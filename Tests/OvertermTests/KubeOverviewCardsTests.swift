@@ -102,6 +102,56 @@ final class KubeOverviewCardsTests: XCTestCase {
         XCTAssertEqual(KubeOverviewCards.passingChecks(report), KubeHealth.Check.allCases.count - 3)
     }
 
+    /// The health card's GitOps line: from the findings already there,
+    /// what lives in the scope, said so.
+    func testTheGitOpsLine() {
+        var report = KubeHealth.Report()
+        XCTAssertNil(KubeOverviewCards.gitOps(report, scope: .namespace("shop")))
+        func subject(_ apiVersion: String, _ kind: String, _ name: String) -> KubeHealth.Subject {
+            KubeHealth.Subject(apiVersion: apiVersion, kind: kind, namespace: "shop", name: name)
+        }
+        report.findings = [
+            KubeHealth.Finding(check: .argoDegraded, subject: subject("argoproj.io/v1alpha1", "Application", "a"), sentence: "Failed: Degraded"),
+            KubeHealth.Finding(
+                check: .notReady, subject: subject("kustomize.toolkit.fluxcd.io/v1", "Kustomization", "k"), sentence: "Ready False", fluxFailing: true),
+            KubeHealth.Finding(check: .notReady, subject: subject("cert-manager.io/v1", "Certificate", "c"), sentence: "Ready False"),
+            KubeHealth.Finding(check: .argoOutOfSync, subject: subject("argoproj.io/v1alpha1", "Application", "b"), sentence: "Drift: OutOfSync"),
+        ]
+        XCTAssertEqual(
+            KubeOverviewCards.gitOps(report, scope: .namespace("shop")), .init(text: "GitOps objects living in shop: 2 failing, 1 drifted or stuck", tone: .failed),
+            "cert-manager isn't GitOps")
+        XCTAssertEqual(KubeOverviewCards.gitOps(report, scope: .all)?.text, "GitOps objects across the cluster: 2 failing, 1 drifted or stuck")
+        report.findings = [report.findings[3]]
+        XCTAssertEqual(KubeOverviewCards.gitOps(report, scope: .namespaces(["a", "b"]))?.tone, .waiting)
+    }
+
+    /// Flux's K601 counted as failing only for its own Ready False: a
+    /// generation not yet looked at (right after an apply) is Progressing,
+    /// then Unknown, and a blocked source or dependency Blocked — never failing.
+    func testTheGitOpsLineCountsOnlyFluxFailures() {
+        func kustomization(_ name: String, generation: Int, observed: Int, ready: String, reason: String) -> [String: Any] {
+            [
+                "apiVersion": "kustomize.toolkit.fluxcd.io/v1", "kind": "Kustomization",
+                "metadata": ["name": name, "namespace": "shop", "generation": generation],
+                "spec": ["interval": "5m", "path": "./apps", "sourceRef": ["kind": "GitRepository", "name": "fleet"]],
+                "status": ["observedGeneration": observed, "conditions": [["type": "Ready", "status": ready, "reason": reason, "message": "m"]]],
+            ]
+        }
+        let lagging = KubeHealth.object(kustomization("lagging", generation: 3, observed: 2, ready: "True", reason: "ReconciliationSucceeded"))
+        let laggingAfterFailure = KubeHealth.object(kustomization("lag-failed", generation: 3, observed: 2, ready: "False", reason: "BuildFailed"))
+        let dependency = KubeHealth.object(kustomization("waiting", generation: 2, observed: 2, ready: "False", reason: "DependencyNotReady"))
+        let artifact = KubeHealth.object(kustomization("no-source", generation: 2, observed: 2, ready: "False", reason: "ArtifactFailed"))
+        let failed = KubeHealth.object(kustomization("broken", generation: 2, observed: 2, ready: "False", reason: "BuildFailed"))
+        for findings in [lagging, laggingAfterFailure, dependency, artifact, failed] {
+            XCTAssertEqual(findings.filter { $0.check == .notReady }.count, 1, "\(findings)")
+        }
+        var report = KubeHealth.Report()
+        report.findings = lagging + laggingAfterFailure + dependency + artifact
+        XCTAssertNil(KubeOverviewCards.gitOps(report, scope: .namespace("shop")), "nothing failing: lag and Blocked aren't said here")
+        report.findings += failed
+        XCTAssertEqual(KubeOverviewCards.gitOps(report, scope: .namespace("shop")), .init(text: "GitOps objects living in shop: 1 failing", tone: .failed))
+    }
+
     /// A list refused or cut: its checks never said to pass — no all-clear for what wasn't checked.
     func testChecksOverListsNotReadNeverPass() {
         var lists = KubeHealth.Lists()

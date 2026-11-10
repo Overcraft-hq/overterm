@@ -490,10 +490,10 @@ final class KubeTreeTests: XCTestCase {
     }
 
     func testAFluxKustomizationsInventory() {
-        XCTAssertEqual(KubeGitOpsTree.inventoryEntry("shop_web_apps_Deployment", version: "v1")?.apiVersion, "apps/v1")
-        XCTAssertNil(KubeGitOpsTree.inventoryEntry("_shop__Namespace", version: "v1")?.namespace)
-        XCTAssertEqual(KubeGitOpsTree.inventoryEntry("_shop__Namespace", version: "v1")?.apiVersion, "v1")
-        XCTAssertNil(KubeGitOpsTree.inventoryEntry("garbage", version: "v1"))
+        XCTAssertEqual(KubeGitOpsSource.inventoryEntry("shop_web_apps_Deployment", version: "v1")?.apiVersion, "apps/v1")
+        XCTAssertNil(KubeGitOpsSource.inventoryEntry("_shop__Namespace", version: "v1")?.namespace)
+        XCTAssertEqual(KubeGitOpsSource.inventoryEntry("_shop__Namespace", version: "v1")?.apiVersion, "v1")
+        XCTAssertNil(KubeGitOpsSource.inventoryEntry("garbage", version: "v1"))
         let kustomization: [String: Any] = [
             "kind": "Kustomization", "apiVersion": "kustomize.toolkit.fluxcd.io/v1", "metadata": ["name": "shop", "namespace": "flux-system"],
             "spec": ["path": "./deploy", "sourceRef": ["kind": "GitRepository", "name": "shop"], "dependsOn": [["name": "infra"]]],

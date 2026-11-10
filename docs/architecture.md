@@ -4891,8 +4891,15 @@ a Flux kind whose `status.observedGeneration` is behind
 `metadata.generation` is "not yet looked at", whatever its Ready says,
 unless suspended or Flux's `-1` before a first reconcile — `KubeHealth.fluxGenerationLag`, Flux's groups only,
 since cert-manager keeps it per condition),
-an Argo CD Application Degraded or Missing, or OutOfSync (K602, K603). Two
-places, read-only:
+an Argo CD Application Failed (K602), or drifted or stuck (K603), by the
+GitOps summaries' own ladder (`KubeGitOpsLadder`, below: an OutOfSync
+auto-sync is fixing says nothing; a failed sync of the current revision,
+Degraded, or Missing while Synced is K602). Above the findings, the card
+says what Argo CD and Flux say of what lives in the scope in a line
+(`KubeOverviewCards.gitOps`: K602 and Flux's K601 `fluxFailing` — its own
+Ready False, never a generation not yet looked at nor a blocked source or
+dependency — failing, K603 drifted or stuck — "GitOps objects living in shop: 2 failing, 1 drifted or stuck"),
+from the findings already read. Two places, read-only:
 
 - **The Overview** (`1`): read once while it shows, in the context and
   namespace shown (every namespace too), the lists `KubeHealth.reads` names
@@ -6143,6 +6150,61 @@ agent's apply against the fake), `KubeGitOpsPageTests` (Resume on
 `fake-prod`: the source read after the review, a wrong name sending
 nothing) and `kubernetesGitOpsChanges` (`E2ERunner+KubernetesGitOpsChanges`,
 run from `kubernetesGitOpsVerbs`) check it.
+
+**GitOps objects summarised** (gitops.md 2.3–2.6, G1; pure, the section's
+groundwork): an Argo CD or Flux object's bytes go through
+`KubeGitOpsWire` — `Decodable` structs declaring only what a summary
+needs, so the decode is the allow-list (never values, parameters,
+`extVars`/`tlas`, patches, `postBuild`, generator elements, Argo's copies
+of the source in `status`, an operation's manifests, last-applied;
+`history` only at its two ends; `status.resources` and an inventory as
+counts and their namespaces, 64 at most; managedFields as times, managers
+and whether they own `spec`/`spec.suspend`; every URL without its
+userinfo) — into `KubeGitOpsObject` (Sendable; its messages through
+`KubeGitOpsMessage`: cut at the first manifest line, URLs masked and
+stripped, credentials scrubbed, 300 characters in a row, 4 KB for a hover).
+`KubeGitOpsLadder` gives each its `KubeGitOpsState` (evaluated Paused,
+Blocked, Failed, Stuck, Drift, Progressing, Ready, Unknown; shown problems
+first), the reason in one line of at most 300 characters (newlines
+folded, whatever the 4 KB messages it quotes) and since when; "fetched,
+not applied" for a Kustomization by its source's artifact, for a
+HelmRelease by its HelmChart's version or its `chartRef` OCIRepository's
+digest (`lastAttemptedRevisionDigest`; a tag isn't a chart version) — every time from the
+object (`lastTransitionTime`, the operation's `startedAt`/`finishedAt`, an
+artifact's `lastUpdateTime`, managedFields'), so
+`KubeGitOpsSummary.ranked` run again at a later `now` (the tick) moves the
+10-minute, 3-minute and `max(2 × interval, 5 min)` edges with no read; a
+Flux object is Blocked by a peer summary (its source or chart not Ready;
+a `dependsOn` chain, 5 hops) and never by a GET. Tags sit beside a state
+(manual sync, an older failed sync, Paused's last state, "may be stale",
+"not reconciled for…"). `KubeGitOpsSummary` also says what is served, reads
+a GET or a page of a list, orders and counts, and keeps a scope by where an
+object lives or what it deploys into (its managed namespaces; its in-cluster
+destination before anything is applied; an ApplicationSet by its
+Applications; a source by who uses it; a remote one by its own namespace
+only). `KubeGitOpsRevision` reads `main@sha1:…`, legacy `main/<sha>`,
+`sha256:` digests and `1.2.3+<sha12>` into what is shown and a candidate
+commit; `KubeGitOpsPath` checks a cluster's path against a checkout by
+components after resolving symlinks (`..`, absolute, NUL and a symlink out
+refused; one `fileExists`, no walk up); `KubeGitOpsGitArgs` refuses unsafe
+refs and non-SHA revisions, verifies a commit (`--end-of-options`,
+ambiguous said), and runs git with `--literal-pathspecs`. `GitRemoteURL`
+normalises a remote (scp, ssh, `git+ssh`, http(s) userinfo and default
+ports, `ssh.github.com`, Azure's three forms, case on github/gitlab/
+bitbucket) and `Refs.parse(remotes:)` keeps no URL with its userinfo.
+`FakeKubeAPI+GitOps` serves Argo CD's and Flux's CRDs with the pinned CRDs'
+printer columns (`Scripts/fetch-gitops-crds.sh`, SHA-checked into
+`Tests/OvertermTests/Fixtures/gitops-crds`), their controllers, and one
+object for each rung (`setArgoState`, `setFluxReady`,
+`setControllerReady` change body and cells in one MODIFIED, `modify`).
+`KubeGitOpsSummaryTests` (each fixture's rung, each rule in order, the
+tick's edges, the last error, scope), `KubeGitOpsWireTests` (the reviewed
+keys, the sentinel never read), `KubeGitOpsRevisionTests` (revisions,
+paths, git's arguments on a throwaway repository), `KubeGitOpsCRDTests`
+(the fake's columns and every field read against the CRDs),
+`KubeRealClusterTests` (opt-in: the CRDs applied to kind-fake, the
+server's columns) and `kubernetesHealth` (K602/K603 and the card's line)
+check it.
 
 ### The cluster's API docs
 

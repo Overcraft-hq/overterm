@@ -756,6 +756,21 @@ final class FakeKubeAPI: @unchecked Sendable {
         }
     }
 
+    /// An object's fields and cells changed together — one MODIFIED, as a
+    /// controller's status write is: `fields` gets the body as it is now
+    /// (`spec`, `status`, `metadata`'s own) to change in place.
+    func modify(_ resource: String, _ name: String, namespace: String? = nil, values: [String: Value] = [:], _ fields: (inout [String: Any]) -> Void) {
+        let key = Self.key(resource, namespace, name)
+        change("MODIFIED") {
+            guard var object = objects[key] else { return nil }
+            var body = object.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
+            fields(&body)
+            object.body = Self.encode(body)
+            object.values.merge(values) { $1 }
+            return object
+        }
+    }
+
     /// An object's managedFields, as a GET answers them: who owns which
     /// fields (`manager`, `operation`, `fieldsV1`) — a server-side apply's
     /// conflicts come from them. A MODIFIED event.
@@ -1620,7 +1635,8 @@ final class FakeKubeAPI: @unchecked Sendable {
     static func columns(for kind: Kind) -> [Column] {
         let name = Column(name: "Name", format: "name", description: "Name must be unique within a namespace.")
         let age = Column(name: "Age", description: "CreationTimestamp is a timestamp representing the server time when this object was created.")
-        if let columns = kind.columns { return [name] + columns + [age] }
+        // A CRD's own Age (Flux's: a date column) stands for the server's.
+        if let columns = kind.columns { return [name] + columns + (columns.contains { $0.name == "Age" } ? [] : [age]) }
         func column(_ name: String, _ type: String = "string", priority: Int = 0, _ description: String = "") -> Column {
             Column(name: name, type: type, priority: priority, description: description)
         }

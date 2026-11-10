@@ -8,10 +8,14 @@ import Foundation
 /// `revisions[]`, `sources[]` and `sourceTypes[]` — in `status.sync`,
 /// `status.operationState.syncResult`, each `status.history[]` entry and
 /// `status.sourceType(s)` alike. Whatever reads a revision reads it here,
-/// so neither form comes back empty. Pure.
+/// so neither form comes back empty. Also what the tree, the delete's
+/// facts and the summaries (`KubeGitOpsWire`) share of how Argo CD and Flux
+/// say where things go: an in-cluster destination, an inventory entry's id.
+/// Pure.
 struct KubeGitOpsSource: Equatable, Sendable {
-    /// As the Application says it — a URL may carry userinfo, so it is
-    /// shown only where the tree already shows it.
+    /// As the Application says it — read from a dictionary, a URL may carry
+    /// userinfo, so it is shown only where the tree already shows it; the
+    /// summaries' (`KubeGitOpsWire`) never carries any.
     var repoURL: String
     var path: String?
     var chart: String?
@@ -21,6 +25,39 @@ struct KubeGitOpsSource: Equatable, Sendable {
 
     /// `chart`, else `path`: where in the repository.
     var place: String? { chart ?? path }
+
+    /// The git repository it names (`GitRemoteURL`): nil for a chart's
+    /// (`chart:` set — a Helm repository or `oci://`), which names none.
+    var repo: GitRemoteURL? { chart == nil ? GitRemoteURL(repoURL) : nil }
+
+    /// A values-only source (`ref:`), read by another one's `$values/…`.
+    var isValuesRef: Bool { ref != nil }
+
+    /// As a row says it, host-less: `acme/shop apps/web @main`, `api@1.4.2`.
+    var said: String {
+        if let chart { return targetRevision.map { "\(chart)@\($0)" } ?? chart }
+        let repository = repo?.path ?? GitRemoteURL.withoutUserinfo(repoURL)
+        return [repository, path, targetRevision.map { "@\($0)" }].compactMap { $0 }.joined(separator: " ")
+    }
+
+    // MARK: Where things go
+
+    /// Argo CD's in-cluster destination: `https://kubernetes.default.svc`,
+    /// or the name `in-cluster`; neither said is the default, here too.
+    static func inCluster(server: String?, name: String?) -> Bool {
+        if let server, !server.isEmpty { return server == "https://kubernetes.default.svc" }
+        if let name, !name.isEmpty { return name == "in-cluster" }
+        return true
+    }
+
+    /// A Flux inventory entry's id: `<namespace>_<name>_<group>_<kind>`
+    /// (no Kubernetes name has an underscore); its version beside it.
+    static func inventoryEntry(_ id: String, version: String) -> (kind: String, name: String, namespace: String?, apiVersion: String)? {
+        let parts = id.split(separator: "_", omittingEmptySubsequences: false).map(String.init)
+        guard parts.count == 4, !parts[1].isEmpty, !parts[3].isEmpty else { return nil }
+        let group = parts[2]
+        return (parts[3], parts[1], parts[0].isEmpty ? nil : parts[0], group.isEmpty ? version : "\(group)/\(version)")
+    }
 
     /// The Application's sources, in order: `spec.sources`, else
     /// `spec.source` as one. A source with no `repoURL` is kept (its
