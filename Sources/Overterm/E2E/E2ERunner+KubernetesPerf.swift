@@ -11,7 +11,8 @@ import Foundation
 /// so kubectl's proxy isn't what is timed. Usage is served for every pod.
 /// Then ten namespaces of 500 pods each at once: ten watches, merged, the
 /// same budgets for the first list and a burst; their Overview a watch a
-/// part, not a part a namespace, and cheap while quiet.
+/// part, not a part a namespace, and cheap while quiet. Then GitOps' leg
+/// (`kubernetesGitOpsPerf`): 1,000 Argo CD Applications.
 extension E2ERunner {
     func kubernetesPerfScenario() async {
         await settledPrompt()
@@ -156,6 +157,8 @@ extension E2ERunner {
         await kubernetesChartPerf()
 
         await tenNamespaces(model, page, fake)
+
+        await kubernetesGitOpsPerf(model, page, fake)
 
         app.closeOverlay(.kubernetes)
         check("closed, its watch ends", await eventually(5) { fake.openWatches == 0 }, "\(fake.openWatches)")

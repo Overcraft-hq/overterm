@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 import XCTest
 
@@ -437,6 +438,88 @@ final class KubeGitOpsSessionTests: XCTestCase {
         session.clock = { Date().addingTimeInterval(16) }
         let later = await eventually(8) { gets().count == 1 }
         XCTAssertTrue(later, "read once its 15 s are up: \(gets().map(\.path))")
+        session.drop()
+    }
+
+    /// G8's finding: thirty GETs that come back between two flushes are
+    /// ranked and drawn once, at the next flush — not once each (1,000
+    /// summaries ranked and the table drawn 50 times over took a burst 8 s).
+    func testGETsThatComeBackAreRankedTogetherAtTheNextFlush() async throws {
+        let (api, client) = try startFake()
+        let names = (0..<30).map { "acme-degraded-\($0)" }
+        for name in names {
+            api.addApplication(
+                name, spec: ["source": ["repoURL": "https://git.acme.example/acme/fleet.git", "path": name], "destination": ["namespace": "shop"]],
+                status: ["sync": ["status": "Synced", "revision": FakeKubeAPI.GitOpsCommit.applied], "health": ["status": "Degraded"]])
+        }
+        let discovery = try await client.discover()
+        let session = session()
+        session.show(context: "kind-fake", scope: .all, discovery: discovery, client: client)
+        let read = await eventually {
+            session.state == .live && !session.summarising && session.rows.shown.filter { $0.ref.name.hasPrefix("acme-degraded-") }.count == 30
+        }
+        XCTAssertTrue(read)
+        try await Task.sleep(for: .milliseconds(300))
+        session.flushInterval = .milliseconds(400)
+        try await Task.sleep(for: .milliseconds(450))
+        var ranked = 0
+        let counting = session.$objects.dropFirst().sink { _ in ranked += 1 }
+        defer { counting.cancel() }
+        let paths = Set(names.map { "/apis/argoproj.io/v1alpha1/namespaces/argocd/applications/\($0)" })
+        api.forgetRequests()
+        for name in names { api.setArgoState(name) { status in status["health"] = ["status": "Degraded", "message": "deadline exceeded"] } }
+        let got = await eventually(10) {
+            api.requests.filter { !$0.isWatch && paths.contains($0.path) }.count == 30
+                && names.allSatisfy { name in session.objects.first { $0.ref.name == name }?.lastError?.contains("deadline exceeded") == true }
+        }
+        XCTAssertTrue(got, "every one read again and ranked")
+        // Two flushes take the thirty (20 + 10); each one's answers ranked once, with the next flush.
+        XCTAssertLessThanOrEqual(ranked, 4, "ranked \(ranked) times for 30 GETs")
+        XCTAssertLessThanOrEqual(session.mostTaken, KubeGitOpsRefetch.perFlush)
+        XCTAssertLessThanOrEqual(session.mostInFlight, KubeGitOpsSession.inFlight)
+        session.drop()
+    }
+
+    /// A GET that comes back in the last moments before the section is
+    /// left is in the store but not yet ranked (the flush it waits for is
+    /// cancelled): shown again within five minutes, the store is reused,
+    /// and the row must hold the new state at once — not the old one until
+    /// the next tick.
+    func testAGETAnsweredJustBeforeLeavingIsRankedWhenShownAgain() async throws {
+        let (api, client) = try startFake()
+        let name = "acme-late"
+        api.addApplication(
+            name, spec: ["source": ["repoURL": "https://git.acme.example/acme/fleet.git", "path": name], "destination": ["namespace": "shop"]],
+            status: ["sync": ["status": "Synced", "revision": FakeKubeAPI.GitOpsCommit.applied], "health": ["status": "Degraded"]])
+        let discovery = try await client.discover()
+        let session = session()
+        session.show(context: "kind-fake", scope: .all, discovery: discovery, client: client)
+        let read = await eventually { session.state == .live && !session.summarising && session.rows.shown.contains { $0.ref.name == name } }
+        XCTAssertTrue(read)
+        try await Task.sleep(for: .milliseconds(300))
+        let path = "/apis/argoproj.io/v1alpha1/namespaces/argocd/applications/\(name)"
+        api.forgetRequests()
+        // The GET is taken by a flush and answered late; the flush its
+        // answer waits for is held off, as one in the last 250 ms is.
+        api.answerSlowly(path, milliseconds: 500)
+        api.setArgoState(name) { status in status["health"] = ["status": "Degraded", "message": "deadline exceeded"] }
+        let asked = await eventually { api.requests.contains { !$0.isWatch && $0.path == path } }
+        XCTAssertTrue(asked, "read again")
+        session.flushInterval = .seconds(60)
+        let stored = await eventually {
+            session.peers(context: "kind-fake").values.contains { $0.ref.name == name && $0.lastError?.contains("deadline exceeded") == true }
+        }
+        XCTAssertTrue(stored, "its answer in the store")
+        XCTAssertNotEqual(
+            session.objects.first { $0.ref.name == name }?.lastError?.contains("deadline exceeded"), true, "not yet ranked: the flush is still to come")
+
+        session.hide()
+        session.show(context: "kind-fake", scope: .all, discovery: discovery, client: client)
+        XCTAssertEqual(
+            session.objects.first { $0.ref.name == name }?.lastError?.contains("deadline exceeded"), true, "the store's state, ranked on show")
+        XCTAssertTrue(
+            session.rows.shown.contains { $0.ref.name == name && "\($0.why) \($0.hover)".contains("deadline exceeded") },
+            "\(session.rows.shown.first { $0.ref.name == name }?.why ?? "no row")")
         session.drop()
     }
 

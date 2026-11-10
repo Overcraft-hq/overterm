@@ -141,7 +141,7 @@ final class E2ETests: XCTestCase {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-e2e-kperf-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
-        _ = try run("kubernetesPerf", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 240)
+        _ = try run("kubernetesPerf", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 300)
     }
     /// The Overview as cards, in a dark theme, a light one and a narrow
     /// window, against the fake: OVERTERM_DUMP_PNG captures each.
