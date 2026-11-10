@@ -6383,7 +6383,8 @@ row's cells move from its summary's (date columns left out — the server
 renders them relative), when a row that isn't healthy changes, or every
 60 s while it is in progress (`KubeGitOpsRefetch`, pure: each at most once
 every 15 s, 20 a flush, Failed, Blocked and Stuck first; 4 in flight; a
-403 or an oversized one "couldn't read why"). The watches are allotted:
+403 or an oversized one "couldn't read why"; the answers ranked and drawn
+together with the next flush, never one by one). The watches are allotted:
 the five kinds, the three controllers, two more for a kind refused across
 the cluster, which is read in `accessibleNamespaces`, else `argocd` and
 the namespaces Applications were seen in, or `flux-system`, plus the
@@ -6421,8 +6422,10 @@ the banner), `KubeGitOpsSessionTests` (against the fake: GETs only, rows-only
 watches, one paged list a kind, paging never past what is left, the store
 left mid-read, Refresh, R3 at scale — 20 GETs a flush, four in flight, 15 s
 an object —, the fallback across scope changes and a namespace refusing,
-kinds not served never asked, the banner, 600 Applications cut at 500) and `kubernetesGitOpsSection`
-(`E2ERunner+KubernetesGitOpsSection`) check it.
+kinds not served never asked, the banner, 600 Applications cut at 500,
+GETs that come back ranked together at the next flush) and `kubernetesGitOpsSection`
+(`E2ERunner+KubernetesGitOpsSection`) check it; `kubernetesPerf`'s GitOps leg
+times it with 1,000 Applications (below).
 
 **Grouped, and its filter's tokens** (gitops.md 2.8, G4). `G`
 (`KubernetesKey.groupBy`, a no-op outside the section) cycles
@@ -6850,6 +6853,24 @@ five minutes on one a query, its last steps only; Live at its own
 intervals, at most one GET a target and one `query_range` a query in 6 s,
 under 3% CPU; hidden, the readings stopped and the metrics proxy closed
 (`proxyCloses`) within 60 s, then nothing of metrics read.
+Its GitOps leg (`E2ERunner+KubernetesGitOpsPerf`, gitops.md 3.2, 8.4, G8):
+1,000 Argo CD Applications (`FakeKubeAPI.addGitOpsPerfApplications`, ~7 KB
+each whole, with the managedFields and the client-side apply's annotation
+a busy one carries — `tableManagedFields` puts them in the rows' metadata,
+as a real server does; `bytesSent` counts what was answered a resource).
+`g` across every namespace drawn with every row live and 500 summarised
+(under 5 s; ~0.7 s, the main thread held under 500 ms; ~0.3 s), the rows'
+first list ~5 MB (~5 KB a row; §3.2's bound 30 MB, so R1 keeps
+`includeObject=Metadata`), the summaries ~4 MB in 25 pages of 20, cut at
+500 and said; a burst of 500 status writes — 450 `reconciledAt` alone,
+nothing read, and 50 turning Degraded, each read once, at most 4 in
+flight and 20 a flush — applied in under 3 s (~1.5–2 s); the table of
+1,000 rows scrolled (p95 under 35 ms; ~18 ms); another section ends its
+follows and `g` again reads no summary. What it found: each GET's answer
+ranked the 1,000 summaries and drew the table again on its own — the
+burst took 7–8 s with the main thread held 0.5–0.8 s at a time; the
+answers now wait for the next flush and are ranked once together
+(`KubeGitOpsSession.reranking`; `KubeGitOpsSessionTests`).
 
 **`kubernetesScale`** (`E2ERunner+KubernetesScale`, testKubernetesScale,
 its own OVERTERM_KUBECONFIG): a large cluster's shape — 5,000 pods across

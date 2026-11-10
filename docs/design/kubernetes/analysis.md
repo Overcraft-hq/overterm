@@ -1296,7 +1296,7 @@ All of them are built; Section 15 says where the build departs from this plan. E
   - The one exception to "the page closed": a Metrics tab's chart expanded into the window's right slot (metrics.md M9). While it shows in a window on screen and its object's Metrics tab is still the detail's, that tab's reads go on with the page hidden — the same GET a target every 15 s, the same Prometheus want, Live's pause counting any key or click in the window — and nothing else is read: no list, no discovery, no watch (`KubernetesModel.readsMetrics`, held by `holdCharts`). The slot closed or given away, the window occluded or closed, or the detail on another tab: nothing is read for it, and the chart keeps its last drawing with its time.
   - A Metrics tab's pods' states for its markers (a pod's GET, a workload's pods by selector, `limit=250`, at most 16 MB) are read once a minute only while the tab shows, stopped by a 403 or a failed sign-in (metrics.md 6.5).
   - Discovery is read once per context, then again on a CRD event, a 404, or every 5 minutes while the page shows.
-  - The GitOps section (`g`, gitops.md 3) follows, while it shows, five kinds' rows across the cluster and three controllers' (8 of the page's 10 watches; two more only for a kind refused across the cluster), reads one paged, byte-bounded list of whole objects a kind (20 a page, 16 MB; 500 objects or 64 MB a kind), then one GET when a row moves. Its summaries stay in memory 5 minutes while the page shows, and go when it hides.
+  - The GitOps section (`g`, gitops.md 3) follows, while it shows, five kinds' rows across the cluster and three controllers' (8 of the page's 10 watches; two more only for a kind refused across the cluster), reads one paged, byte-bounded list of whole objects a kind (20 a page, 16 MB; 500 objects or 64 MB a kind), then one GET when a row moves, the answers ranked together at the next flush. Its summaries stay in memory 5 minutes while the page shows, and go when it hides. Measured (G8, `kubernetesPerf`, 1,000 Applications of ~7 KB with their managedFields and last-applied annotation): the rows' first list ~5 MB, the summaries ~4 MB in 25 pages, cut at 500; drawn in ~0.7 s; a burst of 500 status writes applied in ~2 s with 50 GETs.
   - The rail's GitOps part (gitops.md 4.4, G5) reads only for a bound checkout on screen, the binding's context only: the workloads' rows with their metadata in the binding's namespace, one GET per owner they name (at most 8), then — off production, or once Find What Deploys This is pressed — GitRepositories' rows and OCIRepositories across the cluster, Applications in their namespaces, and Kustomizations and HelmReleases only once a Flux source matched the checkout's remotes; its matches followed rows-only (at most 4 more, so at most 8 on the background slot, none an attention watch). Kept 5 minutes in memory, app-wide; hidden, nothing is read.
   - The `performance` scenario's idle-CPU budget must hold with the page open on a quiet fake cluster.
 - **Large clusters** (globex has thousands of pods):
@@ -1309,7 +1309,7 @@ All of them are built; Section 15 says where the build departs from this plan. E
   - The table updates rows by uid, not by reloading.
   - Ages are recomputed once a second for visible rows only.
 - **Tables:** NSTableView of hosted rows (the container table's lesson: a SwiftUI list of thousands of rows doesn't scroll).
-  - The `kubernetesPerf` scenario measures 5,000 pods: first draw, a burst of 500 events, scroll.
+  - The `kubernetesPerf` scenario measures 5,000 pods: first draw, a burst of 500 events, scroll; and the GitOps section with 1,000 Applications: first draw, bytes read, a burst of 500 events, its GETs, scroll.
 - **Logs:**
   - Keep 5,000 lines. A noisy pod is throttled on drawing, not on reading.
   - Merged logs are capped at `logStreams` and say so.
@@ -1399,7 +1399,7 @@ The scenario starts a forward to a Service, deletes the pod in the fake, and end
   - The production band shows on `fake-prod`, and its write verbs are greyed. `fake-dev` is read-only although its server is on 127.0.0.1. `kind-fake` is writable.
   - `e` and `t` are **recorded, not typed**: the command built is checked, never run against a cluster.
   - `f` runs through the stand-in kubectl, as above.
-- `kubernetesPerf`: 5,000 pods.
+- `kubernetesPerf`: 5,000 pods; the GitOps section with 1,000 Applications.
 - Layout checks through `OVERTERM_DUMP_LAYOUT`.
 
 **Optional live tests** (`OVERTERM_KUBE_TESTS=1`, `KubeRealClusterTests`; docs/testing.md, Kubernetes):

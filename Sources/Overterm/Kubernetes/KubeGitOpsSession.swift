@@ -198,6 +198,8 @@ final class KubeGitOpsSession: ObservableObject {
     private var ticking: Task<Void, Never>?
     private var gets: [KubeGitOpsObject.Key: Task<Void, Never>] = [:]
     private var refetch = KubeGitOpsRefetch()
+    /// A GET came back since the last flush: ranked again then.
+    private var reranking = false
     private var queue: [KubeGitOpsObject.Key] = []
     private var followNotes: [String: String] = [:]
     private var argoNamespace = KubeGitOps.argoDefaultNamespace
@@ -236,6 +238,8 @@ final class KubeGitOpsSession: ObservableObject {
         now = clock()
         if let store, store.context == context, now.timeIntervalSince(store.readAt) <= Self.storeLife {
             summarisedAt = store.readAt
+            // What the store holds, as drawn (`hide` ranks too).
+            rank()
             // Fresh only for the kinds it finished: a section left mid-read reads the rest.
             let missing = kinds.filter { !store.done.contains($0.fullName) }
             if !missing.isEmpty { summarise(missing, client: client) }
@@ -306,6 +310,13 @@ final class KubeGitOpsSession: ObservableObject {
         ticking?.cancel()
         ticking = nil
         queue = []
+        // A GET answered since the last flush is in the store but not yet
+        // ranked: ranked now, or a show within `storeLife` reuses the store
+        // and draws the old summary until the next tick.
+        if reranking {
+            reranking = false
+            rank()
+        }
         refetch = KubeGitOpsRefetch()
         live = [:]
         listed = []
@@ -314,6 +325,8 @@ final class KubeGitOpsSession: ObservableObject {
         spareUsed = 0
         spareByKind = [:]
         fallbackFollows = [:]
+        mostInFlight = 0
+        mostTaken = 0
         client = nil
         served = []
         context = nil
@@ -675,9 +688,14 @@ final class KubeGitOpsSession: ObservableObject {
         if found != controllers { controllers = found }
         if state == .loading, !listed.isEmpty || summarisingTask == nil { state = .live }
         // At most 20 a flush; the rest wait for the next.
-        queue += refetch.take(now: clock()).filter { !queue.contains($0) && gets[$0] == nil }
+        let taken = refetch.take(now: clock()).filter { !queue.contains($0) && gets[$0] == nil }
+        mostTaken = max(mostTaken, taken.count)
+        queue += taken
         pump()
-        if KubeGitOpsControllers.stale(found) != staleBefore { rank() }
+        if reranking || KubeGitOpsControllers.stale(found) != staleBefore {
+            reranking = false
+            rank()
+        }
         publish()
         if !refetch.isEmpty, flushing == nil { scheduleFlush(now: false) }
     }
@@ -704,6 +722,7 @@ final class KubeGitOpsSession: ObservableObject {
                 self.got(key, kind: kind, result)
                 self.pump()
             }
+            mostInFlight = max(mostInFlight, gets.count)
         }
     }
 
@@ -722,8 +741,11 @@ final class KubeGitOpsSession: ObservableObject {
         case .failure:
             break
         }
-        rank()
-        publish()
+        // Ranked and drawn with the next flush, with every other GET it
+        // brings: one at a time, 50 GETs ranked 1,000 summaries and drew
+        // the table 50 times over (G8: a burst took 8 s).
+        reranking = true
+        scheduleFlush(now: false)
     }
 
     // MARK: The tick
@@ -784,4 +806,7 @@ final class KubeGitOpsSession: ObservableObject {
 
     /// How many follows are open now (the kinds', the controllers').
     var openFollows: Int { follows.count }
+    /// The most GETs in flight at once, and taken in one flush, since shown.
+    private(set) var mostInFlight = 0
+    private(set) var mostTaken = 0
 }

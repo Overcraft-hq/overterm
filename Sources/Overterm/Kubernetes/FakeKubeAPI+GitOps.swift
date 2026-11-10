@@ -476,4 +476,143 @@ extension FakeKubeAPI {
                 ],
             ])
     }
+
+    // MARK: At scale (G8)
+
+    /// What `addGitOpsPerfApplications` made: the names, by index, and
+    /// which were made in a problem state.
+    struct GitOpsPerfApps {
+        var names: [String]
+        /// Degraded at the start (every 50th).
+        var degraded: Set<Int>
+        /// OutOfSync with auto-sync off (every 25th from the 5th).
+        var drifting: Set<Int>
+    }
+
+    /// G8's cluster (gitops.md 3.2, 8.4): `count` Argo CD Applications in
+    /// argocd, each as a large real one is — a client-side apply's
+    /// `last-applied-configuration` the size of its spec, managedFields of
+    /// kubectl's and the application controller's, a dozen resources, its
+    /// history and images — deploying into team-0 … team-9. Every 50th is
+    /// Degraded, every 25th from the 5th OutOfSync with auto-sync off; the
+    /// rest Synced and Healthy. Argo CD served first. Fictional names.
+    @discardableResult
+    func addGitOpsPerfApplications(_ count: Int, now: Date = Date()) -> GitOpsPerfApps {
+        serveArgoCD()
+        let namespaces = (0..<10).map { "team-\($0)" }
+        for namespace in namespaces { addNamespace(namespace) }
+        let c = GitOpsCommit.self
+        func ago(_ seconds: TimeInterval) -> String { Self.time(now.addingTimeInterval(-seconds)) }
+        let kinds: [(group: String, kind: String)] = [
+            ("apps", "Deployment"), ("", "Service"), ("", "ConfigMap"), ("", "ServiceAccount"), ("networking.k8s.io", "Ingress"),
+            ("policy", "PodDisruptionBudget"), ("autoscaling", "HorizontalPodAutoscaler"), ("rbac.authorization.k8s.io", "Role"),
+            ("rbac.authorization.k8s.io", "RoleBinding"), ("batch", "CronJob"), ("monitoring.coreos.com", "ServiceMonitor"), ("", "Secret"),
+        ]
+        var made = GitOpsPerfApps(names: [], degraded: [], drifting: [])
+        for index in 0..<count {
+            let name = String(format: "perf-app-%04d", index)
+            let namespace = namespaces[index % namespaces.count]
+            let degraded = index % 50 == 0
+            let drifting = !degraded && index % 25 == 5
+            if degraded { made.degraded.insert(index) }
+            if drifting { made.drifting.insert(index) }
+            made.names.append(name)
+            let source: [String: Any] = [
+                "repoURL": "https://git.acme.example/acme/fleet.git", "path": "apps/\(name)", "targetRevision": "main",
+            ]
+            var spec: [String: Any] = [
+                "project": "acme", "source": source, "destination": ["server": "https://kubernetes.default.svc", "namespace": namespace],
+            ]
+            if !drifting {
+                spec["syncPolicy"] = ["automated": ["prune": true, "selfHeal": true], "syncOptions": ["CreateNamespace=true", "ServerSideApply=true"]]
+            }
+            let resources: [[String: Any]] = kinds.map { entry in
+                [
+                    "group": entry.group, "version": "v1", "kind": entry.kind, "namespace": namespace, "name": "\(name)-\(entry.kind.lowercased())",
+                    "status": drifting && entry.kind == "Deployment" ? "OutOfSync" : "Synced",
+                    "health": ["status": degraded && entry.kind == "Deployment" ? "Degraded" : "Healthy"],
+                ]
+            }
+            var health: [String: Any] = ["status": "Healthy"]
+            if degraded { health = ["status": "Degraded", "message": "Deployment \(name) exceeded its progress deadline"] }
+            let status: [String: Any] = [
+                "sync": ["status": drifting ? "OutOfSync" : "Synced", "revision": drifting ? c.target : c.applied],
+                "health": health,
+                "history": [["id": 7, "revision": c.applied, "deployedAt": ago(3600), "deployStartedAt": ago(3640), "source": source]],
+                "operationState": [
+                    "phase": "Succeeded", "startedAt": ago(3640), "finishedAt": ago(3600), "message": "successfully synced (all tasks run)",
+                    "syncResult": ["revision": c.applied, "source": source],
+                ],
+                "resources": resources,
+                "summary": ["images": ["registry.acme.example/\(name):\(c.applied.prefix(7))", "registry.acme.example/sidecar:1.4.2"]],
+                "reconciledAt": ago(60), "sourceType": "Directory",
+            ]
+            // kubectl's client-side apply: the whole spec again, as a string.
+            let applied = String(
+                decoding: Self.encode(["apiVersion": "argoproj.io/v1alpha1", "kind": "Application", "metadata": ["name": name, "namespace": "argocd"], "spec": spec]),
+                as: UTF8.self)
+            add(
+                "applications.argoproj.io", name, namespace: "argocd", values: Self.argoCells(spec: spec, status: status),
+                labels: ["app.kubernetes.io/part-of": "acme-fleet", "acme.example/team": namespace],
+                annotations: ["kubectl.kubernetes.io/last-applied-configuration": applied], created: now.addingTimeInterval(-86_400),
+                fields: ["spec": spec, "status": status])
+            setManagedFields("applications.argoproj.io", name, namespace: "argocd", Self.perfManagedFields(resources, now: now))
+        }
+        return made
+    }
+
+    /// An Application's managedFields as a busy one carries them: kubectl's
+    /// client-side apply owning the spec, the application controller
+    /// owning the status — every resource keyed, as server-side apply keys
+    /// a list's entries.
+    private static func perfManagedFields(_ resources: [[String: Any]], now: Date) -> [[String: Any]] {
+        var keyed: [String: Any] = [".": [String: Any]()]
+        for resource in resources {
+            let key = "k:" + String(decoding: encode(["group": resource["group"]!, "kind": resource["kind"]!, "name": resource["name"]!, "namespace": resource["namespace"]!]), as: UTF8.self)
+            keyed[key] = [
+                ".": [String: Any](), "f:group": [String: Any](), "f:health": ["f:status": [String: Any]()], "f:kind": [String: Any](), "f:name": [String: Any](), "f:namespace": [String: Any](),
+                "f:status": [String: Any](), "f:version": [String: Any](),
+            ]
+        }
+        let empty = [String: Any]()
+        return [
+            [
+                "manager": "kubectl-client-side-apply", "operation": "Update", "apiVersion": "argoproj.io/v1alpha1", "time": time(now.addingTimeInterval(-86_400)),
+                "fieldsType": "FieldsV1",
+                "fieldsV1": [
+                    "f:metadata": [
+                        "f:annotations": [".": empty, "f:kubectl.kubernetes.io/last-applied-configuration": empty],
+                        "f:labels": [".": empty, "f:app.kubernetes.io/part-of": empty, "f:acme.example/team": empty],
+                    ],
+                    "f:spec": [
+                        ".": empty, "f:destination": [".": empty, "f:namespace": empty, "f:server": empty], "f:project": empty,
+                        "f:source": [".": empty, "f:path": empty, "f:repoURL": empty, "f:targetRevision": empty],
+                        "f:syncPolicy": [".": empty, "f:automated": [".": empty, "f:prune": empty, "f:selfHeal": empty], "f:syncOptions": empty],
+                    ],
+                ],
+            ],
+            [
+                "manager": "argocd-application-controller", "operation": "Update", "apiVersion": "argoproj.io/v1alpha1", "time": time(now.addingTimeInterval(-60)),
+                "fieldsType": "FieldsV1",
+                "fieldsV1": [
+                    "f:status": [
+                        ".": empty, "f:health": [".": empty, "f:status": empty], "f:history": empty,
+                        "f:operationState": [".": empty, "f:finishedAt": empty, "f:message": empty, "f:operation": empty, "f:phase": empty, "f:startedAt": empty, "f:syncResult": empty],
+                        "f:reconciledAt": empty, "f:resources": keyed, "f:sourceType": empty, "f:summary": [".": empty, "f:images": empty],
+                        "f:sync": [".": empty, "f:comparedTo": empty, "f:revision": empty, "f:status": empty],
+                    ]
+                ],
+            ],
+        ]
+    }
+
+    /// An Application's controller wrote its status again, its cells only
+    /// as they say: `reconciledAt` moved (every Application's, every few
+    /// minutes), and, `degrade`, its health Degraded. One MODIFIED.
+    func touchApplication(_ name: String, namespace: String = "argocd", degrade: Bool, at now: Date = Date()) {
+        setArgoState(name, namespace: namespace) { status in
+            status["reconciledAt"] = Self.time(now)
+            if degrade { status["health"] = ["status": "Degraded", "message": "Deployment \(name) exceeded its progress deadline"] }
+        }
+    }
 }

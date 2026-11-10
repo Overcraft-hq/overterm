@@ -306,6 +306,8 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// The next watches' answer: a status, its `Retry-After`.
     private var failedWatches: (count: Int, status: Int, retryAfter: Int?) = (0, 0, nil)
     private var settings = Settings()
+    private var sent: [String: Int] = [:]
+    private var sentWhole: [String: Int] = [:]
     /// Containers' logs, by `namespace|pod|container|previous`.
     private var logs: [String: [LogEntry]] = [:]
     /// Follows open now: their pod and container, and whether they asked for timestamps.
@@ -331,6 +333,40 @@ final class FakeKubeAPI: @unchecked Sendable {
         var nextWriteFailure: (status: Int, reason: String, message: String)?
         var servesOpenAPI = true
         var openAPIPadding = 0
+        var tableManagedFields = false
+    }
+
+    /// Whether a Table row's `PartialObjectMetadata` carries `managedFields`,
+    /// as a real API server's does (gitops.md 3.2: the largest cost of a
+    /// list across the cluster). Off, the rows are lean, as every other
+    /// scenario has them.
+    var tableManagedFields: Bool {
+        get { locked { settings.tableManagedFields } }
+        set { locked { settings.tableManagedFields = newValue } }
+    }
+
+    /// Bytes answered for a resource (its full name: `applications.argoproj.io`)
+    /// since `forgetBytes`: lists, GETs and every watch event — what the
+    /// client received, as the perf scenarios record it.
+    func bytesSent(_ resource: String) -> Int { locked { sent[resource] ?? 0 } }
+    /// Bytes answered for a resource by lists and GETs alone, by whether
+    /// they asked for a Table (`table`) or whole objects.
+    func bytesSent(_ resource: String, table: Bool) -> Int { locked { sentWhole[resource + (table ? "#table" : "#objects")] ?? 0 } }
+    func forgetBytes() {
+        locked {
+            sent = [:]
+            sentWhole = [:]
+        }
+    }
+
+    private func counted(_ answer: Answer, _ resource: String, table: Bool) -> Answer {
+        if case .json(_, let data) = answer {
+            locked {
+                sent[resource, default: 0] += data.count
+                sentWhole[resource + (table ? "#table" : "#objects"), default: 0] += data.count
+            }
+        }
+        return answer
     }
 
     /// Whether it serves `/openapi/v3` (an old server's 404 when not).
@@ -1329,7 +1365,7 @@ final class FakeKubeAPI: @unchecked Sendable {
                 metadata["managedFields"] = nil
                 return .json(200, Self.encode(["kind": "PartialObjectMetadata", "apiVersion": "meta.k8s.io/v1", "metadata": metadata]))
             }
-            return .json(200, Self.encode(Self.full(object, kind)))
+            return counted(.json(200, Self.encode(Self.full(object, kind))), kind.fullName, table: false)
         }
         let table = accept.contains("as=Table") && !settings.ignoresTables.contains(resource)
         let includeObject = query["includeObject"] ?? "Metadata"
@@ -1337,9 +1373,10 @@ final class FakeKubeAPI: @unchecked Sendable {
         if isWatch {
             return watch(kind, namespace: route.namespace, query: query, table: table, includeObject: includeObject, labels: labels, channel: channel)
         }
-        return list(
-            kind, namespace: route.namespace, query: query, table: table, includeObject: includeObject, labels: labels,
-            metadataOnly: !table && accept.contains("as=PartialObjectMetadataList"))
+        return counted(
+            list(
+                kind, namespace: route.namespace, query: query, table: table, includeObject: includeObject, labels: labels,
+                metadataOnly: !table && accept.contains("as=PartialObjectMetadataList")), kind.fullName, table: table)
     }
 
     /// A Service's proxy: the fake Prometheus's two query paths, else 403.
@@ -1510,7 +1547,9 @@ final class FakeKubeAPI: @unchecked Sendable {
                 after = parts[2]
             }
             let fields = FieldSelector(query["fieldSelector"])
-            var matching = objects.values.filter { Self.matches($0, kind.fullName, namespace, labels) && fields.matches(Self.full($0, kind)) }.sorted {
+            var matching = objects.values.filter {
+                Self.matches($0, kind.fullName, namespace, labels) && (fields.isEmpty || fields.matches(Self.full($0, kind)))
+            }.sorted {
                 ($0.namespace ?? "", $0.name) < ($1.namespace ?? "", $1.name)
             }
             if let after { matching = matching.filter { Self.pageKey($0) > after } }
@@ -1526,7 +1565,7 @@ final class FakeKubeAPI: @unchecked Sendable {
             if let token { metadata["continue"] = token }
             if let remaining { metadata["remainingItemCount"] = remaining }
             if table {
-                var object = Self.tableObject(matching, kind, includeObject: includeObject, columns: true)
+                var object = Self.tableObject(matching, kind, includeObject: includeObject, columns: true, managedFields: settings.tableManagedFields)
                 object["metadata"] = metadata
                 return .json(200, Self.encode(object))
             }
@@ -1604,14 +1643,16 @@ final class FakeKubeAPI: @unchecked Sendable {
         guard var watcher = watchers[id], let kind = kinds.first(where: { $0.fullName == object.resource }) else { return Data() }
         var rendered: [String: Any]
         if watcher.table {
-            rendered = Self.tableObject([object], kind, includeObject: watcher.includeObject, columns: !watcher.sentColumns)
+            rendered = Self.tableObject([object], kind, includeObject: watcher.includeObject, columns: !watcher.sentColumns, managedFields: settings.tableManagedFields)
             rendered["metadata"] = ["resourceVersion": String(object.resourceVersion)]
             watcher.sentColumns = true
             watchers[id] = watcher
         } else {
             rendered = Self.full(object, kind)
         }
-        return Self.line(["type": type, "object": rendered])
+        let line = Self.line(["type": type, "object": rendered])
+        sent[object.resource, default: 0] += line.count
+        return line
     }
 
     /// A bookmark as kind's 1.37 sends one: a plain object with the
@@ -1780,14 +1821,14 @@ final class FakeKubeAPI: @unchecked Sendable {
         }
     }
 
-    private static func tableObject(_ objects: [Object], _ kind: Kind, includeObject: String, columns: Bool) -> [String: Any] {
+    private static func tableObject(_ objects: [Object], _ kind: Kind, includeObject: String, columns: Bool, managedFields: Bool = false) -> [String: Any] {
         let rows: [[String: Any]] = objects.map { object in
             var row: [String: Any] = ["cells": cells(object, kind)]
             switch includeObject {
             case "None": break
             case "Object": row["object"] = full(object, kind)
             default:
-                row["object"] = ["kind": "PartialObjectMetadata", "apiVersion": "meta.k8s.io/v1", "metadata": metadata(object, managedFields: false)]
+                row["object"] = ["kind": "PartialObjectMetadata", "apiVersion": "meta.k8s.io/v1", "metadata": metadata(object, managedFields: managedFields)]
             }
             return row
         }
