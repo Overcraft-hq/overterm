@@ -55,13 +55,19 @@ final class KubeGitOpsWireTests: XCTestCase {
         "InitiatedBy": ["username", "automated"],
         "SyncResult": ["revision", "revisions", "resources"],
         "SyncResource": ["kind", "name", "namespace", "status", "message"],
-        "HistoryEntry": ["revision", "revisions", "deployedAt", "chartName", "chartVersion", "status"],
+        "HistoryEntry": ["revision", "revisions", "deployedAt", "chartName", "chartVersion", "status", "lastDeployed"],
         "ResourceEntry": ["namespace", "status", "requiresPruning"],
         "Summary": ["images"],
         "Inventory": ["entries"],
         "InventoryEntry": ["id"],
         "Artifact": ["revision", "lastUpdateTime", "metadata"],
         "ArtifactMetadata": ["org.opencontainers.image.source", "org.opencontainers.image.revision"],
+        // The detail's (G3): history's revisions and times, the resources' identities and states.
+        "Detail": ["status"],
+        "DetailStatus": ["history", "resources", "operationState"],
+        "DetailOperationState": ["syncResult"],
+        "DetailSyncResult": ["resources"],
+        "DetailResource": ["group", "version", "kind", "namespace", "name", "status", "requiresPruning", "health"],
     ]
 
     /// Never declared, anywhere: what holds a value, a manifest or a copy of the source.
@@ -79,7 +85,7 @@ final class KubeGitOpsWireTests: XCTestCase {
             XCTAssertTrue(Set(keys).isDisjoint(with: Self.forbidden), "\(name) declares \(Set(keys).intersection(Self.forbidden))")
         }
         // Copies of a source never have a home: no struct of status declares `source(s)`.
-        for name in ["Status", "Sync", "OperationState", "Operation", "SyncResult", "HistoryEntry"] {
+        for name in ["Status", "Sync", "OperationState", "Operation", "SyncResult", "HistoryEntry", "DetailStatus", "DetailOperationState", "DetailSyncResult"] {
             XCTAssertFalse(declared[name]?.contains("source") ?? true, name)
             XCTAssertFalse(declared[name]?.contains("sources") ?? true, name)
         }

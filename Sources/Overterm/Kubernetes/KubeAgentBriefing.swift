@@ -39,7 +39,125 @@ enum KubeAgentBriefing {
         if ref.kind.group == "apps", ref.kind.kind == "Deployment", ref.namespace != nil {
             return try await deployment(ref, client: client, context: context, now: now)
         }
-        throw KubeBriefProblem.unsupported("Ask Why is a pod's or a Deployment's.")
+        if KubeGitOpsDetail.isGitOps(ref.kind), ref.namespace != nil {
+            let brief = try await gitOps(ref, client: client, context: context, discovery: discovery, now: now)
+            return (brief, KubeBriefReads(object: [:]))
+        }
+        throw KubeBriefProblem.unsupported("Ask Why is a pod's, a Deployment's, or an Argo CD or Flux object's.")
+    }
+
+    // MARK: An Argo CD or Flux object (gitops.md 6.2)
+
+    /// The most objects of its chain a brief reads that the summaries lack.
+    static let gitOpsChainReads = 6
+
+    /// The order a chain's unsummarised links are read in: the dependency
+    /// its conditions name (Flux's `dependency 'ns/name' is not ready` —
+    /// the first of its `dependsOn` that isn't), then its sources, then
+    /// the rest as they are listed.
+    static func readOrder(_ keys: [KubeGitOpsObject.Key], of object: KubeGitOpsObject) -> [KubeGitOpsObject.Key] {
+        var named: Set<String> = []
+        for message in object.conditions.compactMap(\.message) {
+            var rest = message[...]
+            while let open = rest.range(of: "dependency '") {
+                rest = rest[open.upperBound...]
+                guard let close = rest.firstIndex(of: "'") else { break }
+                named.insert(String(rest[..<close]))
+                rest = rest[rest.index(after: close)...]
+            }
+        }
+        func isNamed(_ key: KubeGitOpsObject.Key) -> Bool {
+            named.contains("\(key.namespace ?? object.ref.namespace ?? "")/\(key.name)")
+        }
+        let upstream = Set(KubeGitOpsLadder.upstream(object))
+        return keys.filter(isNamed) + keys.filter { !isNamed($0) && upstream.contains($0) } + keys.filter { !isNamed($0) && !upstream.contains($0) }
+    }
+
+    /// The brief on an Application, ApplicationSet, Kustomization or
+    /// HelmRelease that is Failed, Blocked or Stuck: its one GET (4 MB at
+    /// most) decoded through the summaries' allow-list — never a value, a
+    /// patch, a manifest, a copy of its source —, its chain's states from
+    /// `peers` (the section's summaries), what they lack read by one GET
+    /// each, at most `gitOpsChainReads`, so a Blocked one names its root
+    /// cause. Never a Secret, a ConfigMap, a Helm release. Every word
+    /// through `Secrets`.
+    static func gitOps(
+        _ ref: KubeObjectRef, client: KubeClient, context: KubeBriefContext, discovery: KubeDiscovery?, peers given: KubeGitOpsLadder.Peers = [:],
+        now: Date = Date()
+    ) async throws -> KubeAgentBrief {
+        let namespace = ref.namespace ?? "default"
+        let path = ref.kind.path(namespace: namespace, name: ref.name)
+        let data = try await within { try await client.get(path, maxBytes: KubeGitOpsSession.getBytes) }
+        guard let detail = await KubeBlocking.run({ KubeGitOpsDetail.read(data, readAt: now) }) else {
+            throw KubeBriefProblem.unsupported("\(ref.kind.kind) \(namespace)/\(ref.name) isn't an Argo CD or Flux object this can read.")
+        }
+        var peers = given
+        var notes: [String] = []
+        // Its chain, followed only where it isn't ready (5 hops at most):
+        // for each link, a summarised link that isn't ready or progressing
+        // is followed, as `rootCause` follows it; else what the summaries
+        // lack is read — the dependency its own Ready message names first,
+        // then its sources, then the rest — until one isn't ready. A link
+        // that is ready is never followed, so the reads go to the branch
+        // that fails, not to healthy ones.
+        var reads = 0
+        var frontier = [detail.object]
+        var seen: Set<KubeGitOpsObject.Key> = [detail.object.key]
+        func failing(_ peer: KubeGitOpsObject) -> Bool {
+            let state = KubeGitOpsLadder.evaluate(peer, now: now, peers: peers).state
+            return state != .ready && state != .progressing
+        }
+        for _ in 0..<KubeGitOpsLadder.chainHops {
+            var next: [KubeGitOpsObject] = []
+            for object in frontier {
+                let keys = (KubeGitOpsLadder.upstream(object) + object.dependsOn).filter { !seen.contains($0) }
+                var known: (key: KubeGitOpsObject.Key, peer: KubeGitOpsObject)?
+                for key in keys {
+                    if let peer = peers[key], failing(peer) {
+                        known = (key, peer)
+                        break
+                    }
+                }
+                if let known {
+                    seen.insert(known.key)
+                    next.append(known.peer)
+                    continue
+                }
+                for key in Self.readOrder(keys, of: object) where peers[key] == nil {
+                    guard reads < gitOpsChainReads else { break }
+                    guard let kind = discovery?.kind(apiVersion: KubeGitOpsDetail.apiVersion(of: key.kind), kind: key.kind),
+                        !(kind.group.isEmpty && kind.resource == "secrets")
+                    else { continue }
+                    reads += 1
+                    seen.insert(key)
+                    do {
+                        let body = try await within { try await client.get(kind.path(namespace: key.namespace, name: key.name), maxBytes: KubeGitOpsSession.getBytes) }
+                        guard let peer = await KubeBlocking.run({ try? KubeGitOpsSummary.object(body, readAt: now) }) else { continue }
+                        peers[key] = peer
+                        if failing(peer) {
+                            next.append(peer)
+                            break
+                        }
+                    } catch {
+                        notes.append("\(key) (\(said(error)))")
+                    }
+                }
+            }
+            frontier = next
+            if frontier.isEmpty { break }
+        }
+        let verdict = detail.verdict(peers: peers, now: now)
+        guard verdict.state.isProblem else {
+            throw KubeBriefProblem.notFailing(KubeGitOpsDetail.notAsked(detail.object, state: verdict.state, why: verdict.why) ?? "\(ref.name) isn't failing.")
+        }
+        var words = detail.brief(context: context, peers: peers, now: now)
+        if !notes.isEmpty { words.text += "\nNot in this brief, couldn't be read: " + notes.joined(separator: "; ") + "." }
+        var names: Set<String> = [ref.name, namespace]
+        for peer in peers.values { names.insert(peer.ref.name) }
+        let scrub = scrubber(env: [], names: names)
+        return KubeAgentBrief(
+            message: scrub(words.message), subject: scrub(words.subject), text: scrub(words.text), parts: words.parts.map { .init(title: $0.title, text: scrub($0.text)) },
+            production: context.production, context: ref.context, namespace: namespace, images: detail.object.images)
     }
 
     // MARK: A pod

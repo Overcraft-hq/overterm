@@ -213,6 +213,11 @@ struct KubeDetailView: View {
     private var overviewContent: some View {
         VStack(alignment: .leading, spacing: 16) {
             if let secret = session.secret { KubeSecretView(page: page, secret: secret, theme: theme) }
+            if let gitOps = session.gitOps {
+                // The section's summaries change under it (a refetch, the
+                // ladder's tick): the header follows them.
+                KubeObserving(page.gitOps) { gitOpsHeader(gitOps) }
+            }
             if let overview = session.overview {
                 if let rollout = overview.rollout, rollout.state != .complete { rolloutNote(rollout) }
                 if !overview.facts.isEmpty { items(overview.facts) }
@@ -241,6 +246,127 @@ struct KubeDetailView: View {
         }
         .padding(14)
         .frame(maxWidth: .infinity, alignment: .leading)
+    }
+
+    // MARK: GitOps (gitops.md 2.9)
+
+    /// An Argo CD or Flux object's header: its state and why, where from,
+    /// what is applied, attempted and wanted, where it deploys, its chain
+    /// (each link opens), Argo CD's operation, what is out of sync and its
+    /// history, its conditions (copyable). From the detail's own read and
+    /// the section's summaries; nothing is read for it.
+    @ViewBuilder private func gitOpsHeader(_ detail: KubeGitOpsDetail) -> some View {
+        let now = Date()
+        let peers = page.gitOps.peers(context: session.ref.context)
+        let verdict = detail.verdict(peers: peers, now: now)
+        let mark = gitOpsTone(verdict.state.mark)
+        VStack(alignment: .leading, spacing: 12) {
+            HStack(alignment: .top, spacing: 8) {
+                Text(verbatim: verdict.state.glyph).font(.system(size: 12, weight: .bold)).foregroundStyle(color(mark))
+                Text(verbatim: KubeGitOpsDetail.sentence(verdict, now: now)).font(.system(size: 12)).foregroundStyle(theme.text).textSelection(.enabled)
+                    .fixedSize(horizontal: false, vertical: true)
+                Spacer(minLength: 0)
+            }
+            .padding(10)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(RoundedRectangle(cornerRadius: 8).fill(color(mark).opacity(0.12)))
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("kubernetes.detail.gitops.state")
+            if !verdict.tags.isEmpty {
+                Text(verbatim: verdict.tags.map { $0.said(now: now) }.joined(separator: " · ")).font(.system(size: 11)).foregroundStyle(theme.text3)
+            }
+            items(
+                detail.sourceLines(peers: peers).map { KubeOverview.Item(label: "Source", value: $0, mono: true) }
+                    + detail.revisionLines(peers: peers, now: now).map { KubeOverview.Item(label: $0.label, value: $0.value, mono: true, detail: $0.when) }
+                    + detail.settingLines(now: now).map { KubeOverview.Item(label: $0.label, value: $0.value) })
+            let chain = detail.chain(peers: peers)
+            if !chain.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    caption("Chain")
+                    items(
+                        chain.map { link in
+                            let verdict = link.peer.map { KubeGitOpsLadder.evaluate($0, now: now, peers: peers) }
+                            return KubeOverview.Item(
+                                label: link.role, value: "\(link.key)", tone: verdict.map { gitOpsTone($0.state.mark) } ?? .dim,
+                                link: KubeGitOpsDetail.link(link.key, peer: link.peer),
+                                detail: verdict.map { "\($0.state.word): \($0.why)" } ?? "not summarised: open it to see")
+                        })
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("kubernetes.detail.gitops.chain")
+            }
+            let operation = detail.operationLines(now: now)
+            if !operation.isEmpty || !detail.failures.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    caption("Last operation")
+                    items(
+                        operation.map { KubeOverview.Item(label: $0.label, value: $0.value) }
+                            + detail.failures.map { KubeOverview.Item(label: "Failed", value: $0.said, tone: .bad) }
+                            + (detail.failuresPast > 0 ? [KubeOverview.Item(label: "", value: "and \(detail.failuresPast) more", tone: .dim)] : []))
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("kubernetes.detail.gitops.operation")
+            }
+            if !detail.resources.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    caption("Out of sync")
+                    items(
+                        detail.resources.map { resource in
+                            let said = [resource.status, resource.health, resource.requiresPruning ? "needs pruning" : nil].compactMap { $0 }.joined(separator: " · ")
+                            return KubeOverview.Item(label: resource.kind, value: resource.said, tone: .waiting, link: resource.link, detail: said)
+                        } + (detail.resourcesPast > 0 ? [KubeOverview.Item(label: "", value: "and \(detail.resourcesPast) more", tone: .dim)] : []))
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("kubernetes.detail.gitops.resources")
+            }
+            if !detail.history.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    caption("History")
+                    items(
+                        detail.history.enumerated().map { index, entry in
+                            KubeOverview.Item(
+                                label: index == 0 ? "Live" : "",
+                                value: entry.revisions.map(KubeGitOpsRevision.shown).joined(separator: " · "), mono: true,
+                                detail: entry.deployedAt.map { "deployed \(KubeAge.format(now.timeIntervalSince($0))) ago" })
+                        })
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("kubernetes.detail.gitops.history")
+            }
+            if !detail.conditionLines.isEmpty {
+                VStack(alignment: .leading, spacing: 6) {
+                    HStack(spacing: 6) {
+                        caption("Conditions")
+                        Spacer(minLength: 0)
+                        Button {
+                            page.actions?.copy(detail.conditionsText)
+                        } label: {
+                            Image(systemName: "doc.on.doc").font(.system(size: 10.5)).foregroundStyle(theme.text2).frame(width: 18, height: 18).contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Copy the conditions")
+                        .accessibilityIdentifier("kubernetes.detail.gitops.copyConditions")
+                    }
+                    ForEach(Array(detail.conditionLines.enumerated()), id: \.offset) { _, line in
+                        Text(verbatim: line).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(theme.text2).textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("kubernetes.detail.gitops.conditions")
+            }
+        }
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("kubernetes.detail.gitops")
+    }
+
+    private func gitOpsTone(_ mark: KubeTreeHealth) -> KubeOverview.Tone {
+        switch mark {
+        case .good: .good
+        case .waiting: .waiting
+        case .bad, .missing: .bad
+        case .dim, .unknown: .dim
+        }
     }
 
     private func rolloutNote(_ rollout: KubeRollout) -> some View {
@@ -680,4 +806,18 @@ struct KubeLogsFromNote: View {
         }
         return (clock, false)
     }
+}
+
+/// Its content drawn again whenever `object` changes: for a part of a view
+/// that reads an object its view doesn't observe.
+private struct KubeObserving<Object: ObservableObject, Content: View>: View {
+    @ObservedObject var object: Object
+    let content: () -> Content
+
+    init(_ object: Object, @ViewBuilder content: @escaping () -> Content) {
+        self.object = object
+        self.content = content
+    }
+
+    var body: some View { content() }
 }

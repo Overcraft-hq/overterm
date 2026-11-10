@@ -444,7 +444,7 @@ extension FakeKubeAPI {
                     Self.condition("Ready", "False", "InstallFailed", "Helm install failed for release shop/globex-redis: context deadline exceeded", since: now.addingTimeInterval(-900)),
                     Self.condition("Stalled", "True", "RetriesExceeded", "Failed to install after 3 attempt(s)", since: now.addingTimeInterval(-900)),
                 ],
-                "lastAttemptedRevision": "18.2.0",
+                "lastAttemptedRevision": "18.2.0", "lastAttemptedRevisionDigest": "sha256:\(String(repeating: "9a8b7c6d", count: 8))",
             ])
         addFlux(
             "helmreleases.helm.toolkit.fluxcd.io", "acme-payments",
@@ -461,9 +461,9 @@ extension FakeKubeAPI {
                 ],
                 "lastAttemptedRevision": "1.5.0",
                 "history": [
-                    ["chartName": "payments", "chartVersion": "1.4.2", "status": "deployed", "version": 6],
-                    ["chartName": "payments", "chartVersion": "1.5.0", "status": "failed", "version": 5],
-                    ["chartName": "payments", "chartVersion": "1.4.2", "status": "superseded", "version": 4],
+                    ["chartName": "payments", "chartVersion": "1.4.2", "status": "deployed", "version": 6, "lastDeployed": ago(240)],
+                    ["chartName": "payments", "chartVersion": "1.5.0", "status": "failed", "version": 5, "lastDeployed": ago(300)],
+                    ["chartName": "payments", "chartVersion": "1.4.2", "status": "superseded", "version": 4, "lastDeployed": ago(86_400)],
                 ],
             ])
     }

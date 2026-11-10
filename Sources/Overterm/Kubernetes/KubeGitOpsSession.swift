@@ -727,6 +727,18 @@ final class KubeGitOpsSession: ObservableObject {
         if new != rows { rows = new }
     }
 
+    // MARK: The detail's peers
+
+    /// The summaries held of `context`, by key — the store's own
+    /// dictionary, nothing rebuilt: what the detail's GitOps header and Ask
+    /// Why take a chain's states from (the ladder evaluates each again) —
+    /// nothing read for them (gitops.md 2.9). Empty when the page holds
+    /// none of it.
+    func peers(context: String) -> KubeGitOpsLadder.Peers {
+        guard let store, store.context == context else { return [:] }
+        return store.objects
+    }
+
     // MARK: For the tests
 
     /// How many follows are open now (the kinds', the controllers').
