@@ -39,6 +39,10 @@ enum KubeGitOps {
 
     static func flux(_ kind: KubeResourceKind) -> Flux? { fluxKinds[kind.fullName] }
 
+    /// Flux's sources (GitRepository, OCIRepository, HelmRepository,
+    /// Bucket, HelmChart): their `spec.url` can carry credentials.
+    static func isFluxSource(_ kind: KubeResourceKind) -> Bool { kind.group == "source.toolkit.fluxcd.io" }
+
     static func isArgoApplication(_ kind: KubeResourceKind) -> Bool { kind.group == "argoproj.io" && kind.resource == "applications" }
 
     // MARK: Requests

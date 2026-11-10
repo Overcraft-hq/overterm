@@ -343,10 +343,10 @@ final class KubeHealthTests: XCTestCase {
         XCTAssertEqual(KubeHealth.cutAtManifest("error:\n- apiVersion: v1\n  kind: Secret"), "error: … manifest omitted", "a list's item")
         XCTAssertEqual(KubeHealth.cutAtManifest("metadata: x"), "… manifest omitted")
         XCTAssertEqual(KubeHealth.cutAtManifest("first\nsecond\n--- \nkind: ConfigMap"), "first\nsecond … manifest omitted")
-        XCTAssertEqual(KubeHealth.withoutUserinfo("https://bot:tok@git.acme.example/x"), "https://git.acme.example/x")
-        XCTAssertEqual(KubeHealth.withoutUserinfo("a https://tok@h/x and oci://u:p@r/c"), "a https://h/x and oci://r/c", "a token with no colon, and every URL")
-        XCTAssertEqual(KubeHealth.withoutUserinfo("http://api:8080/users/jane@example.com"), "http://api:8080/users/jane@example.com", "an @ in the path")
-        XCTAssertEqual(KubeHealth.withoutUserinfo("git@git.acme.example:acme/shop"), "git@git.acme.example:acme/shop", "scp form: a user, no secret")
+        XCTAssertEqual(GitRemoteURL.stripUserinfo(inText: "https://bot:tok@git.acme.example/x"), "https://git.acme.example/x")
+        XCTAssertEqual(GitRemoteURL.stripUserinfo(inText: "a https://tok@h/x and oci://u:p@r/c"), "a https://h/x and oci://r/c", "a token with no colon, and every URL")
+        XCTAssertEqual(GitRemoteURL.stripUserinfo(inText: "http://api:8080/users/jane@example.com"), "http://api:8080/users/jane@example.com", "an @ in the path")
+        XCTAssertEqual(GitRemoteURL.stripUserinfo(inText: "git@git.acme.example:acme/shop"), "git@git.acme.example:acme/shop", "scp form: a user, no secret")
     }
 
 

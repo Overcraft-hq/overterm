@@ -174,19 +174,20 @@ enum KubeTableReader {
 
     /// `namespace`: the request's, for a row without a Namespace column.
     /// `columns`: the headers kept from the list, for a watch's later
-    /// events, which come without theirs.
-    static func read(_ data: Data, namespace: String?, columns: [KubeColumn]? = nil) throws -> KubeTable {
+    /// events, which come without theirs. `kind`: what was listed, for
+    /// the kinds whose cells are read with care (`row`).
+    static func read(_ data: Data, namespace: String?, columns: [KubeColumn]? = nil, kind: KubeResourceKind? = nil) throws -> KubeTable {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw Malformed(detail: String(decoding: data.prefix(120), as: UTF8.self))
         }
-        return try read(object, namespace: namespace, columns: columns)
+        return try read(object, namespace: namespace, columns: columns, kind: kind)
     }
 
-    static func read(_ object: [String: Any], namespace: String?, columns kept: [KubeColumn]? = nil) throws -> KubeTable {
+    static func read(_ object: [String: Any], namespace: String?, columns kept: [KubeColumn]? = nil, kind: KubeResourceKind? = nil) throws -> KubeTable {
         let metadata = object["metadata"] as? [String: Any] ?? [:]
         let resourceVersion = metadata["resourceVersion"] as? String
-        let kind = object["kind"] as? String ?? ""
-        if kind == "Table" {
+        let said = object["kind"] as? String ?? ""
+        if said == "Table" {
             var columns = kept ?? []
             if let definitions = object["columnDefinitions"] as? [[String: Any]], !definitions.isEmpty {
                 let data = try JSONSerialization.data(withJSONObject: definitions)
@@ -194,7 +195,7 @@ enum KubeTableReader {
             }
             let rows = (object["rows"] as? [[String: Any]] ?? []).compactMap { row -> KubeRow? in
                 let cells = (row["cells"] as? [Any] ?? []).map { KubeCell(json: $0) }
-                return Self.row(cells, columns: columns, namespace: namespace, object: row["object"] as? [String: Any])
+                return Self.row(cells, columns: columns, namespace: namespace, object: row["object"] as? [String: Any], kind: kind)
             }
             return KubeTable(
                 columns: columns, rows: rows, resourceVersion: resourceVersion, continueToken: (metadata["continue"] as? String).flatMap { $0.isEmpty ? nil : $0 },
@@ -205,7 +206,7 @@ enum KubeTableReader {
             return plain(metadatas, resourceVersion: resourceVersion, continueToken: metadata["continue"] as? String)
         }
         if metadata["name"] != nil { return plain([metadata], resourceVersion: resourceVersion, continueToken: nil) }
-        throw Malformed(detail: kind.isEmpty ? "no kind" : kind)
+        throw Malformed(detail: said.isEmpty ? "no kind" : said)
     }
 
     /// What a server without Table support gives: Name (and Namespace,
@@ -226,8 +227,13 @@ enum KubeTableReader {
 
     /// A row's identity: its Namespace column, else an embedded object's
     /// (asked for with `includeObject=Metadata`), else the request's; its
-    /// name column. A row without a name is no row.
-    static func row(_ cells: [KubeCell], columns: [KubeColumn], namespace: String?, object: [String: Any]? = nil) -> KubeRow? {
+    /// name column. A row without a name is no row. A Flux source's
+    /// (GitRepository, OCIRepository, HelmRepository…) cells lose a URL's
+    /// credentials: its URL column is the `spec.url` that can carry
+    /// `user:token@`, and its Status, the Ready message, may quote it.
+    static func row(_ cells: [KubeCell], columns: [KubeColumn], namespace: String?, object: [String: Any]? = nil, kind: KubeResourceKind? = nil) -> KubeRow? {
+        var cells = cells
+        if let kind, KubeGitOps.isFluxSource(kind) { cells = withoutCredentials(cells, columns: columns) }
         let nameIndex = KubeColumn.nameIndex(in: columns)
         guard nameIndex < cells.count else { return nil }
         let name = cells[nameIndex].text
@@ -243,6 +249,17 @@ enum KubeTableReader {
         let labels = (metadata?["labels"] as? [String: Any] ?? [:]).compactMapValues { $0 as? String }.filter { $0.key.hasPrefix(KubeApplications.prefix) }
         let conditions = KubeRowCondition.read((object?["status"] as? [String: Any])?["conditions"])
         return KubeRow(id: KubeRowID(namespace: rowNamespace, name: name), cells: cells, created: created, labels: labels, conditions: conditions)
+    }
+
+    /// Every text cell without a URL's userinfo: the URL column read as
+    /// one URL (`GitRemoteURL.withoutUserinfo`), the others as text that
+    /// may name some (`stripUserinfo(inText:)`).
+    static func withoutCredentials(_ cells: [KubeCell], columns: [KubeColumn]) -> [KubeCell] {
+        let url = KubeColumn.index(of: "URL", in: columns)
+        return cells.enumerated().map { index, cell in
+            guard case .text(let text) = cell else { return cell }
+            return .text(index == url ? GitRemoteURL.withoutUserinfo(text) : GitRemoteURL.stripUserinfo(inText: text))
+        }
     }
 }
 

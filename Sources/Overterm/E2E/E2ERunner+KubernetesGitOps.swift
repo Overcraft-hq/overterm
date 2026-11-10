@@ -16,6 +16,8 @@ import Foundation
 /// context. Nothing is written but those patches. Then ⌫ on an Application
 /// carrying Argo CD's finalizer: asked with what goes with it, who makes it
 /// again, and its name typed on kind-fake too — a wrong one sends nothing.
+/// And a GitRepository whose URL carries a token is listed, followed and
+/// drawn without it.
 extension E2ERunner {
     func kubernetesGitOpsVerbs(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
         let wasShowing = app.store.showingOverlay == .kubernetes
@@ -28,10 +30,18 @@ extension E2ERunner {
             app.kubernetesCommandRecorder = nil
             app.closeTabsWithoutAsking(app.store.tabs.filter { !opened.contains($0.id) })
         }
-        fake.addCRD(group: "source.toolkit.fluxcd.io", version: "v1", plural: "gitrepositories", kind: "GitRepository", shortNames: ["gitrepo"])
+        fake.addCRD(
+            group: "source.toolkit.fluxcd.io", version: "v1", plural: "gitrepositories", kind: "GitRepository", shortNames: ["gitrepo"],
+            columns: [FakeKubeAPI.Column(name: "URL"), FakeKubeAPI.Column(name: "Ready"), FakeKubeAPI.Column(name: "Status")])
         fake.add(
-            "gitrepositories.source.toolkit.fluxcd.io", "acme-shop", namespace: "shop",
+            "gitrepositories.source.toolkit.fluxcd.io", "acme-shop", namespace: "shop", values: ["URL": "https://git.acme.example/shop.git", "Ready": "True"],
             fields: ["spec": ["url": "https://git.acme.example/shop.git", "interval": "1m"]])
+        // A source whose URL carries a token: its list shows the URL without it.
+        let fleetURL = "https://user:ghp_fake@git.acme.example/acme/fleet.git"
+        fake.add(
+            "gitrepositories.source.toolkit.fluxcd.io", "acme-fleet", namespace: "shop",
+            values: ["URL": .text(fleetURL), "Ready": "False", "Status": .text("unable to clone '\(fleetURL)': authentication required")],
+            fields: ["spec": ["url": fleetURL, "interval": "1m"]])
         // Argo CD in argocd, its Application in shop: the sync's tab is pinned to argocd.
         fake.add("configmaps", KubeGitOps.argoConfigMap, namespace: "argocd", data: ["url": "https://argocd.acme.example"])
         defer { fake.delete("configmaps", KubeGitOps.argoConfigMap, namespace: "argocd") }
@@ -82,6 +92,24 @@ extension E2ERunner {
         check(
             "kind-fake serves Flux's and Argo CD's kinds, by its CRD watch",
             await eventually(15) { ["ks", "applications", "gitrepositories"].allSatisfy { model.discovery?.kind($0) != nil } })
+        // A Flux source's URL column without its credentials, listed and drawn.
+        let fleet = KubeRowID(namespace: "shop", name: "acme-fleet")
+        if await showKubernetesKind(model, page, "gitrepositories", row: fleet) {
+            let cells = model.rows[fleet]?.cells.map(\.text) ?? []
+            check(
+                "a GitRepository's URL is listed without its token",
+                cells.contains("https://git.acme.example/acme/fleet.git") && !cells.contains { $0.contains("ghp_fake") }, "\(cells)")
+            check(
+                "its Ready message too", cells.contains("unable to clone 'https://git.acme.example/acme/fleet.git': authentication required"), "\(cells)")
+            check("and drawn so", await shownText(15) { $0.contains("git.acme.example/acme/fleet.git") } != nil)
+            fake.update(
+                "gitrepositories.source.toolkit.fluxcd.io", "acme-fleet", namespace: "shop", values: ["URL": "https://ghp_fake@git.acme.example/acme/fleet2.git"])
+            check(
+                "a watched change too",
+                await eventually(10) { model.rows[fleet]?.cells.map(\.text).contains("https://git.acme.example/acme/fleet2.git") == true },
+                "\(model.rows[fleet]?.cells.map(\.text) ?? [])")
+            check("no row says the token", !model.rows.sorted.flatMap(\.cells).contains { $0.text.contains("ghp_fake") })
+        }
         guard await showKubernetesKind(model, page, "ks", row: row) else { return }
         page.selection = [row.description]
         let suspendTitle = KubeWriteVerb.fluxSuspend.title

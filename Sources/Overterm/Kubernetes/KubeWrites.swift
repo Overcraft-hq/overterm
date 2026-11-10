@@ -703,7 +703,7 @@ extension KubeClient {
     /// either), and the server's count of the rest (`remainingItemCount`).
     func count(_ kind: KubeResourceKind, in namespace: String, limit: Int = 500) async throws -> KubeNamespaceContents.Count {
         let path = KubePath.query(kind.path(namespace: namespace), [("limit", String(limit)), ("includeObject", "None")])
-        let page = try KubeTableReader.read(try await get(path, accept: Self.tableAccept).body, namespace: namespace)
+        let page = try KubeTableReader.read(try await get(path, accept: Self.tableAccept).body, namespace: namespace, kind: kind)
         let more = page.continueToken != nil
         return KubeNamespaceContents.Count(kind: kind, count: page.rows.count + (page.remainingItemCount ?? 0), atLeast: more && page.remainingItemCount == nil)
     }

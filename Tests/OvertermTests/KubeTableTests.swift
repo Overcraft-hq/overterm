@@ -138,6 +138,68 @@ final class KubeTableTests: XCTestCase {
         XCTAssertNil(KubePodSummary(row: KubeRow(id: KubeRowID(name: "x"), cells: [.text("x")]), columns: [KubeColumn(name: "Name", format: "name")]))
     }
 
+    // MARK: A Flux source's credentials
+
+    private static let gitRepository = KubeResourceKind(
+        group: "source.toolkit.fluxcd.io", version: "v1", resource: "gitrepositories", kind: "GitRepository", singular: "gitrepository", namespaced: true,
+        verbs: ["get", "list", "watch"])
+
+    private func sourceTable(_ rows: [[Any]], columns: Bool = true) -> [String: Any] {
+        var table: [String: Any] = ["kind": "Table", "metadata": ["resourceVersion": "7"], "rows": rows.map { ["cells": $0] }]
+        if columns {
+            table["columnDefinitions"] = [
+                ["name": "Name", "type": "string", "format": "name"], ["name": "URL", "type": "string"], ["name": "Age", "type": "date"],
+                ["name": "Ready", "type": "string"], ["name": "Status", "type": "string"],
+            ]
+        }
+        return table
+    }
+
+    func testAFluxSourcesURLColumnLosesItsCredentials() throws {
+        let rows: [[Any]] = [
+            [
+                "acme-fleet", "https://user:ghp_fake@git.acme.example/acme/shop.git", "5m", "False",
+                "failed to checkout and determine revision: unable to clone 'https://user:ghp_fake@git.acme.example/acme/shop.git': authentication required",
+            ],
+            ["acme-token", "https://ghp_fake@git.acme.example/acme/api.git", "1h", "True", "stored artifact for revision 'main@sha1:c1'"],
+            ["acme-ssh", "ssh://git@git.acme.example/acme/infra.git", "1h", "True", ""],
+        ]
+        let table = try KubeTableReader.read(json(sourceTable(rows)), namespace: "flux-system", kind: Self.gitRepository)
+        XCTAssertEqual(
+            table.rows.map { $0.cell("URL", in: table.columns)?.text },
+            ["https://git.acme.example/acme/shop.git", "https://git.acme.example/acme/api.git", "ssh://git.acme.example/acme/infra.git"])
+        XCTAssertEqual(
+            table.rows[0].cell("Status", in: table.columns)?.text,
+            "failed to checkout and determine revision: unable to clone 'https://git.acme.example/acme/shop.git': authentication required",
+            "the Ready message quoting it too")
+        XCTAssertFalse(table.rows.flatMap(\.cells).contains { $0.text.contains("ghp_fake") })
+        XCTAssertEqual(table.rows[1].cells[2], .text("1h"), "the other cells as they were")
+
+        for resource in ["ocirepositories", "helmrepositories", "buckets"] {
+            var kind = Self.gitRepository
+            kind.resource = resource
+            let read = try KubeTableReader.read(json(sourceTable([["x", "oci://robot:s3cr3t@ghcr.io/acme/charts", "1m", "True", ""]])), namespace: "a", kind: kind)
+            XCTAssertEqual(read.rows.first?.cells[1], .text("oci://ghcr.io/acme/charts"), resource)
+        }
+
+        // Another kind's cells are the server's: nothing is read into them.
+        var other = Self.gitRepository
+        other.group = "example.acme.io"
+        let raw = try KubeTableReader.read(json(sourceTable([["x", "https://u:p@h.example/x", "1m", "True", ""]])), namespace: "a", kind: other)
+        XCTAssertEqual(raw.rows.first?.cells[1], .text("https://u:p@h.example/x"))
+    }
+
+    func testAFluxSourcesWatchedRowsLoseTheirCredentialsToo() throws {
+        var decoder = KubeWatchDecoder(columns: [], namespace: "flux-system", kind: Self.gitRepository)
+        let first = json(["type": "ADDED", "object": sourceTable([["acme-fleet", "https://git.acme.example/acme/shop.git", "1m", "True", ""]])])
+        let second = json([
+            "type": "MODIFIED", "object": sourceTable([["acme-fleet", "https://bot:ghp_fake@git.acme.example/acme/shop.git", "2m", "True", ""]], columns: false),
+        ])
+        let events = try decoder.feed(first + Data([0x0A]) + second + Data([0x0A]))
+        guard events.count == 2, case .modified(let row, _) = events[1] else { return XCTFail("\(events)") }
+        XCTAssertEqual(row.cell("URL", in: decoder.columns), .text("https://git.acme.example/acme/shop.git"), "a later event, read with the kept headers")
+    }
+
     // MARK: Watch events
 
     func testAWatchKeepsTheFirstEventsHeadersForTheRest() throws {

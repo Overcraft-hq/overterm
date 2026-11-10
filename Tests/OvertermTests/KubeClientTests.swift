@@ -245,6 +245,32 @@ final class KubeClientTests: XCTestCase {
         }
     }
 
+    func testAFluxSourceIsListedAndFollowedWithoutItsURLsCredentials() async throws {
+        api.addCRD(
+            group: "source.toolkit.fluxcd.io", version: "v1", plural: "gitrepositories", kind: "GitRepository", shortNames: ["gitrepo"],
+            columns: [FakeKubeAPI.Column(name: "URL"), FakeKubeAPI.Column(name: "Ready"), FakeKubeAPI.Column(name: "Status")])
+        api.add(
+            "gitrepositories.source.toolkit.fluxcd.io", "acme-fleet", namespace: "shop",
+            values: ["URL": "https://user:ghp_fake@git.acme.example/acme/shop.git", "Ready": "True", "Status": "stored artifact"])
+        let client = client()
+        let discovery = try await client.discover()
+        let kind = try XCTUnwrap(discovery.kind("gitrepositories"))
+        let listed = try await client.list(kind, in: .namespace("shop"))
+        let id = KubeRowID(namespace: "shop", name: "acme-fleet")
+        XCTAssertEqual(listed.rows.first?.cell("URL", in: listed.columns), .text("https://git.acme.example/acme/shop.git"))
+
+        let follower = Follower(client.follow(kind, in: .namespace("shop")))
+        defer { follower.stop() }
+        try await follower.until { $0[id] != nil }
+        try await until { self.api.openWatches == 1 }
+        api.update(
+            "gitrepositories.source.toolkit.fluxcd.io", "acme-fleet", namespace: "shop",
+            values: ["URL": "https://ghp_fake@git.acme.example/acme/api.git", "Status": "unable to clone 'https://ghp_fake@git.acme.example/acme/api.git'"])
+        try await follower.until { $0[id]?.cell("URL", in: $0.columns) == .text("https://git.acme.example/acme/api.git") }
+        XCTAssertEqual(follower.rows[id]?.cell("Status", in: follower.rows.columns), .text("unable to clone 'https://git.acme.example/acme/api.git'"))
+        XCTAssertFalse(follower.updates.contains { "\($0)".contains("ghp_fake") }, "no update carries it")
+    }
+
     // MARK: Following a list
 
     func testAFollowedListGetsItsChangesAndBookmarks() async throws {

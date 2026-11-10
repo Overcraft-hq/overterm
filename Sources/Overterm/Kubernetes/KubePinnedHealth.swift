@@ -219,7 +219,7 @@ final class KubePinnedHealthSession: ObservableObject {
                 for namespace in scope.reads(for: kind) {
                     let one: KubeScope = namespace.map { .namespace($0) } ?? .all
                     let body = try await client.get(KubePinnedHealth.path(kind, scope: one), accept: KubeClient.tableAccept).body
-                    var read = try await KubeBlocking.run { Swift.Result { try KubeTableReader.read(body, namespace: namespace) } }.get()
+                    var read = try await KubeBlocking.run { Swift.Result { try KubeTableReader.read(body, namespace: namespace, kind: kind) } }.get()
                     read.rows = read.rows.filter { scope.includes($0.id.namespace) }
                     if whole == nil { whole = read } else { whole!.rows += read.rows }
                 }
