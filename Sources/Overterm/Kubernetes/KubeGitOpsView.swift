@@ -16,6 +16,7 @@ struct KubeGitOpsSectionView: View {
 
     var body: some View {
         let rows = page.gitOpsVisibleRows
+        let listed = page.gitOpsListRows(rows)
         VStack(alignment: .leading, spacing: 10) {
             header
             if let banner = KubeGitOpsControllers.banner(gitOps.controllers) { bannerCard(banner) }
@@ -25,8 +26,13 @@ struct KubeGitOpsSectionView: View {
                 Spacer(minLength: 0)
             } else {
                 ResourceTable(
-                    rows: rows, selection: $page.gitOpsView.selection, columns: KubeGitOpsSection.columns, sort: $page.gitOpsView.sort,
-                    cell: { row, column in cell(row, column) }, verbs: { page.gitOpsVerbs(for: $0) },
+                    rows: listed, selection: $page.gitOpsView.selection, columns: KubeGitOpsSection.columns, sort: $page.gitOpsView.sort,
+                    cell: { row, column in
+                        switch row {
+                        case .group(let group, let folded): groupCell(group, folded: folded)
+                        case .object(let row): cell(row, column)
+                        }
+                    }, verbs: { page.gitOpsVerbs(for: $0) },
                     copy: {
                         let names = rows.filter { page.gitOpsView.selection.contains($0.id) }.map(\.ref.description)
                         if !names.isEmpty { page.actions?.copy(names.joined(separator: "\n")) }
@@ -126,7 +132,12 @@ struct KubeGitOpsSectionView: View {
                     .buttonStyle(.plain)
                     .accessibilityIdentifier("kubernetes.gitops.tool")
                 }
+                if let refusal = page.gitOpsFilterRefusal {
+                    Text(verbatim: refusal).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed).lineLimit(1)
+                        .help(refusal).accessibilityIdentifier("kubernetes.gitops.filterRefused")
+                }
                 Spacer(minLength: 8)
+                groupMenu
                 if gitOps.rows.shown.contains(where: { $0.state == .ready }) {
                     Toggle("Hide Ready", isOn: Binding(get: { page.gitOpsHidesReady }, set: { page.gitOpsView.hideReady = $0 }))
                         .toggleStyle(.checkbox).controlSize(.small).font(.system(size: 11.5))
@@ -137,6 +148,26 @@ struct KubeGitOpsSectionView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("kubernetes.gitops.chips")
+    }
+
+    /// `G`'s grouping, picked here too.
+    private var groupMenu: some View {
+        let current = page.gitOpsView.groupBy
+        return Menu {
+            ForEach(KubeGitOpsGroupBy.allCases, id: \.self) { by in
+                Button {
+                    page.groupGitOps(by: by)
+                } label: {
+                    if by == current { Label(by.title, systemImage: "checkmark") } else { Text(verbatim: by.title) }
+                }
+            }
+        } label: {
+            Text(verbatim: current == .none ? "Group" : "Group: \(current.title)").font(.system(size: 11.5))
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("Group by tool, source, owner or destination (\(KubernetesKey.groupBy.key) cycles)")
+        .accessibilityIdentifier("kubernetes.gitops.groupBy")
     }
 
     // MARK: Empty
@@ -179,6 +210,38 @@ struct KubeGitOpsSectionView: View {
         case .dim: theme.text3
         case .unknown: theme.text2
         }
+    }
+
+    /// A group's row: its fold, its title (the source or owner heading it,
+    /// with that one's own state), what it holds.
+    private func groupCell(_ group: KubeGitOpsGroup, folded: Bool) -> AnyView {
+        AnyView(
+            HStack(spacing: 8) {
+                Button {
+                    page.toggleGitOpsGroup(group.id)
+                } label: {
+                    Image(systemName: folded ? "chevron.right" : "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(theme.text2)
+                        .frame(width: 14)
+                }
+                .buttonStyle(.plain)
+                .help(folded ? "Unfold" : "Fold")
+                Text(verbatim: group.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(group.rest ? theme.text2 : theme.text)
+                    .lineLimit(1).truncationMode(.middle)
+                if let head = group.head {
+                    HStack(spacing: 4) {
+                        Text(verbatim: head.state.glyph).font(.system(size: 9))
+                        Text(verbatim: head.state.word).font(.system(size: 11, weight: .medium))
+                    }
+                    .foregroundStyle(colour(head.state))
+                }
+                Text(verbatim: group.said).font(.system(size: 11.5)).foregroundStyle(theme.text3).lineLimit(1)
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 8)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .background(theme.rowHover.opacity(0.5))
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("kubernetes.gitops.group"))
     }
 
     private func cell(_ row: KubeGitOpsRow, _ column: ResourceColumn?) -> AnyView {

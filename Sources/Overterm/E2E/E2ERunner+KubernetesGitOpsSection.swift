@@ -16,8 +16,12 @@ import SwiftUI
 /// they are and Show adds that namespace; hidden, nothing is asked. G3:
 /// the detail's GitOps header says why, where from and what is applied,
 /// its chain inside it; `a` on a Failed row opens the brief, scrubbed, and
-/// on a Ready one says why not. Reads only but the access reviews; every
-/// sheet ended by the runner.
+/// on a Ready one says why not. G4: `G` groups by tool, source (a Flux
+/// source heading its group with its own state), owner (an
+/// ApplicationSet's Applications, a `dependsOn` root) and destination,
+/// a group folds, and `is:` `kind:` `tool:` `repo:` narrow the rows,
+/// reading nothing. Reads only but the access reviews; every sheet ended
+/// by the runner.
 extension E2ERunner {
     func kubernetesGitOpsSection(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
         let wasShowing = app.store.showingOverlay == .kubernetes
@@ -209,6 +213,9 @@ extension E2ERunner {
         check("said as a chip", await shownText(15) { $0.contains("Flux only") } != nil)
         page.gitOpsView.tool = nil
 
+        // G4: G groups the rows, the filter's tokens narrow them — reading nothing.
+        await kubernetesGitOpsGrouping(model, page, fake)
+
         // The Overview's line goes to g.
         model.setScope(.namespace("flux-system"))
         page.showSection(.overview)
@@ -271,5 +278,85 @@ extension E2ERunner {
         app.toggleKubernetesPage(nil)
         page.showKind(model.discovery?.kind("po") ?? .pods)
         check("back on the list", await eventually(5) { page.section == .workloads })
+    }
+
+    /// G4 (gitops.md 2.8): `G` cycles the grouping on the section's own
+    /// table, drawn as group rows; the filter's tokens; nothing read for
+    /// either but the follows already open.
+    private func kubernetesGitOpsGrouping(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
+        let gitOps = page.gitOps
+        func groups() -> [KubeGitOpsGroup] { page.gitOpsGroups() }
+        func group(_ title: String) -> KubeGitOpsGroup? { groups().first { $0.title == title } }
+        func names(_ group: KubeGitOpsGroup?) -> [String] { group?.members.map(\.ref.name) ?? [] }
+        func objectLists() -> [FakeKubeAPI.Request] {
+            fake.requests.filter { !$0.isWatch && ($0.path.contains("argoproj.io") || $0.path.contains("toolkit.fluxcd.io")) && $0.query["limit"] != nil }
+        }
+        page.filter = ""
+        page.gitOpsView.selection = []
+        page.giveListTheKeyboard()
+        fake.forgetRequests()
+
+        check("not grouped at first", page.gitOpsView.groupBy == .none && page.gitOpsListRows(page.gitOpsVisibleRows).allSatisfy { $0.object != nil })
+        check("G is the section's", await pressKubernetesKey("G", keyCode: 5, shift: true))
+        check("grouped by tool", page.gitOpsView.groupBy == .tool && groups().map(\.title) == ["Argo CD", "Flux"], "\(groups().map(\.title))")
+        check("its group rows drawn", await shownText(15) { $0.contains("Argo CD") && $0.contains("objects") } != nil)
+
+        check("G again: by source", await pressKubernetesKey("G", keyCode: 5, shift: true) && page.gitOpsView.groupBy == .source)
+        let fleet = group("GitRepository flux-system/acme-fleet")
+        check("a Flux source heads its group", fleet?.head?.ref.name == "acme-fleet" && fleet?.members.first?.ref.name == "acme-fleet", "\(names(fleet))")
+        check("with what uses it", names(fleet).contains("acme-cron") && names(fleet).contains("acme-apps"), "\(names(fleet))")
+        let broken = group("GitRepository flux-system/acme-broken")
+        check("acme-broken with its own state, acme-api under it", broken?.head?.state == .failed && names(broken) == ["acme-broken", "acme-api"], "\(names(broken))")
+        check("Argo CD's by repository", group("git.acme.example/acme/fleet")?.members.contains { $0.ref.name == "acme-web" } == true, "\(groups().map(\.title))")
+        check("the source's group drawn", await shownText(15) { $0.contains("GitRepository flux-system/acme-fleet") } != nil)
+        check("never a URL's userinfo", !groups().contains { $0.title.contains("ghp_fake") })
+
+        // A group folds: its row alone.
+        if let fleet {
+            let before = page.gitOpsListRows(page.gitOpsVisibleRows).count
+            page.gitOpsView.selection = [fleet.id]
+            page.giveListTheKeyboard()
+            check("↩ on a group's row folds it", await pressKubernetesKey("\r", keyCode: 36) && page.gitOpsView.folded.contains(fleet.id))
+            check("its members hidden", page.gitOpsListRows(page.gitOpsVisibleRows).count == before - fleet.members.count, "\(before) → \(page.gitOpsListRows(page.gitOpsVisibleRows).count)")
+            check("and nothing opened", page.section == .gitops && page.detail == nil)
+            page.toggleGitOpsGroup(fleet.id)
+            page.gitOpsView.selection = []
+        }
+
+        check("G: by owner", await pressKubernetesKey("G", keyCode: 5, shift: true) && page.gitOpsView.groupBy == .owner)
+        let infra = group("Kustomization flux-system/acme-infra")
+        check("acme-web under its dependsOn root", infra?.members.first?.ref.name == "acme-infra" && names(infra).contains("acme-web"), "\(names(infra))")
+        model.setScope(.all)
+        check("All Namespaces: the ApplicationSet's", await eventually(10) { group("ApplicationSet argocd/acme-envs") != nil }, "\(groups().map(\.title))")
+        let set = group("ApplicationSet argocd/acme-envs")
+        check(
+            "an ApplicationSet with its Applications, heading them",
+            set?.members.first?.key.kind == "ApplicationSet" && Set(names(set)) == ["acme-envs", "acme-envs-dev", "acme-envs-prod"], "\(names(set))")
+        check("drawn", await shownText(15) { $0.contains("ApplicationSet argocd/acme-envs") } != nil)
+        model.setScope(.namespace("shop"))
+        _ = await eventually(10) { gitOps.state == .live && !gitOps.summarising }
+
+        check("G: by destination", await pressKubernetesKey("G", keyCode: 5, shift: true) && page.gitOpsView.groupBy == .destination)
+        check("shop's", names(group("shop")).contains("acme-shop-prod") && names(group("shop")).contains("acme-apps"), "\(groups().map(\.title))")
+        check("G: none again", await pressKubernetesKey("G", keyCode: 5, shift: true) && page.gitOpsView.groupBy == .none)
+        check("the rows plain again", page.gitOpsListRows(page.gitOpsVisibleRows).allSatisfy { $0.object != nil })
+        page.groupGitOps(by: .source)
+        check("the menu's grouping, kept for the page", page.gitOpsView.groupBy == .source)
+        check("said on its menu", await shownText(15) { $0.contains("Group: Source") } != nil)
+        page.groupGitOps(by: .none)
+
+        // The filter's tokens.
+        page.filter = "is:failed kind:ks"
+        let failed = page.gitOpsVisibleRows
+        check("is:failed kind:ks", !failed.isEmpty && failed.allSatisfy { $0.state == .failed && $0.role == .kustomization }, "\(failed.map(\.ref.name))")
+        check("acme-cron among them", failed.contains { $0.ref.name == "acme-cron" })
+        page.filter = "tool:argo repo:acme/fleet"
+        let argo = page.gitOpsVisibleRows
+        check("tool:argo repo:", !argo.isEmpty && argo.allSatisfy { $0.tool == .argo } && argo.contains { $0.ref.name == "acme-web" }, "\(argo.map(\.ref.name))")
+        page.filter = "is:nope"
+        check("a value it doesn't know, said", await shownText(15) { $0.contains("Not read: is:nope") } != nil)
+        page.filter = ""
+        check("no whole-object list for any of it", objectLists().isEmpty, "\(objectLists().map(\.path))")
+        check("GETs only", fake.requests.allSatisfy { $0.method == "GET" })
     }
 }

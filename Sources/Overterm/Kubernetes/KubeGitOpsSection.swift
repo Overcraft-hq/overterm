@@ -26,6 +26,8 @@ struct KubeGitOpsRow: ResourceTableRow, Identifiable, Sendable {
     var summarised: Bool
     /// What the hover says: the why, the last error, the conditions — at most 4 KB, scrubbed.
     var hover = ""
+    /// What `G` groups it by and `repo:` matches (2.8), set as it is made.
+    var grouping = KubeGitOpsGroupKeys()
 
     var height: CGFloat { 26 }
 
@@ -120,7 +122,7 @@ enum KubeGitOpsSection {
             id: KubeGitOpsRow.id(resource: object.resource, object.ref), key: object.key, resource: object.resource, ref: object.ref,
             role: object.role, tool: object.tool, state: object.state, why: why, tags: object.tags, into: into(object),
             revision: revision(object), source: source(object, peers: peers), since: object.stateSince ?? object.created, summarised: true,
-            hover: hover(object))
+            hover: hover(object), grouping: KubeGitOpsGrouping.keys(object, peers: peers))
     }
 
     /// A live row with no summary: its state from its cells alone, "…" for why.
@@ -132,11 +134,21 @@ enum KubeGitOpsSection {
         var revision = ""
         if let text = live.cell("Revision", in: columns)?.text, !text.isEmpty { revision = KubeGitOpsRevision.shown(text) }
         var source = ""
-        if let url = live.cell("URL", in: columns)?.text, !url.isEmpty { source = GitRemoteURL(url)?.path ?? GitRemoteURL.withoutUserinfo(url) }
+        var grouping = KubeGitOpsGroupKeys()
+        if let url = live.cell("URL", in: columns)?.text, !url.isEmpty {
+            source = GitRemoteURL(url)?.path ?? GitRemoteURL.withoutUserinfo(url)
+            grouping.repo = GitRemoteURL(url)?.description ?? GitRemoteURL.withoutUserinfo(url)
+        }
+        // A source heads its own group; the rest can't be placed by what their cells say.
+        if case .source = role {
+            grouping.source = KubeGitOpsGrouping.sourceKey(key)
+            grouping.destination = KubeGitOpsGrouping.sourcesDestination
+        }
         return KubeGitOpsRow(
             id: KubeGitOpsRow.id(resource: resource, live.id), key: key, resource: resource, ref: live.id, role: role, tool: tool, state: state,
             why: refused ? "\(said) · couldn't read why" : "\(said) …", revision: revision, source: source, since: live.created, summarised: false,
-            hover: refused ? "Its summary couldn't be read (forbidden, or too large): what its row says." : "Not summarised yet: what its row says.")
+            hover: refused ? "Its summary couldn't be read (forbidden, or too large): what its row says." : "Not summarised yet: what its row says.",
+            grouping: grouping)
     }
 
     /// The kinds the section shows, by full name: role, tool, Kind.
@@ -305,21 +317,22 @@ enum KubeGitOpsSection {
     }
 
     /// What the table shows: a chip's state alone; else Ready hidden when
-    /// asked; one tool (`:argo`, `:flux`); the rows "not placed" after the
-    /// rest when their chip is on; a text over name, why and source.
+    /// asked (unless `is:` asks for a state); one tool (`:argo`, `:flux`);
+    /// the rows "not placed" when their chip is on; the filter's words
+    /// (`KubeGitOpsFilter`: `is:`, `kind:`, `tool:`, `repo:`, then text
+    /// over name, why and source).
     static func visible(
         _ rows: Rows, chip: KubeGitOpsState?, hideReady: Bool, tool: KubeGitOpsObject.Tool?, notPlaced: Bool, text: String
     ) -> [KubeGitOpsRow] {
+        let filter = KubeGitOpsFilter(text)
         var shown = notPlaced ? rows.notPlaced : rows.shown
-        if let chip { shown = shown.filter { $0.state == chip } } else if hideReady, !notPlaced { shown = shown.filter { $0.state != .ready } }
-        if let tool { shown = shown.filter { $0.tool == tool } }
-        let words = text.lowercased().split(separator: " ").map(String.init).filter { !$0.contains(":") }
-        if !words.isEmpty {
-            shown = shown.filter { row in
-                let haystack = "\(row.ref.description) \(row.why) \(row.source) \(row.role.short)".lowercased()
-                return words.allSatisfy { haystack.contains($0) }
-            }
+        if let chip {
+            shown = shown.filter { $0.state == chip }
+        } else if hideReady, !notPlaced, !filter.asksState {
+            shown = shown.filter { $0.state != .ready }
         }
+        if let tool { shown = shown.filter { $0.tool == tool } }
+        if !filter.isEmpty { shown = shown.filter(filter.matches) }
         return shown
     }
 

@@ -1,7 +1,8 @@
 import Foundation
 
 /// How the GitOps section is looked at: its selection and order, the chip
-/// pressed, Hide Ready, one tool (`:argo`, `:flux`), the rows "not placed".
+/// pressed, Hide Ready, one tool (`:argo`, `:flux`), the rows "not placed",
+/// the grouping (`G`) and the groups folded.
 /// A window's, in memory.
 struct KubeGitOpsViewState: Equatable {
     var selection: Set<String> = []
@@ -13,6 +14,10 @@ struct KubeGitOpsViewState: Equatable {
     var tool: KubeGitOpsObject.Tool?
     /// "N not placed" pressed: those rows instead.
     var notPlaced = false
+    /// `G`: what the rows are grouped by (2.8), kept for the page.
+    var groupBy: KubeGitOpsGroupBy = .none
+    /// The groups folded, by id.
+    var folded: Set<String> = []
 }
 
 /// The GitOps section (`g`; docs/design/kubernetes/gitops.md, 2): Argo CD's
@@ -70,6 +75,42 @@ extension KubernetesPageModel {
         if let sort = view.sort { shown = sort.sorted(shown) { Self.gitOpsSortKey($0, sort.column) } }
         return shown
     }
+
+    /// The table's rows: the visible ones (`gitOpsVisibleRows`, computed
+    /// once by the caller — it filters and sorts every row), grouped as `G`
+    /// says — each group's own row, then its members unless folded.
+    func gitOpsListRows(_ shown: [KubeGitOpsRow]) -> [KubeGitOpsListRow] {
+        guard gitOpsView.groupBy != .none else { return shown.map { .object($0) } }
+        return KubeGitOpsGrouping.rows(gitOpsGroups(shown), folded: gitOpsView.folded)
+    }
+
+    /// The visible rows' groups, as `G` says; none when not grouped.
+    func gitOpsGroups(_ shown: [KubeGitOpsRow]? = nil) -> [KubeGitOpsGroup] {
+        KubeGitOpsGrouping.groups(shown ?? gitOpsVisibleRows, by: gitOpsView.groupBy, all: gitOps.rows.shown + gitOps.rows.notPlaced)
+    }
+
+    /// `G`: the next grouping, the folds forgotten (another grouping's ids).
+    func cycleGitOpsGrouping() {
+        gitOpsView.groupBy = gitOpsView.groupBy.next
+        gitOpsView.folded = []
+        gitOpsView.selection = gitOpsView.selection.filter { !KubeGitOpsGrouping.isGroup($0) }
+    }
+
+    /// A grouping picked from the section's menu.
+    func groupGitOps(by groupBy: KubeGitOpsGroupBy) {
+        guard groupBy != gitOpsView.groupBy else { return }
+        gitOpsView.groupBy = groupBy
+        gitOpsView.folded = []
+        gitOpsView.selection = gitOpsView.selection.filter { !KubeGitOpsGrouping.isGroup($0) }
+    }
+
+    /// A group folded, or unfolded.
+    func toggleGitOpsGroup(_ id: String) {
+        if gitOpsView.folded.contains(id) { gitOpsView.folded.remove(id) } else { gitOpsView.folded.insert(id) }
+    }
+
+    /// The filter's words this section couldn't read, said beside the chips.
+    var gitOpsFilterRefusal: String? { KubeGitOpsFilter(filter).refusal }
 
     /// Hide Ready: as set, else on above 50 rows.
     var gitOpsHidesReady: Bool { gitOpsView.hideReady ?? (gitOps.rows.shown.count > KubeGitOpsSection.hideReadyAbove) }
@@ -140,9 +181,9 @@ extension KubernetesPageModel {
 
     // MARK: Keys
 
-    /// A key while the section shows: ↩ opens, `x` its tree, `k` and ⇧K
-    /// copy, `s` syncs (Argo CD) or reconciles with its source (Flux) in a
-    /// tab; `r`, `p` and ⌫ go on to the page's writes on the row picked
+    /// A key while the section shows: ↩ opens (a group's row folds), `x`
+    /// its tree, `k` and ⇧K copy, `G` groups the rows another way, `s`
+    /// syncs (Argo CD) or reconciles with its source (Flux) in a tab; `r`, `p` and ⌫ go on to the page's writes on the row picked
     /// (`writeTarget`), `a` to Ask Why on it (`askWhyRef`); the page's own
     /// keys as ever. A pod's verbs would
     /// act on the kind under the section: refused. Nil: the page's to
@@ -157,8 +198,16 @@ extension KubernetesPageModel {
         guard case .key(let key) = KubernetesKey.press(characters, sheetShowing: cheatSheet) else { return nil }
         switch key {
         case .open:
+            // A group's row: folded, or unfolded.
+            if gitOpsView.selection.count == 1, let id = gitOpsView.selection.first, KubeGitOpsGrouping.isGroup(id) {
+                toggleGitOpsGroup(id)
+                return true
+            }
             guard let row = gitOpsPicked else { return false }
             return openGitOps(row)
+        case .groupBy:
+            cycleGitOpsGrouping()
+            return true
         case .tree:
             guard let row = gitOpsPicked, openGitOps(row) else { return false }
             return openTree()
@@ -194,7 +243,16 @@ extension KubernetesPageModel {
     func gitOpsVerbs(for ids: Set<String>) -> [ResourceVerb] {
         let all = gitOps.rows.shown + gitOps.rows.notPlaced
         let picked = all.filter { ids.contains($0.id) }
-        guard let first = picked.first else { return [] }
+        guard let first = picked.first else {
+            // A group's row: fold it, or unfold it.
+            guard ids.count == 1, let id = ids.first, KubeGitOpsGrouping.isGroup(id) else { return [] }
+            let folded = gitOpsView.folded.contains(id)
+            return [
+                ResourceVerb(title: folded ? "Unfold" : "Fold", symbol: folded ? "chevron.down" : "chevron.right", place: .button, key: KubernetesKey.open.key) {
+                    [weak self] in self?.toggleGitOpsGroup(id)
+                }
+            ]
+        }
         let open = ResourceVerb(title: "Open", symbol: "arrow.up.right", place: .button, key: KubernetesKey.open.key) { [weak self] in
             self?.openGitOps(first)
         }
