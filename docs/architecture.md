@@ -6187,6 +6187,45 @@ are grouped the same in every locale. `KubeWritesTests` (pure),
 `KubeGitOpsPageTests` (the order against the fake, the worst case on a 403,
 the namespace's reads) and `kubernetesGitOpsVerbs` check it.
 
+**Changing a GitOps object's source, prune or suspension says so**
+(`KubeGitOpsChange.swift`, pure; gitops.md 1.1 rows 9–10, G0d). An apply or
+a YAML save (`KubeManifestRun.diff`, so the editor's Apply, the YAML tab's
+and `k8s_apply` alike) of an Application, ApplicationSet, Kustomization or
+HelmRelease compares the dry run's answer with the live object at fixed
+paths only (`KubeGitOpsApply.changes`): prune (`spec.prune`,
+`deletionPolicy`, Argo CD's `automated.prune`), auto-sync (`automated`,
+Argo CD 3's `enabled: false` as off), the source (`repoURL`, `sources`,
+`path`, `chart`, `sourceRef`, `chartRef`), the destination
+(`destination`, `targetNamespace`, `kubeConfig` by its reference's name),
+`suspend` — an ApplicationSet's under `spec.template.spec`. Each change is
+a `KubeGitOpsChange` (`.spec.prune: false → true`, a URL without its
+userinfo, a map by its scalar leaves), carried on the `KubeManifestItem`
+with `KubeGitOpsApply.warning` (what it does: prune deleting what the new
+spec doesn't make, auto-sync syncing at once, a resume applying what the
+source holds), which leads the result's warnings — the changes pane says it
+before Apply — and `KubeApplyConfirmation` types the object's name on
+every class when anything changed. An agent's `k8s_apply` of any of the
+four kinds is always name-typed by the person, whatever it changes, a new
+one too. A new object replaces nothing, so it changes nothing here.
+Resume (Flux) on production reads more after the review: the object the
+toggle read already fetched gives `KubeFluxResume.facts` (prune, what is
+applied — a Kustomization's `lastAppliedRevision`, a HelmRelease's
+`history[0].chartVersion` — and what was last attempted), and
+`KubeClient.fluxResume` GETs its source (`KubeGitOps.sources`: the
+`sourceRef`, a HelmRelease's chart) once, 4 MB at most, decoding
+`status.artifact.revision` alone; `KubeWriteFacts.resume` carries it to
+`KubeWriteCheck.rule`, whose warning says "Resuming applies what
+gitrepository flux-system/fleet holds now: applies main@c03f9aa; a77b0d1 is
+applied" (`KubeFluxResume.short`: `sha1:` to 7, `sha256:` to 12) and types
+the name when `spec.prune` is on. An unread source is said as the worst
+("whatever it holds now"), never nothing; off production nothing more is
+read. Refresh, reconcile and suspend are never name-typed.
+`KubeWritesTests` (pure), `KubeApplySessionTests` (the editor's and an
+agent's apply against the fake), `KubeGitOpsPageTests` (Resume on
+`fake-prod`: the source read after the review, a wrong name sending
+nothing) and `kubernetesGitOpsChanges` (`E2ERunner+KubernetesGitOpsChanges`,
+run from `kubernetesGitOpsVerbs`) check it.
+
 ### The cluster's API docs
 
 **The cluster's own API docs** (`KubeOpenAPI.swift` and

@@ -645,6 +645,74 @@ final class KubeGitOpsPageTests: XCTestCase {
         await page.model.setProductionWrites(false, for: "fake-prod")
     }
 
+    /// G0d: Resume on production names what it applies — its source's
+    /// revision read after the review, beside the one applied — and, with
+    /// prune, has the name typed; a wrong one sends nothing. Off
+    /// production nothing more is read.
+    func testResumeOnProductionSaysWhatItAppliesAndTypesTheNameWithPrune() async throws {
+        api.addCRD(group: "source.toolkit.fluxcd.io", version: "v1", plural: "gitrepositories", kind: "GitRepository", shortNames: ["gitrepo"])
+        api.add(
+            "gitrepositories.source.toolkit.fluxcd.io", "acme-shop", namespace: "flux-system",
+            fields: [
+                "spec": ["url": "https://bot:ghp_fake@git.acme.example/acme/shop.git"],
+                "status": ["artifact": ["revision": "main@sha1:c03f9aa0123456789abcdef"]],
+            ])
+        api.setFields(
+            "kustomizations.kustomize.toolkit.fluxcd.io", "shop", namespace: "flux-system",
+            [
+                "spec": ["path": "./deploy", "prune": true, "suspend": true, "sourceRef": ["kind": "GitRepository", "name": "acme-shop"]],
+                "status": ["lastAppliedRevision": "main@sha1:a77b0d1e2f3a4b5c6d"],
+            ])
+        let (page, box) = try await page(current: "fake-prod")
+        defer { page.model.hide() }
+        await page.model.setProductionWrites(true, for: "fake-prod")
+        try await until("on") { page.model.selected?.isWritable == true }
+        try await show(page, "ks")
+        api.forgetRequests()
+        XCTAssertTrue(page.press("p"))
+        try await until("asked") { box.confirmations.count == 1 }
+        let resume = box.confirmations[0].0
+        XCTAssertEqual(resume.verb, .fluxResume)
+        XCTAssertEqual(resume.scope, "PRODUCTION · fake-prod · namespace flux-system")
+        XCTAssertTrue(
+            resume.detail.contains(
+                "⚠︎ Resuming applies what gitrepository flux-system/acme-shop holds now: applies main@c03f9aa; a77b0d1 is applied. "
+                    + "spec.prune is on: whatever left the source since is deleted from the cluster."), resume.detail)
+        XCTAssertFalse(resume.detail.contains("ghp_fake"))
+        XCTAssertEqual(resume.typedName, "shop")
+        let order = api.requests.map(\.description)
+        let review = try XCTUnwrap(order.firstIndex(of: "POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews"))
+        let source = try XCTUnwrap(order.firstIndex(of: "GET /apis/source.toolkit.fluxcd.io/v1/namespaces/flux-system/gitrepositories/acme-shop"))
+        XCTAssertLessThan(review, source, "its source read after the review")
+        XCTAssertEqual(written(), [])
+        box.confirmations[0].1("shp")
+        XCTAssertEqual(page.writeStatus, .failed("The name typed wasn't shop: nothing was changed."))
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(written(), [], "a wrong name sends nothing")
+        XCTAssertTrue(suspended())
+        XCTAssertTrue(page.press("p"))
+        try await until("asked again") { box.confirmations.count == 2 }
+        box.confirmations[1].1("shop")
+        try await until("resumed") { !self.suspended() }
+        await page.model.setProductionWrites(false, for: "fake-prod")
+    }
+
+    func testResumeOffProductionReadsNoSource() async throws {
+        api.addCRD(group: "source.toolkit.fluxcd.io", version: "v1", plural: "gitrepositories", kind: "GitRepository", shortNames: ["gitrepo"])
+        api.setFields(
+            "kustomizations.kustomize.toolkit.fluxcd.io", "shop", namespace: "flux-system",
+            ["spec": ["path": "./deploy", "prune": true, "suspend": true, "sourceRef": ["kind": "GitRepository", "name": "acme-shop"]]])
+        let (page, box) = try await page(current: "kind-fake")
+        defer { page.model.hide() }
+        try await show(page, "ks")
+        api.forgetRequests()
+        XCTAssertTrue(page.press("p"))
+        try await until("asked") { box.confirmations.count == 1 }
+        XCTAssertEqual(box.confirmations[0].0.verb, .fluxResume)
+        XCTAssertNil(box.confirmations[0].0.typedName)
+        XCTAssertFalse(api.requests.contains { $0.description.contains("gitrepositories") }, "\(api.requests.map(\.description))")
+    }
+
     /// The fake refuses a strategic merge patch of a custom resource, as a server does.
     func testTheFakeRefusesAStrategicPatchOfACustomResource() async throws {
         let connection = KubeSocketConnection(socket: socket, context: "kind-fake", writable: true)

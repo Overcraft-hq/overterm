@@ -858,10 +858,18 @@ struct KubeManifestItem: Identifiable {
     var sent: [String: Any] = [:]
     /// The fields Overterm's own apply owns on the live object.
     var overterms: Set<String> = []
+    /// An Argo CD or Flux object's source, destination, prune or
+    /// suspension changed against the live object (gitops.md, G0d).
+    var gitOps: [KubeGitOpsChange] = []
+    /// What those changes do, said.
+    var gitOpsWarning: String?
 
     var id: String { ref.description }
     var unchanged: Bool { diff.isEmpty && !isNew }
-    var warnings: [String] { KubeFieldOwners.warnings(owners, managedBy: managedBy) }
+    /// One of the four GitOps kinds whose apply is watched: an agent's is
+    /// always name-typed by the person.
+    var isGitOps: Bool { KubeGitOpsApply.tool(ref.kind) != nil }
+    var warnings: [String] { [gitOpsWarning].compactMap { $0 } + KubeFieldOwners.warnings(owners, managedBy: managedBy) }
     /// `deployment shop/web`.
     var spoken: String { KubeWriteOutcome.spoken(ref) }
 }
@@ -960,7 +968,21 @@ enum KubeApplyConfirmation {
         lines.append(result.summary())
         for warning in result.warnings { lines.append("⚠︎ " + warning) }
         lines.append("Equals: \(kubectl)")
-        let typed = context.isProduction ? (changed.count == 1 ? changed[0].ref.name : context.name) : nil
+        // The name typed on production (rule 4); on every class where a
+        // GitOps object's source, destination, prune or suspension changes,
+        // and for any agent's apply of one (gitops.md, G0d).
+        let asking = changed.filter { !$0.gitOps.isEmpty || (agent && $0.isGitOps) }
+        let typed: String? =
+            if context.isProduction {
+                changed.count == 1 ? changed[0].ref.name : context.name
+            } else if asking.isEmpty {
+                nil
+            } else {
+                asking.count == 1 ? asking[0].ref.name : context.name
+            }
+        if agent, changed.contains(where: \.isGitOps), changed.allSatisfy({ $0.gitOps.isEmpty }) {
+            lines.append("An agent asks to apply an Argo CD or Flux object: you type its name, whatever it changes.")
+        }
         if let typed { lines.append("Type \(typed) to confirm.") }
         return KubeWriteConfirmation(
             verb: nil, title: title, scope: place, detail: lines.joined(separator: "\n"), button: force != nil ? "Force Apply" : (replacing ? "Replace" : "Apply"),

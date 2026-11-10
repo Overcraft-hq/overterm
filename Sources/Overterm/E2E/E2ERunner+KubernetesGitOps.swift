@@ -17,7 +17,7 @@ import Foundation
 /// carrying Argo CD's finalizer: asked with what goes with it, who makes it
 /// again, and its name typed on kind-fake too — a wrong one sends nothing.
 /// And a GitRepository whose URL carries a token is listed, followed and
-/// drawn without it.
+/// drawn without it. Then G0d's (`kubernetesGitOpsChanges`).
 extension E2ERunner {
     func kubernetesGitOpsVerbs(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
         let wasShowing = app.store.showingOverlay == .kubernetes
@@ -295,6 +295,9 @@ extension E2ERunner {
                     && !fake.writes.contains { $0.method == "DELETE" }, "\(String(describing: page.writeStatus))")
             check("it is still there", fake.object("applications.argoproj.io", cascade.name, namespace: "shop") != nil)
         }
+        page.writeStatus = nil
+        // G0d: an apply moving a Kustomization's path, and Resume on production.
+        await kubernetesGitOpsChanges(model, page, fake)
         page.writeStatus = nil
         page.showKind(model.discovery?.kind("po") ?? .pods)
     }

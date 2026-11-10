@@ -349,12 +349,16 @@ enum KubeManifestRun {
             // Who else owns what changes: the result against the live object,
             // only where the diff says something changes.
             let changes = live == nil || !unified.text.isEmpty
+            // An Argo CD or Flux object's source, destination, prune or suspension, against the live one (G0d).
+            let tool = KubeGitOpsApply.tool(refs[index].kind)
+            let gitOps = tool.map { changes ? KubeGitOpsApply.changes($0, live: live, after: afters[index]) : [] } ?? []
             items.append(
                 KubeManifestItem(
                     ref: refs[index], before: sides.before, after: sides.after, diff: unified.text, added: unified.added, removed: unified.removed,
                     isNew: live == nil, owners: changes ? KubeFieldOwners.others(after: KubeManifestDiff.stripped(afters[index]), live: live) : [],
                     managedBy: KubeFieldOwners.managedBy(live), masked: KubeApplyCheck.masked(given), sent: sent[index],
-                    overterms: KubeFieldOwners.overterms(live)))
+                    overterms: KubeFieldOwners.overterms(live), gitOps: gitOps,
+                    gitOpsWarning: tool.flatMap { KubeGitOpsApply.warning(gitOps, tool: $0, after: afters[index], spoken: spoken) }))
         }
         return KubeManifestDiffResult(
             context: context.name, production: context.isProduction, method: method, items: items, text: text, kustomized: kustomized)

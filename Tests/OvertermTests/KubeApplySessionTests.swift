@@ -372,6 +372,92 @@ final class KubeApplySessionTests: XCTestCase {
         XCTAssertNotNil(session.applyRefusal, "writes off: read-only again")
     }
 
+    // MARK: GitOps objects (gitops.md, G0d)
+
+    private func kustomization(prune: Bool, path: String = "./apps/web", interval: String = "5m") -> String {
+        """
+        apiVersion: kustomize.toolkit.fluxcd.io/v1
+        kind: Kustomization
+        metadata:
+          name: acme-web
+          namespace: shop
+        spec:
+          interval: \(interval)
+          path: \(path)
+          prune: \(prune)
+          sourceRef:
+            kind: GitRepository
+            name: fleet
+
+        """
+    }
+
+    private func serveFlux() {
+        api.addCRD(group: "kustomize.toolkit.fluxcd.io", version: "v1", plural: "kustomizations", kind: "Kustomization", shortNames: ["ks"])
+        api.add(
+            "kustomizations.kustomize.toolkit.fluxcd.io", "acme-web", namespace: "shop",
+            fields: ["spec": ["interval": "5m", "path": "./apps/web", "prune": false, "sourceRef": ["kind": "GitRepository", "name": "fleet"]]])
+    }
+
+    private func kustomizationSpec() -> [String: Any] {
+        api.object("kustomizations.kustomize.toolkit.fluxcd.io", "acme-web", namespace: "shop")?["spec"] as? [String: Any] ?? [:]
+    }
+
+    /// Turning prune on with a new path, on a local context: each change
+    /// named, the name typed — a wrong one applies nothing.
+    func testChangingAKustomizationsPruneOrPathTypesTheNameOnEveryClass() async throws {
+        serveFlux()
+        let model = model()
+        let (session, host) = session(model, kustomization(prune: true, path: "./apps/other"), context: "kind-fake")
+        let diffed = await session.runDiff()
+        let item = try XCTUnwrap(diffed?.items.first)
+        XCTAssertEqual(item.gitOps.map(\.said), [".spec.prune: false → true", ".spec.path: ./apps/web → ./apps/other"])
+        XCTAssertEqual(diffed?.warnings.first, item.gitOpsWarning, "the changes pane says it before Apply")
+        host.typed = "acme-wbe"
+        await session.runApply()
+        let asked = try XCTUnwrap(host.asked.first)
+        XCTAssertEqual(asked.scope, "kind-fake · namespace shop")
+        XCTAssertEqual(asked.typedName, "acme-web")
+        XCTAssertTrue(asked.detail.contains(".spec.prune: false → true; .spec.path: ./apps/web → ./apps/other."), asked.detail)
+        XCTAssertTrue(asked.detail.contains("With prune on, Flux deletes whatever it applied that the new spec doesn't make."), asked.detail)
+        XCTAssertEqual(session.state, .failed("The name typed wasn't acme-web: nothing was applied."))
+        XCTAssertTrue(applies(dryRun: false).isEmpty)
+        XCTAssertEqual(kustomizationSpec()["prune"] as? Bool, false)
+        host.typed = "acme-web"
+        await session.runApply()
+        XCTAssertEqual(session.state, .done("Applied kustomization shop/acme-web to kind-fake."))
+        XCTAssertEqual(kustomizationSpec()["prune"] as? Bool, true)
+        // Its interval alone: an ordinary confirmation.
+        let (quiet, quietHost) = self.session(model, kustomization(prune: true, path: "./apps/other", interval: "1m"), context: "kind-fake")
+        await quiet.runApply()
+        XCTAssertNil(quietHost.asked.first?.typedName, quietHost.asked.first?.detail ?? "not asked")
+        XCTAssertEqual(quiet.state, .done("Applied kustomization shop/acme-web to kind-fake."))
+    }
+
+    /// `k8s_apply` on a GitOps kind: the person types its name whatever it changes.
+    func testAgentsApplyOfAGitOpsObjectHasThePersonTypeItsName() async throws {
+        serveFlux()
+        agentWrites = ["kind-fake"]
+        let model = model()
+        var asked: [KubeWriteConfirmation] = []
+        var typed = "acme-wbe"
+        KubeMCP.askOverride = { confirmation in
+            MainActor.assumeIsolated { asked.append(confirmation) }
+            return MainActor.assumeIsolated { typed }
+        }
+        let wrong = await call(model, ["manifest": kustomization(prune: false, interval: "1m"), "context": "kind-fake"])
+        XCTAssertTrue(wrong.error && wrong.text.contains("The name typed wasn't acme-web: nothing was changed."), wrong.text)
+        XCTAssertEqual(asked.first?.typedName, "acme-web")
+        XCTAssertTrue(asked.first?.detail.contains("An agent asks to apply an Argo CD or Flux object: you type its name, whatever it changes.") == true, asked.first?.detail ?? "")
+        XCTAssertTrue(applies(dryRun: false).isEmpty)
+        XCTAssertEqual(kustomizationSpec()["interval"] as? String, "5m")
+        typed = "acme-web"
+        let done = await call(model, ["manifest": kustomization(prune: true), "context": "kind-fake"])
+        XCTAssertFalse(done.error, done.text)
+        XCTAssertTrue(asked.last?.detail.contains(".spec.prune: false → true") == true, asked.last?.detail ?? "")
+        XCTAssertEqual(kustomizationSpec()["prune"] as? Bool, true)
+    }
+
     // MARK: Agents
 
     private func call(_ model: KubernetesModel, _ arguments: [String: Any]) async -> (text: String, error: Bool) {

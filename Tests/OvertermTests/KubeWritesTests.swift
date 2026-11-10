@@ -689,3 +689,197 @@ extension KubeWritesTests {
         XCTAssertEqual(KubeGitOpsDelete.grouped(999), "999")
     }
 }
+
+/// G0d (docs/design/kubernetes/gitops.md, 1.1 rows 9–10): an apply that
+/// changes a GitOps object's source, destination, prune or suspension
+/// names each change and has its name typed on every class; an agent's
+/// apply of one always does; Resume on production says what it applies
+/// and has the name typed with prune.
+extension KubeWritesTests {
+    static func kustomization(prune: Bool = false, path: String = "./apps/web", suspend: Bool? = nil, source: String = "fleet") -> [String: Any] {
+        var spec: [String: Any] = ["prune": prune, "path": path, "interval": "5m", "sourceRef": ["kind": "GitRepository", "name": source]]
+        if let suspend { spec["suspend"] = suspend }
+        return ["apiVersion": "kustomize.toolkit.fluxcd.io/v1", "kind": "Kustomization", "metadata": ["name": "acme-web", "namespace": "flux-system"], "spec": spec]
+    }
+
+    static func item(_ kind: KubeResourceKind, live: [String: Any]?, after: [String: Any], isNew: Bool = false) -> KubeManifestItem {
+        let ref = KubeObjectRef(context: "kind-fake", kind: kind, namespace: "flux-system", name: "acme-web")
+        let tool = KubeGitOpsApply.tool(kind)
+        let changes = tool.map { KubeGitOpsApply.changes($0, live: live, after: after) } ?? []
+        return KubeManifestItem(
+            ref: ref, before: "a", after: "b", diff: "--- a\n+++ b\n@@ -1 +1 @@\n-x\n+y\n", added: 1, removed: 1, isNew: isNew, owners: [], managedBy: [],
+            masked: [], gitOps: changes, gitOpsWarning: tool.flatMap { KubeGitOpsApply.warning(changes, tool: $0, after: after, spoken: KubeWriteOutcome.spoken(ref)) })
+    }
+
+    func testAKustomizationsPrunePathAndSourceChangesAreNamed() throws {
+        let changes = KubeGitOpsApply.changes(
+            .kustomization, live: Self.kustomization(), after: Self.kustomization(prune: true, path: "./apps/other", source: "fleet-2"))
+        XCTAssertEqual(
+            changes.map(\.said),
+            [
+                ".spec.prune: false → true", ".spec.path: ./apps/web → ./apps/other",
+                ".spec.sourceRef: kind=GitRepository, name=fleet → kind=GitRepository, name=fleet-2",
+            ])
+        XCTAssertEqual(changes.map(\.field), [.prune, .path, .source])
+        let warning = try XCTUnwrap(
+            KubeGitOpsApply.warning(changes, tool: .kustomization, after: Self.kustomization(prune: true, path: "./apps/other"), spoken: "kustomization flux-system/acme-web"))
+        XCTAssertTrue(warning.hasPrefix("kustomization flux-system/acme-web's source, destination, prune or suspension changes: .spec.prune: false → true;"), warning)
+        XCTAssertTrue(warning.contains("With prune on, Flux deletes whatever it applied that the new spec doesn't make."), warning)
+        // Anything else — its interval, a patch, a value — is no change of these.
+        var other = Self.kustomization()
+        other["spec"] = (other["spec"] as! [String: Any]).merging(["interval": "1m", "patches": [["patch": "s3cr3t-sentinel"]]]) { $1 }
+        XCTAssertEqual(KubeGitOpsApply.changes(.kustomization, live: Self.kustomization(), after: other), [])
+        // A new object replaces nothing; an absent suspend is false.
+        XCTAssertEqual(KubeGitOpsApply.changes(.kustomization, live: nil, after: Self.kustomization(prune: true)), [])
+        XCTAssertEqual(KubeGitOpsApply.changes(.kustomization, live: Self.kustomization(), after: Self.kustomization(suspend: false)), [])
+        let resumed = KubeGitOpsApply.changes(.kustomization, live: Self.kustomization(prune: true, suspend: true), after: Self.kustomization(prune: true, suspend: false))
+        XCTAssertEqual(resumed.map(\.said), [".spec.suspend: true → false"])
+        let said = KubeGitOpsApply.warning(resumed, tool: .kustomization, after: Self.kustomization(prune: true, suspend: false), spoken: "ks") ?? ""
+        XCTAssertTrue(said.contains("Resumed, Flux applies what its source holds now.") && said.contains("With prune on"), said)
+    }
+
+    func testAnApplicationsSourceAndDestinationWithoutTheURLsCredentials() throws {
+        func app(_ url: String, namespace: String, prune: Bool? = nil, automated: Bool = false) -> [String: Any] {
+            var syncPolicy: [String: Any] = [:]
+            if automated { syncPolicy["automated"] = prune.map { ["prune": $0] } ?? [String: Any]() }
+            return [
+                "spec": [
+                    "source": ["repoURL": url, "path": "apps/web", "targetRevision": "main", "helm": ["values": "password: s3cr3t-sentinel"]],
+                    "destination": ["server": "https://kubernetes.default.svc", "namespace": namespace], "syncPolicy": syncPolicy,
+                ]
+            ]
+        }
+        let changes = KubeGitOpsApply.changes(
+            .application, live: app("https://git.acme.example/acme/fleet.git", namespace: "shop"),
+            after: app("https://bot:ghp_fake@git.acme.example/acme/other.git", namespace: "payments", prune: true, automated: true))
+        XCTAssertEqual(
+            changes.map(\.said),
+            [
+                ".spec.source.repoURL: https://git.acme.example/acme/fleet.git → https://git.acme.example/acme/other.git",
+                ".spec.destination.namespace: shop → payments", ".spec.syncPolicy.automated: off → on", ".spec.syncPolicy.automated.prune: false → true",
+            ])
+        let warning = KubeGitOpsApply.warning(changes, tool: .application, after: app("x", namespace: "payments", prune: true, automated: true), spoken: "application argocd/web") ?? ""
+        XCTAssertTrue(warning.contains("With auto-sync on, Argo CD syncs it from git at once."), warning)
+        XCTAssertTrue(warning.contains("Argo CD deletes whatever it manages"), warning)
+        for secret in ["ghp_fake", "s3cr3t-sentinel", "bot:"] { XCTAssertFalse(warning.contains(secret), secret) }
+        // Argo CD 3's `enabled: false` is auto-sync off.
+        var off = app("https://git.acme.example/acme/fleet.git", namespace: "shop")
+        off["spec"] = (off["spec"] as! [String: Any]).merging(["syncPolicy": ["automated": ["enabled": false]]]) { $1 }
+        XCTAssertEqual(KubeGitOpsApply.changes(.application, live: app("https://git.acme.example/acme/fleet.git", namespace: "shop"), after: off), [])
+        // An ApplicationSet's template; a multi-source change; a HelmRelease's chartRef and kubeConfig by name alone.
+        let set = KubeGitOpsApply.changes(
+            .applicationSet, live: ["spec": ["template": ["spec": ["sources": [["repoURL": "oci://ghcr.io/acme/charts", "chart": "api"]]]]]],
+            after: ["spec": ["template": ["spec": ["sources": [["repoURL": "oci://ghcr.io/acme/charts", "chart": "api"], ["repoURL": "https://git.acme.example/v.git", "ref": "values"]]]]]])
+        XCTAssertEqual(set.map(\.path), [".spec.template.spec.sources"])
+        XCTAssertTrue(
+            KubeGitOpsApply.warning(set, tool: .applicationSet, after: [:], spoken: "applicationset argocd/envs")?.contains("Every Application it generates changes with it.") == true)
+        let release = KubeGitOpsApply.changes(
+            .helmRelease, live: ["spec": ["chartRef": ["kind": "OCIRepository", "name": "web"]]],
+            after: ["spec": ["chartRef": ["kind": "OCIRepository", "name": "web-2"], "kubeConfig": ["secretRef": ["name": "globex-kube", "key": "value"]]]])
+        XCTAssertEqual(
+            release.map(\.said),
+            [".spec.chartRef: kind=OCIRepository, name=web → kind=OCIRepository, name=web-2", ".spec.kubeConfig: (unset) → secretRef globex-kube"])
+    }
+
+    func testAChangedGitOpsObjectsNameIsTypedOnEveryClassAndAnAgentsAlways() {
+        let kind = Self.context("kind-fake")
+        let changed = Self.item(KubeGitOpsTests.kustomizations, live: Self.kustomization(), after: Self.kustomization(prune: true))
+        let result = KubeManifestDiffResult(context: "kind-fake", production: false, method: .serverSide, items: [changed], text: "")
+        let asked = KubeApplyConfirmation.make(result, context: kind, kubectl: "kubectl apply")
+        XCTAssertEqual(asked.typedName, "acme-web")
+        XCTAssertTrue(asked.detail.contains("⚠︎ kustomization flux-system/acme-web's source, destination, prune or suspension changes: .spec.prune: false → true."), asked.detail)
+        XCTAssertTrue(asked.detail.contains("Type acme-web to confirm."), asked.detail)
+        XCTAssertEqual(result.warnings.first, changed.gitOpsWarning, "the diff pane says it before the apply")
+        // Its interval alone: no name off production — but an agent's, always.
+        var interval = Self.kustomization()
+        interval["spec"] = (interval["spec"] as! [String: Any]).merging(["interval": "1m"]) { $1 }
+        let quiet = Self.item(KubeGitOpsTests.kustomizations, live: Self.kustomization(), after: interval)
+        let quietResult = KubeManifestDiffResult(context: "kind-fake", production: false, method: .serverSide, items: [quiet], text: "")
+        XCTAssertNil(KubeApplyConfirmation.make(quietResult, context: kind, kubectl: "k").typedName)
+        let agent = KubeApplyConfirmation.make(quietResult, context: kind, kubectl: "k", agent: true)
+        XCTAssertEqual(agent.typedName, "acme-web")
+        XCTAssertTrue(agent.detail.contains("An agent asks to apply an Argo CD or Flux object: you type its name, whatever it changes."), agent.detail)
+        let created = Self.item(KubeGitOpsTests.applications, live: nil, after: ["spec": [:]], isNew: true)
+        XCTAssertEqual(
+            KubeApplyConfirmation.make(KubeManifestDiffResult(context: "kind-fake", production: false, method: .serverSide, items: [created], text: ""), context: kind, kubectl: "k", agent: true)
+                .typedName,
+            "acme-web", "a new one too")
+        // Any other kind keeps rule 4: production only, an agent's too.
+        let deployment = KubeManifestItem(
+            ref: Self.deployment(in: "kind-fake"), before: "a", after: "b", diff: "--- a\n+++ b\n", added: 1, removed: 1, isNew: false, owners: [], managedBy: [], masked: [])
+        XCTAssertNil(
+            KubeApplyConfirmation.make(KubeManifestDiffResult(context: "kind-fake", production: false, method: .serverSide, items: [deployment], text: ""), context: kind, kubectl: "k", agent: true)
+                .typedName)
+        // Two objects, one GitOps change: its name.
+        let both = KubeManifestDiffResult(context: "kind-fake", production: false, method: .serverSide, items: [deployment, changed], text: "")
+        XCTAssertEqual(KubeApplyConfirmation.make(both, context: kind, kubectl: "k").typedName, "acme-web")
+    }
+
+    func testResumeOnProductionNamesWhatItAppliesAndTypesTheNameWithPrune() {
+        let object: [String: Any] = [
+            "metadata": ["name": "acme-cron", "namespace": "flux-system"],
+            "spec": ["prune": true, "suspend": true, "sourceRef": ["kind": "GitRepository", "name": "acme-fleet"]],
+            "status": ["lastAppliedRevision": "main@sha1:a77b0d1e2f3a4b5c", "lastAttemptedRevision": "main@sha1:a77b0d1e2f3a4b5c"],
+        ]
+        var (facts, source) = KubeFluxResume.facts(object, tool: .kustomization, resource: KubeGitOpsTests.kustomizations.fullName)
+        XCTAssertEqual(source?.spoken, "gitrepository flux-system/acme-fleet")
+        XCTAssertTrue(facts.prune)
+        facts.next = "main@sha1:c03f9aa0123456789"
+        XCTAssertEqual(
+            facts.said,
+            "Resuming applies what gitrepository flux-system/acme-fleet holds now: applies main@c03f9aa; a77b0d1 is applied. "
+                + "spec.prune is on: whatever left the source since is deleted from the cluster.")
+        // The source still at the applied revision, same ref: one revision, said so.
+        var same = facts
+        same.applied = "main@sha1:c03f9aa0123456789"
+        same.prune = false
+        XCTAssertEqual(
+            same.said, "Resuming applies what gitrepository flux-system/acme-fleet holds now: applies main@c03f9aa, the revision applied now — what was changed by hand is put back.")
+        // An OCIRepository's tag@sha256: the same.
+        same.applied = "latest@sha256:0123456789abcdef0123"
+        same.next = "latest@sha256:0123456789abcdef0123"
+        XCTAssertTrue(same.said.hasSuffix("applies latest@sha256:0123456789ab, the revision applied now — what was changed by hand is put back."), same.said)
+        // Same ref, another revision: still the two said.
+        same.next = "latest@sha256:fedcba9876543210fedc"
+        XCTAssertTrue(same.said.hasSuffix("; sha256:0123456789ab is applied."), same.said)
+        let prod = Self.context("fake-prod", session: true)
+        let rule = KubeWriteCheck.rule(.fluxResume, for: prod, kind: KubeGitOpsTests.kustomizations, resume: facts)
+        XCTAssertTrue(rule.typedName)
+        let confirmation = KubeWriteConfirmation.make(.fluxResume, KubeGitOpsTests.ref(KubeGitOpsTests.kustomizations, "acme-cron", in: "fake-prod"), context: prod, rule: rule)
+        XCTAssertTrue(confirmation.detail.contains("⚠︎ Resuming applies what gitrepository flux-system/acme-fleet holds now: applies main@c03f9aa"), confirmation.detail)
+        XCTAssertEqual(confirmation.typedName, "acme-cron")
+        // Without prune: said, not typed; off production: neither.
+        var quiet = facts
+        quiet.prune = false
+        XCTAssertFalse(KubeWriteCheck.rule(.fluxResume, for: prod, kind: KubeGitOpsTests.kustomizations, resume: quiet).typedName)
+        XCTAssertNotNil(KubeWriteCheck.rule(.fluxResume, for: prod, kind: KubeGitOpsTests.kustomizations, resume: quiet).warning)
+        let kind = Self.context("kind-fake")
+        XCTAssertFalse(KubeWriteCheck.rule(.fluxResume, for: kind, kind: KubeGitOpsTests.kustomizations, resume: facts).typedName)
+        XCTAssertNil(KubeWriteCheck.rule(.fluxResume, for: kind, kind: KubeGitOpsTests.kustomizations, resume: facts).warning)
+        // The source unread: the worst said, never nothing.
+        var unread = facts
+        unread.next = nil
+        unread.unread = "403 Forbidden"
+        XCTAssertTrue(
+            unread.said.hasPrefix("Resuming applies whatever gitrepository flux-system/acme-fleet holds now (its revision couldn't be read: 403 Forbidden); main@a77b0d1 is applied."),
+            unread.said)
+        // Refresh, reconcile and suspend are never typed, production or not.
+        for verb in [KubeWriteVerb.reconcile, .fluxSuspend] {
+            XCTAssertFalse(KubeWriteCheck.rule(verb, for: prod, kind: KubeGitOpsTests.kustomizations).typedName, "\(verb)")
+        }
+        XCTAssertFalse(KubeWriteCheck.rule(.refresh, for: prod, kind: KubeGitOpsTests.applications).typedName)
+        // A HelmRelease: its chart's version against what is deployed.
+        let release: [String: Any] = [
+            "metadata": ["name": "acme-payments", "namespace": "flux-system"],
+            "spec": ["chart": ["spec": ["chart": "payments", "sourceRef": ["kind": "HelmRepository", "name": "acme-charts"]]]],
+            "status": ["history": [["chartVersion": "1.4.2"]], "lastAttemptedRevision": "1.5.0"],
+        ]
+        var (helm, chart) = KubeFluxResume.facts(release, tool: .helmRelease, resource: KubeGitOpsTests.helmReleases.fullName)
+        XCTAssertEqual(chart?.spoken, "helmchart flux-system/flux-system-acme-payments")
+        helm.next = "1.5.0"
+        XCTAssertEqual(
+            helm.said, "Resuming upgrades it to what helmchart flux-system/flux-system-acme-payments holds now: chart 1.5.0; 1.4.2 is deployed. 1.5.0 was last attempted.")
+        XCTAssertFalse(helm.prune)
+        XCTAssertEqual(KubeFluxResume.short("latest@sha256:0123456789abcdef0123"), "latest@sha256:0123456789ab")
+    }
+}
