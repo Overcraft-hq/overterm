@@ -84,6 +84,7 @@ struct KubeGitOpsObject: Equatable, Sendable, Identifiable {
     struct HelmHistory: Equatable, Sendable {
         var chartVersion: String?
         var status: String?
+        var lastDeployed: Date?
     }
 
     struct Artifact: Equatable, Sendable {
@@ -365,7 +366,7 @@ struct KubeGitOpsObject: Equatable, Sendable, Identifiable {
             dependsOn = (spec?.dependsOn ?? []).compactMap { dependsOnKey($0, kind: "HelmRelease", own: namespace) }
             revisions.attempted = status?.lastAttemptedRevision.flatMap { $0.isEmpty ? nil : $0 }
             revisions.attemptedDigest = status?.lastAttemptedRevisionDigest.flatMap { $0.isEmpty ? nil : $0 }
-            if let first = status?.historyFirst { revisions.helmHistory = HelmHistory(chartVersion: first.chartVersion, status: first.status) }
+            if let first = status?.historyFirst { revisions.helmHistory = HelmHistory(chartVersion: first.chartVersion, status: first.status, lastDeployed: KubeGitOpsTime.date(first.lastDeployed)) }
             // A HelmRelease's namespace is its target's, else its own.
             let target = spec?.targetNamespace.flatMap { $0.isEmpty ? nil : $0 } ?? namespace
             destination = Destination(cluster: nil, namespace: target, inCluster: spec?.kubeConfig == nil)

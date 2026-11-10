@@ -32,6 +32,8 @@ enum KubeGitOpsWire {
             ("InitiatedBy", InitiatedBy.keys), ("SyncResult", SyncResult.keys), ("SyncResource", SyncResource.keys),
             ("HistoryEntry", HistoryEntry.keys), ("ResourceEntry", ResourceEntry.keys), ("Summary", Summary.keys), ("Inventory", Inventory.keys),
             ("InventoryEntry", InventoryEntry.keys), ("Artifact", Artifact.keys), ("ArtifactMetadata", ArtifactMetadata.keys),
+            ("Detail", Detail.keys), ("DetailStatus", DetailStatus.keys), ("DetailOperationState", DetailOperationState.keys),
+            ("DetailSyncResult", DetailSyncResult.keys), ("DetailResource", DetailResource.keys),
         ]
         return Dictionary(uniqueKeysWithValues: all)
     }
@@ -578,7 +580,8 @@ enum KubeGitOpsWire {
     }
 
     /// One `history` entry: Argo CD's revision(s) and when; a HelmRelease's
-    /// chart version and status. Never its `source(s)`.
+    /// chart version, status and when it was last deployed. Never its
+    /// `source(s)`.
     struct HistoryEntry: Decodable, Sendable, Declared {
         var revision: String?
         var revisions: [String]?
@@ -586,8 +589,9 @@ enum KubeGitOpsWire {
         var chartName: String?
         var chartVersion: String?
         var status: String?
+        var lastDeployed: String?
 
-        enum CodingKeys: String, CodingKey, CaseIterable { case revision, revisions, deployedAt, chartName, chartVersion, status }
+        enum CodingKeys: String, CodingKey, CaseIterable { case revision, revisions, deployedAt, chartName, chartVersion, status, lastDeployed }
         static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
 
         var said: [String] { Revisions.said(revision, revisions) }
@@ -697,6 +701,111 @@ enum KubeGitOpsWire {
         }
     }
 
+    // MARK: The detail's (G3)
+
+    /// What the detail's GitOps header reads beyond a summary (gitops.md,
+    /// 2.9), from the same body: Argo CD's last 10 `history` entries (their
+    /// revisions and when, never their `source(s)`), the resources out of
+    /// sync or needing pruning and the operation's failed ones, at most 50
+    /// each — counted past that, never decoded.
+    struct Detail: Decodable, Sendable, Declared {
+        var status: DetailStatus?
+
+        enum CodingKeys: String, CodingKey, CaseIterable { case status }
+        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+    }
+
+    struct DetailStatus: Decodable, Sendable, Declared {
+        /// Newest last, as Argo CD writes it: the last `historyKept`.
+        var history: [HistoryEntry] = []
+        var resources: [DetailResource] = []
+        /// Out of sync or needing pruning, past the `listKept` kept.
+        var resourcesPast = 0
+        var operationState: DetailOperationState?
+
+        enum CodingKeys: String, CodingKey, CaseIterable { case history, resources, operationState }
+        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            if var list = try? c.nestedUnkeyedContainer(forKey: .history) {
+                while !list.isAtEnd {
+                    if (try? list.decodeNil()) == true { continue }
+                    guard let entry = try? list.decode(HistoryEntry.self) else {
+                        _ = try? list.decode(Skip.self)
+                        continue
+                    }
+                    history.append(entry)
+                    if history.count > historyKept { history.removeFirst() }
+                }
+            }
+            if var list = try? c.nestedUnkeyedContainer(forKey: .resources) {
+                while !list.isAtEnd {
+                    if (try? list.decodeNil()) == true { continue }
+                    guard let entry = try? list.decode(DetailResource.self) else {
+                        _ = try? list.decode(Skip.self)
+                        continue
+                    }
+                    guard entry.status == "OutOfSync" || entry.requiresPruning == true else { continue }
+                    if resources.count < listKept { resources.append(entry) } else { resourcesPast += 1 }
+                }
+            }
+            operationState = try? c.decodeIfPresent(DetailOperationState.self, forKey: .operationState)
+        }
+    }
+
+    struct DetailOperationState: Decodable, Sendable, Declared {
+        var syncResult: DetailSyncResult?
+
+        enum CodingKeys: String, CodingKey, CaseIterable { case syncResult }
+        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+    }
+
+    /// The operation's resources that failed: at most `listKept`, the rest
+    /// counted; never its `source(s)` copy.
+    struct DetailSyncResult: Decodable, Sendable, Declared {
+        var failed: [SyncResource] = []
+        var failedPast = 0
+
+        enum CodingKeys: String, CodingKey, CaseIterable { case resources }
+        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            guard var list = try? c.nestedUnkeyedContainer(forKey: .resources) else { return }
+            while !list.isAtEnd {
+                if (try? list.decodeNil()) == true { continue }
+                guard let resource = try? list.decode(SyncResource.self) else {
+                    _ = try? list.decode(Skip.self)
+                    continue
+                }
+                guard resource.status == "SyncFailed" else { continue }
+                if failed.count < listKept { failed.append(resource) } else { failedPast += 1 }
+            }
+        }
+    }
+
+    /// One `status.resources` entry, as the detail lists it: what it is,
+    /// where, its sync and health status, whether it needs pruning.
+    struct DetailResource: Decodable, Sendable, Declared {
+        var group: String?
+        var version: String?
+        var kind: String?
+        var namespace: String?
+        var name: String?
+        var status: String?
+        var requiresPruning: Bool?
+        var health: Health?
+
+        enum CodingKeys: String, CodingKey, CaseIterable { case group, version, kind, namespace, name, status, requiresPruning, health }
+        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+    }
+
+    /// The detail's history entries kept: the last 10.
+    static let historyKept = 10
+    /// The detail's resources (and failed ones) kept: 50.
+    static let listKept = 50
+
     // MARK: Helpers
 
     /// Whatever is there, unread.
@@ -728,6 +837,21 @@ enum KubeGitOpsWire {
 
     /// A page of a list.
     static func list(_ data: Data) throws -> List { try JSONDecoder().decode(List.self, from: data) }
+
+    /// One GET's body as the detail reads it, parsed once: the summary's
+    /// fields, and for an Application what only the detail shows. It
+    /// declares no key of its own — both halves are the structs above.
+    struct DetailRead: Decodable, Sendable {
+        var object: Object
+        var detail: Detail?
+
+        init(from decoder: Decoder) throws {
+            object = try Object(from: decoder)
+            detail = object.kind == "Application" ? try? Detail(from: decoder) : nil
+        }
+    }
+
+    static func detailRead(_ data: Data) throws -> DetailRead { try JSONDecoder().decode(DetailRead.self, from: data) }
 }
 
 extension Optional where Wrapped == String {

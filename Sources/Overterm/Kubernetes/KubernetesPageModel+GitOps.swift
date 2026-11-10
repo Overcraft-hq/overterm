@@ -143,7 +143,8 @@ extension KubernetesPageModel {
     /// A key while the section shows: ↩ opens, `x` its tree, `k` and ⇧K
     /// copy, `s` syncs (Argo CD) or reconciles with its source (Flux) in a
     /// tab; `r`, `p` and ⌫ go on to the page's writes on the row picked
-    /// (`writeTarget`); the page's own keys as ever. A pod's verbs would
+    /// (`writeTarget`), `a` to Ask Why on it (`askWhyRef`); the page's own
+    /// keys as ever. A pod's verbs would
     /// act on the kind under the section: refused. Nil: the page's to
     /// decide, the arrows the table's.
     func gitOpsPress(_ characters: String) -> Bool? {
@@ -179,7 +180,7 @@ extension KubernetesPageModel {
                 return false
             }
             return true
-        case .restart, .pause, .delete, .command, .namespace, .context, .allNamespaces: return nil
+        case .restart, .pause, .delete, .askWhy, .command, .namespace, .context, .allNamespaces: return nil
         default: return false
         }
     }

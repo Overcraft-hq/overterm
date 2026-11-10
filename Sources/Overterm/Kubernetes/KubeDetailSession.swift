@@ -39,6 +39,10 @@ final class KubeDetailSession: ObservableObject, Identifiable {
     @Published private(set) var overview: KubeOverview?
     /// What the object says of itself to the health checks (3.9).
     @Published private(set) var health: [KubeHealth.Finding] = []
+    /// An Argo CD Application or ApplicationSet, a Flux Kustomization or
+    /// HelmRelease: what its Overview's GitOps header says, read from the
+    /// same answer through the summaries' allow-list (gitops.md 2.9).
+    @Published private(set) var gitOps: KubeGitOpsDetail?
     /// The YAML shows `managedFields` and the last-applied annotation.
     @Published var showsHidden = false {
         didSet { if showsHidden != oldValue { yaml = makeYAML() } }
@@ -129,8 +133,15 @@ final class KubeDetailSession: ObservableObject, Identifiable {
             Task { [weak self] in
                 do {
                     let object = try await client.object(ref.kind, namespace: ref.namespace, name: ref.name)
+                    // A GitOps object's header, decoded off the main thread:
+                    // an Application's body runs to megabytes.
+                    var gitOps: KubeGitOpsDetail?
+                    if KubeGitOpsDetail.isGitOps(ref.kind) {
+                        let data = object.data
+                        gitOps = await KubeBlocking.run { KubeGitOpsDetail.read(data, readAt: Date()) }
+                    }
                     guard let self, !Task.isCancelled else { return }
-                    self.loaded(object)
+                    self.loaded(object, gitOps: gitOps)
                 } catch is CancellationError {
                 } catch {
                     guard let self, !Task.isCancelled else { return }
@@ -143,7 +154,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
             })
     }
 
-    private func loaded(_ object: KubeObject) {
+    private func loaded(_ object: KubeObject, gitOps: KubeGitOpsDetail?) {
         // A Secret is never asked for, whatever comes: a kind discovery
         // named otherwise answering one is dropped, not kept.
         guard !KubeObjectStrip.isSecret(object.json) else {
@@ -155,6 +166,7 @@ final class KubeDetailSession: ObservableObject, Identifiable {
         resource?.take(json)
         overview = KubeOverview.of(json)
         health = KubeHealth.object(json)
+        self.gitOps = gitOps
         yaml = makeYAML()
         state = .loaded
         logs?.podRead(json)

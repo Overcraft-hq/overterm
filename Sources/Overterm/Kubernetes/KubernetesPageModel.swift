@@ -173,7 +173,8 @@ enum KubernetesKey: String, ResourceKey {
         case .database:
             return "Database client: a database pod (\(KubeDatabase.spoken)) forwarded, its connection form filled in"
         case .askWhy:
-            return "Ask an agent why: a failing pod (CrashLoopBackOff, OOMKilled, ImagePullBackOff, Pending…) or a stuck rollout — its brief, scrubbed, shown before it is sent (⌘L too)"
+            return
+                "Ask an agent why: a failing pod (CrashLoopBackOff, OOMKilled, ImagePullBackOff, Pending…), a stuck rollout, an Argo CD or Flux object Failed, Blocked or Stuck — its brief, scrubbed, shown before it is sent (⌘L too)"
         case .restart:
             return "Rollout restart a Deployment, StatefulSet or DaemonSet; on a pod, delete it so its controller makes it again; reconcile a Flux object, refresh an Argo CD Application — asked first"
         case .scaleUp: return "Scale up by one — asked first"

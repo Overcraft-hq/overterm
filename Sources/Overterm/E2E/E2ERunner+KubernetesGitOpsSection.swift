@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import SwiftUI
 
 /// G2 (docs/design/kubernetes/gitops.md, 2, 3, 8.4) against the fake API
 /// server, never a real cluster: `g` on kind-fake shows Argo CD's and
@@ -12,8 +13,11 @@ import Foundation
 /// read again; `r` asks the page's own sheet (cancelled: nothing sent); `s`
 /// records argocd's sync in a tab, never typed; `:flux` keeps Flux's rows;
 /// the Overview's GitOps card says to press `g`; the empty scope says where
-/// they are and Show adds that namespace; hidden, nothing is asked. Reads
-/// only but the access reviews; every sheet ended by the runner.
+/// they are and Show adds that namespace; hidden, nothing is asked. G3:
+/// the detail's GitOps header says why, where from and what is applied,
+/// its chain inside it; `a` on a Failed row opens the brief, scrubbed, and
+/// on a Ready one says why not. Reads only but the access reviews; every
+/// sheet ended by the runner.
 extension E2ERunner {
     func kubernetesGitOpsSection(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
         let wasShowing = app.store.showingOverlay == .kubernetes
@@ -98,6 +102,29 @@ extension E2ERunner {
             check(
                 "the object in its kind's list, its detail open",
                 await eventually(10) { page.section == .custom && page.detail?.ref.name == "acme-cron" }, "\(page.section) \(page.detail?.ref.name ?? "none")")
+            // G3: its Overview's GitOps header, from the detail's one GET and the summaries kept.
+            page.showTab(.overview)
+            check("the detail's GitOps header read", await eventually(10) { page.detail?.gitOps?.object.ref.name == "acme-cron" })
+            check(
+                "it says why, as the row does",
+                await shownText(15) { $0.contains("Failed: main@c03f9aa failed (BuildFailed); main@a77b0d1 still applied") } != nil)
+            let header = await overviewElement("kubernetes.detail.gitops", timeout: 10)
+            let chain = await overviewElement("kubernetes.detail.gitops.chain", timeout: 10)
+            let detailFrame = await overviewElement("kubernetes.detail", timeout: 10)
+            Self.accessibilityTree(false)
+            if let header, let chain, let detailFrame {
+                check("where from, its source's URL without its token", header.text.contains("git.acme.example/acme/shop ./apps/cron @main"), header.text)
+                check("what its source fetched, and when", header.text.contains("by GitRepository acme-fleet"), header.text)
+                check("its chain names its source", chain.text.contains("GitRepository flux-system/acme-fleet"), chain.text)
+                check("never the sentinel or a token in it", !header.text.contains(FakeKubeAPI.gitOpsSentinel) && !header.text.contains("ghp_fake"), header.text)
+                check("the header inside the detail", detailFrame.frame.insetBy(dx: -1, dy: -1).contains(header.frame), "\(detailFrame.frame) \(header.frame)")
+                check("its chain inside the header", header.frame.insetBy(dx: -1, dy: -1).contains(chain.frame), "\(header.frame) \(chain.frame)")
+            } else {
+                check("the header's layout read", false, "\(header.debugDescription) \(chain.debugDescription)")
+            }
+            check(
+                "nothing written for it, the verbs' access reviews aside",
+                !fake.requests.contains { $0.method != "GET" && !$0.path.contains("accessreviews") }, "\(fake.requests.filter { $0.method != "GET" }.map(\.path))")
             fake.forgetRequests()
             page.goBack()
             check("[ back to GitOps", page.section == .gitops)
@@ -119,6 +146,44 @@ extension E2ERunner {
             endSheet(.alertSecondButtonReturn)
             await pause(0.3)
             check("cancelled, nothing patched", !fake.writes.contains { $0.method == "PATCH" && $0.path.contains("acme-cron") })
+        }
+
+        // a: Ask Why on a Failed row — its brief shown whole, scrubbed; on a Ready one, why not.
+        if let cron = row("Kustomization", "acme-cron") {
+            func sheet() -> AskAgentView? { (window.attachedSheet?.contentViewController as? NSHostingController<AskAgentView>)?.rootView }
+            page.gitOpsView.selection = [cron.id]
+            page.giveListTheKeyboard()
+            fake.forgetRequests()
+            check("a on its row", await pressKubernetesKey("a", keyCode: 0))
+            check("the Ask Agent sheet opens", await eventually(15) { self.window.attachedSheet != nil && sheet() != nil }, page.commandProblem ?? "")
+            let ask = app.askAgent
+            check(
+                "the question started for you",
+                ask.message == "Why does Flux Kustomization flux-system/acme-cron fail to deploy, and what should change?"
+                    && ask.subject == "Kustomization/acme-cron Failed", "\(ask.message) / \(ask.subject ?? "none")")
+            check("the whole brief shown before it is sent", ask.showsBrief)
+            let prompt = await app.askAgentPrompt()
+            check("its state, attempted against applied", prompt.contains("main@c03f9aa failed (BuildFailed); main@a77b0d1 still applied"), prompt)
+            check("its conditions", ask.parts.contains { $0.title == "conditions" }, "\(ask.parts.map(\.title))")
+            check("the sentinel and a token never in it", !prompt.contains(FakeKubeAPI.gitOpsSentinel) && !prompt.contains("ghp_fake"), prompt)
+            check("read with GETs alone, no Secret", fake.requests.allSatisfy { $0.method == "GET" } && !fake.requests.contains { $0.path.contains("/secrets") })
+            let cancelled = sheet().map { $0.cancel() } != nil
+            check("Cancel sends nothing", await eventually(3) { self.window.attachedSheet == nil } && cancelled && !ask.isOpen)
+            if app.store.showingOverlay != .kubernetes { app.toggleKubernetesPage(nil) }
+            // An isolated run is never activated: after a sheet its window may
+            // be neither key nor main, and the later parts need the keyboard —
+            // given back, as a person's click on the window would.
+            if !window.isKeyWindow { window.makeKeyAndOrderFront(nil) }
+            page.giveListTheKeyboard()
+        }
+        if let apps = row("Kustomization", "acme-apps") {
+            page.gitOpsView.selection = [apps.id]
+            page.giveListTheKeyboard()
+            check("a on a Ready row", await pressKubernetesKey("a", keyCode: 0))
+            check("says why not", page.commandProblem?.contains("acme-apps is Ready") == true, page.commandProblem ?? "none")
+            await pause(0.4)
+            check("and opens nothing", window.attachedSheet == nil)
+            page.commandProblem = nil
         }
 
         // s: argocd in a tab, recorded, never typed.

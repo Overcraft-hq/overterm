@@ -417,8 +417,8 @@ Every kind gets the generic view: the server's Table, and a detail with metadata
 
 | Feature | Lens | Freelens | Ours | How | Stage |
 |---|---|---|---|---|---|
-| Flux dashboard, Sources, Kustomizations, HelmReleases | **Plus** | ext | Generic tables, health from conditions. Suspend, resume and reconcile as annotation patches. One state ladder with Argo CD's (`KubeGitOpsLadder`, gitops.md 2.3) over allow-listed summaries. The GitOps section (`g`) summarises both tools on one screen, problems first; ↩ opens an object in its kind's list (gitops.md 2) | Watch / API | 1b / 4 / G1 / G2 |
-| Argo CD applications, sync, refresh, resource tree | **Plus** | community ext | Generic tables (sync and health are printer columns). The managed tree from `status.resources`. Sync is left to `argocd` in a tab. K602/K603 are the ladder's Failed, and Drift or Stuck. Applications and ApplicationSets in the GitOps section (`g`) | Watch / Tab | 1b / 3b / G1 / G2 |
+| Flux dashboard, Sources, Kustomizations, HelmReleases | **Plus** | ext | Generic tables, health from conditions. Suspend, resume and reconcile as annotation patches. One state ladder with Argo CD's (`KubeGitOpsLadder`, gitops.md 2.3) over allow-listed summaries. The GitOps section (`g`) summarises both tools on one screen, problems first; ↩ opens an object in its kind's list (gitops.md 2), whose detail says why, where from and what is applied, its chain's states from the summaries; Ask Why on a Failed, Blocked or Stuck one (gitops.md 2.9, 6.2) | Watch / API | 1b / 4 / G1 / G2 / G3 |
+| Argo CD applications, sync, refresh, resource tree | **Plus** | community ext | Generic tables (sync and health are printer columns). The managed tree from `status.resources`. Sync is left to `argocd` in a tab. K602/K603 are the ladder's Failed, and Drift or Stuck. Applications and ApplicationSets in the GitOps section (`g`); the detail's operation, out-of-sync resources and last 10 history entries, Ask Why | Watch / Tab | 1b / 3b / G1 / G2 / G3 |
 | Cost per namespace (OpenCost, Kubecost or an estimate) | **Plus** | — | **Out**: it needs cloud prices. Requests against usage is shown instead | — | Out |
 | Security Center (Trivy Operator) | **Plus** | requested | **Out** of the cluster. A pod's image can be scanned on the Docker page (`DockerScout`) | Local | 4 |
 | Teamwork, Cluster Connect | **Plus** | — | **Out**: SaaS, and an agent in the cluster | — | Out |
@@ -519,6 +519,7 @@ Overterm already has the pieces to do both:
     - `CreateContainerConfigError`
     - `Pending`
     - a stuck rollout
+    - an Argo CD or Flux object that is Failed, Blocked or Stuck (gitops.md 6.2, G3): its own brief, the root cause along its chain
   - The brief holds:
     - the pod's status and last terminated state, with what the exit code means;
     - its events;

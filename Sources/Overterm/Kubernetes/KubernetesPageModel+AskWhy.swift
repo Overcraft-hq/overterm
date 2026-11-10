@@ -3,15 +3,20 @@ import Foundation
 // MARK: Ask Why (stage 1e; docs/design/kubernetes/analysis.md, 3.4)
 
 extension KubernetesPageModel {
-    /// Whether a ref is something Ask Why asks about: a pod, a Deployment.
+    /// Whether a ref is something Ask Why asks about: a pod, a Deployment,
+    /// an Argo CD Application or ApplicationSet, a Flux Kustomization or
+    /// HelmRelease (gitops.md 6.2).
     static func asksWhy(_ ref: KubeObjectRef) -> Bool {
         ref.isPod || (ref.kind.group == "apps" && ref.kind.kind == "Deployment" && ref.namespace != nil)
+            || (KubeGitOpsDetail.isGitOps(ref.kind) && ref.namespace != nil)
     }
 
-    /// What `a` and ⌘L act on: the detail's object while it shows a pod or
-    /// a Deployment, else the list's one selected row of them.
+    /// What `a` and ⌘L act on: the detail's object while it shows one Ask
+    /// Why asks about, else the GitOps section's one row picked, else the
+    /// list's one selected row of them.
     var askWhyRef: KubeObjectRef? {
         if let detail { return Self.asksWhy(detail.ref) ? detail.ref : nil }
+        if section == .gitops { return gitOpsSelectedRef.flatMap { Self.asksWhy($0) ? $0 : nil } }
         guard selection.count == 1, let row = rows.first(where: { selection.contains($0.id) }), let ref = ref(for: row.id), Self.asksWhy(ref) else {
             return nil
         }
@@ -23,11 +28,33 @@ extension KubernetesPageModel {
     /// else its row — a pod's Status, a Deployment's state off its cells.
     func askWhyUnavailable(_ ref: KubeObjectRef) -> String? {
         if askingWhy == ref { return "Reading what to tell the agent…" }
+        if KubeGitOpsDetail.isGitOps(ref.kind) { return gitOpsAskWhyUnavailable(ref) }
         if let detail, detail.ref == ref, let json = detail.object?.json { return KubeTrouble.notFailing(object: json) }
         guard model.kind.fullName == ref.kind.fullName, let row = model.rows[KubeRowID(namespace: ref.namespace, name: ref.name)] else { return nil }
         let columns = model.rows.columns
         if ref.isPod { return KubePodSummary(row: row, columns: columns).flatMap(KubeTrouble.notFailing) }
         return KubeTrouble.notFailing(KubeDeploymentHint(row: row, columns: columns), name: ref.name)
+    }
+
+    /// A GitOps object's: offered while it is Failed, Blocked or Stuck —
+    /// as the detail's read says, else the section's row, else its own
+    /// list's cells (which can't tell Blocked or Stuck: offered unless
+    /// they say Ready, the brief saying so if it isn't failing).
+    private func gitOpsAskWhyUnavailable(_ ref: KubeObjectRef) -> String? {
+        let now = Date()
+        if let detail, detail.ref == ref, let read = detail.gitOps {
+            let verdict = read.verdict(peers: gitOps.peers(context: ref.context), now: now)
+            return KubeGitOpsDetail.notAsked(read.object, state: verdict.state, why: verdict.why)
+        }
+        let id = KubeGitOpsRow.id(resource: ref.kind.fullName, KubeRowID(namespace: ref.namespace, name: ref.name))
+        if gitOps.context == ref.context, let row = (gitOps.rows.shown + gitOps.rows.notPlaced).first(where: { $0.id == id }) {
+            guard !row.state.isProblem else { return nil }
+            return "\(row.key.kind) \(row.ref.description) is \(row.state.word) (\(row.why)): Ask Why is for one that is Failed, Blocked or Stuck."
+        }
+        guard model.kind.fullName == ref.kind.fullName, let row = model.rows[KubeRowID(namespace: ref.namespace, name: ref.name)] else { return nil }
+        let (state, said) = KubeGitOpsSection.cellState(resource: ref.kind.fullName, row, columns: model.rows.columns)
+        guard state == .ready else { return nil }
+        return "\(ref.kind.kind) \(KubeRowID(namespace: ref.namespace, name: ref.name).description) is Ready (\(said)): Ask Why is for one that is Failed, Blocked or Stuck."
     }
 
     /// Ask an Agent Why… — the detail's button and the menu's item, greyed
@@ -81,6 +108,24 @@ extension KubernetesPageModel {
         let context = KubeBriefContext(name: ref.context, production: known?.isProduction ?? true, writable: known?.isWritable ?? false)
         let discovery = model.knownDiscovery(of: ref.context)
         askingWhy = ref
+        if KubeGitOpsDetail.isGitOps(ref.kind) {
+            // Its chain from the section's summaries, what they lack read by a GET each.
+            let peers = gitOps.peers(context: ref.context)
+            Task { [weak self] in
+                do {
+                    let brief = try await KubeAgentBriefing.gitOps(ref, client: client, context: context, discovery: discovery, peers: peers)
+                    guard let self else { return }
+                    self.askingWhy = nil
+                    self.actions?.askWhy(brief)
+                } catch {
+                    guard let self else { return }
+                    self.askingWhy = nil
+                    self.commandProblem =
+                        (error as? KubeBriefProblem)?.description ?? "Couldn't read \(ref.kind.kind) \(ref.namespace.map { "\($0)/" } ?? "")\(ref.name): \(KubernetesModel.said(error))"
+                }
+            }
+            return
+        }
         Task { [weak self] in
             do {
                 let read = try await KubeAgentBriefing.read(ref, client: client, context: context, discovery: discovery)

@@ -3596,7 +3596,8 @@ never the proxy's socket, which refuses port-forward on every context.
 **Ask Why** (`KubeAgentBrief.swift`, `KubeAgentBriefing.swift`,
 `KubernetesPageModel+AskWhy.swift`; analysis 3.4): a failing pod or a stuck
 rollout handed to an agent with what it needs to say why — Docker's Ask Why
-(`DockerAgentBrief`), for Kubernetes.
+(`DockerAgentBrief`), for Kubernetes. An Argo CD or Flux object that is
+Failed, Blocked or Stuck has its own brief (A GitOps object's detail, below).
 
 - **What is wrong** (`KubeTrouble`, pure): off a pod's object, its
   containers (init first) — `CrashLoopBackOff` (`OOMKilled` when its last
@@ -6272,6 +6273,51 @@ left mid-read, Refresh, R3 at scale — 20 GETs a flush, four in flight, 15 s
 an object —, the fallback across scope changes and a namespace refusing,
 kinds not served never asked, the banner, 600 Applications cut at 500) and `kubernetesGitOpsSection`
 (`E2ERunner+KubernetesGitOpsSection`) check it.
+
+**A GitOps object's detail** (`KubeGitOpsDetail.swift`, pure; gitops.md
+2.9, 6.2, G3). An Application, ApplicationSet, Kustomization or
+HelmRelease's Overview opens with a GitOps header, read from the body the
+detail's one GET already brought (`KubeDetailSession.gitOps`) through the
+summaries' allow-list plus `KubeGitOpsWire.Detail` — Argo CD's last 10
+`history` entries (revisions and times, never their `source(s)`), the
+resources out of sync or needing pruning and the operation's failed ones,
+50 each, the rest counted, never decoded. It says the ladder's state and
+why with its age ("Failed: upgrade to 1.5.0 failed; rolled back to 1.4.2
+(4m)"), its sources with their host ("values from this repo" for a `ref:`
+one), the revisions applied, attempted, wanted and fetched with when,
+where it deploys, its interval, prune, auto-sync or suspension, Argo CD's
+last operation, its out-of-sync resources (each opens its object) and
+history, its conditions (5.3's, copyable), and its chain — the source, a
+HelmRelease's chart, each `dependsOn`, the ApplicationSet or object that
+manages it — with each link's state, each opening it. The chain's states
+come from the section's summaries (`KubeGitOpsSession.peers`, kept five
+minutes while the page shows): nothing is read for it, and a link the
+page holds no summary of is said as not summarised. **Ask Why** takes
+these four kinds (`asksWhy`; `a` in the section acts on the row picked,
+`askWhyRef`): offered while the object is Failed, Blocked or Stuck — the
+detail's read, else the section's row, else its own list's cells (which
+can't tell Blocked or Stuck: offered unless Ready) — greyed with why
+otherwise. `KubeAgentBriefing.gitOps` reads the object by one GET (4 MB),
+its chain from the summaries and what they lack by a GET each (at most 6,
+never a Secret, a ConfigMap or a Helm release), so a Blocked one names its
+root cause; the brief (`KubeGitOpsDetail.brief`) is the header's words, the
+conditions, Argo CD's operation, failed and out-of-sync resources and
+history, the chain — every word through `Secrets`, shown whole before it is
+sent. What needs a matched checkout (§4.2) comes with the rail's match:
+each history entry opening a review of `git diff a..b -- <path>` (G5),
+and Ask Why's commits between applied and attempted (G6). The brief's
+chain is followed only where it isn't ready — a summarised link that
+isn't ready or progressing, else what the summaries lack read in
+`readOrder` (the dependency its Ready message names, then its sources),
+stopping at the first that isn't — so the six reads reach the branch that
+fails, never healthy siblings. The detail's body is decoded once
+(`KubeGitOpsWire.detailRead`), off the main thread, and the header
+observes the section's session, so a refetch or the tick redraws it. `KubeGitOpsDetailTests` (pure: the
+sentence, the lines, the chain and root cause, the bounds, the brief, the
+sentinel never in any of it), `KubeGitOpsAskWhyPageTests` (against the
+fake: offered on a Failed one, greyed on a Ready one, a Blocked one's chain
+read by a GET, GETs only) and `kubernetesGitOpsSection` (the header, `a`'s
+brief) check it.
 
 ### The cluster's API docs
 
