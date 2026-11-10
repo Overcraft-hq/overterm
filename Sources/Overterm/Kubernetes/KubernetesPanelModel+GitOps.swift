@@ -15,8 +15,10 @@ protocol KubeGitOpsPanelHost: AnyObject {
     func gitOpsTabWrite(_ verb: KubeProcessVerb, on ref: KubeObjectRef) async
     /// The binding's context on the page, the object's list and detail open.
     func gitOpsOpenOnPage(_ ref: KubeObjectRef) async
-    /// Ask Why: the page's brief, shown whole before it is sent.
-    func gitOpsAskWhy(_ ref: KubeObjectRef) async
+    /// Ask Why: the page's brief, shown whole before it is sent — with
+    /// what the rail knows of the checkout (`extra`, scrubbed): the
+    /// commits between applied and attempted, the files this branch changes.
+    func gitOpsAskWhy(_ ref: KubeObjectRef, extra: [AskAgentModel.Part]) async
     /// The page's write status as it changes.
     var gitOpsWriteStatus: AnyPublisher<KubeWriteStatus?, Never> { get }
 }
@@ -145,6 +147,9 @@ final class KubeGitOpsCheckouts {
 
     private var remotes: [String: [KubeGitOpsMatch.Remote]] = [:]
 
+    /// `git for-each-ref`: each remote-tracking branch's, branch's and tag's commit, local.
+    nonisolated static let refsArguments = ["for-each-ref", "--format=%(objectname) %(refname)", "refs/remotes", "refs/heads", "refs/tags"]
+
     /// How many times a checkout's remotes were read (a test's).
     private(set) var remoteReads: [String: Int] = [:]
 
@@ -170,8 +175,17 @@ final class KubeGitOpsCheckouts {
             let trimmed = said.trimmingCharacters(in: .whitespacesAndNewlines)
             if trimmed.hasPrefix("\(remote.name)/") { defaults[remote.name] = String(trimmed.dropFirst(remote.name.count + 1)) }
         }
-        let head = branch?.trimmingCharacters(in: .whitespacesAndNewlines)
-        return KubeGitOpsMatch.Checkout(root: root, remotes: list, branch: head?.isEmpty == false ? head : nil, defaults: defaults)
+        let name = branch?.trimmingCharacters(in: .whitespacesAndNewlines)
+        let commit = (try? await git(["rev-parse", "--verify", "--quiet", "HEAD"], root, [0, 1]))?.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Where every ref points, hashed — nothing of it kept.
+        let refs = (try? await git(Self.refsArguments, root, [0])).map { output -> Int in
+            var hasher = Hasher()
+            hasher.combine(output)
+            return hasher.finalize()
+        }
+        return KubeGitOpsMatch.Checkout(
+            root: root, remotes: list, branch: name?.isEmpty == false ? name : nil, defaults: defaults, head: commit?.count == 40 ? commit : nil,
+            refs: refs)
     }
 
     /// The checkout whose remotes name `repo`, among `roots`; its facts.
@@ -239,6 +253,9 @@ final class KubePanelGitOps: ObservableObject {
         var object: KubeGitOpsObject?
         var whys: [KubeGitOpsMatch.Why]
         var tracks: String?
+        /// Has this branch reached the cluster (4.3): a case (a) match's
+        /// manifests line and what goes with it, once the checkout answered.
+        var reach: KubeGitOpsReach.Answer?
 
         var id: String { key.description }
 
@@ -321,6 +338,19 @@ final class KubePanelGitOps: ObservableObject {
     private var ownerTask: Task<Void, Never>?
     private var follows: [String: Task<Void, Never>] = [:]
     private var statusWatch: AnyCancellable?
+    /// Each case (a) match's question as last asked of the checkout, and
+    /// its answer: asked again only when the question's git — the
+    /// revisions, the path, what it tracks, HEAD, the refs — changes (4.3's key).
+    private var asked: [KubeGitOpsObject.Key: KubeGitOpsReach.Key] = [:]
+    /// Each one's question as it is now: its words (`KubeGitOpsReach.labeled`).
+    private var questions: [KubeGitOpsObject.Key: KubeGitOpsReach.Question] = [:]
+    private var reached: [KubeGitOpsObject.Key: KubeGitOpsReach.Answer] = [:]
+    private var reachTasks: [KubeGitOpsObject.Key: Task<Void, Never>] = [:]
+    private var headTask: Task<Void, Never>?
+    /// How many times a match was asked of the checkout (a test's).
+    private(set) var reachRuns = 0
+    /// A review tab in the checkout: the panel's (`openReview`).
+    var openReview: (ReviewSource, URL) -> Void = { _, _ in }
 
     init(kubernetes: KubernetesModel, cache: KubeGitOpsMatchCache = .shared, checkouts: KubeGitOpsCheckouts = .shared) {
         self.kubernetes = kubernetes
@@ -394,6 +424,9 @@ final class KubePanelGitOps: ObservableObject {
         reads = [:]
         refetched = [:]
         lastGet = [:]
+        asked = [:]
+        questions = [:]
+        reached = [:]
         state = .idle
         if !matches.isEmpty { matches = [] }
         searched = []
@@ -414,6 +447,10 @@ final class KubePanelGitOps: ObservableObject {
         follows = [:]
         for task in queued.values { task.cancel() }
         queued = [:]
+        for task in reachTasks.values { task.cancel() }
+        reachTasks = [:]
+        headTask?.cancel()
+        headTask = nil
     }
 
     /// Unbound: a verb's outcome goes too.
@@ -636,6 +673,7 @@ final class KubePanelGitOps: ObservableObject {
         refetched = [:]
         lastGet = [:]
         ownersRead = []
+        asked = [:]
         start(press: pressed)
     }
 
@@ -788,7 +826,9 @@ final class KubePanelGitOps: ObservableObject {
             owned: owners, objects: objects, workloads: workloads.map { ($0.ref, $0.images) }, checkout: facts, context: context.name)
         let now = clock()
         let new = found.map { found in
-            Match(key: found.key, object: objects[found.key].map { KubeGitOpsSummary.evaluated($0, now: now, peers: objects) }, whys: found.whys, tracks: found.tracks)
+            Match(
+                key: found.key, object: objects[found.key].map { KubeGitOpsSummary.evaluated($0, now: now, peers: objects) }, whys: found.whys,
+                tracks: found.tracks, reach: reached[found.key])
         }.sorted { a, b in
             switch (a.object, b.object) {
             case let (x?, y?): return KubeGitOpsSummary.ordered(x, y)
@@ -803,6 +843,84 @@ final class KubePanelGitOps: ObservableObject {
         default: state = .live
         }
         followLive()
+        reach(objects: objects, facts: facts)
+    }
+
+    // MARK: Has this branch reached the cluster (4.3)
+
+    /// Each case (a) match asked of the checkout when its question changed;
+    /// an event that changes nothing runs no git.
+    private func reach(objects: [KubeGitOpsObject.Key: KubeGitOpsObject], facts: KubeGitOpsMatch.Checkout) {
+        let git = checkouts.git
+        let root = facts.root
+        let generation = self.generation
+        var wanted: Set<KubeGitOpsObject.Key> = []
+        for match in matches {
+            guard let object = match.object, let why = match.whys.first(where: \.isRepository),
+                let question = KubeGitOpsReach.question(object, why: why, checkout: facts, peers: objects)
+            else { continue }
+            wanted.insert(match.key)
+            let key = match.key
+            questions[key] = question
+            guard asked[key] != question.key else {
+                // Nothing git reads changed (a reconcile's Ready → Progressing → Ready): the words only.
+                if let answer = reached[key] { show(KubeGitOpsReach.labeled(answer, question), for: key) }
+                continue
+            }
+            let asking = question.key
+            asked[key] = asking
+            reachRuns += 1
+            reachTasks[key]?.cancel()
+            reachTasks[key] = Task { [weak self] in
+                let answer = await KubeGitOpsReach.answer(question, in: root, git: git)
+                guard let self, self.generation == generation, !Task.isCancelled, self.asked[key] == asking else { return }
+                self.reachTasks[key] = nil
+                self.show(self.questions[key].map { KubeGitOpsReach.labeled(answer, $0) } ?? answer, for: key)
+            }
+        }
+        // A match gone, or no longer case (a): its answer goes.
+        for key in Set(asked.keys).subtracting(wanted) {
+            asked[key] = nil
+            questions[key] = nil
+            reached[key] = nil
+            reachTasks[key]?.cancel()
+            reachTasks[key] = nil
+        }
+    }
+
+    private func show(_ answer: KubeGitOpsReach.Answer, for key: KubeGitOpsObject.Key) {
+        if reached[key] != answer { reached[key] = answer }
+        if let index = matches.firstIndex(where: { $0.key == key }), matches[index].reach != answer { matches[index].reach = answer }
+    }
+
+    /// The checkout may have moved (a commit, a checkout of another branch —
+    /// the window's diff saw its git change): its branch and HEAD read again
+    /// (a few local git calls, only while shown with a match), and the
+    /// answers asked again if they changed.
+    func headMayHaveMoved() {
+        guard binding != nil, let root, facts != nil, !matches.isEmpty, headTask == nil else { return }
+        let generation = self.generation
+        headTask = Task { [weak self] in
+            guard let self else { return }
+            let facts = await self.checkouts.facts(root)
+            guard self.generation == generation, !Task.isCancelled else { return }
+            self.headTask = nil
+            guard facts != self.facts else { return }
+            self.facts = facts
+            self.compute()
+        }
+    }
+
+    /// Diff Deployed…Current: what the checkout has that isn't at the manifests' commit.
+    func reviewDeployed(_ match: Match) {
+        guard let root, let found = match.reach?.found else { return }
+        openReview(KubeDeployedCommit.review(found), root)
+    }
+
+    /// The files this branch changes under the match's paths.
+    func reviewChanged(_ match: Match) {
+        guard let root, let review = match.reach?.changed?.review else { return }
+        openReview(review, root)
     }
 
     // MARK: P5, P6: the matches kept current
@@ -888,9 +1006,23 @@ final class KubePanelGitOps: ObservableObject {
         Task { await host.gitOpsOpenOnPage(ref) }
     }
 
+    /// Ask Why, with the checkout's side when the match has one: the
+    /// commits between applied and attempted (`git log --oneline`, at most
+    /// 20, both verified), the files this branch changes (6.2).
     func askWhy(_ match: Match) {
         guard let ref = ref(match), let host else { return }
-        Task { await host.gitOpsAskWhy(ref) }
+        let reach = match.reach
+        let root = self.root
+        let git = checkouts.git
+        Task {
+            var extra: [AskAgentModel.Part] = []
+            if let reach, let root {
+                var commits: [String] = []
+                if let range = reach.range { commits = await KubeGitOpsReach.commits(range, in: root, git: git) }
+                extra = KubeGitOpsReach.briefParts(reach, commits: commits, checkout: root)
+            }
+            await host.gitOpsAskWhy(ref, extra: extra)
+        }
     }
 
     /// The page's status followed into the rail from the press on, until it ends.

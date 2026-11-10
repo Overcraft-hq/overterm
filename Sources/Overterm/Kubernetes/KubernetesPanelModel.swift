@@ -174,6 +174,7 @@ final class KubernetesPanelModel: ObservableObject {
             // @Published emits before the value lands.
             DispatchQueue.main.async { self?.bindingMayHaveChanged() }
         }
+        gitOps.openReview = { [weak self] source, root in self?.openReview(source, root) }
     }
 
     // MARK: The checkout and its binding

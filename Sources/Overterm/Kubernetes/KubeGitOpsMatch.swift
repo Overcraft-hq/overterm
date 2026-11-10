@@ -87,6 +87,12 @@ enum KubeGitOpsMatch {
         var remotes: [Remote]
         var branch: String?
         var defaults: [String: String] = [:]
+        /// HEAD's commit, whole: what "has this branch reached the cluster" is keyed by (4.3).
+        var head: String?
+        /// The checkout's refs — remote-tracking branches, branches, tags —
+        /// as one hash: a fetch that moves `origin/<tracked>` changes it, so
+        /// the answers compared with that branch are asked again (4.3).
+        var refs: Int?
 
         /// The remotes' repositories, what a source's URL is compared with.
         var repos: Set<GitRemoteURL> { Set(remotes.map(\.repo)) }

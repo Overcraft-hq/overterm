@@ -136,6 +136,15 @@ extension FakeKubeAPI {
         modify(resource, name, namespace: namespace, values: Self.fluxCells(status: status)) { body in body["status"] = status }
     }
 
+    /// A Flux object's status changed in place (its revisions, its
+    /// artifact), its cells with it: one MODIFIED.
+    func setFluxStatus(_ resource: String, _ name: String, namespace: String = "flux-system", _ change: (inout [String: Any]) -> Void) {
+        let current = object(resource, name, namespace: namespace) ?? [:]
+        var status = current["status"] as? [String: Any] ?? [:]
+        change(&status)
+        modify(resource, name, namespace: namespace, values: Self.fluxCells(status: status)) { body in body["status"] = status }
+    }
+
     static func argoCells(spec: [String: Any], status: [String: Any]) -> [String: Value] {
         let sync = status["sync"] as? [String: Any]
         return [
