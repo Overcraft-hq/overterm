@@ -49,6 +49,24 @@ enum KubeOverviewCards {
         return pills
     }
 
+    // MARK: GitOps
+
+    /// The health card's GitOps line (docs/design/kubernetes/gitops.md,
+    /// 2.1), from the findings the report already holds — no read: Argo
+    /// CD's Failed (K602) and Flux's own Ready False (K601's `fluxFailing`:
+    /// never a generation not yet looked at, nor a blocked source or
+    /// dependency — the section calls those Progressing, Unknown, Blocked)
+    /// as failing, Argo CD's drifted or stuck (K603). It counts what *lives*
+    /// in the scope, and says so. Nil when there is nothing to say.
+    static func gitOps(_ report: KubeHealth.Report, scope: KubeScope?) -> Pill? {
+        let failing = report.findings.count { $0.check == .argoDegraded || ($0.check == .notReady && $0.fluxFailing) }
+        let behind = report.findings.count { $0.check == .argoOutOfSync }
+        guard failing + behind > 0 else { return nil }
+        let place = scope.map { $0 == .all ? "across the cluster" : "living in \($0.names?.joined(separator: ", ") ?? "")" } ?? "here"
+        let counts = [failing > 0 ? "\(failing) failing" : nil, behind > 0 ? "\(behind) drifted or stuck" : nil].compactMap { $0 }
+        return Pill(text: "GitOps objects \(place): \(counts.joined(separator: ", "))", tone: failing > 0 ? .failed : .waiting)
+    }
+
     // MARK: A kind's card
 
     /// One kind's card: its count, its line (the counts the bar draws,

@@ -739,7 +739,7 @@ The fake evaluates no printer-column JSONPath, so each helper sets the body and 
     - `acme-api` (sourced from `acme-broken`, its own reason ArtifactFailed);
     - `acme-jobs` (suspended, with a managedFields time, Ready=False from before);
     - `globex-remote` (`spec.kubeConfig`).
-  - HelmReleases: `globex-redis` (`chartRef` to an OCIRepository, Stalled RetriesExceeded) and `acme-payments` (`history[0]` failed at 1.5.0, Ready=False RollbackSucceeded, deployed 1.4.2).
+  - HelmReleases: `globex-redis` (`chartRef` to an OCIRepository, Stalled RetriesExceeded) and `acme-payments` (Ready=False RollbackSucceeded, `lastAttemptedRevision` 1.5.0; `history[0]` the rollback's release, deployed at 1.4.2, the failed 1.5.0 after it — helm-controller records a rollback as a release of its own, so "rolled back to" is `history[0]`'s chart version).
   - An OCIRepository whose artifact metadata names `git.acme.example/acme/shop` at `c1`.
 - **Refusals:** the fake's existing `forbidden` set.
 

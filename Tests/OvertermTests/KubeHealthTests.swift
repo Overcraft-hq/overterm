@@ -234,7 +234,43 @@ final class KubeHealthTests: XCTestCase {
             "apiVersion": "argoproj.io/v1alpha1", "kind": "Application", "metadata": ["name": "shop", "namespace": "argocd"],
             "status": ["health": ["status": "Degraded", "message": "Deployment web: progress deadline exceeded"], "sync": ["status": "OutOfSync"]],
         ]
-        XCTAssertEqual(codes(KubeHealth.object(application)), ["K602", "K603"], "the worst first")
+        XCTAssertEqual(codes(KubeHealth.object(application)), ["K602"], "Degraded is Failed, whatever its sync says")
+        XCTAssertEqual(KubeHealth.object(application).first?.sentence, "Failed: Degraded: Deployment web: progress deadline exceeded")
+    }
+
+    /// K602 and K603 are the GitOps section's ladder (gitops.md, 2.3): an
+    /// OutOfSync auto-sync is fixing says nothing; one it won't fix, or a
+    /// sync that hangs, is K603; a failed sync of the current revision K602.
+    func testArgoCDsChecksAreTheLadders() {
+        let now = Date()
+        func app(_ spec: [String: Any] = [:], _ status: [String: Any]) -> [String: Any] {
+            ["apiVersion": "argoproj.io/v1alpha1", "kind": "Application", "metadata": ["name": "shop", "namespace": "argocd"], "spec": spec, "status": status]
+        }
+        let auto: [String: Any] = ["syncPolicy": ["automated": ["prune": true]]]
+        let target = "77e1a02b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f"
+        let started = FakeKubeAPI.time(now.addingTimeInterval(-60))
+        let syncing = app(
+            auto, ["sync": ["status": "OutOfSync", "revision": target], "health": ["status": "Healthy"], "operationState": ["phase": "Running", "startedAt": started]])
+        XCTAssertEqual(KubeHealth.object(syncing, now: now), [], "auto-sync on it: Progressing, no finding")
+        let manual = app([:], ["sync": ["status": "OutOfSync", "revision": target], "health": ["status": "Healthy"]])
+        XCTAssertEqual(KubeHealth.object(manual, now: now).map(\.sentence), ["Drift: OutOfSync, auto-sync off"])
+        XCTAssertEqual(KubeHealth.object(manual, now: now).map(\.check), [.argoOutOfSync])
+        let hung = app(
+            auto,
+            [
+                "sync": ["status": "OutOfSync", "revision": target], "health": ["status": "Healthy"],
+                "operationState": ["phase": "Running", "startedAt": FakeKubeAPI.time(now.addingTimeInterval(-26 * 60)), "message": "waiting for hook"],
+            ])
+        XCTAssertEqual(KubeHealth.object(hung, now: now).map(\.sentence), ["Stuck: syncing 26m: waiting for hook"])
+        let failed = app(
+            auto,
+            [
+                "sync": ["status": "OutOfSync", "revision": target], "health": ["status": "Healthy"],
+                "operationState": ["phase": "Failed", "message": "hook failed", "syncResult": ["revision": target]],
+            ])
+        XCTAssertEqual(KubeHealth.object(failed, now: now).map(\.check), [.argoDegraded])
+        XCTAssertEqual(KubeHealth.object(failed, now: now).first?.sentence, "Failed: auto-sync failed for 77e1a02 and won't retry it: hook failed")
+        XCTAssertEqual(KubeHealth.object(app(auto, ["sync": ["status": "Synced"], "health": ["status": "Healthy"]]), now: now), [])
     }
 
     private static let gitopsSentinel = "s3cr3t-sentinel"
@@ -335,7 +371,8 @@ final class KubeHealthTests: XCTestCase {
         XCTAssertEqual(
             KubeHealth.object(kept[2]).first?.sentence, "its Ready condition is False: BuildFailed — kustomize build failed: … manifest omitted",
             "the Overview's sentence quotes no manifest")
-        XCTAssertEqual(KubeHealth.object(kept[0]).map(\.check.code), ["K602", "K603"], "the checks still see status")
+        XCTAssertEqual(KubeHealth.object(kept[0]).map(\.check.code), ["K602"], "the checks still see status")
+        XCTAssertEqual(KubeHealth.object(kept[0]).first?.sentence, "Failed: ComparisonError: rpc error: fetching https://git.acme.example/acme/shop.git failed")
     }
 
     func testAMessageIsCutAtItsFirstManifestLineAndAURLLosesItsUserinfo() {

@@ -109,6 +109,30 @@ extension E2ERunner {
             "pending-0", namespace: "shop", FakeKubeAPI.Pod(status: "Pending", phase: "Pending", ready: 0), created: Date().addingTimeInterval(-600))
         fake.add("poddisruptionbudgets.policy", "lint", namespace: "shop", fields: ["status": ["disruptionsAllowed": 0, "expectedPods": 1, "currentHealthy": 1]])
         guard await eventually(15, { model.discovery?.kind("poddisruptionbudgets") != nil }) else { return check("fake-dev serves PDBs", false) }
+        // Argo CD's checks are the GitOps ladder's (gitops.md, G1): one
+        // OutOfSync with auto-sync off (Drift, K603), one auto-sync is
+        // syncing (Progressing: nothing said); the tree's Degraded one Failed (K602).
+        let argo = model.discovery?.kind("applications") != nil
+        check("fake-dev serves Argo CD's Applications (the tree's CRDs)", argo)
+        let target = FakeKubeAPI.GitOpsCommit.target
+        fake.addApplication(
+            "health-drift", namespace: "shop",
+            spec: ["source": ["repoURL": "https://git.acme.example/acme/fleet.git", "path": "apps/drift"], "destination": ["namespace": "shop"]],
+            status: ["sync": ["status": "OutOfSync", "revision": target], "health": ["status": "Healthy"]])
+        fake.addApplication(
+            "health-syncing", namespace: "shop",
+            spec: [
+                "source": ["repoURL": "https://git.acme.example/acme/fleet.git", "path": "apps/syncing"], "destination": ["namespace": "shop"],
+                "syncPolicy": ["automated": ["prune": true]],
+            ],
+            status: [
+                "sync": ["status": "OutOfSync", "revision": target], "health": ["status": "Healthy"],
+                "operationState": ["phase": "Running", "startedAt": FakeKubeAPI.time(Date().addingTimeInterval(-30))],
+            ])
+        defer {
+            fake.delete("applications.argoproj.io", "health-drift", namespace: "shop")
+            fake.delete("applications.argoproj.io", "health-syncing", namespace: "shop")
+        }
         fake.forgetRequests()
         check("1 is the Overview", page.press("1") && page.section == .overview)
         let health = page.health
@@ -120,6 +144,19 @@ extension E2ERunner {
         check("an Ingress to a Service that isn't there", found("K301", "ingress/lint"))
         check("a pod Pending for ten minutes", found("K502", "pod/pending-0"))
         check("a budget allowing no disruption", found("K401", "poddisruptionbudget/lint"))
+        if argo {
+            check(
+                "an Application auto-sync isn't fixing: drifted (K603), said by the ladder",
+                findings.contains { $0.check.code == "K603" && $0.subject.said == "application/health-drift" && $0.sentence == "Drift: OutOfSync, auto-sync off" },
+                "\(findings.filter { $0.subject.kind == "Application" }.map { "\($0.check.code) \($0.subject.said) \($0.sentence)" })")
+            check("one auto-sync is syncing: nothing said", !findings.contains { $0.subject.said == "application/health-syncing" })
+            check(
+                "a Degraded one is Failed (K602), no longer K603 too",
+                found("K602", "application/tree-shop") && !found("K603", "application/tree-shop"))
+            let line = KubeOverviewCards.gitOps(health.report, scope: health.scope)
+            check("the health card's GitOps line counts them", line?.text.hasPrefix("GitOps objects living in shop: ") == true, line?.text ?? "none")
+            check("drawn on the Overview's card", await shownText(15) { $0.contains("GitOps objects living in shop") } != nil)
+        }
         check("its count drawn by the Overview's header", await shownText(15) { $0.contains("Health: \(health.report.said)") } != nil, health.report.said)
         let reads = fake.requests.filter { !$0.isWatch && $0.query["limit"] != nil && $0.query["includeObject"] == nil }
         check("its lists bounded", reads.contains { $0.path == "/api/v1/namespaces/shop/pods" && $0.query["limit"] == String(KubeHealth.podLimit) }, "\(reads.map(\.path))")

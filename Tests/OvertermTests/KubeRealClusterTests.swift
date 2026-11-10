@@ -548,7 +548,58 @@ final class KubeRealClusterTests: XCTestCase {
         session.hide()
     }
 
+    // MARK: Argo CD's and Flux's CRDs (docs/design/kubernetes/gitops.md, 8.5)
+
+    /// The pinned CRDs (`Scripts/fetch-gitops-crds.sh`) applied to
+    /// kind-fake — only through the script's kubeconfig, `--context
+    /// kind-fake` —, then the server's own printer columns read as a Table
+    /// and compared with the fake's (`FakeKubeAPI.gitOpsColumns`): names,
+    /// types and priorities. What it served before is left; what it added
+    /// is deleted after.
+    func testGitOpsCRDsPrinterColumnsAreTheFakes() async throws {
+        let run = Kubectl(kubectl: fixture.kubectl, kubeconfig: fixture.kindKubeconfig, home: fixture.home)
+        let folder = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/gitops-crds")
+        let files = try FileManager.default.contentsOfDirectory(atPath: folder.path).filter { $0.hasSuffix(".yaml") }.sorted().map {
+            folder.appendingPathComponent($0).path
+        }
+        XCTAssertEqual(files.count, 5)
+        let before = Set(try run(["get", "crd", "-o", "jsonpath={.items[*].metadata.name}"]).split(separator: " ").map(String.init))
+        // Every CRD the files hold (the source controller's six, ExternalArtifact
+        // among them), not only the ones the fake serves: each one added is removed.
+        let applied = try Set(files.flatMap { try Self.crdNames(inYAML: String(contentsOfFile: $0, encoding: .utf8)) })
+        XCTAssertTrue(applied.isSuperset(of: FakeKubeAPI.gitOpsColumns.keys), "\(applied.sorted())")
+        XCTAssertTrue(applied.contains("externalartifacts.source.toolkit.fluxcd.io"))
+        let added = applied.subtracting(before)
+        defer {
+            for name in added { _ = try? run(["delete", "crd", name, "--wait=false"]) }
+        }
+        // Server-side: an ApplicationSet's CRD is too large for last-applied.
+        for file in files { try run(["apply", "--server-side", "--force-conflicts", "--field-manager=overterm-test", "-f", file]) }
+        for name in FakeKubeAPI.gitOpsColumns.keys { try run(["wait", "--for=condition=Established", "crd/\(name)", "--timeout=60s"]) }
+        let kind = try fixture.context("kind-fake")
+        let client = KubeClient(KubeProxyConnection(proxies: proxies, context: kind))
+        let discovery = try await client.discover()
+        for (fullName, columns) in FakeKubeAPI.gitOpsColumns {
+            let served = try XCTUnwrap(discovery.kinds.first { $0.fullName == fullName }, fullName)
+            let table = try await client.list(served, in: .namespace(fixture.namespace))
+            // The server's: Name first, then the CRD's own (Age only where the CRD has none).
+            let said = table.columns.filter { $0.name != "Name" && !(columns.allSatisfy { $0.name != "Age" } && $0.name == "Age") }
+            XCTAssertEqual(said.map(\.name), columns.map(\.name), fullName)
+            XCTAssertEqual(said.map(\.type), columns.map(\.type), fullName)
+            XCTAssertEqual(said.map(\.priority), columns.map(\.priority), fullName)
+        }
+    }
+
     // MARK: Helpers
+
+    /// Each CustomResourceDefinition's `metadata.name` in a file of several documents.
+    static func crdNames(inYAML text: String) throws -> [String] {
+        let documents = try XCTUnwrap(YAMLReader.documents(text))
+        return documents.compactMap { document in
+            guard let document = document as? [String: Any], document["kind"] as? String == "CustomResourceDefinition" else { return nil }
+            return (document["metadata"] as? [String: Any])?["name"] as? String
+        }
+    }
 
     private func eventually(_ seconds: Double, _ condition: @escaping () async -> Bool) async throws -> Bool {
         let deadline = Date().addingTimeInterval(seconds)

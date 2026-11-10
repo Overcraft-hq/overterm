@@ -99,13 +99,10 @@ struct KubeGitOpsDelete: Equatable, Sendable {
             facts.managed = resources.count
             facts.namespaces = Set(resources.compactMap { $0.namespace.flatMap { $0.isEmpty ? nil : $0 } })
             if let destination = wire.spec?.destination {
-                var said: [String: Any] = [:]
-                if let server = destination.server { said["server"] = server }
-                if let name = destination.name { said["name"] = name }
-                facts.remote = !KubeGitOpsTree.argoInCluster(said)
+                facts.remote = !KubeGitOpsSource.inCluster(server: destination.server, name: destination.name)
             }
         case .kustomization:
-            let entries = (wire.status?.inventory?.entries ?? []).compactMap { KubeGitOpsTree.inventoryEntry($0.id ?? "", version: "v1") }
+            let entries = (wire.status?.inventory?.entries ?? []).compactMap { KubeGitOpsSource.inventoryEntry($0.id ?? "", version: "v1") }
             facts.managed = entries.count
             facts.namespaces = Set(entries.compactMap(\.namespace))
             facts.remote = wire.spec?.kubeConfig != nil

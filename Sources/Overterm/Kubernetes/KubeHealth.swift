@@ -13,7 +13,8 @@ import Foundation
 ///   restarts in the last hour and a pod `Pending` for more than a minute; a
 ///   PodDisruptionBudget that allows no disruption; an HPA at its maximum; a
 ///   custom resource whose `Ready` condition is False (Flux, cert-manager…);
-///   an Argo CD Application Degraded or Missing, or OutOfSync.
+///   an Argo CD Application Failed (K602), or drifted or stuck (K603), by
+///   the GitOps section's own ladder (`KubeGitOpsLadder`).
 /// - **What needs another object** (`related`): a Service selecting no pod;
 ///   an Ingress sending to a Service that isn't there, or to a port it hasn't.
 ///   Said only when the list it needs was read whole.
@@ -60,8 +61,8 @@ enum KubeHealth {
             case .recentRestarts: "Restarted in the last hour"
             case .pendingLong: "Pending for over a minute"
             case .notReady: "Not ready"
-            case .argoDegraded: "Argo CD: unhealthy"
-            case .argoOutOfSync: "Argo CD: out of sync"
+            case .argoDegraded: "Argo CD: failed"
+            case .argoOutOfSync: "Argo CD: drifted or stuck"
             }
         }
     }
@@ -91,6 +92,11 @@ enum KubeHealth {
         var subject: Subject
         /// A plain sentence: `container web has no readiness probe`.
         var sentence: String
+        /// A Flux object's K601 that the GitOps section calls Failed: its
+        /// own Ready False — not a generation it hasn't looked at yet
+        /// (Progressing, then Unknown), nor a source or dependency that
+        /// isn't ready (Blocked). What the health card's GitOps line counts.
+        var fluxFailing = false
 
         var id: String { [check.code, subject.namespace ?? "", subject.kind, subject.name, sentence].joined(separator: "\u{0}") }
         var severity: Severity { check.severity }
@@ -206,14 +212,15 @@ enum KubeHealth {
                 found.append(Finding(check: .hpaAtMax, subject: subject, sentence: "at its maximum: \(current) of \(max) replicas, it can't scale further"))
             }
         case ("argoproj.io", "Application"):
-            let status = object["status"] as? [String: Any] ?? [:]
-            let health = (status["health"] as? [String: Any])?["status"] as? String
-            if let health, ["Degraded", "Missing"].contains(health) {
-                let message = ((status["health"] as? [String: Any])?["message"] as? String).map { ": \($0)" } ?? ""
-                found.append(Finding(check: .argoDegraded, subject: subject, sentence: "Argo CD says it is \(health)\(message)"))
-            }
-            if (status["sync"] as? [String: Any])?["status"] as? String == "OutOfSync" {
-                found.append(Finding(check: .argoOutOfSync, subject: subject, sentence: "Argo CD says it is OutOfSync with its source"))
+            // The section's ladder (gitops.md, 2.3): Failed is K602; Drift
+            // and Stuck K603 — an OutOfSync auto-sync is fixing isn't said.
+            if let summary = KubeGitOpsSummary.object(object, readAt: now) {
+                let verdict = KubeGitOpsLadder.evaluate(summary, now: now)
+                switch verdict.state {
+                case .failed: found.append(Finding(check: .argoDegraded, subject: subject, sentence: "Failed: \(verdict.why)"))
+                case .drift, .stuck: found.append(Finding(check: .argoOutOfSync, subject: subject, sentence: "\(verdict.state.word): \(verdict.why)"))
+                default: break
+                }
             }
         default:
             break
@@ -226,7 +233,11 @@ enum KubeHealth {
                     check: .notReady, subject: subject,
                     sentence: "Flux hasn't looked at its latest change yet (generation \(lag.generation), last looked at \(lag.observed))\(before)"))
         } else if !builtinGroups.contains(group), let ready = readyFalse(object) {
-            found.append(Finding(check: .notReady, subject: subject, sentence: "its Ready condition is False" + (ready.isEmpty ? "" : ": \(ready)")))
+            let blocked = ["DependencyNotReady", "ArtifactFailed"].contains(readyReason(object) ?? "")
+            found.append(
+                Finding(
+                    check: .notReady, subject: subject, sentence: "its Ready condition is False" + (ready.isEmpty ? "" : ": \(ready)"),
+                    fluxFailing: group.hasSuffix(".toolkit.fluxcd.io") && !blocked))
         }
         return found.sorted(by: Finding.ordered)
     }
@@ -322,6 +333,12 @@ enum KubeHealth {
             let observed = KubeRollout.int((object["status"] as? [String: Any])?["observedGeneration"]), observed >= 0, observed < generation
         else { return nil }
         return (generation, observed)
+    }
+
+    /// A `Ready` condition's reason, whatever its status.
+    static func readyReason(_ object: [String: Any]) -> String? {
+        let conditions = (object["status"] as? [String: Any])?["conditions"] as? [[String: Any]] ?? []
+        return conditions.first { $0["type"] as? String == "Ready" }?["reason"] as? String
     }
 
     /// A `Ready` condition False: its reason and message; nil when there is

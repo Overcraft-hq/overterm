@@ -417,8 +417,8 @@ Every kind gets the generic view: the server's Table, and a detail with metadata
 
 | Feature | Lens | Freelens | Ours | How | Stage |
 |---|---|---|---|---|---|
-| Flux dashboard, Sources, Kustomizations, HelmReleases | **Plus** | ext | Generic tables, health from conditions. Suspend, resume and reconcile as annotation patches | Watch / API | 1b / 4 |
-| Argo CD applications, sync, refresh, resource tree | **Plus** | community ext | Generic tables (sync and health are printer columns). The managed tree from `status.resources`. Sync is left to `argocd` in a tab | Watch / Tab | 1b / 3b |
+| Flux dashboard, Sources, Kustomizations, HelmReleases | **Plus** | ext | Generic tables, health from conditions. Suspend, resume and reconcile as annotation patches. One state ladder with Argo CD's (`KubeGitOpsLadder`, gitops.md 2.3) over allow-listed summaries | Watch / API | 1b / 4 / G1 |
+| Argo CD applications, sync, refresh, resource tree | **Plus** | community ext | Generic tables (sync and health are printer columns). The managed tree from `status.resources`. Sync is left to `argocd` in a tab. K602/K603 are the ladder's Failed, and Drift or Stuck | Watch / Tab | 1b / 3b / G1 |
 | Cost per namespace (OpenCost, Kubecost or an estimate) | **Plus** | — | **Out**: it needs cloud prices. Requests against usage is shown instead | — | Out |
 | Security Center (Trivy Operator) | **Plus** | requested | **Out** of the cluster. A pod's image can be scanned on the Docker page (`DockerScout`) | Local | 4 |
 | Teamwork, Cluster Connect | **Plus** | — | **Out**: SaaS, and an agent in the cluster | — | Out |
@@ -1454,7 +1454,7 @@ The first analysis's 11, updated, then new ones. Each has a recommended option.
 21. **Secret values:** one GET when the user asks to see a Secret, which returns every value at once. Values masked until revealed one by one, dropped on navigation, never cached, logged or written. On production the first Show per context and session asks once. Copy is explicit (**recommended**) / no Show on production at all.
 22. **Which kubectl:** the installed copy closest to the server's minor, within ±1, with a setting (global and per context) to override; never downloaded (**recommended**) / always the first on PATH. *Built differently: Section 15, Where the build departs.*
 23. **Cloud sign-in and discovery (EKS, AKS, GKE without a kubeconfig):** left out, kubectl's job; help on errors only (**recommended**) / built-in sign-in.
-24. **GitOps:** generic tables of Argo and Flux resources in stage 1b, trees in stage 3b, verbs in stage 4; sync left to their own CLIs in a tab (**recommended**) / dedicated dashboards.
+24. **GitOps:** generic tables of Argo and Flux resources in stage 1b, trees in stage 3b, verbs in stage 4; sync left to their own CLIs in a tab (**recommended**) / dedicated dashboards. Since taken further as a summary, not a new list (docs/design/kubernetes/gitops.md: G1's summaries and state ladder, K602/K603 through it).
 25. **New: the production classifier:** the default pattern matches `prod`, `prd`, `production` and `live` as a separated word, which covers `…/acme-prod` and `globex-eu-west-1-prod`; overrides in `kubernetes.contexts` (**recommended**) / any substring `prod` / every remote context treated as production.
 26. **New: live proxies:** at most `maxProxies` (4), one kept for the page's context, background proxies evicted first, then the least recently used idle one; oidc logins serialized (**recommended**) / no cap.
 27. **New: shells on production:** allowed after `kubectl auth can-i` and a confirmation once per pod and session; a context can turn shells off (**recommended**) / only on writable contexts.

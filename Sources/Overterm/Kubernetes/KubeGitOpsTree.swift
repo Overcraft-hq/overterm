@@ -46,11 +46,9 @@ enum KubeGitOpsTree {
     }
 
     /// Whether an Application deploys to the cluster it lives in: its
-    /// objects can be opened here only then.
+    /// objects can be opened here only then (`KubeGitOpsSource.inCluster`).
     static func argoInCluster(_ destination: [String: Any]) -> Bool {
-        if let server = destination["server"] as? String, !server.isEmpty { return server == "https://kubernetes.default.svc" }
-        if let name = destination["name"] as? String, !name.isEmpty { return name == "in-cluster" }
-        return true
+        KubeGitOpsSource.inCluster(server: destination["server"] as? String, name: destination["name"] as? String)
     }
 
     /// Said once of an Argo CD 3 Application whose resources carry no health.
@@ -154,15 +152,6 @@ enum KubeGitOpsTree {
         }
     }
 
-    /// An inventory entry's id: `<namespace>_<name>_<group>_<kind>` (no
-    /// Kubernetes name has an underscore); its version beside it.
-    static func inventoryEntry(_ id: String, version: String) -> (kind: String, name: String, namespace: String?, apiVersion: String)? {
-        let parts = id.split(separator: "_", omittingEmptySubsequences: false).map(String.init)
-        guard parts.count == 4, !parts[1].isEmpty, !parts[3].isEmpty else { return nil }
-        let group = parts[2]
-        return (parts[3], parts[1], parts[0].isEmpty ? nil : parts[0], group.isEmpty ? version : "\(group)/\(version)")
-    }
-
     private static func kustomization(_ tree: inout KubeTree, _ object: [String: Any]) {
         let spec = object["spec"] as? [String: Any] ?? [:]
         let status = object["status"] as? [String: Any] ?? [:]
@@ -179,7 +168,7 @@ enum KubeGitOpsTree {
         let entries = (status["inventory"] as? [String: Any])?["entries"] as? [[String: Any]] ?? []
         if entries.count > shownLimit { tree.notes.append("\(entries.count - shownLimit) more objects not drawn — the first \(shownLimit) are.") }
         for entry in entries.prefix(shownLimit) {
-            guard let found = inventoryEntry(entry["id"] as? String ?? "", version: entry["v"] as? String ?? "v1") else { continue }
+            guard let found = KubeGitOpsSource.inventoryEntry(entry["id"] as? String ?? "", version: entry["v"] as? String ?? "v1") else { continue }
             tree.root.children.append(
                 KubeTreeNode(
                     id: "\(id)/manages/\(entry["id"] as? String ?? "")", kind: found.kind, name: found.name, namespace: found.namespace,
