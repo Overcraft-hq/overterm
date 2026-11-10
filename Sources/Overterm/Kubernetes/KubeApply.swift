@@ -402,11 +402,15 @@ enum KubeFieldOwners {
     /// A tool that sets its fields back.
     enum Tool: String, Equatable, Sendable {
         case helm, argoCD, fluxKustomize, fluxHelm
+        /// Only Argo CD 2.x's default tracking label, `app.kubernetes.io/instance`,
+        /// which Helm charts set too (`KubeGitOpsOwner`).
+        case argoCDProbably
 
         var title: String {
             switch self {
             case .helm: "Helm"
             case .argoCD: "Argo CD"
+            case .argoCDProbably: "Argo CD (probably)"
             case .fluxKustomize: "Flux (kustomize-controller)"
             case .fluxHelm: "Flux (helm-controller)"
             }
@@ -417,6 +421,8 @@ enum KubeFieldOwners {
             switch self {
             case .helm: "Helm manages this: its next upgrade sets these fields back."
             case .argoCD: "Argo CD manages this; your change will be reverted."
+            case .argoCDProbably:
+                "Argo CD probably manages this (its app.kubernetes.io/instance label, which Helm charts set too); your change may be reverted."
             case .fluxKustomize: "Flux (kustomize-controller) manages this; your change will be reverted."
             case .fluxHelm: "Flux (helm-controller) manages this; your change will be reverted at its next reconcile."
             }
@@ -533,17 +539,26 @@ enum KubeFieldOwners {
     }
 
     /// The tools whose marks the live object carries — Argo CD's tracking
-    /// label or annotation, Flux's labels, Helm's `managed-by` — even where
-    /// no field of theirs is changed.
+    /// annotation or labels and Flux's labels (`KubeGitOpsOwner`), Helm's
+    /// `managed-by` — even where no field of theirs is changed.
     static func managedBy(_ live: [String: Any]?) -> [Tool] {
         let metadata = live?["metadata"] as? [String: Any] ?? [:]
         let labels = metadata["labels"] as? [String: Any] ?? [:]
         let annotations = metadata["annotations"] as? [String: Any] ?? [:]
         var tools: [Tool] = []
-        if labels["argocd.argoproj.io/instance"] != nil || annotations["argocd.argoproj.io/tracking-id"] != nil { tools.append(.argoCD) }
-        if labels["kustomize.toolkit.fluxcd.io/name"] != nil { tools.append(.fluxKustomize) }
-        if labels["helm.toolkit.fluxcd.io/name"] != nil { tools.append(.fluxHelm) }
-        if (labels["app.kubernetes.io/managed-by"] as? String)?.lowercased() == "helm" || annotations["meta.helm.sh/release-name"] != nil {
+        // Argo CD's own marks, even where they name no Application this
+        // reads (an odd tracking id, an empty instance label): it is Argo's.
+        if annotations[KubeGitOpsOwner.trackingAnnotation] != nil || labels[KubeGitOpsOwner.argoInstanceLabel] != nil { tools.append(.argoCD) }
+        for owner in KubeGitOpsOwner.parse(metadata: metadata) {
+            let tool: Tool =
+                switch owner.tool {
+                case .argoCD: owner.isCertain ? .argoCD : .argoCDProbably
+                case .fluxKustomize: .fluxKustomize
+                case .fluxHelm: .fluxHelm
+                }
+            if !tools.contains(tool), !(tool == .argoCDProbably && tools.contains(.argoCD)) { tools.append(tool) }
+        }
+        if (labels["app.kubernetes.io/managed-by"] as? String)?.lowercased() == "helm" || annotations[KubeGitOpsOwner.helmReleaseAnnotation] != nil {
             if !tools.contains(.fluxHelm) { tools.append(.helm) }
         }
         return tools
@@ -554,6 +569,8 @@ enum KubeFieldOwners {
     static func warnings(_ owners: [Owner], managedBy: [Tool]) -> [String] {
         var tools: [Tool] = []
         for tool in owners.compactMap(\.tool) + managedBy where !tools.contains(tool) { tools.append(tool) }
+        // A field Argo CD's controller owns says it surely.
+        if tools.contains(.argoCD) { tools.removeAll { $0 == .argoCDProbably } }
         return tools.map(\.warning) + owners.map { "Also owned: \($0.said)." }
     }
 }

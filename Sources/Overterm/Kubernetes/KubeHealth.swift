@@ -218,7 +218,14 @@ enum KubeHealth {
         default:
             break
         }
-        if !builtinGroups.contains(group), let ready = readyFalse(object) {
+        if let lag = fluxGenerationLag(object, group: group) {
+            // Flux's Ready is about an older spec: not yet looked at, whatever it says.
+            let before = readyFalse(object).map { $0.isEmpty ? "; its last Ready was False" : "; its last Ready was False: \($0)" } ?? ""
+            found.append(
+                Finding(
+                    check: .notReady, subject: subject,
+                    sentence: "Flux hasn't looked at its latest change yet (generation \(lag.generation), last looked at \(lag.observed))\(before)"))
+        } else if !builtinGroups.contains(group), let ready = readyFalse(object) {
             found.append(Finding(check: .notReady, subject: subject, sentence: "its Ready condition is False" + (ready.isEmpty ? "" : ": \(ready)")))
         }
         return found.sorted(by: Finding.ordered)
@@ -299,6 +306,22 @@ enum KubeHealth {
         let scheduled = (status["conditions"] as? [[String: Any]] ?? []).first { $0["type"] as? String == "PodScheduled" && $0["status"] as? String == "False" }
         let why = (scheduled?["message"] as? String ?? scheduled?["reason"] as? String).map { ": \($0)" } ?? ""
         return Finding(check: .pendingLong, subject: subject, sentence: "Pending for \(KubeAge.format(now.timeIntervalSince(created)))\(why)")
+    }
+
+    /// A Flux object (`*.toolkit.fluxcd.io`) whose `status.observedGeneration`
+    /// is behind `metadata.generation`: its conditions are about an older
+    /// spec — Flux is healthy only with Ready True *and* the two equal. Not
+    /// for other groups (cert-manager keeps `observedGeneration` per
+    /// condition), nor a suspended object (Flux looks at nothing then), nor
+    /// one that says no `observedGeneration`, or Flux's `-1` before its
+    /// first reconcile (not yet reconciled at all — its Ready says so). One read can't time the lag: no "after a minute".
+    static func fluxGenerationLag(_ object: [String: Any], group: String) -> (generation: Int, observed: Int)? {
+        guard group.hasSuffix(".toolkit.fluxcd.io") else { return nil }
+        if (object["spec"] as? [String: Any])?["suspend"] as? Bool == true { return nil }
+        guard let generation = KubeRollout.int((object["metadata"] as? [String: Any])?["generation"]),
+            let observed = KubeRollout.int((object["status"] as? [String: Any])?["observedGeneration"]), observed >= 0, observed < generation
+        else { return nil }
+        return (generation, observed)
     }
 
     /// A `Ready` condition False: its reason and message; nil when there is
@@ -414,7 +437,9 @@ enum KubeHealth {
     /// What of a listed object is kept for the checks: never what may
     /// carry a secret — env values (their names stay), Helm values (a Flux
     /// HelmRelease's, an Argo Application's), kubectl's last-applied copy
-    /// of the whole object, managedFields. Dropped as each list is decoded.
+    /// of the whole object, managedFields, a URL's userinfo (a source's
+    /// `repoURL: https://bot:token@…`, and its status copies), a message's
+    /// quoted manifest (gitops.md, 5.3, step 1). Dropped as each list is decoded.
     static func kept(_ object: [String: Any]) -> [String: Any] {
         var object = object
         if var metadata = object["metadata"] as? [String: Any] {
@@ -426,16 +451,30 @@ enum KubeHealth {
             object["metadata"] = metadata
         }
         if let spec = object["spec"] as? [String: Any] { object["spec"] = scrubbed(spec) }
+        // Argo CD copies the whole source — Helm values, parameters — into
+        // status (`sync.comparedTo`, `history[]`, `operationState`), and an
+        // operation may carry raw manifests: status is scrubbed the same way.
+        if let status = object["status"] as? [String: Any] { object["status"] = scrubbed(status) }
         return object
     }
 
-    private static let secretKeys: Set<String> = ["values", "valuesObject", "valuesFrom", "parameters", "data", "stringData"]
+    /// Keys whose whole value may hold a secret, wherever they are: Helm
+    /// values (both tools'), Argo's parameters, jsonnet's `extVars` and
+    /// `tlas`, every kind of patch, Flux's `postBuild.substitute`, an
+    /// ApplicationSet generator's `elements`, an operation's raw
+    /// `manifests`, a Secret's or ConfigMap's data.
+    static let secretKeys: Set<String> = [
+        "values", "valuesObject", "valuesFrom", "parameters", "fileParameters", "data", "stringData", "extVars", "tlas", "patches",
+        "patchesStrategicMerge", "patchesJson6902", "substitute", "elements", "manifests",
+    ]
 
     private static func scrubbed(_ value: Any) -> Any {
         if let dict = value as? [String: Any] {
             var out: [String: Any] = [:]
             for (key, inner) in dict where !secretKeys.contains(key) {
-                if key == "env", let entries = inner as? [[String: Any]] {
+                if key == "message", let message = inner as? String {
+                    out[key] = withoutUserinfo(cutAtManifest(message))
+                } else if key == "env", let entries = inner as? [[String: Any]] {
                     out[key] = entries.map { entry in
                         var entry = entry
                         if entry["value"] != nil { entry["value"] = "" }
@@ -448,7 +487,36 @@ enum KubeHealth {
             return out
         }
         if let array = value as? [Any] { return array.map(scrubbed) }
+        if let string = value as? String { return withoutUserinfo(string) }
         return value
+    }
+
+    /// Every `scheme://user:token@host` in `text` without its userinfo,
+    /// all of it: a token may have no `:`. A userinfo holds no `/`, `?`
+    /// or `#`, so a later `@` in a path (`…/users/jane@example.com`) stays.
+    static func withoutUserinfo(_ text: String) -> String {
+        guard text.contains("://"), text.contains("@") else { return text }
+        return text.replacingOccurrences(of: #"([A-Za-z][A-Za-z0-9+.-]*://)[^/?#@\s]+@"#, with: "$1", options: .regularExpression)
+    }
+
+    /// A message up to its first line that starts a manifest — trimmed,
+    /// beginning `apiVersion:`, `kind:`, `data:`, `stringData:` or
+    /// `metadata:`, or a `---` marker — then "… manifest omitted": a
+    /// BuildFailed or a sync's error quotes whole YAML, a Secret's too.
+    static func cutAtManifest(_ message: String) -> String {
+        let starts = ["apiVersion:", "kind:", "data:", "stringData:", "metadata:"]
+        var kept: [Substring] = []
+        for line in message.split(separator: "\n", omittingEmptySubsequences: false) {
+            let bare = line.trimmingCharacters(in: .whitespaces)
+            // A list's item too: `- apiVersion: v1`.
+            let item = bare.hasPrefix("- ") ? bare.dropFirst(2).trimmingCharacters(in: .whitespaces) : bare
+            if bare.hasPrefix("---") || starts.contains(where: { item.hasPrefix($0) }) {
+                let before = kept.joined(separator: "\n").trimmingCharacters(in: .whitespacesAndNewlines)
+                return before.isEmpty ? "… manifest omitted" : before + " … manifest omitted"
+            }
+            kept.append(line)
+        }
+        return message
     }
 
     /// What the checks read: each list's objects (in its kind: a list's

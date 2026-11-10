@@ -9,7 +9,9 @@ import XCTest
 /// the rules over fixture objects — containers on a template, not each
 /// pod; restarts within the hour; Pending past a minute; budgets and
 /// autoscalers; a custom resource's Ready; Argo's health; a Service
-/// selecting nothing, an Ingress to a missing Service or port; then
+/// selecting nothing, an Ingress to a missing Service or port; K601's
+/// generation rule on Flux kinds only; what `kept` keeps of Argo CD's and
+/// Flux's objects, a sentinel in every carrier (gitops.md, 8.1); then
 /// against `FakeKubeAPI` on sockets of the tests' own — the Overview's
 /// bounded lists, never a Secret or a ConfigMap; the pinned cards from
 /// rows, read while shown and not after; "Compare with…" through each
@@ -234,6 +236,119 @@ final class KubeHealthTests: XCTestCase {
         ]
         XCTAssertEqual(codes(KubeHealth.object(application)), ["K602", "K603"], "the worst first")
     }
+
+    private static let gitopsSentinel = "s3cr3t-sentinel"
+
+    // MARK: K601: Flux's generation
+
+    func testFluxIsReadyOnlyOnceItLookedAtTheLatestSpec() {
+        func flux(_ group: String, _ kind: String, generation: Int, observed: Int?, ready: String, suspend: Bool = false) -> [String: Any] {
+            var status: [String: Any] = ["conditions": [["type": "Ready", "status": ready, "reason": ready == "True" ? "ReconciliationSucceeded" : "BuildFailed"]]]
+            if let observed { status["observedGeneration"] = observed }
+            return [
+                "apiVersion": "\(group)/v1", "kind": kind, "metadata": ["name": "acme-apps", "namespace": "flux-system", "generation": generation],
+                "spec": ["suspend": suspend], "status": status,
+            ]
+        }
+        let lagging = KubeHealth.object(flux("kustomize.toolkit.fluxcd.io", "Kustomization", generation: 5, observed: 4, ready: "True"))
+        XCTAssertEqual(lagging.map(\.check.code), ["K601"], "Ready True about an older spec")
+        XCTAssertEqual(lagging.first?.sentence, "Flux hasn't looked at its latest change yet (generation 5, last looked at 4)")
+        let failedBefore = KubeHealth.object(flux("helm.toolkit.fluxcd.io", "HelmRelease", generation: 3, observed: 2, ready: "False"))
+        XCTAssertEqual(failedBefore.map(\.check.code), ["K601"], "one finding")
+        XCTAssertEqual(failedBefore.first?.sentence, "Flux hasn't looked at its latest change yet (generation 3, last looked at 2); its last Ready was False: BuildFailed")
+        XCTAssertEqual(KubeHealth.object(flux("kustomize.toolkit.fluxcd.io", "Kustomization", generation: 5, observed: 5, ready: "True")), [])
+        XCTAssertEqual(KubeHealth.object(flux("kustomize.toolkit.fluxcd.io", "Kustomization", generation: 5, observed: 4, ready: "True", suspend: true)), [], "suspended: Flux looks at nothing")
+        XCTAssertEqual(KubeHealth.object(flux("source.toolkit.fluxcd.io", "GitRepository", generation: 2, observed: nil, ready: "True")), [], "no observedGeneration said")
+        XCTAssertEqual(
+            KubeHealth.object(flux("kustomize.toolkit.fluxcd.io", "Kustomization", generation: 1, observed: -1, ready: "True")), [],
+            "Flux's -1 before its first reconcile: left to its Ready")
+        XCTAssertEqual(
+            KubeHealth.object(flux("helm.toolkit.fluxcd.io", "HelmRelease", generation: 1, observed: -1, ready: "False")).map(\.sentence),
+            ["its Ready condition is False: BuildFailed"])
+        XCTAssertEqual(
+            KubeHealth.object(flux("cert-manager.io", "Certificate", generation: 5, observed: 4, ready: "True")), [],
+            "cert-manager keeps it per condition: today's rule")
+        XCTAssertEqual(KubeHealth.object(flux("cert-manager.io", "Certificate", generation: 5, observed: 4, ready: "False")).map(\.check.code), ["K601"])
+    }
+
+    // MARK: What the Overview keeps
+
+    /// The sentinel in every carrier Argo CD and Flux have — spec and the
+    /// copies Argo keeps in status — is never in what is kept.
+    func testWhatIsKeptOfAGitOpsObjectHoldsNoValueOrManifest() {
+        let s = Self.gitopsSentinel
+        let source: [String: Any] = [
+            "repoURL": "https://bot:\(s)@git.acme.example/acme/shop.git", "path": "deploy",
+            "helm": ["values": "password: \(s)", "valuesObject": ["password": s], "parameters": [["name": "pw", "value": s]], "fileParameters": [["name": s, "path": s]]],
+            "directory": ["jsonnet": ["extVars": [["name": "pw", "value": s]], "tlas": [["name": "pw", "value": s]]]],
+            "plugin": ["env": [["name": "PW", "value": s]]],
+            "kustomize": ["patches": [["patch": "value: \(s)"]]],
+        ]
+        let application: [String: Any] = [
+            "apiVersion": "argoproj.io/v1alpha1", "kind": "Application",
+            "metadata": [
+                "name": "acme-shop-prod", "namespace": "argocd",
+                "annotations": ["kubectl.kubernetes.io/last-applied-configuration": "{\"pw\":\"\(s)\"}"],
+                "managedFields": [["manager": s]],
+            ],
+            "spec": ["source": source, "destination": ["namespace": "shop"]],
+            "status": [
+                "sync": ["status": "OutOfSync", "revision": "a77b0d1", "comparedTo": ["source": source]],
+                "history": [["revision": "a77b0d1", "source": source]],
+                "health": ["status": "Degraded", "message": "Deployment shop-api: progress deadline exceeded"],
+                "conditions": [["type": "ComparisonError", "message": "rpc error: fetching https://\(s)@git.acme.example/acme/shop.git failed"]],
+                "operationState": [
+                    "phase": "Failed",
+                    "message": "one or more objects failed to apply:\n  apiVersion: v1\n  kind: Secret\n  data:\n    pw: \(s)",
+                    "operation": ["sync": ["source": source, "manifests": ["kind: Secret\nstringData:\n  pw: \(s)"]]],
+                    "syncResult": ["revision": "a77b0d1", "source": source],
+                ],
+            ],
+        ]
+        let appSet: [String: Any] = [
+            "apiVersion": "argoproj.io/v1alpha1", "kind": "ApplicationSet", "metadata": ["name": "acme-envs", "namespace": "argocd"],
+            "spec": ["generators": [["list": ["elements": [["env": "prod", "pw": s]]]]], "template": ["spec": ["source": source]]],
+        ]
+        let kustomization: [String: Any] = [
+            "apiVersion": "kustomize.toolkit.fluxcd.io/v1", "kind": "Kustomization", "metadata": ["name": "acme-apps", "namespace": "flux-system"],
+            "spec": [
+                "path": "./deploy", "patches": [["patch": "value: \(s)"]], "patchesStrategicMerge": [["pw": s]], "patchesJson6902": [["pw": s]],
+                "postBuild": ["substitute": ["PW": s], "substituteFrom": [["kind": "Secret", "name": "acme-vars"]]],
+            ],
+            "status": [
+                "conditions": [
+                    ["type": "Ready", "status": "False", "reason": "BuildFailed", "message": "kustomize build failed:\n---\nkind: Secret\nstringData:\n  pw: \(s)"]
+                ]
+            ],
+        ]
+        let release: [String: Any] = [
+            "apiVersion": "helm.toolkit.fluxcd.io/v2", "kind": "HelmRelease", "metadata": ["name": "acme-payments", "namespace": "flux-system"],
+            "spec": ["values": ["pw": s], "valuesFrom": [["kind": "Secret", "name": s]]],
+        ]
+        let kept = [application, appSet, kustomization, release].map(KubeHealth.kept)
+        let text = String(decoding: try! JSONSerialization.data(withJSONObject: kept, options: .withoutEscapingSlashes), as: UTF8.self)
+        XCTAssertFalse(text.contains(s), text)
+        XCTAssertTrue(text.contains("acme-vars"), "a Secret's name named only, and kept")
+        XCTAssertTrue(text.contains("progress deadline exceeded"), "what the checks read stays")
+        XCTAssertTrue(text.contains("https://git.acme.example/acme/shop.git"), "the URL kept, its userinfo not")
+        XCTAssertTrue(text.contains("one or more objects failed to apply: … manifest omitted"), text)
+        XCTAssertEqual(
+            KubeHealth.object(kept[2]).first?.sentence, "its Ready condition is False: BuildFailed — kustomize build failed: … manifest omitted",
+            "the Overview's sentence quotes no manifest")
+        XCTAssertEqual(KubeHealth.object(kept[0]).map(\.check.code), ["K602", "K603"], "the checks still see status")
+    }
+
+    func testAMessageIsCutAtItsFirstManifestLineAndAURLLosesItsUserinfo() {
+        XCTAssertEqual(KubeHealth.cutAtManifest("sync failed"), "sync failed")
+        XCTAssertEqual(KubeHealth.cutAtManifest("error:\n- apiVersion: v1\n  kind: Secret"), "error: … manifest omitted", "a list's item")
+        XCTAssertEqual(KubeHealth.cutAtManifest("metadata: x"), "… manifest omitted")
+        XCTAssertEqual(KubeHealth.cutAtManifest("first\nsecond\n--- \nkind: ConfigMap"), "first\nsecond … manifest omitted")
+        XCTAssertEqual(KubeHealth.withoutUserinfo("https://bot:tok@git.acme.example/x"), "https://git.acme.example/x")
+        XCTAssertEqual(KubeHealth.withoutUserinfo("a https://tok@h/x and oci://u:p@r/c"), "a https://h/x and oci://r/c", "a token with no colon, and every URL")
+        XCTAssertEqual(KubeHealth.withoutUserinfo("http://api:8080/users/jane@example.com"), "http://api:8080/users/jane@example.com", "an @ in the path")
+        XCTAssertEqual(KubeHealth.withoutUserinfo("git@git.acme.example:acme/shop"), "git@git.acme.example:acme/shop", "scp form: a user, no secret")
+    }
+
 
     // MARK: What needs another object
 
