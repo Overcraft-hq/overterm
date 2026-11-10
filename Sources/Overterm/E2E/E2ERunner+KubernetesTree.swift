@@ -190,6 +190,24 @@ extension E2ERunner {
                     ],
                 ],
             ])
+        // Argo CD 3, multi-source: `revisions[]`, no resource health in
+        // the Application (`resourceHealthSource: appTree`).
+        fake.add(
+            "applications.argoproj.io", "tree-api", namespace: "shop",
+            fields: [
+                "spec": [
+                    "destination": ["server": "https://kubernetes.default.svc", "namespace": "shop"],
+                    "sources": [
+                        ["repoURL": "oci://ghcr.io/acme/charts", "chart": "api", "targetRevision": "1.4.2"],
+                        ["repoURL": "https://git.acme.example/shop-values.git", "targetRevision": "main", "ref": "values"],
+                    ],
+                ],
+                "status": [
+                    "sync": ["status": "Synced", "revision": "", "revisions": ["1.4.2", "77e1a02c03f9aa51e8ad0"]], "health": ["status": "Healthy"],
+                    "resourceHealthSource": "appTree",
+                    "resources": [["group": "apps", "version": "v1", "kind": "Deployment", "namespace": "shop", "name": "tree-web", "status": "Synced"]],
+                ],
+            ])
         fake.add(
             "kustomizations.kustomize.toolkit.fluxcd.io", "tree-shop", namespace: "shop",
             fields: [
@@ -253,6 +271,22 @@ extension E2ERunner {
             check("a managed object opens", page.treeVerbs(for: managed).first?.title == "Open")
         }
         check("drawn", await shownText(15) { $0.contains("git.acme.example/shop.git") } != nil)
+
+        page.open(KubeObjectRef(context: "fake-dev", kind: applications, namespace: "shop", name: "tree-api"), from: .list)
+        page.showTab(.overview)
+        check(
+            "an Argo CD 3 multi-source Application's tree",
+            await eventually(15) { page.detail?.ref.name == "tree-api" && page.detail?.tree?.state == .loaded })
+        let multi = page.detail?.tree?.tree
+        check(
+            "each source its own revision",
+            multi?.root.children.filter { $0.relation == .source }.map { $0.status ?? "-" } == ["1.4.2", "77e1a02c03f9"],
+            "\(multi?.root.children.map { "\($0.name) \($0.status ?? "-")" } ?? [])")
+        check(
+            "its objects by sync alone, never unknown",
+            multi?.root.children.filter { $0.relation == .manages }.map(\.health) == [.dim] && multi?.notes.contains(KubeGitOpsTree.appTreeNote) == true,
+            "\(multi?.notes ?? [])")
+        check("Argo CD 3's health said", await shownText(15) { $0.contains("Argo CD 3 keeps each resource's health outside the Application") } != nil)
 
         page.open(KubeObjectRef(context: "fake-dev", kind: kustomizations, namespace: "shop", name: "tree-shop"), from: .list)
         page.showTab(.overview)

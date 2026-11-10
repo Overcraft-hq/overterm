@@ -53,6 +53,13 @@ enum KubeGitOpsTree {
         return true
     }
 
+    /// Said once of an Argo CD 3 Application whose resources carry no health.
+    static let appTreeNote = "Argo CD 3 keeps each resource's health outside the Application: its objects are shown by sync alone."
+
+    /// `status.resourceHealthSource: appTree` — Argo CD 3's default: each
+    /// resource's health isn't in `status.resources`.
+    static func isHealthElsewhere(_ status: [String: Any]) -> Bool { status["resourceHealthSource"] as? String == "appTree" }
+
     private static func argo(_ tree: inout KubeTree, _ object: [String: Any]) {
         let spec = object["spec"] as? [String: Any] ?? [:]
         let status = object["status"] as? [String: Any] ?? [:]
@@ -64,16 +71,15 @@ enum KubeGitOpsTree {
         tree.root.health = mark
         tree.root.status = [sync, health].compactMap { $0 }.joined(separator: " · ").nilIfEmpty
         let id = tree.root.id
-        let sources = (spec["sources"] as? [[String: Any]]) ?? (spec["source"] as? [String: Any]).map { [$0] } ?? []
-        for (index, source) in sources.enumerated() {
-            let repo = source["repoURL"] as? String ?? ""
-            let place = [source["chart"] as? String, source["path"] as? String].compactMap { $0 }.first
-            let revision = source["targetRevision"] as? String
+        // A multi-source Application says `revisions[]`, one per source.
+        let synced = status["sync"] as? [String: Any]
+        for (index, source) in KubeGitOpsSource.all(in: spec).enumerated() {
             tree.root.children.append(
                 KubeTreeNode(
-                    id: "\(id)/source/\(index)", kind: "Repository", name: repo, namespace: nil, apiVersion: nil, relation: .source,
-                    how: [place, revision.map { "@ \($0)" }].compactMap { $0 }.joined(separator: " ").nilIfEmpty, health: .dim,
-                    status: (status["sync"] as? [String: Any])?["revision"].flatMap { ($0 as? String).map { String($0.prefix(12)) } }))
+                    id: "\(id)/source/\(index)", kind: "Repository", name: source.repoURL, namespace: nil, apiVersion: nil, relation: .source,
+                    how: [source.place, source.targetRevision.map { "@ \($0)" }, source.ref.map { "ref \($0)" }].compactMap { $0 }.joined(separator: " ")
+                        .nilIfEmpty, health: .dim,
+                    status: KubeGitOpsSource.revision(synced, source: index).map { String($0.prefix(12)) }))
         }
         let destination = spec["destination"] as? [String: Any] ?? [:]
         let here = argoInCluster(destination)
@@ -82,6 +88,11 @@ enum KubeGitOpsTree {
             tree.notes.append("It deploys to another cluster (\(said)): its objects are listed as Argo CD says them, not opened here.")
         }
         let resources = status["resources"] as? [[String: Any]] ?? []
+        // Argo CD 3 keeps each resource's health in its tree, not the
+        // Application, unless `controller.resource.health.persist` is set:
+        // the children are drawn by sync alone, never as unknown.
+        let healthElsewhere = isHealthElsewhere(status)
+        if healthElsewhere, !resources.isEmpty { tree.notes.append(appTreeNote) }
         if resources.count > shownLimit { tree.notes.append("\(resources.count - shownLimit) more objects not drawn — the first \(shownLimit) are.") }
         for resource in resources.prefix(shownLimit) {
             let group = resource["group"] as? String ?? ""
@@ -89,7 +100,7 @@ enum KubeGitOpsTree {
             let kind = resource["kind"] as? String ?? ""
             let name = resource["name"] as? String ?? ""
             let namespace = (resource["namespace"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-            let health = (resource["health"] as? [String: Any])?["status"] as? String
+            let health = healthElsewhere ? nil : (resource["health"] as? [String: Any])?["status"] as? String
             let sync = resource["status"] as? String
             var mark = argoHealth(health)
             if sync == "OutOfSync", !mark.isProblem { mark = .waiting }

@@ -4812,7 +4812,22 @@ Overview has its tree (`x` on its row opens the Overview scrolled to it):
   remote case: said, its objects listed without a link — no verb reaches
   this cluster's same-named object — and a HelmRelease's labels not read
   here. An Application and a
-  Kustomization read nothing but their own object.
+  Kustomization read nothing but their own object. A multi-source
+  Application's `revisions[]` (and `source`/`sources`, `sourceType(s)`,
+  in `sync`, `syncResult` and `history[]` alike) are read by one reader,
+  `KubeGitOpsSource` (pure), so neither form comes back empty; Argo CD 3,
+  which keeps each resource's health outside the Application
+  (`status.resourceHealthSource: appTree`), is said once and its objects
+  drawn by sync alone, never as unknown. Who deploys an object, from its
+  marks alone, is `KubeGitOpsOwner` (pure): the tracking-id annotation
+  (`<appNamespace>_<app>` for apps in any namespace),
+  `argocd.argoproj.io/instance`, Argo CD 2.x's default
+  `app.kubernetes.io/instance` as "probably" (Helm sets it too; not with
+  Helm's release annotation or Flux's labels), and Flux's name and
+  namespace labels; the apply's warnings take it
+  (`KubeFieldOwners.managedBy`, `.argoCDProbably`; an Argo mark that
+  names no app — an odd tracking id, an empty label — still says Argo CD
+  surely).
 
 Read once when the Overview shows (`KubeDetailSession.showTree`, asked for
 once the object is read; Refresh again), each list in the object's
@@ -4856,7 +4871,11 @@ allowing no disruption of the pods it covers (K401), an HPA at its maximum
 (K402); a container restarted in the last hour (its last termination's
 `finishedAt`, else when it ran again; K501), a pod Pending past a minute
 with the scheduler's word (K502); a custom resource — any group Kubernetes
-doesn't serve itself — whose `Ready` is False (K601: Flux, cert-manager…),
+doesn't serve itself — whose `Ready` is False (K601: Flux, cert-manager…;
+a Flux kind whose `status.observedGeneration` is behind
+`metadata.generation` is "not yet looked at", whatever its Ready says,
+unless suspended or Flux's `-1` before a first reconcile — `KubeHealth.fluxGenerationLag`, Flux's groups only,
+since cert-manager keeps it per condition),
 an Argo CD Application Degraded or Missing, or OutOfSync (K602, K603). Two
 places, read-only:
 
@@ -4872,7 +4891,11 @@ places, read-only:
   "nothing extra is read"), never a Secret or a ConfigMap, no watch;
   decoded and checked off the main thread (`KubeBlocking`), what may carry
   a secret dropped as each list is decoded (`KubeHealth.kept`: env values,
-  Helm values, the last-applied copy, managedFields); a list cut or refused said
+  Helm values, Argo's parameters, jsonnet's `extVars`/`tlas`, every patch,
+  Flux's `postBuild.substitute`, generator `elements`, an operation's raw
+  `manifests` — in `spec` and `status` alike, since Argo copies the whole
+  source into `status` —, a URL's userinfo in any string, a message from
+  its first manifest line on, the last-applied copy, managedFields); a list cut or refused said
   (`Report.notes`), and a Service's selection not judged from a cut pod
   list. Refresh reads again; hidden, what was read goes. The count sits by
   the header (`KubeHealthCount`), the findings by check under the usage,

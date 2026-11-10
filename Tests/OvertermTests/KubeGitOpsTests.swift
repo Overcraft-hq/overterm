@@ -12,6 +12,10 @@ import XCTest
 /// (production, read-only until its switch), all fictional: the access
 /// review, the read, the confirmation naming the context and namespace,
 /// then the patch, which the fake applies; refused, nothing is sent.
+/// And what their objects say, read right (docs/design/kubernetes/
+/// gitops.md, 1.1, G0a): `revision(s)`/`source(s)` by one reader, Argo CD
+/// 3's `appTree` tree, the owner an object's marks name and the apply's
+/// warnings from them.
 final class KubeGitOpsTests: XCTestCase {
     static func crd(_ group: String, _ resource: String, _ kind: String, version: String = "v1") -> KubeResourceKind {
         KubeResourceKind(
@@ -226,6 +230,156 @@ final class KubeGitOpsTests: XCTestCase {
         XCTAssertEqual(sync.typedName, "shop")
         XCTAssertTrue(sync.detail.contains("argocd app sync shop --app-namespace argocd --core --kube-context fake-prod"), sync.detail)
         XCTAssertEqual(KubeWriteOutcome.done(.refresh, Self.ref(Self.applications)), "Asked Argo CD to refresh application argocd/shop in kind-fake: it compares it with its source again.")
+    }
+
+    private static func data(_ object: [String: Any]) -> Data { try! JSONSerialization.data(withJSONObject: object) }
+
+    // MARK: Revisions and sources
+
+    func testOneReaderForBothFormsOfRevisionsAndSources() {
+        XCTAssertEqual(KubeGitOpsSource.revisions(["revision": "a77b0d1"]), ["a77b0d1"])
+        XCTAssertEqual(KubeGitOpsSource.revisions(["revision": "", "revisions": ["a77b0d1", "1.4.2"]]), ["a77b0d1", "1.4.2"], "multi-source: the plural")
+        XCTAssertEqual(KubeGitOpsSource.revisions(["revision": ""]), [], "nothing fetched yet")
+        XCTAssertEqual(KubeGitOpsSource.revisions(nil), [])
+        XCTAssertEqual(KubeGitOpsSource.revision(["revisions": ["a77b0d1", "", "1.4.2"]], source: 1), nil, "a source with nothing yet keeps its index")
+        XCTAssertEqual(KubeGitOpsSource.revision(["revisions": ["a77b0d1", "", "1.4.2"]], source: 2), "1.4.2")
+        XCTAssertEqual(KubeGitOpsSource.revision(["revision": "a77b0d1"], source: 0), "a77b0d1")
+        XCTAssertNil(KubeGitOpsSource.revision(["revision": "a77b0d1"], source: 1))
+        XCTAssertEqual(KubeGitOpsSource.sourceTypes(["sourceType": "Helm"]), ["Helm"])
+        XCTAssertEqual(KubeGitOpsSource.sourceTypes(["sourceTypes": ["Helm", "Directory"]]), ["Helm", "Directory"])
+
+        let multi: [String: Any] = [
+            "sources": [
+                ["repoURL": "oci://ghcr.io/acme/charts", "chart": "api", "targetRevision": "1.4.2"],
+                ["repoURL": "git@git.acme.example:acme/shop", "targetRevision": "main", "ref": "values"],
+            ]
+        ]
+        let sources = KubeGitOpsSource.all(in: multi)
+        XCTAssertEqual(sources.map(\.repoURL), ["oci://ghcr.io/acme/charts", "git@git.acme.example:acme/shop"])
+        XCTAssertEqual(sources.map(\.place), ["api", nil])
+        XCTAssertEqual(sources.map(\.ref), [nil, "values"])
+        XCTAssertEqual(KubeGitOpsSource.all(in: ["source": ["repoURL": "https://git.acme.example/acme/shop.git", "path": "deploy"]]).map(\.path), ["deploy"])
+        XCTAssertEqual(KubeGitOpsSource.all(in: [:]), [])
+
+        // What is applied (history, else the operation) and what git has now.
+        let status: [String: Any] = [
+            "sync": ["status": "OutOfSync", "revisions": ["77e1a02", "1.4.2"]],
+            "history": [["revisions": ["0000001", "1.4.1"]], ["revisions": ["5d0c1e2", "1.4.2"]]],
+            "operationState": ["phase": "Succeeded", "syncResult": ["revisions": ["5d0c1e2", "1.4.2"]]],
+        ]
+        XCTAssertEqual(KubeGitOpsSource.applied(status), ["5d0c1e2", "1.4.2"], "history's last entry")
+        XCTAssertEqual(KubeGitOpsSource.wanted(status), ["77e1a02", "1.4.2"])
+        XCTAssertEqual(
+            KubeGitOpsSource.applied(["operationState": ["syncResult": ["revision": "5d0c1e2"]]]), ["5d0c1e2"], "no history yet: the operation's")
+    }
+
+    // MARK: The tree
+
+    func testAMultiSourceArgoCD3ApplicationsTree() {
+        let app: [String: Any] = [
+            "kind": "Application", "apiVersion": "argoproj.io/v1alpha1", "metadata": ["name": "acme-api", "namespace": "team-a"],
+            "spec": [
+                "sources": [
+                    ["repoURL": "oci://ghcr.io/acme/charts", "chart": "api", "targetRevision": "1.4.2"],
+                    ["repoURL": "git@git.acme.example:acme/shop", "targetRevision": "main", "ref": "values"],
+                ],
+                "destination": ["server": "https://kubernetes.default.svc", "namespace": "shop"],
+            ],
+            "status": [
+                "sync": ["status": "Synced", "revision": "", "revisions": ["1.4.2", "77e1a02c03f9aa51e8ad0"]],
+                "health": ["status": "Healthy"],
+                "resourceHealthSource": "appTree",
+                "resources": [
+                    ["group": "apps", "version": "v1", "kind": "Deployment", "namespace": "shop", "name": "api", "status": "Synced"],
+                    ["version": "v1", "kind": "Service", "namespace": "shop", "name": "api", "status": "OutOfSync"],
+                ],
+            ],
+        ]
+        let tree = KubeTree.build(.argoApplication, read: KubeTreeRead(root: Self.data(app)))
+        let sources = tree.root.children.filter { $0.relation == .source }
+        XCTAssertEqual(sources.map(\.status), ["1.4.2", "77e1a02c03f9"], "each source its own revision, never empty")
+        XCTAssertEqual(sources.map(\.how), ["api @ 1.4.2", "@ main ref values"])
+        XCTAssertEqual(tree.notes.filter { $0 == KubeGitOpsTree.appTreeNote }.count, 1, "said once")
+        let managed = tree.root.children.filter { $0.relation == .manages }
+        XCTAssertEqual(managed.map(\.health), [.dim, .waiting], "by sync alone: never unknown or unhealthy")
+        XCTAssertEqual(managed.map(\.status), ["Synced", "OutOfSync"])
+
+        // Argo CD 2 (or 3 with the health persisted): each resource's own.
+        var persisted = app
+        var status = app["status"] as! [String: Any]
+        status["resourceHealthSource"] = nil
+        status["resources"] = [["group": "apps", "version": "v1", "kind": "Deployment", "namespace": "shop", "name": "api", "status": "Synced", "health": ["status": "Degraded"]]]
+        persisted["status"] = status
+        let old = KubeTree.build(.argoApplication, read: KubeTreeRead(root: Self.data(persisted)))
+        XCTAssertFalse(old.notes.contains(KubeGitOpsTree.appTreeNote))
+        XCTAssertEqual(old.root.children.filter { $0.relation == .manages }.map(\.health), [.bad])
+    }
+
+    // MARK: Owners
+
+    func testTheOwnerAnObjectsMarksName() {
+        XCTAssertEqual(
+            KubeGitOpsOwner.parse(labels: [:], annotations: ["argocd.argoproj.io/tracking-id": "acme-shop:apps/Deployment:shop/shop-api"]),
+            [KubeGitOpsOwner(tool: .argoCD, name: "acme-shop", namespace: nil, mark: .trackingID)])
+        XCTAssertEqual(
+            KubeGitOpsOwner.tracking("team-a_acme-api:apps/Deployment:shop/api"), KubeGitOpsOwner(tool: .argoCD, name: "acme-api", namespace: "team-a", mark: .trackingID),
+            "an app in any namespace")
+        XCTAssertEqual(KubeGitOpsOwner.tracking(":apps/Deployment:shop/api"), nil)
+        XCTAssertEqual(KubeGitOpsOwner.tracking("no-colon"), nil)
+        XCTAssertEqual(
+            KubeGitOpsOwner.parse(labels: ["argocd.argoproj.io/instance": "acme-shop"], annotations: [:]).map(\.mark), [.argoInstance])
+        let probable = KubeGitOpsOwner.parse(labels: ["app.kubernetes.io/instance": "acme-shop"], annotations: [:])
+        XCTAssertEqual(probable, [KubeGitOpsOwner(tool: .argoCD, name: "acme-shop", namespace: nil, mark: .appInstance)])
+        XCTAssertEqual(probable.first?.isCertain, false)
+        XCTAssertEqual(probable.first?.said, "probably Argo CD Application acme-shop")
+        XCTAssertEqual(
+            KubeGitOpsOwner.parse(labels: ["app.kubernetes.io/instance": "web"], annotations: ["meta.helm.sh/release-name": "web"]), [],
+            "Helm's own install: its instance label names nobody")
+        XCTAssertEqual(
+            KubeGitOpsOwner.parse(
+                labels: ["app.kubernetes.io/instance": "acme-api", "argocd.argoproj.io/instance": "acme-api"],
+                annotations: ["argocd.argoproj.io/tracking-id": "acme-shop:apps/Deployment:shop/api"]
+            ).map(\.mark), [.trackingID], "the surest mark only")
+        let flux = KubeGitOpsOwner.parse(
+            labels: [
+                "kustomize.toolkit.fluxcd.io/name": "acme-apps", "kustomize.toolkit.fluxcd.io/namespace": "flux-system",
+                "helm.toolkit.fluxcd.io/name": "acme-payments", "helm.toolkit.fluxcd.io/namespace": "flux-system", "app.kubernetes.io/instance": "payments",
+            ], annotations: [:])
+        XCTAssertEqual(flux.map(\.said), ["Kustomization flux-system/acme-apps", "HelmRelease flux-system/acme-payments"], "Helm's instance label under Flux names nobody")
+        XCTAssertEqual(
+            KubeGitOpsOwner.parse(metadata: ["labels": ["kustomize.toolkit.fluxcd.io/name": "acme-apps"], "annotations": ["other": 1]]).map(\.tool),
+            [.fluxKustomize])
+    }
+
+    func testTheApplysWarningsTakeTheOwnersMarks() {
+        XCTAssertEqual(KubeFieldOwners.managedBy(["metadata": ["labels": ["app.kubernetes.io/instance": "acme-shop"]]]), [.argoCDProbably])
+        XCTAssertEqual(
+            KubeFieldOwners.managedBy(["metadata": ["annotations": ["argocd.argoproj.io/tracking-id": "acme-shop:apps/Deployment:shop/web"]]]), [.argoCD])
+        XCTAssertEqual(
+            KubeFieldOwners.managedBy([
+                "metadata": ["labels": ["app.kubernetes.io/instance": "web", "app.kubernetes.io/managed-by": "Helm"], "annotations": ["meta.helm.sh/release-name": "web"]]
+            ]), [.helm], "a Helm install")
+        XCTAssertEqual(
+            KubeFieldOwners.warnings([], managedBy: [.argoCDProbably]),
+            ["Argo CD probably manages this (its app.kubernetes.io/instance label, which Helm charts set too); your change may be reverted."])
+        let argoField = KubeFieldOwners.Owner(manager: "argocd-controller", operation: "Apply", fields: [".spec.replicas"])
+        XCTAssertEqual(
+            KubeFieldOwners.warnings([argoField], managedBy: [.argoCDProbably]).first, "Argo CD manages this; your change will be reverted.",
+            "a field Argo CD owns says it surely")
+        XCTAssertEqual(KubeFieldOwners.warnings([argoField], managedBy: [.argoCDProbably]).count, 2, "once, then the field")
+
+        // A tracking id that doesn't parse is still Argo CD's, surely; its instance label then names the app.
+        XCTAssertEqual(
+            KubeGitOpsOwner.parse(labels: ["argocd.argoproj.io/instance": "acme-shop"], annotations: ["argocd.argoproj.io/tracking-id": "no-colon"]),
+            [KubeGitOpsOwner(tool: .argoCD, name: "acme-shop", namespace: nil, mark: .argoInstance)])
+        XCTAssertEqual(
+            KubeFieldOwners.managedBy([
+                "metadata": ["labels": ["app.kubernetes.io/instance": "acme-shop"], "annotations": ["argocd.argoproj.io/tracking-id": ":odd"]]
+            ]), [.argoCD], "an odd tracking id: certain, never only probably")
+        XCTAssertEqual(KubeFieldOwners.managedBy(["metadata": ["labels": ["argocd.argoproj.io/instance": ""]]]), [.argoCD], "an empty instance label")
+        XCTAssertEqual(
+            KubeFieldOwners.warnings([], managedBy: KubeFieldOwners.managedBy(["metadata": ["annotations": ["argocd.argoproj.io/tracking-id": "no-colon"]]])),
+            ["Argo CD manages this; your change will be reverted."])
     }
 }
 
