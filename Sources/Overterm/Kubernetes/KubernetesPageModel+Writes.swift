@@ -26,6 +26,8 @@ struct KubeWriteFacts {
     var gitOps: KubeGitOpsDelete?
     /// What a namespace's GitOps objects take with its delete.
     var gitOpsHeld: KubeNamespaceGitOps?
+    /// What a Flux object's resume on production applies (gitops.md, G0d).
+    var resume: KubeFluxResume?
     /// A resize's changes, against the pod as read after the review.
     var resize: [KubeResize.Change] = []
     /// The context the access review and the reads were made on: the
@@ -422,13 +424,18 @@ extension KubernetesPageModel {
                     }
                 case .pause, .resume, .suspend, .unsuspend, .cordon, .uncordon, .fluxSuspend, .fluxResume:
                     guard let (toggle, on) = verb.toggle else { break }
-                    if toggle.state(of: try await client.spec(ref)) == on {
+                    let read = try await client.spec(ref)
+                    if toggle.state(of: read) == on {
                         // Its access review is the opposite's too.
                         guard toggles, let opposite = verb.opposite else {
                             self?.writeStatus = .failed(toggle.already(on, object))
                             return
                         }
                         facts.verb = opposite
+                    }
+                    // Resuming on production applies whatever its source holds now: said, from the same read.
+                    if facts.verb == .fluxResume, context.isProduction {
+                        facts.resume = await client.fluxResume(read, ref: ref, discovery: discovery)
                     }
                 case .trigger:
                     let job = KubeWrites.manualJobName(ref.name, suffix: suffix())
@@ -513,7 +520,7 @@ extension KubernetesPageModel {
             writeStatus = .failed(Self.writeContextChanged)
             return
         }
-        let rule = KubeWriteCheck.rule(facts.verb, for: context, kind: ref.kind, replicas: facts.to, gitOps: facts.gitOps, held: facts.gitOpsHeld)
+        let rule = KubeWriteCheck.rule(facts.verb, for: context, kind: ref.kind, replicas: facts.to, gitOps: facts.gitOps, held: facts.gitOpsHeld, resume: facts.resume)
         if let refused = rule.refused {
             writeStatus = .failed(refused)
             return

@@ -267,10 +267,11 @@ enum KubeWriteCheck {
 
     /// `replicas`: what a scale would set, for scaling to 0. `gitOps`:
     /// what a GitOps object's delete takes with it, as read after the
-    /// review; `held`: what a namespace's GitOps objects take with it.
+    /// review; `held`: what a namespace's GitOps objects take with it;
+    /// `resume`: what a Flux object's resume on production applies.
     static func rule(
         _ verb: KubeWriteVerb, for context: KubeContext, kind: KubeResourceKind, replicas: Int? = nil, gitOps: KubeGitOpsDelete? = nil,
-        held: KubeNamespaceGitOps? = nil
+        held: KubeNamespaceGitOps? = nil, resume: KubeFluxResume? = nil
     ) -> KubeWriteRule {
         guard offered(verb, on: kind) else {
             return KubeWriteRule(refused: "A \(kind.kind.isEmpty ? kind.resource : kind.kind) has no \(verb.label.lowercased()).")
@@ -291,15 +292,21 @@ enum KubeWriteCheck {
             // triggered Job by deleting it), and asked all the same.
             case .evict, .restart, .resize, .pause, .resume, .trigger, .suspend, .unsuspend, .cordon, .uncordon, .createNamespace: false
             // GitOps' own verbs: each asks its controller for what it does anyway, or is undone by its opposite.
-            case .reconcile, .fluxSuspend, .fluxResume, .refresh: false
+            case .reconcile, .fluxSuspend, .refresh: false
+            // …but a resume on production applies whatever git holds now, pruning with it (gitops.md, G0d).
+            case .fluxResume: production && resume?.prune == true
             }
-        return KubeWriteRule(access: access(verb, on: kind), typedName: typed, warning: warning(verb, kind: kind, gitOps: gitOps, held: held))
+        return KubeWriteRule(
+            access: access(verb, on: kind), typedName: typed, warning: warning(verb, kind: kind, gitOps: gitOps, held: held, resume: production ? resume : nil))
     }
 
     /// A GitOps object's delete always warns: of what was read, else of the
     /// worst case — never nothing.
-    static func warning(_ verb: KubeWriteVerb, kind: KubeResourceKind, gitOps: KubeGitOpsDelete? = nil, held: KubeNamespaceGitOps? = nil) -> String? {
+    static func warning(
+        _ verb: KubeWriteVerb, kind: KubeResourceKind, gitOps: KubeGitOpsDelete? = nil, held: KubeNamespaceGitOps? = nil, resume: KubeFluxResume? = nil
+    ) -> String? {
         switch verb {
+        case .fluxResume where resume != nil: return resume?.said
         case .delete where isNamespace(kind):
             return (["Everything in the namespace is deleted with it."] + [held?.said].compactMap { $0 }).joined(separator: " ")
         case .delete where KubeGitOpsDelete.tool(kind) != nil:
