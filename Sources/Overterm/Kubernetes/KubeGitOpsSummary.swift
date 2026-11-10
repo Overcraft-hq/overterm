@@ -86,17 +86,19 @@ enum KubeGitOpsSummary {
     static func ranked(_ objects: [KubeGitOpsObject], now: Date, stale: Set<KubeGitOpsObject.Tool> = []) -> [KubeGitOpsObject] {
         var peers: KubeGitOpsLadder.Peers = [:]
         for object in objects { peers[object.key] = object }
-        return objects.map { object in
-            var object = object
-            let verdict = KubeGitOpsLadder.evaluate(object, now: now, peers: peers)
-            object.state = verdict.state
-            object.why = verdict.why
-            object.stateSince = verdict.since
-            object.tags = verdict.tags + object.ownTags
-            if stale.contains(object.tool) { object.tags.append(.mayBeStale) }
-            return object
-        }
-        .sorted(by: ordered)
+        return objects.map { evaluated($0, now: now, peers: peers, stale: stale) }.sorted(by: ordered)
+    }
+
+    /// One object put on the ladder against `peers` (its source, chart, dependencies).
+    static func evaluated(_ object: KubeGitOpsObject, now: Date, peers: KubeGitOpsLadder.Peers, stale: Set<KubeGitOpsObject.Tool> = []) -> KubeGitOpsObject {
+        var object = object
+        let verdict = KubeGitOpsLadder.evaluate(object, now: now, peers: peers)
+        object.state = verdict.state
+        object.why = verdict.why
+        object.stateSince = verdict.since
+        object.tags = verdict.tags + object.ownTags
+        if stale.contains(object.tool) { object.tags.append(.mayBeStale) }
+        return object
     }
 
     /// State in display order, then the oldest problem first, then by name.

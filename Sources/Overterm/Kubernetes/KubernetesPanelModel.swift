@@ -20,6 +20,13 @@ import Foundation
 /// slot) says so while the others show, and is followed again after a
 /// wait. The pod picked in the right slot outlives the panel hiding — its
 /// reads follow the slot and the window — and goes when the binding does.
+/// The workloads' rows carry their metadata there, so their Argo CD or
+/// Flux owners are known (`KubeListOptions.owners`); what deploys the
+/// checkout is `gitOps`'s (`KubePanelGitOps`, gitops.md 4), started and
+/// stopped with these follows. Its own follows (at most 4, rows only) take
+/// the rail's to at most 8, all on the background slot — on-screen reads,
+/// not attention watches: none counts against `kubernetes.backgroundWatches`,
+/// and the page takes the slot first when it needs one.
 /// Reads only: every request is a GET.
 @MainActor
 final class KubernetesPanelModel: ObservableObject {
@@ -36,6 +43,8 @@ final class KubernetesPanelModel: ObservableObject {
         var health: String
         var failing: Bool
         var images: [String]
+        /// The Argo CD or Flux objects its marks name (`KubeRow.owners`).
+        var owners: [KubeGitOpsOwner] = []
         var id: String { ref.said }
     }
 
@@ -96,6 +105,12 @@ final class KubernetesPanelModel: ObservableObject {
     @Published private(set) var helmUpgrade: KubeHelmUpgradeSession?
     /// Asked of the window for the upgrade's sheet, its tab and its diff.
     weak var helmHost: KubeHelmUpgradeHost?
+    /// What deploys the checkout: Argo CD's and Flux's objects (gitops.md 4).
+    let gitOps: KubePanelGitOps
+    /// Asked of the window for a GitOps verb: the page's guard path.
+    weak var gitOpsHost: KubeGitOpsPanelHost? {
+        didSet { gitOps.host = gitOpsHost }
+    }
 
     enum SlotTab: String, CaseIterable, Identifiable {
         case logs = "Logs"
@@ -148,9 +163,13 @@ final class KubernetesPanelModel: ObservableObject {
     /// The look-up running for a workload: only its own end clears it.
     private var lookUps: [String: UUID] = [:]
 
-    init(store: KubeBindingStore = .shared, kubernetes: KubernetesModel = .shared) {
+    init(
+        store: KubeBindingStore = .shared, kubernetes: KubernetesModel = .shared, gitOpsCache: KubeGitOpsMatchCache = .shared,
+        gitOpsCheckouts: KubeGitOpsCheckouts = .shared
+    ) {
         self.store = store
         self.kubernetes = kubernetes
+        gitOps = KubePanelGitOps(kubernetes: kubernetes, cache: gitOpsCache, checkouts: gitOpsCheckouts)
         bindingChanges = store.$bindings.dropFirst().sink { [weak self] _ in
             // @Published emits before the value lands.
             DispatchQueue.main.async { self?.bindingMayHaveChanged() }
@@ -170,6 +189,12 @@ final class KubernetesPanelModel: ObservableObject {
     private func bindingMayHaveChanged(force: Bool = false) {
         let now = panelVisible || force ? store.binding(for: checkout) : binding
         guard force || now != binding else { return }
+        // The checkout's own binding edited or removed (not another checkout's
+        // shown): what the rail listed for it is dropped (gitops.md 4.4).
+        if let old = binding, old != now, let checkout, old.checkout == KubeBindingStore.key(checkout) {
+            gitOps.cache.drop(binding: old)
+            if let now { gitOps.cache.drop(binding: now) }
+        }
         binding = now
         if let session = helmUpgrade, session.binding != now || session.checkout != checkout { helmUpgrade = nil }
         // The pod picked stays while the namespace it is in is still the bound one.
@@ -239,6 +264,7 @@ final class KubernetesPanelModel: ObservableObject {
     /// pod stays: its reads follow the slot (`updateSlot`).
     private func stop() {
         generation += 1
+        gitOps.stop()
         for task in follows.values { task.cancel() }
         follows = [:]
         followed = []
@@ -264,6 +290,7 @@ final class KubernetesPanelModel: ObservableObject {
         stop()
         guard panelVisible else { return }
         guard let binding else {
+            gitOps.unbound()
             readGuess()
             return
         }
@@ -296,6 +323,7 @@ final class KubernetesPanelModel: ObservableObject {
         followed = kinds
         following = (binding, context, checkout)
         for kind in kinds { follow(kind, generation: generation) }
+        gitOps.follow(binding, context: context, checkout: checkout, client: client(for: context))
     }
 
     /// One kind followed. What it can't get past (`KubeClient.follow`
@@ -304,7 +332,9 @@ final class KubernetesPanelModel: ObservableObject {
     private func follow(_ kind: KubeResourceKind, generation: Int) {
         guard let following else { return }
         let client = client(for: following.context)
-        let options = KubeListOptions(labelSelector: following.binding.selector)
+        // A workload's rows say who deploys it (its metadata, in this one namespace); a pod's needn't.
+        let workload = kind.fullName != KubeResourceKind.pods.fullName
+        let options = KubeListOptions(labelSelector: following.binding.selector, metadata: workload, owners: workload)
         let scope = KubeScope.namespace(following.binding.namespace)
         let key = kind.fullName
         follows[key]?.cancel()
@@ -406,7 +436,10 @@ final class KubernetesPanelModel: ObservableObject {
                 found.append(Self.workload(workload, row: row, columns: kept.columns))
             }
         }
-        if found != workloads { workloads = found }
+        if found != workloads {
+            workloads = found
+            gitOps.workloadsChanged(found.map { ($0.ref, $0.owners, $0.images) })
+        }
         let kept = rows[KubeResourceKind.pods.fullName] ?? KubeRows()
         let (shown, hidden) = Self.limited(kept.sorted.compactMap { KubePodSummary(row: $0, columns: kept.columns).map(Pod.init) })
         if shown != pods { pods = shown }
@@ -434,18 +467,20 @@ final class KubernetesPanelModel: ObservableObject {
         case .deployment:
             let hint = KubeDeploymentHint(row: row, columns: columns)
             let failing = hint.map { if case .available = $0 { false } else if case .scaledToZero = $0 { false } else { true } } ?? false
-            return Workload(ref: ref, health: hint?.text ?? row.cell("Ready", in: columns)?.text ?? "—", failing: failing, images: images)
+            return Workload(
+                ref: ref, health: hint?.text ?? row.cell("Ready", in: columns)?.text ?? "—", failing: failing, images: images, owners: row.owners)
         case .statefulSet:
             let ready = row.cell("Ready", in: columns)?.text ?? "—"
             let parts = ready.split(separator: "/").compactMap { Int($0) }
             let failing = parts.count == 2 && parts[0] < parts[1]
-            return Workload(ref: ref, health: "\(ready) ready", failing: failing, images: images)
+            return Workload(ref: ref, health: "\(ready) ready", failing: failing, images: images, owners: row.owners)
         case .daemonSet:
             let ready = row.cell("Ready", in: columns).flatMap { Int($0.text) }
             let desired = row.cell("Desired", in: columns).flatMap { Int($0.text) }
             let failing = (ready ?? 0) < (desired ?? 0)
             return Workload(
-                ref: ref, health: "\(ready.map(String.init) ?? "?")/\(desired.map(String.init) ?? "?") ready", failing: failing, images: images)
+                ref: ref, health: "\(ready.map(String.init) ?? "?")/\(desired.map(String.init) ?? "?") ready", failing: failing, images: images,
+                owners: row.owners)
         }
     }
 

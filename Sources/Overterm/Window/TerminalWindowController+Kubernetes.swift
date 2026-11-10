@@ -81,7 +81,13 @@ extension TerminalWindowController {
             showChange: { [weak self] change in self?.showKubernetesChange(change) },
             snippets: { [weak self] in Settings.shared.snippetsEnabled ? self?.snippets.snippets ?? [] : [] },
             fillSnippet: { [weak self] snippet, then in self?.fillKubernetesSnippet(snippet, then) },
-            expandChart: { [weak self] chart in self?.showKubernetesExpandedChart(chart) })
+            expandChart: { [weak self] chart in self?.showKubernetesExpandedChart(chart) },
+            checkouts: { [weak self] in
+                guard let self else { return [] }
+                // The selected tab's first, then the window's others.
+                return ([store.selected] + store.tabs).compactMap { $0?.checkoutSource?.root }
+            },
+            openReview: { [weak self] source, root in self?.openReview(source, in: root) })
     }
 
     /// A Metrics tab's chart alone in the right-hand pane (metrics.md 2.1,
