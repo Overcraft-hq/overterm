@@ -88,12 +88,15 @@ struct KubeWatchDecoder: Sendable {
     let namespace: String?
     /// What is watched, for the kinds whose cells are read with care.
     let kind: KubeResourceKind?
+    /// Whether the rows say who deploys them (`KubeListOptions.owners`).
+    let owners: Bool
     private var lines = DockerLineSplitter()
 
-    init(columns: [KubeColumn], namespace: String?, kind: KubeResourceKind? = nil) {
+    init(columns: [KubeColumn], namespace: String?, kind: KubeResourceKind? = nil, owners: Bool = false) {
         self.columns = columns
         self.namespace = namespace
         self.kind = kind
+        self.owners = owners
     }
 
     /// The events whole in `data` and what came before it.
@@ -119,7 +122,7 @@ struct KubeWatchDecoder: Sendable {
         case "BOOKMARK":
             return [.bookmark(resourceVersion: version ?? "", initialEventsEnd: bookmark(object))]
         case "ADDED", "MODIFIED", "DELETED":
-            let table = try KubeTableReader.read(object, namespace: namespace, columns: columns, kind: kind)
+            let table = try KubeTableReader.read(object, namespace: namespace, columns: columns, kind: kind, owners: owners)
             if object["kind"] as? String == "Table", !table.columns.isEmpty { columns = table.columns }
             return table.rows.map { row in
                 switch type {

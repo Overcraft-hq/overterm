@@ -106,6 +106,7 @@ struct KubernetesPanelView: View {
                             .fixedSize(horizontal: false, vertical: true).padding(.horizontal, 12).padding(.vertical, 2)
                     }
                     deployedLine
+                    KubePanelGitOpsView(gitOps: panel.gitOps, theme: theme)
                     section("Workloads")
                     if panel.workloads.isEmpty { quiet("None here" + (binding.selector.map { " with \($0)" } ?? "")) }
                     ForEach(panel.workloads) { workload in workloadRow(workload) }

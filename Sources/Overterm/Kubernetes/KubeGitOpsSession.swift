@@ -434,6 +434,10 @@ final class KubeGitOpsSession: ObservableObject {
             if let row = rows?[object.ref], let columns = rows?.columns { object.cells = KubeGitOpsSection.cellsKey(row, columns: columns) }
             store.objects[object.key] = object
         }
+        // Where Applications live: where the rail lists them too (gitops.md 4.4).
+        if KubeGitOps.isArgoApplication(kind) {
+            KubeGitOpsMatchCache.shared.saw(applicationsIn: Set(paged.objects.compactMap(\.ref.namespace)), context: store.context)
+        }
         self.store = store
         rank()
         publish()

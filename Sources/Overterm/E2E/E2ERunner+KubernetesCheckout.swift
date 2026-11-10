@@ -24,22 +24,10 @@ extension E2ERunner {
         _ = await eventually(5) { fake.openWatches == 0 }
 
         // The fixture checkout: c1 deployed, c2 on a branch not yet.
-        let repo = scratch.appendingPathComponent("ot-kube-shop", isDirectory: true)
-        try? FileManager.default.removeItem(at: repo)
-        try? FileManager.default.createDirectory(at: repo.appendingPathComponent("k8s"), withIntermediateDirectories: true)
-        let manifest =
-            "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: shop-api\n  namespace: shop\n  labels:\n    app.kubernetes.io/part-of: ot-shop\n"
-        try? manifest.write(to: repo.appendingPathComponent("k8s/api.yaml"), atomically: true, encoding: .utf8)
-        try? await git(["init", "-q", "-b", "main"], in: repo)
-        try? await git(["add", "k8s/api.yaml"], in: repo)
-        try? await git(["commit", "-q", "-m", "shop-api"], in: repo)
-        let c1 = ((try? await Git.run(["rev-parse", "HEAD"], in: repo)) ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
-        try? await git(["checkout", "-q", "-b", "fix/orders"], in: repo)
-        try? "fix\n".write(to: repo.appendingPathComponent("FIX"), atomically: true, encoding: .utf8)
-        try? await git(["add", "FIX"], in: repo)
-        try? await git(["commit", "-q", "-m", "the fix"], in: repo)
-        guard c1.count == 40 else { return check("the fixture checkout is made", false, c1) }
-        let short = String(c1.prefix(7))
+        guard let fixture = await E2EKubeCheckoutFixture.make(in: scratch) else { return check("the fixture checkout is made", false) }
+        let repo = fixture.repo
+        let c1 = fixture.c1
+        let short = fixture.short
 
         let part = ["app.kubernetes.io/part-of": "ot-shop"]
         fake.add(

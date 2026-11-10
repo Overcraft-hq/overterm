@@ -4690,6 +4690,78 @@ default to.
   checkout's agent first, `k8s_get` from its pane in the bound
   namespace, and hidden nothing asked — then shown again, read again.
 
+**What deploys the checkout** (`KubernetesPanelModel+GitOps.swift`:
+`KubePanelGitOps`, `KubeGitOpsMatchCache`, `KubeGitOpsCheckouts`,
+`KubeGitOpsPanelHost`; `KubeGitOpsMatch.swift` (pure); `KubePanelGitOpsView`;
+gitops.md 4, G5). The rail's panel says which Argo CD and Flux objects deploy
+the bound checkout, after the deployed commit, only when there is a match,
+an owner, a problem or Find What Deploys This. Two shapes of repository,
+owners first: **the app repo** — the bound workloads' rows carry their
+metadata in the binding's one namespace (`KubeListOptions.owners`;
+`KubeRow.owners` from Flux's labels, Argo CD's tracking id and instance
+label, no other annotation kept; every other list's rows unchanged), and
+each owner is read by one GET (at most 8 objects with a Flux owner's
+source and chart, 4 MB each); Helm's own `app.kubernetes.io/instance` counts
+only once that Application's `status.resources` names the workload
+(`KubeGitOpsWire.Managed`, names only); a tracking id naming an Application
+the cluster hasn't (a 404, or its kind not served — Argo CD running in
+another cluster: the part says "unserved" and still names it) is said,
+never looked for in another context, while a GET refused or failed, or a
+group discovery couldn't read, is only a problem line, never "not in"
+(`KubeGitOpsMatch.OwnerRead`: present, absent, unreadable); with no
+marks, an Application with the workload's image "probably deploys" it.
+**The config repo** — a source whose URL is one of the checkout's remotes
+(`GitRemoteURL`, read once per checkout through `git remote -v` — again on
+Refresh —, only the normalised value kept; its git, `KubeGitOpsCheckouts.git`,
+runs with `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1` in isolated
+runs and tests, so no developer's `insteadOf` changes a match; never a fetch): an Application's `source(s)[i]`, a Kustomization's
+or HelmRelease's GitRepository (a `chartRef`'s HelmChart's), an
+OCIRepository whose artifact names the repository; its path checked in the
+checkout (`KubeGitOpsPath`: out of it refused, not on this branch said), a
+`ref:` values source the repository only — and what it tracks ("tracks
+main; this branch is fix/orders", `HEAD` the remote's default branch read
+locally). Its reads, every one a GET on the panel's background slot: P0
+discovery (the page's, else one read, cached), P1 the workloads' marks, P2
+the owners' GETs, P3 GitRepositories' rows (their URL column) and
+OCIRepositories' objects (200 or 8 MB), P4 Applications in `argocd`, the
+namespaces the page's section saw them in and the binding's, and
+Kustomizations and HelmReleases only once a Flux source matched (500 objects
+or 64 MB a kind, `pagedObjects`; a cut said "searched 500 of 1,240…"; a 403
+across the cluster read in Flux's namespace and the binding's, no
+ConfigMap; a `chartRef`'s HelmChart by GET, each once, at most 8, the rest
+said), P5 one rows-only follow per kind and namespace holding a match
+(at most 4: the rail's follows go to at most 8, all on-screen reads on the
+background slot, none an attention watch), P6 a match read again when its
+row changes, once every 15 s. **On production P3 and P4 wait for Find What
+Deploys This**, which says what it will list. P3–P4's answer is kept five
+minutes in memory, app-wide, by context, binding and the remotes' set
+(`KubeGitOpsMatchCache`; dropped on Refresh, a binding of the checkout
+edited or removed, a credential failure, at quit); hidden, every read ends
+and only the cache stays. Only the matches are ranked, against everything
+held (merged once a change), not the whole listing at each row flip.
+Refresh shows whenever the part was read, failed or found neither tool,
+and reads everything again — P0 too after it failed. Its buttons — Open on
+Page, Refresh or Reconcile, Sync (or Reconcile with Source) in a Tab…, Ask
+Why on a problem — go through the window (`KubeGitOpsPanelHost`, the page's
+contexts loaded first) to the page's one guard path; the page's outcome is
+said in the rail too. An Argo CD Application's detail, when a tab of the
+window has a checkout of its repository, offers each history entry's diff
+against the one before it (`KubernetesPageModel+GitOpsHistory`): both
+revisions verified as commits there (`KubeGitOpsGitArgs.resolve`), a
+review tab of `git --literal-pathspecs diff a..b -- <its paths>`
+(`ReviewSource.paths`). `KubeGitOpsMatchTests` (pure: every mark, path,
+source and tracking rule), `KubePanelGitOpsTests` (against the fake: the
+owner by one GET, the sources matched and listed only then, production
+unpressed lists nothing — GitRepositories' rows named —, the cache and the
+remotes and P0 read once, a binding change and Refresh reading again, an
+owner refused or unserved never "not in", production with its writes on
+and every rail verb's sheet cancelled sending no non-GET, then one confirmed
+write; no `git fetch`, the developer's config left out; unbound and hidden
+nothing asked, never a Secret),
+`ReviewModelTests` (literal paths) and the `kubernetesCheckoutGitOps`
+scenario (`E2EKubeCheckoutFixture`, the checkout every Kubernetes scenario
+binds) check it.
+
 **Attention marks** (`KubeAttention.swift` (pure),
 `KubeAttentionWatches`, `TerminalWindowController+KubernetesAttention`;
 analysis 3.13, Section 10, decision 9): a failure in a bound namespace
@@ -6411,8 +6483,9 @@ root cause; the brief (`KubeGitOpsDetail.brief`) is the header's words, the
 conditions, Argo CD's operation, failed and out-of-sync resources and
 history, the chain — every word through `Secrets`, shown whole before it is
 sent. What needs a matched checkout (§4.2) comes with the rail's match:
-each history entry opening a review of `git diff a..b -- <path>` (G5),
-and Ask Why's commits between applied and attempted (G6). The brief's
+each history entry opening a review of `git diff a..b -- <path>` (G5,
+What deploys the checkout, above), and Ask Why's commits between applied
+and attempted (G6). The brief's
 chain is followed only where it isn't ready — a summarised link that
 isn't ready or progressing, else what the summaries lack read in
 `readOrder` (the dependency its Ready message names, then its sources),

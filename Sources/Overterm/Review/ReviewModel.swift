@@ -115,6 +115,8 @@ final class ReviewModel: ObservableObject, Identifiable {
                 }
             case .range(let base, let head):
                 list = try await changedFiles(against: ["\(base)...\(head)"])
+            case .paths(let base, let head, let paths):
+                list = try await changedFiles(against: ["\(base)..\(head)"], paths: paths)
             case .commits(let from, let to):
                 let parent = try? await Git.run(["rev-parse", "--verify", "--quiet", "\(from)^1"], in: root)
                 let base = parent.map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.flatMap { $0.isEmpty ? nil : $0 } ?? DiffModel.emptyTree
@@ -150,10 +152,13 @@ final class ReviewModel: ObservableObject, Identifiable {
         }
     }
 
-    /// `git diff --name-status` with `--numstat`'s counts.
-    private func changedFiles(against revisions: [String]) async throws -> [ChangedFile] {
-        var list = GitStatus.parse(nameStatusZ: try await Git.run(["diff", "--name-status", "-z", "-M"] + revisions + ["--"], in: root))
-        let numbers = GitStatus.parse(numstatZ: try await Git.run(["diff", "--numstat", "-z", "-M"] + revisions + ["--"], in: root))
+    /// `git diff --name-status` with `--numstat`'s counts — under `paths`
+    /// only when given, each a literal path (`--literal-pathspecs`).
+    private func changedFiles(against revisions: [String], paths: [String] = []) async throws -> [ChangedFile] {
+        let literal = paths.isEmpty ? [] : [KubeGitOpsGitArgs.literal]
+        var list = GitStatus.parse(
+            nameStatusZ: try await Git.run(literal + ["diff", "--name-status", "-z", "-M"] + revisions + ["--"] + paths, in: root))
+        let numbers = GitStatus.parse(numstatZ: try await Git.run(literal + ["diff", "--numstat", "-z", "-M"] + revisions + ["--"] + paths, in: root))
         for index in list.indices {
             list[index].added = numbers[list[index].path]?.added
             list[index].removed = numbers[list[index].path]?.removed
@@ -212,6 +217,9 @@ final class ReviewModel: ObservableObject, Identifiable {
             return try await Git.run(["diff", "--no-color", "-M", "\(base)...\(head)", "--"] + paths, in: root, outputLimit: limit)
         case .commits(_, let to):
             return try await Git.run(["diff", "--no-color", "-M", commitsBase ?? DiffModel.emptyTree, to, "--"] + paths, in: root, outputLimit: limit)
+        case .paths(let base, let head, _):
+            return try await Git.run(
+                [KubeGitOpsGitArgs.literal, "diff", "--no-color", "-M", "\(base)..\(head)", "--"] + paths, in: root, outputLimit: limit)
         }
     }
 

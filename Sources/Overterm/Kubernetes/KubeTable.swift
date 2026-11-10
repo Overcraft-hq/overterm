@@ -141,6 +141,10 @@ struct KubeRow: Equatable, Sendable, Identifiable {
     /// stuck rollout is in its `Progressing` condition, which no cell says).
     /// Nothing else of the object is kept.
     var conditions: [KubeRowCondition] = []
+    /// The Argo CD or Flux objects its labels and tracking annotation name
+    /// as what deploys it (`KubeGitOpsOwner`) — only where the list asked
+    /// (`KubeListOptions.owners`: the rail's workloads).
+    var owners: [KubeGitOpsOwner] = []
 
     func cell(_ column: String, in columns: [KubeColumn]) -> KubeCell? {
         guard let index = KubeColumn.index(of: column, in: columns), index < cells.count else { return nil }
@@ -176,14 +180,16 @@ enum KubeTableReader {
     /// `columns`: the headers kept from the list, for a watch's later
     /// events, which come without theirs. `kind`: what was listed, for
     /// the kinds whose cells are read with care (`row`).
-    static func read(_ data: Data, namespace: String?, columns: [KubeColumn]? = nil, kind: KubeResourceKind? = nil) throws -> KubeTable {
+    static func read(_ data: Data, namespace: String?, columns: [KubeColumn]? = nil, kind: KubeResourceKind? = nil, owners: Bool = false) throws -> KubeTable {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw Malformed(detail: String(decoding: data.prefix(120), as: UTF8.self))
         }
-        return try read(object, namespace: namespace, columns: columns, kind: kind)
+        return try read(object, namespace: namespace, columns: columns, kind: kind, owners: owners)
     }
 
-    static func read(_ object: [String: Any], namespace: String?, columns kept: [KubeColumn]? = nil, kind: KubeResourceKind? = nil) throws -> KubeTable {
+    static func read(
+        _ object: [String: Any], namespace: String?, columns kept: [KubeColumn]? = nil, kind: KubeResourceKind? = nil, owners: Bool = false
+    ) throws -> KubeTable {
         let metadata = object["metadata"] as? [String: Any] ?? [:]
         let resourceVersion = metadata["resourceVersion"] as? String
         let said = object["kind"] as? String ?? ""
@@ -195,7 +201,7 @@ enum KubeTableReader {
             }
             let rows = (object["rows"] as? [[String: Any]] ?? []).compactMap { row -> KubeRow? in
                 let cells = (row["cells"] as? [Any] ?? []).map { KubeCell(json: $0) }
-                return Self.row(cells, columns: columns, namespace: namespace, object: row["object"] as? [String: Any], kind: kind)
+                return Self.row(cells, columns: columns, namespace: namespace, object: row["object"] as? [String: Any], kind: kind, owners: owners)
             }
             return KubeTable(
                 columns: columns, rows: rows, resourceVersion: resourceVersion, continueToken: (metadata["continue"] as? String).flatMap { $0.isEmpty ? nil : $0 },
@@ -231,7 +237,10 @@ enum KubeTableReader {
     /// (GitRepository, OCIRepository, HelmRepository…) cells lose a URL's
     /// credentials: its URL column is the `spec.url` that can carry
     /// `user:token@`, and its Status, the Ready message, may quote it.
-    static func row(_ cells: [KubeCell], columns: [KubeColumn], namespace: String?, object: [String: Any]? = nil, kind: KubeResourceKind? = nil) -> KubeRow? {
+    /// `owners`: its owners read from its marks too (`KubeRow.owners`).
+    static func row(
+        _ cells: [KubeCell], columns: [KubeColumn], namespace: String?, object: [String: Any]? = nil, kind: KubeResourceKind? = nil, owners: Bool = false
+    ) -> KubeRow? {
         var cells = cells
         if let kind, KubeGitOps.isFluxSource(kind) { cells = withoutCredentials(cells, columns: columns) }
         let nameIndex = KubeColumn.nameIndex(in: columns)
@@ -248,7 +257,9 @@ enum KubeTableReader {
         }
         let labels = (metadata?["labels"] as? [String: Any] ?? [:]).compactMapValues { $0 as? String }.filter { $0.key.hasPrefix(KubeApplications.prefix) }
         let conditions = KubeRowCondition.read((object?["status"] as? [String: Any])?["conditions"])
-        return KubeRow(id: KubeRowID(namespace: rowNamespace, name: name), cells: cells, created: created, labels: labels, conditions: conditions)
+        var row = KubeRow(id: KubeRowID(namespace: rowNamespace, name: name), cells: cells, created: created, labels: labels, conditions: conditions)
+        if owners { row.owners = KubeGitOpsOwner.parse(metadata: metadata) }
+        return row
     }
 
     /// Every text cell without a URL's userinfo: the URL column read as

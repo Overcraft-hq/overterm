@@ -128,7 +128,13 @@ final class KubernetesPanelModelTests: XCTestCase {
         XCTAssertTrue(
             api.requests.contains { $0.path == "/apis/apps/v1/namespaces/shop/deployments" && $0.query["labelSelector"] == "app.kubernetes.io/part-of=shop" },
             "the selector is the server's: \(api.requests.map(\.path))")
-        XCTAssertTrue(api.requests.allSatisfy { $0.query["includeObject"] == nil || $0.query["includeObject"] == "None" }, "rows only")
+        // Rows only — a workload's with its metadata, in this one namespace, for who deploys it (gitops.md 4.2).
+        XCTAssertTrue(
+            api.requests.allSatisfy {
+                $0.query["includeObject"] == nil || $0.query["includeObject"] == "None"
+                    || ($0.query["includeObject"] == "Metadata" && $0.path.hasPrefix("/apis/apps/v1/namespaces/shop/"))
+            }, "rows only: \(api.requests.map { "\($0.path) \($0.query)" })")
+        XCTAssertFalse(api.requests.contains { $0.path.hasSuffix("/pods") && $0.query["includeObject"] == "Metadata" }, "the pods' rows carry nothing")
         try await until(10, "the deployed commit") { panel.deployed["deploy/web"] != nil && panel.deployed["deploy/worker"] != nil }
         XCTAssertEqual(panel.deployed["deploy/web"]?.text, "deployed \(sha.prefix(7)), up to date with main")
         XCTAssertEqual(panel.deployed["deploy/worker"], KubeDeployedAnswer.none)

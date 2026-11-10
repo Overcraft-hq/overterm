@@ -379,7 +379,13 @@ struct KubeGitOpsObject: Equatable, Sendable, Identifiable {
                     KubeGitOpsSource(repoURL: url, path: nil, chart: nil, targetRevision: spec?.ref?.tracks, ref: nil)
                 ]
             }
-            if sourceKind == "HelmChart" { sourceRef = flux(spec?.sourceRef) }
+            if sourceKind == "HelmChart" {
+                sourceRef = flux(spec?.sourceRef)
+                // Its chart: a path in a GitRepository, a name in a Helm repository.
+                if let chart = spec?.chartName, !chart.isEmpty {
+                    sources = [KubeGitOpsSource(repoURL: "", path: nil, chart: chart, targetRevision: nil, ref: nil)]
+                }
+            }
             tracks = spec?.ref?.tracks ?? (sourceKind == "GitRepository" ? "master" : nil)
             if let artifact = status?.artifact {
                 self.artifact = Artifact(revision: artifact.revision, lastUpdateTime: KubeGitOpsTime.date(artifact.lastUpdateTime))

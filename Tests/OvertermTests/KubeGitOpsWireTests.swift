@@ -68,6 +68,10 @@ final class KubeGitOpsWireTests: XCTestCase {
         "DetailOperationState": ["syncResult"],
         "DetailSyncResult": ["resources"],
         "DetailResource": ["group", "version", "kind", "namespace", "name", "status", "requiresPruning", "health"],
+        // The rail's (G5): what an Application manages, by name only.
+        "Managed": ["status"],
+        "ManagedStatus": ["resources"],
+        "ManagedEntry": ["group", "kind", "namespace", "name"],
     ]
 
     /// Never declared, anywhere: what holds a value, a manifest or a copy of the source.

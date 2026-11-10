@@ -9,6 +9,7 @@ extension TerminalWindowController {
     func wireKubernetesPanel() {
         kubernetesPanel.openReview = { [weak self] source, root in self?.openReview(source, in: root) }
         kubernetesPanel.helmHost = self
+        kubernetesPanel.gitOpsHost = self
         kubernetesPanel.showSlot = { [weak self] in self?.showKubernetesSlot() }
         diff.$root
             .combineLatest(store.$selectedID)
@@ -94,4 +95,47 @@ extension TerminalWindowController {
             store.tabs.filter { $0.agent != nil }, selected: store.selected, checkout: { $0.checkoutSource.map { KubeBindingStore.key($0.root) } },
             bound: bound, first: brief.checkout)
     }
+}
+
+// MARK: The rail's GitOps part, through the page's guard path (gitops.md 4.5)
+
+extension TerminalWindowController: KubeGitOpsPanelHost {
+    /// The page's contexts, read when they weren't: `write` and its checks
+    /// find the context there (a few seconds at most, else the page says
+    /// it has no such context).
+    private func kubernetesContextsLoaded() async {
+        let model = kubernetesPage.model
+        guard !model.contextsRead else { return }
+        model.reloadContexts()
+        for _ in 0..<50 where !model.contextsRead { try? await Task.sleep(for: .milliseconds(100)) }
+    }
+
+    func gitOpsWrite(_ verb: KubeWriteVerb, on ref: KubeObjectRef) async {
+        await kubernetesContextsLoaded()
+        kubernetesPage.write(verb, on: ref)
+    }
+
+    func gitOpsTabWrite(_ verb: KubeProcessVerb, on ref: KubeObjectRef) async {
+        await kubernetesContextsLoaded()
+        kubernetesPage.runTabWrite(verb, on: ref)
+    }
+
+    /// The page on the binding's context, the object's list and its detail.
+    func gitOpsOpenOnPage(_ ref: KubeObjectRef) async {
+        await kubernetesContextsLoaded()
+        let model = kubernetesPage.model
+        if model.selectedName != ref.context { model.select(ref.context) }
+        showKubernetesPage()
+        for _ in 0..<100 where model.selectedName != ref.context || model.catalog.kind(fullName: ref.kind.fullName) == nil {
+            try? await Task.sleep(for: .milliseconds(100))
+        }
+        kubernetesPage.openFromOverview(kind: ref.kind.fullName, KubeRowID(namespace: ref.namespace, name: ref.name), from: .gitops)
+    }
+
+    func gitOpsAskWhy(_ ref: KubeObjectRef) async {
+        await kubernetesContextsLoaded()
+        kubernetesPage.askWhy(ref)
+    }
+
+    var gitOpsWriteStatus: AnyPublisher<KubeWriteStatus?, Never> { kubernetesPage.$writeStatus.eraseToAnyPublisher() }
 }

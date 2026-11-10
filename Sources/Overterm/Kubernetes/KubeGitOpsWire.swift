@@ -33,7 +33,8 @@ enum KubeGitOpsWire {
             ("HistoryEntry", HistoryEntry.keys), ("ResourceEntry", ResourceEntry.keys), ("Summary", Summary.keys), ("Inventory", Inventory.keys),
             ("InventoryEntry", InventoryEntry.keys), ("Artifact", Artifact.keys), ("ArtifactMetadata", ArtifactMetadata.keys),
             ("Detail", Detail.keys), ("DetailStatus", DetailStatus.keys), ("DetailOperationState", DetailOperationState.keys),
-            ("DetailSyncResult", DetailSyncResult.keys), ("DetailResource", DetailResource.keys),
+            ("DetailSyncResult", DetailSyncResult.keys), ("DetailResource", DetailResource.keys), ("Managed", Managed.keys),
+            ("ManagedStatus", ManagedStatus.keys), ("ManagedEntry", ManagedEntry.keys),
         ]
         return Dictionary(uniqueKeysWithValues: all)
     }
@@ -207,6 +208,8 @@ enum KubeGitOpsWire {
         var sourceRef: Reference?
         var chartRef: Reference?
         var chart: Chart?
+        /// A HelmChart's `spec.chart`, a word: the chart's path in a GitRepository.
+        var chartName: String?
         var dependsOn: [Reference]?
         var kubeConfig: KubeConfig?
         // Flux's sources
@@ -238,6 +241,7 @@ enum KubeGitOpsWire {
             sourceRef = try? c.decodeIfPresent(Reference.self, forKey: .sourceRef)
             chartRef = try? c.decodeIfPresent(Reference.self, forKey: .chartRef)
             chart = try? c.decodeIfPresent(Chart.self, forKey: .chart)
+            if chart == nil { chartName = try? c.decodeIfPresent(String.self, forKey: .chart) }
             dependsOn = try? c.decodeIfPresent([Reference].self, forKey: .dependsOn)
             kubeConfig = try? c.decodeIfPresent(KubeConfig.self, forKey: .kubeConfig)
             url = (try? c.decodeIfPresent(String.self, forKey: .url)).flatMap { $0.map(GitRemoteURL.withoutUserinfo) }
@@ -800,6 +804,54 @@ enum KubeGitOpsWire {
         enum CodingKeys: String, CodingKey, CaseIterable { case group, version, kind, namespace, name, status, requiresPruning, health }
         static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
     }
+
+    // MARK: The rail's (G5)
+
+    /// What an Application manages, by name only — the rail asks whether it
+    /// names a bound workload, where only Helm's own instance label said so
+    /// (gitops.md 4.2): `status.resources[]`'s group, kind, namespace and
+    /// name, at most `managedKept`; their sync, health and the rest never.
+    struct Managed: Decodable, Sendable, Declared {
+        var status: ManagedStatus?
+
+        enum CodingKeys: String, CodingKey, CaseIterable { case status }
+        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+    }
+
+    struct ManagedStatus: Decodable, Sendable, Declared {
+        var resources: [ManagedEntry] = []
+
+        enum CodingKeys: String, CodingKey, CaseIterable { case resources }
+        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+
+        init(from decoder: Decoder) throws {
+            let c = try decoder.container(keyedBy: CodingKeys.self)
+            guard var list = try? c.nestedUnkeyedContainer(forKey: .resources) else { return }
+            while !list.isAtEnd {
+                if (try? list.decodeNil()) == true { continue }
+                guard resources.count < managedKept, let entry = try? list.decode(ManagedEntry.self) else {
+                    _ = try? list.decode(Skip.self)
+                    continue
+                }
+                resources.append(entry)
+            }
+        }
+    }
+
+    struct ManagedEntry: Decodable, Sendable, Declared, Hashable {
+        var group: String?
+        var kind: String?
+        var namespace: String?
+        var name: String?
+
+        enum CodingKeys: String, CodingKey, CaseIterable { case group, kind, namespace, name }
+        static var keys: [String] { CodingKeys.allCases.map(\.stringValue) }
+    }
+
+    /// The most of an Application's managed resources the rail looks at.
+    static let managedKept = 2000
+
+    static func managed(_ data: Data) throws -> Managed { try JSONDecoder().decode(Managed.self, from: data) }
 
     /// The detail's history entries kept: the last 10.
     static let historyKept = 10

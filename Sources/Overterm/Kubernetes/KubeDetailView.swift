@@ -11,6 +11,8 @@ struct KubeDetailView: View {
     @ObservedObject var page: KubernetesPageModel
     @ObservedObject var session: KubeDetailSession
     @ObservedObject var theme: ChromeTheme
+    /// The window's checkout of an Application's repository, its history read there (G5).
+    @State private var historyCheckout: KubeGitOpsHistoryCheckout?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -329,9 +331,28 @@ struct KubeDetailView: View {
                                 value: entry.revisions.map(KubeGitOpsRevision.shown).joined(separator: " · "), mono: true,
                                 detail: entry.deployedAt.map { "deployed \(KubeAge.format(now.timeIntervalSince($0))) ago" })
                         })
+                    // A checkout of its repository open in the window: each entry's diff against the one before, there.
+                    if let checkout = historyCheckout, detail.history.count > 1 {
+                        HStack(spacing: 8) {
+                            Text(verbatim: "Diff in \(checkout.name):").font(.system(size: 11)).foregroundStyle(theme.text3)
+                            ForEach(0..<(detail.history.count - 1), id: \.self) { index in
+                                let entry = detail.history[index]
+                                Button(entry.revisions.map(KubeGitOpsRevision.shown).first ?? "entry \(index + 1)") {
+                                    page.reviewHistory(detail, entry: index, in: checkout)
+                                }
+                                .buttonStyle(.link)
+                                .font(.system(size: 11, design: .monospaced))
+                                .help("A review tab: what changed under \(checkout.pathspecs.joined(separator: ", ")) since the entry before")
+                                .accessibilityIdentifier("kubernetes.detail.gitops.history.diff.\(index)")
+                            }
+                        }
+                    }
                 }
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("kubernetes.detail.gitops.history")
+                .task(id: detail.object.key.description + "\u{1F}\(detail.history.count)") {
+                    historyCheckout = await page.historyCheckout(detail)
+                }
             }
             if !detail.conditionLines.isEmpty {
                 VStack(alignment: .leading, spacing: 6) {

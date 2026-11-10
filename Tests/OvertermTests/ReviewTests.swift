@@ -257,6 +257,24 @@ final class ReviewModelTests: XCTestCase {
         XCTAssertEqual(model.diffs["a.txt"]?.lines.filter { $0.kind == .removed }.map(\.text), ["two"])
     }
 
+    /// An Argo CD history entry's diff (gitops.md 2.9, G5): only under its
+    /// paths, each a literal name — `:(top)` names a folder, nothing more.
+    func testPathsAreWhatChangedUnderThemOnlyLiterally() async throws {
+        let base = try await sha("main")
+        try FileManager.default.createDirectory(at: repo.appendingPathComponent(":(top)x"), withIntermediateDirectories: true)
+        try write(":(top)x/d.txt", "d\n")
+        try await git(["add", "-A"])
+        try await git(["commit", "-q", "-m", "magic"])
+        let head = try await sha("HEAD")
+        let model = await loaded(.paths(base: base, head: head, paths: [":(top)x"]))
+        XCTAssertEqual(model.phase, .loaded)
+        XCTAssertEqual(model.files.map(\.path), [":(top)x/d.txt"], "the pathspec is a name, not magic for the whole tree")
+        XCTAssertEqual(model.diffs[":(top)x/d.txt"]?.lines.filter { $0.kind == .added }.map(\.text), ["d"])
+        let source = ReviewSource.paths(base: base, head: head, paths: ["deploy/fake-prod"])
+        XCTAssertEqual(source.title, "\(base.prefix(7))..\(head.prefix(7))")
+        XCTAssertEqual(source.subtitle, "\(base.prefix(7)) to \(head.prefix(7)) under deploy/fake-prod")
+    }
+
     func testCommitsAreAgainstTheFirstsParent() async throws {
         let first = try await sha("HEAD~1")
         let second = try await sha("HEAD")

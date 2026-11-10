@@ -91,6 +91,11 @@ struct KubernetesActions {
     /// A Metrics tab's chart alone in the window's right slot (M9): the
     /// page steps aside.
     var expandChart: (KubeExpandedChart) -> Void = { _ in }
+    /// The checkouts open in the window's tabs: where an Argo CD history
+    /// entry's diff is read, when one has the Application's repository.
+    var checkouts: () -> [URL] = { [] }
+    /// A review tab for a range of a checkout (an Argo CD history entry's diff).
+    var openReview: (ReviewSource, URL) -> Void = { _, _ in }
 }
 
 /// The Kubernetes lists' keys (`ResourceKey`), only while the list has the
