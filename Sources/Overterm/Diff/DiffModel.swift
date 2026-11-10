@@ -100,6 +100,12 @@ final class DiffModel: ObservableObject {
     /// The one picked in the pane (`choose`); remembered.
     @Published private(set) var scope: Scope
     @Published private(set) var branch: String?
+    /// HEAD's commit; set only when it moves.
+    @Published private(set) var head: String?
+    /// Bumped when git wrote a remote-tracking ref (a fetch, a push): the
+    /// rail's GitOps answers compared with `origin/<branch>` look again.
+    /// Read from the watchers' paths — no git.
+    @Published private(set) var remoteRefsMoved = 0
     @Published private(set) var diffs: [String: FileDiff] = [:]
     /// Folded or not, by path: how each card started when first shown in
     /// the pane, or how the user left it. Kept while the pane stays on this
@@ -250,6 +256,7 @@ final class DiffModel: ObservableObject {
         folded = [:]
         allFolded = nil
         branch = nil
+        head = nil
         error = nil
         watcher?.stop()
         watcher = nil
@@ -268,11 +275,22 @@ final class DiffModel: ObservableObject {
     /// every change in ~/Library ran a git status that could only fail.
     private func watch(_ url: URL) async {
         guard (try? await Git.run(["rev-parse", "--is-inside-work-tree"], in: url)) != nil, url == root else { return }
-        watcher = DirectoryWatcher(root: url, latency: 0.2) { [weak self] _ in self?.scheduleRefresh() }
+        watcher = DirectoryWatcher(root: url, latency: 0.2) { [weak self] paths in self?.changed(paths) }
         let directories = await Self.gitDirectories(outside: url)
         // The tab may have moved on while git answered.
         guard url == root, !directories.isEmpty else { return }
-        gitWatcher = DirectoryWatcher(roots: directories, latency: 0.2) { [weak self] _ in self?.scheduleRefresh() }
+        gitWatcher = DirectoryWatcher(roots: directories, latency: 0.2) { [weak self] paths in self?.changed(paths) }
+    }
+
+    private func changed(_ paths: [String]) {
+        if paths.contains(where: Self.isRemoteRef) { remoteRefsMoved &+= 1 }
+        scheduleRefresh()
+    }
+
+    /// A directory FSEvents reports (a directory, not a file) that holds
+    /// remote-tracking refs: a fetch writes `refs/remotes/<remote>/<branch>` loose.
+    nonisolated static func isRemoteRef(_ path: String) -> Bool {
+        path.contains("/refs/remotes/") || path.hasSuffix("/refs/remotes")
     }
 
     /// Where git keeps this checkout's state, when that is not inside it: the
@@ -348,7 +366,8 @@ final class DiffModel: ObservableObject {
         let ticket = generation
         do {
             let status = try await Git.run(["status", "--porcelain=v1", "-z", "--untracked-files=all"], in: root)
-            let hasHead = (try? await Git.run(["rev-parse", "--verify", "--quiet", "HEAD"], in: root)) != nil
+            let headCommit = (try? await Git.run(["rev-parse", "--verify", "--quiet", "HEAD"], in: root))?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let hasHead = headCommit != nil
             // HEAD, or the empty tree when there is no commit yet.
             let head = hasHead ? "HEAD" : Self.emptyTree
             let numstat = (try? await Git.run(["diff", "--numstat", "-z", head], in: root)) ?? ""
@@ -371,6 +390,7 @@ final class DiffModel: ObservableObject {
             moreCommits = log.count > Self.maxCommits
             self.comparison = comparison
             branch = branchName
+            if self.head != headCommit { self.head = headCommit }
             error = nil
             if panelVisible {
                 settleFolds()

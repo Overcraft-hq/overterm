@@ -21,6 +21,18 @@ extension TerminalWindowController {
         sidebarPanel.$panel
             .sink { [weak self] panel in DispatchQueue.main.async { self?.updateKubernetesPanelVisibility(panel: panel) } }
             .store(in: &cancellables)
+        // The checkout's git moved (a commit, another branch, a fetch): the
+        // rail's "has this branch reached the cluster" asks its HEAD again
+        // (gitops.md 4.3) — a few local git calls, only while it shows a
+        // match. Only what moved: the diff refreshes at every save, and
+        // republishes these each time, changed or not.
+        diff.$branch.combineLatest(diff.$head, diff.$comparison, diff.$remoteRefsMoved)
+            .map { KubeCheckoutGit(branch: $0, head: $1, comparison: $2, remoteRefsMoved: $3) }
+            .removeDuplicates()
+            .dropFirst()
+            .debounce(for: .milliseconds(500), scheduler: DispatchQueue.main)
+            .sink { [weak self] _ in self?.kubernetesPanel.gitOps.headMayHaveMoved() }
+            .store(in: &cancellables)
         // An agent's `k8s_` call: its pane's tab's checkout, in any window.
         KubeMCP.paneCheckout = { tag in
             for controller in NSApp.windows.compactMap({ $0.windowController as? TerminalWindowController }) {
@@ -132,10 +144,18 @@ extension TerminalWindowController: KubeGitOpsPanelHost {
         kubernetesPage.openFromOverview(kind: ref.kind.fullName, KubeRowID(namespace: ref.namespace, name: ref.name), from: .gitops)
     }
 
-    func gitOpsAskWhy(_ ref: KubeObjectRef) async {
+    func gitOpsAskWhy(_ ref: KubeObjectRef, extra: [AskAgentModel.Part]) async {
         await kubernetesContextsLoaded()
-        kubernetesPage.askWhy(ref)
+        kubernetesPage.askWhy(ref, extra: extra)
     }
 
     var gitOpsWriteStatus: AnyPublisher<KubeWriteStatus?, Never> { kubernetesPage.$writeStatus.eraseToAnyPublisher() }
+}
+
+/// What the diff knows of the checkout's git that the rail's GitOps answers depend on.
+private struct KubeCheckoutGit: Equatable {
+    var branch: String?
+    var head: String?
+    var comparison: DiffModel.BranchComparison?
+    var remoteRefsMoved: Int
 }

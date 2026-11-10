@@ -186,7 +186,10 @@ final class KubePanelGitOpsTests: XCTestCase {
 
     func testTheCacheAndTheRemotesReadOnce() async throws {
         let panel = bound("fake-dev")
-        try await until(15, "matched") { self.match(panel, "Kustomization", "acme-apps")?.whys.count == 2 }
+        // acme-apps matches from its owner's GETs alone; acme-cron only once the lists are in (and kept).
+        try await until(15, "matched") {
+            self.match(panel, "Kustomization", "acme-apps")?.whys.count == 2 && self.match(panel, "Kustomization", "acme-cron") != nil
+        }
         let reads = checkouts.remoteReads[repo.standardizedFileURL.path]
         XCTAssertEqual(reads, 1)
         panel.panelVisible = false
@@ -361,13 +364,164 @@ final class KubePanelGitOpsTests: XCTestCase {
         XCTAssertEqual(match(panel, "Kustomization", "acme-apps")?.tracks, "tracks main; this branch is fix/orders")
         panel.gitOps.refresh()
         try await until(15, "again") { self.gitCalls.calls.filter { $0 == Refs.remoteArguments }.count == 2 }
+        // The remotes, the branches, HEAD, the refs (read, hashed); and 4.3's questions, every one with literal pathspecs.
         let verbs = Set(gitCalls.calls.compactMap(\.first))
-        XCTAssertEqual(verbs, Set([Refs.remoteArguments[0], "symbolic-ref"]), "\(gitCalls.calls)")
+        XCTAssertTrue(verbs.isSubset(of: [Refs.remoteArguments[0], "symbolic-ref", "rev-parse", "for-each-ref", KubeGitOpsGitArgs.literal]), "\(gitCalls.calls)")
+        XCTAssertTrue(gitCalls.calls.contains(KubeGitOpsCheckouts.refsArguments))
+        let literal = Set(gitCalls.calls.filter { $0.first == KubeGitOpsGitArgs.literal }.map { $0.dropFirst().first ?? "" })
+        XCTAssertTrue(literal.isSubset(of: ["rev-parse", "rev-list", "merge-base", "diff", "log"]), "\(literal)")
         panel.panelVisible = false
         // In a unit test the rail's own runner leaves the global and system config out.
         let origins = try await KubeGitOpsCheckouts().git(["config", "--list", "--show-origin"], repo, [0])
         let outside = origins.split(separator: "\n").filter { !$0.hasPrefix("file:.git/config") && !$0.hasPrefix("command line:") }
         XCTAssertEqual(outside, [], "only the repository's own config")
+    }
+
+    // MARK: Has this branch reached the cluster (gitops.md 4.3, 8.2)
+
+    /// Ask Why, recorded: what the rail adds about the checkout.
+    private final class RecordingHost: KubeGitOpsPanelHost {
+        var extras: [String: [AskAgentModel.Part]] = [:]
+        func gitOpsWrite(_ verb: KubeWriteVerb, on ref: KubeObjectRef) async {}
+        func gitOpsTabWrite(_ verb: KubeProcessVerb, on ref: KubeObjectRef) async {}
+        func gitOpsOpenOnPage(_ ref: KubeObjectRef) async {}
+        func gitOpsAskWhy(_ ref: KubeObjectRef, extra: [AskAgentModel.Part]) async { extras[ref.name] = extra }
+        var gitOpsWriteStatus: AnyPublisher<KubeWriteStatus?, Never> { Empty().eraseToAnyPublisher() }
+    }
+
+    private func head() async throws -> String { try await git(["rev-parse", "HEAD"]).trimmingCharacters(in: .whitespacesAndNewlines) }
+
+    /// acme-apps applied main's c1 (its source fetched the same); fix/orders
+    /// one commit ahead under deploy/fake-dev; origin/main at c1 (as a fetch
+    /// left it). acme-cron applied c1 and tried HEAD, which failed.
+    private func flux(applied c1: String, attempted: String) {
+        let ks = "kustomizations.kustomize.toolkit.fluxcd.io"
+        api.setFluxStatus(ks, "acme-apps") { status in
+            status["lastAppliedRevision"] = "main@sha1:\(c1)"
+            status["lastAttemptedRevision"] = "main@sha1:\(c1)"
+        }
+        api.setFluxStatus("gitrepositories.source.toolkit.fluxcd.io", "acme-fleet") { status in
+            status["artifact"] = ["revision": "main@sha1:\(c1)", "lastUpdateTime": FakeKubeAPI.time(Date().addingTimeInterval(-600))]
+        }
+        api.setFluxStatus(ks, "acme-cron") { status in
+            status["lastAppliedRevision"] = "main@sha1:\(c1)"
+            status["lastAttemptedRevision"] = "main@sha1:\(attempted)"
+        }
+    }
+
+    func testTheManifestsLineFromFluxsAppliedRevision() async throws {
+        let c1 = try await head()
+        try await git(["update-ref", "refs/remotes/origin/main", c1])
+        try await git(["checkout", "-q", "-b", "fix/orders"])
+        try "resources:\n  - api.yaml\n".write(to: repo.appendingPathComponent("deploy/fake-dev/kustomization.yaml"), atomically: true, encoding: .utf8)
+        try "kind: ConfigMap\n".write(to: repo.appendingPathComponent("deploy/fake-dev/api.yaml"), atomically: true, encoding: .utf8)
+        try await git(["add", "."])
+        try await git(["commit", "-q", "-m", "the fix, see https://bot:ghp_fake0123456789@git.acme.example/acme/shop"])
+        let c2 = try await head()
+        flux(applied: c1, attempted: c2)
+        let panel = bound("fake-dev")
+        var reviews: [ReviewSource] = []
+        panel.openReview = { source, _ in reviews.append(source) }
+        let host = RecordingHost()
+        panel.gitOpsHost = host
+        try await until(15, "acme-apps' manifests line") { self.match(panel, "Kustomization", "acme-apps")?.reach?.found != nil }
+        let apps = try XCTUnwrap(match(panel, "Kustomization", "acme-apps")?.reach)
+        XCTAssertEqual(apps.deployed.text, "manifests at \(c1.prefix(7)), up to date with origin/main; this branch is 1 commit ahead")
+        XCTAssertEqual(apps.source, "from Flux's applied revision (Kustomization acme-apps, Ready)")
+        XCTAssertNil(apps.attempted)
+        XCTAssertNil(apps.fetched)
+        XCTAssertNil(apps.unchanged, "no change under the path is Argo CD's")
+        XCTAssertEqual(apps.pathspecs, ["deploy/fake-dev"], "api.yaml is under the path already")
+        XCTAssertEqual(apps.changed?.text, "2 files under deploy/fake-dev on this branch")
+        XCTAssertEqual(apps.changed?.review, .paths(base: c1, head: c2, paths: ["deploy/fake-dev/api.yaml", "deploy/fake-dev/kustomization.yaml"]))
+        // Diff Deployed…Current and the changed files open their reviews in the checkout.
+        let appsMatch = try XCTUnwrap(match(panel, "Kustomization", "acme-apps"))
+        panel.gitOps.reviewDeployed(appsMatch)
+        panel.gitOps.reviewChanged(appsMatch)
+        XCTAssertEqual(reviews, [.range(base: c1, head: "HEAD"), .paths(base: c1, head: c2, paths: ["deploy/fake-dev/api.yaml", "deploy/fake-dev/kustomization.yaml"])])
+
+        // Attempted ≠ applied: HEAD tried, and failed.
+        try await until(10, "acme-cron's attempt") { self.match(panel, "Kustomization", "acme-cron")?.reach?.attempted != nil }
+        let cron = try XCTUnwrap(match(panel, "Kustomization", "acme-cron"))
+        let attempted = try XCTUnwrap(cron.reach?.attempted)
+        XCTAssertTrue(attempted.hasPrefix("Flux tried \(c2.prefix(7)) (this branch's HEAD) and failed: BuildFailed: "), attempted)
+        XCTAssertTrue(attempted.hasSuffix("; \(c1.prefix(7)) is still applied"), attempted)
+        XCTAssertFalse(attempted.contains(FakeKubeAPI.gitOpsSentinel), "the quoted Secret omitted")
+        XCTAssertEqual(cron.reach?.range, KubeGitOpsReach.CommitRange(from: c1, to: c2))
+        // Ask Why from the rail: the commits between, scrubbed.
+        panel.gitOps.askWhy(cron)
+        try await until(10, "asked") { host.extras["acme-cron"] != nil }
+        let parts = host.extras["acme-cron"] ?? []
+        let commits = try XCTUnwrap(parts.first { $0.title == "commits" }?.text)
+        XCTAssertTrue(commits.contains("\(c2.prefix(7)) the fix"), commits)
+        XCTAssertFalse(commits.contains("ghp_fake0123456789"), "scrubbed: \(commits)")
+        XCTAssertTrue(parts.contains { $0.title == "checkout" && $0.text.contains("Flux tried") })
+
+        // The HEAD key: nothing changed, no git; a new HEAD, the line again.
+        let runs = panel.gitOps.reachRuns
+        panel.gitOps.headMayHaveMoved()
+        try await Task.sleep(for: .milliseconds(400))
+        XCTAssertEqual(panel.gitOps.reachRuns, runs, "an unchanged HEAD asks nothing again")
+        // A reconcile: Ready → Progressing → Ready, the revisions the same —
+        // watch events that change nothing git reads: no git, the words said again.
+        let ks = "kustomizations.kustomize.toolkit.fluxcd.io"
+        var ready: Any?
+        var offset: TimeInterval = 0
+        panel.gitOps.clock = { Date().addingTimeInterval(offset) }
+        api.setFluxStatus(ks, "acme-apps") { status in
+            ready = status["conditions"]
+            status["conditions"] = [FakeKubeAPI.condition("Ready", "Unknown", "Progressing", "Reconciliation in progress", since: Date())]
+        }
+        try await until(10, "the reconcile seen") {
+            self.match(panel, "Kustomization", "acme-apps")?.reach?.source.hasSuffix("(Kustomization acme-apps, Ready)") == false
+        }
+        XCTAssertEqual(panel.gitOps.reachRuns, runs, "a state that flipped asks git nothing")
+        XCTAssertEqual(match(panel, "Kustomization", "acme-apps")?.reach?.found?.sha, c1, "the answer kept")
+        offset = KubePanelGitOps.refetchEvery + 1
+        api.setFluxStatus(ks, "acme-apps") { status in status["conditions"] = ready }
+        try await until(10, "Ready again") { self.match(panel, "Kustomization", "acme-apps")?.reach?.source.hasSuffix("(Kustomization acme-apps, Ready)") == true }
+        XCTAssertEqual(panel.gitOps.reachRuns, runs, "and back: still no git")
+        panel.gitOps.clock = Date.init
+        try "two\n".write(to: repo.appendingPathComponent("TWO"), atomically: true, encoding: .utf8)
+        try await git(["add", "TWO"])
+        try await git(["commit", "-q", "-m", "two"])
+        panel.gitOps.headMayHaveMoved()
+        try await until(10, "a new HEAD recomputes the manifests line") {
+            self.match(panel, "Kustomization", "acme-apps")?.reach?.deployed.text.hasSuffix("this branch is 2 commits ahead") == true
+        }
+        XCTAssertGreaterThan(panel.gitOps.reachRuns, runs)
+        XCTAssertEqual(match(panel, "Kustomization", "acme-apps")?.reach?.changed?.count, 2, "TWO isn't under the path")
+        panel.panelVisible = false
+    }
+
+    func testAnApplicationsLiveRevisionAndNoChangeUnderItsPath() async throws {
+        let c1 = try await head()
+        // main moves on outside the path; a fetch left origin/main there.
+        try "readme\n".write(to: repo.appendingPathComponent("README"), atomically: true, encoding: .utf8)
+        try await git(["add", "README"])
+        try await git(["commit", "-q", "-m", "readme"])
+        let c2 = try await head()
+        try await git(["update-ref", "refs/remotes/origin/main", c2])
+        api.addApplication(
+            "acme-shop-dev",
+            spec: [
+                "project": "acme", "source": ["repoURL": "https://git.acme.example/acme/shop.git", "path": "deploy/fake-dev", "targetRevision": "main"],
+                "destination": ["server": "https://kubernetes.default.svc", "namespace": "shop"],
+            ],
+            status: [
+                "sync": ["status": "Synced", "revision": c2], "health": ["status": "Healthy"],
+                "history": [["revision": c1, "deployedAt": FakeKubeAPI.time(Date().addingTimeInterval(-600))]],
+            ])
+        let panel = bound("fake-dev")
+        try await until(15, "its line") { self.match(panel, "Application", "acme-shop-dev")?.reach?.unchanged != nil }
+        let reach = try XCTUnwrap(match(panel, "Application", "acme-shop-dev")?.reach)
+        XCTAssertTrue(reach.source.hasPrefix("from Argo CD's synced revision (Application acme-shop-dev, "), reach.source)
+        XCTAssertTrue(reach.deployed.text.hasPrefix("manifests at \(c1.prefix(7)), 1 commit behind origin/main"), reach.deployed.text)
+        XCTAssertEqual(reach.fetched, "git has \(c2.prefix(7)); Argo CD synced \(c1.prefix(7)) (newer than \(c1.prefix(7)))")
+        XCTAssertEqual(reach.unchanged, "no change under deploy/fake-dev since \(c1.prefix(7)) on origin/main")
+        XCTAssertEqual(reach.changed?.text, "no change under deploy/fake-dev on this branch")
+        XCTAssertNil(reach.changed?.review)
+        panel.panelVisible = false
     }
 
     // MARK: Production with its writes on (gitops.md 4.4, 8.2)
@@ -379,13 +533,15 @@ final class KubePanelGitOpsTests: XCTestCase {
         let page: KubernetesPageModel
         var opened: [KubeObjectRef] = []
         var asked: [KubeObjectRef] = []
+        var extras: [String: [AskAgentModel.Part]] = [:]
         init(_ page: KubernetesPageModel) { self.page = page }
         func gitOpsWrite(_ verb: KubeWriteVerb, on ref: KubeObjectRef) async { page.write(verb, on: ref) }
         func gitOpsTabWrite(_ verb: KubeProcessVerb, on ref: KubeObjectRef) async { page.runTabWrite(verb, on: ref) }
         func gitOpsOpenOnPage(_ ref: KubeObjectRef) async { opened.append(ref) }
-        func gitOpsAskWhy(_ ref: KubeObjectRef) async {
+        func gitOpsAskWhy(_ ref: KubeObjectRef, extra: [AskAgentModel.Part]) async {
             asked.append(ref)
-            page.askWhy(ref)
+            extras[ref.name] = extra
+            page.askWhy(ref, extra: extra)
         }
         var gitOpsWriteStatus: AnyPublisher<KubeWriteStatus?, Never> { page.$writeStatus.eraseToAnyPublisher() }
     }

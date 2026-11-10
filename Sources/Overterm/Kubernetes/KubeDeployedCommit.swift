@@ -11,6 +11,10 @@ enum KubeCommitSource: Int, Comparable, Sendable, Equatable {
     case tag = 2
     /// A Helm release's chart `appVersion`, when it is SHA-shaped.
     case appVersion = 3
+    /// What Argo CD synced or Flux applied (gitops.md 4.3): the manifests,
+    /// not the code — asked in its own call, never ranked against an
+    /// image's candidates (`KubeGitOpsReach`), and said by tool there.
+    case gitopsRevision = 4
 
     static func < (lhs: KubeCommitSource, rhs: KubeCommitSource) -> Bool { lhs.rawValue < rhs.rawValue }
 
@@ -19,7 +23,14 @@ enum KubeCommitSource: Int, Comparable, Sendable, Equatable {
         case .revisionLabel: "the image's revision label"
         case .tag: "the image's tag"
         case .appVersion: "the chart's appVersion"
+        case .gitopsRevision: "the GitOps revision"
         }
+    }
+
+    /// "Argo CD's synced revision", "Flux's applied revision"; the others as `said`.
+    func said(tool: KubeGitOpsObject.Tool?) -> String {
+        guard self == .gitopsRevision, let tool else { return said }
+        return tool == .argo ? "Argo CD's synced revision" : "Flux's applied revision"
     }
 }
 
@@ -58,6 +69,9 @@ enum KubeDeployedAnswer: Equatable, Sendable {
     case missing(sha: String, source: KubeCommitSource)
     /// No source gave a commit.
     case none
+    /// The source answered, but not with a commit — said by source
+    /// (gitops.md 4.3): "Argo CD's synced revision isn't a commit (chart 1.4.2)".
+    case notACommit(String)
 
     var found: Found? { if case .found(let found) = self { found } else { nil } }
 
@@ -67,9 +81,11 @@ enum KubeDeployedAnswer: Equatable, Sendable {
     var text: String {
         switch self {
         case .none: return "no commit found in the image"
+        case .notACommit(let said): return said
+        case .missing(let sha, .gitopsRevision): return "manifests at \(sha.prefix(7)), not in this checkout — fetch to compare"
         case .missing(let sha, _): return "commit \(sha.prefix(7)) is not in this checkout"
         case .found(let found):
-            var text = "deployed \(found.short)"
+            var text = (found.source == .gitopsRevision ? "manifests at " : "deployed ") + found.short
             if let base = found.base, let behind = found.behind {
                 text += behind == 0 ? ", up to date with \(base)" : ", \(Self.commits(behind)) behind \(base)"
             }
@@ -90,7 +106,7 @@ enum KubeDeployedAnswer: Equatable, Sendable {
         switch self {
         case .found(let found): "from \(found.source.said)"
         case .missing(_, let source): "from \(source.said)"
-        case .none: nil
+        case .none, .notACommit: nil
         }
     }
 
@@ -166,21 +182,40 @@ enum KubeDeployedCommit {
 
     /// The first candidate the checkout has, compared with it; the first
     /// one missing when none is there; `.none` with no candidate.
-    static func answer(_ candidates: [KubeCommitCandidate], in checkout: URL) async -> KubeDeployedAnswer {
+    /// `bases`: the branches to compare with, each a whole ref and the name
+    /// it is said by, first one there wins (default `main`, `master`, then
+    /// `origin/HEAD`; empty: none); `git`: how git runs (default `Git.run`).
+    static func answer(
+        _ candidates: [KubeCommitCandidate], in checkout: URL, bases: [Base]? = nil, git runner: KubeGitOpsCheckouts.Runner? = nil
+    ) async -> KubeDeployedAnswer {
         guard !candidates.isEmpty else { return .none }
         var seen = Set<String>()
         for candidate in candidates where seen.insert(candidate.sha).inserted {
-            if let found = await compare(candidate, in: checkout) { return .found(found) }
+            if let found = await compare(candidate, in: checkout, bases: bases, git: runner) { return .found(found) }
         }
         // A tag of digits the checkout hasn't is a build number, not a commit.
         guard let first = candidates.first(where: { !isDigitsOnly($0.sha) }) else { return .none }
         return .missing(sha: first.sha, source: first.source)
     }
 
+    /// A branch to compare with: its whole ref (`refs/heads/main`,
+    /// `refs/remotes/origin/main`, `refs/tags/v1.2.0`) — what git is given,
+    /// never a short name git would read as a tag or a local branch first —
+    /// and the name the line says ("main", "origin/main", "tag v1.2.0").
+    struct Base: Equatable, Sendable {
+        var ref: String
+        var said: String
+    }
+
     /// The candidate looked up in the checkout: nil when it hasn't it.
-    static func compare(_ candidate: KubeCommitCandidate, in checkout: URL) async -> KubeDeployedAnswer.Found? {
+    static func compare(
+        _ candidate: KubeCommitCandidate, in checkout: URL, bases: [Base]? = nil, git runner: KubeGitOpsCheckouts.Runner? = nil
+    ) async -> KubeDeployedAnswer.Found? {
         func git(_ arguments: [String]) async -> String? {
-            let output = try? await Git.run(arguments, in: checkout, success: [0, 1, 128], timeout: 15)
+            let output =
+                if let runner { try? await runner(arguments, checkout, [0, 1, 128]) } else {
+                    try? await Git.run(arguments, in: checkout, success: [0, 1, 128], timeout: 15)
+                }
             return output?.trimmingCharacters(in: .whitespacesAndNewlines).nilIfEmpty
         }
         guard isSHAShaped(candidate.sha), let full = await git(["rev-parse", "--verify", "--quiet", "\(candidate.sha)^{commit}"]), full.count == 40,
@@ -188,15 +223,18 @@ enum KubeDeployedCommit {
         else { return nil }
         let head = await git(["rev-parse", "--verify", "--quiet", "HEAD"])
         let branch = await git(["symbolic-ref", "--quiet", "--short", "HEAD"])
-        var base: String?
-        for name in ["main", "master"] where base == nil {
-            if await git(["rev-parse", "--verify", "--quiet", "refs/heads/\(name)"]) != nil { base = name }
+        var base: Base?
+        for candidate in bases ?? [Base(ref: "refs/heads/main", said: "main"), Base(ref: "refs/heads/master", said: "master")] where base == nil {
+            guard candidate.ref.hasPrefix("refs/") else { continue }
+            if await git(["rev-parse", "--verify", "--quiet", "--end-of-options", "\(candidate.ref)^{commit}"]) != nil { base = candidate }
         }
-        if base == nil, let remote = await git(["symbolic-ref", "--quiet", "--short", "refs/remotes/origin/HEAD"]) { base = remote }
-        let behind = base == nil ? nil : await git(["rev-list", "--count", "\(full)..\(base!)"]).flatMap { Int($0) }
+        if base == nil, bases == nil, let remote = await git(["symbolic-ref", "--quiet", "refs/remotes/origin/HEAD"]), remote.hasPrefix("refs/remotes/") {
+            base = Base(ref: remote, said: String(remote.dropFirst("refs/remotes/".count)))
+        }
+        let behind = base == nil ? nil : await git(["rev-list", "--count", "--end-of-options", "\(full)..\(base!.ref)"]).flatMap { Int($0) }
         let sides = await git(["rev-list", "--left-right", "--count", "\(full)...HEAD"])?.split(whereSeparator: \.isWhitespace).compactMap { Int($0) }
         return KubeDeployedAnswer.Found(
-            sha: full, source: candidate.source, base: behind == nil ? nil : base, behind: behind, branch: branch, ahead: sides?.last ?? 0,
+            sha: full, source: candidate.source, base: behind == nil ? nil : base?.said, behind: behind, branch: branch, ahead: sides?.last ?? 0,
             elsewhere: sides?.first ?? 0, isHead: head == full)
     }
 

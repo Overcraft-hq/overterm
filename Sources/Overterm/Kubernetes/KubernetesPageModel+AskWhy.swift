@@ -97,7 +97,9 @@ extension KubernetesPageModel {
     /// (`KubeMCP.usagePart`, bounded by `usageLimit`) — and handed to the Ask Agent
     /// sheet, which shows it whole before anything is sent. What couldn't
     /// be read is said over the list (or under the detail's buttons).
-    func askWhy(_ ref: KubeObjectRef) {
+    /// `extra`: what the rail adds about a GitOps object's matched checkout
+    /// (gitops.md 6.2) — scrubbed again here, after the brief's own parts.
+    func askWhy(_ ref: KubeObjectRef, extra: [AskAgentModel.Part] = []) {
         commandProblem = nil
         guard askingWhy == nil else { return }
         guard let client = model.client(for: ref.context) else {
@@ -113,7 +115,8 @@ extension KubernetesPageModel {
             let peers = gitOps.peers(context: ref.context)
             Task { [weak self] in
                 do {
-                    let brief = try await KubeAgentBriefing.gitOps(ref, client: client, context: context, discovery: discovery, peers: peers)
+                    var brief = try await KubeAgentBriefing.gitOps(ref, client: client, context: context, discovery: discovery, peers: peers)
+                    brief.parts += extra.map { AskAgentModel.Part(title: $0.title, text: KubeMCPText.scrubbed($0.text)) }
                     guard let self else { return }
                     self.askingWhy = nil
                     self.actions?.askWhy(brief)

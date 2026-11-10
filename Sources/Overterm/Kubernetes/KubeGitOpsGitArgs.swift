@@ -55,19 +55,59 @@ enum KubeGitOpsGitArgs {
         return [literal, "rev-parse", "--verify", "--end-of-options", "\(sha)^{commit}"]
     }
 
+    /// The whole refs a cluster-named branch or tag is looked up as.
+    static let refPrefixes = ["refs/heads/", "refs/tags/", "refs/remotes/"]
+
+    /// A checked whole ref: `refs/heads/…`, `refs/tags/…` or `refs/remotes/…`.
+    static func wholeRef(_ text: String) -> String? {
+        guard refPrefixes.contains(where: text.hasPrefix) else { return nil }
+        return ref(text)
+    }
+
     /// `git --literal-pathspecs rev-list --count <from>..<to> -- <paths>`:
-    /// both revisions verified SHAs, or a checked `refs/remotes/…`.
+    /// `from` a verified SHA, `to` one or a checked whole ref (`wholeRef`).
     static func countArguments(from: String, to: String, pathspecs: [String]) -> [String]? {
         guard let from = revision(from) else { return nil }
-        let to = revision(to) ?? (to.hasPrefix("refs/remotes/") ? ref(to) : nil)
+        let to = revision(to) ?? wholeRef(to)
         guard let to, !pathspecs.isEmpty else { return nil }
         return [literal, "rev-list", "--count", "--end-of-options", "\(from)..\(to)", "--"] + pathspecs
     }
 
-    /// `git --literal-pathspecs diff --name-only <base>...HEAD -- <paths>`.
+    /// `git --literal-pathspecs diff --name-only -z <base>...HEAD -- <paths>`:
+    /// NUL-separated, so a name git would quote (`core.quotePath`: "café")
+    /// comes back as it is on disk (`changedFiles`).
     static func changedArguments(base: String, pathspecs: [String]) -> [String]? {
         guard let base = revision(base), !pathspecs.isEmpty else { return nil }
-        return [literal, "diff", "--name-only", "--end-of-options", "\(base)...HEAD", "--"] + pathspecs
+        return [literal, "diff", "--name-only", "-z", "--end-of-options", "\(base)...HEAD", "--"] + pathspecs
+    }
+
+    /// `changedArguments`' output: the names, as they are.
+    static func changedFiles(_ output: String) -> [String] {
+        output.split(separator: "\0", omittingEmptySubsequences: true).map(String.init)
+    }
+
+    /// `git --literal-pathspecs rev-parse --verify --quiet --end-of-options <ref>`: a checked whole ref there, its commit.
+    static func refArguments(_ ref: String) -> [String]? {
+        guard let ref = wholeRef(ref) else { return nil }
+        return [literal, "rev-parse", "--verify", "--quiet", "--end-of-options", "\(ref)^{commit}"]
+    }
+
+    /// `git merge-base --end-of-options <ref> HEAD`: a checked ref.
+    static func mergeBaseArguments(_ ref: String) -> [String]? {
+        guard let ref = wholeRef(ref) else { return nil }
+        return [literal, "merge-base", "--end-of-options", ref, "HEAD"]
+    }
+
+    /// `git merge-base --is-ancestor <a> <b>`: both verified commits.
+    static func ancestorArguments(_ a: String, _ b: String) -> [String]? {
+        guard let a = revision(a), let b = revision(b) else { return nil }
+        return [literal, "merge-base", "--is-ancestor", "--end-of-options", a, b]
+    }
+
+    /// `git log --oneline -n <limit> <from>..<to>`: both verified commits.
+    static func logArguments(from: String, to: String, limit: Int) -> [String]? {
+        guard let from = revision(from), let to = revision(to), limit > 0 else { return nil }
+        return [literal, "log", "--oneline", "--no-decorate", "--no-color", "-n", String(limit), "--end-of-options", "\(from)..\(to)", "--"]
     }
 
     enum Commit: Equatable, Sendable {
@@ -82,10 +122,11 @@ enum KubeGitOpsGitArgs {
     }
 
     /// `sha` as this checkout knows it: verified to be one commit.
-    static func resolve(_ sha: String, in checkout: URL) async -> Commit {
+    static func resolve(_ sha: String, in checkout: URL, git runner: KubeGitOpsCheckouts.Runner? = nil) async -> Commit {
         guard let arguments = verifyArguments(sha) else { return .refused }
         do {
-            let full = try await Git.run(arguments, in: checkout).trimmingCharacters(in: .whitespacesAndNewlines)
+            let output = if let runner { try await runner(arguments, checkout, [0]) } else { try await Git.run(arguments, in: checkout) }
+            let full = output.trimmingCharacters(in: .whitespacesAndNewlines)
             return full.count == 40 ? .commit(full) : .missing
         } catch let error as GitError {
             return failure(error.stderr)

@@ -4762,6 +4762,65 @@ nothing asked, never a Secret),
 scenario (`E2EKubeCheckoutFixture`, the checkout every Kubernetes scenario
 binds) check it.
 
+**Has this branch reached the cluster** (`KubeGitOpsReach.swift`; gitops.md
+4.3, G6). Under each case (a) match — an object that takes its manifests
+from the checkout's repository — the rail compares what it applied with
+the checkout, beside the image's line and never ranked against it (the
+manifests, not the code). `KubeGitOpsReach.question` (pure) reads the
+object: Argo CD's live revision (history's last, else the last
+operation's; a multi-source Application's matched source), a
+Kustomization's `lastAppliedRevision` (an OCI artifact's
+`org.opencontainers.image.revision` when the artifact is the one applied),
+a HelmRelease's newest history entry (its `+<12 hex>` under the Revision
+strategy, else "chart 1.4.2"); a Flux attempt that failed
+(`lastAttemptedRevision` ≠ applied, Ready False; a HelmRelease's rollback);
+what was fetched but not applied (`KubeGitOpsLadder.unattempted`, Argo CD's
+`sync.revision` against its live one); the path, the remote and the branch
+it tracks; HEAD. `answer` asks the checkout, every call through
+`KubeGitOpsCheckouts.git` (isolated in tests) and `KubeGitOpsGitArgs`
+(revisions verified, a 12-character prefix to exactly one commit, refs
+checked, `--literal-pathspecs`, `--end-of-options`), nothing fetched: the
+commit as a `KubeCommitCandidate` of the fourth source
+`KubeCommitSource.gitopsRevision` ("Argo CD's synced revision", "Flux's
+applied revision"), compared by `KubeDeployedCommit` with the tracked
+branch (the remote's, else the local one, given to git as a whole ref and
+said by its name, `KubeDeployedCommit.Base`; not here: compared with none,
+and "origin/release isn't in this checkout — fetch to compare") — "manifests at a77b0d1, up to
+date with origin/main; this branch is 1 commit ahead", "…, not in this
+checkout — fetch to compare", or `KubeDeployedAnswer.notACommit` by source
+("Argo CD's synced revision isn't a commit (chart 1.4.2)"); "Flux tried
+c03f9aa (this branch's HEAD) and failed: …; a77b0d1 is still applied" (the
+summary's scrubbed error); "Flux fetched …, not applied yet (newer than …)"
+by `merge-base --is-ancestor`; for an Application with a path, "no change
+under apps/web since a77b0d1 on origin/main" (`rev-list --count
+<live>..<ref> -- <pathspecs>`); and the files this branch changes
+(`diff --name-only -z <merge-base>...HEAD -- <pathspecs>`, names as on disk,
+`KubeGitOpsChanges`: "3 files under apps/web on this branch", a review tab
+of them, `ReviewSource.paths`). The pathspecs: the path,
+`manifest-generate-paths`' entries, and the path's `kustomization.yaml`
+`resources:` and `components:` one level deep (256 KB at most, `YAMLReader`;
+a remote entry not followed, said), each through `KubeGitOpsPath`, one under
+another left out; the line names what it checked. An answer is keyed by its
+question's git (`Question.key`: the revisions, the path, what it tracks,
+HEAD, the checkout's refs hashed — `KubeGitOpsMatch.Checkout.refs`), never
+its words: a reconcile's Ready → Progressing → Ready, a message, Stuck from
+the clock run no git, the words said again from the question as it is now
+(`KubeGitOpsReach.labeled`). The window hears the diff model's branch, HEAD
+(`DiffModel.head`, set only when it moves), comparison and a fetch
+(`remoteRefsMoved`, from the watchers' paths), deduplicated — a save moves
+none — and `headMayHaveMoved` (debounced) reads the facts again; a new HEAD
+or a moved ref asks again. Diff Deployed…Current opens
+`deployed...HEAD`. The rail's Ask Why adds the checkout's side
+(`KubeGitOpsReach.briefParts`: the lines, `git log --oneline` from applied to
+attempted, at most 20, and the changed files — through `Secrets` again in
+the page's `askWhy(_:extra:)`). `KubeGitOpsReachTests` (pure and against a
+repository of the test's own: each tool's revision, the words, the attempt,
+fetched, the pathspecs, the answers, Ask Why's commits scrubbed),
+`KubePanelGitOpsTests` (the manifests line and its reviews, the attempt on
+HEAD and its commits in Ask Why, an unchanged HEAD running no git and a new
+one recomputing, an Application's "no change under") and
+`kubernetesCheckoutGitOps` parts 4–6 check it.
+
 **Attention marks** (`KubeAttention.swift` (pure),
 `KubeAttentionWatches`, `TerminalWindowController+KubernetesAttention`;
 analysis 3.13, Section 10, decision 9): a failure in a bound namespace
@@ -6484,8 +6543,9 @@ conditions, Argo CD's operation, failed and out-of-sync resources and
 history, the chain — every word through `Secrets`, shown whole before it is
 sent. What needs a matched checkout (§4.2) comes with the rail's match:
 each history entry opening a review of `git diff a..b -- <path>` (G5,
-What deploys the checkout, above), and Ask Why's commits between applied
-and attempted (G6). The brief's
+What deploys the checkout, above), and the rail's Ask Why's commits
+between applied and attempted (G6, Has this branch reached the cluster,
+above). The brief's
 chain is followed only where it isn't ready — a summarised link that
 isn't ready or progressing, else what the summaries lack read in
 `readOrder` (the dependency its Ready message names, then its sources),

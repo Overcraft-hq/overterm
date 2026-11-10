@@ -74,6 +74,47 @@ struct KubePanelGitOpsView: View {
         }
     }
 
+    /// Has this branch reached the cluster (4.3): the manifests line beside
+    /// the image's, attempted ≠ applied, fetched not applied, no change
+    /// under the path, the files this branch changes — as of the last fetch.
+    @ViewBuilder private func reachLines(_ match: KubePanelGitOps.Match, _ reach: KubeGitOpsReach.Answer) -> some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text(verbatim: reach.deployed.text).font(.system(size: 11)).foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("kubernetes.panel.gitops.deployed")
+            Text(verbatim: reach.source).font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
+            if let attempted = reach.attempted { small(attempted, failed: true, id: "kubernetes.panel.gitops.attempted") }
+            if let fetched = reach.fetched { small(fetched, failed: false, id: "kubernetes.panel.gitops.fetched") }
+            if let unchanged = reach.unchanged { small(unchanged, failed: false, id: "kubernetes.panel.gitops.unchanged") }
+            if let changed = reach.changed {
+                if changed.review != nil {
+                    Button(changed.text) { gitOps.reviewChanged(match) }
+                        .buttonStyle(.link).font(.system(size: 10.5))
+                        .help("A review tab (⇧⌘R) of these files, from where this branch left \(changed.against)")
+                        .accessibilityIdentifier("kubernetes.panel.gitops.changed")
+                } else {
+                    small(changed.text, failed: false, id: "kubernetes.panel.gitops.changed")
+                }
+            }
+            ForEach(reach.checked, id: \.self) { small($0, failed: false, id: nil) }
+            if let found = reach.found, !found.isHead || found.elsewhere > 0 {
+                Button("Diff Deployed…Current") { gitOps.reviewDeployed(match) }
+                    .buttonStyle(.link).font(.system(size: 11))
+                    .help("A review tab (⇧⌘R): what the checkout has that isn't in the manifests' commit")
+                    .accessibilityIdentifier("kubernetes.panel.gitops.diffDeployed")
+            }
+            if !reach.pathspecs.isEmpty || reach.found != nil {
+                Text(verbatim: "as of the last fetch").font(.system(size: 10)).foregroundStyle(theme.text3)
+            }
+        }
+        .padding(.top, 2)
+    }
+
+    @ViewBuilder private func small(_ text: String, failed: Bool, id: String?) -> some View {
+        let view = Text(verbatim: text).font(.system(size: 10.5)).foregroundStyle(failed ? TabStatusStyle.failed : theme.text2).lineLimit(3)
+            .fixedSize(horizontal: false, vertical: true)
+        if let id { view.accessibilityIdentifier(id) } else { view }
+    }
+
     private func row(_ match: KubePanelGitOps.Match) -> some View {
         let now = Date()
         let object = match.object
@@ -92,6 +133,7 @@ struct KubePanelGitOpsView: View {
             }
             Text(verbatim: ([match.why] + [match.tracks].compactMap { $0 }).joined(separator: " · ")).font(.system(size: 10.5)).foregroundStyle(theme.text3)
                 .lineLimit(2).fixedSize(horizontal: false, vertical: true)
+            if let reach = match.reach { reachLines(match, reach) }
             if object != nil {
                 HStack(spacing: 10) {
                     Button("Open on Page") { gitOps.openOnPage(match) }
