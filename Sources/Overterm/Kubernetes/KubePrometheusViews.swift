@@ -43,9 +43,14 @@ struct KubePrometheusChartView: View {
         let _ = KubeChartDraws.shared.composed(identifier, window: ObjectIdentifier(theme))
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 10) {
-                Text(verbatim: title).font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
-                if monitor.service != nil { KubeChartRangePicker(page: page, monitor: monitor) }
+                if identifier == "kubernetes.overview.prometheus" {
+                    // On the Overview, a card's title.
+                    Text(verbatim: title).font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text)
+                } else {
+                    Text(verbatim: title).font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+                }
                 Spacer(minLength: 0)
+                if monitor.service != nil { KubeChartRangePicker(page: page, monitor: monitor) }
             }
             if let service = monitor.service {
                 if let reading = monitor.charts[chart], let unavailable = reading.unavailable {
@@ -102,8 +107,10 @@ struct KubePrometheusChartView: View {
             refused(reading.refused ?? "")
             requests(reading)
         case .cluster:
-            HStack(alignment: .top, spacing: 20) {
-                ForEach(KubeClusterCharts.prometheus(reading)) { drawn($0, reading) }
+            // Side by side where they fit, else one under the other.
+            ViewThatFits(in: .horizontal) {
+                HStack(alignment: .top, spacing: 20) { ForEach(KubeClusterCharts.prometheus(reading)) { drawn($0, reading) } }
+                VStack(alignment: .leading, spacing: 14) { ForEach(KubeClusterCharts.prometheus(reading)) { drawn($0, reading) } }
             }
             requests(reading)
         case .volume:

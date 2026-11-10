@@ -121,6 +121,22 @@ final class KubePlotTests: XCTestCase {
         XCTAssertEqual(hidden.top, 2, accuracy: 1e-9)
     }
 
+    /// Reference lines at one height said once; near ones' labels pushed apart, never drawn over each other.
+    func testReferenceLabelsNeverOverlap() {
+        let used = KubeChartSeries(id: "used", name: "Used", points: points([2, 3]))
+        func one(_ id: String, _ role: KubeChartRole, _ value: Double) -> KubeChartSeries {
+            KubeChartSeries(id: id, name: id, role: role, points: [KubeSeriesPoint(time: t0, value: value)])
+        }
+        let equal = KubePlot(data([used, one("capacity", .capacity, 12), one("allocatable", .allocatable, 12)]), size: size)
+        XCTAssertEqual(equal.references.map(\.label).filter { !$0.isEmpty }, ["allocatable = capacity"])
+        let near = KubePlot(data([used, one("capacity", .capacity, 12), one("allocatable", .allocatable, 11.8), one("request", .request, 2)]), size: size)
+        let shown = near.references.filter { !$0.label.isEmpty }.sorted { $0.labelY < $1.labelY }
+        XCTAssertEqual(shown.count, 3)
+        for (a, b) in zip(shown, shown.dropFirst()) { XCTAssertGreaterThanOrEqual(b.labelY - a.labelY, KubePlot.labelHeight - 0.01, "\(a.label) / \(b.label)") }
+        let request = near.references.first { $0.id == "request" }!
+        XCTAssertEqual(request.labelY, request.labelAt.y - 7, accuracy: 0.01, "a label alone stays above its line")
+    }
+
     func testAReferenceIsSteppedAndLabelledAtItsRightEnd() {
         let capacity = [KubeSeriesPoint(time: t0, value: 10), KubeSeriesPoint(time: t0.addingTimeInterval(1800), value: 20)]
         let plot = KubePlot(

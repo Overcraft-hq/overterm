@@ -542,13 +542,14 @@ struct KubeChartView: View {
                     .frame(width: KubePlot.gutter - 6, alignment: .trailing)
                     .position(x: (KubePlot.gutter - 6) / 2, y: min(max(plot.y(of: tick), 6), plot.size.height - 6))
             }
-            ForEach(plot.references, id: \.id) { reference in
-                Text(verbatim: reference.name)
+            // Above its line, or under it at the very top, never over
+            // another's; lines that coincide said once (`KubePlot.labelled`).
+            ForEach(plot.references.filter { !$0.label.isEmpty }, id: \.id) { reference in
+                Text(verbatim: reference.label)
                     .font(.system(size: 9)).foregroundStyle(referenceColour(reference.role))
                     .fixedSize()
-                    .frame(width: 120, alignment: .trailing)
-                    // Above its line, or under it at the very top.
-                    .position(x: reference.labelAt.x - 62, y: reference.labelAt.y < 16 ? reference.labelAt.y + 7 : reference.labelAt.y - 7)
+                    .frame(width: 160, alignment: .trailing)
+                    .position(x: reference.labelAt.x - 82, y: reference.labelY)
             }
         }
         .allowsHitTesting(false)

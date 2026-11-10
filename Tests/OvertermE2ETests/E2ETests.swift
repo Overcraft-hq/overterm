@@ -141,6 +141,14 @@ final class E2ETests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dir) }
         _ = try run("kubernetesPerf", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 240)
     }
+    /// The Overview as cards, in a dark theme, a light one and a narrow
+    /// window, against the fake: OVERTERM_DUMP_PNG captures each.
+    func testKubernetesOverview() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-e2e-kov-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        _ = try run("kubernetesOverview", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 180)
+    }
     /// 5,000 pods across 50 namespaces with their Deployments, ReplicaSets
     /// and Services: the first list, the scroll, a burst, the Overview's
     /// health checks, a 200-pod Deployment's tree, the footprint after.

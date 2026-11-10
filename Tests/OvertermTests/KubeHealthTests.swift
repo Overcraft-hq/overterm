@@ -292,6 +292,49 @@ final class KubeHealthTests: XCTestCase {
         XCTAssertEqual(KubeHealth.Report(findings: [], checked: 3).said, "No finding in 3 objects")
     }
 
+    /// Only the checks over lists read whole ran: a refused, cut or
+    /// unserved list's checks never count as passing.
+    func testOnlyChecksOverListsReadWholeRan() {
+        var lists = KubeHealth.Lists()
+        lists.add(Self.read("pods"), kind: "Pod", apiVersion: "v1", body: Self.listBody([Self.pod("web-1")]), place: "namespace shop")
+        lists.add(Self.read("deployments"), kind: "Deployment", apiVersion: "apps/v1", body: Self.listBody([]), place: "namespace shop")
+        lists.add(Self.read("services"), kind: "Service", apiVersion: "v1", body: Self.listBody([]), place: "namespace shop")
+        lists.failed(Self.read("ingresses"), "Forbidden", place: "namespace shop")
+        lists.add(Self.read("horizontalpodautoscalers"), kind: "HorizontalPodAutoscaler", apiVersion: "autoscaling/v2", body: Self.listBody([]), place: "namespace shop")
+        var ran = KubeHealth.report(lists).ran
+        XCTAssertTrue(ran.isSuperset(of: [.noReadinessProbe, .noLimits, .latestImage, .serviceSelectsNone, .recentRestarts, .pendingLong, .hpaAtMax]))
+        XCTAssertFalse(ran.contains(.ingressMissingService), "ingresses refused")
+        XCTAssertFalse(ran.contains(.ingressMissingPort))
+        XCTAssertFalse(ran.contains(.pdbNoDisruption), "budgets never read")
+        XCTAssertFalse(ran.contains(.argoDegraded), "no Argo CD")
+        XCTAssertFalse(ran.contains(.notReady), "no custom resource read")
+
+        // Services refused in one namespace of two: theirs never ran.
+        lists.failed(Self.read("services"), "Forbidden", place: "namespace web")
+        XCTAssertFalse(KubeHealth.report(lists).ran.contains(.serviceSelectsNone))
+
+        // Pods cut at their limit: nothing over pods ran.
+        var cut = KubeHealth.Lists()
+        let page: [String: Any] = ["metadata": ["continue": "next"], "items": [Self.pod("web-1")]]
+        cut.add(Self.read("pods"), kind: "Pod", apiVersion: "v1", body: try! JSONSerialization.data(withJSONObject: page), place: "namespace shop")
+        cut.add(Self.read("services"), kind: "Service", apiVersion: "v1", body: Self.listBody([]), place: "namespace shop")
+        ran = KubeHealth.report(cut).ran
+        XCTAssertTrue(ran.isDisjoint(with: [.noReadinessProbe, .noRequests, .recentRestarts, .pendingLong, .serviceSelectsNone]), "\(ran)")
+
+        // A workload list not JSON: the container checks didn't run whole.
+        var broken = KubeHealth.Lists()
+        broken.add(Self.read("pods"), kind: "Pod", apiVersion: "v1", body: Self.listBody([]), place: "namespace shop")
+        broken.add(Self.read("replicasets"), kind: "ReplicaSet", apiVersion: "apps/v1", body: Data("<html>".utf8), place: "namespace shop")
+        ran = KubeHealth.report(broken).ran
+        XCTAssertFalse(ran.contains(.noLimits))
+        XCTAssertTrue(ran.contains(.recentRestarts))
+
+        // Argo CD's applications read whole: its checks and Ready ran.
+        broken.add(Self.read("applications"), kind: "Application", apiVersion: "argoproj.io/v1alpha1", body: Self.listBody([]), place: "namespace shop")
+        ran = KubeHealth.report(broken).ran
+        XCTAssertTrue(ran.isSuperset(of: [.argoDegraded, .argoOutOfSync, .notReady]))
+    }
+
     // MARK: The Overview's reads, against the fake
 
     private func startFake(_ name: String = "a") throws -> (FakeKubeAPI, String) {

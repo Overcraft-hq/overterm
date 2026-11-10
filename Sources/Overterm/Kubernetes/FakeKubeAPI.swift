@@ -799,6 +799,7 @@ final class FakeKubeAPI: @unchecked Sendable {
             values: [
                 "Last Seen": .text(Self.age(since: last)), "Type": .text(type), "Reason": .text(reason),
                 "Object": .text("\((kind?.kind ?? resource).lowercased())/\(objectName)"), "Message": .text(message),
+                "Count": .integer(count),
             ], created: last,
             fields: [
                 "involvedObject": involved, "type": type, "reason": reason, "message": message, "count": count, "firstTimestamp": time,
@@ -1675,9 +1676,10 @@ final class FakeKubeAPI: @unchecked Sendable {
                 column("Container-Runtime", priority: 1, "Container runtime version reported by the node through runtime remote API (e.g. containerd://1.4.2)."),
             ]
         case "events", "events.events.k8s.io":
-            // Name is a wide column, as the server has it: `format: name` says which.
+            // Count and Name are wide columns, as the server has them: `format: name` says which.
             return [
                 column("Last Seen"), column("Type"), column("Reason"), column("Object"), column("Message"),
+                column("Count", "integer", priority: 1, "The number of times this event has occurred."),
                 Column(name: "Name", format: "name", priority: 1, description: "Name must be unique within a namespace."),
             ]
         case "statefulsets.apps":

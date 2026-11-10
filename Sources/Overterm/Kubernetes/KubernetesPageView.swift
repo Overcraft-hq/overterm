@@ -345,7 +345,7 @@ struct KubernetesPageView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Text(verbatim: page.title).font(.system(size: 20, weight: .semibold)).foregroundStyle(theme.text)
+            Text(verbatim: page.title).font(.system(size: 20, weight: .semibold)).foregroundStyle(theme.text).lineLimit(1).fixedSize()
                 .accessibilityIdentifier("kubernetes.title")
             if page.showsSection, model.listState == .live || model.rows.count > 0 {
                 let failing = page.failing.count
@@ -375,7 +375,7 @@ struct KubernetesPageView: View {
                     .lineLimit(1).truncationMode(.tail).help(status.text).accessibilityIdentifier("kubernetes.compareStatus")
             }
             Spacer(minLength: 12)
-            Toggle("Wide", isOn: $page.wide).toggleStyle(.checkbox).font(.system(size: 12)).foregroundStyle(theme.text2)
+            Toggle("Wide", isOn: $page.wide).toggleStyle(.checkbox).font(.system(size: 12)).foregroundStyle(theme.text2).fixedSize()
                 .help("What kubectl get -o wide adds (\(KubernetesKey.wide.key))")
             namespaceChip
             HStack(spacing: 4) {

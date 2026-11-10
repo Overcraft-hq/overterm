@@ -461,6 +461,8 @@ enum KubeHealth {
 
         private(set) var lists: [String: List] = [:]
         var notes: [String] = []
+        /// The lists that a namespace (or more) couldn't give: refused, or not JSON.
+        private(set) var failed: Set<String> = []
 
         init() {}
 
@@ -470,6 +472,7 @@ enum KubeHealth {
         mutating func add(_ read: Read, kind: String, apiVersion: String, body: Data, place: String, scope: KubeScope = .all) {
             guard let list = try? JSONSerialization.jsonObject(with: body) as? [String: Any] else {
                 notes.append("The \(read.fullName) list couldn't be read: the answer isn't JSON.")
+                failed.insert(read.fullName)
                 return
             }
             let more = ((list["metadata"] as? [String: Any])?["continue"] as? String).map { !$0.isEmpty } ?? false
@@ -490,9 +493,14 @@ enum KubeHealth {
 
         mutating func failed(_ read: Read, _ reason: String, place: String) {
             notes.append("The \(read.fullName) in \(place) couldn't be listed: \(reason)")
+            failed.insert(read.fullName)
         }
 
         func list(_ fullName: String) -> List? { lists[fullName] }
+        /// Read, and read whole: every namespace answered, none cut at its limit.
+        func whole(_ fullName: String) -> Bool { lists[fullName]?.complete == true && !failed.contains(fullName) }
+        /// Not read at all: not served (a CRD not installed), not asked.
+        func absent(_ fullName: String) -> Bool { lists[fullName] == nil && !failed.contains(fullName) }
         var read: Int { lists.count }
         var objects: Int { lists.values.reduce(0) { $0 + $1.items.count } }
     }
@@ -503,6 +511,10 @@ enum KubeHealth {
         /// How many objects were checked, and what wasn't read.
         var checked = 0
         var notes: [String] = []
+        /// The checks that ran over lists read whole — what found nothing
+        /// among them passes; one over a list refused, cut short or never
+        /// read says nothing (`KubeHealth.ran`).
+        var ran: Set<Check> = []
 
         var errors: Int { findings.count { $0.severity == .error } }
         var warnings: Int { findings.count { $0.severity == .warning } }
@@ -548,18 +560,58 @@ enum KubeHealth {
         for read in reads where !ordered.contains(read.fullName) {
             for item in lists.list(read.fullName)?.items ?? [] { found += object(item, now: now) }
         }
-        if let pods = lists.list("pods"), pods.complete {
+        if let pods = lists.list("pods"), lists.whole("pods") {
             for service in lists.list("services")?.items ?? [] {
                 if let finding = serviceSelection(service, pods: pods.items) { found.append(finding) }
             }
         } else if lists.list("pods") != nil, !(lists.list("services")?.items.isEmpty ?? true) {
             report.notes.append("Services' selections aren't checked: not every pod was read.")
         }
-        if let services = lists.list("services"), services.complete {
+        if let services = lists.list("services"), lists.whole("services") {
             for ingress in lists.list("ingresses.networking.k8s.io")?.items ?? [] { found += ingressBackends(ingress, services: services) }
         }
         report.findings = Array(Set(found)).sorted(by: Finding.ordered)
+        report.ran = ran(lists)
         return report
+    }
+
+    /// The lists a check reads: `whole`, each read whole; `optional`, each
+    /// read whole or not served at all (none refused or cut short);
+    /// `served`, at least one of the optional ones was read.
+    private struct Needs {
+        var whole: [String] = []
+        var optional: [String] = []
+        var served = false
+    }
+
+    private static func needs(_ check: Check) -> Needs {
+        let workloads = ["deployments.apps", "statefulsets.apps", "daemonsets.apps", "cronjobs.batch", "replicasets.apps", "jobs.batch"]
+        let gitOps = [
+            "argoproj.io", "kustomize.toolkit.fluxcd.io", "helm.toolkit.fluxcd.io", "source.toolkit.fluxcd.io", "cert-manager.io",
+        ]
+        .flatMap { group in reads.filter { $0.group == group }.map(\.fullName) }
+        switch check {
+        case .noReadinessProbe, .noLivenessProbe, .noRequests, .noLimits, .latestImage:
+            return Needs(whole: ["pods"], optional: workloads)
+        case .serviceSelectsNone: return Needs(whole: ["pods", "services"])
+        case .ingressMissingService, .ingressMissingPort: return Needs(whole: ["services", "ingresses.networking.k8s.io"])
+        case .pdbNoDisruption: return Needs(whole: ["poddisruptionbudgets.policy"])
+        case .hpaAtMax: return Needs(whole: ["horizontalpodautoscalers.autoscaling"])
+        case .recentRestarts, .pendingLong: return Needs(whole: ["pods"])
+        case .notReady: return Needs(optional: gitOps, served: true)
+        case .argoDegraded, .argoOutOfSync: return Needs(whole: ["applications.argoproj.io"])
+        }
+    }
+
+    /// The checks whose lists were all read whole.
+    static func ran(_ lists: Lists) -> Set<Check> {
+        Set(
+            Check.allCases.filter { check in
+                let needs = needs(check)
+                guard needs.whole.allSatisfy(lists.whole) else { return false }
+                guard needs.optional.allSatisfy({ lists.whole($0) || lists.absent($0) }) else { return false }
+                return !needs.served || needs.optional.contains(where: lists.whole)
+            })
     }
 
     /// `ingressBackends` over a list.

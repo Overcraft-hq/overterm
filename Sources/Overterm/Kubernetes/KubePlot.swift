@@ -294,6 +294,43 @@ struct KubePlot: Sendable {
         var last: Double
         /// Where its label sits: the line's right end.
         var labelAt: CGPoint
+        /// What its label says — `allocatable = capacity` for lines that
+        /// coincide, the first of them; empty for the others — and its
+        /// text's centre: above the line (under it at the very top), moved
+        /// down past a neighbour's (`labelled`).
+        var label = ""
+        var labelY: CGFloat = 0
+    }
+
+    /// The height a reference's label takes, so that two never overlap.
+    static let labelHeight: CGFloat = 11
+
+    /// The right-end labels laid out: lines at the same height said once
+    /// (`allocatable = capacity`), each label above its line or under it
+    /// at the top, then pushed down past the one above it — never drawn
+    /// over another. A projection's (labelled where it ends) keeps its own.
+    static func labelled(_ references: [Reference], frame: CGRect) -> [Reference] {
+        var references = references
+        for index in references.indices {
+            let y = references[index].labelAt.y
+            references[index].label = references[index].name
+            references[index].labelY = y < 16 ? y + 7 : y - 7
+        }
+        let right = references.indices.filter { references[$0].role != .projection && references[$0].labelAt.x >= frame.maxX - 1 }
+            .sorted { (references[$0].labelAt.y, references[$0].id) < (references[$1].labelAt.y, references[$1].id) }
+        var shown: [Int] = []
+        for index in right {
+            if let first = shown.last, abs(references[first].labelAt.y - references[index].labelAt.y) < 0.5 {
+                references[first].label += " = " + references[index].name
+                references[index].label = ""
+                continue
+            }
+            if let above = shown.last, references[index].labelY - references[above].labelY < labelHeight {
+                references[index].labelY = references[above].labelY + labelHeight
+            }
+            shown.append(index)
+        }
+        return references
     }
 
     /// A band where it is drawn.
@@ -496,6 +533,8 @@ struct KubePlot: Sendable {
                 id: series.id, name: series.name, role: series.role, stroke: KubePlotPath(cgPath: path.copy() ?? path), last: lastPoint.value,
                 labelAt: CGPoint(x: frame.maxX, y: endY))
         }
+
+        self.references = Self.labelled(self.references, frame: frame)
 
         markers = data.shownMarkers.map { Marker(marker: $0, x: x($0.time.timeIntervalSince1970)) }
         let windowEnd = self.end

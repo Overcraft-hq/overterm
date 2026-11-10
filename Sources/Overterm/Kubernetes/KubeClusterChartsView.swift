@@ -16,24 +16,34 @@ struct KubeClusterSampledView: View {
     var body: some View {
         let charts = page.sampledClusterCharts()
         if !charts.isEmpty {
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .top, spacing: 20) {
-                    ForEach(charts) { chart in
-                        KubeChartView(
-                            data: chart.data, cursor: cursor, headline: chart.headline, span: "last 10 min", chips: chart.chips,
-                            copy: { [weak page] in page?.copyChartText($0) }, theme: theme
-                        )
-                        .frame(minWidth: 200, maxWidth: .infinity)
-                    }
+            VStack(alignment: .leading, spacing: 10) {
+                Text(verbatim: "Cluster usage").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text)
+                // Side by side where they fit, else one under the other.
+                ViewThatFits(in: .horizontal) {
+                    HStack(alignment: .top, spacing: 20) { sampled(charts) }
+                    VStack(alignment: .leading, spacing: 14) { sampled(charts) }
                 }
                 Text(verbatim: page.sampledClusterCaption()).font(.system(size: 10.5)).foregroundStyle(theme.text3)
                     .accessibilityIdentifier("kubernetes.overview.usage.caption")
                 Text(verbatim: KubeChartEmpty.requestsNeedSpecs.sentence).font(.system(size: 10.5)).foregroundStyle(theme.text3)
                 let nodes = page.sampledNodeRows()
                 KubeNodeStripsView(
-                    page: page, rows: nodes.rows, more: nodes.more, caption: "Nodes, the last 15 min of allocatable — sampled while shown", theme: theme)
+                    page: page, rows: nodes.rows, more: nodes.more, caption: "Nodes, the last 15 min of allocatable — sampled while shown", theme: theme
+                )
+                .padding(.top, 4)
             }
+            .resourceCard(theme)
             .accessibilityIdentifier("kubernetes.overview.sampled")
+        }
+    }
+
+    private func sampled(_ charts: [KubePodCharts.Chart]) -> some View {
+        ForEach(charts) { chart in
+            KubeChartView(
+                data: chart.data, cursor: cursor, headline: chart.headline, span: "last 10 min", chips: chart.chips,
+                copy: { [weak page] in page?.copyChartText($0) }, theme: theme
+            )
+            .frame(minWidth: 200, maxWidth: .infinity)
         }
     }
 }
@@ -59,7 +69,11 @@ struct KubeNodeStripsView: View {
         if !rows.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
                 Text(verbatim: caption).font(.system(size: 11)).foregroundStyle(theme.text3)
-                grid
+                // Its rows are as wide as their strips: a narrow card scrolls them, the page never.
+                ViewThatFits(in: .horizontal) {
+                    grid
+                    ScrollView(.horizontal, showsIndicators: false) { grid }
+                }
                 if more > 0 {
                     Text(verbatim: "The 50 most used of \(rows.count + more) nodes; the rest are in the Nodes list.").font(.system(size: 10.5)).foregroundStyle(theme.text3)
                 }

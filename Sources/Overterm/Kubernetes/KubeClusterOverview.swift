@@ -96,6 +96,22 @@ enum KubeWorkloadState {
         }
     }
 
+    /// How far off a workload is, as its row says it: `2/3 ready` (a
+    /// DaemonSet's Ready of its Desired), a Job's status. Nil when it says nothing.
+    static func said(_ row: KubeRow, columns: [KubeColumn], kind: String) -> String? {
+        switch kind {
+        case "deployments", "statefulsets", "replicasets":
+            if let ready = row.cell("Ready", in: columns)?.text, pair(ready) != nil { return "\(ready) ready" }
+            fallthrough
+        case "daemonsets":
+            guard let ready = number(row.cell("Ready", in: columns)), let desired = number(row.cell("Desired", in: columns)) else { return nil }
+            return "\(ready)/\(desired) ready"
+        case "jobs":
+            return row.cell("Status", in: columns)?.text.nilIfEmpty
+        default: return nil
+        }
+    }
+
     /// `2/3` as (2, 3).
     static func pair(_ text: String) -> (Int, Int)? {
         let parts = text.split(separator: "/").map { Int($0.trimmingCharacters(in: .whitespaces)) }
@@ -127,6 +143,8 @@ struct KubeClusterOverview: Equatable, Sendable {
         var resource: String
         var total: Int
         var notReady: [KubeRowID]
+        /// How far off a row not ready is, as its row says it (`0/1 ready`, `Failed`).
+        var said: [KubeRowID: String] = [:]
 
         var id: String { resource }
     }
@@ -149,6 +167,8 @@ struct KubeClusterOverview: Equatable, Sendable {
     /// Pods in each phase (`phases`), for the phases that could be read.
     var phases: [String: Int] = [:]
     var failingPods: [KubePodSummary] = []
+    /// Of those, the ones whose phase is Pending (an image not pulled): counted once, as failing.
+    var failingPending = 0
     var nodes = 0
     var notReadyNodes: [String] = []
     /// The last hour's Warning events, newest first.
@@ -182,22 +202,28 @@ struct KubeClusterOverview: Equatable, Sendable {
             guard let rows = input.pods[phase] else { continue }
             overview.phases[phase] = rows.count
             if phase == "Succeeded" { continue }
-            overview.failingPods += rows.sorted.compactMap { KubePodSummary(row: $0, columns: rows.columns) }.filter { $0.isFailing || phase == "Failed" || phase == "Unknown" }
+            let failing = rows.sorted.compactMap { KubePodSummary(row: $0, columns: rows.columns) }.filter { $0.isFailing || phase == "Failed" || phase == "Unknown" }
+            if phase == "Pending" { overview.failingPending = failing.count }
+            overview.failingPods += failing
         }
         overview.failingPods.sort { $0.id < $1.id }
         var members: [(kind: KubeResourceKind, row: KubeRow, ready: Bool)] = []
         for (kind, rows) in input.workloads {
             var notReady: [KubeRowID] = []
+            var said: [KubeRowID: String] = [:]
             for row in rows.sorted {
                 let ready = KubeWorkloadState.ready(row, columns: rows.columns, kind: kind.resource) ?? true
-                if !ready { notReady.append(row.id) }
+                if !ready {
+                    notReady.append(row.id)
+                    said[row.id] = KubeWorkloadState.said(row, columns: rows.columns, kind: kind.resource)
+                }
                 if row.labels[KubeApplications.instanceLabel] ?? row.labels[KubeApplications.nameLabel] != nil {
                     members.append((kind, row, ready))
                 } else {
                     overview.unlabelled += 1
                 }
             }
-            overview.workloads.append(WorkloadCount(title: KubeKindCatalog.title(of: kind), resource: kind.fullName, total: rows.count, notReady: notReady))
+            overview.workloads.append(WorkloadCount(title: KubeKindCatalog.title(of: kind), resource: kind.fullName, total: rows.count, notReady: notReady, said: said))
         }
         overview.systems = KubeApplications.group(members)
         if let nodes = input.nodes {
