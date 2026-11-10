@@ -185,7 +185,7 @@ enum KubernetesKey: String, ResourceKey {
         case .newNamespace: return "New namespace — its name, then asked first; on a writable context"
         case .debug:
             return "Debug container in a tab (kubectl debug --target); on a node, a node shell (a privileged pod, its nodeShell setting on, the name typed) — writable contexts only, asked first"
-        case .delete: return "Delete — asked first; on production (and a namespace anywhere, warned what it holds) the name typed"
+        case .delete: return "Delete — asked first; on production (and a namespace, an Application, a Kustomization or a HelmRelease anywhere, warned what goes with it) the name typed"
         case .edit:
             return "Edit the YAML in the editor — Overterm's copy, values masked; Diff with Cluster there, then Apply on a writable context, asked first"
         case .back: return "Back in the detail's history (⌘[ too)"

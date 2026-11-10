@@ -445,3 +445,247 @@ final class KubeWriteClientTests: XCTestCase {
         XCTAssertNotNil(api.pod("web-1", namespace: "shop"))
     }
 }
+
+/// G0b (docs/design/kubernetes/gitops.md, 1.1 rows 6–7): deleting a GitOps
+/// object says what goes with it, and its name is typed on every class.
+extension KubeWritesTests {
+    static let applicationSets = KubeGitOpsTests.crd("argoproj.io", "applicationsets", "ApplicationSet", version: "v1alpha1")
+
+    static func data(_ object: [String: Any]) -> Data { try! JSONSerialization.data(withJSONObject: object) }
+
+    static func gitOps(_ kind: KubeResourceKind, _ object: [String: Any], name: String = "acme-shop", namespace: String = "argocd") throws -> KubeGitOpsDelete {
+        let tool = try XCTUnwrap(KubeGitOpsDelete.tool(kind))
+        return try KubeGitOpsDelete.read(data(object), tool: tool, ref: KubeObjectRef(context: "fake-dev", kind: kind, namespace: namespace, name: name))
+    }
+
+    static func resources(_ count: Int, namespaces: [String]) -> [[String: Any]] {
+        (0..<count).map { ["kind": "ConfigMap", "version": "v1", "name": "c\($0)", "namespace": namespaces[$0 % namespaces.count], "status": "Synced"] }
+    }
+
+    func testTheNameIsTypedOnEveryClassForTheThreeKinds() {
+        let dev = Self.context("fake-dev", settings: KubeContextSettings(writable: true))
+        let kind = Self.context("kind-fake")
+        for cascading in [KubeGitOpsTests.applications, KubeGitOpsTests.kustomizations, KubeGitOpsTests.helmReleases] {
+            XCTAssertTrue(KubeWriteCheck.rule(.delete, for: dev, kind: cascading).typedName, cascading.fullName)
+            XCTAssertTrue(KubeWriteCheck.rule(.delete, for: kind, kind: cascading).typedName, cascading.fullName)
+            XCTAssertNotNil(KubeWriteCheck.rule(.delete, for: kind, kind: cascading).warning, "never no sentence: \(cascading.fullName)")
+        }
+        XCTAssertFalse(KubeWriteCheck.rule(.delete, for: dev, kind: Self.applicationSets).typedName, "an ApplicationSet as any custom resource")
+        XCTAssertTrue(KubeWriteCheck.rule(.delete, for: dev, kind: Self.applicationSets).warning?.contains("generated Applications") == true)
+        XCTAssertFalse(KubeWriteCheck.rule(.delete, for: dev, kind: KubeGitOpsTests.gitRepositories).typedName, "a source deletes nothing it feeds")
+        XCTAssertNil(KubeWriteCheck.rule(.delete, for: dev, kind: KubeGitOpsTests.gitRepositories).warning)
+        XCTAssertFalse(KubeWriteCheck.rule(.delete, for: dev, kind: Self.configmaps).typedName)
+        // The GitOps verbs that only ask their controller are never typed.
+        for verb in [KubeWriteVerb.refresh] { XCTAssertFalse(KubeWriteCheck.rule(verb, for: dev, kind: KubeGitOpsTests.applications).typedName) }
+        for verb in [KubeWriteVerb.reconcile, .fluxSuspend, .fluxResume] {
+            XCTAssertFalse(KubeWriteCheck.rule(verb, for: dev, kind: KubeGitOpsTests.kustomizations).typedName, "\(verb)")
+        }
+    }
+
+    func testAnApplicationsFinalizerByPrefixAndItsCount() throws {
+        let background = try Self.gitOps(
+            KubeGitOpsTests.applications,
+            [
+                "metadata": ["finalizers": ["resources-finalizer.argocd.argoproj.io/background"]],
+                "spec": ["destination": ["server": "https://kubernetes.default.svc", "namespace": "shop"]],
+                "status": ["resources": Self.resources(42, namespaces: ["shop", "payments", "web"])],
+            ])
+        XCTAssertEqual(background.finalizer, "resources-finalizer.argocd.argoproj.io/background")
+        XCTAssertEqual(
+            background.said,
+            "Argo CD deletes the 42 resources it manages with it, across 3 namespaces (its resources-finalizer.argocd.argoproj.io/background finalizer).")
+        let plain = try Self.gitOps(
+            KubeGitOpsTests.applications,
+            ["metadata": ["finalizers": ["resources-finalizer.argocd.argoproj.io"]], "status": ["resources": Self.resources(1, namespaces: ["shop"])]])
+        XCTAssertEqual(plain.said, "Argo CD deletes the 1 resource it manages with it, in namespace shop (its resources-finalizer.argocd.argoproj.io finalizer).")
+        let foreground = try Self.gitOps(KubeGitOpsTests.applications, ["metadata": ["finalizers": ["x", "resources-finalizer.argocd.argoproj.io/foreground"]]])
+        XCTAssertEqual(foreground.finalizer, "resources-finalizer.argocd.argoproj.io/foreground")
+        XCTAssertTrue(foreground.said.contains("it lists none now"), foreground.said)
+        let lookalike = try Self.gitOps(
+            KubeGitOpsTests.applications,
+            ["metadata": ["finalizers": ["resources-finalizer.argocd.argoproj.io-x"]], "status": ["resources": Self.resources(3, namespaces: ["shop"])]])
+        XCTAssertNil(lookalike.finalizer)
+        XCTAssertEqual(
+            lookalike.said,
+            "It has no resources-finalizer.argocd.argoproj.io finalizer: the 3 resources it manages stay, no longer managed by Argo CD.")
+        let remote = try Self.gitOps(
+            KubeGitOpsTests.applications,
+            [
+                "metadata": ["finalizers": ["resources-finalizer.argocd.argoproj.io"]],
+                "spec": ["destination": ["name": "acme-edge"]], "status": ["resources": Self.resources(2, namespaces: ["shop"])],
+            ])
+        XCTAssertTrue(remote.said.contains("— in the other cluster it deploys to"), remote.said)
+    }
+
+    func testAKustomizationsPruneAndDeletionPolicyAndAHelmRelease() throws {
+        let entries: [[String: Any]] = [["id": "shop_web_apps_Deployment", "v": "v1"], ["id": "shop_web__Service", "v": "v1"], ["id": "_shop__Namespace", "v": "v1"]]
+        let pruning = try Self.gitOps(KubeGitOpsTests.kustomizations, ["spec": ["prune": true], "status": ["inventory": ["entries": entries]]])
+        XCTAssertEqual(pruning.said, "Flux deletes the 3 objects in its inventory with it, in namespace shop (spec.prune).")
+        let off = try Self.gitOps(KubeGitOpsTests.kustomizations, ["spec": ["prune": false], "status": ["inventory": ["entries": entries]]])
+        XCTAssertEqual(off.said, "spec.prune is off: the 3 objects it applied stay.")
+        XCTAssertFalse(off.deletesManaged)
+        let orphan = try Self.gitOps(KubeGitOpsTests.kustomizations, ["spec": ["prune": true, "deletionPolicy": "Orphan"]])
+        XCTAssertEqual(orphan.said, "spec.deletionPolicy Orphan: what it applied stays.")
+        let delete = try Self.gitOps(KubeGitOpsTests.kustomizations, ["spec": ["prune": false, "deletionPolicy": "Delete"]])
+        XCTAssertEqual(delete.said, "Flux deletes whatever it applied with it (spec.deletionPolicy Delete); its inventory lists none now.")
+        // WaitForTermination deletes the whole inventory whatever prune says, and waits for it.
+        let waits = try Self.gitOps(KubeGitOpsTests.kustomizations, ["spec": ["prune": false, "deletionPolicy": "WaitForTermination"], "status": ["inventory": ["entries": entries]]])
+        XCTAssertEqual(waits.said, "Flux deletes the 3 objects in its inventory with it, in namespace shop (spec.deletionPolicy WaitForTermination).")
+        XCTAssertTrue(waits.deletesManaged)
+        // Suspended, its controller skips the cascade.
+        let suspended = try Self.gitOps(KubeGitOpsTests.kustomizations, ["spec": ["prune": true, "suspend": true], "status": ["inventory": ["entries": entries]]])
+        XCTAssertEqual(suspended.said, "It is suspended (spec.suspend): Flux removes it without deleting what it applied — the 3 objects in its inventory stay, unless it is resumed first.")
+        XCTAssertFalse(suspended.deletesManaged)
+        let held = try Self.gitOps(KubeGitOpsTests.helmReleases, ["spec": ["suspend": true]])
+        XCTAssertEqual(held.said, "It is suspended (spec.suspend): Flux removes it without uninstalling its Helm release, unless it is resumed first.")
+        XCTAssertFalse(held.deletesManaged)
+        XCTAssertFalse(try Self.gitOps(KubeGitOpsTests.applications, ["spec": ["suspend": true]]).suspended, "Argo CD has no suspend")
+        let release = try Self.gitOps(KubeGitOpsTests.helmReleases, ["spec": ["values": ["replicas": 3]]])
+        XCTAssertEqual(release.said, "Flux uninstalls its Helm release with it: everything the chart made goes.")
+        let set = try Self.gitOps(Self.applicationSets, ["spec": ["syncPolicy": ["preserveResourcesOnDeletion": true]]])
+        XCTAssertTrue(set.said.contains("preserveResourcesOnDeletion keeps what they deployed"), set.said)
+    }
+
+    func testAFailedReadGivesTheWorstCase() {
+        let app = KubeGitOpsDelete.unread(.application, "applications.argoproj.io \"acme-shop\" is forbidden")
+        XCTAssertEqual(app.said, "Couldn't read it (applications.argoproj.io \"acme-shop\" is forbidden): Argo CD may delete everything it manages with it.")
+        XCTAssertTrue(app.deletesManaged)
+        XCTAssertTrue(KubeGitOpsDelete.unread(.kustomization, "timeout").said.contains("Flux may delete everything it applied with it"))
+        // A rule made without the read (the menu's) still warns.
+        let kind = Self.context("kind-fake")
+        XCTAssertEqual(
+            KubeWriteCheck.rule(.delete, for: kind, kind: KubeGitOpsTests.applications).warning,
+            "It wasn't read: Argo CD may delete everything it manages with it.")
+    }
+
+    func testAChildObjectsDeleteSaysItWillBeRecreated() throws {
+        let child = try Self.gitOps(
+            KubeGitOpsTests.kustomizations,
+            [
+                "metadata": ["labels": [KubeGitOpsOwner.kustomizeName: "flux-system", KubeGitOpsOwner.kustomizeNamespace: "flux-system"]],
+                "spec": ["prune": true],
+            ], name: "acme-apps", namespace: "flux-system")
+        XCTAssertTrue(child.said.hasSuffix(" Managed by Kustomization flux-system/flux-system: it will be recreated."), child.said)
+        // The bootstrap Kustomization applies itself: nothing makes it again.
+        let root = try Self.gitOps(
+            KubeGitOpsTests.kustomizations,
+            [
+                "metadata": ["labels": [KubeGitOpsOwner.kustomizeName: "flux-system", KubeGitOpsOwner.kustomizeNamespace: "flux-system"]],
+                "spec": ["prune": true],
+            ], name: "flux-system", namespace: "flux-system")
+        XCTAssertFalse(root.said.contains("recreated"), root.said)
+        let generated = try Self.gitOps(
+            KubeGitOpsTests.applications, ["metadata": ["ownerReferences": [["apiVersion": "argoproj.io/v1alpha1", "kind": "ApplicationSet", "name": "acme-set"]]]])
+        XCTAssertTrue(generated.said.hasSuffix(" Managed by ApplicationSet argocd/acme-set: it will be recreated."), generated.said)
+        let appOfApps = try Self.gitOps(
+            KubeGitOpsTests.applications, ["metadata": ["annotations": [KubeGitOpsOwner.trackingAnnotation: "acme-root:argoproj.io/Application:argocd/acme-shop"]]])
+        XCTAssertTrue(appOfApps.said.hasSuffix(" Managed by Application acme-root: it will be recreated."), appOfApps.said)
+        let probably = try Self.gitOps(KubeGitOpsTests.applications, ["metadata": ["labels": [KubeGitOpsOwner.appInstanceLabel: "acme-root"]]])
+        XCTAssertTrue(probably.said.hasSuffix(" Probably Argo CD Application acme-root manages it: it may be recreated."), probably.said)
+    }
+
+    func testTheConfirmationOfAGitOpsDeleteNamesWhatGoesAndAsksTheName() throws {
+        let dev = Self.context("fake-dev", settings: KubeContextSettings(writable: true))
+        let facts = try Self.gitOps(
+            KubeGitOpsTests.applications,
+            ["metadata": ["finalizers": ["resources-finalizer.argocd.argoproj.io"]], "status": ["resources": Self.resources(42, namespaces: ["shop"])]])
+        let ref = KubeObjectRef(context: "fake-dev", kind: KubeGitOpsTests.applications, namespace: "argocd", name: "acme-shop")
+        let rule = KubeWriteCheck.rule(.delete, for: dev, kind: ref.kind, gitOps: facts)
+        let confirmation = KubeWriteConfirmation.make(.delete, ref, context: dev, rule: rule)
+        XCTAssertEqual(confirmation.typedName, "acme-shop")
+        XCTAssertEqual(confirmation.scope, "fake-dev · namespace argocd")
+        XCTAssertTrue(confirmation.detail.contains("⚠︎ Argo CD deletes the 42 resources it manages with it"), confirmation.detail)
+        XCTAssertTrue(confirmation.detail.hasSuffix("Type acme-shop to confirm."), confirmation.detail)
+    }
+
+    /// Values, parameters, manifests and annotations are never decoded:
+    /// nothing of them reaches the facts or their sentence.
+    func testNoValueReachesTheFacts() throws {
+        let sentinel = "s3cr3t-sentinel"
+        let facts = try Self.gitOps(
+            KubeGitOpsTests.applications,
+            [
+                "metadata": [
+                    "finalizers": ["resources-finalizer.argocd.argoproj.io"],
+                    "annotations": ["kubectl.kubernetes.io/last-applied-configuration": sentinel],
+                    "labels": ["acme/token": sentinel],
+                ],
+                "spec": [
+                    "source": [
+                        "repoURL": "https://user:\(sentinel)@git.acme.example/shop.git",
+                        "helm": ["values": sentinel, "valuesObject": ["k": sentinel], "parameters": [["name": "p", "value": sentinel]]],
+                    ]
+                ],
+                "status": [
+                    "resources": Self.resources(2, namespaces: ["shop"]), "sync": ["comparedTo": ["source": ["helm": ["values": sentinel]]]],
+                    "operationState": ["operation": ["sync": ["manifests": [sentinel]]], "message": "kind: Secret\ndata:\n  k: \(sentinel)"],
+                ],
+            ])
+        var dumped = ""
+        dump(facts, to: &dumped)
+        XCTAssertFalse(dumped.contains(sentinel), dumped)
+        XCTAssertFalse(facts.said.contains(sentinel))
+    }
+
+    /// Discovery not known yet: the worst case, never no sentence.
+    func testDeletingANamespaceWithoutDiscoverySaysTheWorst() async {
+        let client = KubeClient(KubeSocketConnection(socket: "/tmp/otk-none-\(UInt32.random(in: 0...UInt32.max)).sock", context: "fake-dev"))
+        let held = await client.gitOpsHeld(in: "argocd", discovery: nil)
+        XCTAssertEqual(held?.uncounted, true)
+        let warning = KubeWriteCheck.rule(.delete, for: Self.context("kind-fake"), kind: .namespaces, held: held).warning ?? ""
+        XCTAssertEqual(
+            warning,
+            "Everything in the namespace is deleted with it. Its GitOps objects weren't counted: any Applications, Kustomizations or HelmReleases in it may delete what they manage.")
+    }
+
+    /// A kind whose read failed part way is unread, said once: no partial count beside it.
+    func testAKindReadPartWayIsUnreadNotCounted() {
+        var held = KubeNamespaceGitOps()
+        var kustomizations = KubeNamespaceGitOps()
+        kustomizations.add([KubeGitOpsDelete(tool: .kustomization, prune: true, managed: 4, namespaces: ["shop"])], tool: .kustomization)
+        held.merge(kustomizations)
+        // Applications: a page read, the next too large — never merged.
+        held.unread.append(.application)
+        XCTAssertEqual(
+            held.said,
+            "And the pruning Kustomization in it deletes what it manages: 4 objects in namespace shop. Its Applications couldn't be read: they may delete everything they manage.")
+        XCTAssertLessThanOrEqual(KubeNamespaceGitOps.applicationPageLimit, 20)
+    }
+
+    func testDeletingANamespaceCountsWhatItsGitOpsObjectsTake() {
+        var held = KubeNamespaceGitOps()
+        var apps: [KubeGitOpsDelete] = []
+        for index in 0..<31 {
+            var app = KubeGitOpsDelete(tool: .application)
+            app.finalizer = KubeGitOpsDelete.argoFinalizer
+            app.managed = index == 0 ? 64 : 38
+            app.namespaces = ["ns\(index % 9)"]
+            apps.append(app)
+        }
+        // Without the finalizer: counted, not cascading.
+        apps.append(KubeGitOpsDelete(tool: .application, managed: 500, namespaces: ["elsewhere"]))
+        held.add(apps, tool: .application)
+        XCTAssertEqual(held.parts.first?.count, 32)
+        XCTAssertEqual(
+            held.said, "And the 31 Applications in it with Argo CD's resources finalizer delete what they manage: 1,204 objects across 9 namespaces.")
+        held.add([KubeGitOpsDelete(tool: .helmRelease), KubeGitOpsDelete(tool: .helmRelease)], tool: .helmRelease)
+        held.unread.append(.kustomization)
+        XCTAssertTrue(held.said?.contains("Its 2 HelmReleases uninstall their releases.") == true, held.said ?? "")
+        XCTAssertTrue(held.said?.contains("Its Kustomizations couldn't be read: they may delete everything they applied.") == true, held.said ?? "")
+        held.more(.application, count: 700)
+        XCTAssertTrue(held.said?.hasPrefix("And at least 31 Applications") == true, held.said ?? "")
+
+        let kind = Self.context("kind-fake")
+        let warning = KubeWriteCheck.rule(.delete, for: kind, kind: .namespaces, held: held).warning ?? ""
+        XCTAssertTrue(warning.hasPrefix("Everything in the namespace is deleted with it. And at least 31 Applications"), warning)
+        XCTAssertEqual(KubeWriteCheck.rule(.delete, for: kind, kind: .namespaces).warning, "Everything in the namespace is deleted with it.")
+        XCTAssertNil(KubeNamespaceGitOps().said, "none held, nothing added")
+        // A suspended HelmRelease and a suspended pruning Kustomization take nothing.
+        var quiet = KubeNamespaceGitOps()
+        quiet.add([KubeGitOpsDelete(tool: .helmRelease, suspended: true)], tool: .helmRelease)
+        quiet.add([KubeGitOpsDelete(tool: .kustomization, prune: true, suspended: true, managed: 9)], tool: .kustomization)
+        XCTAssertNil(quiet.said, quiet.said ?? "")
+        XCTAssertEqual(KubeGitOpsDelete.grouped(1_000_000), "1,000,000")
+        XCTAssertEqual(KubeGitOpsDelete.grouped(999), "999")
+    }
+}
