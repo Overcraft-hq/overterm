@@ -4507,6 +4507,41 @@ refuses (RBAC on events) is said; the rest stands. The list's verbs are
 no keys there; the page's are. The sidebar counts what fails beside it;
 the palette has Kubernetes Overview. `KubeClusterOverviewTests`.
 
+It is drawn as cards (`KubeClusterOverviewView` over `KubeOverviewCards`,
+pure, and the resource pages' `ResourceCard`: the theme's card fill, a
+hairline border, a 10 pt radius, `ResourcePill` for a status in words, a
+`ResourceCardRow` for a row that is a button): a header strip (the
+context, its namespace, the version and node count, Live or reading, the
+pills — `N need attention`, the health count, `N checks pass`, its own
+view observing the health session, which the page doesn't republish —
+and a check passes only if it ran over lists read whole,
+`KubeHealth.Report.ran`: never one over a list refused, cut at its limit
+or not served); a card a kind (pods, each workload kind, nodes: the
+number, a thin bar in the status colours with the same counts said under
+it — pods by phase: running, completed (neutral), pending, failing, a pod
+failing counted once, as failing, whatever its phase, `failingPending` —
+a press shows its list); Needs attention worst first
+(`KubeOverviewCards.attention`: failing before not ready, nodes before
+pods before workloads, the most restarted first; a reason pill each,
+`CrashLoopBackOff · 14×`, `NotReady`, a workload's row as it says it,
+`2/3 ready` — `KubeWorkloadState.said`, kept in `WorkloadCount.said`)
+beside the usage of allocatable (the share in big numbers, its bar at
+≥ 70 and ≥ 90, the samples since shown as a line against allocatable);
+the charts, the health checks (severities as chips, a check a row that
+opens to its findings, the ones with problems open at first), the
+applications as small cards, the warning events. Below 720 pt the paired
+cards stack and the charts go one under the other. A chart's reference
+labels never overlap (`KubePlot.labelled`: lines at one height said once,
+`allocatable = capacity`; near ones pushed apart). Each card is an
+accessibility container (`.contain`), so its own identifier and its
+children's stay. Presentation only:
+nothing more is read for it. `KubeOverviewCardsTests`; the
+`kubernetesOverview` scenario draws it dark, light and narrow
+(OVERTERM_DUMP_PNG captures each), finds the cards by their identifiers
+in SwiftUI's accessibility tree (AXEnhancedUserInterface on, in its own
+process) — side by side wide, one column narrow, nothing scrolling
+sideways — and the pass pill again after a refresh.
+
 ### The switcher
 
 **The switcher** (⌃⌘J, `kubernetes.switch`; ⇧⌥⌘J, Docker's pattern, is
