@@ -200,7 +200,7 @@ extension E2ERunner {
     /// `identifier` (SwiftUI's `.accessibilityIdentifier`): their frames
     /// united, in screen points, and every word in them — read again until
     /// it is there (SwiftUI builds its tree a moment later).
-    private func overviewElement(_ identifier: String, timeout: TimeInterval = 5) async -> (frame: CGRect, text: String)? {
+    func overviewElement(_ identifier: String, timeout: TimeInterval = 5) async -> (frame: CGRect, text: String)? {
         Self.accessibilityTree(true)
         let deadline = Date().addingTimeInterval(timeout)
         repeat {

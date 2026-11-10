@@ -154,8 +154,8 @@ extension E2ERunner {
                 "a Degraded one is Failed (K602), no longer K603 too",
                 found("K602", "application/tree-shop") && !found("K603", "application/tree-shop"))
             let line = KubeOverviewCards.gitOps(health.report, scope: health.scope)
-            check("the health card's GitOps line counts them", line?.text.hasPrefix("GitOps objects living in shop: ") == true, line?.text ?? "none")
-            check("drawn on the Overview's card", await shownText(15) { $0.contains("GitOps objects living in shop") } != nil)
+            check("the Overview's GitOps line counts them", line?.text.hasPrefix("GitOps living in shop: ") == true, line?.text ?? "none")
+            check("drawn on the Overview's card", await shownText(15) { $0.contains("GitOps living in shop") } != nil)
         }
         check("its count drawn by the Overview's header", await shownText(15) { $0.contains("Health: \(health.report.said)") } != nil, health.report.said)
         let reads = fake.requests.filter { !$0.isWatch && $0.query["limit"] != nil && $0.query["includeObject"] == nil }

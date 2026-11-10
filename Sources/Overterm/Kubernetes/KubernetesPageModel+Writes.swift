@@ -67,6 +67,8 @@ extension KubernetesPageModel {
     /// What a write key means: the object the detail shows, while it
     /// shows one; else the list's one selected row.
     var writeTarget: KubeObjectRef? {
+        // The GitOps section: its row picked (gitops.md 2.7).
+        if section == .gitops { return gitOpsSelectedRef }
         if let detail { return detail.ref }
         guard selection.count == 1, let id = selection.first, rows.contains(where: { $0.id == id }) else { return nil }
         return ref(for: id)

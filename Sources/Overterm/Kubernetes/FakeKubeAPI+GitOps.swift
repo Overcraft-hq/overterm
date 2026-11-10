@@ -43,7 +43,11 @@ extension FakeKubeAPI {
 
     private func serveCRD(_ group: String, _ version: String, _ plural: String, _ kind: String, shortNames: [String]) {
         let fullName = "\(plural).\(group)"
-        guard !servedKinds.contains(where: { $0.fullName == fullName }) else { return }
+        // Served already (an earlier scenario's, with no columns): the pinned CRD's columns.
+        if let served = servedKinds.first(where: { $0.fullName == fullName }) {
+            if (served.columns ?? []).isEmpty { setColumns(fullName, Self.gitOpsColumns[fullName] ?? []) }
+            return
+        }
         addCRD(group: group, version: version, plural: plural, kind: kind, shortNames: shortNames, columns: Self.gitOpsColumns[fullName] ?? [])
     }
 

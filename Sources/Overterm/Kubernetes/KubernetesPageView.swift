@@ -99,7 +99,10 @@ struct KubernetesPageView: View {
                 caption("Resources").padding(.top, 10)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 1) {
-                        ForEach(KubeSection.allCases) { section in sectionRow(section) }
+                        // GitOps only where Argo CD or Flux is served (gitops.md 2.1).
+                        ForEach(KubeSection.allCases.filter { $0 != .gitops || page.gitOpsServed || page.section == .gitops }) { section in
+                            sectionRow(section)
+                        }
                     }
                 }
             }
@@ -125,6 +128,9 @@ struct KubernetesPageView: View {
                         KubeHelmCount(helm: page.helm, theme: theme)
                     } else if section == .overview {
                         KubeOverviewCount(session: page.clusterOverview)
+                    } else if section == .gitops {
+                        // No count: one would live only while the section shows.
+                        EmptyView()
                     } else if !section.listsKinds {
                         KubeForwardsCount(forwards: page.forwards, theme: theme)
                     } else if !model.catalog.isEmpty {
@@ -446,7 +452,12 @@ struct KubernetesPageView: View {
             // it (the Docker page's lesson): first in the stack, always.
             GeometryReader { geometry in
                 HStack(spacing: 0) {
-                    list(rows, failedOutright: failedOutright)
+                    if page.section == .gitops {
+                        // Its table stands in for the list's: the page's first, the one given the keyboard.
+                        KubeGitOpsSectionView(page: page, gitOps: page.gitOps, model: model, theme: theme)
+                    } else {
+                        list(rows, failedOutright: failedOutright)
+                    }
                     if let detail = page.detail {
                         Rectangle().fill(theme.border).frame(width: 1)
                         KubeDetailView(page: page, session: detail, theme: theme)

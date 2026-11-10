@@ -56,23 +56,6 @@ struct KubeOverviewHealthView: View {
         if session.state != .idle {
             VStack(alignment: .leading, spacing: 10) {
                 header
-                if session.state == .loaded, let gitOps = KubeOverviewCards.gitOps(session.report, scope: session.scope) {
-                    // What Argo CD and Flux say of what lives here, in a line.
-                    HStack(spacing: 6) {
-                        Image(systemName: "arrow.triangle.branch").font(.system(size: 10.5, weight: .semibold))
-                        Text(verbatim: gitOps.text).font(.system(size: 11.5, weight: .medium)).lineLimit(2)
-                            .fixedSize(horizontal: false, vertical: true)
-                    }
-                    .foregroundStyle(gitOps.tone == .failed ? TabStatusStyle.failed : theme.orangeText)
-                    .padding(.horizontal, 8).padding(.vertical, 4)
-                    .background(
-                        RoundedRectangle(cornerRadius: 6, style: .continuous)
-                            .fill((gitOps.tone == .failed ? TabStatusStyle.failed : theme.orangeText).opacity(0.1))
-                    )
-                    .help("From the checks below: Argo CD's failed (K602), drifted or stuck (K603), Flux's not ready (K601)")
-                    .accessibilityElement(children: .combine)
-                    .accessibilityIdentifier("kubernetes.health.gitops")
-                }
                 if session.state != .loading, !session.report.byCheck.isEmpty {
                     VStack(alignment: .leading, spacing: 0) {
                         ForEach(Array(session.report.byCheck.enumerated()), id: \.element.check) { index, group in
