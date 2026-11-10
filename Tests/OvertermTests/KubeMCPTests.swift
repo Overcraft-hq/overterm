@@ -178,8 +178,8 @@ final class KubeMCPTests: XCTestCase {
         let names = KubeMCP.tools.compactMap { $0["name"] as? String }
         XCTAssertEqual(names, KubeMCP.reads)
         XCTAssertEqual(
-            Set(names), ["k8s_contexts", "k8s_get", "k8s_describe", "k8s_logs", "k8s_events", "k8s_why", "k8s_rollout", "k8s_top", "k8s_metrics"],
-            "k8s_top since metrics (2d), k8s_metrics since M11")
+            Set(names), ["k8s_contexts", "k8s_get", "k8s_describe", "k8s_logs", "k8s_events", "k8s_why", "k8s_rollout", "k8s_top", "k8s_metrics", "k8s_gitops"],
+            "k8s_top since metrics (2d), k8s_metrics since M11, k8s_gitops since G7")
         for verb in ["restart", "scale", "delete", "apply", "patch", "exec", "edit", "secret"] {
             XCTAssertFalse(names.contains { $0.contains(verb) }, "no \(verb) tool")
         }

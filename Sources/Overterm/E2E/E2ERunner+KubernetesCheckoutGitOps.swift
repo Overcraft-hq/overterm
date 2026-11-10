@@ -36,6 +36,12 @@ import SwiftUI
 ///    carries the commits from what is applied to what was tried, and the
 ///    changed files, scrubbed; cancelled, nothing sent.
 ///
+/// 7. (G7, gitops.md 6.1) The agent in the checkout's tab: `k8s_gitops`
+///    with `checkout: true` answers what the rail found, from its listing
+///    — a line each, the deployed sentence, no token or sentinel; another
+///    context refused; bound to fake-prod before the press, it lists
+///    nothing across the cluster and says to press Find What Deploys This.
+///
 /// Unbound and hidden, the rail asks nothing. Every write lands on the
 /// fake; every sheet is ended by the runner.
 extension E2ERunner {
@@ -136,6 +142,32 @@ extension E2ERunner {
         check("with what it tracks", match("Kustomization", "acme-apps")?.tracks == "tracks main; this branch is fix/orders", match("Kustomization", "acme-apps")?.tracks ?? "none")
         check("no token said", !gitOps.matches.contains { "\($0.why) \($0.object?.sources.map(\.repoURL) ?? [])".contains("ghp_fake") })
 
+        // 7. The agent in the checkout's tab asks the same.
+        let pane = tab.terminal.processTag
+        func agent(_ arguments: [String: Any]) async -> (text: String, error: Bool) {
+            do {
+                let result = try await KubeMCP.call("k8s_gitops", arguments, kubernetes: model, pane: pane)
+                return (((result["content"] as? [[String: Any]])?.first?["text"] as? String) ?? "", result["isError"] as? Bool == true)
+            } catch let error as BrowserMCP.ToolError {
+                return (error.message, true)
+            } catch {
+                return ("\(error)", true)
+            }
+        }
+        let writesBefore = fake.writes.count
+        let asked = await agent(["checkout": true])
+        let flat = asked.text.replacingOccurrences(of: "\n", with: " | ")
+        check("k8s_gitops checkout answers on the binding", !asked.error && asked.text.contains("bound to kind-fake/shop"), flat)
+        check(
+            "the rail's match, a line each",
+            asked.text.contains("Kustomization flux-system/acme-apps  Ready") && asked.text.contains("matched: owns Deployment/shop-api · deploy/fake-dev"), flat)
+        check("from the rail's listing", asked.text.contains("as the rail read them in the last five minutes"), flat)
+        check("acme-cron's attempt said", asked.text.contains("Flux tried c03f9aa"), flat)
+        check("no token, no sentinel", !asked.text.contains("ghp_fake") && !asked.text.contains(FakeKubeAPI.gitOpsSentinel), flat)
+        let elsewhere = await agent(["checkout": true, "context": "fake-dev"])
+        check("another context refused", elsewhere.error && elsewhere.text.contains("only on the checkout's own context, kind-fake"), elsewhere.text)
+        check("nothing written by the agent", fake.writes.count == writesBefore, "\(fake.writes.suffix(3))")
+
         // Open on Page: the Application's detail; its history's entry a review in the checkout.
         if let app0 = match("Application", "acme-shop-dev") {
             gitOps.openOnPage(app0)
@@ -201,6 +233,12 @@ extension E2ERunner {
         await pause(0.5)
         check("nothing listed across the cluster before it is pressed", lists().isEmpty, "\(lists().map(\.path))")
         check("no GitRepository rows across the cluster before it is pressed", !listedGitRepositories())
+        let prod = await agent(["checkout": true])
+        check(
+            "the agent on fake-prod: the owners only, press Find What Deploys This",
+            !prod.error && prod.text.contains("On fake-prod only the owners of the bound workloads were read")
+                && prod.text.contains("Kustomization flux-system/acme-apps"), prod.text.replacingOccurrences(of: "\n", with: " | "))
+        check("and it listed nothing across the cluster", lists().isEmpty && !listedGitRepositories(), "\(lists().map(\.path))")
         gitOps.find()
         check("pressed, it lists and finds acme-cron", await eventually(20) { match("Kustomization", "acme-cron") != nil }, "\(gitOps.state)")
         check("by lists across the cluster", !lists().isEmpty)
