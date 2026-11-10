@@ -550,7 +550,7 @@ final class KubeAgentBriefingTests: XCTestCase {
         for secret in [Self.password, Self.bearer, Self.blob, Self.secretValue] {
             XCTAssertFalse(whole.contains(secret), "\(secret) scrubbed")
         }
-        XCTAssertTrue(whole.contains("postgres://worker:••••••@db:5432/shop"), "the URL kept, its password out")
+        XCTAssertTrue(whole.contains("postgres://db:5432/shop") && !whole.contains("worker:••••••@"), "the URL kept, its whole userinfo out")
         XCTAssertTrue(whole.contains("acme/worker"), "the image's name isn't taken for a secret")
 
         let logRequests = api.requests.filter(\.isLog)

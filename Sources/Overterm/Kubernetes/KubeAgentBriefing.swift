@@ -346,9 +346,12 @@ enum KubeAgentBriefing {
     }
 
     /// What every word of the brief goes through: the env's secret values
-    /// (but `names`), every URL's password, then credentials and blobs.
+    /// (but `names`), every URL's password, its whole userinfo (a token
+    /// alone, `https://tok@host/…`, has no `:` for `Secrets.maskURLs` to
+    /// see — a Flux source's Ready message and events quote one), then
+    /// credentials and blobs.
     nonisolated static func scrubber(env: [(key: String, value: String)], names: Set<String>) -> (String) -> String {
-        { Secrets.scrubCredentials(Secrets.scrub($0, env: env, keeping: names)) }
+        { Secrets.scrubCredentials(GitRemoteURL.stripUserinfo(inText: Secrets.scrub($0, env: env, keeping: names))) }
     }
 
     private static func said(_ error: Error) -> String {

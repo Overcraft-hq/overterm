@@ -367,7 +367,7 @@ enum KubeMCP {
                     ("includeObject", KubeClient.includeObject(kind, scope)),
                 ])
             let body = try await within { try await client.get(path, accept: KubeClient.tableAccept).body }
-            table = try KubeTableReader.read(body, namespace: namespace)
+            table = try KubeTableReader.read(body, namespace: namespace, kind: kind)
         }
         var lines = [target.header(scope, kind: kind)]
         lines.append(
@@ -431,7 +431,7 @@ enum KubeMCP {
             let table: KubeTable
             do {
                 let body = try await within { try await client.get(path, accept: KubeClient.tableAccept).body }
-                table = try KubeTableReader.read(body, namespace: namespace)
+                table = try KubeTableReader.read(body, namespace: namespace, kind: kind)
             } catch let error as KubeAPIError where error.isForbidden {
                 continue  // Not this namespace's: the others' still.
             }
@@ -968,8 +968,9 @@ enum KubeMCPText {
     /// A cell this long is cut.
     static let maxCell = 200
 
-    /// `text` scrubbed of what looks like a credential (`Secrets`).
-    static func scrubbed(_ text: String) -> String { Secrets.scrubCredentials(Secrets.maskURLs(in: text)) }
+    /// `text` scrubbed of what looks like a credential (`Secrets`), and of
+    /// every URL's userinfo — a token alone has no `:` for `maskURLs`.
+    static func scrubbed(_ text: String) -> String { Secrets.scrubCredentials(GitRemoteURL.stripUserinfo(inText: Secrets.maskURLs(in: text))) }
 
     /// Scrubbed and bounded: every answer's last step.
     static func finished(_ text: String) -> String { bounded(scrubbed(text)) }

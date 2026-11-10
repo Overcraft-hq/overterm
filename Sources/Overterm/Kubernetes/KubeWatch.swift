@@ -86,11 +86,14 @@ enum KubeWatchEvent: Equatable, Sendable {
 struct KubeWatchDecoder: Sendable {
     private(set) var columns: [KubeColumn]
     let namespace: String?
+    /// What is watched, for the kinds whose cells are read with care.
+    let kind: KubeResourceKind?
     private var lines = DockerLineSplitter()
 
-    init(columns: [KubeColumn], namespace: String?) {
+    init(columns: [KubeColumn], namespace: String?, kind: KubeResourceKind? = nil) {
         self.columns = columns
         self.namespace = namespace
+        self.kind = kind
     }
 
     /// The events whole in `data` and what came before it.
@@ -116,7 +119,7 @@ struct KubeWatchDecoder: Sendable {
         case "BOOKMARK":
             return [.bookmark(resourceVersion: version ?? "", initialEventsEnd: bookmark(object))]
         case "ADDED", "MODIFIED", "DELETED":
-            let table = try KubeTableReader.read(object, namespace: namespace, columns: columns)
+            let table = try KubeTableReader.read(object, namespace: namespace, columns: columns, kind: kind)
             if object["kind"] as? String == "Table", !table.columns.isEmpty { columns = table.columns }
             return table.rows.map { row in
                 switch type {

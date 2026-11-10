@@ -240,6 +240,51 @@ final class KubeMCPTests: XCTestCase {
         XCTAssertTrue(none.hasSuffix("No pods matching app=nothing."), none)
     }
 
+    func testAFluxSourcesURLReachesAnAgentWithoutItsCredentials() async throws {
+        api.addCRD(
+            group: "source.toolkit.fluxcd.io", version: "v1", plural: "gitrepositories", kind: "GitRepository", shortNames: ["gitrepo"],
+            columns: [FakeKubeAPI.Column(name: "URL"), FakeKubeAPI.Column(name: "Ready"), FakeKubeAPI.Column(name: "Status")])
+        api.add(
+            "gitrepositories.source.toolkit.fluxcd.io", "acme-fleet", namespace: "shop",
+            values: ["URL": "https://ghp_fake@git.acme.example/acme/shop.git", "Ready": "False", "Status": "unable to clone 'https://bot:ghp_fake@git.acme.example/acme/shop.git'"])
+        api.add("gitrepositories.source.toolkit.fluxcd.io", "acme-other", namespace: "payments", values: ["URL": "https://u:ghp_fake@git.acme.example/acme/pay.git"])
+        for namespace in ["shop", "all"] {
+            let said = try await text("k8s_get", ["kind": "gitrepositories", "namespace": namespace])
+            XCTAssertTrue(said.contains("acme-fleet") && said.contains("https://git.acme.example/acme/shop.git"), said)
+            XCTAssertFalse(said.contains("ghp_fake"), said)
+        }
+    }
+
+    /// A source's Ready message and its events quote the URL it failed
+    /// to clone: describe and events give them without its userinfo, a
+    /// token with no `:` and one too short to look like a credential too.
+    func testAFluxSourcesDescribeAndEventsGiveNoUserinfo() async throws {
+        api.addCRD(
+            group: "source.toolkit.fluxcd.io", version: "v1", plural: "gitrepositories", kind: "GitRepository", shortNames: ["gitrepo"],
+            columns: [FakeKubeAPI.Column(name: "URL"), FakeKubeAPI.Column(name: "Ready")])
+        let failed = "unable to clone 'https://tok9z@git.acme.example/acme/x.git': authentication required"
+        api.add(
+            "gitrepositories.source.toolkit.fluxcd.io", "acme-fleet", namespace: "shop", values: ["URL": "https://tok9z@git.acme.example/acme/x.git"],
+            fields: [
+                "spec": ["url": "https://tok9z@git.acme.example/acme/x.git", "interval": "1m"],
+                "status": ["conditions": [["type": "Ready", "status": "False", "reason": "GitOperationFailed", "message": failed]]],
+            ])
+        api.addEvent(
+            about: "gitrepositories.source.toolkit.fluxcd.io", "acme-fleet", namespace: "shop", type: "Warning", reason: "GitOperationFailed",
+            message: "failed to checkout and determine revision: unable to clone 'https://deploy:tok9z@git.acme.example/acme/x.git'",
+            component: "source-controller")
+        let described = try await text("k8s_describe", ["kind": "gitrepositories", "name": "acme-fleet"])
+        XCTAssertTrue(described.contains("GitRepository shop/acme-fleet") && described.contains("https://git.acme.example/acme/x.git"), described)
+        XCTAssertTrue(described.contains("GitOperationFailed"), "its events and Ready said: \(described)")
+        XCTAssertFalse(described.contains("tok9z"), described)
+        let events = try await text("k8s_events", ["kind": "gitrepositories", "name": "acme-fleet"])
+        XCTAssertTrue(events.contains("GitOperationFailed") && events.contains("https://git.acme.example/acme/x.git"), events)
+        XCTAssertFalse(events.contains("tok9z"), events)
+        let namespace = try await text("k8s_events")
+        XCTAssertTrue(namespace.contains("GitOperationFailed"), namespace)
+        XCTAssertFalse(namespace.contains("tok9z"), namespace)
+    }
+
     func testAReadOnProductionWorks() async throws {
         let said = try await text("k8s_get", ["kind": "pods", "context": "fake-prod"])
         XCTAssertTrue(said.hasPrefix("PRODUCTION context fake-prod (read-only: Overterm changes nothing there), namespace payments."), said)

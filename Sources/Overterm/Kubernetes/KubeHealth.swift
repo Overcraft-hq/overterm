@@ -473,7 +473,7 @@ enum KubeHealth {
             var out: [String: Any] = [:]
             for (key, inner) in dict where !secretKeys.contains(key) {
                 if key == "message", let message = inner as? String {
-                    out[key] = withoutUserinfo(cutAtManifest(message))
+                    out[key] = GitRemoteURL.stripUserinfo(inText: cutAtManifest(message))
                 } else if key == "env", let entries = inner as? [[String: Any]] {
                     out[key] = entries.map { entry in
                         var entry = entry
@@ -487,16 +487,8 @@ enum KubeHealth {
             return out
         }
         if let array = value as? [Any] { return array.map(scrubbed) }
-        if let string = value as? String { return withoutUserinfo(string) }
+        if let string = value as? String { return GitRemoteURL.stripUserinfo(inText: string) }
         return value
-    }
-
-    /// Every `scheme://user:token@host` in `text` without its userinfo,
-    /// all of it: a token may have no `:`. A userinfo holds no `/`, `?`
-    /// or `#`, so a later `@` in a path (`…/users/jane@example.com`) stays.
-    static func withoutUserinfo(_ text: String) -> String {
-        guard text.contains("://"), text.contains("@") else { return text }
-        return text.replacingOccurrences(of: #"([A-Za-z][A-Za-z0-9+.-]*://)[^/?#@\s]+@"#, with: "$1", options: .regularExpression)
     }
 
     /// A message up to its first line that starts a manifest — trimmed,

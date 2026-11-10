@@ -2535,7 +2535,22 @@ the connection's context is writable (Writes, below).
   Table support, a plain List as Name and Created At. A row
   (`KubeRow`) is known by its namespace and name (`KubeRowID`): a
   Namespace column (a CRD's printer column may have one), else the
-  embedded metadata's, else the request's.
+  embedded metadata's, else the request's. A Flux source's rows
+  (`KubeGitOps.isFluxSource`: GitRepository, OCIRepository,
+  HelmRepository…; the reader is told the kind, by `KubeClient`'s lists
+  and watches and `k8s_get`) lose a URL's credentials as they are read
+  (`KubeTableReader.withoutCredentials`): the URL column, `spec.url`,
+  can be `https://user:token@…` — a token with no `:` too, which
+  `Secrets.maskURL` doesn't see — so it goes through
+  `GitRemoteURL.withoutUserinfo` (`Git/GitRemoteURL.swift`, pure: the
+  whole userinfo, cut at the authority's last `@`; the scp form, a user
+  and no secret, as written), and every other text cell (the Ready
+  message quotes the URL) through `stripUserinfo(inText:)`. The page,
+  the watches' changes and an agent never see the token: what else an
+  agent reads — `k8s_describe`'s conditions, events, Ask Why — goes
+  through `stripUserinfo(inText:)` too, in `KubeMCPText.scrubbed` and
+  `KubeAgentBriefing.scrubber` (gitops.md 5.3: the whole userinfo, not
+  just a password after a `:`).
   `KubePodSummary` reads a pod's Ready, Status and Restarts cells
   (`7 (2m ago)` since 1.22) into whether it is ready, failing and why
   (`CrashLoopBackOff`, `OOMKilled`, `Init:…` said as the init container's).
@@ -4894,7 +4909,8 @@ places, read-only:
   Helm values, Argo's parameters, jsonnet's `extVars`/`tlas`, every patch,
   Flux's `postBuild.substitute`, generator `elements`, an operation's raw
   `manifests` — in `spec` and `status` alike, since Argo copies the whole
-  source into `status` —, a URL's userinfo in any string, a message from
+  source into `status` —, a URL's userinfo in any string
+  (`GitRemoteURL.stripUserinfo(inText:)`), a message from
   its first manifest line on, the last-applied copy, managedFields); a list cut or refused said
   (`Report.notes`), and a Service's selection not judged from a cut pod
   list. Refresh reads again; hidden, what was read goes. The count sits by
