@@ -103,7 +103,7 @@ enum KubernetesKey: String, ResourceKey {
     case open, back, forward, close, logs, history, tree, metrics, earlierRange, laterRange, followInTab, shell, attach, portForward, openForward, database,
         askWhy
     case restart, scaleUp, scaleDown, scaleTo, pause, trigger, cordon, newNamespace, debug, delete, edit
-    case command, namespace, context, wide, allNamespaces, copyKubectl, filter, help
+    case command, namespace, context, wide, allNamespaces, copyKubectl, groupBy, filter, help
 
     var section: KubeSection? { KubeSection(rawValue: rawValue) }
 
@@ -144,6 +144,7 @@ enum KubernetesKey: String, ResourceKey {
         case .wide: return "w"
         case .allNamespaces: return "0"
         case .copyKubectl: return "k"
+        case .groupBy: return "G"
         case .filter: return "/"
         default: return "?"
         }
@@ -198,7 +199,10 @@ enum KubernetesKey: String, ResourceKey {
         case .wide: return "Wide columns — what kubectl get -o wide adds (IP, Node…)"
         case .allNamespaces: return "All namespaces"
         case .copyKubectl: return "Copy as kubectl — the selected object's command, else the list's (its namespace and selectors)"
-        case .filter: return "Filter — web status:crashloopbackoff ns:shop -status:running label:app=web field:status.phase=Running"
+        case .groupBy: return "GitOps: group by tool, source, owner or destination, then none again — in the GitOps section"
+        case .filter:
+            return
+                "Filter — web status:crashloopbackoff ns:shop -status:running label:app=web field:status.phase=Running; in GitOps is:failed kind:ks tool:argo repo:fleet"
         default: return "These keys"
         }
     }

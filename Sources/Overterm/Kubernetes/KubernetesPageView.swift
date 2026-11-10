@@ -386,7 +386,7 @@ struct KubernetesPageView: View {
             namespaceChip
             HStack(spacing: 4) {
                 Image(systemName: "line.3.horizontal.decrease").font(.system(size: 10)).foregroundStyle(theme.text3)
-                TextField("Filter  /", text: $page.filter)
+                TextField(page.section == .gitops ? "Filter  is: kind: tool: repo:  /" : "Filter  /", text: $page.filter)
                     .textFieldStyle(.plain)
                     .font(.system(size: 12))
                     .focused($focus, equals: .filter)

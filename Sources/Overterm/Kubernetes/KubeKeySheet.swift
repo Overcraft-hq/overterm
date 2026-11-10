@@ -25,7 +25,7 @@ extension KubernetesKey {
         switch self {
         case .overview, .workloads, .network, .config, .storage, .cluster, .custom, .helm, .gitops, .forwards: .sections
         case .open, .back, .forward, .close, .command, .namespace, .context, .filter, .help: .navigation
-        case .wide, .allNamespaces, .copyKubectl: .list
+        case .wide, .allNamespaces, .copyKubectl, .groupBy: .list
         case .logs, .history, .tree, .metrics, .earlierRange, .laterRange, .followInTab, .shell, .attach, .portForward, .openForward, .database, .askWhy, .edit: .verbs
         case .restart, .scaleUp, .scaleDown, .scaleTo, .pause, .trigger, .cordon, .newNamespace, .debug, .delete: .writes
         }

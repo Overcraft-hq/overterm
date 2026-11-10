@@ -6274,6 +6274,31 @@ an object —, the fallback across scope changes and a namespace refusing,
 kinds not served never asked, the banner, 600 Applications cut at 500) and `kubernetesGitOpsSection`
 (`E2ERunner+KubernetesGitOpsSection`) check it.
 
+**Grouped, and its filter's tokens** (gitops.md 2.8, G4). `G`
+(`KubernetesKey.groupBy`, a no-op outside the section) cycles
+`KubeGitOpsGroupBy` — none, tool, source, owner, destination — kept in the
+page's `KubeGitOpsViewState` with the groups folded; the chips' menu picks
+one too. `KubeGitOpsGrouping` (pure, reads nothing) sets each row's
+`KubeGitOpsGroupKeys` as the row is made, the summaries at hand as peers:
+by source a Flux object's source object (a HelmChart standing for its
+repository), which heads its group with its own state, and Argo CD's
+Applications by repository (`GitRemoteURL`, never userinfo); by owner its
+ApplicationSet, else the top of its parents by tracking id, instance label
+or Flux's labels (five hops, a cycle ended; "probably" Argo CD names nobody
+not summarised), else its `dependsOn` root — an object others name heads
+its own group; by destination another cluster said, its destination's
+namespace, the namespaces it manages, sources apart. `groups` keeps the
+visible rows' order inside each group (head first), puts groups with a
+problem first, then by title, the catch-all ("No owner", "Not summarised")
+last; the table's rows are `KubeGitOpsListRow` — a group's own row across
+the columns (↩ or its chevron folds it), or an object's. `KubeGitOpsFilter`
+reads the filter's `is:`, `kind:`, `tool:` and `repo:` words (commas for
+any of several, `-` to turn one around; an unknown value said beside the
+chips, matching anything), then the text over name, why and source; a
+word with another list's key (`label:`, `ns:`) is nothing here, and an
+`is:` asking for a state keeps Hide Ready from hiding it.
+`KubeGitOpsGroupingTests` and `kubernetesGitOpsSection` check it.
+
 **A GitOps object's detail** (`KubeGitOpsDetail.swift`, pure; gitops.md
 2.9, 6.2, G3). An Application, ApplicationSet, Kustomization or
 HelmRelease's Overview opens with a GitOps header, read from the body the
