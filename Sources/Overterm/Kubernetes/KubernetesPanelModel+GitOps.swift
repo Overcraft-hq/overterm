@@ -498,73 +498,89 @@ final class KubePanelGitOps: ObservableObject {
 
     private func readOwners() {
         guard let client, let discovery else { return }
-        let owners = KubeGitOpsMatch.owners(workloads.map { ($0.ref, $0.owners) }).map(\.owner)
-        ownersRead = owners
+        let named = KubeGitOpsMatch.owners(workloads.map { ($0.ref, $0.owners) })
+        ownersRead = named.map(\.owner)
         ownerTask?.cancel()
         let generation = self.generation
-        let binding = self.binding
+        let namespace = binding?.namespace
         ownerTask = Task { [weak self] in
-            var budget = Self.ownerReads
-            var objects: [KubeGitOpsObject.Key: KubeGitOpsObject] = [:]
-            var reads: [KubeGitOpsOwner: KubeGitOpsMatch.OwnerRead] = [:]
-            var problems: [String] = []
-            let now = Date()
-            for owner in owners where budget > 0 {
-                let key = KubeGitOpsMatch.key(of: owner)
-                guard let kind = Self.kind(of: key.kind, in: discovery) else {
-                    // Not served here: no GET, and not in this cluster — unless its
-                    // group failed to answer discovery, which says nothing.
-                    if let group = Self.failedGroup(of: key.kind, in: discovery) {
-                        reads[owner] = .unreadable
-                        problems.append("Couldn't read \(owner.said): \(group) didn't answer discovery")
-                    } else {
-                        reads[owner] = .absent
-                    }
-                    continue
-                }
-                budget -= 1
-                do {
-                    let data = try await client.get(kind.path(namespace: key.namespace, name: key.name), maxBytes: Self.getBytes)
-                    var object = try await KubeBlocking.run { Result { try KubeGitOpsSummary.object(data, readAt: now) } }.get()
-                    // Helm's own label: the Application owns it only when it says so.
-                    if owner.mark == .appInstance, let namespace = binding?.namespace {
-                        let managed = (try? await KubeBlocking.run { Result { try KubeGitOpsWire.managed(data) } }.get())?.status?.resources ?? []
-                        let refs = self?.workloads.filter { $0.owners.contains(owner) }.map(\.ref) ?? []
-                        if !refs.contains(where: { KubeGitOpsMatch.manages(managed, $0, namespace: namespace) }) { object = nil }
-                    }
-                    if let object {
-                        objects[object.key] = object
-                        reads[owner] = .present
-                        // A Flux owner's source, and its chart's.
-                        for upstream in KubeGitOpsLadder.upstream(object) where budget > 0 && objects[upstream] == nil {
-                            budget -= 1
-                            if let read = await Self.get(upstream, client: client, discovery: discovery, now: now) {
-                                objects[read.key] = read
-                                for further in KubeGitOpsLadder.upstream(read) where budget > 0 && objects[further] == nil {
-                                    budget -= 1
-                                    if let source = await Self.get(further, client: client, discovery: discovery, now: now) { objects[source.key] = source }
-                                }
-                            }
-                        }
-                    } else {
-                        reads[owner] = .absent
-                    }
-                } catch let error as KubeAPIError where error.isNotFound {
-                    reads[owner] = .absent
-                } catch is CancellationError {
-                    return
-                } catch {
-                    // Refused (403), failed, timed out: unknown — never "not in" the cluster.
-                    reads[owner] = .unreadable
-                    problems.append("Couldn't read \(owner.said): \(KubernetesModel.said(error))")
-                }
-            }
+            guard let read = await Self.readOwners(named, client: client, discovery: discovery, namespace: namespace, now: Date()) else { return }
             guard let self, self.generation == generation, !Task.isCancelled else { return }
-            self.owned = objects
-            self.reads = reads
-            self.problems = problems
+            self.owned = read.objects
+            self.reads = read.reads
+            self.problems = read.problems
             self.compute()
         }
+    }
+
+    /// What P2 read: the owners' objects, what each GET said, what couldn't be read.
+    struct OwnersRead: Sendable {
+        var objects: [KubeGitOpsObject.Key: KubeGitOpsObject] = [:]
+        var reads: [KubeGitOpsOwner: KubeGitOpsMatch.OwnerRead] = [:]
+        var problems: [String] = []
+    }
+
+    /// P2: each owner the workloads' marks name read by one GET, at most
+    /// `ownerReads` objects with a Flux owner's source and chart — the
+    /// rail's, and `k8s_gitops checkout`'s. Helm's own label names the
+    /// Application only when it manages one of those workloads in
+    /// `namespace`. Nil when cancelled.
+    nonisolated static func readOwners(
+        _ named: [(owner: KubeGitOpsOwner, workloads: [KubeWorkloadRef])], client: KubeClient, discovery: KubeDiscovery, namespace: String?,
+        now: Date
+    ) async -> OwnersRead? {
+        var budget = ownerReads
+        var read = OwnersRead()
+        for (owner, refs) in named where budget > 0 {
+            let key = KubeGitOpsMatch.key(of: owner)
+            guard let kind = kind(of: key.kind, in: discovery) else {
+                // Not served here: no GET, and not in this cluster — unless its
+                // group failed to answer discovery, which says nothing.
+                if let group = failedGroup(of: key.kind, in: discovery) {
+                    read.reads[owner] = .unreadable
+                    read.problems.append("Couldn't read \(owner.said): \(group) didn't answer discovery")
+                } else {
+                    read.reads[owner] = .absent
+                }
+                continue
+            }
+            budget -= 1
+            do {
+                let data = try await client.get(kind.path(namespace: key.namespace, name: key.name), maxBytes: getBytes)
+                var object = try await KubeBlocking.run { Result { try KubeGitOpsSummary.object(data, readAt: now) } }.get()
+                // Helm's own label: the Application owns it only when it says so.
+                if owner.mark == .appInstance, let namespace {
+                    let managed = (try? await KubeBlocking.run { Result { try KubeGitOpsWire.managed(data) } }.get())?.status?.resources ?? []
+                    if !refs.contains(where: { KubeGitOpsMatch.manages(managed, $0, namespace: namespace) }) { object = nil }
+                }
+                if let object {
+                    read.objects[object.key] = object
+                    read.reads[owner] = .present
+                    // A Flux owner's source, and its chart's.
+                    for upstream in KubeGitOpsLadder.upstream(object) where budget > 0 && read.objects[upstream] == nil {
+                        budget -= 1
+                        if let source = await get(upstream, client: client, discovery: discovery, now: now) {
+                            read.objects[source.key] = source
+                            for further in KubeGitOpsLadder.upstream(source) where budget > 0 && read.objects[further] == nil {
+                                budget -= 1
+                                if let found = await get(further, client: client, discovery: discovery, now: now) { read.objects[found.key] = found }
+                            }
+                        }
+                    }
+                } else {
+                    read.reads[owner] = .absent
+                }
+            } catch let error as KubeAPIError where error.isNotFound {
+                read.reads[owner] = .absent
+            } catch is CancellationError {
+                return nil
+            } catch {
+                // Refused (403), failed, timed out: unknown — never "not in" the cluster.
+                read.reads[owner] = .unreadable
+                read.problems.append("Couldn't read \(owner.said): \(KubernetesModel.said(error))")
+            }
+        }
+        return Task.isCancelled ? nil : read
     }
 
     /// One object by its key, summarised; nil when it isn't there or can't be read.
@@ -601,7 +617,10 @@ final class KubePanelGitOps: ObservableObject {
 
     /// Where Applications are listed: Argo CD's namespace, those the page
     /// saw them in, the binding's.
-    private func argoNamespaces(_ binding: KubeBinding) -> [String] {
+    private func argoNamespaces(_ binding: KubeBinding) -> [String] { Self.argoNamespaces(binding, cache: cache) }
+
+    /// The rail's, and `k8s_gitops checkout`'s: Argo CD's own, those the page saw them in, the binding's.
+    static func argoNamespaces(_ binding: KubeBinding, cache: KubeGitOpsMatchCache) -> [String] {
         let seen = cache.seenApplications(binding.context).sorted()
         var names: Set<String> = []
         return ([KubeGitOps.argoDefaultNamespace] + seen + [binding.namespace]).filter { names.insert($0).inserted }
@@ -686,9 +705,20 @@ final class KubePanelGitOps: ObservableObject {
     }
 
     /// P3 and P4: what names the checkout, and what takes from it.
+    ///
+    /// `objects`/`bytes` given (`k8s_gitops checkout`'s 200 or 16 MB), they
+    /// are a kind's across every place it is read in — Applications in each
+    /// Argo CD namespace, a refused Flux kind namespace by namespace — and
+    /// the places past it are said, not read (gitops.md 6.1). Not given, each
+    /// place reads the section's own bound (the rail's).
     nonisolated static func listing(
-        client: KubeClient, discovery: KubeDiscovery, checkout: KubeGitOpsMatch.Checkout, namespace: String, argo: [String]
+        client: KubeClient, discovery: KubeDiscovery, checkout: KubeGitOpsMatch.Checkout, namespace: String, argo: [String],
+        objects: Int? = nil, bytes: Int? = nil
     ) async -> Result<KubeGitOpsMatchCache.Listing, Error> {
+        let stopAfter = objects ?? KubeGitOpsSession.kindObjects
+        let totalBytes = bytes ?? KubeGitOpsSession.kindBytes
+        let shared = objects != nil || bytes != nil
+        func budget() -> KubeGitOpsBudget { KubeGitOpsBudget(objects: stopAfter, bytes: totalBytes, shared: shared) }
         var listing = KubeGitOpsMatchCache.Listing()
         let now = Date()
         let flux = KubeGitOpsControllers.fluxNamespace
@@ -716,9 +746,9 @@ final class KubePanelGitOps: ObservableObject {
             if let kind = kind(of: "OCIRepository", in: discovery) {
                 let paged: KubeGitOpsPaged
                 do {
-                    paged = try await client.pagedObjects(kind, in: nil, stopAfter: ociObjects, totalBytes: ociBytes, readAt: now)
+                    paged = try await client.pagedObjects(kind, in: nil, stopAfter: min(ociObjects, stopAfter), totalBytes: min(ociBytes, totalBytes), readAt: now)
                 } catch let error as KubeAPIError where error.isForbidden {
-                    paged = try await client.pagedObjects(kind, in: flux, stopAfter: ociObjects, totalBytes: ociBytes, readAt: now)
+                    paged = try await client.pagedObjects(kind, in: flux, stopAfter: min(ociObjects, stopAfter), totalBytes: min(ociBytes, totalBytes), readAt: now)
                     listing.searched.append("OCIRepositories: forbidden across the cluster; read in \(flux)")
                 }
                 if let cut = paged.cut { listing.searched.append("searched \(cut)") }
@@ -730,9 +760,12 @@ final class KubePanelGitOps: ObservableObject {
             // P4: Applications where they live.
             if let kind = kind(of: "Application", in: discovery) {
                 var refused: [String] = []
-                for place in argo {
+                var budget = budget()
+                for place in argo where budget.allows(place) {
+                    let left = budget.left
                     do {
-                        let paged = try await client.pagedObjects(kind, in: place, readAt: now)
+                        let paged = try await client.pagedObjects(kind, in: place, stopAfter: left.objects, totalBytes: left.bytes, readAt: now)
+                        budget.spend(paged)
                         if let cut = paged.cut { listing.searched.append("searched \(cut) in \(place)") }
                         for object in paged.objects { listing.objects[object.key] = object }
                     } catch let error as KubeAPIError where error.isForbidden || error.isNotFound {
@@ -740,6 +773,7 @@ final class KubePanelGitOps: ObservableObject {
                     }
                 }
                 if !refused.isEmpty { listing.searched.append("Applications: refused in \(refused.joined(separator: ", "))") }
+                if let said = budget.said(KubeKindCatalog.title(of: kind)) { listing.searched.append(said) }
             }
             // P4: Kustomizations and HelmReleases, only once a Flux source matched.
             // A chartRef's HelmChart by GET: each chart once (a miss remembered), at most `ownerReads`.
@@ -751,15 +785,24 @@ final class KubePanelGitOps: ObservableObject {
                     guard let kind = kind(of: name, in: discovery) else { continue }
                     var objects: [KubeGitOpsObject] = []
                     do {
-                        let paged = try await client.pagedObjects(kind, in: nil, readAt: now)
+                        let paged = try await client.pagedObjects(kind, in: nil, stopAfter: stopAfter, totalBytes: totalBytes, readAt: now)
                         if let cut = paged.cut { listing.searched.append("searched \(cut)") }
                         objects = paged.objects
                     } catch let error as KubeAPIError where error.isForbidden {
                         var seen: Set<String> = []
-                        for place in places where seen.insert(place).inserted {
-                            if let paged = try? await client.pagedObjects(kind, in: place, readAt: now) { objects += paged.objects }
+                        var budget = budget()
+                        var readIn: [String] = []
+                        for place in places where seen.insert(place).inserted && budget.allows(place) {
+                            let left = budget.left
+                            readIn.append(place)
+                            guard let paged = try? await client.pagedObjects(kind, in: place, stopAfter: left.objects, totalBytes: left.bytes, readAt: now) else { continue }
+                            budget.spend(paged)
+                            if let cut = paged.cut { listing.searched.append("searched \(cut) in \(place)") }
+                            objects += paged.objects
                         }
-                        listing.searched.append("\(KubeKindCatalog.title(of: kind)): forbidden across the cluster; read in \(seen.sorted().joined(separator: ", "))")
+                        let title = KubeKindCatalog.title(of: kind)
+                        listing.searched.append("\(title): forbidden across the cluster; read in \(readIn.sorted().joined(separator: ", "))")
+                        if let said = budget.said(title) { listing.searched.append(said) }
                     }
                     let matched = Set(matchedSources)
                     for object in objects {

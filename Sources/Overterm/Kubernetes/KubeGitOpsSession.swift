@@ -17,6 +17,43 @@ struct KubeGitOpsPaged: Sendable {
     var pages = 0
 }
 
+/// What one kind may still read across the places it is read in (a kind
+/// refused across the cluster, read namespace by namespace): `k8s_gitops`'
+/// 200 objects or 16 MB a kind held across them all (gitops.md 6.1), what
+/// each place read taken off. `shared` off, each place gets the whole
+/// bound again (the rail's own reads, each place the section's 500/64 MB).
+struct KubeGitOpsBudget: Sendable {
+    let objects: Int
+    let bytes: Int
+    var shared = true
+    private(set) var readObjects = 0
+    private(set) var readBytes = 0
+    /// The places not read because the bound was spent.
+    private(set) var skipped: [String] = []
+
+    /// What the next place may read.
+    var left: (objects: Int, bytes: Int) { shared ? (objects - readObjects, bytes - readBytes) : (objects, bytes) }
+    var spent: Bool { shared && (readObjects >= objects || readBytes >= bytes) }
+
+    mutating func spend(_ paged: KubeGitOpsPaged) {
+        readObjects += paged.objects.count
+        readBytes += paged.bytes
+    }
+
+    /// Whether `place` may be read; if not, it is remembered as skipped.
+    mutating func allows(_ place: String) -> Bool {
+        guard spent else { return true }
+        skipped.append(place)
+        return false
+    }
+
+    /// "Applications: 200 objects or 16 MB a kind read; not read in team-a, team-b."
+    func said(_ title: String) -> String? {
+        guard !skipped.isEmpty else { return nil }
+        return "\(title): \(objects) objects or \(bytes >> 20) MB a kind read; not read in \(skipped.joined(separator: ", "))"
+    }
+}
+
 extension KubeClient {
     func pagedObjects(
         _ kind: KubeResourceKind, in namespace: String?, pageLimit: Int = KubeGitOpsSession.pageLimit, maxBytes: Int = KubeGitOpsSession.pageBytes,

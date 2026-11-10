@@ -920,16 +920,18 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// discovery and in paths — and the CRD itself an object, ADDED to the
     /// watches of CRDs, as the server has it once the CRD is established.
     /// `columns`: its `additionalPrinterColumns` (Name and Age come with them);
-    /// `schema`: its `spec`'s OpenAPI schema, as `/openapi/v3` says it (nil: anything).
+    /// `schema`: its `spec`'s OpenAPI schema, as `/openapi/v3` says it (nil: anything);
+    /// `first`: its group listed before every other group in discovery (as a
+    /// server orders groups by priority, not by when they came).
     func addCRD(
         group: String, version: String, plural: String, kind: String, namespaced: Bool = true, shortNames: [String] = [], columns: [Column] = [],
-        schema: [String: Any]? = nil
+        schema: [String: Any]? = nil, first: Bool = false
     ) {
         let served = Kind(
             group: group, version: version, resource: plural, kind: kind, namespaced: namespaced, shortNames: shortNames, categories: [],
             subresources: ["status"], columns: columns, custom: true)
         locked {
-            kinds.append(served)
+            if first { kinds.insert(served, at: 0) } else { kinds.append(served) }
             if let schema { crdSchemas[served.fullName] = schema }
         }
         add("customresourcedefinitions.apiextensions.k8s.io", "\(plural).\(group)", values: [:], labels: [:])

@@ -3837,8 +3837,8 @@ where a context is writable for agents (Agents' writes, below):
   are picked, since the server lists them in key order, and a list cut
   there says so —, `warnings_only` as `type=Warning`, or one object's by `name` (and
   `kind`, a pod's by default), at most 200.
-- `k8s_why`: Ask Why's brief (`KubeAgentBriefing`) on a pod or a
-  Deployment, as one text — the question, the brief, each part; one that
+- `k8s_why`: Ask Why's brief (`KubeAgentBriefing`) on a pod, a
+  Deployment, or an Argo CD or Flux object (`k8s_gitops`), as one text — the question, the brief, each part; one that
   isn't failing says why.
 - `k8s_rollout`: a Deployment's, StatefulSet's or DaemonSet's rollout as
   `KubeRollout` says it, its replicas, and its history — a Deployment's
@@ -3846,7 +3846,26 @@ where a context is writable for agents (Agents' writes, below):
   owns, newest first: revision, images, ready, age, change-cause.
 - `k8s_top`: usage as `kubectl top` says it (Usage, below).
 - `k8s_metrics`: an object's usage over a range, as text (Agents' usage,
-  below). `k8s_apply`
+  below).
+- `k8s_gitops` (`KubeMCP+GitOps`, gitops.md 6.1): Argo CD's and Flux's
+  objects in the namespace or deploying into it, ranked on the section's
+  ladder, one line each (`KubeMCPGitOpsText`: state, why, the revision
+  applied and Flux's failed attempt, source, where, last error — every
+  message the summary's, through 5.3, then `Secrets` again); `kind`,
+  `failing_only`, `limit`. Read on demand: `pagedObjects` at 200 objects
+  or 16 MB a kind, a kind refused across the cluster read where it lives
+  — the bound held across those places (`KubeGitOpsBudget`), the places
+  past it said, not read.
+  `checkout: true` is what deploys the calling pane's checkout, on its
+  binding's context only (refused unbound or naming another): the
+  workloads' marks and their owners by GET (`KubePanelGitOps.readOwners`,
+  the rail's P2), the rail's listing when `KubeGitOpsMatchCache` holds
+  one, else off production `KubePanelGitOps.listing` at the agent's
+  bounds, a kind's across all its namespaces (not kept), never on production; each match with the deployed
+  sentence and Flux's attempted line (`KubeGitOpsReach`). `k8s_why` takes
+  an Application, ApplicationSet, Kustomization or HelmRelease too (G3's
+  brief; `application` is Argo CD's even where another `applications`
+  kind, app.k8s.io's, is served first). No GitOps write tool. `k8s_apply`
   is a write (Manifests in the editor, below). A name that isn't one of
   these is an unknown tool.
 
