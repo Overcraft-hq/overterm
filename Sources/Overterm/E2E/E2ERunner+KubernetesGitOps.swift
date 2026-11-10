@@ -13,7 +13,9 @@ import Foundation
 /// merge patch the fake applies; its tree's GitRepository reconciled from
 /// the node's own verbs; an Application refreshed by `r`, then synced by
 /// `s` with argocd in a tab — recorded, not typed, the tab pinned to the
-/// context. Nothing is written but those patches.
+/// context. Nothing is written but those patches. Then ⌫ on an Application
+/// carrying Argo CD's finalizer: asked with what goes with it, who makes it
+/// again, and its name typed on kind-fake too — a wrong one sends nothing.
 extension E2ERunner {
     func kubernetesGitOpsVerbs(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
         let wasShowing = app.store.showingOverlay == .kubernetes
@@ -220,6 +222,51 @@ extension E2ERunner {
                 "PATCH /apis/source.toolkit.fluxcd.io/v1/namespaces/shop/gitrepositories/acme-shop",
                 "PATCH /apis/argoproj.io/v1alpha1/namespaces/shop/applications/tree-shop",
             ] && fake.writes.filter { !$0.isAccessReview }.count == 5, "\(fake.writes.map(\.description))")
+
+        // G0b: ⌫ on an Application with Argo CD's finalizer says what goes
+        // with it and who makes it again, and asks its name on kind-fake
+        // too; a wrong name sends nothing.
+        let cascade = KubeRowID(namespace: "shop", name: "acme-cascade")
+        fake.add(
+            "applications.argoproj.io", cascade.name, namespace: "shop",
+            labels: [KubeGitOpsOwner.kustomizeName: "acme-apps", KubeGitOpsOwner.kustomizeNamespace: "flux-system"],
+            fields: [
+                "metadata": ["finalizers": ["resources-finalizer.argocd.argoproj.io/background"]],
+                "spec": ["destination": ["server": "https://kubernetes.default.svc", "namespace": "shop"]],
+                "status": [
+                    "resources": [
+                        ["kind": "Deployment", "group": "apps", "version": "v1", "name": "web", "namespace": "shop"],
+                        ["kind": "Service", "version": "v1", "name": "web", "namespace": "shop"],
+                        ["kind": "ConfigMap", "version": "v1", "name": "web", "namespace": "payments"],
+                    ]
+                ],
+            ])
+        defer { fake.delete("applications.argoproj.io", cascade.name, namespace: "shop") }
+        if await showKubernetesKind(model, page, "applications", row: cascade) {
+            page.selection = [cascade.description]
+            page.writeStatus = nil
+            check(
+                "Delete… is offered once reviewed",
+                await eventually(10) { page.verbs(for: [cascade.description]).first { $0.title == KubeWriteVerb.delete.title }.map { $0.unavailable == nil } == true })
+            page.giveListTheKeyboard()
+            check("⌫ is the list's", await pressKubernetesKey("\u{7F}", keyCode: 51))
+            check("the delete is asked with its name", await eventually(10) { self.window.attachedSheet != nil && self.typedNameField() != nil })
+            let delete = sheetTexts().joined(separator: "\n")
+            check("naming it", delete.contains("Delete application shop/acme-cascade?") && delete.contains("kind-fake · namespace shop"), delete)
+            check(
+                "what goes with it, counted",
+                delete.contains("Argo CD deletes the 3 resources it manages with it, across 2 namespaces (its resources-finalizer.argocd.argoproj.io/background finalizer)."),
+                delete)
+            check("who makes it again", delete.contains("Managed by Kustomization flux-system/acme-apps: it will be recreated."), delete)
+            check("its name asked on a local context too", delete.contains("Type acme-cascade to confirm."), delete)
+            typedNameField()?.stringValue = "acme-cascad"
+            confirmSheet()
+            check(
+                "a wrong name sends nothing",
+                await eventually(5) { page.writeStatus == .failed("The name typed wasn't acme-cascade: nothing was changed.") }
+                    && !fake.writes.contains { $0.method == "DELETE" }, "\(String(describing: page.writeStatus))")
+            check("it is still there", fake.object("applications.argoproj.io", cascade.name, namespace: "shop") != nil)
+        }
         page.writeStatus = nil
         page.showKind(model.discovery?.kind("po") ?? .pods)
     }

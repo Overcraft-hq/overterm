@@ -22,6 +22,10 @@ struct KubeWriteFacts {
     var job: String?
     var request: KubeWriteRequest?
     var contents: KubeNamespaceContents?
+    /// What a GitOps object's delete takes with it (gitops.md, G0b).
+    var gitOps: KubeGitOpsDelete?
+    /// What a namespace's GitOps objects take with its delete.
+    var gitOpsHeld: KubeNamespaceGitOps?
     /// A resize's changes, against the pod as read after the review.
     var resize: [KubeResize.Change] = []
     /// The context the access review and the reads were made on: the
@@ -457,6 +461,10 @@ extension KubernetesPageModel {
                     facts.resize = changes
                 case .delete where KubeWriteCheck.isNamespace(ref.kind):
                     facts.contents = await client.contents(of: ref.name, discovery: discovery)
+                    facts.gitOpsHeld = await client.gitOpsHeld(in: ref.name, discovery: discovery)
+                case .delete where KubeGitOpsDelete.tool(ref.kind) != nil:
+                    // Read after the review, bounded; a failed read is the worst case, not a refusal.
+                    facts.gitOps = await client.gitOpsDelete(ref)
                 case .reconcile:
                     // flux reconcile refuses a suspended one: its controller would ignore the ask.
                     if KubeWriteToggle.suspended.state(of: try await client.spec(ref)) {
@@ -505,7 +513,7 @@ extension KubernetesPageModel {
             writeStatus = .failed(Self.writeContextChanged)
             return
         }
-        let rule = KubeWriteCheck.rule(facts.verb, for: context, kind: ref.kind, replicas: facts.to)
+        let rule = KubeWriteCheck.rule(facts.verb, for: context, kind: ref.kind, replicas: facts.to, gitOps: facts.gitOps, held: facts.gitOpsHeld)
         if let refused = rule.refused {
             writeStatus = .failed(refused)
             return

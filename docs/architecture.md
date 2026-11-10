@@ -6050,6 +6050,45 @@ trees' nodes (a Kustomization's source, its `dependsOn`) all have them.
 patches applied, read-only and production refusing, the tab lines) and
 `kubernetesGitOpsVerbs` (`E2ERunner+KubernetesGitOps`) check them.
 
+**Deleting a GitOps object says what goes with it** (`KubeGitOpsDelete.swift`,
+pure; gitops.md 1.1 rows 6–7, G0b). An Application, a Kustomization or a
+HelmRelease has its controller delete what it manages, so its delete types
+the name on every class (`KubeWriteCheck.rule`, `KubeGitOpsDelete.cascades`;
+an ApplicationSet's is asked as any custom resource's, warned that its
+generated Applications go). After the access review the guard reads the
+object once (`KubeClient.gitOpsDelete`: one GET, 16 MB at most) straight
+into `KubeGitOpsDelete.Wire`'s allow-listed fields — the finalizers, the
+owner marks, `prune`/`deletionPolicy`/`suspend`, the destination, the counts of
+`status.resources` and the inventory with their namespaces — so no value,
+parameter, manifest or last-applied annotation is ever decoded; the facts
+ride `KubeWriteFacts.gitOps` and the warning says them: Argo CD's
+`resources-finalizer.argocd.argoproj.io` matched by prefix (`/background`,
+`/foreground`) with the count ("Argo CD deletes the 42 resources it manages
+with it, across 3 namespaces"), none without it; Flux's prune (Delete and
+WaitForTermination always, Orphan never, MirrorPrune as prune says); a
+HelmRelease's uninstall; neither while suspended (its controller skips the
+cascade then, "unless it is resumed first"); another cluster said.
+A read that fails or is refused gives the worst case ("may delete
+everything it manages"), never no sentence, as does a rule made without
+the read. A parent — Flux's Kustomization labels, an app-of-apps tracking
+id or instance label (KubeGitOpsOwner), an owning ApplicationSet — adds
+"Managed by Kustomization flux-system/apps: it will be recreated" (not a
+bootstrap Kustomization naming itself). A namespace's delete reads each
+GitOps kind it serves in the namespace (`KubeClient.gitOpsHeld`: pages of
+100 into the same wire — Applications 20, as they carry their history and
+sources — 500 objects a kind, the rest from `remainingItemCount` as "at
+least"; a kind merged only once read to its end, so a page that fails
+leaves it unread rather than half counted) into `KubeNamespaceGitOps`,
+which adds
+"And the 31 Applications in it with Argo CD's resources finalizer delete
+what they manage: 1,204 objects across 9 namespaces", the HelmReleases'
+uninstalls, and the kinds that couldn't be read as the worst case — and,
+while the context's discovery isn't known, that its GitOps objects weren't
+counted and may delete what they manage. Numbers
+are grouped the same in every locale. `KubeWritesTests` (pure),
+`KubeGitOpsPageTests` (the order against the fake, the worst case on a 403,
+the namespace's reads) and `kubernetesGitOpsVerbs` check it.
+
 ### The cluster's API docs
 
 **The cluster's own API docs** (`KubeOpenAPI.swift` and

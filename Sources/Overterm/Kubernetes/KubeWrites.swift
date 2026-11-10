@@ -265,8 +265,13 @@ enum KubeWriteCheck {
         }
     }
 
-    /// `replicas`: what a scale would set, for scaling to 0.
-    static func rule(_ verb: KubeWriteVerb, for context: KubeContext, kind: KubeResourceKind, replicas: Int? = nil) -> KubeWriteRule {
+    /// `replicas`: what a scale would set, for scaling to 0. `gitOps`:
+    /// what a GitOps object's delete takes with it, as read after the
+    /// review; `held`: what a namespace's GitOps objects take with it.
+    static func rule(
+        _ verb: KubeWriteVerb, for context: KubeContext, kind: KubeResourceKind, replicas: Int? = nil, gitOps: KubeGitOpsDelete? = nil,
+        held: KubeNamespaceGitOps? = nil
+    ) -> KubeWriteRule {
         guard offered(verb, on: kind) else {
             return KubeWriteRule(refused: "A \(kind.kind.isEmpty ? kind.resource : kind.kind) has no \(verb.label.lowercased()).")
         }
@@ -278,7 +283,8 @@ enum KubeWriteCheck {
             switch verb {
             // Section 2.4: always with the name typed.
             case .forceDelete, .removeFinalizers: true
-            case .delete: production || namespace
+            // An Application, a Kustomization, a HelmRelease: their controller deletes what they manage (gitops.md, decision 13).
+            case .delete: production || namespace || KubeGitOpsDelete.cascades(kind)
             case .recreate: production
             case .scale: production && replicas == 0
             // Not in rule 4's list: each is undone by its opposite (a
@@ -287,19 +293,27 @@ enum KubeWriteCheck {
             // GitOps' own verbs: each asks its controller for what it does anyway, or is undone by its opposite.
             case .reconcile, .fluxSuspend, .fluxResume, .refresh: false
             }
-        return KubeWriteRule(access: access(verb, on: kind), typedName: typed, warning: warning(verb, kind: kind))
+        return KubeWriteRule(access: access(verb, on: kind), typedName: typed, warning: warning(verb, kind: kind, gitOps: gitOps, held: held))
     }
 
-    static func warning(_ verb: KubeWriteVerb, kind: KubeResourceKind) -> String? {
+    /// A GitOps object's delete always warns: of what was read, else of the
+    /// worst case — never nothing.
+    static func warning(_ verb: KubeWriteVerb, kind: KubeResourceKind, gitOps: KubeGitOpsDelete? = nil, held: KubeNamespaceGitOps? = nil) -> String? {
         switch verb {
+        case .delete where isNamespace(kind):
+            return (["Everything in the namespace is deleted with it."] + [held?.said].compactMap { $0 }).joined(separator: " ")
+        case .delete where KubeGitOpsDelete.tool(kind) != nil:
+            let tool = KubeGitOpsDelete.tool(kind)!
+            return (gitOps?.tool == tool ? gitOps! : .unread(tool, "")).said
+        default: break
+        }
+        return switch verb {
         case .forceDelete:
             "Force deleting doesn't wait for the kubelet to say the pod stopped: its containers may still be running on their node, "
                 + "and a StatefulSet's pod may run twice."
         case .removeFinalizers:
             "A finalizer is a controller's promise to clean up — a volume, a load balancer, DNS — before the object goes. "
                 + "Removed, that cleanup may never happen, and an object already being deleted goes at once."
-        case .delete where kind.group.isEmpty && kind.resource == "namespaces":
-            "Everything in the namespace is deleted with it."
         case .fluxSuspend:
             "While it is suspended Flux applies nothing from its source, and puts back nothing changed by hand."
         case .resize:

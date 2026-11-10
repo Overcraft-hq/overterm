@@ -659,4 +659,95 @@ final class KubeGitOpsPageTests: XCTestCase {
         }
         XCTAssertFalse(suspended())
     }
+
+    // MARK: G0b — deleting a GitOps object says what goes with it
+
+    private func cascadingApplication() {
+        api.setFields(
+            "applications.argoproj.io", "shop", namespace: "flux-system",
+            [
+                "metadata": ["finalizers": ["resources-finalizer.argocd.argoproj.io/background"]],
+                "spec": [
+                    "destination": ["server": "https://kubernetes.default.svc", "namespace": "shop"],
+                    "source": ["repoURL": "https://git.acme.example/shop.git", "helm": ["values": "token: s3cr3t-sentinel"]],
+                ],
+                "status": [
+                    "resources": [
+                        ["kind": "Deployment", "group": "apps", "version": "v1", "name": "web", "namespace": "shop"],
+                        ["kind": "Service", "version": "v1", "name": "web", "namespace": "payments"],
+                    ]
+                ],
+            ])
+    }
+
+    /// ⌫ on an Application with Argo CD's finalizer: reviewed, read, then
+    /// asked with its count and its name typed on a local context; a wrong
+    /// name sends nothing, the right one one DELETE.
+    func testDeletingAnApplicationReadsItThenTypesItsName() async throws {
+        cascadingApplication()
+        let (page, box) = try await page(current: "kind-fake")
+        defer { page.model.hide() }
+        try await show(page, "app")
+        api.forgetRequests()
+        XCTAssertTrue(page.deleteKey())
+        try await until("asked") { box.confirmations.count == 1 }
+        let order = api.requests.map(\.description)
+        let review = try XCTUnwrap(order.firstIndex(of: "POST /apis/authorization.k8s.io/v1/selfsubjectaccessreviews"))
+        let read = try XCTUnwrap(order.firstIndex(of: "GET /apis/argoproj.io/v1alpha1/namespaces/flux-system/applications/shop"))
+        XCTAssertLessThan(review, read, "reviewed before it is read")
+        XCTAssertTrue(reviewed().contains(["verb": "delete", "resource": "applications", "group": "argoproj.io", "namespace": "flux-system"]), "\(reviewed())")
+        let confirmation = box.confirmations[0].0
+        XCTAssertEqual(confirmation.typedName, "shop", "typed off production too")
+        XCTAssertTrue(
+            confirmation.detail.contains(
+                "⚠︎ Argo CD deletes the 2 resources it manages with it, across 2 namespaces (its resources-finalizer.argocd.argoproj.io/background finalizer)."),
+            confirmation.detail)
+        XCTAssertFalse(confirmation.detail.contains("s3cr3t-sentinel"))
+        XCTAssertEqual(written(), [], "nothing before the button")
+        box.confirmations[0].1("shp")
+        XCTAssertEqual(page.writeStatus, .failed("The name typed wasn't shop: nothing was changed."))
+        XCTAssertEqual(written(), [])
+        XCTAssertTrue(page.deleteKey())
+        try await until("asked again") { box.confirmations.count == 2 }
+        box.confirmations[1].1("shop")
+        try await until("deleted") { self.written().count == 1 }
+        XCTAssertEqual(written().map(\.description), ["DELETE /apis/argoproj.io/v1alpha1/namespaces/flux-system/applications/shop"])
+    }
+
+    /// The object's read refused: the worst case said, the name still typed.
+    func testADeleteWhoseReadFailsGivesTheWorstCase() async throws {
+        let (page, box) = try await page(current: "kind-fake")
+        defer { page.model.hide() }
+        try await show(page, "ks")
+        api.forbidden = ["kustomizations.kustomize.toolkit.fluxcd.io"]
+        XCTAssertTrue(page.deleteKey())
+        try await until("asked") { box.confirmations.count == 1 }
+        let confirmation = box.confirmations[0].0
+        XCTAssertEqual(confirmation.typedName, "shop")
+        XCTAssertTrue(confirmation.detail.contains("Flux may delete everything it applied with it."), confirmation.detail)
+        XCTAssertTrue(confirmation.detail.contains("Couldn't read it ("), confirmation.detail)
+        XCTAssertEqual(written(), [])
+    }
+
+    /// A namespace's delete counts what its GitOps objects take with it.
+    func testDeletingANamespaceCountsItsGitOpsObjects() async throws {
+        cascadingApplication()
+        let (page, box) = try await page(current: "kind-fake")
+        defer { page.model.hide() }
+        let namespaces = try XCTUnwrap(page.model.discovery?.kind("ns"))
+        api.forgetRequests()
+        page.write(.delete, on: KubeObjectRef(context: "kind-fake", kind: namespaces, namespace: nil, name: "flux-system"))
+        try await until("asked") { box.confirmations.count == 1 }
+        let detail = box.confirmations[0].0.detail
+        XCTAssertTrue(
+            detail.contains(
+                "⚠︎ Everything in the namespace is deleted with it. And the Application in it with Argo CD's resources finalizer and the pruning "
+                    + "Kustomization in it delete what they manage: 2 objects across 2 namespaces."), detail)
+        XCTAssertEqual(box.confirmations[0].0.typedName, "flux-system")
+        let paths = api.requests.filter { $0.method == "GET" }.map(\.path)
+        XCTAssertTrue(paths.contains("/apis/argoproj.io/v1alpha1/namespaces/flux-system/applications"), "\(paths)")
+        XCTAssertTrue(paths.contains("/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/flux-system/kustomizations"), "\(paths)")
+        XCTAssertFalse(paths.contains { $0.contains("/configmaps/") || $0.contains("/secrets/") }, "no ConfigMap or Secret read whole: \(paths)")
+        XCTAssertEqual(written(), [])
+    }
 }
