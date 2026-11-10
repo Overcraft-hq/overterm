@@ -57,12 +57,17 @@ struct KubeCommand: Equatable, Sendable {
         case kind(String)
         case context(String?)
         case namespace(String?)
+        /// `:gitops`, `:argo`, `:flux`: the GitOps section, the last two one tool's rows.
+        case gitops(KubeGitOpsObject.Tool?)
     }
 
     var action: Action {
         switch target {
         case "ctx", "context", "contexts": .context(namespace ?? context)
         case "ns": .namespace(allNamespaces ? "*" : namespace)
+        case "gitops": .gitops(nil)
+        case "argo", "argocd": .gitops(.argo)
+        case "flux": .gitops(.flux)
         default: .kind(target)
         }
     }
@@ -175,7 +180,10 @@ struct KubeCommandBar: Equatable {
     /// name starts with, then the rest that contain it; `ctx` and `ns`.
     private func kindCompletions(_ typed: String) -> [Completion] {
         var ranked: [(Completion, Int, Int)] = []
-        let commands: [(String, String)] = [("ctx", "Switch context"), ("ns", "Switch namespace")]
+        let commands: [(String, String)] = [
+            ("ctx", "Switch context"), ("ns", "Switch namespace"), ("gitops", "GitOps: Argo CD and Flux  g"), ("argo", "GitOps: Argo CD's only"),
+            ("flux", "GitOps: Flux's only"),
+        ]
         for (offset, (name, detail)) in commands.enumerated() {
             let rank = typed.isEmpty ? 0 : name == typed ? 0 : name.hasPrefix(typed) ? 1 : nil
             if let rank { ranked.append((Completion(text: name, detail: detail), rank, offset)) }
@@ -217,7 +225,7 @@ struct KubeCommandBar: Equatable {
     /// ↩: the word completed when it isn't already a whole name, then read.
     mutating func command() -> KubeCommand? {
         if let (word, _, first) = currentWord, !word.isEmpty, let completion = selected, completion.text.lowercased() != word.lowercased() {
-            let whole = first ? kinds.contains { KubeKinds.names(of: $0).contains(word.lowercased()) } || ["ctx", "ns"].contains(word.lowercased()) : false
+            let whole = first ? kinds.contains { KubeKinds.names(of: $0).contains(word.lowercased()) } || ["ctx", "ns", "gitops", "argo", "argocd", "flux"].contains(word.lowercased()) : false
             if !whole { complete() }
         }
         return KubeCommand.parse(text)

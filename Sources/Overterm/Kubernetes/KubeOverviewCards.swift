@@ -51,20 +51,35 @@ enum KubeOverviewCards {
 
     // MARK: GitOps
 
-    /// The health card's GitOps line (docs/design/kubernetes/gitops.md,
-    /// 2.1), from the findings the report already holds — no read: Argo
+    /// The Overview's GitOps line (docs/design/kubernetes/gitops.md, 2.1),
+    /// from the findings the health report already holds — no read: Argo
     /// CD's Failed (K602) and Flux's own Ready False (K601's `fluxFailing`:
     /// never a generation not yet looked at, nor a blocked source or
     /// dependency — the section calls those Progressing, Unknown, Blocked)
     /// as failing, Argo CD's drifted or stuck (K603). It counts what *lives*
-    /// in the scope, and says so. Nil when there is nothing to say.
-    static func gitOps(_ report: KubeHealth.Report, scope: KubeScope?) -> Pill? {
+    /// in the scope, and says so — the section (`g`) counts what lives in
+    /// or deploys into it, so the two can differ. Nil when there is
+    /// nothing to say.
+    struct GitOpsLine: Equatable, Sendable {
+        /// `GitOps living in shop`.
+        var title: String
+        /// `2 failing`, `1 drifted or stuck`: a pill each.
+        var counts: [Pill]
+        var tone: Tone
+
+        /// The line in words: `GitOps living in shop: 2 failing — press g for what deploys here`.
+        var text: String { "\(title): \(counts.map(\.text).joined(separator: ", ")) — press \(KubeSection.gitops.key) for what deploys here" }
+    }
+
+    static func gitOps(_ report: KubeHealth.Report, scope: KubeScope?) -> GitOpsLine? {
         let failing = report.findings.count { $0.check == .argoDegraded || ($0.check == .notReady && $0.fluxFailing) }
         let behind = report.findings.count { $0.check == .argoOutOfSync }
         guard failing + behind > 0 else { return nil }
         let place = scope.map { $0 == .all ? "across the cluster" : "living in \($0.names?.joined(separator: ", ") ?? "")" } ?? "here"
-        let counts = [failing > 0 ? "\(failing) failing" : nil, behind > 0 ? "\(behind) drifted or stuck" : nil].compactMap { $0 }
-        return Pill(text: "GitOps objects \(place): \(counts.joined(separator: ", "))", tone: failing > 0 ? .failed : .waiting)
+        var counts: [Pill] = []
+        if failing > 0 { counts.append(Pill(text: "\(failing) failing", tone: .failed)) }
+        if behind > 0 { counts.append(Pill(text: "\(behind) drifted or stuck", tone: .waiting)) }
+        return GitOpsLine(title: "GitOps \(place)", counts: counts, tone: failing > 0 ? .failed : .waiting)
     }
 
     // MARK: A kind's card

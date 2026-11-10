@@ -99,7 +99,7 @@ struct KubernetesActions {
 /// guard path — the access review, the confirmation, a typed name where
 /// rule 4 says. Pure.
 enum KubernetesKey: String, ResourceKey {
-    case overview, workloads, network, config, storage, cluster, custom, helm, forwards
+    case overview, workloads, network, config, storage, cluster, custom, helm, gitops, forwards
     case open, back, forward, close, logs, history, tree, metrics, earlierRange, laterRange, followInTab, shell, attach, portForward, openForward, database,
         askWhy
     case restart, scaleUp, scaleDown, scaleTo, pause, trigger, cordon, newNamespace, debug, delete, edit
@@ -225,8 +225,14 @@ final class KubernetesPageModel: ObservableObject {
         didSet {
             guard section != oldValue else { return }
             updateHelmReading()
+            updateGitOpsReading()
             updateOverviewReading()
             updateMetricsWanted()
+            // GitOps' table stands in for the list's: the keyboard to
+            // whichever shows, once it is laid out.
+            if section == .gitops || oldValue == .gitops {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in self?.giveListTheKeyboard() }
+            }
         }
     }
     /// `:`: the command bar over the page.
@@ -271,6 +277,7 @@ final class KubernetesPageModel: ObservableObject {
             }
             updateLogsReading()
             updateHelmReading()
+            updateGitOpsReading()
             updateOverviewReading()
             updateMetricsWanted()
         }
@@ -285,6 +292,7 @@ final class KubernetesPageModel: ObservableObject {
             updateLogsReading()
             if windowVisible != oldValue {
                 updateHelmReading()
+                updateGitOpsReading()
                 updateOverviewReading()
                 updateMetricsWanted()
             }
@@ -305,6 +313,13 @@ final class KubernetesPageModel: ObservableObject {
     /// The Helm section's releases and the one opened: this window's.
     let helm: KubeHelmSession
     private var helmWatch: AnyCancellable?
+    /// The GitOps section's reading and its summaries: this window's.
+    let gitOps = KubeGitOpsSession()
+    /// How the GitOps section is looked at: selection, order, chip, filters.
+    @Published var gitOpsView = KubeGitOpsViewState()
+    private var gitOpsWatch: AnyCancellable?
+    /// The section a detail opened from a section's row goes back to (`[`).
+    var detailOpenedFrom: KubeSection = .overview
     /// The Overview section's reading: this window's, while it shows.
     let clusterOverview = KubeClusterOverviewSession()
     /// The Overview's health checks (3.9): read once while it shows.
@@ -503,6 +518,11 @@ final class KubernetesPageModel: ObservableObject {
         helmWatch = model.$selectedName.removeDuplicates().dropFirst().map { _ in () }
             .merge(with: model.$scope.removeDuplicates().dropFirst().map { _ in () })
             .sink { [weak self] in DispatchQueue.main.async { self?.helmScopeChanged() } }
+        // GitOps reads the context shown as it serves it; another scope
+        // filters again (after the change).
+        gitOpsWatch = model.$selectedName.removeDuplicates().dropFirst().map { _ in () }
+            .merge(with: model.$scope.removeDuplicates().dropFirst().map { _ in () }, model.$discovery.removeDuplicates().dropFirst().map { _ in () })
+            .sink { [weak self] in DispatchQueue.main.async { self?.updateGitOpsReading() } }
         // The Overview reads the context and namespace shown, as the
         // cluster serves them: again with each (after the change).
         overviewWatch = model.$selectedName.removeDuplicates().dropFirst().map { _ in () }
@@ -586,6 +606,10 @@ final class KubernetesPageModel: ObservableObject {
     /// A section's digit: its kind last shown, else its first — or, while
     /// it has none, the section alone until it has.
     func showSection(_ section: KubeSection) {
+        if section == .gitops, let refusal = gitOpsRefusal() {
+            commandProblem = refusal
+            return
+        }
         guard section.listsKinds else {
             waitingForSection = false
             self.section = section
@@ -675,6 +699,7 @@ final class KubernetesPageModel: ObservableObject {
             cheatSheet = false
         }
         if section == .helm, let handled = helmPress(characters) { return handled }
+        if section == .gitops, let handled = gitOpsPress(characters) { return handled }
         if section == .overview, let handled = overviewPress(characters) { return handled }
         guard let press = KubernetesKey.press(characters, sheetShowing: cheatSheet) else { return false }
         switch press {
@@ -846,7 +871,7 @@ final class KubernetesPageModel: ObservableObject {
         // Opened from the Overview (metrics.md 3.7): the Overview again.
         if history.backToOverview() {
             closeDetail()
-            showSection(.overview)
+            showSection(detailOpenedFrom)
             return
         }
         guard let ref = history.goBack() else { return }
@@ -864,6 +889,10 @@ final class KubernetesPageModel: ObservableObject {
     /// showing: its filter (`/` is the list's).
     func commandPress(_ characters: String) -> Bool {
         switch characters {
+        case "r" where section == .gitops:
+            // ⌘R: GitOps' summaries read again.
+            refreshGitOps()
+            return true
         case "f" where detailTab == .logs && (detail?.logs != nil || detail?.merged != nil):
             focusLogFilter += 1
             return true
@@ -1051,6 +1080,9 @@ final class KubernetesPageModel: ObservableObject {
                 guard let typed = KubePicker.typedNamespaces(name) else { return "Not a namespace's name: \(name)" }
                 scope = .of(typed)
             }
+        case .gitops:
+            let served = targetName.flatMap(model.knownDiscovery(of:)) ?? model.discovery
+            if let served, !KubeGitOpsSummary.served(served) { return "Neither Argo CD nor Flux is served by \(targetName ?? "the context")." }
         case .kind(let name):
             let served = targetName.flatMap(model.knownDiscovery(of:)) ?? model.discovery
             guard let discovery = served else { return "What \(targetName ?? "the context") serves isn't known yet." }
@@ -1073,6 +1105,12 @@ final class KubernetesPageModel: ObservableObject {
             return nil
         case .namespace:
             if let scope { model.setScope(scope) }
+            return nil
+        case .gitops(let tool):
+            if let scope { model.setScope(scope) }
+            gitOpsView.tool = tool
+            gitOpsView.chip = nil
+            showSection(.gitops)
             return nil
         default: break
         }

@@ -6,12 +6,13 @@ import Foundation
 /// shows, in the order it shows them; Cluster takes RBAC's and the
 /// built-in kinds no other names, Custom resources every kind of a group
 /// that isn't Kubernetes' own — the CRDs, grouped by API group. Overview,
-/// Helm and Forwards are no kind: the cluster's health at a glance
+/// Helm, GitOps and Forwards are no kind: the cluster's health at a glance
 /// (`KubeClusterOverviewSession`) on 1, Helm's releases, read from its own
-/// records (`KubeHelmSession`), on 8, and the app's port-forwards
+/// records (`KubeHelmSession`), on 8, Argo CD's and Flux's objects
+/// summarised (`KubeGitOpsSession`) on `g`, and the app's port-forwards
 /// (`KubeForwards`) on 9. Pure.
 enum KubeSection: String, CaseIterable, Identifiable, Sendable {
-    case overview, workloads, network, config, storage, cluster, custom, helm, forwards
+    case overview, workloads, network, config, storage, cluster, custom, helm, gitops, forwards
 
     var id: String { rawValue }
 
@@ -25,6 +26,7 @@ enum KubeSection: String, CaseIterable, Identifiable, Sendable {
         case .cluster: "Cluster"
         case .custom: "Custom Resources"
         case .helm: "Helm"
+        case .gitops: "GitOps"
         case .forwards: "Forwards"
         }
     }
@@ -39,6 +41,7 @@ enum KubeSection: String, CaseIterable, Identifiable, Sendable {
         case .cluster: "server.rack"
         case .custom: "puzzlepiece.extension"
         case .helm: "shippingbox"
+        case .gitops: "arrow.triangle.branch"
         case .forwards: "arrow.left.arrow.right"
         }
     }
@@ -78,16 +81,33 @@ enum KubeSection: String, CaseIterable, Identifiable, Sendable {
                 "rolebindings.rbac.authorization.k8s.io", "clusterroles.rbac.authorization.k8s.io", "clusterrolebindings.rbac.authorization.k8s.io",
                 "customresourcedefinitions.apiextensions.k8s.io", "apiservices.apiregistration.k8s.io",
             ]
-        case .overview, .custom, .helm, .forwards: []
+        case .overview, .custom, .helm, .gitops, .forwards: []
         }
     }
 
-    /// Its digit on the list: Overview is 1, Helm 8, Forwards 9.
-    var key: String { String((Self.allCases.firstIndex(of: self) ?? 0) + 1) }
+    /// Its key on the list: Overview is 1 … Helm 8, Forwards 9 — digits
+    /// people's habits know — and GitOps `g` (gitops.md decision 1: 0 is
+    /// All Namespaces, and renumbering would break those habits).
+    var key: String {
+        switch self {
+        case .overview: "1"
+        case .workloads: "2"
+        case .network: "3"
+        case .config: "4"
+        case .storage: "5"
+        case .cluster: "6"
+        case .custom: "7"
+        case .helm: "8"
+        case .gitops: "g"
+        case .forwards: "9"
+        }
+    }
 
     /// Whether it lists a cluster's kinds (the Overview sums the cluster
-    /// up, Helm lists its releases, Forwards Overterm's own forwards).
-    var listsKinds: Bool { self != .forwards && self != .helm && self != .overview }
+    /// up, Helm lists its releases, GitOps summarises Argo CD's and Flux's
+    /// objects — their kinds stay in Custom Resources — Forwards
+    /// Overterm's own forwards).
+    var listsKinds: Bool { ![.overview, .helm, .gitops, .forwards].contains(self) }
 }
 
 /// What the page offers of a cluster: every kind discovery says can be

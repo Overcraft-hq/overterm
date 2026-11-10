@@ -118,9 +118,12 @@ final class KubeOverviewCardsTests: XCTestCase {
             KubeHealth.Finding(check: .argoOutOfSync, subject: subject("argoproj.io/v1alpha1", "Application", "b"), sentence: "Drift: OutOfSync"),
         ]
         XCTAssertEqual(
-            KubeOverviewCards.gitOps(report, scope: .namespace("shop")), .init(text: "GitOps objects living in shop: 2 failing, 1 drifted or stuck", tone: .failed),
+            KubeOverviewCards.gitOps(report, scope: .namespace("shop")),
+            .init(title: "GitOps living in shop", counts: [.init(text: "2 failing", tone: .failed), .init(text: "1 drifted or stuck", tone: .waiting)], tone: .failed),
             "cert-manager isn't GitOps")
-        XCTAssertEqual(KubeOverviewCards.gitOps(report, scope: .all)?.text, "GitOps objects across the cluster: 2 failing, 1 drifted or stuck")
+        XCTAssertEqual(
+            KubeOverviewCards.gitOps(report, scope: .all)?.text, "GitOps across the cluster: 2 failing, 1 drifted or stuck — press g for what deploys here",
+            "it says what it counts, and where the section is")
         report.findings = [report.findings[3]]
         XCTAssertEqual(KubeOverviewCards.gitOps(report, scope: .namespaces(["a", "b"]))?.tone, .waiting)
     }
@@ -149,7 +152,7 @@ final class KubeOverviewCardsTests: XCTestCase {
         report.findings = lagging + laggingAfterFailure + dependency + artifact
         XCTAssertNil(KubeOverviewCards.gitOps(report, scope: .namespace("shop")), "nothing failing: lag and Blocked aren't said here")
         report.findings += failed
-        XCTAssertEqual(KubeOverviewCards.gitOps(report, scope: .namespace("shop")), .init(text: "GitOps objects living in shop: 1 failing", tone: .failed))
+        XCTAssertEqual(KubeOverviewCards.gitOps(report, scope: .namespace("shop"))?.counts, [.init(text: "1 failing", tone: .failed)])
     }
 
     /// A list refused or cut: its checks never said to pass — no all-clear for what wasn't checked.

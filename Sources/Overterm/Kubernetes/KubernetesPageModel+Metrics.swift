@@ -218,8 +218,9 @@ extension KubernetesPageModel {
 
     /// An object the Overview names (a failing pod, a workload, a node):
     /// its kind's list, and its detail.
-    func openFromOverview(kind fullName: String, _ id: KubeRowID) {
+    func openFromOverview(kind fullName: String, _ id: KubeRowID, from section: KubeSection = .overview) {
         guard let context = model.selectedName else { return }
+        detailOpenedFrom = section
         let kind = model.catalog.kind(fullName: fullName) ?? (fullName == KubeResourceKind.pods.fullName ? .pods : nil)
         guard let kind else { return }
         showKind(kind)

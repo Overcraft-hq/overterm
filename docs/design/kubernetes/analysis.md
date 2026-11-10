@@ -417,8 +417,8 @@ Every kind gets the generic view: the server's Table, and a detail with metadata
 
 | Feature | Lens | Freelens | Ours | How | Stage |
 |---|---|---|---|---|---|
-| Flux dashboard, Sources, Kustomizations, HelmReleases | **Plus** | ext | Generic tables, health from conditions. Suspend, resume and reconcile as annotation patches. One state ladder with Argo CD's (`KubeGitOpsLadder`, gitops.md 2.3) over allow-listed summaries | Watch / API | 1b / 4 / G1 |
-| Argo CD applications, sync, refresh, resource tree | **Plus** | community ext | Generic tables (sync and health are printer columns). The managed tree from `status.resources`. Sync is left to `argocd` in a tab. K602/K603 are the ladder's Failed, and Drift or Stuck | Watch / Tab | 1b / 3b / G1 |
+| Flux dashboard, Sources, Kustomizations, HelmReleases | **Plus** | ext | Generic tables, health from conditions. Suspend, resume and reconcile as annotation patches. One state ladder with Argo CD's (`KubeGitOpsLadder`, gitops.md 2.3) over allow-listed summaries. The GitOps section (`g`) summarises both tools on one screen, problems first; ↩ opens an object in its kind's list (gitops.md 2) | Watch / API | 1b / 4 / G1 / G2 |
+| Argo CD applications, sync, refresh, resource tree | **Plus** | community ext | Generic tables (sync and health are printer columns). The managed tree from `status.resources`. Sync is left to `argocd` in a tab. K602/K603 are the ladder's Failed, and Drift or Stuck. Applications and ApplicationSets in the GitOps section (`g`) | Watch / Tab | 1b / 3b / G1 / G2 |
 | Cost per namespace (OpenCost, Kubecost or an estimate) | **Plus** | — | **Out**: it needs cloud prices. Requests against usage is shown instead | — | Out |
 | Security Center (Trivy Operator) | **Plus** | requested | **Out** of the cluster. A pod's image can be scanned on the Docker page (`DockerScout`) | Local | 4 |
 | Teamwork, Cluster Connect | **Plus** | — | **Out**: SaaS, and an agent in the cluster | — | Out |
@@ -1292,6 +1292,7 @@ All of them are built; Section 15 says where the build departs from this plan. E
   - The one exception to "the page closed": a Metrics tab's chart expanded into the window's right slot (metrics.md M9). While it shows in a window on screen and its object's Metrics tab is still the detail's, that tab's reads go on with the page hidden — the same GET a target every 15 s, the same Prometheus want, Live's pause counting any key or click in the window — and nothing else is read: no list, no discovery, no watch (`KubernetesModel.readsMetrics`, held by `holdCharts`). The slot closed or given away, the window occluded or closed, or the detail on another tab: nothing is read for it, and the chart keeps its last drawing with its time.
   - A Metrics tab's pods' states for its markers (a pod's GET, a workload's pods by selector, `limit=250`, at most 16 MB) are read once a minute only while the tab shows, stopped by a 403 or a failed sign-in (metrics.md 6.5).
   - Discovery is read once per context, then again on a CRD event, a 404, or every 5 minutes while the page shows.
+  - The GitOps section (`g`, gitops.md 3) follows, while it shows, five kinds' rows across the cluster and three controllers' (8 of the page's 10 watches; two more only for a kind refused across the cluster), reads one paged, byte-bounded list of whole objects a kind (20 a page, 16 MB; 500 objects or 64 MB a kind), then one GET when a row moves. Its summaries stay in memory 5 minutes while the page shows, and go when it hides.
   - The `performance` scenario's idle-CPU budget must hold with the page open on a quiet fake cluster.
 - **Large clusters** (globex has thousands of pods):
   - The default is the context's namespace; "all" is paged with `limit=500` and Table plus Metadata.

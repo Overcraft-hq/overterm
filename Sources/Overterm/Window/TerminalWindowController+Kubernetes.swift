@@ -763,6 +763,9 @@ extension TerminalWindowController {
             command("namespace", "Kubernetes: Switch Namespace…", "The namespace picker  n", "square.dashed") { $0.openPicker(.namespace) },
             command("command", "Kubernetes: Go to Kind…", "The command bar  :  — :deploy, :po shop, :svc @fake-dev", "chevron.right") { $0.openCommand() },
             command("allNamespaces", "Kubernetes: All Namespaces", "0", "square.grid.2x2") { $0.model.setScope(.all) },
+            command("gitops", "Kubernetes: GitOps", "Argo CD's and Flux's objects in or deploying into the scope  g  —  :gitops, :argo, :flux", "arrow.triangle.branch") {
+                $0.showSection(.gitops)
+            },
             command("wide", page.wide ? "Kubernetes: Default Columns" : "Kubernetes: Wide Columns", "w", "rectangle.split.3x1") { $0.wide.toggle() },
             command("terminal", "Kubernetes: Terminal in This Context", "A tab whose plain kubectl goes to the context shown", "helm") {
                 $0.openTerminal()
@@ -804,6 +807,8 @@ extension TerminalWindowController {
                     })
             }
         }
+        // The GitOps section's rows, by name: each opens in its kind's list.
+        items += page.gitOpsPaletteItems { [weak self] in self?.showKubernetesPage() }
         // The Helm section's release: Roll Back and Uninstall, by the same path.
         if page.section == .helm, let release = page.helmPicked, let context = page.helmContext {
             for verb in page.helmWriteVerbs(for: release) where verb.unavailable == nil {

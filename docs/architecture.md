@@ -4980,8 +4980,11 @@ Degraded, or Missing while Synced is K602). Above the findings, the card
 says what Argo CD and Flux say of what lives in the scope in a line
 (`KubeOverviewCards.gitOps`: K602 and Flux's K601 `fluxFailing` — its own
 Ready False, never a generation not yet looked at nor a blocked source or
-dependency — failing, K603 drifted or stuck — "GitOps objects living in shop: 2 failing, 1 drifted or stuck"),
-from the findings already read. Two places, read-only:
+dependency — failing, K603 drifted or stuck — "GitOps living in shop" with a
+pill a count, "press g for what deploys here"), from the findings already
+read; it is its own card under the kinds' (`KubeOverviewGitOpsCard`), and a
+press shows the GitOps section, which counts what lives in *or deploys
+into* the scope. Two places, read-only:
 
 - **The Overview** (`1`): read once while it shows, in the context and
   namespace shown (every namespace too), the lists `KubeHealth.reads` names
@@ -6287,6 +6290,70 @@ paths, git's arguments on a throwaway repository), `KubeGitOpsCRDTests`
 `KubeRealClusterTests` (opt-in: the CRDs applied to kind-fake, the
 server's columns) and `kubernetesHealth` (K602/K603 and the card's line)
 check it.
+
+**The GitOps section** (`g`; gitops.md 2–3, G2): Argo CD's and Flux's
+objects that live in or deploy into the scope on one screen, between Helm
+and Forwards (`KubeSection.gitops`, its key an explicit `g` — the digits
+stay — shown in the sidebar only where `KubeGitOpsSummary.served`; `g`
+elsewhere says neither is served). It summarises; it lists no kind (their
+lists stay in Custom Resources). `KubeGitOpsSession` (a window's, as its
+page) reads only while the section shows on a page on screen: **R1** a
+rows-only follow across the cluster of Applications, Kustomizations,
+HelmReleases, GitRepositories and OCIRepositories (`includeObject=Metadata`,
+as any list across the cluster), **R1c** Argo CD's controllers
+(Deployments and StatefulSets in the namespace most Applications live in,
+else `argocd`) and Flux's (`flux-system`) in one namespace each
+(`includeObject=None`; `KubeGitOpsControllers`: one not ready shows the
+banner and tags its tool's rows "may be stale", never a state), **R2** one
+paged list of whole objects a served kind (`KubeClient.pagedObjects`: 20 a
+page and 16 MB, halved on `KubeBodyTooLarge` with the same `continue`, an
+object alone too large stops the kind, a 410 lists again; 500 objects or 64
+MB a kind, two kinds at a time, each page decoded off the main thread by
+the allow-list and dropped; the cut said), **R3** one GET (4 MB) when a
+row's cells move from its summary's (date columns left out — the server
+renders them relative), when a row that isn't healthy changes, or every
+60 s while it is in progress (`KubeGitOpsRefetch`, pure: each at most once
+every 15 s, 20 a flush, Failed, Blocked and Stuck first; 4 in flight; a
+403 or an oversized one "couldn't read why"). The watches are allotted:
+the five kinds, the three controllers, two more for a kind refused across
+the cluster, which is read in `accessibleNamespaces`, else `argocd` and
+the namespaces Applications were seen in, or `flux-system`, plus the
+scope's — never by reading a ConfigMap — said in the header. The
+summaries are kept five minutes (`KubeGitOpsSession.Store`, in memory)
+while the page shows, fresh only for the kinds whose read finished
+(`done`: a section left mid-read reads the rest when shown again; a
+fallback's re-read on a scope change keeps the kinds still pending; Refresh
+holds every summary until its kind's new ones replace it; a refused kind's
+spare watches are given back when its follow ends; a write's ref only for
+the context the rows were read on): ↩ to a detail and `[` back reads no list again;
+leaving the section ends the follows and GETs (`hide`), the page hiding,
+another context or a credential failure drops them (`drop`). A 30 s tick
+re-ranks with no read; a scope change only filters again (but in the
+fallback). `KubeGitOpsSection` (pure) makes the rows (`KubeGitOpsRow`:
+state, kind, `namespace/name`, Into — `→ ns` a destination, the managed
+namespaces, `⇢ server` another cluster —, why, revision — Argo's `live →
+target` while OutOfSync, Flux's applied —, source host-less, age since the
+state began), problems first; live rows without a summary from their cells
+alone, "not placed" off All Namespaces; the chips, Hide Ready (on above 50
+rows), the header's words, the empty scope's hint ("Show argocd" adds the
+namespace) and `k`'s `flux get …`/`argocd app get …` lines.
+`KubeGitOpsSectionView` draws it in the Overview's card and pill language
+over a `ResourceTable` (`kubernetes.gitops`), which stands in for the list's
+table so it has the keyboard. `KubernetesPageModel+GitOps` routes the keys
+(`gitOpsPress`: ↩ the object in its kind's list with its detail,
+`openFromOverview(…, from: .gitops)` so `[` comes back; `x` its tree; `k`
+and ⇧K copy; `s` argocd's sync or flux's reconcile with its source in a
+tab; `r`, `p` and ⌫ on to the page's own writes through `writeTarget`,
+which is the row picked), the right-click (`gitOpsVerbs`: Open, the
+detail's verbs, Copy; several rows Open and Copy only), the palette's rows
+(`k.g.…`) and `:gitops`, `:argo`, `:flux` (the last two one tool's rows).
+`KubeGitOpsSectionTests` (rows, scope, columns, chips, words, R3's policy,
+the banner), `KubeGitOpsSessionTests` (against the fake: GETs only, rows-only
+watches, one paged list a kind, paging never past what is left, the store
+left mid-read, Refresh, R3 at scale — 20 GETs a flush, four in flight, 15 s
+an object —, the fallback across scope changes and a namespace refusing,
+kinds not served never asked, the banner, 600 Applications cut at 500) and `kubernetesGitOpsSection`
+(`E2ERunner+KubernetesGitOpsSection`) check it.
 
 ### The cluster's API docs
 

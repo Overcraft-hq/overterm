@@ -23,7 +23,7 @@ enum KubeKeyGroup: String, CaseIterable, Sendable {
 extension KubernetesKey {
     var group: KubeKeyGroup {
         switch self {
-        case .overview, .workloads, .network, .config, .storage, .cluster, .custom, .helm, .forwards: .sections
+        case .overview, .workloads, .network, .config, .storage, .cluster, .custom, .helm, .gitops, .forwards: .sections
         case .open, .back, .forward, .close, .command, .namespace, .context, .filter, .help: .navigation
         case .wide, .allNamespaces, .copyKubectl: .list
         case .logs, .history, .tree, .metrics, .earlierRange, .laterRange, .followInTab, .shell, .attach, .portForward, .openForward, .database, .askWhy, .edit: .verbs

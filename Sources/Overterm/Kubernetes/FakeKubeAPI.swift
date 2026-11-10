@@ -970,6 +970,14 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// The kinds it serves now.
     var servedKinds: [Kind] { locked { kinds } }
 
+    /// A served CRD's printer columns, as a newer version of it declares
+    /// them: the next list and watch draw them.
+    func setColumns(_ fullName: String, _ columns: [Column]) {
+        locked {
+            for index in kinds.indices where kinds[index].fullName == fullName { kinds[index].columns = columns }
+        }
+    }
+
     /// Applies one change under the lock and sends its event.
     private func change(_ type: String, _ make: () -> Object?) {
         let sends = locked { () -> [(Channel, Data)] in
@@ -1635,8 +1643,13 @@ final class FakeKubeAPI: @unchecked Sendable {
     static func columns(for kind: Kind) -> [Column] {
         let name = Column(name: "Name", format: "name", description: "Name must be unique within a namespace.")
         let age = Column(name: "Age", description: "CreationTimestamp is a timestamp representing the server time when this object was created.")
-        // A CRD's own Age (Flux's: a date column) stands for the server's.
-        if let columns = kind.columns { return [name] + columns + (columns.contains { $0.name == "Age" } ? [] : [age]) }
+        // A CRD's own Age (Flux's: a date column) stands for the server's,
+        // which is a date column too.
+        if let columns = kind.columns {
+            var age = age
+            age.type = "date"
+            return [name] + columns + (columns.contains { $0.name == "Age" } ? [] : [age])
+        }
         func column(_ name: String, _ type: String = "string", priority: Int = 0, _ description: String = "") -> Column {
             Column(name: name, type: type, priority: priority, description: description)
         }

@@ -212,8 +212,12 @@ final class KubeKindsTests: XCTestCase {
         for group in ["example.com", "cert-manager.io", "argoproj.io", "karpenter.sh", "k8s.io.example.com"] {
             XCTAssertFalse(KubeKindCatalog.isBuiltIn(group: group), group)
         }
-        XCTAssertEqual(KubeSection.allCases.map(\.key), ["1", "2", "3", "4", "5", "6", "7", "8", "9"], "Overview is 1, Helm 8, Forwards 9")
-        XCTAssertEqual(KubeSection.allCases, [.overview, .workloads, .network, .config, .storage, .cluster, .custom, .helm, .forwards], "Section 6's order")
+        XCTAssertEqual(
+            KubeSection.allCases.map(\.key), ["1", "2", "3", "4", "5", "6", "7", "8", "g", "9"], "Overview is 1, Helm 8, GitOps g, Forwards still 9")
+        XCTAssertEqual(
+            KubeSection.allCases, [.overview, .workloads, .network, .config, .storage, .cluster, .custom, .helm, .gitops, .forwards],
+            "Section 6's order, GitOps between Helm and Forwards")
+        XCTAssertEqual(KubeSection.allCases.filter { !$0.listsKinds }, [.overview, .helm, .gitops, .forwards])
     }
 
     func testAKindsTitle() {

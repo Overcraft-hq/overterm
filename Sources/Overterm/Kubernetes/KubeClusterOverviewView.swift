@@ -31,6 +31,7 @@ struct KubeClusterOverviewView: View {
                 header(overview)
                 KubePinnedHealthView(page: page, session: page.pinnedHealth, theme: theme)
                 kinds(overview)
+                KubeOverviewGitOpsCard(page: page, session: page.health, theme: theme)
                 paired(overview)
                 charts
                 KubeOverviewHealthView(page: page, session: page.health, theme: theme)
@@ -577,6 +578,47 @@ struct KubeOverviewHeaderPills: View {
                 ResourcePill(text: passing.text, colour: theme.greenText, symbol: "checkmark")
                     .accessibilityIdentifier("kubernetes.overview.passing")
             }
+        }
+    }
+}
+
+/// The Overview's GitOps line (docs/design/kubernetes/gitops.md, 2.1) as a
+/// card: what Argo CD and Flux say of what lives in the scope, a pill a
+/// count, from the health checks already read (K601–K603) — no read of its
+/// own. A press goes to the GitOps section (`g`), which counts what lives
+/// in or deploys into the scope.
+struct KubeOverviewGitOpsCard: View {
+    @ObservedObject var page: KubernetesPageModel
+    @ObservedObject var session: KubeHealthSession
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View {
+        if session.state == .loaded, let line = KubeOverviewCards.gitOps(session.report, scope: session.scope) {
+            let tint = line.tone == .failed ? TabStatusStyle.failed : TabStatusStyle.waiting
+            Button {
+                page.showSection(.gitops)
+                page.giveListTheKeyboard()
+            } label: {
+                HStack(spacing: 8) {
+                    Image(systemName: KubeSection.gitops.symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.text2)
+                    Text(verbatim: line.title).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
+                    ForEach(line.counts, id: \.text) { pill in
+                        ResourcePill(text: pill.text, colour: pill.tone == .failed ? TabStatusStyle.failed : theme.orangeText)
+                    }
+                    Spacer(minLength: 8)
+                    Text(verbatim: "press \(KubeSection.gitops.key) for what deploys here").font(.system(size: 11.5)).foregroundStyle(theme.text3)
+                        .lineLimit(1)
+                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(theme.text3)
+                }
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .resourceCard(theme, tint: tint.opacity(0.6), padding: 12)
+            .help("From the health checks: Argo CD's failed (K602), drifted or stuck (K603), Flux's not ready (K601) — what lives here. GitOps (g) shows what lives in or deploys into the scope.")
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text(verbatim: line.text))
+            .accessibilityAddTraits(.isButton)
+            .accessibilityIdentifier("kubernetes.overview.gitops")
         }
     }
 }
