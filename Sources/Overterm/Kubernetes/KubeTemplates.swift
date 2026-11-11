@@ -23,14 +23,10 @@ enum KubeTemplates {
     /// The app's own.
     static var bundled: URL? { Bundle.main.resourceURL?.appendingPathComponent("kubernetes/templates", isDirectory: true) }
 
-    /// The user's, in the support folder — a unit test's own in the
-    /// temporary directory.
+    /// The user's, in the support folder (an isolated run's own, a unit
+    /// test's too).
     static var userFolder: URL {
-        let base =
-            AppEnvironment.isUnitTest && !AppEnvironment.isIsolated
-            ? FileManager.default.temporaryDirectory.appendingPathComponent("overterm-unit-test-\(getpid())", isDirectory: true)
-            : AppEnvironment.supportDirectory
-        return base.appendingPathComponent("Kubernetes/Templates", isDirectory: true)
+        AppEnvironment.supportDirectory.appendingPathComponent("Kubernetes/Templates", isDirectory: true)
     }
 
     /// Larger than any template: a file past it is passed over.

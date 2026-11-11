@@ -108,16 +108,12 @@ struct KubeWorkloadRef: Hashable, Sendable {
 /// whole on each change. Never anything in the repository, and no secret.
 @MainActor
 final class KubeBindingStore: ObservableObject {
-    /// The app's: the support folder's (an isolated run's own); a unit
-    /// test's, a temporary folder — never the user's bindings.
+    /// The app's: the support folder's (an isolated run's own, a unit
+    /// test's too) — never the user's bindings in a test.
     static let shared = KubeBindingStore(file: defaultFile)
 
     nonisolated static var defaultFile: URL {
-        let folder =
-            AppEnvironment.isUnitTest && !AppEnvironment.isIsolated
-            ? FileManager.default.temporaryDirectory.appendingPathComponent("overterm-unit-bindings-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
-            : AppEnvironment.supportDirectory.appendingPathComponent("Kubernetes", isDirectory: true)
-        return folder.appendingPathComponent("bindings.json")
+        AppEnvironment.supportDirectory.appendingPathComponent("Kubernetes/bindings.json")
     }
 
     let file: URL

@@ -115,13 +115,12 @@ final class KubeTerminalTests: XCTestCase {
     }
 
     func testTheDefaultFolderIsNeverTheRealSupportFolderInAUnitTest() {
-        // A unit test's supportDirectory is the user's real one, where the
-        // running app's pins live: the default moves to a temporary folder.
+        // A unit test's supportDirectory is a temporary one of its own, never
+        // the user's real one, where the running app's pins live.
         let real = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].standardizedFileURL.path
         XCTAssertTrue(AppEnvironment.isUnitTest)
         let folder = KubeTerminalFiles().folder.standardizedFileURL.path
         XCTAssertFalse(folder.hasPrefix(real), folder)
-        XCTAssertFalse(folder.hasPrefix(AppEnvironment.supportDirectory.standardizedFileURL.path), folder)
         XCTAssertTrue(folder.hasPrefix(FileManager.default.temporaryDirectory.standardizedFileURL.path), folder)
         XCTAssertTrue(folder.hasSuffix("/Kubernetes/Contexts"), folder)
         XCTAssertEqual(KubeTerminalFiles.defaultFolder, KubeTerminalFiles().folder)
