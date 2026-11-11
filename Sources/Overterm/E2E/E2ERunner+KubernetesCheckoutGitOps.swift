@@ -207,7 +207,10 @@ extension E2ERunner {
             let sheet = sheetTexts().joined(separator: "\n")
             check("naming the context and namespace", sheet.contains("kind-fake · namespace flux-system"), sheet)
             check("and the flux command", sheet.contains("flux reconcile kustomization acme-apps --context kind-fake -n flux-system"), sheet)
-            check("nothing sent while it asks", fake.writes.count == before)
+            // The access review before the sheet is a POST but no write: kept a
+            // minute, it is asked again here when the run is slow.
+            let sent = fake.writes.dropFirst(before).filter { !$0.isAccessReview }
+            check("nothing sent while it asks", sent.isEmpty, "\(sent)")
             endSheet(.alertFirstButtonReturn)
             check(
                 "confirmed: one merge patch",
