@@ -115,6 +115,8 @@ final class Settings: ObservableObject {
         case .string(let text): !text.isEmpty
         case .int, .double: value(key)?.number != SettingsSchema.byKey[key]?.defaultValue?.number
         case .list(let items): !items.isEmpty
+        case .entries(let entries): !entries.isEmpty
+        case .records(let records): !records.isEmpty
         case nil: false
         }
     }
