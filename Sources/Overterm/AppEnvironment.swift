@@ -7,7 +7,9 @@ import Foundation
 /// dump (`OVERTERM_DUMP_LAYOUT`) — shares the bundle id, and so the real
 /// app's defaults, with the user's Overterm. It gets its own defaults suite
 /// (wiped at launch), its own support directory, no notifications, no
-/// focus stealing and no saved divider positions.
+/// focus stealing, no saved divider positions and no saved window frame
+/// (macOS keeps it in the standard defaults: the window opens at a fixed
+/// frame instead, `TerminalWindowController.placeIsolatedWindow`).
 enum AppEnvironment {
     private static let env = ProcessInfo.processInfo.environment
 

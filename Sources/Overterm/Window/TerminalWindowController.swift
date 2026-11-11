@@ -230,6 +230,19 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private static let sidebarVisibleKey = "sidebarVisible"
     private static let diffVisibleKey = "diffVisible"
 
+    /// An isolated run's first window: the same frame every time, 1400×880
+    /// (or the screen's visible area, if smaller) in its middle — the frame
+    /// the scenarios were written at. A later window opens as a second
+    /// window always did, its default size, centred: the autosave name is
+    /// the first window's.
+    private static var isolatedWindowPlaced = false
+    private static func placeIsolatedWindow(_ window: NSWindow) {
+        guard !isolatedWindowPlaced, let area = (window.screen ?? NSScreen.main)?.visibleFrame else { return }
+        isolatedWindowPlaced = true
+        let size = CGSize(width: min(1_400, area.width), height: min(880, area.height))
+        window.setFrame(NSRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2, width: size.width, height: size.height), display: false)
+    }
+
     init() {
         // The sizes everything below is built at.
         ChromeMetrics.apply()
@@ -256,8 +269,17 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         window.appearance = NSAppearance(named: GhosttyRuntime.shared.backgroundColor.brightnessComponent < 0.5 ? .darkAqua : .aqua)
         window.tabbingMode = .disallowed
         window.center()
-        // The old name, kept: it is where macOS has the window's size.
-        window.setFrameAutosaveName("OvertermMainWindow")
+        if AppEnvironment.isIsolated {
+            // Never the autosaved frame: macOS keeps it in the standard
+            // defaults — the user's — so a run read the user's window and
+            // wrote its own back, and each scenario opened at whatever the
+            // one before had left (full screen's 1000×640, and the page's
+            // text read off the window no longer fit).
+            Self.placeIsolatedWindow(window)
+        } else {
+            // The old name, kept: it is where macOS has the window's size.
+            window.setFrameAutosaveName("OvertermMainWindow")
+        }
         super.init(window: window)
         window.delegate = self
         buildLayout(in: window)

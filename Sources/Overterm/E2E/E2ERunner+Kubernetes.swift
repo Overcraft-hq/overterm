@@ -571,7 +571,7 @@ extension E2ERunner {
         check("Cancel puts the sheet away", askSheet != nil && sheetGone && !app.askAgent.isOpen)
 
         check("the pane's header says the context", await shownText(15) { $0.contains("fake-dev") && $0.contains("shop") } != nil)
-        let devLabel = await stripLabel("fake-dev")
+        let devLabel = await stripLabel("fake-dev", waitForRed: false)
         check("its tab in the strip says ⎈ fake-dev, not in red", devLabel.found && !devLabel.red, "\(devLabel)")
         check("and its pane, not production, carries no band", productionBands() == [false], "\(productionBands())")
 
@@ -1722,23 +1722,27 @@ extension E2ERunner {
 
     /// The strip's text with `word` in the title bar, and whether it is
     /// drawn in the production red.
-    func stripLabel(_ word: String) async -> (found: Bool, red: Bool) {
+    func stripLabel(_ word: String, waitForRed: Bool = true) async -> (found: Bool, red: Bool) {
         let top = window.contentLayoutRect.maxY
         let deadline = Date().addingTimeInterval(15)
+        // Found but not red yet: read again — the label is drawn before its
+        // tab's pin colours it, and a read in between said "not red".
+        var found = false
         repeat {
             for tiled in [false, true] {
                 for line in await readWindow(tiled: tiled) where line.text.contains(word) && line.frame.midY > top {
-                    guard let pixels = shownPixels() else { return (true, false) }
+                    found = true
+                    guard let pixels = shownPixels() else { continue }
                     var red = 0
                     for x in stride(from: line.frame.minX, to: line.frame.maxX, by: 1) {
                         for y in stride(from: line.frame.minY, to: line.frame.maxY, by: 1) where pixels.isRed(at: CGPoint(x: x, y: y)) { red += 1 }
                     }
-                    return (true, red >= 6)
+                    if red >= 6 || !waitForRed { return (true, red >= 6) }
                 }
             }
             await pause(0.3)
         } while Date() < deadline
-        return (false, false)
+        return (found, false)
     }
 
     /// `n`, by the key as the window takes it: the namespaces, one picked by
@@ -2533,16 +2537,18 @@ extension E2ERunner {
     /// Whether one read of the window draws every one of `texts`, each on
     /// a line of its own or not: Vision reads a sidebar's rows, or a
     /// field and the list under it, as separate lines.
-    private func drawn(_ texts: [String], _ timeout: TimeInterval = 15) async -> Bool {
+    private func drawn(_ texts: [String], _ timeout: TimeInterval = 15, file: StaticString = #fileID, line: UInt = #line) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
+        var lines: [String] = []
         repeat {
-            let lines = await readWindow().map(\.text)
+            lines = await readWindow().map(\.text)
             // Vision may read one line as two boxes ("panic:", "out of
             // cheese"): the boxes in reading order, joined, count too.
             let joined = lines.joined(separator: " ")
             if texts.allSatisfy({ text in lines.contains { $0.contains(text) } || joined.contains(text) }) { return true }
             await pause(0.3)
         } while Date() < deadline
+        sawInstead(lines, at: "\(file):\(line)")
         return false
     }
 

@@ -81,7 +81,8 @@ extension E2ERunner {
             await eventually(10) { model.rows[node]?.cell("Status", in: model.rows.columns)?.text == "Ready,SchedulingDisabled" },
             model.rows[node]?.cells.map(\.text).joined(separator: " ") ?? "no row")
         // Whole: the Status column is the last the table narrows (minWidth).
-        check("drawn so", await shownText(15) { $0.contains("Ready,SchedulingDisabled") } != nil)
+        // Vision may read a space after the comma ("Ready, SchedulingDisabled").
+        check("drawn so", await shownText(15) { $0.replacingOccurrences(of: ", ", with: ",").contains("Ready,SchedulingDisabled") } != nil)
         check("as one PATCH", fake.writes.filter { $0.path == "/api/v1/nodes/fake-node-1" }.count == 1, "\(fake.writes.suffix(3))")
         check("Cordon… now greyed with why", page.verbs(for: ["fake-node-1"]).first { $0.title == "Cordon…" }?.unavailable == "node fake-node-1 is cordoned already.")
 
