@@ -132,7 +132,7 @@ extension E2ERunner {
         check("naming the pod and kind-fake", resize.contains("Resize pod shop/sized-0 in place?") && resize.contains("kind-fake · namespace shop"), resize)
         check("the change", resize.contains("app: cpu request 100m → 250m"), resize)
         check("and the kubectl it equals", resize.contains("kubectl patch po sized-0 --subresource resize"), resize)
-        check("nothing sent while it asks", !fake.writes.contains { !$0.isAccessReview })
+        check("nothing sent while it asks", !fake.writes.contains { !$0.isAccessReview }, "\(fake.writes.filter { !$0.isAccessReview })")
         if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
         check(
             "confirmed, the resize subresource is patched", await eventually(10) { fake.writes.contains { $0.description == "PATCH /api/v1/namespaces/shop/pods/sized-0/resize" } },
