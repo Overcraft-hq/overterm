@@ -56,6 +56,14 @@ extension E2ERunner {
         check("the strip is on screen, under the menu bar's band", onScreen.height > 40 && onScreen.maxY <= top + 1 && onScreen.minY >= screen.minY, report)
         check("and the tabs in it", app.store.tabFrames.values.contains { $0.width > 0 })
         check("the strip is the toolbar's one item", window.toolbar?.items.first?.view === strip && window.toolbar?.items.count == 1)
+        let backdrops = Self.stripBackdrops(strip)
+        check("nothing is drawn behind it in full screen either", backdrops.isEmpty, backdrops.joined(separator: ", "))
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty {
+            let base = (png as NSString).deletingPathExtension
+            app.captureWindow(to: base + "-fullscreen.png")
+            // The bar comes down in a window of its own in full screen.
+            if let bar = strip.window, bar !== window { app.captureWindow(to: base + "-fullscreen-bar.png", window: bar) }
+        }
         // No traffic lights: the strip starts near the screen's edge.
         check("the strip takes the traffic lights' room", onScreen.minX - screen.minX < 30, "\(onScreen) on \(screen)")
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty { app.captureWindow(to: png) }

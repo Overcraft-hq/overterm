@@ -2210,6 +2210,19 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     for sub in v.subviews { walk(sub, depth + 1) }
                 }
                 walk(content, 0)
+                // What AppKit lays around the strip in the title bar — a glass
+                // platter behind the toolbar's item drew a band once.
+                var bar: NSView? = self.tabBarView
+                while let up = bar?.superview, !String(describing: Swift.type(of: up)).hasPrefix("NSTitlebarView") { bar = up }
+                if let toolbarView = bar?.superview {
+                    @MainActor func walkBar(_ v: NSView, _ depth: Int) {
+                        guard depth < 8 else { return }
+                        let name = String(describing: Swift.type(of: v)).prefix(60)
+                        out += "titlebar " + String(repeating: "  ", count: depth) + "\(name) \(v.convert(v.bounds, to: nil).integral)\(v.isHidden ? " HIDDEN" : "")\n"
+                        for sub in v.subviews { walkBar(sub, depth + 1) }
+                    }
+                    walkBar(toolbarView, 0)
+                }
                 if let clip = (self.editor?.view.subviews.compactMap { $0 as? NSScrollView }.first)?.contentView {
                     out += "editor clip bounds \(clip.bounds.integral)\n"
                 }
@@ -4070,6 +4083,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         }
         item.view = strip
         item.label = ""
+        // Unbordered: linked against macOS 26's SDK, the bar sets an
+        // item's view on a Liquid Glass platter (`NSToolbarPlatterView`
+        // around an `NSGlassEffectView`), 8 pt lower than the bar and as
+        // wide as the strip — its rounded bottom showed as a grey band
+        // under the tabs. The strip draws its own; nothing goes behind it.
+        item.isBordered = false
         item.visibilityPriority = .high
         return item
     }
