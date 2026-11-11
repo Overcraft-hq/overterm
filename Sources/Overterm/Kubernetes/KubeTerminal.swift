@@ -192,16 +192,10 @@ struct KubeTerminalFiles: Sendable {
         self.folder = folder
     }
 
-    /// The support folder's — but in a unit test's process, a folder of its
-    /// own in the temporary directory: `supportDirectory` is the user's real
-    /// one there (only isolated runs move it), where the running app's pins
-    /// live.
+    /// The support folder's — an isolated run's own, a unit test's too:
+    /// never the user's, where the running app's pins live.
     static var defaultFolder: URL {
-        let base =
-            AppEnvironment.isUnitTest && !AppEnvironment.isIsolated
-            ? FileManager.default.temporaryDirectory.appendingPathComponent("overterm-unit-test-\(getpid())", isDirectory: true)
-            : AppEnvironment.supportDirectory
-        return base.appendingPathComponent("Kubernetes/Contexts", isDirectory: true)
+        AppEnvironment.supportDirectory.appendingPathComponent("Kubernetes/Contexts", isDirectory: true)
     }
 
     nonisolated(unsafe) private static var swept: Set<String> = []

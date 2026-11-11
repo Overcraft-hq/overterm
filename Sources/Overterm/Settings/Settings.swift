@@ -15,18 +15,10 @@ import Foundation
 final class Settings: ObservableObject {
     static let shared = Settings(url: sharedURL, legacy: AppEnvironment.defaults)
 
-    /// settings.json in the support folder — in a unit test's process (not
-    /// isolated, so the support folder is the user's real one) a file of
-    /// its own: a test that sets a value must never write, or turn off,
-    /// what the running Overterm reads.
-    static var sharedURL: URL {
-        guard AppEnvironment.isUnitTest, !AppEnvironment.isIsolated else {
-            return AppEnvironment.supportDirectory.appendingPathComponent("settings.json")
-        }
-        return FileManager.default.temporaryDirectory
-            .appendingPathComponent("overterm-unit-settings-\(ProcessInfo.processInfo.processIdentifier)", isDirectory: true)
-            .appendingPathComponent("settings.json")
-    }
+    /// settings.json in the support folder — an isolated run's own, a unit
+    /// test's included: a test that sets a value must never write, or turn
+    /// off, what the running Overterm reads.
+    static var sharedURL: URL { AppEnvironment.supportDirectory.appendingPathComponent("settings.json") }
 
     enum NewTabDirectory: String, CaseIterable, Identifiable {
         /// The selected tab's directory.

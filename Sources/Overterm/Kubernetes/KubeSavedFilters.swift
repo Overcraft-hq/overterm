@@ -73,13 +73,9 @@ extension KubeSavedFilter {
 final class KubeSavedFilters: ObservableObject {
     static let shared = KubeSavedFilters(file: defaultFile)
 
-    /// The support folder's — a unit test's own in the temporary directory.
+    /// The support folder's (an isolated run's own, a unit test's too).
     static var defaultFile: URL {
-        let base =
-            AppEnvironment.isUnitTest && !AppEnvironment.isIsolated
-            ? FileManager.default.temporaryDirectory.appendingPathComponent("overterm-unit-test-\(getpid())", isDirectory: true)
-            : AppEnvironment.supportDirectory
-        return base.appendingPathComponent("Kubernetes/filters.json")
+        AppEnvironment.supportDirectory.appendingPathComponent("Kubernetes/filters.json")
     }
 
     let file: URL

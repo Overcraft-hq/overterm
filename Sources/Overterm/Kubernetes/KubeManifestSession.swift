@@ -86,13 +86,9 @@ enum KubeManifestEdits {
     private(set) static var opened: [String: Opened] = [:]
     private static var swept = false
 
-    /// The support folder's — a unit test's own in the temporary directory.
+    /// The support folder's (an isolated run's own, a unit test's too).
     static var root: URL {
-        let base =
-            AppEnvironment.isUnitTest && !AppEnvironment.isIsolated
-            ? FileManager.default.temporaryDirectory.appendingPathComponent("overterm-unit-test-\(getpid())", isDirectory: true)
-            : AppEnvironment.supportDirectory
-        return base.appendingPathComponent("Kubernetes/Edits", isDirectory: true)
+        AppEnvironment.supportDirectory.appendingPathComponent("Kubernetes/Edits", isDirectory: true)
     }
 
     static var folder: URL { root.appendingPathComponent(String(getpid()), isDirectory: true) }

@@ -254,7 +254,8 @@ final class KubeBindingTests: XCTestCase {
 
     @MainActor
     func testUnitTestsNeverUseTheUsersBindings() {
-        XCTAssertFalse(KubeBindingStore.defaultFile.path.hasPrefix(AppEnvironment.supportDirectory.path), KubeBindingStore.defaultFile.path)
+        let real = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Overterm").path
+        XCTAssertFalse(KubeBindingStore.defaultFile.path.hasPrefix(real), KubeBindingStore.defaultFile.path)
         XCTAssertTrue(KubeBindingStore.defaultFile.path.hasPrefix(FileManager.default.temporaryDirectory.path))
     }
 }

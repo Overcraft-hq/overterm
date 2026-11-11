@@ -160,9 +160,9 @@ enum AppEnvironment {
         return DockerEndpoint.current()
     }
 
-    /// Whether this process is a unit test's: XCTest is loaded. The app
-    /// itself never links it.
-    static let isUnitTest = NSClassFromString("XCTestCase") != nil
+    /// Whether this process is a unit test's (`isUnderTest`): isolated too,
+    /// its support folder a temporary one.
+    static var isUnitTest: Bool { isUnderTest }
 
     /// Whether the user's own kubeconfig is out of bounds: an isolated run
     /// or a unit test. This Mac's current context is production.
