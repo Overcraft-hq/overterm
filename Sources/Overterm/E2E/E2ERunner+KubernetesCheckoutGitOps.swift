@@ -134,11 +134,15 @@ extension E2ERunner {
         check(
             "the workloads' rows carry their marks in the binding's namespace only",
             fake.requests.contains { $0.path == "/apis/apps/v1/namespaces/shop/deployments" && $0.query["includeObject"] == "Metadata" })
+        // Each object's match is its own read: waited for, not taken as acme-apps' came.
         check(
-            "acme-cron's path is not on this branch", match("Kustomization", "acme-cron")?.why == "path apps/cron is not on this branch",
+            "acme-cron's path is not on this branch", await eventually(20) { match("Kustomization", "acme-cron")?.why == "path apps/cron is not on this branch" },
             match("Kustomization", "acme-cron")?.why ?? "none")
-        check("an Application of the path, in argocd", match("Application", "acme-shop-dev")?.why == "deploy/fake-dev", match("Application", "acme-shop-dev")?.why ?? "none")
-        check("the part drawn", await shownText(15) { $0.contains("owns Deployment/shop-api") } != nil)
+        check(
+            "an Application of the path, in argocd", await eventually(20) { match("Application", "acme-shop-dev")?.why == "deploy/fake-dev" },
+            match("Application", "acme-shop-dev")?.why ?? "none")
+        // Where the rail has it, as a person scrolls to it; wrapped where its width says.
+        check("the part drawn", await railShowsPhrase("owns Deployment/shop-api"))
         check("with what it tracks", match("Kustomization", "acme-apps")?.tracks == "tracks main; this branch is fix/orders", match("Kustomization", "acme-apps")?.tracks ?? "none")
         check("no token said", !gitOps.matches.contains { "\($0.why) \($0.object?.sources.map(\.repoURL) ?? [])".contains("ghp_fake") })
 
@@ -297,7 +301,7 @@ extension E2ERunner {
         check(
             "from Flux's applied revision", match("Kustomization", "acme-apps")?.reach?.source == "from Flux's applied revision (Kustomization acme-apps, Ready)",
             match("Kustomization", "acme-apps")?.reach?.source ?? "none")
-        check("the manifests line drawn", await shownText(15) { $0.contains("manifests at \(fixture.short)") } != nil)
+        check("the manifests line drawn", await railShowsPhrase("manifests at \(fixture.short)"))
         if let apps = match("Kustomization", "acme-apps") {
             gitOps.reviewDeployed(apps)
             let expected = ReviewSource.range(base: fixture.c1, head: "HEAD")
@@ -401,6 +405,18 @@ extension E2ERunner {
             railScroll(to: CGFloat(step) / 5)
             await pause(0.4)
             if await shownText(2, match) != nil { return true }
+        }
+        return false
+    }
+
+    /// Whether the rail draws `phrase`, on a line or wrapped onto the next,
+    /// scrolled down a step at a time as a person would read it.
+    private func railShowsPhrase(_ phrase: String) async -> Bool {
+        defer { railScroll(to: 0) }
+        for step in 0...5 {
+            railScroll(to: CGFloat(step) / 5)
+            await pause(0.4)
+            if await shownPhrase(phrase, 2) { return true }
         }
         return false
     }

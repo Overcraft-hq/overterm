@@ -76,7 +76,8 @@ extension E2ERunner {
         fake.setFields("deployments.apps", "shop-api", namespace: "shop", spec(9))
         check("the banner", await eventually(10) { resource.clusterChange != nil })
         check("the edits kept", resource.buffer.storage.string.contains("replicas: 7") && !resource.buffer.storage.string.contains("minReadySeconds: 9"))
-        check("the banner drawn", await shownText(15) { $0.contains("changed on the cluster") } != nil)
+        // The banner wraps where the tab's width says.
+        check("the banner drawn", await shownPhrase("changed on the cluster"))
         check("with Reload", await shownText(15) { $0 == "Reload" } != nil)
         resource.reload()
         check(

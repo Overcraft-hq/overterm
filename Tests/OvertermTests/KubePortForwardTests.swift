@@ -513,7 +513,7 @@ final class KubeForwardsTests: XCTestCase {
         let forwards = forwards(canI: .no("RBAC: forbidden"), launches: launches)
         let id = forwards.start(spec(.service("web"), 80), in: Self.dev)
         try await until("stopped") { forwards.forward(id)?.state.isStopped == true }
-        XCTAssertEqual(forwards.forward(id)?.state, .stopped("kubectl auth can-i create pods/portforward says no in shop: RBAC: forbidden"))
+        XCTAssertEqual(forwards.forward(id)?.state, .stopped("Refused: kubectl auth can-i create pods/portforward in shop: RBAC: forbidden"))
         XCTAssertTrue(launches.played.isEmpty)
     }
 

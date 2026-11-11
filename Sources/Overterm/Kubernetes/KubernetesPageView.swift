@@ -370,8 +370,9 @@ struct KubernetesPageView: View {
                 }
             }
             if page.detail == nil, let problem = page.commandProblem {
-                Text(verbatim: problem).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).lineLimit(1).truncationMode(.tail)
-                    .help(problem).accessibilityIdentifier("kubernetes.commandProblem")
+                // Two lines before it is cut: a refusal's reason is the point of it.
+                Text(verbatim: problem).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).lineLimit(2).truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true).help(problem).accessibilityIdentifier("kubernetes.commandProblem")
             } else if page.detail == nil, let status = page.writeStatus {
                 Text(verbatim: status.text).font(.system(size: 11.5)).foregroundStyle(status.isFailure ? TabStatusStyle.failed : theme.text2)
                     .lineLimit(1).truncationMode(.tail).help(status.text).accessibilityIdentifier("kubernetes.writeStatus")
@@ -606,15 +607,18 @@ struct KubernetesPageView: View {
                 view = AnyView(
                     HStack(spacing: 4) {
                         Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10))
-                        Text(verbatim: row.summary?.exitReason ?? text)
+                        Text(verbatim: row.summary?.exitReason ?? text).layoutPriority(1)
                             .help("\(row.row.id.name): \(row.summary?.exitReason ?? text)")
                         Spacer(minLength: 4)
-                        askWhyButton(row)
+                        askWhyButton(row).fixedSize()
                     }
                     .foregroundStyle(TabStatusStyle.failed))
             case "status" where row.summary != nil:
                 let done = row.summary?.isReady == true || row.summary?.isCompleted == true
-                view = AnyView(Text(verbatim: text).foregroundStyle(done ? theme.text : TabStatusStyle.waiting))
+                view = AnyView(Text(verbatim: text).foregroundStyle(done ? theme.text : TabStatusStyle.waiting).help(text))
+            case "status":
+                // A node's (Ready,SchedulingDisabled), anything without a summary: whole on hover too.
+                view = AnyView(Text(verbatim: text).foregroundStyle(theme.text2).help(text))
             case "name":
                 view = AnyView(Text(verbatim: text).foregroundStyle(theme.text))
             default:

@@ -33,7 +33,21 @@ extension E2ERunner {
 }
 
 extension E2ERunner {
+    /// One part of a scenario, timed: what it took and when it ended, said
+    /// in the run's output — where a slow run's seconds went.
+    func kubernetesPart(_ name: String, _ body: () async -> Void) async {
+        let start = Date()
+        await body()
+        note(String(format: "part %@: %.1f s (ended %.0f s in)", name, Date().timeIntervalSince(start), Date().timeIntervalSince(Self.partsBegan)))
+    }
+
+    /// When the scenario began (touched at its start), for the parts' timings.
+    static let partsBegan = Date()
+}
+
+extension E2ERunner {
     func kubernetesScenario() async {
+        _ = Self.partsBegan
         await settledPrompt()
         let model = KubernetesModel.shared
         let page = app.kubernetesPage
@@ -147,23 +161,8 @@ extension E2ERunner {
         // run's own: it answers `auth can-i` itself (attach refused) and
         // records what it was given, and hands the rest — `proxy` — to the
         // real kubectl.
-        let kubectl = ["/usr/local/bin/kubectl", "/opt/homebrew/bin/kubectl"].first { FileManager.default.isExecutableFile(atPath: $0) }
-        guard let standIn = Self.writeStandInKubectl(in: scratch, real: kubectl) else {
-            return check("the stand-in kubectl is written", false)
-        }
-        Settings.shared.set("kubernetes.kubectlPath", .string(standIn.script.path))
-        if let kubectl {
-            note("kubectl proxy: \(kubectl), through the stand-in, KUBECONFIG \(kubeconfig.path) only")
-        } else {
-            note("no kubectl installed: a stand-in connection to the fake's socket")
-            // Writable as the context is (kind-fake; fake-prod with its switch on), or GETs only.
-            model.connectOverride = { context in KubeSocketConnection(socket: socket, context: context.name, writable: context.isWritable) }
-            // A metrics proxy's stand-in: still only the Service's two query paths.
-            model.prometheusOverride = { context, service in
-                KubePrometheusDirect(connection: KubeSocketConnection(socket: socket, context: context.name), service: service)
-            }
-            model.statusOverride = { _ in .open }
-        }
+        guard let tools = kubernetesKubectl(socket: socket, kubeconfig: kubeconfig) else { return }
+        let (kubectl, standIn) = (tools.kubectl, tools.standIn)
 
         app.toggleKubernetesPage(nil)
         check(
@@ -190,7 +189,8 @@ extension E2ERunner {
             "a crashing pod's reason is said", page.failing.count == 1 && worker?.id.name == "worker-5c" && worker?.exitReason == "CrashLoopBackOff",
             "\(page.failing)")
         check("its restarts too", worker?.restarts == 5 && worker?.lastRestart == "30s ago", "\(String(describing: worker))")
-        check("and drawn", await shownText(15) { $0.contains("CrashLoopBackOff") } != nil)
+        // Whole, beside the Why button: the Status column is the last the table narrows (minWidth).
+        check("and drawn whole", await shownText(15) { $0.contains("CrashLoopBackOff") } != nil)
         check("ages are counted on from the row", model.anchors[KubeRowID(namespace: "shop", name: "web-7d9")]?.said != nil)
         check("nothing marks fake-dev as production", page.band == nil)
 
@@ -209,7 +209,7 @@ extension E2ERunner {
             "by one watch, not lists again", fake.requests.filter { $0.isWatch && $0.path.hasSuffix("/pods") }.count == 1,
             "\(fake.requests.suffix(4))")
         check("what the cluster serves is read once, its CRDs watched", fake.watched.contains(KubernetesModel.crdName), "\(fake.watched)")
-        await kubernetesStreamingLists(model, page, fake)
+        await kubernetesPart("kubernetesStreamingLists") { await kubernetesStreamingLists(model, page, fake) }
 
         // Keys, while the list has the keyboard.
         if let event = NSEvent.keyEvent(
@@ -237,7 +237,7 @@ extension E2ERunner {
         page.filter = ""
         page.applySelector()
         check("cleared, every pod again", await eventually(10) { model.rows.count == 2 }, "\(model.rows.count)")
-        await kubernetesFieldSelector(model, page, fake)
+        await kubernetesPart("kubernetesFieldSelector") { await kubernetesFieldSelector(model, page, fake) }
         let filterFocus = page.focusFilter
         check("/ goes to the filter", page.press("/") && page.focusFilter == filterFocus + 1)
         page.giveListTheKeyboard()
@@ -254,11 +254,11 @@ extension E2ERunner {
         check(": closes them and opens the bar", !page.cheatSheet && page.command != nil)
         page.closeCommand()
         page.giveListTheKeyboard()
-        await kubernetesContextSettings(model, page)
-        await namespaceAndContextPickers(model, page)
-        await severalNamespaces(model, page, fake)
-        await kubernetesKinds(model, page, fake)
-        await kubernetesDetail(model, page, fake)
+        await kubernetesPart("kubernetesContextSettings") { await kubernetesContextSettings(model, page) }
+        await kubernetesPart("namespaceAndContextPickers") { await namespaceAndContextPickers(model, page) }
+        await kubernetesPart("severalNamespaces") { await severalNamespaces(model, page, fake) }
+        await kubernetesPart("kubernetesKinds") { await kubernetesKinds(model, page, fake) }
+        await kubernetesPart("kubernetesDetail") { await kubernetesDetail(model, page, fake) }
 
         // All namespaces: same-named pods in two are two rows.
         check("0 is all namespaces", page.press("0") && model.scope == .all)
@@ -318,37 +318,33 @@ extension E2ERunner {
         fake.forgetRequests()
         await pause(1.5)
         check("and nothing is asked", fake.requests.isEmpty, "\(fake.requests)")
-        await kubernetesSwitcher(model, page, fake)
-        await kubernetesTerminal(model, page, kubeconfig: kubeconfig)
-        await kubernetesPodCommands(model, page, fake, kubeconfig: kubeconfig, canI: standIn.log)
-        await kubernetesAskWhy(model, page, fake)
-        await kubernetesAgentTools(model, fake)
-        await kubernetesCheckout(model, page, fake)
+        await kubernetesPart("kubernetesSwitcher") { await kubernetesSwitcher(model, page, fake) }
+        await kubernetesPart("kubernetesTerminal") { await kubernetesTerminal(model, page, kubeconfig: kubeconfig) }
+        await kubernetesPart("kubernetesPodCommands") { await kubernetesPodCommands(model, page, fake, kubeconfig: kubeconfig, canI: standIn.log) }
+        await kubernetesPart("kubernetesAskWhy") { await kubernetesAskWhy(model, page, fake) }
+        await kubernetesPart("kubernetesAgentTools") { await kubernetesAgentTools(model, fake) }
+        await kubernetesPart("kubernetesCheckout") { await kubernetesCheckout(model, page, fake) }
         let forwarding = await kubernetesForwards(model, page, fake, kubeconfig: kubeconfig, canI: standIn.log, forwards: standIn.forwards)
-        await kubernetesWrites(model, page, fake, kubeconfig: kubeconfig, port: port, kubectl: kubectl)
-        await kubernetesVerbs(model, page, fake)
-        await kubernetesTabWrites(model, page, fake)
-        await kubernetesAgentWrites(model, page, fake, kubeconfig: kubeconfig, port: port)
-        await kubernetesApply(model, page, fake, kubeconfig: kubeconfig, port: port)
-        await kubernetesHelm(model, page, fake)
-        await kubernetesHelmWrites(model, page, fake)
-        await kubernetesAttention(model, page, fake, realProxy: kubectl != nil)
-        await kubernetesMetrics(model, page, fake)
-        await kubernetesCharts(model, page, fake)
-        await kubernetesObjectCharts(model, page, fake)
-        await kubernetesMergedLogs(model, page, fake)
-        await kubernetesTimeline(model, page, fake)
-        await kubernetesTree(model, page, fake)
-        await kubernetesGitOpsVerbs(model, page, fake)
-        await kubernetesGitOpsSection(model, page, fake)
-        await kubernetesCheckoutGitOps(model, page, fake)
-        await kubernetesHealth(model, page, fake, kubeconfig: kubeconfig, port: port)
-        await kubernetesTabContext(model, page, fake, kubeconfig: kubeconfig)
-        await kubernetesNodeShellAndResize(model, page, fake)
-        await kubernetesPrometheus(model, page, fake, realProxy: kubectl != nil)
-        await kubernetesAPIDocs(model, page, fake)
-        await kubernetesPodFiles(model, page, fake)
-        await kubernetesDocker(model, page, fake)
+        await kubernetesPart("kubernetesWrites") { await kubernetesWrites(model, page, fake, kubeconfig: kubeconfig, port: port, kubectl: kubectl) }
+        await kubernetesPart("kubernetesVerbs") { await kubernetesVerbs(model, page, fake) }
+        await kubernetesPart("kubernetesTabWrites") { await kubernetesTabWrites(model, page, fake) }
+        await kubernetesPart("kubernetesAgentWrites") { await kubernetesAgentWrites(model, page, fake, kubeconfig: kubeconfig, port: port) }
+        await kubernetesPart("kubernetesApply") { await kubernetesApply(model, page, fake, kubeconfig: kubeconfig, port: port) }
+        await kubernetesPart("kubernetesHelm") { await kubernetesHelm(model, page, fake) }
+        await kubernetesPart("kubernetesHelmWrites") { await kubernetesHelmWrites(model, page, fake) }
+        await kubernetesPart("kubernetesAttention") { await kubernetesAttention(model, page, fake, realProxy: kubectl != nil) }
+        await kubernetesPart("kubernetesMergedLogs") { await kubernetesMergedLogs(model, page, fake) }
+        await kubernetesPart("kubernetesTimeline") { await kubernetesTimeline(model, page, fake) }
+        await kubernetesPart("kubernetesTree") { await kubernetesTree(model, page, fake) }
+        await kubernetesPart("kubernetesGitOpsVerbs") { await kubernetesGitOpsVerbs(model, page, fake) }
+        await kubernetesPart("kubernetesGitOpsSection") { await kubernetesGitOpsSection(model, page, fake) }
+        await kubernetesPart("kubernetesCheckoutGitOps") { await kubernetesCheckoutGitOps(model, page, fake) }
+        await kubernetesPart("kubernetesHealth") { await kubernetesHealth(model, page, fake, kubeconfig: kubeconfig, port: port) }
+        await kubernetesPart("kubernetesTabContext") { await kubernetesTabContext(model, page, fake, kubeconfig: kubeconfig) }
+        await kubernetesPart("kubernetesNodeShellAndResize") { await kubernetesNodeShellAndResize(model, page, fake) }
+        await kubernetesPart("kubernetesAPIDocs") { await kubernetesAPIDocs(model, page, fake) }
+        await kubernetesPart("kubernetesPodFiles") { await kubernetesPodFiles(model, page, fake) }
+        await kubernetesPart("kubernetesDocker") { await kubernetesDocker(model, page, fake) }
 
         // Off: the page says so, and no proxy is left.
         Settings.shared.set("kubernetes.enabled", .bool(false))
@@ -378,6 +374,125 @@ extension E2ERunner {
         model.prometheusOverride = nil
         model.statusOverride = nil
         try? FileManager.default.removeItem(at: kubeconfig)
+    }
+
+    /// kubernetes.kubectlPath, a stand-in script of the run's own: it
+    /// answers `auth can-i` itself (attach refused), records what it was
+    /// given, and hands the rest — `proxy` — to the real kubectl if this
+    /// Mac has one (KUBECONFIG the scenario's file only); else a stand-in
+    /// connection goes to the fake's socket. The real kubectl, if any, and
+    /// the stand-in's files; nil (said) if it couldn't be written.
+    func kubernetesKubectl(socket: String, kubeconfig: URL) -> (kubectl: String?, standIn: (script: URL, log: URL, forwards: URL))? {
+        let model = KubernetesModel.shared
+        let kubectl = ["/usr/local/bin/kubectl", "/opt/homebrew/bin/kubectl"].first { FileManager.default.isExecutableFile(atPath: $0) }
+        guard let standIn = Self.writeStandInKubectl(in: scratch, real: kubectl) else {
+            check("the stand-in kubectl is written", false)
+            return nil
+        }
+        Settings.shared.set("kubernetes.kubectlPath", .string(standIn.script.path))
+        if let kubectl {
+            note("kubectl proxy: \(kubectl), through the stand-in, KUBECONFIG \(kubeconfig.path) only")
+        } else {
+            note("no kubectl installed: a stand-in connection to the fake's socket")
+            // Writable as the context is (kind-fake; fake-prod with its switch on), or GETs only.
+            model.connectOverride = { context in KubeSocketConnection(socket: socket, context: context.name, writable: context.isWritable) }
+            // A metrics proxy's stand-in: still only the Service's two query paths.
+            model.prometheusOverride = { context, service in
+                KubePrometheusDirect(connection: KubeSocketConnection(socket: socket, context: context.name), service: service)
+            }
+            model.statusOverride = { _ in .open }
+        }
+        return (kubectl, standIn)
+    }
+
+    /// The scenario's end: Kubernetes off says so, no proxy is left, no
+    /// kubectl outlives the run, and nothing of the run's is left set.
+    func kubernetesTearDown(kubeconfig: URL) async {
+        let model = KubernetesModel.shared
+        if app.store.showingOverlay == .kubernetes { app.toggleKubernetesPage(nil) }
+        Settings.shared.set("kubernetes.enabled", .bool(false))
+        app.toggleKubernetesPage(nil)
+        check("with Kubernetes off the page says so", !model.enabled && model.rows.count == 0)
+        var left = await model.proxies.connected
+        for _ in 0..<50 where !left.isEmpty {
+            await pause(0.1)
+            left = await model.proxies.connected
+        }
+        check("and no proxy is left", left.isEmpty, "\(left)")
+        app.toggleKubernetesPage(nil)
+        Settings.shared.set("kubernetes.enabled", nil)
+        app.closeOverlay(.kubernetes)
+        let pids = ManagedProcess.livePIDs
+        ManagedProcess.closeAll()
+        check("every kubectl proxy ends", await eventually(5) { pids.allSatisfy { kill($0, 0) != 0 } }, "\(pids)")
+        KubeSocketFolder.app.remove()
+        Settings.shared.set("kubernetes.kubectlPath", nil)
+        model.connectOverride = nil
+        model.prometheusOverride = nil
+        model.statusOverride = nil
+        try? FileManager.default.removeItem(at: kubeconfig)
+    }
+
+    /// The charts (metrics.md), a scenario of its own: the pod's Metrics
+    /// tab sampled from metrics-server, a workload's, a node's and a
+    /// namespace's, then Prometheus — against the same fake as
+    /// `kubernetes`, OVERTERM_KUBECONFIG's file alone, fake-dev's `shop`.
+    /// Apart from `kubernetes` so each runs well inside its time: the
+    /// charts wait on samples polled every half second, and together
+    /// they took most of eight minutes.
+    func kubernetesChartsScenario() async {
+        _ = Self.partsBegan
+        await settledPrompt()
+        let model = KubernetesModel.shared
+        let page = app.kubernetesPage
+        check("the run guards the user's kubeconfig", AppEnvironment.guardsKubeconfig)
+        guard let path = ProcessInfo.processInfo.environment["OVERTERM_KUBECONFIG"], !path.isEmpty, !path.contains(":") else {
+            return check("OVERTERM_KUBECONFIG names the scenario's own file", false, "testKubernetesCharts sets it")
+        }
+        let kubeconfig = URL(fileURLWithPath: path)
+        guard !KubeconfigSources.isUsersOwn(kubeconfig, home: FileManager.default.homeDirectoryForCurrentUser) else {
+            return check("OVERTERM_KUBECONFIG isn't under ~/.kube", false, path)
+        }
+        check("the only kubeconfig this run may read is the scenario's", AppEnvironment.kubeconfigs(extra: ["~/.kube/config"]) == [kubeconfig])
+        let socket = "/tmp/ot-e2e-kch-\(UUID().uuidString.prefix(6)).sock"
+        let fake = FakeKubeAPI(socket: socket)
+        let port: Int
+        do {
+            try fake.start()
+            port = try fake.listenTCP()
+        } catch {
+            return check("the fake API server starts", false, "\(error)")
+        }
+        defer { fake.stop() }
+        fake.addNamespace("shop")
+        fake.addNamespace("payments")
+        fake.addPod("web-7d9", namespace: "shop", labels: ["app": "web"])
+        // The pod Prometheus' series name (kubernetesPrometheus).
+        fake.addPod("web-8k2", namespace: "shop", FakeKubeAPI.Pod(ports: [FakeKubeAPI.ContainerPort(8080, name: "http")]), labels: ["app": "web"])
+        fake.add("nodes", "fake-node-1", values: ["Status": "Ready", "Roles": "control-plane", "Version": "v1.34.1"])
+        do {
+            try Self.fakeKubeconfig(port: port).write(to: kubeconfig, atomically: true, encoding: .utf8)
+        } catch {
+            return check("the scenario's kubeconfig is written", false, "\(error)")
+        }
+        guard let tools = kubernetesKubectl(socket: socket, kubeconfig: kubeconfig) else { return }
+        let kubectl = tools.kubectl
+        app.toggleKubernetesPage(nil)
+        check(
+            "the scenario's two contexts are read", await eventually(10) { model.contexts.contexts.map(\.name) == ["fake-dev", "fake-prod"] },
+            "\(model.contexts.contexts.map(\.name)) \(model.contexts.problems)")
+        check("the page opens on fake-dev, in shop", model.selectedName == "fake-dev" && model.scope == .namespace("shop"))
+        check(
+            "its pods are listed", await eventually(15) { model.rows[KubeRowID(namespace: "shop", name: "web-7d9")] != nil },
+            "\(model.rows.sorted.map(\.id.description)) \(model.listState) \(model.proxyStatus)")
+
+        await kubernetesPart("kubernetesMetrics") { await kubernetesMetrics(model, page, fake) }
+        await kubernetesPart("kubernetesCharts") { await kubernetesCharts(model, page, fake) }
+        await kubernetesPart("kubernetesObjectCharts") { await kubernetesObjectCharts(model, page, fake) }
+        await kubernetesPart("kubernetesPrometheus") { await kubernetesPrometheus(model, page, fake, realProxy: kubectl != nil) }
+
+        check("the charts wrote nothing to the fake", fake.writes.isEmpty, "\(fake.writes)")
+        await kubernetesTearDown(kubeconfig: kubeconfig)
     }
 
     /// Terminal in this context (3.11): opened from the page's context card
@@ -1134,7 +1249,7 @@ extension E2ERunner {
         check("so is a log followed in a tab", verb("Follow Logs in a Tab")?.unavailable == nil, verb("Follow Logs in a Tab")?.unavailable ?? "")
         check(
             "attach, refused by can-i, is greyed with the reason",
-            verb("Attach in a Tab")?.unavailable == "kubectl auth can-i create pods/attach says no in shop.", verb("Attach in a Tab")?.unavailable ?? "")
+            verb("Attach in a Tab")?.unavailable == "Refused: kubectl auth can-i create pods/attach in shop.", verb("Attach in a Tab")?.unavailable ?? "")
         let asked = canIs()
         check(
             "can-i got the run's kubeconfig alone, --context and -n",
@@ -1173,10 +1288,11 @@ extension E2ERunner {
         // A: refused — nothing opens, and the page says why.
         check("back on the page", await reopen("shop/web-7d9"))
         _ = page.press("A")
-        check("A, refused, says why", await eventually(5) { page.commandProblem?.contains("says no") == true }, page.commandProblem ?? "nothing said")
+        check("A, refused, says why", await eventually(5) { page.commandProblem?.hasPrefix("Refused: ") == true }, page.commandProblem ?? "nothing said")
         await pause(0.3)
         check("and opens nothing", recorded.count == 2)
-        check("drawn on the page", await shownText(15) { $0.contains("pods/attach says no") } != nil)
+        // The verdict first, the header wrapping before it cuts: "Refused" is drawn whatever the width.
+        check("drawn on the page, refused", await shownPhrase("Refused: kubectl auth can-i create pods/attach"))
         check("picked again, the refusal goes", await reopen("shop/web-7d9") && page.commandProblem == nil, page.commandProblem ?? "")
         _ = page.press("e")
         check("e again", await eventually(10) { recorded.count == 3 })
@@ -1980,12 +2096,19 @@ extension E2ERunner {
             "the YAML, without managedFields or the last-applied annotation",
             !pod.yaml.isEmpty && !pod.yaml.contains("managedFields") && !pod.yaml.contains(KubeObjectStrip.lastApplied) && pod.yaml.contains("image: nginx:1.27"),
             String(pod.yaml.prefix(300)))
-        // In the editor's monospace font: its hyphens read as dashes, so the key alone.
-        check("drawn", await shownText(15) { $0.contains("nodeName:") } != nil)
         check(
             "in the app's editor: the pod's one buffer, in memory",
             await eventually(5) { pod.resource?.state == .loaded && page.yamlEditor?.active === pod.resource?.buffer }
                 && pod.resource?.buffer.document.isVirtual == true && pod.resource?.buffer.storage.string.contains("image: nginx:1.27") == true)
+        // The spec drawn in the editor: spec.nodeName is past the fold of a
+        // window a laptop's height, so scrolled to, as a person would. In
+        // the editor's monospace font its hyphens read as dashes: a key alone.
+        if let editor = page.yamlEditor {
+            let range = (editor.textView.string as NSString).range(of: "nodeName:")
+            check("nodeName in the editor's text", range.location != NSNotFound)
+            if range.location != NSNotFound { editor.reveal(range, flash: false) }
+        }
+        check("drawn", await shownText(15) { $0.contains("nodeName:") } != nil)
         check("followed while it shows", pod.resource?.isFollowing == true)
         check("on fake-dev, read-only: Apply greyed, with why", await eventually(5) { pod.resource?.session.applyRefusal?.hasPrefix("This context is read-only") == true })
         check("why drawn", await shownText(15) { $0.contains("Apply is off") } != nil)

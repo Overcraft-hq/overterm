@@ -323,6 +323,77 @@ final class KubePlotTests: XCTestCase {
         XCTAssertNotNil(registry.chart(cpu.identifier, in: other), "the old view's going leaves the new one's")
     }
 
+    /// The registry holds a chart's laid-out size: the dump says it, so a
+    /// chart never laid out (0×0, no plot) is told from one on screen.
+    func testTheRegistrySaysEachChartsSizeAndListsWhatIsShown() {
+        let registry = KubeChartRegistry()
+        let windows = (NSObject(), NSObject())
+        let one = ObjectIdentifier(windows.0), other = ObjectIdentifier(windows.1)
+        let cpu = data([KubeChartSeries(id: "cpu", name: "CPU", points: points([0.2, 0.3]))])
+        let size = CGSize(width: 532, height: 140)
+        let token = UUID()
+        registry.show(cpu, plot: KubePlot(cpu, size: size), token: token, window: one, cursor: KubeChartCursor(), size: size)
+        XCTAssertEqual(registry.chart(cpu.identifier, in: one)?.size, size)
+        XCTAssertTrue(registry.lines(in: one).first?.hasSuffix(" size=532x140") == true, registry.lines(in: one).first ?? "")
+        XCTAssertEqual(registry.identifiers(in: one), [cpu.identifier])
+        XCTAssertEqual(registry.identifiers(in: other), [])
+        registry.hide(token)
+        XCTAssertEqual(registry.identifiers(), [], "hidden, it is listed no more")
+    }
+
+    /// A chart is listed only between its appearing and its disappearing:
+    /// one a lazy stack built ahead, or kept after it scrolled off, hears
+    /// its data change and its plot built, and never puts an entry back.
+    func testAChartOffScreenIsNeverListed() async throws {
+        let registry = KubeChartRegistry()
+        let window = ObjectIdentifier(registry)
+        let cursor = KubeChartCursor()
+        let cpu = data([KubeChartSeries(id: "cpu", name: "CPU", points: points([0.2, 0.3]))])
+        let size = CGSize(width: 400, height: 120)
+        let state = KubeChartState(registry: registry)
+
+        // Built ahead: its data and its plot arrive before it appears.
+        state.register(cpu, window: window, cursor: cursor, size: .zero)
+        state.want(cpu, size: size, hidden: [], hideReferences: false)
+        try await until { state.plot != nil }
+        state.register(cpu, plot: state.plot, window: window, cursor: cursor, size: size)
+        XCTAssertEqual(registry.identifiers(in: window), [], "not yet on screen: not listed")
+
+        state.appear(cpu, window: window, cursor: cursor, size: size)
+        XCTAssertEqual(registry.identifiers(in: window), [cpu.identifier])
+        XCTAssertEqual(registry.chart(cpu.identifier, in: window)?.size, size)
+        XCTAssertNotNil(registry.chart(cpu.identifier, in: window)?.plot)
+
+        // Scrolled off, then a new sample: its plot built again, still unlisted.
+        state.disappear()
+        XCTAssertEqual(registry.identifiers(in: window), [], "off screen: gone")
+        var newer = cpu
+        newer.series[0].points = points([0.2, 0.3, 0.5])
+        newer.version += 1
+        state.register(newer, window: window, cursor: cursor, size: size)
+        state.want(newer, size: size, hidden: [], hideReferences: false)
+        try await until { state.plot?.key.version == newer.version }
+        state.register(newer, plot: state.plot, window: window, cursor: cursor, size: size)
+        XCTAssertEqual(registry.identifiers(in: window), [], "its data changing off screen puts nothing back")
+
+        // Back on screen: listed again, with the new data.
+        state.appear(newer, window: window, cursor: cursor, size: size)
+        XCTAssertEqual(registry.chart(cpu.identifier, in: window)?.data.version, newer.version)
+    }
+
+    private struct TimedOut: Error {}
+
+    private func until(_ timeout: TimeInterval = 5, _ condition: () -> Bool) async throws {
+        let deadline = Date().addingTimeInterval(timeout)
+        while !condition() {
+            if Date() > deadline {
+                XCTFail("the plot was never built")
+                throw TimedOut()
+            }
+            try await Task.sleep(nanoseconds: 20_000_000)
+        }
+    }
+
     func testTheDrawCounterKeepsWindowsApart() {
         let draws = KubeChartDraws()
         // Kept alive, so their identifiers stay theirs.

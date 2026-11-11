@@ -56,9 +56,11 @@ extension E2ERunner {
                 name, namespace: namespace,
                 FakeKubeAPI.Pod(node: node, resources: ["app": ["requests": ["cpu": "100m", "memory": "64Mi"], "limits": ["cpu": "500m", "memory": "256Mi"]]]),
                 labels: ["app": "api", "pod-template-hash": hash])
-            fake.setFields(
-                "pods", name, namespace: namespace,
-                ["metadata": ["ownerReferences": [["apiVersion": "apps/v1", "kind": "ReplicaSet", "name": "api-\(hash)", "controller": true]]]])
+            let owner: [[String: Any]] = [["apiVersion": "apps/v1", "kind": "ReplicaSet", "name": "api-\(hash)", "controller": true]]
+            fake.setFields("pods", name, namespace: namespace, ["metadata": ["ownerReferences": owner]])
+            // In its Metadata rows too, as a server has them: the namespace's
+            // tab groups by owner from them — without, by pod once they came.
+            fake.setRowOwners("pods", name, namespace: namespace, owner)
             fake.setPodMetrics(name, namespace: namespace, [("app", index == 0 ? "60m" : "30m", "40Mi")], labels: ["app": "api", "pod-template-hash": hash])
         }
         let pressure = Date().addingTimeInterval(-300)
@@ -99,16 +101,19 @@ extension E2ERunner {
         let cpuDump = charts.lines(in: scope).first { $0.contains(subject + ".cpu") } ?? ""
         note("kubernetes object charts dump: \(cpuDump)")
         check("against one pod's request and limit, from the template", cpuDump.contains("refs=[request=100m limit=500m]"), cpuDump)
+        await revealChart(subject + ".revisions", scope: scope)
         check(
             "by revision, labelled from its ReplicaSet",
             await eventually(15) { charts.chart(subject + ".revisions", in: scope)?.data.usage.map(\.name) == ["rev 3 (nginx:1.27.2)"] },
             charts.chart(subject + ".revisions", in: scope)?.data.usage.map(\.name).joined(separator: ", ") ?? "none")
+        await revealChart(subject + ".replicas", scope: scope)
         check(
             "its replicas, stepped, with its HPA's bounds",
             await eventually(15) {
                 guard let replicas = charts.chart(subject + ".replicas", in: scope) else { return false }
                 return replicas.data.stepped && replicas.data.references.map(\.name).contains("HPA max")
             })
+        await revealChart("kubernetes.chart.hpa.\(namespace).api.replicas", scope: scope)
         check(
             "its HPA found and charted beside it",
             await eventually(15) { charts.chart("kubernetes.chart.hpa.\(namespace).api.replicas", in: scope) != nil }, charts.lines(in: scope).joined(separator: "; "))
@@ -120,6 +125,7 @@ extension E2ERunner {
             fake.requests.contains { $0.path == "/apis/metrics.k8s.io/v1beta1/namespaces/\(namespace)/pods" && $0.query["labelSelector"] == "app=api" })
         check("the caption says where the numbers come from", await shownText(15) { $0.contains("Sampled from metrics-server while shown since") } != nil)
         page.pickWorkloadView(.total)
+        await revealChart(subject + ".cpu", scope: scope)
         check(
             "Total: stacked, against the request × its replicas",
             await eventually(10) {
@@ -130,19 +136,23 @@ extension E2ERunner {
 
         // M4: change markers. Its ReplicaSet's revision a rollout on every chart, from its History;
         // a pod's OOMKill, seen between two reads of its pods' states, on its CPU and memory.
-        check(
-            "its rollout marked on every chart, from its History",
-            await eventually(15) {
-                [".cpu", ".memory", ".revisions", ".replicas"].allSatisfy { id in
-                    charts.chart(subject + id, in: scope)?.data.shownMarkers.contains { $0.kind == .rollout && $0.title.hasPrefix("Revision 3") } == true
-                }
-            }, charts.lines(in: scope).filter { $0.contains(subject) }.joined(separator: "; "))
+        // Each chart scrolled to in turn: four don't fit on one screen.
+        var unmarked: [String] = []
+        for id in [".cpu", ".memory", ".revisions", ".replicas"] {
+            await revealChart(subject + id, scope: scope)
+            let marked = await eventually(15) {
+                charts.chart(subject + id, in: scope)?.data.shownMarkers.contains { $0.kind == .rollout && $0.title.hasPrefix("Revision 3") } == true
+            }
+            if !marked { unmarked.append(charts.lines(in: scope).first { $0.contains(subject + id + " ") } ?? subject + id + " not on screen") }
+        }
+        check("its rollout marked on every chart, from its History", unmarked.isEmpty, unmarked.joined(separator: "; "))
         fake.updatePod(pods[0], namespace: namespace) {
             $0.restarts = 1
             $0.lastReason = "OOMKilled"
             $0.lastExitCode = 137
             $0.lastFinished = Date().addingTimeInterval(-20)
         }
+        await revealChart(subject + ".memory", scope: scope)
         check(
             "a pod's OOMKill marked on its memory, named by its pod",
             await eventually(15) {
@@ -155,6 +165,7 @@ extension E2ERunner {
         note("kubernetes markers dump: \(markedDump)")
         check(
             "the dump names them", markedDump.contains("markers=2[rollout,oom]") || markedDump.contains("markers=2[oom,rollout]"), markedDump)
+        await revealChart(subject + ".cpu", scope: scope, top: true)
         if let rollout = charts.chart(subject + ".cpu", in: scope)?.data.shownMarkers.first(where: { $0.kind == .rollout }) {
             // Show ±30 min: every chart narrowed to it, nothing asked for it.
             page.showAround(rollout)
@@ -221,6 +232,7 @@ extension E2ERunner {
         check("never the kubelet", !fake.requests.contains { $0.path.contains("/proxy") })
         check("its top pods not read until asked", !fake.requests.contains { $0.path == "/apis/metrics.k8s.io/v1beta1/namespaces/\(namespace)/pods" })
         page.sampleTopPods()
+        await revealChart("kubernetes.chart.node.\(node).top.cpu", scope: scope)
         check(
             "Sample Top Pods: its largest pods, stacked",
             await eventually(20) { charts.chart("kubernetes.chart.node.\(node).top.cpu", in: scope)?.data.usage.count == 2 },
@@ -239,10 +251,14 @@ extension E2ERunner {
             await eventually(20) {
                 guard let cpu = charts.chart(nsCPU, in: scope) else { return false }
                 return cpu.data.usage.map(\.name) == ["api"] && cpu.data.references.first?.role == .quota && cpu.data.tier?.contains("by owner") == true
-            }, charts.lines(in: scope).first { $0.contains(nsCPU) } ?? "none")
+            },
+            (charts.lines(in: scope).first { $0.contains(nsCPU) } ?? "none") + " usage "
+                + (charts.chart(nsCPU, in: scope)?.data.usage.map { "\($0.id):\($0.points.count)" }.joined(separator: ",") ?? "-"))
+        await revealChart("kubernetes.chart.namespace.\(namespace).phases", scope: scope)
         check(
             "its pods by phase",
             await eventually(15) { charts.chart("kubernetes.chart.namespace.\(namespace).phases", in: scope)?.data.usage.map(\.name) == ["Running"] })
+        await chartsToTop(scope: scope)
         check(
             "its pods' owners from Metadata rows",
             fake.requests.contains { $0.path == "/api/v1/namespaces/\(namespace)/pods" && $0.query["includeObject"] == "Metadata" })
@@ -744,6 +760,8 @@ extension E2ERunner {
             }
         }
         check("the entry's saved queries read", await eventually(10) { model.selected?.settings.charts.count == 3 }, "\(model.selected?.settings.charts ?? [])")
+        // The charts back at the top first: the list keeps its place for the next object's tab.
+        await chartsToTop(scope: app.theme.map(ObjectIdentifier.init))
         page.showTab(.overview)
         page.closeDetail()
         guard let deployments = model.discovery?.kind("deployments") else { return check("deployments served", false) }

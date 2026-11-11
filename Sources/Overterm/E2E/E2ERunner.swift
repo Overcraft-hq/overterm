@@ -89,6 +89,7 @@ final class E2ERunner {
         "simulator": { await $0.simulatorScenario() },
         "docker": { await $0.dockerScenario() },
         "kubernetes": { await $0.kubernetesScenario() },
+        "kubernetesCharts": { await $0.kubernetesChartsScenario() },
         "kubernetesPerf": { await $0.kubernetesPerfScenario() },
         "kubernetesOverview": { await $0.kubernetesOverviewScenario() },
         "kubernetesScale": { await $0.kubernetesScaleScenario() },

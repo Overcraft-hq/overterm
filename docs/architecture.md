@@ -3355,8 +3355,8 @@ namespace as Terminal in this context pins one.
   pod's right-click menu (one pod picked) and its detail's buttons
   (`ResourceActionBar`, `kubernetes.detail.actions`) — disabled with the
   process check's refusal, "Checking kubectl auth can-i …" while it is
-  asked, or "kubectl auth can-i create pods/attach says no in shop[: the
-  reason]". A key pressed waits for the answer; refused, the page's
+  asked, or "Refused: kubectl auth can-i create pods/attach in shop[: the
+  reason]" — the verdict first, so a line cut at its end still says it. A key pressed waits for the answer; refused, the page's
   `commandProblem` says it (over the list, or under the detail's buttons)
   until another pod, namespace or context is picked. With the detail
   open the keys mean the pod it shows (a link followed, back and forward
@@ -5475,10 +5475,18 @@ its object (`cluster`, `pod.shop.web-8k2`, `volume.shop.data-db-0`). The
 charts on screen are in `KubeChartRegistry` from appearing to
 disappearing, an entry per view (its token) with its window (its
 `ChromeTheme`) — two windows' Overviews, or a detail's new view shown
-before the old one goes, never take each other's entry:
-`OVERTERM_DUMP_LAYOUT` prints a line for each of its window's (series, points, drawn after
-decimation, the axis's top, references, source, tier), and the scenarios
-read it. A Prometheus reading becomes a chart through `KubeChartData.of`:
+before the old one goes, never take each other's entry. Only on screen:
+a chart view a `LazyVStack` built ahead, or kept after it scrolled off,
+still hears its data change and its plot built, and once put back an
+entry nobody removed — a chart of 0×0 with no plot (`drawn=0`) that a
+lookup by identifier found before the one shown; so it registers only
+between its `onAppear` and `onDisappear` (`KubeChartState`'s `appear`,
+`disappear` and `register`, which does nothing off screen —
+`KubePlotTests` checks it), and its entry goes when its state does. `OVERTERM_DUMP_LAYOUT` prints a
+line for each of its window's (series, points, drawn after decimation,
+the axis's top, references, source, tier, the size it was laid out
+at), and the scenarios read it — a chart below the fold scrolled to
+first (`revealChart`), as a person would. A Prometheus reading becomes a chart through `KubeChartData.of`:
 the cluster's CPU and memory with active requests, limits and allocatable
 as flat lines, a claim's used against its capacity (stepped); a
 Metrics tab's are `KubePromTabCharts`' (below).
@@ -6682,7 +6690,11 @@ an image not on the engine asked and Cancel pulls nothing.
 
 ### The scenarios
 
-**The scenario** (`kubernetes`, `E2ERunner+Kubernetes`): testKubernetes
+**The scenario** (`kubernetes`, `E2ERunner+Kubernetes`; about 260 s,
+each part's time said in its output, `kubernetesPart`; the charts —
+metrics-server's, the workload, node and namespace tabs, Prometheus —
+are `kubernetesCharts`, testKubernetesCharts, about 120 s, on a fake of
+its own set up the same way): testKubernetes
 names a temporary OVERTERM_KUBECONFIG; the scenario opens the page before
 the file exists (no kubeconfig), then starts `FakeKubeAPI` on a socket
 and 127.0.0.1 and writes there two contexts on it, `fake-dev` (remote,

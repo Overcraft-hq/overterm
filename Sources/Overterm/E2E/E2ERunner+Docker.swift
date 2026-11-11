@@ -1893,19 +1893,19 @@ extension E2ERunner {
     /// bottom left, as an event's location) — for what SwiftUI draws itself,
     /// which no AppKit view holds and, without an assistive app, no
     /// accessibility element either.
-    func readWindow(tiled: Bool = false) async -> [(text: String, frame: CGRect)] {
+    func readWindow(tiled: Bool = false, halves: Bool = false) async -> [(text: String, frame: CGRect)] {
         guard let image = app.windowImage(window) else { return [] }
         let pixels = WindowPixels(image: image)
         let size = window.frame.size
-        return await Task.detached { Self.recognize(pixels, size: size, tiled: tiled) }.value
+        return await Task.detached { Self.recognize(pixels, size: size, tiled: tiled, halves: halves) }.value
     }
 
     struct WindowPixels: @unchecked Sendable {
         let image: CGImage
     }
 
-    nonisolated static func recognize(_ pixels: WindowPixels, size: CGSize, tiled: Bool = false) -> [(text: String, frame: CGRect)] {
-        recognized(pixels.image, tiled: tiled).map { candidate, place in
+    nonisolated static func recognize(_ pixels: WindowPixels, size: CGSize, tiled: Bool = false, halves: Bool = false) -> [(text: String, frame: CGRect)] {
+        recognized(pixels.image, tiled: tiled, halves: halves).map { candidate, place in
             let box = place(candidate.boundingBox)
             return (candidate.text, CGRect(x: box.minX * size.width, y: box.minY * size.height, width: box.width * size.width, height: box.height * size.height))
         }
@@ -1930,7 +1930,7 @@ extension E2ERunner {
     /// is kept once. `tiled` reads in tiles whatever the whole read gave:
     /// on a laptop's own screen the whole read leaves out small text — a
     /// severity chip, a list row's chip — that a tile reads.
-    nonisolated static func recognized(_ image: CGImage, tiled: Bool = false) -> [(RecognizedLine, (CGRect) -> CGRect)] {
+    nonisolated static func recognized(_ image: CGImage, tiled: Bool = false, halves: Bool = false) -> [(RecognizedLine, (CGRect) -> CGRect)] {
         func read(_ image: CGImage) -> [RecognizedLine] {
             let request = VNRecognizeTextRequest()
             request.recognitionLevel = .accurate
@@ -1944,6 +1944,12 @@ extension E2ERunner {
         let (width, height) = (image.width, image.height)
         let tile = 1400
         let step = tile - 200
+        // `halves` (`shownText`'s): across, tiles overlap by half, so a line
+        // up to half a tile wide (350 points) is whole in one of them.
+        // Overlapping by 200 pixels, a detail's caption that started just
+        // before one tile's edge and ran past the next's was read in two
+        // halves, neither matching.
+        let across = halves ? tile / 2 : step
         guard whole.isEmpty, width > tile || height > tile else { return whole.map { ($0, { $0 }) } }
         var lines: [(RecognizedLine, (CGRect) -> CGRect)] = []
         var seen = Set<String>()
@@ -1968,7 +1974,7 @@ extension E2ERunner {
                     }
                 }
                 if left + columns >= width { break }
-                left += step
+                left += across
             }
             if top + rows >= height { break }
             top += step
@@ -2008,12 +2014,42 @@ extension E2ERunner {
     /// something isn't drawn.
     func shownText(_ timeout: TimeInterval = 15, _ match: @escaping (String) -> Bool) async -> (text: String, frame: CGRect)? {
         let deadline = Date().addingTimeInterval(timeout)
+        var read: [String] = []
         repeat {
-            if let line = await readWindow().first(where: { match($0.text) }) { return line }
-            if let line = await readWindow(tiled: true).first(where: { match($0.text) }) { return line }
+            let whole = await readWindow()
+            if let line = whole.first(where: { match($0.text) }) { return line }
+            let tiles = await readWindow(tiled: true, halves: true)
+            if let line = tiles.first(where: { match($0.text) }) { return line }
+            read = tiles.isEmpty ? whole.map(\.text) : tiles.map(\.text)
             await pause(0.3)
         } while Date() < deadline
+        // Not found: what was read instead, beside the failure — only when
+        // asked (OVERTERM_E2E_READ=1): a run that reveals a Secret's value
+        // never prints what it read.
+        if ProcessInfo.processInfo.environment["OVERTERM_E2E_READ"] == "1" {
+            note("not drawn — read instead: \(read.joined(separator: " | "))")
+            if let folder = ProcessInfo.processInfo.environment["OVERTERM_E2E_READ_DIR"], !folder.isEmpty {
+                app.captureWindow(to: folder + "/unread-\(Int(Date().timeIntervalSince1970)).png", window: window)
+            }
+        }
         return nil
+    }
+
+    /// Whether `phrase` is drawn, on one line or wrapped onto the next: a
+    /// narrow column wraps a sentence where its width says, and the two
+    /// lines Vision reads are next to each other in what it gives.
+    func shownPhrase(_ phrase: String, _ timeout: TimeInterval = 15) async -> Bool {
+        func found(_ lines: [(text: String, frame: CGRect)]) -> Bool {
+            let texts = lines.map(\.text)
+            return texts.contains { $0.contains(phrase) } || zip(texts, texts.dropFirst()).contains { ($0 + " " + $1).contains(phrase) }
+        }
+        let deadline = Date().addingTimeInterval(timeout)
+        repeat {
+            if found(await readWindow()) { return true }
+            if found(await readWindow(tiled: true, halves: true)) { return true }
+            await pause(0.3)
+        } while Date() < deadline
+        return false
     }
 
     /// A click where a person would click, for the window itself. Both
@@ -2719,7 +2755,10 @@ extension E2ERunner {
             "\(docker.platforms)")
         await drawn("and says it under its name", await shownText { $0.contains("linux/amd64") })
         page.imageSelection = [legacy]
-        await drawn("an emulated image's detail says so", await shownText { $0.drop(while: { !$0.isLetter }).hasPrefix("Emulated:") }) { $0.contains("linux/amd64") }
+        // Both in what is picked: a line a tile's edge cut ("Emulated: linux/ai") isn't the line.
+        await drawn(
+            "an emulated image's detail says so", await shownText { $0.drop(while: { !$0.isLetter }).hasPrefix("Emulated:") && $0.contains("linux/amd64") }
+        ) { $0.contains("linux/amd64") }
         // Vision reads the row's parts as lines of their own — the label,
         // "linux/amd64 -", "emulated" — so they are looked for side by side.
         let platformLabel = await shownText { $0 == "Platform" }
@@ -3248,11 +3287,14 @@ extension E2ERunner {
             return cell.convert(cell.bounds, to: nil)
         }
         var frame: CGRect?
+        var seen = "no row"
         if await eventually(5, { row() != nil }), let row = row() {
             // The one 58080 on screen: the detail is db's, which has none.
-            frame = await wordFrame("58080").flatMap { $0.intersects(row) ? $0 : nil }
+            let found = await wordFrame("58080")
+            seen = "row \(row), 58080 at \(found.map { "\($0)" } ?? "none")"
+            frame = found.flatMap { $0.intersects(row) ? $0 : nil }
         }
-        check("the list's row shows its port pill", frame != nil)
+        check("the list's row shows its port pill", frame != nil, seen)
         guard let frame else { return }
         await click(at: CGPoint(x: frame.midX, y: frame.midY))
         check(

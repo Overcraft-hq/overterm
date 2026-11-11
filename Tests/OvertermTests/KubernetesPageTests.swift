@@ -273,6 +273,9 @@ final class KubernetesPageTests: XCTestCase {
             ["Name", "Ready", "Status", "Restarts", "CPU", "Memory", "%CPU/R", "%CPU/L", "%MEM/R", "%MEM/L", "Age", "IP", "Node", "Nominated Node", "Readiness Gates"],
             "wide: the shares too")
         page.wide = false
+        let status = page.columns.first { $0.title == "Status" }
+        XCTAssertEqual(status?.minWidth, 190, "Status is the last the table narrows: CrashLoopBackOff and its Why stay whole")
+        XCTAssertTrue(page.columns.filter { $0.title != "Status" }.allSatisfy { $0.minWidth == 40 }, "the others give way first")
 
         XCTAssertEqual(page.failing.map(\.id.name), ["api-1"])
         XCTAssertEqual(page.failing.first?.exitReason, "CrashLoopBackOff")

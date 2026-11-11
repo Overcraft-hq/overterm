@@ -63,8 +63,10 @@ extension E2ERunner {
             "no memory limit: said, not guessed",
             cell(.memoryLimit)?.help == "Not every container of this pod has a memory limit: the pod has none as a whole.",
             "\(String(describing: cell(.memoryLimit)))")
-        check("drawn", await shownText(15) { $0.contains("%CPU/R") } != nil)
+        // What the first read asked, before the window is read: the shares
+        // are read again every so often, and reading text can take seconds.
         let asked = ksmAsked()
+        check("drawn", await shownText(15) { $0.contains("%CPU/R") } != nil)
         check("one instant query for shop", asked.count == 1 && asked.allSatisfy { $0.path == service.queryPath }, "\(asked.map(\.query))")
         check("scoped to it", asked.first?.query["query"]?.contains(#"namespace="shop""#) == true)
         check("given 20 s", asked.allSatisfy { $0.query["timeout"] == "20s" })

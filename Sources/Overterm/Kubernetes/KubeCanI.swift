@@ -109,7 +109,8 @@ enum KubeAccessState: Equatable {
         case .unknown, .checking: return "Checking kubectl auth can-i \(access) in \(namespace)…"
         case .answered(.yes): return nil
         case .answered(.no(let reason)):
-            return "kubectl auth can-i \(access) says no in \(namespace)" + (reason.map { ": \($0)" } ?? ".")
+            // The verdict first: a header cut at its end still says it was refused.
+            return "Refused: kubectl auth can-i \(access) in \(namespace)" + (reason.map { ": \($0)" } ?? ".")
         case .answered(.failed(let reason)): return "Couldn't ask kubectl auth can-i \(access): \(reason)"
         }
     }

@@ -102,6 +102,44 @@ final class KubeChartState: ObservableObject {
     @Published private(set) var plot: KubePlot?
     private var wanted: KubePlot.Key?
     private var building: Task<Void, Never>?
+    /// Its chart's entry in `KubeChartRegistry`.
+    let token = UUID()
+    /// Between its chart's appearing and its disappearing: only then is it
+    /// in the registry. A view a `LazyVStack` built ahead, or kept after it
+    /// scrolled off, still hears its data change and its plot built — and
+    /// put back an entry nobody removed, a chart of 0×0 with no plot that
+    /// a lookup by identifier could find before the one on screen.
+    private(set) var onScreen = false
+    /// The registry it is listed in: the app's, or a test's.
+    let registry: KubeChartRegistry
+
+    init(registry: KubeChartRegistry = .shared) { self.registry = registry }
+
+    deinit {
+        // Gone without its disappearing (its hosting view torn down): its entry goes too.
+        let token = token, registry = registry
+        Task { @MainActor in registry.hide(token) }
+    }
+
+    /// Its chart appeared: listed from now, as it is.
+    func appear(_ data: KubeChartData, window: ObjectIdentifier, cursor: KubeChartCursor, size: CGSize) {
+        onScreen = true
+        register(data, window: window, cursor: cursor, size: size)
+    }
+
+    /// Its chart went off screen: unlisted, and kept so whatever changes
+    /// after (its data, its plot) until it appears again.
+    func disappear() {
+        onScreen = false
+        registry.hide(token)
+    }
+
+    /// Its entry brought up to date — only while it is on screen. `plot`:
+    /// the one `$plot` is emitting, before the property holds it.
+    func register(_ data: KubeChartData, plot: KubePlot? = nil, window: ObjectIdentifier, cursor: KubeChartCursor, size: CGSize) {
+        guard onScreen else { return }
+        registry.show(data, plot: plot ?? self.plot, token: token, window: window, cursor: cursor, size: size)
+    }
 
     func want(_ data: KubeChartData, size: CGSize, hidden: Set<String>, hideReferences: Bool) {
         guard size.width > 1, size.height > 1 else { return }
@@ -143,12 +181,14 @@ final class KubeChartRegistry {
         var window: ObjectIdentifier
         /// The crosshair it shares with its scope's other charts.
         var cursor: KubeChartCursor
+        /// The plot's size as the view last had it laid out; zero, never laid out.
+        var size: CGSize = .zero
     }
 
     private var entries: [UUID: Shown] = [:]
 
-    func show(_ data: KubeChartData, plot: KubePlot?, token: UUID, window: ObjectIdentifier, cursor: KubeChartCursor) {
-        entries[token] = Shown(data: data, plot: plot, window: window, cursor: cursor)
+    func show(_ data: KubeChartData, plot: KubePlot?, token: UUID, window: ObjectIdentifier, cursor: KubeChartCursor, size: CGSize = .zero) {
+        entries[token] = Shown(data: data, plot: plot, window: window, cursor: cursor, size: size)
     }
 
     func hide(_ token: UUID) { entries[token] = nil }
@@ -158,11 +198,16 @@ final class KubeChartRegistry {
         entries.values.first { $0.data.identifier == identifier && (window == nil || $0.window == window) }
     }
 
+    /// The identifiers of one window's charts on screen, or of every window's.
+    func identifiers(in window: ObjectIdentifier? = nil) -> [String] {
+        entries.values.filter { window == nil || $0.window == window }.map(\.data.identifier).sorted()
+    }
+
     /// The dump's lines of one window's charts, or of every window's.
     func lines(in window: ObjectIdentifier? = nil) -> [String] {
         entries.values.filter { window == nil || $0.window == window }
             .sorted { $0.data.identifier < $1.data.identifier }
-            .map { KubeChartSummary.dump($0.data, plot: $0.plot) }
+            .map { KubeChartSummary.dump($0.data, plot: $0.plot) + " size=\(Int($0.size.width))x\(Int($0.size.height))" }
     }
 
     /// The tooltip a chart would show at `time`.
@@ -225,8 +270,6 @@ struct KubeChartView: View {
     @State private var size: CGSize = .zero
     /// The marker whose popover is open.
     @State private var popover: String?
-    /// Its own entry in `KubeChartRegistry`.
-    @State private var token = UUID()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 4) {
@@ -237,12 +280,13 @@ struct KubeChartView: View {
         .onAppear {
             // A series off by default (C2's RSS) starts hidden; the legend shows it.
             if hidden.isEmpty, !data.hiddenByDefault.isEmpty { hidden = data.hiddenByDefault }
-            register(state.plot)
+            state.appear(data, window: window, cursor: cursor, size: size)
         }
-        .onDisappear { KubeChartRegistry.shared.hide(token) }
-        .onReceive(state.$plot) { plot in register(plot) }
+        .onDisappear { state.disappear() }
+        // `$plot` emits before the property is set: the emitted one registered.
+        .onReceive(state.$plot) { plot in register(plot: plot) }
         .onChange(of: data.version) { _ in
-            register(state.plot)
+            register()
             want()
         }
         .onChange(of: hidden) { _ in want() }
@@ -252,8 +296,9 @@ struct KubeChartView: View {
     /// The window it is in, as the registry and the draw counter know it.
     private var window: ObjectIdentifier { ObjectIdentifier(theme) }
 
-    private func register(_ plot: KubePlot?) {
-        KubeChartRegistry.shared.show(data, plot: plot, token: token, window: window, cursor: cursor)
+    /// Its entry brought up to date — only while it is on screen (`KubeChartState.register`).
+    private func register(plot: KubePlot? = nil, size: CGSize? = nil) {
+        state.register(data, plot: plot, window: window, cursor: cursor, size: size ?? self.size)
     }
 
     private func want() { state.want(data, size: size, hidden: hidden, hideReferences: hideReferences) }
@@ -429,11 +474,13 @@ struct KubeChartView: View {
             }
             .onAppear {
                 size = geometry.size
-                want()
+                state.want(data, size: geometry.size, hidden: hidden, hideReferences: hideReferences)
+                register(size: geometry.size)
             }
             .onChange(of: geometry.size) { new in
                 size = new
-                want()
+                state.want(data, size: new, hidden: hidden, hideReferences: hideReferences)
+                register(size: new)
             }
         }
         .frame(height: height)
