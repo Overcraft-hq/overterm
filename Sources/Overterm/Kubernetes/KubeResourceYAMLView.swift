@@ -26,7 +26,7 @@ struct KubeResourceYAMLView: View {
             case .empty:
                 ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
             case .failed(let reason):
-                Text(verbatim: reason).font(.system(size: 12)).foregroundStyle(TabStatusStyle.failed).padding(16)
+                Text(verbatim: reason).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(TabStatusStyle.failed).padding(16)
                     .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
             case .loaded:
                 if resource.showsDiff {
@@ -48,17 +48,17 @@ struct KubeResourceYAMLView: View {
                 verbatim: "In memory, never saved · without managedFields and status"
                     + (detail.secret != nil ? " · every value masked" : " · secret-looking env values hidden")
             )
-            .font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
+            .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1)
             Spacer(minLength: 4)
             if resource.showsDiff {
-                Button("Back to the YAML") { resource.showsDiff = false }.font(.system(size: 11.5))
+                Button("Back to the YAML") { resource.showsDiff = false }.font(.system(size: ChromeMetrics.text(11.5)))
             }
             if detail.hasHidden {
-                Toggle("As served", isOn: $detail.showsHidden).toggleStyle(.checkbox).font(.system(size: 11.5))
+                Toggle("As served", isOn: $detail.showsHidden).toggleStyle(.checkbox).font(.system(size: ChromeMetrics.text(11.5)))
                     .help("The object as the server sent it, managedFields and all — read only")
                     .accessibilityIdentifier("kubernetes.detail.showHidden")
             }
-            Button("Copy") { page.actions?.copy(resource.buffer.storage.string) }.font(.system(size: 11.5))
+            Button("Copy") { page.actions?.copy(resource.buffer.storage.string) }.font(.system(size: ChromeMetrics.text(11.5)))
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)

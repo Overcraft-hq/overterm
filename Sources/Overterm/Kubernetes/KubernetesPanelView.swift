@@ -46,27 +46,27 @@ struct KubernetesPanelView: View {
 
     private var unbound: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("This checkout isn't bound to a cluster.").font(.system(size: 12)).foregroundStyle(theme.text2)
+            Text("This checkout isn't bound to a cluster.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
             if panel.guessing {
                 HStack(spacing: 6) {
                     ProgressView().controlSize(.mini)
-                    Text("Looking for Kubernetes files…").font(.system(size: 11.5)).foregroundStyle(theme.text3)
+                    Text("Looking for Kubernetes files…").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3)
                 }
             } else if let guess = panel.guess, !guess.isEmpty {
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(verbatim: "Found \(guess.said)").font(.system(size: 11.5)).foregroundStyle(theme.text2)
+                    Text(verbatim: "Found \(guess.said)").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
                     if let release = guess.release { fact("release", release) }
                     if let namespace = guess.namespace { fact("namespace", namespace) }
                     if let selector = guess.selector { fact("labels", selector) }
                     if !guess.workloads.isEmpty { fact("workloads", guess.workloads.joined(separator: ", ")) }
                 }
             } else if panel.guess != nil {
-                Text("No chart, kustomization or manifest found in it.").font(.system(size: 11.5)).foregroundStyle(theme.text3)
+                Text("No chart, kustomization or manifest found in it.").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3)
             }
             Button {
                 panel.beginEdit()
             } label: {
-                Label("Bind to a Context and Namespace…", systemImage: "link").font(.system(size: 11.5))
+                Label("Bind to a Context and Namespace…", systemImage: "link").font(.system(size: ChromeMetrics.text(11.5)))
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.accentText)
@@ -79,8 +79,8 @@ struct KubernetesPanelView: View {
 
     private func fact(_ label: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Text(label).font(.system(size: 10.5)).foregroundStyle(theme.text3).frame(width: 64, alignment: .leading)
-            Text(verbatim: value).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text).lineLimit(2).truncationMode(.middle)
+            Text(label).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).frame(width: 64, alignment: .leading)
+            Text(verbatim: value).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text).lineLimit(2).truncationMode(.middle)
         }
     }
 
@@ -93,7 +93,7 @@ struct KubernetesPanelView: View {
                 if let release = binding.release { helmLine(release) }
                 switch panel.state {
                 case .failed(let reason):
-                    Text(verbatim: reason).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed).lineLimit(4)
+                    Text(verbatim: reason).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.failed).lineLimit(4)
                         .fixedSize(horizontal: false, vertical: true).padding(.horizontal, 12).padding(.vertical, 6)
                     Button("Try Again") { panel.retry() }
                         .controlSize(.small).padding(.horizontal, 12)
@@ -102,7 +102,7 @@ struct KubernetesPanelView: View {
                     ProgressView().controlSize(.small).frame(maxWidth: .infinity).padding(.top, 12)
                 case .live:
                     ForEach(panel.problems, id: \.self) { problem in
-                        Text(verbatim: problem).font(.system(size: 10.5)).foregroundStyle(TabStatusStyle.failed).lineLimit(3)
+                        Text(verbatim: problem).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(TabStatusStyle.failed).lineLimit(3)
                             .fixedSize(horizontal: false, vertical: true).padding(.horizontal, 12).padding(.vertical, 2)
                     }
                     deployedLine
@@ -117,7 +117,7 @@ struct KubernetesPanelView: View {
                         Button {
                             openPage()
                         } label: {
-                            Text(verbatim: "and \(panel.podsHidden) more on the page…").font(.system(size: 11.5))
+                            Text(verbatim: "and \(panel.podsHidden) more on the page…").font(.system(size: ChromeMetrics.text(11.5)))
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(theme.accentText)
@@ -138,13 +138,13 @@ struct KubernetesPanelView: View {
     private func scope(_ binding: KubeBinding) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
-                Text(verbatim: "⎈").font(.system(size: 12))
+                Text(verbatim: "⎈").font(.system(size: ChromeMetrics.text(12)))
                 Text(verbatim: (panel.production ? "PRODUCTION · " : "") + binding.said)
-                    .font(.system(size: 12, weight: .medium)).foregroundStyle(panel.production ? KubernetesPageView.production : theme.text)
+                    .font(.system(size: ChromeMetrics.text(12), weight: .medium)).foregroundStyle(panel.production ? KubernetesPageView.production : theme.text)
                     .lineLimit(1).truncationMode(.middle)
             }
             if let selector = binding.selector {
-                Text(verbatim: selector).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(theme.text3).lineLimit(1)
+                Text(verbatim: selector).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text3).lineLimit(1)
             }
         }
         .padding(.horizontal, 12)
@@ -164,7 +164,7 @@ struct KubernetesPanelView: View {
                     .accessibilityIdentifier("kubernetes.panel.helmUpgrade")
             }
             .buttonStyle(.link)
-            .font(.system(size: 11))
+            .font(.system(size: ChromeMetrics.text(11)))
             .disabled(panel.helmUpgrade?.state.isWorking == true)
             if let session = panel.helmUpgrade { KubeHelmUpgradeStatus(session: session, theme: theme) }
         }
@@ -176,10 +176,10 @@ struct KubernetesPanelView: View {
     @ViewBuilder private var deployedLine: some View {
         if let headline = panel.headline {
             VStack(alignment: .leading, spacing: 4) {
-                Text(verbatim: headline.answer.text).font(.system(size: 11.5)).foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: headline.answer.text).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("kubernetes.panel.deployed")
                 if let source = headline.answer.sourceSaid {
-                    Text(verbatim: "\(headline.workload.ref.said), \(source)").font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(1)
+                    Text(verbatim: "\(headline.workload.ref.said), \(source)").font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).lineLimit(1)
                 }
                 HStack(spacing: 10) {
                     if let found = headline.answer.found, !found.isHead || found.elsewhere > 0 {
@@ -194,9 +194,9 @@ struct KubernetesPanelView: View {
                     }
                 }
                 .buttonStyle(.link)
-                .font(.system(size: 11))
+                .font(.system(size: ChromeMetrics.text(11)))
                 if let problem = panel.lookUpProblem {
-                    Text(verbatim: problem).font(.system(size: 10.5)).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
+                    Text(verbatim: problem).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
                 }
             }
             .padding(.horizontal, 12)
@@ -208,11 +208,11 @@ struct KubernetesPanelView: View {
         HStack(spacing: 8) {
             Circle().fill(workload.failing ? TabStatusStyle.failed : TabStatusStyle.done).frame(width: 7, height: 7)
             VStack(alignment: .leading, spacing: 1) {
-                Text(verbatim: workload.ref.said).font(.system(size: 12.5)).foregroundStyle(theme.text).lineLimit(1)
+                Text(verbatim: workload.ref.said).font(.system(size: ChromeMetrics.text(12.5))).foregroundStyle(theme.text).lineLimit(1)
                 HStack(spacing: 6) {
-                    Text(verbatim: workload.health).font(.system(size: 10.5)).foregroundStyle(workload.failing ? TabStatusStyle.failed : theme.text3)
+                    Text(verbatim: workload.health).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(workload.failing ? TabStatusStyle.failed : theme.text3)
                     if let found = panel.deployed[workload.id]?.found {
-                        Text(verbatim: found.short).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(theme.text3)
+                        Text(verbatim: found.short).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text3)
                     }
                 }
                 .lineLimit(1)
@@ -234,12 +234,12 @@ struct KubernetesPanelView: View {
                 Circle().fill(failing ? TabStatusStyle.failed : summary.isReady || summary.isCompleted ? TabStatusStyle.done : TabStatusStyle.waiting)
                     .frame(width: 7, height: 7)
                 VStack(alignment: .leading, spacing: 1) {
-                    Text(verbatim: pod.id.name).font(.system(size: 12.5)).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
+                    Text(verbatim: pod.id.name).font(.system(size: ChromeMetrics.text(12.5))).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
                     HStack(spacing: 6) {
                         Text(verbatim: summary.status).foregroundStyle(failing ? TabStatusStyle.failed : theme.text3)
                         if let restarts = summary.restarts, restarts > 0 { Text(verbatim: "↻ \(restarts)").foregroundStyle(theme.text3) }
                     }
-                    .font(.system(size: 10.5))
+                    .font(.system(size: ChromeMetrics.text(10.5)))
                     .lineLimit(1)
                 }
                 Spacer(minLength: 0)
@@ -256,8 +256,8 @@ struct KubernetesPanelView: View {
 
     private func forwardRow(_ forward: KubeForward) -> some View {
         HStack(spacing: 8) {
-            Image(systemName: "arrow.left.arrow.right").font(.system(size: 10)).foregroundStyle(theme.text3).frame(width: 10)
-            Text(verbatim: ":\(forward.spec.localPort) → \(forward.pod ?? forward.spec.target.name)").font(.system(size: 12)).foregroundStyle(theme.text)
+            Image(systemName: "arrow.left.arrow.right").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3).frame(width: 10)
+            Text(verbatim: ":\(forward.spec.localPort) → \(forward.pod ?? forward.spec.target.name)").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text)
                 .lineLimit(1).truncationMode(.middle)
             Spacer(minLength: 0)
         }
@@ -266,16 +266,16 @@ struct KubernetesPanelView: View {
     }
 
     private func section(_ title: String) -> some View {
-        Text(title).font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+        Text(title).font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
             .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 4)
     }
 
     private func quiet(_ text: String) -> some View {
-        Text(verbatim: text).font(.system(size: 11.5)).foregroundStyle(theme.text3).padding(.horizontal, 12).padding(.vertical, 2)
+        Text(verbatim: text).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).padding(.horizontal, 12).padding(.vertical, 2)
     }
 
     private func note(_ text: String) -> some View {
-        Text(text).font(.system(size: 12)).foregroundStyle(theme.text2).padding(.horizontal, 12).padding(.top, 8)
+        Text(text).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).padding(.horizontal, 12).padding(.top, 8)
     }
 }
 
@@ -287,7 +287,7 @@ struct KubeBindingForm: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(panel.binding == nil ? "Bind this checkout" : "This checkout's binding").font(.system(size: 12, weight: .semibold))
+            Text(panel.binding == nil ? "Bind this checkout" : "This checkout's binding").font(.system(size: ChromeMetrics.text(12), weight: .semibold))
                 .foregroundStyle(theme.text)
             Picker("Context", selection: field(\.context)) {
                 ForEach(panel.contextNames, id: \.self) { Text(verbatim: $0).tag($0) }
@@ -304,7 +304,7 @@ struct KubeBindingForm: View {
                     set: { text in
                         panel.draft?.workloads = text.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
                     }), "deploy/web, sts/db (empty: all)")
-            if let problem = panel.store.problem { Text(verbatim: problem).font(.system(size: 10.5)).foregroundStyle(TabStatusStyle.failed) }
+            if let problem = panel.store.problem { Text(verbatim: problem).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(TabStatusStyle.failed) }
             HStack(spacing: 8) {
                 Button("Cancel") { panel.cancelEdit() }
                 if panel.binding != nil { Button("Unbind") { panel.unbind() } }
@@ -315,7 +315,7 @@ struct KubeBindingForm: View {
             }
             .controlSize(.small)
             Text("Kept in Overterm's own folder, keyed by this checkout — nothing is written into the repository.")
-                .font(.system(size: 10.5)).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
+                .font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
         }
         .padding(.horizontal, 12)
         .padding(.top, 8)
@@ -332,8 +332,8 @@ struct KubeBindingForm: View {
 
     private func labelled(_ label: String, _ text: Binding<String>, _ placeholder: String) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(label).font(.system(size: 10.5)).foregroundStyle(theme.text3)
-            TextField(placeholder, text: text).textFieldStyle(.roundedBorder).font(.system(size: 11.5, design: .monospaced)).controlSize(.small)
+            Text(label).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3)
+            TextField(placeholder, text: text).textFieldStyle(.roundedBorder).font(.system(size: ChromeMetrics.text(11.5), design: .monospaced)).controlSize(.small)
         }
     }
 }
@@ -349,7 +349,7 @@ struct KubeSlotView: View {
         if let session = panel.session {
             KubeSlotPodView(panel: panel, session: session, theme: theme, runInTerminal: runInTerminal).id(session.id)
         } else {
-            Text(panel.picked == nil ? "Pick a pod in the Kubernetes panel." : "Reading…").font(.system(size: 12)).foregroundStyle(theme.text3)
+            Text(panel.picked == nil ? "Pick a pod in the Kubernetes panel." : "Reading…").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         }
     }
@@ -364,7 +364,7 @@ private struct KubeSlotPodView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                Text(verbatim: "pod/\(session.ref.name)").font(.system(size: 12.5, weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
+                Text(verbatim: "pod/\(session.ref.name)").font(.system(size: ChromeMetrics.text(12.5), weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
                 Spacer(minLength: 4)
                 Picker("", selection: Binding(get: { panel.slotTab }, set: { panel.pickTab($0) })) {
                     ForEach(KubernetesPanelModel.SlotTab.allCases) { Text($0.rawValue).tag($0) }
@@ -390,7 +390,7 @@ private struct KubeSlotPodView: View {
     @ViewBuilder private var overview: some View {
         switch session.state {
         case .failed(let reason):
-            Text(verbatim: reason).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).padding(12)
+            Text(verbatim: reason).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.failed).padding(12)
         case .loading, .withheld:
             ProgressView().controlSize(.small).frame(maxWidth: .infinity).padding(.top, 20)
         case .loaded:
@@ -398,20 +398,20 @@ private struct KubeSlotPodView: View {
                 VStack(alignment: .leading, spacing: 4) {
                     ForEach(session.overview?.facts ?? []) { item in
                         HStack(alignment: .firstTextBaseline, spacing: 8) {
-                            Text(verbatim: item.label).font(.system(size: 11)).foregroundStyle(theme.text3).frame(width: 90, alignment: .leading)
-                            Text(verbatim: item.value).font(.system(size: 11.5, design: item.mono ? .monospaced : .default)).foregroundStyle(theme.text)
+                            Text(verbatim: item.label).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).frame(width: 90, alignment: .leading)
+                            Text(verbatim: item.value).font(.system(size: ChromeMetrics.text(11.5), design: item.mono ? .monospaced : .default)).foregroundStyle(theme.text)
                                 .textSelection(.enabled)
                         }
                     }
                     ForEach(session.overview?.sections ?? []) { section in
-                        Text(section.title).font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3).padding(.top, 8)
+                        Text(section.title).font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3).padding(.top, 8)
                         ForEach(section.items) { item in
                             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                                Text(verbatim: item.label).font(.system(size: 11)).foregroundStyle(theme.text3).frame(width: 90, alignment: .leading)
+                                Text(verbatim: item.label).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).frame(width: 90, alignment: .leading)
                                 VStack(alignment: .leading, spacing: 1) {
-                                    Text(verbatim: item.value).font(.system(size: 11.5, design: item.mono ? .monospaced : .default)).foregroundStyle(theme.text)
+                                    Text(verbatim: item.value).font(.system(size: ChromeMetrics.text(11.5), design: item.mono ? .monospaced : .default)).foregroundStyle(theme.text)
                                     if let detail = item.detail {
-                                        Text(verbatim: detail).font(.system(size: 10.5, design: item.detailMono ? .monospaced : .default)).foregroundStyle(theme.text3)
+                                        Text(verbatim: detail).font(.system(size: ChromeMetrics.text(10.5), design: item.detailMono ? .monospaced : .default)).foregroundStyle(theme.text3)
                                     }
                                 }
                                 .textSelection(.enabled)

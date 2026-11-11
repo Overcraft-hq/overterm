@@ -97,12 +97,12 @@ struct KubeExpandedChartView: View {
             Divider().opacity(0.3)
             VStack(alignment: .leading, spacing: 6) {
                 Text(verbatim: live == nil ? KubeExpandedChart.stale(since: expanded.updated) : shown.caption ?? "")
-                    .font(.system(size: 10.5)).foregroundStyle(live == nil ? theme.text2 : theme.text3).lineLimit(3)
+                    .font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(live == nil ? theme.text2 : theme.text3).lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier(Self.identifier + ".caption")
                 if live != nil, let window = page.metricsWindow {
                     HStack(spacing: 6) {
-                        Text(verbatim: (window.kind == .zoom ? "Zoomed " : "Custom ") + window.title).font(.system(size: 11, weight: .semibold))
+                        Text(verbatim: (window.kind == .zoom ? "Zoomed " : "Custom ") + window.title).font(.system(size: ChromeMetrics.text(11), weight: .semibold))
                             .foregroundStyle(theme.text)
                         Button("Reset") { page.resetMetricsWindow() }.controlSize(.small)
                             .accessibilityIdentifier(Self.identifier + ".reset")
@@ -110,7 +110,7 @@ struct KubeExpandedChartView: View {
                 }
                 if live != nil, page.metricsLivePaused {
                     HStack(spacing: 6) {
-                        Text(verbatim: "Paused").font(.system(size: 11, weight: .semibold)).foregroundStyle(theme.text2)
+                        Text(verbatim: "Paused").font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(theme.text2)
                         Button("Resume") { page.resumeMetrics() }.controlSize(.small)
                     }
                 }
@@ -144,16 +144,16 @@ struct KubeExpandedChartView: View {
     private func header(_ shown: KubeExpandedChart.Shown) -> some View {
         HStack(spacing: 6) {
             Text(verbatim: "⎈").foregroundStyle(theme.dimText)
-            Text(verbatim: shown.chart.data.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
+            Text(verbatim: shown.chart.data.title).font(.system(size: ChromeMetrics.text(12), weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
             Text(verbatim: "\(expanded.ref.namespace.map { "\($0)/" } ?? "")\(expanded.ref.name) · \(expanded.ref.context)")
-                .font(.system(size: 11)).foregroundStyle(theme.dimText).lineLimit(1).truncationMode(.middle)
+                .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText).lineLimit(1).truncationMode(.middle)
             Spacer(minLength: 0)
             Button("Show in Kubernetes", action: onShowPage)
                 .controlSize(.small)
                 .help("The page again, on this chart's Metrics tab")
                 .accessibilityIdentifier(Self.identifier + ".show")
             Button(action: onClose) {
-                Image(systemName: "xmark").font(.system(size: 11))
+                Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(11)))
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)

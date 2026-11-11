@@ -45,30 +45,30 @@ struct KubePrometheusChartView: View {
             HStack(spacing: 10) {
                 if identifier == "kubernetes.overview.prometheus" {
                     // On the Overview, a card's title.
-                    Text(verbatim: title).font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text)
+                    Text(verbatim: title).font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text)
                 } else {
-                    Text(verbatim: title).font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+                    Text(verbatim: title).font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
                 }
                 Spacer(minLength: 0)
                 if monitor.service != nil { KubeChartRangePicker(page: page, monitor: monitor) }
             }
             if let service = monitor.service {
                 if let reading = monitor.charts[chart], let unavailable = reading.unavailable {
-                    Text(verbatim: unavailable).font(.system(size: 11)).foregroundStyle(theme.text3).textSelection(.enabled)
+                    Text(verbatim: unavailable).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("kubernetes.chart.unavailable")
                 } else if let reading = monitor.charts[chart] {
                     content(reading)
                     Text(verbatim: "The last \(reading.range.title), from Prometheus \(service)" + (reading.caption.map { " · \($0)" } ?? ""))
-                        .font(.system(size: 10.5)).foregroundStyle(theme.text3)
+                        .font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3)
                         .accessibilityIdentifier("kubernetes.chart.caption")
                     problemAndNotes(reading)
                     if chart == .cluster { overviewParts(service) }
                 } else {
-                    Text(verbatim: "Asking Prometheus \(service)…").font(.system(size: 11)).foregroundStyle(theme.text3)
+                    Text(verbatim: "Asking Prometheus \(service)…").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                 }
             } else if let said = monitor.state.said {
-                Text(verbatim: said).font(.system(size: 11)).foregroundStyle(theme.text3).textSelection(.enabled)
+                Text(verbatim: said).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -91,11 +91,11 @@ struct KubePrometheusChartView: View {
 
     @ViewBuilder private func problemAndNotes(_ reading: KubeChartReading) -> some View {
         if let problem = reading.problem {
-            Text(verbatim: problem).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed).textSelection(.enabled)
+            Text(verbatim: problem).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.failed).textSelection(.enabled)
             report(reading)
         }
         ForEach(reading.notes, id: \.self) { note in
-            Text(verbatim: note).font(.system(size: 10.5)).foregroundStyle(theme.text3).textSelection(.enabled)
+            Text(verbatim: note).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("kubernetes.chart.note")
         }
@@ -127,18 +127,18 @@ struct KubePrometheusChartView: View {
             if let chart = KubeClusterCharts.namespaces(reading) {
                 drawn(chart, reading)
             } else if let why = reading.refused {
-                Text(verbatim: "CPU by namespace: " + why).font(.system(size: 11)).foregroundStyle(theme.text3).textSelection(.enabled)
+                Text(verbatim: "CPU by namespace: " + why).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
             if let problem = reading.problem {
-                Text(verbatim: "CPU by namespace: " + problem).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed).textSelection(.enabled)
+                Text(verbatim: "CPU by namespace: " + problem).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.failed).textSelection(.enabled)
                 report(reading)
             }
         }
         if let reading = monitor.charts[.nodes], reading.unavailable == nil {
             if let why = reading.refused {
                 // Too costly over this range: the last 15 minutes sampled, where metrics-server is.
-                Text(verbatim: "Nodes over \(reading.range.title): " + why).font(.system(size: 11)).foregroundStyle(theme.text3).textSelection(.enabled)
+                Text(verbatim: "Nodes over \(reading.range.title): " + why).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                 let sampled = page.sampledNodeRows()
                 KubeNodeStripsView(page: page, rows: sampled.rows, more: sampled.more, caption: "Nodes, the last 15 min of allocatable — sampled while shown", theme: theme)
@@ -151,7 +151,7 @@ struct KubePrometheusChartView: View {
                     theme: theme)
             }
             if let problem = reading.problem {
-                Text(verbatim: "Nodes: " + problem).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed).textSelection(.enabled)
+                Text(verbatim: "Nodes: " + problem).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.failed).textSelection(.enabled)
                 report(reading)
             }
         }
@@ -172,7 +172,7 @@ struct KubePrometheusChartView: View {
         let forecast = unbounded ? nil : KubeVolumeForecast.chip(available: reading.totals[.volumeAvailable], rate: KubeVolumeForecast.rate(reading))
         drawn(KubePodCharts.Chart(data: data, headline: headline, chips: forecast.map { [$0] } ?? []), reading)
         if unbounded, let capacity {
-            Text(verbatim: KubeVolumeForecast.unbounded(capacity)).font(.system(size: 11)).foregroundStyle(theme.text3).textSelection(.enabled)
+            Text(verbatim: KubeVolumeForecast.unbounded(capacity)).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("kubernetes.detail.volume.unbounded")
         }
@@ -186,9 +186,9 @@ struct KubePrometheusChartView: View {
                 if let reading = monitor.charts[inodes] {
                     let data = KubeChartData.of(reading, chart: inodes, measure: .inodes)
                     drawn(KubePodCharts.Chart(data: data, headline: reading.series[.inodes]?.last.map { KubeChartUnit.ratio.format($0.value) }), reading)
-                    if let problem = reading.problem { Text(verbatim: problem).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed) }
+                    if let problem = reading.problem { Text(verbatim: problem).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.failed) }
                 } else {
-                    Text(verbatim: "Asking Prometheus…").font(.system(size: 11)).foregroundStyle(theme.text3)
+                    Text(verbatim: "Asking Prometheus…").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                 }
             }
         }
@@ -212,8 +212,8 @@ struct KubePrometheusChartView: View {
             .frame(minWidth: 200, maxWidth: .infinity)
         } else {
             VStack(alignment: .leading, spacing: 3) {
-                Text(verbatim: data.title).font(.system(size: 11)).foregroundStyle(theme.text3)
-                Text(verbatim: "Prometheus has no samples of it over the last \(reading.range.title).").font(.system(size: 11)).foregroundStyle(theme.text3)
+                Text(verbatim: data.title).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
+                Text(verbatim: "Prometheus has no samples of it over the last \(reading.range.title).").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
             }
             .frame(minWidth: 200, maxWidth: .infinity, alignment: .leading)
         }
@@ -222,7 +222,7 @@ struct KubePrometheusChartView: View {
     /// Why the lines aren't asked over this range, and the range they are.
     private func refused(_ why: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(verbatim: why).font(.system(size: 11)).foregroundStyle(theme.text3).textSelection(.enabled)
+            Text(verbatim: why).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("kubernetes.chart.refused")
             Button {
@@ -242,9 +242,9 @@ struct KubePrometheusChartView: View {
         let shares = KubeClusterCharts.chips(reading, cpu: true).map { "CPU " + $0.text } + KubeClusterCharts.chips(reading, cpu: false).map { "Memory " + $0.text }
         if shares.isEmpty {
             Text(verbatim: "No requests or limits in Prometheus: kube-state-metrics' kube_pod_container_resource_requests (and kube_pod_status_phase, which says which pods are active) isn't scraped.")
-                .font(.system(size: 11)).foregroundStyle(theme.text3)
+                .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
         } else if reading.refused != nil {
-            Text(verbatim: shares.joined(separator: " · ")).font(.system(size: 11.5)).foregroundStyle(theme.text2).textSelection(.enabled)
+            Text(verbatim: shares.joined(separator: " · ")).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).textSelection(.enabled)
                 .accessibilityIdentifier("kubernetes.overview.requests")
         }
     }

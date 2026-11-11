@@ -130,7 +130,7 @@ struct KubeMetricsTabView: View {
     @ViewBuilder private func objectProblem(_ charts: KubeObjectCharts?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if let said = page.objectMetricsProblem(of: session) {
-                Text(verbatim: said).font(.system(size: 12)).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: said).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                     .accessibilityIdentifier("kubernetes.metrics.problem")
                 report
@@ -138,7 +138,7 @@ struct KubeMetricsTabView: View {
                 ProgressView().controlSize(.small)
             } else {
                 Text(verbatim: charts?.caption ?? (page.metricsSource(of: session.ref) == .prometheus ? "Asking Prometheus…" : "Waiting for the first sample…"))
-                    .font(.system(size: 12)).foregroundStyle(theme.text3)
+                    .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
             }
         }
         .padding(16)
@@ -163,7 +163,7 @@ struct KubeMetricsTabView: View {
                         page.pickMetricsRange(range)
                     } label: {
                         Text(verbatim: range.title)
-                            .font(.system(size: 11.5, weight: picked ? .semibold : .regular))
+                            .font(.system(size: ChromeMetrics.text(11.5), weight: picked ? .semibold : .regular))
                             .foregroundStyle(!enabled ? theme.text3.opacity(0.5) : picked ? theme.text : theme.text2)
                             .padding(.horizontal, 8)
                             .frame(height: 22)
@@ -179,7 +179,7 @@ struct KubeMetricsTabView: View {
                     Button {
                         page.customRangeShown = true
                     } label: {
-                        Text(verbatim: "Custom").font(.system(size: 11.5, weight: page.metricsWindow?.kind == .custom ? .semibold : .regular))
+                        Text(verbatim: "Custom").font(.system(size: ChromeMetrics.text(11.5), weight: page.metricsWindow?.kind == .custom ? .semibold : .regular))
                             .foregroundStyle(theme.text2)
                             .padding(.horizontal, 8)
                             .frame(height: 22)
@@ -196,7 +196,7 @@ struct KubeMetricsTabView: View {
                 }
                 if let window = page.metricsWindow {
                     Text(verbatim: (window.kind == .zoom ? "Zoomed " : "Custom ") + window.title)
-                        .font(.system(size: 11.5, weight: .semibold)).foregroundStyle(theme.text)
+                        .font(.system(size: ChromeMetrics.text(11.5), weight: .semibold)).foregroundStyle(theme.text)
                         .fixedSize()
                         .padding(.horizontal, 8)
                         .frame(height: 22)
@@ -209,7 +209,7 @@ struct KubeMetricsTabView: View {
                         .accessibilityIdentifier("kubernetes.metrics.reset")
                 }
                 if page.metricsLivePaused {
-                    Text(verbatim: "Paused").font(.system(size: 11.5, weight: .semibold)).foregroundStyle(theme.text2)
+                    Text(verbatim: "Paused").font(.system(size: ChromeMetrics.text(11.5), weight: .semibold)).foregroundStyle(theme.text2)
                         .help("Live stopped reading after 15 minutes without input in this window")
                         .accessibilityIdentifier("kubernetes.metrics.paused")
                     Button("Resume") { page.resumeMetrics() }
@@ -221,7 +221,7 @@ struct KubeMetricsTabView: View {
                 sizingButton
             }
             if let caption {
-                Text(verbatim: caption).font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(2)
+                Text(verbatim: caption).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("kubernetes.metrics.caption")
             }
@@ -244,7 +244,7 @@ struct KubeMetricsTabView: View {
     @ViewBuilder private func problem(_ charts: KubePodCharts?) -> some View {
         VStack(alignment: .leading, spacing: 8) {
             if let said = page.metricsTabProblem(of: session.ref) {
-                Text(verbatim: said).font(.system(size: 12)).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: said).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
                     .accessibilityIdentifier("kubernetes.metrics.problem")
                 if page.podUsageRefused(of: session.ref) {
@@ -259,7 +259,7 @@ struct KubeMetricsTabView: View {
                     verbatim: charts?.caption
                         ?? (page.metricsSource(of: session.ref) == .prometheus ? "Asking Prometheus…" : "Waiting for metrics-server's first sample of this pod…")
                 )
-                .font(.system(size: 12)).foregroundStyle(theme.text3)
+                .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
             }
         }
         .padding(16)
@@ -319,11 +319,11 @@ struct KubePodChartsList: View {
     }
 
     private func caption(_ text: String) -> some View {
-        Text(verbatim: text).font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+        Text(verbatim: text).font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
     }
 
     private func note(_ text: String) -> some View {
-        Text(verbatim: text).font(.system(size: 11)).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
+        Text(verbatim: text).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
             .accessibilityIdentifier("kubernetes.metrics.note")
     }
@@ -361,11 +361,11 @@ struct KubeObjectChartsList: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
                 ForEach(charts.groups) { group in
-                    Text(verbatim: group.title).font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+                    Text(verbatim: group.title).font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
                         .onAppear { if group.readsWhenShown { groupShown?(group.title, true) } }
                         .onDisappear { if group.readsWhenShown { groupShown?(group.title, false) } }
                     if group.pending, group.charts.isEmpty {
-                        Text(verbatim: "Asked of Prometheus while shown").font(.system(size: 11)).foregroundStyle(theme.text3)
+                        Text(verbatim: "Asked of Prometheus while shown").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                             .accessibilityIdentifier("kubernetes.metrics.pending")
                     }
                     ForEach(group.charts) { chart in
@@ -378,7 +378,7 @@ struct KubeObjectChartsList: View {
                     }
                 }
                 ForEach(charts.notes, id: \.self) { note in
-                    Text(verbatim: note).font(.system(size: 11)).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
+                    Text(verbatim: note).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("kubernetes.metrics.note")
                 }
             }
@@ -399,9 +399,9 @@ struct KubeGPUAllocationView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 3) {
-            Text(verbatim: "GPUs").font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+            Text(verbatim: "GPUs").font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
             ForEach(allocation.resources) { resource in
-                Text(verbatim: allocation.lines[allocation.resources.firstIndex(of: resource) ?? 0]).font(.system(size: 12)).foregroundStyle(theme.text)
+                Text(verbatim: allocation.lines[allocation.resources.firstIndex(of: resource) ?? 0]).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text)
             }
             ForEach(allocation.holders) { holder in
                 let line = allocation.lines[allocation.resources.count + (allocation.holders.firstIndex(of: holder) ?? 0)]
@@ -409,17 +409,17 @@ struct KubeGPUAllocationView: View {
                     Button {
                         open(pod)
                     } label: {
-                        Text(verbatim: line).font(.system(size: 11.5)).foregroundStyle(theme.text2)
+                        Text(verbatim: line).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
                     }
                     .buttonStyle(.plain)
                     .help("Open \(pod.description)")
                     .accessibilityIdentifier("kubernetes.metrics.gpus.holder")
                 } else {
-                    Text(verbatim: line).font(.system(size: 11.5)).foregroundStyle(theme.text2)
+                    Text(verbatim: line).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
                 }
             }
             ForEach(allocation.notes, id: \.self) { note in
-                Text(verbatim: note).font(.system(size: 11)).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: note).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
             }
         }
         .textSelection(.enabled)
@@ -444,13 +444,13 @@ struct KubeCustomRangeView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text(verbatim: "Custom range").font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.text)
+            Text(verbatim: "Custom range").font(.system(size: ChromeMetrics.text(12), weight: .semibold)).foregroundStyle(theme.text)
             DatePicker("From", selection: $start, displayedComponents: [.date, .hourAndMinute])
                 .accessibilityIdentifier("kubernetes.metrics.custom.start")
             DatePicker("To", selection: $end, displayedComponents: [.date, .hourAndMinute])
                 .accessibilityIdentifier("kubernetes.metrics.custom.end")
             if let problem {
-                Text(verbatim: problem).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed).fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: problem).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.failed).fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("kubernetes.metrics.custom.problem")
             }
             HStack {

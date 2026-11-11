@@ -26,11 +26,11 @@ struct KubeNamespaceSheetView: View {
         // Said as it is typed; the problem Create found until it is changed.
         let problem = draft.problem ?? (typed.isEmpty ? nil : KubeNamespaceName.problem(typed))
         return VStack(alignment: .leading, spacing: 10) {
-            Text("New Namespace").font(.system(size: 14, weight: .semibold)).foregroundStyle(theme.text)
+            Text("New Namespace").font(.system(size: ChromeMetrics.text(14), weight: .semibold)).foregroundStyle(theme.text)
             Text(verbatim: (production ? KubeWriteConfirmation.productionMark : "") + draft.context + " · cluster-wide")
-                .font(.system(size: 11.5)).foregroundStyle(production ? KubernetesPageView.production : theme.text2)
+                .font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(production ? KubernetesPageView.production : theme.text2)
             HStack(spacing: 8) {
-                Text("Name").font(.system(size: 12)).foregroundStyle(theme.text2)
+                Text("Name").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
                 // The keyboard is the field's as the sheet appears: the
                 // page's keys stand aside while it shows (`press`).
                 PaletteField(
@@ -52,10 +52,10 @@ struct KubeNamespaceSheetView: View {
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.border))
                 .accessibilityIdentifier("kubernetes.namespace.name")
             }
-            Text("Lowercase letters, digits and -, at most 63. Asked again before it is made.").font(.system(size: 11))
+            Text("Lowercase letters, digits and -, at most 63. Asked again before it is made.").font(.system(size: ChromeMetrics.text(11)))
                 .foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
             if let problem {
-                Text(verbatim: problem).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed)
+                Text(verbatim: problem).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.failed)
                     .accessibilityIdentifier("kubernetes.namespace.problem")
             }
             HStack {

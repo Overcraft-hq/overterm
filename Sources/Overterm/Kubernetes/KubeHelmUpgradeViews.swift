@@ -8,7 +8,7 @@ struct KubeHelmUpgradeStatus: View {
     var body: some View {
         if let text = session.state.text {
             Text(verbatim: text)
-                .font(.system(size: 10.5))
+                .font(.system(size: ChromeMetrics.text(10.5)))
                 .foregroundStyle(session.state.isFailure ? TabStatusStyle.failed : theme.text3)
                 .lineLimit(3)
                 .fixedSize(horizontal: false, vertical: true)
@@ -38,7 +38,7 @@ struct KubeHelmDiffContent: View {
                 content(result)
             } else {
                 Text(verbatim: session.state.text ?? "Diff Chart with Release, from the Kubernetes panel of a checkout bound to a release.")
-                    .font(.system(size: 11)).foregroundStyle(theme.dimText).padding(12)
+                    .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText).padding(12)
                 Spacer(minLength: 0)
             }
         }
@@ -48,10 +48,10 @@ struct KubeHelmDiffContent: View {
     private var header: some View {
         HStack(spacing: 6) {
             Text(verbatim: "⎈").foregroundStyle(theme.dimText)
-            Text(verbatim: session.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
+            Text(verbatim: session.title).font(.system(size: ChromeMetrics.text(12), weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
             if let result = session.result {
                 Text(verbatim: (result.production ? "PRODUCTION · " : "") + result.context)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: ChromeMetrics.text(11), weight: .semibold))
                     .foregroundStyle(result.production ? KubernetesPageView.production : theme.dimText)
             }
             Spacer(minLength: 0)
@@ -60,7 +60,7 @@ struct KubeHelmDiffContent: View {
                 .disabled(session.state.isWorking)
                 .help("helm upgrade from the checkout's chart, in a tab pinned to the context — asked first")
             Button(action: onClose) {
-                Image(systemName: "xmark").font(.system(size: 11))
+                Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(11)))
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
@@ -77,19 +77,19 @@ struct KubeHelmDiffContent: View {
                     verbatim:
                         "helm template of \(result.chartSaid ?? result.chart.lastPathComponent) with revision \(result.revision)'s values — rendered here, no cluster asked — against what revision \(result.revision) has."
                 )
-                .font(.system(size: 11)).foregroundStyle(theme.dimText)
+                .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
                 .fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("kubernetes.helmDiff.label")
                 if result.diff.secrets > 0 {
                     Text(verbatim: "Secrets' values are masked: *** (before) and *** (after) say one changed.")
-                        .font(.system(size: 11)).foregroundStyle(theme.dimText)
+                        .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
                 }
                 if result.diff.withheld > 0 {
                     Text(verbatim: "\(result.diff.withheld) document\(result.diff.withheld == 1 ? "" : "s") left out: unreadable, so it couldn't be masked.")
-                        .font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed)
+                        .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.failed)
                 }
                 if let text = session.state.text {
-                    Text(verbatim: text).font(.system(size: 11)).foregroundStyle(session.state.isFailure ? KubernetesPageView.production : theme.dimText)
+                    Text(verbatim: text).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(session.state.isFailure ? KubernetesPageView.production : theme.dimText)
                 }
                 ForEach(result.diff.items) { item in
                     if item.change == .unchanged {
@@ -97,7 +97,7 @@ struct KubeHelmDiffContent: View {
                             Image(systemName: "checkmark.circle").foregroundStyle(theme.dimText)
                             Text(verbatim: "\(item.spoken): unchanged").foregroundStyle(theme.dimText)
                         }
-                        .font(.system(size: 11))
+                        .font(.system(size: ChromeMetrics.text(11)))
                     } else {
                         FileCard(
                             file: ChangedFile(

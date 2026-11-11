@@ -813,7 +813,7 @@ struct DockerRunSheet: View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Run").font(.system(size: ChromeMetrics.text(17), weight: .semibold))
             ForEach(Array(spec.notes.enumerated()), id: \.offset) { _, note in
-                Text(verbatim: note).font(.system(size: 11)).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: note).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
             }
             .accessibilityIdentifier("docker.run.notes")
             Form {
@@ -859,12 +859,12 @@ struct DockerRunSheet: View {
     /// from, never a value here; one can be left out.
     private var askedList: some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text("Asked in the tab when it runs").font(.system(size: 12))
+            Text("Asked in the tab when it runs").font(.system(size: ChromeMetrics.text(12)))
             ForEach(spec.asked) { ask in
                 HStack(spacing: 6) {
-                    Image(systemName: ask.secret ? "key.fill" : "questionmark.circle").font(.system(size: 10)).foregroundStyle(.secondary)
-                    Text(verbatim: ask.key).font(.system(size: 12, design: .monospaced))
-                    Text(verbatim: ask.from).font(.system(size: 11)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    Image(systemName: ask.secret ? "key.fill" : "questionmark.circle").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(.secondary)
+                    Text(verbatim: ask.key).font(.system(size: ChromeMetrics.text(12), design: .monospaced))
+                    Text(verbatim: ask.from).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
                     Spacer()
                     // A command's value stays: its Command names it.
                     if ask.env {
@@ -878,7 +878,7 @@ struct DockerRunSheet: View {
                 }
             }
             Text("Typed into the tab, hidden for a secret — never kept here, on the command line or in the shell's history.")
-                .font(.system(size: 11)).foregroundStyle(.tertiary)
+                .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(.tertiary)
         }
         .accessibilityIdentifier("docker.run.asked")
     }

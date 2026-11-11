@@ -18,7 +18,7 @@ struct KubeSizingView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(spacing: 8) {
-                Text(verbatim: card?.title ?? "Sizing").font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+                Text(verbatim: card?.title ?? "Sizing").font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
                     .lineLimit(1)
                 Spacer(minLength: 0)
                 if reading.done {
@@ -50,7 +50,7 @@ struct KubeSizingView: View {
         if !reading.done {
             HStack(spacing: 6) {
                 ProgressView().controlSize(.small)
-                Text(verbatim: "Asking Prometheus for seven days of usage, once…").font(.system(size: 12)).foregroundStyle(theme.text3)
+                Text(verbatim: "Asking Prometheus for seven days of usage, once…").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
             }
         } else if let why = reading.unavailable ?? reading.refused {
             sentence(why)
@@ -58,7 +58,7 @@ struct KubeSizingView: View {
             ForEach(card.rows) { row in rowView(row) }
             if let problem = reading.problem { sentence("Part of it couldn't be read: \(problem)") }
             ForEach(reading.notes, id: \.self) { sentence($0) }
-            Text(verbatim: KubeSizingCard.advice).font(.system(size: 11)).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
+            Text(verbatim: KubeSizingCard.advice).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
         } else if let problem = reading.problem {
             sentence("Sizing couldn't be read: \(problem)")
         } else {
@@ -67,18 +67,18 @@ struct KubeSizingView: View {
     }
 
     private func sentence(_ text: String) -> some View {
-        Text(verbatim: text).font(.system(size: 12)).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
+        Text(verbatim: text).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
             .textSelection(.enabled)
             .accessibilityIdentifier("kubernetes.metrics.sizing.said")
     }
 
     private func rowView(_ row: KubeSizingCard.Row) -> some View {
         VStack(alignment: .leading, spacing: 4) {
-            Text(verbatim: row.container).font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.text)
+            Text(verbatim: row.container).font(.system(size: ChromeMetrics.text(12), weight: .semibold)).foregroundStyle(theme.text)
             if let cpu = row.cpu { measureView(cpu) }
             if let memory = row.memory { measureView(memory) }
             if let note = row.note {
-                Text(verbatim: note).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: note).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.failed).fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("kubernetes.metrics.sizing.oom")
             }
         }
@@ -89,11 +89,11 @@ struct KubeSizingView: View {
     private func measureView(_ measure: KubeSizingCard.Measure) -> some View {
         VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 6) {
-                Text(verbatim: measure.title).font(.system(size: 11, weight: .medium)).foregroundStyle(theme.text2)
-                Text(verbatim: measure.suggestion).font(.system(size: 11)).foregroundStyle(theme.text).textSelection(.enabled)
+                Text(verbatim: measure.title).font(.system(size: ChromeMetrics.text(11), weight: .medium)).foregroundStyle(theme.text2)
+                Text(verbatim: measure.suggestion).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text).textSelection(.enabled)
             }
             KubeSizingBars(measure: measure, theme: theme)
-            Text(verbatim: measure.now).font(.system(size: 10.5)).foregroundStyle(theme.text3)
+            Text(verbatim: measure.now).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3)
         }
     }
 }
@@ -111,7 +111,7 @@ private struct KubeSizingBars: View {
         VStack(alignment: .leading, spacing: 3) {
             ForEach(measure.bars) { bar in
                 HStack(spacing: 6) {
-                    Text(verbatim: bar.label).font(.system(size: 10.5).monospacedDigit()).foregroundStyle(theme.text3).frame(width: Self.label, alignment: .trailing)
+                    Text(verbatim: bar.label).font(.system(size: ChromeMetrics.text(10.5)).monospacedDigit()).foregroundStyle(theme.text3).frame(width: Self.label, alignment: .trailing)
                     GeometryReader { geometry in
                         RoundedRectangle(cornerRadius: 2).fill(theme.selected)
                             .overlay(alignment: .leading) {
@@ -120,7 +120,7 @@ private struct KubeSizingBars: View {
                             }
                     }
                     .frame(height: Self.height)
-                    Text(verbatim: bar.text).font(.system(size: 10.5).monospacedDigit()).foregroundStyle(theme.text2).frame(width: Self.value, alignment: .leading)
+                    Text(verbatim: bar.text).font(.system(size: ChromeMetrics.text(10.5)).monospacedDigit()).foregroundStyle(theme.text2).frame(width: Self.value, alignment: .leading)
                 }
             }
         }

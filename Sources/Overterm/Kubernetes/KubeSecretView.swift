@@ -14,10 +14,10 @@ struct KubeSecretView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: secret.state == .shown ? "lock.open.fill" : "lock.fill").foregroundStyle(theme.text3)
-                Text(verbatim: headline).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(theme.text)
+                Text(verbatim: headline).font(.system(size: ChromeMetrics.text(12.5), weight: .semibold)).foregroundStyle(theme.text)
                 Spacer(minLength: 0)
                 if secret.state == .shown {
-                    Button("Hide") { secret.drop(.asked) }.font(.system(size: 11.5)).accessibilityIdentifier("kubernetes.secret.hide")
+                    Button("Hide") { secret.drop(.asked) }.font(.system(size: ChromeMetrics.text(11.5))).accessibilityIdentifier("kubernetes.secret.hide")
                 }
             }
             switch secret.state {
@@ -25,7 +25,7 @@ struct KubeSecretView: View {
             case .confirming: confirming
             case .loading: ProgressView().controlSize(.small)
             case .failed(let reason):
-                Text(verbatim: reason).font(.system(size: 12)).foregroundStyle(TabStatusStyle.failed).fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: reason).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(TabStatusStyle.failed).fixedSize(horizontal: false, vertical: true)
                 showButton("Try Again")
             case .shown: shown
             }
@@ -44,7 +44,7 @@ struct KubeSecretView: View {
 
     private func showButton(_ title: String = "Show Values") -> some View {
         Button(title) { _ = page.showSecret() }
-            .font(.system(size: 12))
+            .font(.system(size: ChromeMetrics.text(12)))
             .accessibilityIdentifier("kubernetes.secret.show")
     }
 
@@ -53,13 +53,13 @@ struct KubeSecretView: View {
     private var hidden: some View {
         VStack(alignment: .leading, spacing: 8) {
             if let note = secret.droppedNote {
-                Text(verbatim: note).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.waiting).accessibilityIdentifier("kubernetes.secret.dropped")
+                Text(verbatim: note).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.waiting).accessibilityIdentifier("kubernetes.secret.dropped")
             }
             Text(
                 verbatim:
                     "Not read: its keys come only with its values, all at once. Show reads them, masked until you reveal one, and drops them when you leave this Secret, hide the page, change context, or after \(KubeSecretSession.said(secret.timeout)) without a look."
             )
-            .font(.system(size: 12)).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
+            .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
             showButton()
         }
     }
@@ -67,13 +67,13 @@ struct KubeSecretView: View {
     private var confirming: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text(verbatim: "\(secret.ref.context) is a production context. Show reads every value of this Secret at once.")
-                .font(.system(size: 12, weight: .medium)).foregroundStyle(TabStatusStyle.failed).fixedSize(horizontal: false, vertical: true)
-            Text(verbatim: "Asked once for \(secret.ref.context) until Overterm quits.").font(.system(size: 11.5)).foregroundStyle(theme.text3)
+                .font(.system(size: ChromeMetrics.text(12), weight: .medium)).foregroundStyle(TabStatusStyle.failed).fixedSize(horizontal: false, vertical: true)
+            Text(verbatim: "Asked once for \(secret.ref.context) until Overterm quits.").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3)
             HStack(spacing: 8) {
                 Button("Show Values") { secret.confirm() }.accessibilityIdentifier("kubernetes.secret.confirm")
                 Button("Cancel") { secret.cancelConfirmation() }.accessibilityIdentifier("kubernetes.secret.cancel")
             }
-            .font(.system(size: 12))
+            .font(.system(size: ChromeMetrics.text(12)))
         }
         .padding(10)
         .background(RoundedRectangle(cornerRadius: 6).strokeBorder(TabStatusStyle.failed.opacity(0.6)))
@@ -84,7 +84,7 @@ struct KubeSecretView: View {
     private var shown: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text(verbatim: "Values masked · one revealed at a time · hidden again after \(KubeSecretSession.said(secret.timeout)) without a look")
-                .font(.system(size: 11)).foregroundStyle(theme.text3)
+                .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
             ForEach(secret.entries) { entry in row(entry) }
             if let leaf = secret.certificates.first { certificate(leaf, chain: secret.certificates.count) }
         }
@@ -94,10 +94,10 @@ struct KubeSecretView: View {
         let isRevealed = secret.revealed == entry.key
         return VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(verbatim: entry.key).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
+                Text(verbatim: entry.key).font(.system(size: ChromeMetrics.text(12), design: .monospaced)).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
                     .frame(width: 140, alignment: .leading)
                 if !isRevealed {
-                    Text(verbatim: entry.masked).font(.system(size: 11.5)).foregroundStyle(theme.text3)
+                    Text(verbatim: entry.masked).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3)
                         .accessibilityIdentifier("kubernetes.secret.masked.\(entry.key)")
                 }
                 Spacer(minLength: 0)
@@ -105,7 +105,7 @@ struct KubeSecretView: View {
                     Button {
                         if isRevealed { secret.conceal() } else { secret.reveal(entry.key) }
                     } label: {
-                        Image(systemName: isRevealed ? "eye.slash" : "eye").font(.system(size: 11))
+                        Image(systemName: isRevealed ? "eye.slash" : "eye").font(.system(size: ChromeMetrics.text(11)))
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(theme.text2)
@@ -114,7 +114,7 @@ struct KubeSecretView: View {
                     Button {
                         page.copySecretValue(entry.key)
                     } label: {
-                        Image(systemName: "doc.on.doc").font(.system(size: 11))
+                        Image(systemName: "doc.on.doc").font(.system(size: ChromeMetrics.text(11)))
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(theme.text2)
@@ -124,14 +124,14 @@ struct KubeSecretView: View {
             }
             if isRevealed, let text = secret.revealedText {
                 ScrollView {
-                    Text(verbatim: text).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(theme.text)
+                    Text(verbatim: text).font(.system(size: ChromeMetrics.text(11.5), design: .monospaced)).foregroundStyle(theme.text)
                         .frame(maxWidth: .infinity, alignment: .leading).fixedSize(horizontal: false, vertical: true)
                 }
                 .frame(maxHeight: 160)
                 .padding(6)
                 .background(RoundedRectangle(cornerRadius: 4).fill(theme.text.opacity(0.05)))
                 .accessibilityIdentifier("kubernetes.secret.value")
-                if entry.isBinary { Text("Binary: shown as base64").font(.system(size: 10.5)).foregroundStyle(theme.text3) }
+                if entry.isBinary { Text("Binary: shown as base64").font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3) }
             }
         }
     }
@@ -148,15 +148,15 @@ struct KubeSecretView: View {
             case .notYetValid: ("not valid yet", TabStatusStyle.waiting)
             }
         return VStack(alignment: .leading, spacing: 5) {
-            Text("Certificate (tls.crt)").font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3).padding(.top, 6)
+            Text("Certificate (tls.crt)").font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3).padding(.top, 6)
             fact("Subject", certificate.subject)
             fact("Issuer", certificate.isSelfSigned ? "self-signed" : certificate.issuer)
             if !certificate.alternativeNames.isEmpty { fact("Names", certificate.alternativeNames.joined(separator: ", ")) }
             fact("Valid from", certificate.notBefore.formatted(date: .abbreviated, time: .shortened))
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 label("Valid until")
-                Text(verbatim: certificate.notAfter.formatted(date: .abbreviated, time: .shortened)).font(.system(size: 12)).foregroundStyle(theme.text)
-                Text(verbatim: said).font(.system(size: 11.5, weight: .medium)).foregroundStyle(color)
+                Text(verbatim: certificate.notAfter.formatted(date: .abbreviated, time: .shortened)).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text)
+                Text(verbatim: said).font(.system(size: ChromeMetrics.text(11.5), weight: .medium)).foregroundStyle(color)
                     .accessibilityIdentifier("kubernetes.secret.certificate.validity")
             }
             if certificate.isCA { fact("CA", "yes") }
@@ -166,13 +166,13 @@ struct KubeSecretView: View {
     }
 
     private func label(_ text: String) -> some View {
-        Text(verbatim: text).font(.system(size: 11.5)).foregroundStyle(theme.text3).frame(width: 128, alignment: .leading)
+        Text(verbatim: text).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).frame(width: 128, alignment: .leading)
     }
 
     private func fact(_ title: String, _ value: String) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
             label(title)
-            Text(verbatim: value).font(.system(size: 12)).foregroundStyle(theme.text).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
+            Text(verbatim: value).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
         }
     }
 }

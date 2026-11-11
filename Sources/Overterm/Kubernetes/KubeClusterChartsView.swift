@@ -17,15 +17,15 @@ struct KubeClusterSampledView: View {
         let charts = page.sampledClusterCharts()
         if !charts.isEmpty {
             VStack(alignment: .leading, spacing: 10) {
-                Text(verbatim: "Cluster usage").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text)
+                Text(verbatim: "Cluster usage").font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text)
                 // Side by side where they fit, else one under the other.
                 ViewThatFits(in: .horizontal) {
                     HStack(alignment: .top, spacing: 20) { sampled(charts) }
                     VStack(alignment: .leading, spacing: 14) { sampled(charts) }
                 }
-                Text(verbatim: page.sampledClusterCaption()).font(.system(size: 10.5)).foregroundStyle(theme.text3)
+                Text(verbatim: page.sampledClusterCaption()).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3)
                     .accessibilityIdentifier("kubernetes.overview.usage.caption")
-                Text(verbatim: KubeChartEmpty.requestsNeedSpecs.sentence).font(.system(size: 10.5)).foregroundStyle(theme.text3)
+                Text(verbatim: KubeChartEmpty.requestsNeedSpecs.sentence).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3)
                 let nodes = page.sampledNodeRows()
                 KubeNodeStripsView(
                     page: page, rows: nodes.rows, more: nodes.more, caption: "Nodes, the last 15 min of allocatable — sampled while shown", theme: theme
@@ -68,14 +68,14 @@ struct KubeNodeStripsView: View {
     var body: some View {
         if !rows.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
-                Text(verbatim: caption).font(.system(size: 11)).foregroundStyle(theme.text3)
+                Text(verbatim: caption).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                 // Its rows are as wide as their strips: a narrow card scrolls them, the page never.
                 ViewThatFits(in: .horizontal) {
                     grid
                     ScrollView(.horizontal, showsIndicators: false) { grid }
                 }
                 if more > 0 {
-                    Text(verbatim: "The 50 most used of \(rows.count + more) nodes; the rest are in the Nodes list.").font(.system(size: 10.5)).foregroundStyle(theme.text3)
+                    Text(verbatim: "The 50 most used of \(rows.count + more) nodes; the rest are in the Nodes list.").font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3)
                 }
             }
             .accessibilityIdentifier("kubernetes.overview.nodes")
@@ -96,9 +96,9 @@ struct KubeNodeStripsView: View {
         let name = theme.accentText
         let value = theme.text2
         return Canvas { context, _ in
-            context.draw(Text(verbatim: "CPU").font(.system(size: 10)).foregroundColor(label), at: CGPoint(x: layout.strip(.cpu).minX, y: layout.height(0) / 2), anchor: .leading)
+            context.draw(Text(verbatim: "CPU").font(.system(size: ChromeMetrics.text(10))).foregroundColor(label), at: CGPoint(x: layout.strip(.cpu).minX, y: layout.height(0) / 2), anchor: .leading)
             context.draw(
-                Text(verbatim: "Memory").font(.system(size: 10)).foregroundColor(label), at: CGPoint(x: layout.strip(.memory).minX, y: layout.height(0) / 2), anchor: .leading)
+                Text(verbatim: "Memory").font(.system(size: ChromeMetrics.text(10))).foregroundColor(label), at: CGPoint(x: layout.strip(.memory).minX, y: layout.height(0) / 2), anchor: .leading)
             let fits = KubeNodeStripsLayout.fits(context.resolve(Self.name("M", name)).measure(in: CGSize(width: 100, height: 100)).width)
             for (index, row) in rows.enumerated() {
                 let mid = layout.mid(index)
@@ -106,13 +106,13 @@ struct KubeNodeStripsView: View {
                 for measure in [KubeUsageCell.Measure.cpu, .memory] {
                     let frame = layout.strip(measure, row: index)
                     guard let strip = measure == .cpu ? row.cpu : row.memory else {
-                        context.draw(Text(verbatim: "–").font(.system(size: 11)).foregroundColor(label), at: CGPoint(x: frame.minX, y: mid), anchor: .leading)
+                        context.draw(Text(verbatim: "–").font(.system(size: ChromeMetrics.text(11))).foregroundColor(label), at: CGPoint(x: frame.minX, y: mid), anchor: .leading)
                         continue
                     }
                     KubeHeatStripView.draw(strip.percents, in: frame, context: &context, colours: colours, track: track)
                     let share = strip.now.map { "\(Int($0.rounded()))%" } ?? "–"
                     context.draw(
-                        Text(verbatim: share).font(.system(size: 11, design: .monospaced)).foregroundColor(value),
+                        Text(verbatim: share).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundColor(value),
                         at: CGPoint(x: frame.maxX + KubeNodeStripsLayout.shareWidth + 5, y: mid), anchor: .trailing)
                 }
             }
@@ -149,7 +149,7 @@ struct KubeNodeStripsView: View {
     }
 
     private static func name(_ text: String, _ colour: Color) -> Text {
-        Text(verbatim: text).font(.system(size: 11.5, design: .monospaced)).foregroundColor(colour)
+        Text(verbatim: text).font(.system(size: ChromeMetrics.text(11.5), design: .monospaced)).foregroundColor(colour)
     }
 
     /// Every strip drawn, said to the registry the scenario and the layout dump read.
@@ -244,7 +244,7 @@ private struct KubeNodeStripsHoverLabel: View {
                 case .memory?: row.memory?.summary()
                 }
             if let text {
-                Text(verbatim: text).font(.system(size: 10.5)).foregroundStyle(theme.text)
+                Text(verbatim: text).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text)
                     .padding(.horizontal, 6).padding(.vertical, 3)
                     .background(RoundedRectangle(cornerRadius: 4).fill(theme.menu).shadow(color: theme.cardShadow, radius: 2))
                     .fixedSize()

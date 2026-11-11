@@ -120,12 +120,12 @@ struct RightPaneView: View {
                 }
                 if pane.kubernetesOpened {
                     tab(.kubernetes, help: "The pod picked in the Kubernetes panel") {
-                        Image(systemName: "helm").font(.system(size: 11))
+                        Image(systemName: "helm").font(.system(size: ChromeMetrics.text(11)))
                     }
                 }
                 if pane.manifestOpened {
                     tab(.manifest, help: "A Kubernetes manifest against its cluster") {
-                        Text(verbatim: "⎈").font(.system(size: 12))
+                        Text(verbatim: "⎈").font(.system(size: ChromeMetrics.text(12)))
                     }
                 }
                 if pane.compareOpened {

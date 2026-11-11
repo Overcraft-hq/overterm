@@ -58,13 +58,13 @@ struct KubeGitOpsSectionView: View {
         let said = KubeGitOpsSection.header(argo: tools.argo, flux: tools.flux, summarisedAt: gitOps.summarisedAt, summarising: gitOps.summarising, now: gitOps.now)
         return VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Image(systemName: KubeSection.gitops.symbol).font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text2)
-                Text(verbatim: "GitOps").font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text)
+                Image(systemName: KubeSection.gitops.symbol).font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text2)
+                Text(verbatim: "GitOps").font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text)
                 Text(verbatim: [model.selectedName, model.scope.title].compactMap { $0 }.joined(separator: " · "))
-                    .font(.system(size: 12)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
+                    .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 8)
                 if gitOps.summarising { ProgressView().controlSize(.mini) }
-                Text(verbatim: said).font(.system(size: 11.5)).foregroundStyle(theme.text3).lineLimit(1)
+                Text(verbatim: said).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).lineLimit(1)
                     .accessibilityIdentifier("kubernetes.gitops.header")
                 Button("Refresh") { page.refreshGitOps() }.controlSize(.small).disabled(gitOps.summarising)
                     .help("Every kind summarised again (⌘R)").accessibilityIdentifier("kubernetes.gitops.refresh")
@@ -75,7 +75,7 @@ struct KubeGitOpsSectionView: View {
                 } icon: {
                     Image(systemName: "info.circle")
                 }
-                .font(.system(size: 11.5)).foregroundStyle(theme.text2)
+                .font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("kubernetes.gitops.notes")
@@ -86,7 +86,7 @@ struct KubeGitOpsSectionView: View {
     private func bannerCard(_ text: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(theme.orangeText)
-            Text(verbatim: text).font(.system(size: 12, weight: .medium)).foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
+            Text(verbatim: text).font(.system(size: ChromeMetrics.text(12), weight: .medium)).foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
         .resourceCard(theme, tint: TabStatusStyle.waiting, padding: 10)
@@ -133,14 +133,14 @@ struct KubeGitOpsSectionView: View {
                     .accessibilityIdentifier("kubernetes.gitops.tool")
                 }
                 if let refusal = page.gitOpsFilterRefusal {
-                    Text(verbatim: refusal).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed).lineLimit(1)
+                    Text(verbatim: refusal).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.failed).lineLimit(1)
                         .help(refusal).accessibilityIdentifier("kubernetes.gitops.filterRefused")
                 }
                 Spacer(minLength: 8)
                 groupMenu
                 if gitOps.rows.shown.contains(where: { $0.state == .ready }) {
                     Toggle("Hide Ready", isOn: Binding(get: { page.gitOpsHidesReady }, set: { page.gitOpsView.hideReady = $0 }))
-                        .toggleStyle(.checkbox).controlSize(.small).font(.system(size: 11.5))
+                        .toggleStyle(.checkbox).controlSize(.small).font(.system(size: ChromeMetrics.text(11.5)))
                         .help("Ready rows are hidden by default above \(KubeGitOpsSection.hideReadyAbove) rows; their chip still counts them")
                         .accessibilityIdentifier("kubernetes.gitops.hideReady")
                 }
@@ -162,7 +162,7 @@ struct KubeGitOpsSectionView: View {
                 }
             }
         } label: {
-            Text(verbatim: current == .none ? "Group" : "Group: \(current.title)").font(.system(size: 11.5))
+            Text(verbatim: current == .none ? "Group" : "Group: \(current.title)").font(.system(size: ChromeMetrics.text(11.5)))
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
@@ -176,17 +176,17 @@ struct KubeGitOpsSectionView: View {
         if gitOps.state != .live && gitOps.summarising && gitOps.rows.shown.isEmpty {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
-                Text(verbatim: "Reading Argo CD's and Flux's objects…").font(.system(size: 12)).foregroundStyle(theme.text3)
+                Text(verbatim: "Reading Argo CD's and Flux's objects…").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
             }
             .padding(.top, 12)
         } else if !gitOps.rows.shown.isEmpty {
             Text(verbatim: page.filter.isEmpty ? "Nothing in this state." : "Nothing matches “\(page.filter)”.")
-                .font(.system(size: 12)).foregroundStyle(theme.text3).padding(.top, 12)
+                .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3).padding(.top, 12)
         } else {
             let hint = KubeGitOpsSection.emptyHint(gitOps.rows, scope: model.scope)
             HStack(spacing: 10) {
-                Image(systemName: "arrow.triangle.branch").font(.system(size: 16)).foregroundStyle(theme.text3)
-                Text(verbatim: hint.text).font(.system(size: 12.5)).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
+                Image(systemName: "arrow.triangle.branch").font(.system(size: ChromeMetrics.text(16))).foregroundStyle(theme.text3)
+                Text(verbatim: hint.text).font(.system(size: ChromeMetrics.text(12.5))).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
                 if let namespace = hint.namespace {
                     Button("Show \(namespace)") { page.showGitOpsNamespace(namespace) }.controlSize(.small)
                         .help("Adds \(namespace) to the namespaces shown")
@@ -220,21 +220,21 @@ struct KubeGitOpsSectionView: View {
                 Button {
                     page.toggleGitOpsGroup(group.id)
                 } label: {
-                    Image(systemName: folded ? "chevron.right" : "chevron.down").font(.system(size: 10, weight: .semibold)).foregroundStyle(theme.text2)
+                    Image(systemName: folded ? "chevron.right" : "chevron.down").font(.system(size: ChromeMetrics.text(10), weight: .semibold)).foregroundStyle(theme.text2)
                         .frame(width: 14)
                 }
                 .buttonStyle(.plain)
                 .help(folded ? "Unfold" : "Fold")
-                Text(verbatim: group.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(group.rest ? theme.text2 : theme.text)
+                Text(verbatim: group.title).font(.system(size: ChromeMetrics.text(12), weight: .semibold)).foregroundStyle(group.rest ? theme.text2 : theme.text)
                     .lineLimit(1).truncationMode(.middle)
                 if let head = group.head {
                     HStack(spacing: 4) {
-                        Text(verbatim: head.state.glyph).font(.system(size: 9))
-                        Text(verbatim: head.state.word).font(.system(size: 11, weight: .medium))
+                        Text(verbatim: head.state.glyph).font(.system(size: ChromeMetrics.text(9)))
+                        Text(verbatim: head.state.word).font(.system(size: ChromeMetrics.text(11), weight: .medium))
                     }
                     .foregroundStyle(colour(head.state))
                 }
-                Text(verbatim: group.said).font(.system(size: 11.5)).foregroundStyle(theme.text3).lineLimit(1)
+                Text(verbatim: group.said).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).lineLimit(1)
                 Spacer(minLength: 0)
             }
             .padding(.horizontal, 8)
@@ -245,21 +245,21 @@ struct KubeGitOpsSectionView: View {
     }
 
     private func cell(_ row: KubeGitOpsRow, _ column: ResourceColumn?) -> AnyView {
-        let small = Font.system(size: 12)
+        let small = Font.system(size: ChromeMetrics.text(12))
         switch column?.id {
         case "state":
             return AnyView(
                 HStack(spacing: 5) {
-                    Text(verbatim: row.state.glyph).font(.system(size: 10))
-                    Text(verbatim: row.state.word).font(.system(size: 12, weight: .medium))
+                    Text(verbatim: row.state.glyph).font(.system(size: ChromeMetrics.text(10)))
+                    Text(verbatim: row.state.word).font(.system(size: ChromeMetrics.text(12), weight: .medium))
                 }
                 .foregroundStyle(colour(row.state)).lineLimit(1)
                 .accessibilityIdentifier("kubernetes.gitops.row.\(row.ref.namespace ?? "").\(row.ref.name)"))
         case "kind":
-            return AnyView(Text(verbatim: row.role.short).font(.system(size: 11, weight: .medium, design: .monospaced)).foregroundStyle(theme.text2))
+            return AnyView(Text(verbatim: row.role.short).font(.system(size: ChromeMetrics.text(11), weight: .medium, design: .monospaced)).foregroundStyle(theme.text2))
         case "name":
             return AnyView(
-                Text(verbatim: row.ref.description).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.text).lineLimit(1)
+                Text(verbatim: row.ref.description).font(.system(size: ChromeMetrics.text(12), design: .monospaced)).foregroundStyle(theme.text).lineLimit(1)
                     .truncationMode(.middle))
         case "into":
             return AnyView(Text(verbatim: row.into).font(small).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle))
@@ -269,18 +269,18 @@ struct KubeGitOpsSectionView: View {
                 HStack(spacing: 6) {
                     Text(verbatim: row.why).font(small).foregroundStyle(row.summarised ? theme.text : theme.text3).lineLimit(1).truncationMode(.tail)
                     ForEach(tags, id: \.self) { tag in
-                        Text(verbatim: tag).font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(1)
+                        Text(verbatim: tag).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).lineLimit(1)
                             .padding(.horizontal, 5).background(Capsule().fill(theme.rowHover))
                     }
                 }
                 .help(row.hover))
         case "revision":
-            return AnyView(Text(verbatim: row.revision).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(theme.text2).lineLimit(1))
+            return AnyView(Text(verbatim: row.revision).font(.system(size: ChromeMetrics.text(11.5), design: .monospaced)).foregroundStyle(theme.text2).lineLimit(1))
         case "source":
             return AnyView(Text(verbatim: row.source).font(small).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle).help(row.source))
         case "age":
             let age = row.since.map { KubeAge.format(max(0, gitOps.now.timeIntervalSince($0))) } ?? ""
-            return AnyView(Text(verbatim: age).font(.system(size: 11.5)).foregroundStyle(theme.text3).monospacedDigit())
+            return AnyView(Text(verbatim: age).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).monospacedDigit())
         default:
             return AnyView(EmptyView())
         }

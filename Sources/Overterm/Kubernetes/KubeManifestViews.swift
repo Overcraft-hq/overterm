@@ -32,8 +32,8 @@ struct KubeManifestBar: View {
         VStack(alignment: .leading, spacing: 4) {
             if let resource = session.resource { KubeResourceBanner(resource: resource, theme: theme) }
             HStack(spacing: 6) {
-                Text(verbatim: "⎈").font(.system(size: 13)).foregroundStyle(theme.dimText)
-                Text(verbatim: session.title).font(.system(size: 12, weight: .medium)).foregroundStyle(theme.text).lineLimit(1)
+                Text(verbatim: "⎈").font(.system(size: ChromeMetrics.text(13))).foregroundStyle(theme.dimText)
+                Text(verbatim: session.title).font(.system(size: ChromeMetrics.text(12), weight: .medium)).foregroundStyle(theme.text).lineLimit(1)
                     .truncationMode(.middle)
                 place
                 Spacer(minLength: 0)
@@ -75,14 +75,14 @@ struct KubeManifestBar: View {
                 }
                 Spacer(minLength: 0)
                 if let note = session.docsNote {
-                    Text(verbatim: note).font(.system(size: 10)).foregroundStyle(theme.dimText).lineLimit(1).truncationMode(.tail).help(note)
+                    Text(verbatim: note).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText).lineLimit(1).truncationMode(.tail).help(note)
                 }
             }
-            .font(.system(size: 12))
+            .font(.system(size: ChromeMetrics.text(12)))
             .controlSize(.small)
             if let text = statusText {
                 Text(verbatim: text)
-                    .font(.system(size: 11))
+                    .font(.system(size: ChromeMetrics.text(11)))
                     .foregroundStyle(session.state.isFailure ? KubernetesPageView.production : theme.dimText)
                     .lineLimit(1)
                     .truncationMode(.tail)
@@ -102,7 +102,7 @@ struct KubeManifestBar: View {
     @ViewBuilder private var place: some View {
         if let ref = session.ref {
             Text(verbatim: (context?.isProduction == true ? "PRODUCTION · " : "") + ref.context + " · " + (ref.namespace.map { "namespace \($0)" } ?? "cluster-wide"))
-                .font(.system(size: 11, weight: .semibold))
+                .font(.system(size: ChromeMetrics.text(11), weight: .semibold))
                 .foregroundStyle(context?.isProduction == true ? KubernetesPageView.production : theme.dimText)
                 .lineLimit(1)
         } else {
@@ -135,8 +135,8 @@ struct KubeResourceBanner: View {
     var body: some View {
         if let change = resource.clusterChange {
             HStack(spacing: 8) {
-                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 11)).foregroundStyle(Self.warning)
-                Text(verbatim: Self.said(change, resource)).font(.system(size: 11.5, weight: .medium)).foregroundStyle(theme.text).lineLimit(1)
+                Image(systemName: "exclamationmark.triangle.fill").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(Self.warning)
+                Text(verbatim: Self.said(change, resource)).font(.system(size: ChromeMetrics.text(11.5), weight: .medium)).foregroundStyle(theme.text).lineLimit(1)
                     .truncationMode(.tail)
                 Spacer(minLength: 4)
                 if case .changed = change {
@@ -148,7 +148,7 @@ struct KubeResourceBanner: View {
                     .help("Your edits against the object as the cluster has it now — a server-side dry run")
                     .accessibilityIdentifier("kubernetes.manifest.diffAgainst")
             }
-            .font(.system(size: 11.5))
+            .font(.system(size: ChromeMetrics.text(11.5)))
             .controlSize(.small)
             .padding(.horizontal, 8)
             .frame(height: 24)
@@ -254,7 +254,7 @@ struct KubeManifestDiffView: View {
             KubeManifestDiffContent(session: session, theme: theme, onClose: onClose, onOpen: onOpen)
         } else {
             Text("Diff with Cluster, from a Kubernetes manifest in the editor, shows here.")
-                .font(.system(size: 11)).foregroundStyle(theme.dimText)
+                .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(theme.strip)
         }
@@ -282,7 +282,7 @@ struct KubeManifestDiffContent: View {
                 content(result)
             } else {
                 Text(verbatim: session.state.text ?? "Diff with Cluster from the manifest's bar in the editor.")
-                    .font(.system(size: 11)).foregroundStyle(theme.dimText).padding(12)
+                    .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText).padding(12)
                 Spacer(minLength: 0)
             }
         }
@@ -292,10 +292,10 @@ struct KubeManifestDiffContent: View {
     private var header: some View {
         HStack(spacing: 6) {
             Text(verbatim: "⎈").foregroundStyle(theme.dimText)
-            Text(verbatim: session.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
+            Text(verbatim: session.title).font(.system(size: ChromeMetrics.text(12), weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
             if let result = session.result {
                 Text(verbatim: (result.production ? "PRODUCTION · " : "") + result.context)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: ChromeMetrics.text(11), weight: .semibold))
                     .foregroundStyle(result.production ? KubernetesPageView.production : theme.dimText)
             }
             Spacer(minLength: 0)
@@ -306,13 +306,13 @@ struct KubeManifestDiffContent: View {
             Button {
                 onOpen(session.file)
             } label: {
-                Image(systemName: "arrow.up.forward.square").font(.system(size: 11))
+                Image(systemName: "arrow.up.forward.square").font(.system(size: ChromeMetrics.text(11)))
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
             .help("The manifest in the editor")
             Button(action: onClose) {
-                Image(systemName: "xmark").font(.system(size: 11))
+                Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(11)))
             }
             .buttonStyle(.plain)
             .foregroundStyle(theme.dimText)
@@ -326,16 +326,16 @@ struct KubeManifestDiffContent: View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 10) {
                 Text(verbatim: result.label)
-                    .font(.system(size: 11, weight: result.isServerSide ? .regular : .semibold))
+                    .font(.system(size: ChromeMetrics.text(11), weight: result.isServerSide ? .regular : .semibold))
                     .foregroundStyle(result.isServerSide ? theme.dimText : Self.warning)
                     .accessibilityIdentifier("kubernetes.manifest.label")
                 ForEach(result.warnings, id: \.self) { warning in
-                    Text(verbatim: "⚠︎ " + warning).font(.system(size: 11)).foregroundStyle(Self.warning)
+                    Text(verbatim: "⚠︎ " + warning).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(Self.warning)
                 }
                 if let conflict = session.conflict {
                     VStack(alignment: .leading, spacing: 4) {
-                        Text(verbatim: conflictTitle(conflict)).font(.system(size: 11, weight: .semibold)).foregroundStyle(KubernetesPageView.production)
-                        Text(verbatim: conflict.said).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text)
+                        Text(verbatim: conflictTitle(conflict)).font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(KubernetesPageView.production)
+                        Text(verbatim: conflict.said).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text)
                         HStack {
                             if case .fields = conflict, !result.production {
                                 Button("Force…") { session.forceApply() }.controlSize(.small)
@@ -349,7 +349,7 @@ struct KubeManifestDiffContent: View {
                     .background(RoundedRectangle(cornerRadius: 6).fill(KubernetesPageView.production.opacity(0.08)))
                 }
                 if let text = session.state.text {
-                    Text(verbatim: text).font(.system(size: 11)).foregroundStyle(session.state.isFailure ? KubernetesPageView.production : theme.dimText)
+                    Text(verbatim: text).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(session.state.isFailure ? KubernetesPageView.production : theme.dimText)
                 }
                 ForEach(result.items) { item in
                     if item.unchanged {
@@ -357,7 +357,7 @@ struct KubeManifestDiffContent: View {
                             Image(systemName: "checkmark.circle").foregroundStyle(theme.dimText)
                             Text(verbatim: "\(item.spoken): unchanged").foregroundStyle(theme.dimText)
                         }
-                        .font(.system(size: 11))
+                        .font(.system(size: ChromeMetrics.text(11)))
                     } else {
                         FileCard(
                             file: ChangedFile(
@@ -370,7 +370,7 @@ struct KubeManifestDiffContent: View {
                             }, onOpen: { onOpen(session.file) })
                         if !item.masked.isEmpty {
                             Text(verbatim: "Still masked — retype before applying: " + item.masked.joined(separator: ", "))
-                                .font(.system(size: 11)).foregroundStyle(Self.warning)
+                                .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(Self.warning)
                         }
                     }
                 }

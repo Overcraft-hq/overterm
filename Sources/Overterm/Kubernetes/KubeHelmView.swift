@@ -37,7 +37,7 @@ struct KubeHelmSection: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text(verbatim: countNote).font(.system(size: 11.5)).foregroundStyle(theme.text3)
+            Text(verbatim: countNote).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3)
             Spacer(minLength: 4)
             Button("Copy helm") { page.actions?.copy(page.helmCommand) }.controlSize(.small).help(page.helmCommand)
             Button("Refresh") { page.loadHelm() }.controlSize(.small).disabled(helm.listState == .loading)
@@ -62,11 +62,11 @@ struct KubeHelmSection: View {
         VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .top, spacing: 8) {
                 Image(systemName: "lock.trianglebadge.exclamationmark").foregroundStyle(TabStatusStyle.waiting)
-                Text(verbatim: text).font(.system(size: 12)).foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: text).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 8) {
                 let command = KubeHelmLine.list(context: helm.context ?? "", scope: helm.scope ?? .all)
-                Text(verbatim: command).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(theme.text2).textSelection(.enabled)
+                Text(verbatim: command).font(.system(size: ChromeMetrics.text(11.5), design: .monospaced)).foregroundStyle(theme.text2).textSelection(.enabled)
                     .lineLimit(1).truncationMode(.middle)
                 Button("Copy") { page.actions?.copy(command) }.controlSize(.small)
                 Button("Terminal in This Context") { page.openHelmTerminal() }.controlSize(.small)
@@ -85,7 +85,7 @@ struct KubeHelmSection: View {
     private func unlistedNote(_ text: String) -> some View {
         HStack(alignment: .top, spacing: 8) {
             Image(systemName: "exclamationmark.triangle").foregroundStyle(TabStatusStyle.waiting)
-            Text(verbatim: text).font(.system(size: 12)).foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
+            Text(verbatim: text).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
             Button("Refresh") { page.loadHelm() }.controlSize(.small)
         }
@@ -101,7 +101,7 @@ struct KubeHelmSection: View {
         if helm.releases.isEmpty {
             if helm.listState == .live {
                 Text(verbatim: helm.secretsRefused == nil ? "No Helm releases in \(page.scopeLabel)." : "No releases readable here.")
-                    .font(.system(size: 12)).foregroundStyle(theme.text3).padding(.horizontal, 20).padding(.top, 20)
+                    .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3).padding(.horizontal, 20).padding(.top, 20)
                     .accessibilityIdentifier("kubernetes.helm.empty")
             } else if helm.listState == .loading {
                 ProgressView().controlSize(.small).frame(maxWidth: .infinity).padding(.top, 30)
@@ -130,7 +130,7 @@ struct KubeHelmSection: View {
             cell("App Version", width: 90)
             cell("Updated", width: 80)
         }
-        .font(.system(size: 11, weight: .semibold))
+        .font(.system(size: ChromeMetrics.text(11), weight: .semibold))
         .foregroundStyle(theme.text3)
         .padding(.horizontal, 20)
         .frame(height: 24)
@@ -155,7 +155,7 @@ struct KubeHelmSection: View {
             HStack(spacing: 4) {
                 Text(verbatim: release.name).lineLimit(1).truncationMode(.middle)
                 if release.storage != .secret {
-                    Text(verbatim: release.storage == .tiller ? "Helm 2" : "ConfigMap").font(.system(size: 9.5)).foregroundStyle(theme.text3)
+                    Text(verbatim: release.storage == .tiller ? "Helm 2" : "ConfigMap").font(.system(size: ChromeMetrics.text(9.5))).foregroundStyle(theme.text3)
                         .padding(.horizontal, 4).background(RoundedRectangle(cornerRadius: 3).stroke(theme.border))
                 }
             }
@@ -169,7 +169,7 @@ struct KubeHelmSection: View {
                 cell(release.updated.map { KubeAge.format(context.date.timeIntervalSince($0)) } ?? "—", width: 80).foregroundStyle(theme.text2)
             }
         }
-        .font(.system(size: 12))
+        .font(.system(size: ChromeMetrics.text(12)))
         .foregroundStyle(theme.text)
         .padding(.horizontal, 20)
         .frame(height: 26)
@@ -232,12 +232,12 @@ struct KubeHelmDetailView: View {
     private var header: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
-                Text(verbatim: "Helm release").font(.system(size: 11, weight: .medium)).foregroundStyle(theme.text3)
+                Text(verbatim: "Helm release").font(.system(size: ChromeMetrics.text(11), weight: .medium)).foregroundStyle(theme.text3)
                 Spacer(minLength: 0)
                 Button {
                     page.actions?.copy(KubeHelmLine.status(context: opened.context, namespace: opened.release.namespace, release: opened.release.name))
                 } label: {
-                    Image(systemName: "terminal").font(.system(size: 11, weight: .medium)).foregroundStyle(theme.text2).frame(width: 22, height: 22)
+                    Image(systemName: "terminal").font(.system(size: ChromeMetrics.text(11), weight: .medium)).foregroundStyle(theme.text2).frame(width: 22, height: 22)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -245,20 +245,20 @@ struct KubeHelmDetailView: View {
                 Button {
                     helm.close()
                 } label: {
-                    Image(systemName: "xmark").font(.system(size: 11, weight: .medium)).foregroundStyle(theme.text2).frame(width: 22, height: 22)
+                    Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(11), weight: .medium)).foregroundStyle(theme.text2).frame(width: 22, height: 22)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help("Close (Esc)")
                 .accessibilityIdentifier("kubernetes.helm.close")
             }
-            Text(verbatim: opened.release.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).lineLimit(2)
+            Text(verbatim: opened.release.name).font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text).lineLimit(2)
                 .textSelection(.enabled)
             Text(
                 verbatim: [opened.release.namespace, "revision \(opened.record.revision)", opened.record.status, opened.release.storage.said, opened.context]
                     .joined(separator: " · ")
             )
-            .font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
+            .font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
             KubeHelmActions(page: page, writeAccess: page.model.writeAccess, release: opened.release, theme: theme).padding(.top, 4)
         }
         .padding(.horizontal, 14)
@@ -279,7 +279,7 @@ struct KubeHelmDetailView: View {
             VStack(alignment: .leading, spacing: 4) {
                 ResourceActionBar(verbs: page.helmWriteVerbs(for: release), theme: theme, identifier: "kubernetes.helm.actions")
                 if let status = page.writeStatus {
-                    Text(verbatim: status.text).font(.system(size: 11)).foregroundStyle(status.isFailure ? TabStatusStyle.failed : theme.text2)
+                    Text(verbatim: status.text).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(status.isFailure ? TabStatusStyle.failed : theme.text2)
                         .lineLimit(3).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                         .accessibilityIdentifier("kubernetes.helm.writeStatus")
                 }
@@ -294,7 +294,7 @@ struct KubeHelmDetailView: View {
                     helm.tab = item
                 } label: {
                     Text(item.title)
-                        .font(.system(size: 12, weight: helm.tab == item ? .semibold : .regular))
+                        .font(.system(size: ChromeMetrics.text(12), weight: helm.tab == item ? .semibold : .regular))
                         .foregroundStyle(helm.tab == item ? theme.text : theme.text2)
                         .padding(.horizontal, 9)
                         .frame(height: 24)
@@ -312,11 +312,11 @@ struct KubeHelmDetailView: View {
 
     private var confirming: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text(verbatim: "Read a release on \(opened.context)?").font(.system(size: 13, weight: .semibold)).foregroundStyle(KubernetesPageView.production)
+            Text(verbatim: "Read a release on \(opened.context)?").font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(KubernetesPageView.production)
             Text(
                 "A release is a Secret of Helm's: reading it reads its values and manifest. Overterm masks what looks secret, keeps it only while it shows, and never writes or logs it. Asked once per production context this session."
             )
-            .font(.system(size: 12)).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
+            .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
             HStack {
                 Button("Read Release") { helm.confirm() }.keyboardShortcut(.defaultAction)
                 Button("Cancel") { helm.cancelConfirmation() }
@@ -329,8 +329,8 @@ struct KubeHelmDetailView: View {
 
     private func note(_ text: String, symbol: String) -> some View {
         VStack(spacing: 10) {
-            Image(systemName: symbol).font(.system(size: 22, weight: .light)).foregroundStyle(theme.text3)
-            Text(verbatim: text).font(.system(size: 12)).foregroundStyle(theme.text2).multilineTextAlignment(.center).textSelection(.enabled)
+            Image(systemName: symbol).font(.system(size: ChromeMetrics.text(22), weight: .light)).foregroundStyle(theme.text3)
+            Text(verbatim: text).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).multilineTextAlignment(.center).textSelection(.enabled)
                 .frame(maxWidth: 360)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -343,7 +343,7 @@ struct KubeHelmDetailView: View {
             Text(title).foregroundStyle(theme.text3).frame(width: 110, alignment: .leading)
             Text(verbatim: value ?? "—").foregroundStyle(theme.text).textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
         }
-        .font(.system(size: 12))
+        .font(.system(size: ChromeMetrics.text(12)))
     }
 
     private static func said(_ date: Date?) -> String? { date?.formatted(date: .abbreviated, time: .standard) }
@@ -360,7 +360,7 @@ struct KubeHelmDetailView: View {
                 fact("Last deployed", Self.said(detail.lastDeployed))
                 if let about = detail.chartDescription { fact("About the chart", about) }
                 fact("Storage", opened.release.storage.said + " " + opened.record.object)
-                Text(verbatim: maskNote(detail)).font(.system(size: 11)).foregroundStyle(theme.text3).padding(.top, 8)
+                Text(verbatim: maskNote(detail)).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).padding(.top, 8)
                     .fixedSize(horizontal: false, vertical: true)
             }
             .padding(16)
@@ -379,7 +379,7 @@ struct KubeHelmDetailView: View {
                 ForEach(opened.release.history) { record in
                     let current = record.id == opened.record.id
                     HStack(spacing: 10) {
-                        Text(verbatim: String(record.revision)).font(.system(size: 12, design: .monospaced)).frame(width: 36, alignment: .leading)
+                        Text(verbatim: String(record.revision)).font(.system(size: ChromeMetrics.text(12), design: .monospaced)).frame(width: 36, alignment: .leading)
                         Text(verbatim: record.status).foregroundStyle(KubeHelmSection.color(record.status, theme: theme)).frame(width: 110, alignment: .leading)
                         Text(verbatim: current ? detail.summary ?? "" : helm.summaries[record.id] ?? "—").foregroundStyle(theme.text2)
                             .lineLimit(2).frame(maxWidth: .infinity, alignment: .leading)
@@ -388,7 +388,7 @@ struct KubeHelmDetailView: View {
                         }
                         if record.revision != opened.release.revision { rollBack(to: record) }
                     }
-                    .font(.system(size: 12))
+                    .font(.system(size: ChromeMetrics.text(12)))
                     .padding(.horizontal, 14)
                     .frame(minHeight: 28)
                     .background(Rectangle().fill(current ? theme.selected : .clear))
@@ -397,7 +397,7 @@ struct KubeHelmDetailView: View {
                     .help(current ? "The revision shown" : "Read revision \(record.revision)")
                     .accessibilityIdentifier("kubernetes.helm.revision.\(record.revision)")
                 }
-                Text("A revision's description is read with it: press one to read it.").font(.system(size: 11)).foregroundStyle(theme.text3)
+                Text("A revision's description is read with it: press one to read it.").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                     .padding(14)
             }
         }
@@ -422,7 +422,7 @@ struct KubeHelmDetailView: View {
             Button {
                 page.runHelmWrite(.helmRollback, on: release, revision: revision)
             } label: {
-                Image(systemName: "clock.arrow.circlepath").font(.system(size: 11, weight: .medium))
+                Image(systemName: "clock.arrow.circlepath").font(.system(size: ChromeMetrics.text(11), weight: .medium))
                     .foregroundStyle(unavailable == nil ? theme.text2 : theme.text3.opacity(0.5)).frame(width: 22, height: 22).contentShape(Rectangle())
             }
             .buttonStyle(.plain)
@@ -461,9 +461,9 @@ struct KubeHelmDetailView: View {
     private func text(_ text: String, note: String, id: String) -> some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Text(verbatim: note).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
+                Text(verbatim: note).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1)
                 Spacer(minLength: 4)
-                Button("Copy") { page.actions?.copy(text) }.font(.system(size: 11.5)).help("Copy it as shown, masked")
+                Button("Copy") { page.actions?.copy(text) }.font(.system(size: ChromeMetrics.text(11.5))).help("Copy it as shown, masked")
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -484,7 +484,7 @@ struct KubeHelmCount: View {
 
     var body: some View {
         if helm.listState == .live, !helm.releases.isEmpty {
-            Text(verbatim: "\(helm.releases.count)").foregroundStyle(theme.text3).font(.system(size: 10.5, design: .monospaced))
+            Text(verbatim: "\(helm.releases.count)").foregroundStyle(theme.text3).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced))
         }
     }
 }

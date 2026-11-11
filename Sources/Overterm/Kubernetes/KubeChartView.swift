@@ -314,12 +314,12 @@ struct KubeChartView: View {
         let wraps = data.legendSeries.count > 3
         return VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(verbatim: data.title).font(.system(size: 11)).foregroundStyle(theme.text3)
+                Text(verbatim: data.title).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                 if let value = headline ?? KubeChartSummary.totals(data).last.map({ data.unit.format($0.value) }) {
-                    Text(verbatim: value).font(.system(size: 12, weight: .medium, design: .monospaced)).foregroundStyle(theme.text)
+                    Text(verbatim: value).font(.system(size: ChromeMetrics.text(12), weight: .medium, design: .monospaced)).foregroundStyle(theme.text)
                 }
                 ForEach(chips, id: \.text) { chip in
-                    Text(verbatim: chip.text).font(.system(size: 10.5, weight: chip.alert ? .semibold : .regular))
+                    Text(verbatim: chip.text).font(.system(size: ChromeMetrics.text(10.5), weight: chip.alert ? .semibold : .regular))
                         .foregroundStyle(chip.alert ? TabStatusStyle.failed : theme.text2)
                         .padding(.horizontal, 5).padding(.vertical, 1)
                         .background(RoundedRectangle(cornerRadius: 4).fill((chip.alert ? TabStatusStyle.failed : theme.text3).opacity(0.12)))
@@ -330,7 +330,7 @@ struct KubeChartView: View {
                 if !wraps { legend }
                 if let expand {
                     Button(action: expand) {
-                        Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: 10))
+                        Image(systemName: "arrow.up.left.and.arrow.down.right").font(.system(size: ChromeMetrics.text(10)))
                     }
                     .buttonStyle(.plain)
                     .foregroundStyle(theme.text3)
@@ -351,7 +351,7 @@ struct KubeChartView: View {
                 }
             }
             if let note = data.markerNote {
-                Text(verbatim: note).font(.system(size: 10.5)).foregroundStyle(theme.text3).fixedSize()
+                Text(verbatim: note).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).fixedSize()
                     .help("The cluster keeps events about an hour: older warnings and scaling are marked only where a History has them")
                     .accessibilityIdentifier(data.identifier + ".markerNote")
             }
@@ -367,7 +367,7 @@ struct KubeChartView: View {
                             context.stroke(path, with: .foreground, style: StrokeStyle(lineWidth: 1, dash: [3, 3]))
                         }
                         .frame(width: 12, height: 6)
-                        Text(verbatim: "Lines").font(.system(size: 10.5)).fixedSize()
+                        Text(verbatim: "Lines").font(.system(size: ChromeMetrics.text(10.5))).fixedSize()
                     }
                     .foregroundStyle(hideReferences ? theme.text3.opacity(0.5) : theme.text3)
                 }
@@ -396,7 +396,7 @@ struct KubeChartView: View {
         } label: {
             HStack(spacing: 4) {
                 RoundedRectangle(cornerRadius: 2).fill(colour).frame(width: 8, height: 8)
-                Text(verbatim: series.name).font(.system(size: 10.5)).lineLimit(1).fixedSize()
+                Text(verbatim: series.name).font(.system(size: ChromeMetrics.text(10.5))).lineLimit(1).fixedSize()
             }
             .foregroundStyle(hidden.contains(series.id) ? theme.text3.opacity(0.5) : theme.text3)
         }
@@ -520,14 +520,14 @@ struct KubeChartView: View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
                 RoundedRectangle(cornerRadius: 2).fill(KubeChartPalette.marker(marker.kind, dark: theme.isDark).color).frame(width: 8, height: 8)
-                Text(verbatim: marker.kind.label).font(.system(size: 11, weight: .semibold)).foregroundStyle(theme.text2)
+                Text(verbatim: marker.kind.label).font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(theme.text2)
                 Spacer(minLength: 8)
-                Text(verbatim: KubeChartTime.full(marker.time)).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(theme.text3)
+                Text(verbatim: KubeChartTime.full(marker.time)).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text3)
             }
-            Text(verbatim: marker.title).font(.system(size: 12)).foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
+            Text(verbatim: marker.title).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
             if let detail = marker.detail {
-                Text(verbatim: detail).font(.system(size: 11)).foregroundStyle(theme.text2).lineLimit(6).fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: detail).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text2).lineLimit(6).fixedSize(horizontal: false, vertical: true)
                     .textSelection(.enabled)
             }
             HStack(spacing: 8) {
@@ -558,7 +558,7 @@ struct KubeChartView: View {
     /// The markers past the cap, the oldest, folded at the left edge.
     private func earlier(_ plot: KubePlot) -> some View {
         Text(verbatim: "+\(data.earlierMarkers) earlier")
-            .font(.system(size: 9, weight: .medium)).foregroundStyle(theme.text3)
+            .font(.system(size: ChromeMetrics.text(9), weight: .medium)).foregroundStyle(theme.text3)
             .fixedSize()
             .padding(.horizontal, 3)
             .background(RoundedRectangle(cornerRadius: 3).fill(theme.border.opacity(0.6)))
@@ -571,7 +571,7 @@ struct KubeChartView: View {
     private func bandTips(_ plot: KubePlot) -> some View {
         ForEach(plot.bands, id: \.band.id) { placed in
             Text(verbatim: placed.band.title)
-                .font(.system(size: 9, weight: .medium)).foregroundStyle(Color.orange).lineLimit(1)
+                .font(.system(size: ChromeMetrics.text(9), weight: .medium)).foregroundStyle(Color.orange).lineLimit(1)
                 .frame(width: max(placed.maxX - placed.minX, 1), height: 12, alignment: .leading)
                 .clipped()
                 .help("\(placed.band.title) since \(KubeChartTime.clock(placed.band.start))")
@@ -585,7 +585,7 @@ struct KubeChartView: View {
         ZStack(alignment: .topLeading) {
             ForEach(plot.yTicks, id: \.self) { tick in
                 Text(verbatim: plot.unit.format(tick))
-                    .font(.system(size: 9, design: .monospaced)).foregroundStyle(theme.text3)
+                    .font(.system(size: ChromeMetrics.text(9), design: .monospaced)).foregroundStyle(theme.text3)
                     .frame(width: KubePlot.gutter - 6, alignment: .trailing)
                     .position(x: (KubePlot.gutter - 6) / 2, y: min(max(plot.y(of: tick), 6), plot.size.height - 6))
             }
@@ -593,7 +593,7 @@ struct KubeChartView: View {
             // another's; lines that coincide said once (`KubePlot.labelled`).
             ForEach(plot.references.filter { !$0.label.isEmpty }, id: \.id) { reference in
                 Text(verbatim: reference.label)
-                    .font(.system(size: 9)).foregroundStyle(referenceColour(reference.role))
+                    .font(.system(size: ChromeMetrics.text(9))).foregroundStyle(referenceColour(reference.role))
                     .fixedSize()
                     .frame(width: 160, alignment: .trailing)
                     .position(x: reference.labelAt.x - 82, y: reference.labelY)
@@ -609,7 +609,7 @@ struct KubeChartView: View {
                 ZStack(alignment: .topLeading) {
                     ForEach(plot.timeTicks, id: \.self) { tick in
                         Text(verbatim: KubeChartTime.tick(tick, interval: interval))
-                            .font(.system(size: 9, design: .monospaced)).foregroundStyle(theme.text3)
+                            .font(.system(size: ChromeMetrics.text(9), design: .monospaced)).foregroundStyle(theme.text3)
                             .fixedSize()
                             .position(x: min(max(plot.x(of: tick), 16), plot.size.width - 16), y: 6)
                     }
@@ -719,7 +719,7 @@ struct KubeChartOverlay: View {
         let room = max(1, Int((plot.size.height - 30) / 14))
         let rows = tip.rows.count > room ? Array(tip.rows.prefix(room - 1)) : tip.rows
         let card = VStack(alignment: .leading, spacing: 1) {
-            Text(verbatim: tip.time).font(.system(size: 10, weight: .medium)).foregroundStyle(theme.text)
+            Text(verbatim: tip.time).font(.system(size: ChromeMetrics.text(10), weight: .medium)).foregroundStyle(theme.text)
             ForEach(Array(rows.enumerated()), id: \.offset) { _, row in
                 HStack(spacing: 5) {
                     if let colour = row.colour {
@@ -727,13 +727,13 @@ struct KubeChartOverlay: View {
                     } else {
                         Rectangle().fill(KubeChartPalette.reference(row.role, dark: theme.isDark).color).frame(width: 6, height: 1)
                     }
-                    Text(verbatim: row.name).font(.system(size: 10)).foregroundStyle(theme.text3).lineLimit(1)
+                    Text(verbatim: row.name).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3).lineLimit(1)
                     Spacer(minLength: 6)
-                    Text(verbatim: row.value).font(.system(size: 10, design: .monospaced)).foregroundStyle(theme.text)
+                    Text(verbatim: row.value).font(.system(size: ChromeMetrics.text(10), design: .monospaced)).foregroundStyle(theme.text)
                 }
             }
             if rows.count < tip.rows.count {
-                Text(verbatim: "+\(tip.rows.count - rows.count) more").font(.system(size: 10)).foregroundStyle(theme.text3)
+                Text(verbatim: "+\(tip.rows.count - rows.count) more").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
             }
         }
         .padding(6)

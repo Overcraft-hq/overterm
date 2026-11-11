@@ -94,15 +94,15 @@ struct ResourceKeySheet<Key: ResourceKey>: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
-            Text("Keys in the list").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text).padding(.bottom, 4)
+            Text("Keys in the list").font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text).padding(.bottom, 4)
             ForEach(Array(Key.allCases), id: \.self) { key in
                 HStack(spacing: 12) {
-                    Text(verbatim: key.key).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.text)
+                    Text(verbatim: key.key).font(.system(size: ChromeMetrics.text(12), design: .monospaced)).foregroundStyle(theme.text)
                         .frame(width: 48, alignment: .leading)
-                    Text(key.title).font(.system(size: 12)).foregroundStyle(theme.text2)
+                    Text(key.title).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
                 }
             }
-            Text("↑↓ to move, ⇧ and ⌘ to pick several, ⌘C copies their names.").font(.system(size: 11)).foregroundStyle(theme.text3)
+            Text("↑↓ to move, ⇧ and ⌘ to pick several, ⌘C copies their names.").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                 .padding(.top, 6)
         }
         .padding(18)

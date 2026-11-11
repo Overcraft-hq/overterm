@@ -15,14 +15,14 @@ struct KubePanelGitOpsView: View {
         if gitOps.shows {
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 6) {
-                    Text("GitOps").font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+                    Text("GitOps").font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
                     Spacer(minLength: 0)
                     // Read, failed, or neither tool served: always a way to read again.
                     if gitOps.canRefresh {
                         Button {
                             gitOps.refresh()
                         } label: {
-                            Image(systemName: "arrow.clockwise").font(.system(size: 10))
+                            Image(systemName: "arrow.clockwise").font(.system(size: ChromeMetrics.text(10)))
                         }
                         .buttonStyle(.plain)
                         .foregroundStyle(theme.text3)
@@ -33,18 +33,18 @@ struct KubePanelGitOpsView: View {
                 .padding(.horizontal, 12).padding(.top, 10).padding(.bottom, 4)
                 // What a verb asked from here did, above the rows it may be about.
                 if let status = gitOps.status {
-                    Text(verbatim: status.text).font(.system(size: 10.5)).foregroundStyle(status.isFailure ? TabStatusStyle.failed : theme.text2)
+                    Text(verbatim: status.text).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(status.isFailure ? TabStatusStyle.failed : theme.text2)
                         .fixedSize(horizontal: false, vertical: true).padding(.horizontal, 12).padding(.vertical, 2)
                         .accessibilityIdentifier("kubernetes.panel.gitops.status")
                 }
                 if case .waiting(let reads) = gitOps.state {
                     VStack(alignment: .leading, spacing: 3) {
                         Button("Find What Deploys This") { gitOps.find() }
-                            .buttonStyle(.link).font(.system(size: 11))
+                            .buttonStyle(.link).font(.system(size: ChromeMetrics.text(11)))
                             .help("On production nothing is listed across the cluster until asked")
                             .accessibilityIdentifier("kubernetes.panel.gitops.find")
                         if !reads.isEmpty {
-                            Text(verbatim: reads).font(.system(size: 10.5)).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
+                            Text(verbatim: reads).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
                         }
                     }
                     .padding(.horizontal, 12).padding(.vertical, 2)
@@ -60,7 +60,7 @@ struct KubePanelGitOpsView: View {
     }
 
     private func line(_ text: String, failed: Bool) -> some View {
-        Text(verbatim: text).font(.system(size: 10.5)).foregroundStyle(failed ? TabStatusStyle.failed : theme.text3).lineLimit(3)
+        Text(verbatim: text).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(failed ? TabStatusStyle.failed : theme.text3).lineLimit(3)
             .fixedSize(horizontal: false, vertical: true).padding(.horizontal, 12).padding(.vertical, 2)
     }
 
@@ -79,16 +79,16 @@ struct KubePanelGitOpsView: View {
     /// under the path, the files this branch changes — as of the last fetch.
     @ViewBuilder private func reachLines(_ match: KubePanelGitOps.Match, _ reach: KubeGitOpsReach.Answer) -> some View {
         VStack(alignment: .leading, spacing: 2) {
-            Text(verbatim: reach.deployed.text).font(.system(size: 11)).foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
+            Text(verbatim: reach.deployed.text).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
                 .accessibilityIdentifier("kubernetes.panel.gitops.deployed")
-            Text(verbatim: reach.source).font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
+            Text(verbatim: reach.source).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
             if let attempted = reach.attempted { small(attempted, failed: true, id: "kubernetes.panel.gitops.attempted") }
             if let fetched = reach.fetched { small(fetched, failed: false, id: "kubernetes.panel.gitops.fetched") }
             if let unchanged = reach.unchanged { small(unchanged, failed: false, id: "kubernetes.panel.gitops.unchanged") }
             if let changed = reach.changed {
                 if changed.review != nil {
                     Button(changed.text) { gitOps.reviewChanged(match) }
-                        .buttonStyle(.link).font(.system(size: 10.5))
+                        .buttonStyle(.link).font(.system(size: ChromeMetrics.text(10.5)))
                         .help("A review tab (⇧⌘R) of these files, from where this branch left \(changed.against)")
                         .accessibilityIdentifier("kubernetes.panel.gitops.changed")
                 } else {
@@ -98,19 +98,19 @@ struct KubePanelGitOpsView: View {
             ForEach(reach.checked, id: \.self) { small($0, failed: false, id: nil) }
             if let found = reach.found, !found.isHead || found.elsewhere > 0 {
                 Button("Diff Deployed…Current") { gitOps.reviewDeployed(match) }
-                    .buttonStyle(.link).font(.system(size: 11))
+                    .buttonStyle(.link).font(.system(size: ChromeMetrics.text(11)))
                     .help("A review tab (⇧⌘R): what the checkout has that isn't in the manifests' commit")
                     .accessibilityIdentifier("kubernetes.panel.gitops.diffDeployed")
             }
             if !reach.pathspecs.isEmpty || reach.found != nil {
-                Text(verbatim: "as of the last fetch").font(.system(size: 10)).foregroundStyle(theme.text3)
+                Text(verbatim: "as of the last fetch").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
             }
         }
         .padding(.top, 2)
     }
 
     @ViewBuilder private func small(_ text: String, failed: Bool, id: String?) -> some View {
-        let view = Text(verbatim: text).font(.system(size: 10.5)).foregroundStyle(failed ? TabStatusStyle.failed : theme.text2).lineLimit(3)
+        let view = Text(verbatim: text).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(failed ? TabStatusStyle.failed : theme.text2).lineLimit(3)
             .fixedSize(horizontal: false, vertical: true)
         if let id { view.accessibilityIdentifier(id) } else { view }
     }
@@ -121,17 +121,17 @@ struct KubePanelGitOpsView: View {
         return VStack(alignment: .leading, spacing: 2) {
             HStack(spacing: 8) {
                 Circle().fill(color(object?.state)).frame(width: 7, height: 7)
-                Text(verbatim: match.said).font(.system(size: 12)).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
+                Text(verbatim: match.said).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 0)
             }
             if let object {
                 let revision = KubeGitOpsRevision.column(object)
                 let age = object.stateSince.map { " · \(KubeAge.format(now.timeIntervalSince($0)))" } ?? ""
                 Text(verbatim: "\(object.state.word): \(object.why)" + (revision.isEmpty ? "" : " · \(revision)") + age)
-                    .font(.system(size: 10.5)).foregroundStyle(object.state.mark == .bad ? TabStatusStyle.failed : theme.text2).lineLimit(2)
+                    .font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(object.state.mark == .bad ? TabStatusStyle.failed : theme.text2).lineLimit(2)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Text(verbatim: ([match.why] + [match.tracks].compactMap { $0 }).joined(separator: " · ")).font(.system(size: 10.5)).foregroundStyle(theme.text3)
+            Text(verbatim: ([match.why] + [match.tracks].compactMap { $0 }).joined(separator: " · ")).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3)
                 .lineLimit(2).fixedSize(horizontal: false, vertical: true)
             if let reach = match.reach { reachLines(match, reach) }
             if object != nil {
@@ -146,7 +146,7 @@ struct KubePanelGitOpsView: View {
                     if match.isProblem { Button("Ask Why") { gitOps.askWhy(match) } }
                 }
                 .buttonStyle(.link)
-                .font(.system(size: 11))
+                .font(.system(size: ChromeMetrics.text(11)))
                 .disabled(gitOps.status?.isWorking == true)
             }
         }

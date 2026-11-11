@@ -15,10 +15,10 @@ struct KubeTimelineView: View {
     var body: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Text(verbatim: note).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
+                Text(verbatim: note).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1)
                 Spacer(minLength: 4)
                 if timeline.diffing != nil { ProgressView().controlSize(.mini) }
-                Button("Refresh") { page.detail?.showHistory(again: true) }.font(.system(size: 11.5)).disabled(timeline.state == .loading)
+                Button("Refresh") { page.detail?.showHistory(again: true) }.font(.system(size: ChromeMetrics.text(11.5))).disabled(timeline.state == .loading)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -28,17 +28,17 @@ struct KubeTimelineView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         switch timeline.state {
                         case .idle, .loading: ProgressView().controlSize(.small).frame(maxWidth: .infinity)
-                        case .failed(let reason): Text(verbatim: reason).font(.system(size: 12)).foregroundStyle(TabStatusStyle.failed)
+                        case .failed(let reason): Text(verbatim: reason).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(TabStatusStyle.failed)
                         case .loaded:
                             if let problem = timeline.diffProblem {
-                                Text(verbatim: problem).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).textSelection(.enabled)
+                                Text(verbatim: problem).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.failed).textSelection(.enabled)
                             }
                             ForEach(timeline.notes, id: \.self) { note in
-                                Text(verbatim: note).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.waiting).fixedSize(horizontal: false, vertical: true)
+                                Text(verbatim: note).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.waiting).fixedSize(horizontal: false, vertical: true)
                             }
                             compare
                             if timeline.entries.isEmpty {
-                                Text("No changes kept: no revisions, Helm records or recent events.").font(.system(size: 12)).foregroundStyle(theme.text3)
+                                Text("No changes kept: no revisions, Helm records or recent events.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
                             }
                             ForEach(timeline.entries) { entry in row(entry).id(entry.id) }
                         }
@@ -71,7 +71,7 @@ struct KubeTimelineView: View {
     @ViewBuilder private var compare: some View {
         if timeline.templateRevisions.count > 1 || timeline.helmRevisions.count > 1 {
             HStack(spacing: 8) {
-                Text("Compare").font(.system(size: 11.5)).foregroundStyle(theme.text3)
+                Text("Compare").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3)
                 if timeline.templateRevisions.count > 1 && timeline.helmRevisions.count > 1 {
                     Picker("", selection: $comparesHelm) {
                         Text("Template").tag(false)
@@ -84,14 +84,14 @@ struct KubeTimelineView: View {
                     }
                 }
                 picker(selection: Binding(get: { compareFrom ?? defaultFrom }, set: { compareFrom = $0 }))
-                Text(verbatim: "→").font(.system(size: 11.5)).foregroundStyle(theme.text3)
+                Text(verbatim: "→").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3)
                 picker(selection: Binding(get: { compareTo ?? revisions.last ?? 0 }, set: { compareTo = $0 }))
                 Button("Diff") {
                     let from = compareFrom ?? defaultFrom
                     let to = compareTo ?? revisions.last ?? 0
                     page.openChange(usesHelm ? .helm(from: from, to: to) : .template(from: from, to: to))
                 }
-                .font(.system(size: 11.5))
+                .font(.system(size: ChromeMetrics.text(11.5)))
                 .disabled(timeline.diffing != nil || (compareFrom ?? defaultFrom) == (compareTo ?? revisions.last ?? 0))
                 .help("The two revisions against each other in the changes pane, masked")
                 .accessibilityIdentifier("kubernetes.timeline.compare")
@@ -116,29 +116,29 @@ struct KubeTimelineView: View {
     private func row(_ entry: KubeTimelineEntry) -> some View {
         let marked = page.markedEntry == entry.id
         return HStack(alignment: .top, spacing: 8) {
-            Image(systemName: symbol(entry.kind)).font(.system(size: 11)).foregroundStyle(color(entry.kind)).frame(width: 14)
+            Image(systemName: symbol(entry.kind)).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(color(entry.kind)).frame(width: 14)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(verbatim: entry.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(entry.kind == .warning ? TabStatusStyle.waiting : theme.text)
-                    if entry.count > 1 { Text(verbatim: "×\(entry.count)").font(.system(size: 11)).foregroundStyle(theme.text3) }
+                    Text(verbatim: entry.title).font(.system(size: ChromeMetrics.text(12), weight: .semibold)).foregroundStyle(entry.kind == .warning ? TabStatusStyle.waiting : theme.text)
+                    if entry.count > 1 { Text(verbatim: "×\(entry.count)").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3) }
                     Spacer(minLength: 0)
                     if let time = entry.time {
                         TimelineView(.periodic(from: .now, by: 1)) { context in
                             Text(verbatim: (entry.approximate ? "after " : "") + KubeAge.format(context.date.timeIntervalSince(time)) + " ago")
-                                .font(.system(size: 11)).foregroundStyle(theme.text3)
+                                .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                                 .help(time.formatted(date: .abbreviated, time: .standard))
                         }
                     }
                     if let change = entry.change {
                         Button("Diff") { page.openChange(change) }
-                            .font(.system(size: 11)).controlSize(.small)
+                            .font(.system(size: ChromeMetrics.text(11))).controlSize(.small)
                             .disabled(timeline.diffing != nil)
                             .help("What changed, in the changes pane — masked")
                             .accessibilityIdentifier("kubernetes.timeline.diff.\(entry.id)")
                     }
                 }
                 if let detail = entry.detail {
-                    Text(verbatim: detail).font(.system(size: 11.5)).foregroundStyle(theme.text2).textSelection(.enabled)
+                    Text(verbatim: detail).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
             }
@@ -183,13 +183,13 @@ struct KubeChangeDiffContent: View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
                 Text(verbatim: "⎈").foregroundStyle(theme.dimText)
-                Text(verbatim: change.title).font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
+                Text(verbatim: change.title).font(.system(size: ChromeMetrics.text(12), weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
                 Text(verbatim: (change.production ? "PRODUCTION · " : "") + change.context)
-                    .font(.system(size: 11, weight: .semibold))
+                    .font(.system(size: ChromeMetrics.text(11), weight: .semibold))
                     .foregroundStyle(change.production ? KubernetesPageView.production : theme.dimText)
                 Spacer(minLength: 0)
                 Button(action: onClose) {
-                    Image(systemName: "xmark").font(.system(size: 11))
+                    Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(11)))
                 }
                 .buttonStyle(.plain)
                 .foregroundStyle(theme.dimText)
@@ -200,11 +200,11 @@ struct KubeChangeDiffContent: View {
             Divider().opacity(0.3)
             ScrollView {
                 LazyVStack(alignment: .leading, spacing: 10) {
-                    Text(verbatim: change.label).font(.system(size: 11)).foregroundStyle(theme.dimText).fixedSize(horizontal: false, vertical: true)
+                    Text(verbatim: change.label).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText).fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("kubernetes.change.label")
                     if change.diff.withheld > 0 {
                         Text(verbatim: "\(change.diff.withheld) document\(change.diff.withheld == 1 ? "" : "s") left out: unreadable, so it couldn't be masked.")
-                            .font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed)
+                            .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.failed)
                     }
                     ForEach(change.diff.items) { item in
                         if item.change == .unchanged {
@@ -212,7 +212,7 @@ struct KubeChangeDiffContent: View {
                                 Image(systemName: "checkmark.circle").foregroundStyle(theme.dimText)
                                 Text(verbatim: "\(item.spoken): unchanged").foregroundStyle(theme.dimText)
                             }
-                            .font(.system(size: 11))
+                            .font(.system(size: ChromeMetrics.text(11)))
                         } else {
                             FileCard(
                                 file: ChangedFile(

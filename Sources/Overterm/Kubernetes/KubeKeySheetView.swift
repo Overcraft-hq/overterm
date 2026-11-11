@@ -17,9 +17,9 @@ struct KubeKeySheetView: View {
             Color.black.opacity(0.001).onTapGesture { page.cheatSheet = false }
             VStack(alignment: .leading, spacing: 0) {
                 HStack {
-                    Text("Keys on the Kubernetes page").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text)
+                    Text("Keys on the Kubernetes page").font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text)
                     Spacer()
-                    Text("Esc").font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
+                    Text("Esc").font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text3)
                 }
                 .padding(.horizontal, 18)
                 .padding(.vertical, 12)
@@ -28,20 +28,20 @@ struct KubeKeySheetView: View {
                     VStack(alignment: .leading, spacing: 14) {
                         ForEach(groups) { group in
                             VStack(alignment: .leading, spacing: 5) {
-                                Text(verbatim: group.title).font(.system(size: 11, weight: .semibold)).foregroundStyle(theme.text3)
+                                Text(verbatim: group.title).font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(theme.text3)
                                     .accessibilityIdentifier("kubernetes.keys.\(group.id)")
                                 ForEach(group.rows) { row in
                                     HStack(alignment: .firstTextBaseline, spacing: 12) {
-                                        Text(verbatim: row.key).font(.system(size: 12, design: .monospaced))
+                                        Text(verbatim: row.key).font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                                             .foregroundStyle(row.key == KubeKeySheet.unbound ? theme.text3 : theme.text)
                                             .frame(width: 64, alignment: .leading)
-                                        Text(verbatim: row.title).font(.system(size: 12)).foregroundStyle(theme.text2)
+                                        Text(verbatim: row.title).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
                                             .fixedSize(horizontal: false, vertical: true)
                                     }
                                 }
                             }
                         }
-                        Text("↑↓ to move, ⇧ and ⌘ to pick several, ⌘C copies their names.").font(.system(size: 11)).foregroundStyle(theme.text3)
+                        Text("↑↓ to move, ⇧ and ⌘ to pick several, ⌘C copies their names.").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                     }
                     .padding(18)
                 }

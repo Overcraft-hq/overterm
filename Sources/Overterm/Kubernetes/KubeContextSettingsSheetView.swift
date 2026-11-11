@@ -32,29 +32,29 @@ struct KubeContextSettingsSheetView: View {
 
     private func row(_ title: String, @ViewBuilder _ content: () -> some View) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(title).font(.system(size: 12)).foregroundStyle(theme.text2).frame(width: 150, alignment: .trailing)
+            Text(title).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).frame(width: 150, alignment: .trailing)
             content()
         }
     }
 
     private func note(_ text: String) -> some View {
-        Text(verbatim: text).font(.system(size: 11)).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
+        Text(verbatim: text).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
             .padding(.leading, 160)
     }
 
     private func field(_ placeholder: String, _ path: WritableKeyPath<KubeContextSettingsDraft, String>, id: String) -> some View {
         TextField(placeholder, text: binding(path, ""))
             .textFieldStyle(.roundedBorder)
-            .font(.system(size: 12, design: .monospaced))
+            .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
             .accessibilityIdentifier("kubernetes.contextSettings.\(id)")
     }
 
     private func card(_ draft: KubeContextSettingsDraft) -> some View {
         let production = draft.isProduction
         return VStack(alignment: .leading, spacing: 10) {
-            Text("Context Settings").font(.system(size: 14, weight: .semibold)).foregroundStyle(theme.text)
+            Text("Context Settings").font(.system(size: ChromeMetrics.text(14), weight: .semibold)).foregroundStyle(theme.text)
             Text(verbatim: (production ? KubeWriteConfirmation.productionMark : "") + draft.context)
-                .font(.system(size: 11.5, design: .monospaced)).foregroundStyle(production ? KubernetesPageView.production : theme.text2)
+                .font(.system(size: ChromeMetrics.text(11.5), design: .monospaced)).foregroundStyle(production ? KubernetesPageView.production : theme.text2)
                 .textSelection(.enabled)
             row("Class") {
                 Picker("", selection: binding(\.contextClass, nil)) {
@@ -89,44 +89,44 @@ struct KubeContextSettingsSheetView: View {
             row("Prometheus Service") { field("found as Lens finds it — or monitoring/prometheus-server:80", \.prometheus, id: "prometheus") }
             row("Node shell") {
                 Toggle("Offered on nodes when writable, the node's name typed", isOn: binding(\.nodeShell, false))
-                    .toggleStyle(.checkbox).font(.system(size: 12))
+                    .toggleStyle(.checkbox).font(.system(size: ChromeMetrics.text(12)))
                     .accessibilityIdentifier("kubernetes.contextSettings.nodeShell")
             }
             row("Node shell's image") { field("its debug image — or acme/node-tools:1", \.nodeShellImage, id: "nodeShellImage") }
             row("Default namespace") { field("the kubeconfig's", \.defaultNamespace, id: "defaultNamespace") }
             row("Agents") {
                 Toggle("May change it (kubernetes.agentWrites) — each call asked", isOn: binding(\.agentWrites, false))
-                    .toggleStyle(.checkbox).font(.system(size: 12))
+                    .toggleStyle(.checkbox).font(.system(size: ChromeMetrics.text(12)))
                     .accessibilityIdentifier("kubernetes.contextSettings.agentWrites")
             }
             if production {
                 row("Apply") {
                     Toggle("From the editor while writes are on, the name typed", isOn: binding(\.applyOnProduction, false))
-                        .toggleStyle(.checkbox).font(.system(size: 12))
+                        .toggleStyle(.checkbox).font(.system(size: ChromeMetrics.text(12)))
                         .accessibilityIdentifier("kubernetes.contextSettings.applyOnProduction")
                 }
             }
             let lessStrict = draft.confirmingLessStrict && draft.lessStrict(entry: nil)
             if lessStrict {
                 VStack(alignment: .leading, spacing: 6) {
-                    Text(verbatim: draft.lessStrictSaid).font(.system(size: 11.5, weight: .medium)).foregroundStyle(KubernetesPageView.production)
+                    Text(verbatim: draft.lessStrictSaid).font(.system(size: ChromeMetrics.text(11.5), weight: .medium)).foregroundStyle(KubernetesPageView.production)
                         .fixedSize(horizontal: false, vertical: true)
                         .accessibilityIdentifier("kubernetes.contextSettings.lessStrict")
                     TextField(draft.context, text: binding(\.typedName, ""))
                         .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 12, design: .monospaced))
+                        .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                         .accessibilityIdentifier("kubernetes.contextSettings.typedName")
                 }
                 .padding(10)
                 .background(RoundedRectangle(cornerRadius: 8).stroke(KubernetesPageView.production))
             }
             if let problem = draft.problem ?? draft.validation {
-                Text(verbatim: problem).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed)
+                Text(verbatim: problem).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.failed)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("kubernetes.contextSettings.problem")
             }
             HStack {
-                Button("More in Settings…") { page.openKubernetesSettings() }.buttonStyle(.link).font(.system(size: 11.5))
+                Button("More in Settings…") { page.openKubernetesSettings() }.buttonStyle(.link).font(.system(size: ChromeMetrics.text(11.5)))
                 Spacer()
                 Button("Cancel") { page.closeContextSettings() }.keyboardShortcut(.cancelAction)
                 Button(lessStrict ? "Make It \(draft.resolvedClass.title)" : "Save") { page.saveContextSettings() }.keyboardShortcut(.defaultAction)

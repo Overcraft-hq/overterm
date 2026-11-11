@@ -129,7 +129,7 @@ struct AskAgentView: View {
                 label("What is sent")
                 ScrollView {
                     Text(verbatim: model.prompt(diff: nil))
-                        .font(.system(size: 11, design: .monospaced))
+                        .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
                         .foregroundStyle(theme.text)
                         .textSelection(.enabled)
                         .frame(maxWidth: .infinity, alignment: .leading)

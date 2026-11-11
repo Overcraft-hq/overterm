@@ -397,7 +397,7 @@ struct TabItemView: View {
             // the title gives way first (capped, an ARN truncated in the middle).
             if let badge = tab.kubeBadge {
                 Text(verbatim: badge.text)
-                    .font(.system(size: 10.5, weight: badge.alert ? .semibold : .regular, design: .monospaced))
+                    .font(.system(size: ChromeMetrics.text(10.5), weight: badge.alert ? .semibold : .regular, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.middle)
                     .foregroundStyle(badge.alert ? KubernetesPageView.production : theme.text3)
@@ -410,7 +410,7 @@ struct TabItemView: View {
             // quiet tab isn't read as a healthy deploy.
             if let why = tab.kubeNotWatched {
                 Text(verbatim: "⎈ not watched")
-                    .font(.system(size: 10.5, design: .monospaced))
+                    .font(.system(size: ChromeMetrics.text(10.5), design: .monospaced))
                     .lineLimit(1)
                     .foregroundStyle(theme.text3)
                     .help(why)
