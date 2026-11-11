@@ -1800,6 +1800,11 @@ final class E2ERunner {
         // several places along it, and that view must zoom the window.
         // (The click can't be sent at the window here — the run is never
         // activated, and AppKit holds a mouse-down for an inactive app.)
+        // And it sits on the window's own chrome: no glass the toolbar lays
+        // behind its item (macOS 26's platter hung 8 pt under the bar, a
+        // grey band across the window under the tabs).
+        let backdrops = Self.stripBackdrops(app.tabBarView)
+        check("nothing is drawn behind the strip", backdrops.isEmpty, backdrops.joined(separator: ", "))
         var dragArea: WindowDragView?
         for fraction in [0.35, 0.55, 0.75] {
             let point = NSPoint(x: window.frame.width * fraction, y: lights.midY)
@@ -1829,6 +1834,23 @@ final class E2ERunner {
         } else {
             check("the strip's empty space is the drag area at all", false)
         }
+    }
+
+    /// What lies behind the strip between it and the toolbar's own view:
+    /// glass, a platter or a material — what AppKit draws behind a bordered
+    /// item. Empty when the strip sits on the chrome.
+    static func stripBackdrops(_ strip: NSView?) -> [String] {
+        var found: [String] = []
+        var view = strip?.superview
+        while let current = view {
+            let name = String(describing: Swift.type(of: current))
+            if name.hasPrefix("NSToolbarView") || name.hasPrefix("NSTitlebarView") { break }
+            if current is NSVisualEffectView || (name.contains("Glass") && name != "NSGlassContainerView") || name.contains("Platter") {
+                found.append(name)
+            }
+            view = current.superview
+        }
+        return found
     }
 
     /// Dropping a tab onto a pane: the only way to make a split out of
@@ -4269,6 +4291,10 @@ final class E2ERunner {
         check("a light theme turns the chrome light", await eventually(3) { self.app.theme?.isDark == false })
         check("and the window with it", app.window?.backgroundColor == app.theme?.winNS)
         check("the title bar too", app.window?.appearance?.name == .aqua, "\(app.window?.appearance?.name as Any)")
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty {
+            await pause(0.6)
+            app.captureWindow(to: (png as NSString).deletingPathExtension + "-light.png")
+        }
         // The editor keeps its own vocabulary for the same colours.
         let file = out("themed.swift")
         try? "let hello = \"hi\"\n".write(to: file, atomically: true, encoding: .utf8)

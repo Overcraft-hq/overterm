@@ -19,6 +19,7 @@ version is tagged `v<version>`.
 - docker: the containers list scrolls in half the time; env names with PASS, PWD, PASSPHRASE or PIN as a word (`RABBITMQ_DEFAULT_PASS`, `MYSQL_PWD`) look secret — their values were shown, handed to agents and copied onto a command line
 - security: a word with a control character (a container's or chart folder's name, an env value, a dropped path) is written as an escape, never typed raw into a tab
 - build: Xcode 27 builds the app, and an app built with it takes clicks on macOS 27; double-clicking the strip's empty space zooms the window there again
+- window: built with macOS 26's SDK or later, the tab strip no longer sits on a grey glass band across the title bar
 - usage: an isolated run never runs your own claude for its usage
 
 ## 1.5.6 — 2026-11-13
