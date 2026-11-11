@@ -237,6 +237,9 @@ struct PaletteField: NSViewRepresentable {
     /// ⇥ (1) and ⇧⇥ (-1), where a list has tabs to step through — or
     /// completes (the Kubernetes `:` bar); nil, ⇥ moves the keyboard on.
     var onTab: ((Int) -> Void)? = nil
+    /// Whether ⇧⇥ goes to `onTab` too (-1). A field whose ⇥ only completes
+    /// (the `:` bar) leaves ⇧⇥ to move the keyboard back, as usual.
+    var backtabSteps = true
     var placeholder = "Search tabs, worktrees, snippets, actions…"
     /// The chrome is dark whatever the system appearance; the field's default
     /// label colour would follow the system and go dark-on-dark.
@@ -281,6 +284,16 @@ struct PaletteField: NSViewRepresentable {
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
+    /// What ⇥ or ⇧⇥ gives `onTab`: 1, -1, or nil to let the key move the
+    /// keyboard as usual.
+    static func tabStep(_ selector: Selector, backtabSteps: Bool) -> Int? {
+        switch selector {
+        case #selector(NSResponder.insertTab(_:)): 1
+        case #selector(NSResponder.insertBacktab(_:)): backtabSteps ? -1 : nil
+        default: nil
+        }
+    }
+
     final class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: PaletteField
 
@@ -304,10 +317,11 @@ struct PaletteField: NSViewRepresentable {
                 parent.onSubmit(false)
             case #selector(NSResponder.cancelOperation(_:)):
                 parent.onCancel()
-            case #selector(NSResponder.insertTab(_:)) where parent.onTab != nil:
-                parent.onTab?(1)
-            case #selector(NSResponder.insertBacktab(_:)) where parent.onTab != nil:
-                parent.onTab?(-1)
+            case #selector(NSResponder.insertTab(_:)), #selector(NSResponder.insertBacktab(_:)):
+                guard let onTab = parent.onTab,
+                    let step = PaletteField.tabStep(selector, backtabSteps: parent.backtabSteps)
+                else { return false }
+                onTab(step)
             default:
                 return false
             }

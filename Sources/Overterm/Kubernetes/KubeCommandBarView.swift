@@ -28,7 +28,8 @@ struct KubeCommandBarView: View {
                     onMove: { page.command?.move($0) },
                     onSubmit: { _ in page.runCommand() },
                     onCancel: { page.closeCommand() },
-                    onTab: { if $0 > 0 { page.command?.complete() } },
+                    onTab: { _ in page.command?.complete() },
+                    backtabSteps: false,
                     placeholder: "deploy · po shop · svc @fake-dev · widgets /blue · ctx · ns",
                     textColor: NSColor(theme.text), focusesOnAppear: true, fontSize: 14
                 )
