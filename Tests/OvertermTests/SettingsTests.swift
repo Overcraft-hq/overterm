@@ -4,10 +4,11 @@ import XCTest
 
 @MainActor
 final class SettingsTests: XCTestCase {
-    /// A unit test's `Settings.shared` is a file of its own: a test that
-    /// set `docker.enabled` once turned Docker off in the running app.
+    /// A unit test's `Settings.shared` is in a support folder of its own: a
+    /// test that set `docker.enabled` once turned Docker off in the running app.
     func testTheSharedSettingsInAUnitTestAreNotTheUsers() {
-        let real = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("Overterm").appendingPathComponent("settings.json").standardizedFileURL.path
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let real = support.appendingPathComponent("Overterm/settings.json").standardizedFileURL.path
         XCTAssertNotEqual(Settings.sharedURL.standardizedFileURL.path, real)
         XCTAssertTrue(Settings.sharedURL.path.hasPrefix(FileManager.default.temporaryDirectory.path))
     }
