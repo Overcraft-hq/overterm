@@ -14,6 +14,25 @@ final class E2ETests: XCTestCase {
         .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         .appendingPathComponent("Overterm.app/Contents/MacOS/Overterm")
 
+    /// The display kept awake for the whole run: a full run takes about 14
+    /// minutes, and on a Mac whose display sleeps after 10 every scenario
+    /// after that would read a black window. Released at the end; only
+    /// while E2E runs (it is opt-in).
+    nonisolated(unsafe) private static var awake: NSObjectProtocol?
+
+    override class func setUp() {
+        super.setUp()
+        guard ProcessInfo.processInfo.environment["OVERTERM_E2E_TESTS"] == "1", awake == nil else { return }
+        awake = ProcessInfo.processInfo.beginActivity(
+            options: [.idleDisplaySleepDisabled, .userInitiated], reason: "Overterm's E2E scenarios read the window's pixels")
+    }
+
+    override class func tearDown() {
+        if let awake { ProcessInfo.processInfo.endActivity(awake) }
+        awake = nil
+        super.tearDown()
+    }
+
     override func setUpWithError() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["OVERTERM_E2E_TESTS"] == "1", "E2E is opt-in: make e2e")
         try XCTSkipUnless(FileManager.default.isExecutableFile(atPath: Self.app.path), "build the app first: make app")
@@ -60,11 +79,17 @@ final class E2ETests: XCTestCase {
 
         let deadline = Date().addingTimeInterval(timeout)
         while process.isRunning, Date() < deadline { Thread.sleep(forTimeInterval: 0.1) }
+        var left: [pid_t] = []
         if process.isRunning {
+            // What it started (each context's kubectl proxy, in a group of
+            // its own) outlives a terminated app: found first, by parent.
+            left = Self.descendants(of: process.processIdentifier)
             process.terminate()
             XCTFail("\(scenario): timed out after \(Int(timeout)) s")
         }
         process.waitUntilExit()
+        // Then ended, each by its exact pid — never by a pattern.
+        for pid in left where kill(pid, 0) == 0 { kill(pid, SIGTERM) }
         // A child of the app still holding the pipe would keep it open: bounded.
         if ended.wait(timeout: .now() + 10) == .timedOut { out.fileHandleForReading.readabilityHandler = nil }
         let printed = String(decoding: collected.data, as: UTF8.self)
@@ -89,6 +114,32 @@ final class E2ETests: XCTestCase {
         XCTAssertFalse(passed.isEmpty, "\(scenario): no checks ran")
         print("\(scenario): \(passed.count) checks passed")
         return printed
+    }
+
+    /// Every process under `root`, children before theirs.
+    private static func descendants(of root: pid_t) -> [pid_t] {
+        let ps = Process()
+        ps.executableURL = URL(fileURLWithPath: "/bin/ps")
+        ps.arguments = ["-axo", "pid=,ppid="]
+        let out = Pipe()
+        ps.standardOutput = out
+        guard (try? ps.run()) != nil else { return [] }
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        ps.waitUntilExit()
+        var children: [pid_t: [pid_t]] = [:]
+        for line in String(decoding: data, as: UTF8.self).split(separator: "\n") {
+            let fields = line.split(separator: " ").compactMap { pid_t($0) }
+            if fields.count == 2 { children[fields[1], default: []].append(fields[0]) }
+        }
+        var found: [pid_t] = []
+        var queue = [root]
+        while let next = queue.first, found.count < 10_000 {
+            queue.removeFirst()
+            let under = children[next] ?? []
+            found += under
+            queue += under
+        }
+        return found
     }
 
     func testTerminal() throws { try run("terminal") }

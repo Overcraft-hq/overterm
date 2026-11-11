@@ -52,6 +52,10 @@ enum AppEnvironment {
         return ours
     }()
 
+    /// Whether the support directory is this run's own temporary one, to
+    /// remove at its end — not one a test handed in.
+    static var ownsSupportDirectory: Bool { isIsolated && env["OVERTERM_SUPPORT_DIR"] == nil }
+
     /// Files dropped onto a terminal as promises (Photos, Safari, the
     /// screenshot thumbnail write theirs only when asked) land here, a
     /// folder per drop. The caches, where macOS may clear them in time; an

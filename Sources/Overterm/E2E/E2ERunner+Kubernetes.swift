@@ -38,6 +38,11 @@ extension E2ERunner {
     func kubernetesPart(_ name: String, _ body: () async -> Void) async {
         let start = Date()
         await body()
+        // What the part left queued lands before the next begins: closing
+        // its tabs selects another, which takes the keyboard a turn later —
+        // the docs part's editor, opened in the same turn, lost it to the
+        // terminal that way.
+        await pause(0.2)
         note(String(format: "part %@: %.1f s (ended %.0f s in)", name, Date().timeIntervalSince(start), Date().timeIntervalSince(Self.partsBegan)))
     }
 
@@ -1122,6 +1127,9 @@ extension E2ERunner {
         }
         fake.forgetRequests()
         let before = launched().count
+        // The form d opens holds the Secret's value: until it is put away,
+        // what a failing read saw is never kept.
+        withholdPictures = true
         page.selection = ["shop/db-0"]
         page.giveListTheKeyboard()
         check("d on a postgres-looking pod", page.press("d"))
@@ -1148,6 +1156,7 @@ extension E2ERunner {
             "\(fake.requests.filter { $0.path.contains("secrets") }.map(\.path))")
         if let sheet = window.attachedSheet { window.endSheet(sheet) }
         _ = await eventually(2) { self.window.attachedSheet == nil }
+        withholdPictures = false
         check("the form put away, the window keeps no password", app.databaseDraft != nil && app.databaseDraft?.password == nil)
         check(
             "the forward d started is the Database client's: its server not probed for an API",
@@ -2459,7 +2468,10 @@ extension E2ERunner {
         check("and says it isn't read", await shownText(15) { $0.contains("Not read") } != nil)
         check("no Secret was asked for", secretGETs().isEmpty)
 
-        // Show, pressed as a person presses it.
+        // Show, pressed as a person presses it — from here until its
+        // values are dropped, a read that fails saves no picture.
+        withholdPictures = true
+        defer { withholdPictures = false }
         if let button = await wordFrame("Show Values") {
             await click(at: CGPoint(x: button.midX, y: button.midY))
         } else {
@@ -2556,13 +2568,17 @@ extension E2ERunner {
     /// read that found nothing (Vision failed, the window not drawn) says
     /// nothing about `text`, so it never passes — read again until one
     /// that worked does, or the time is up.
-    private func notDrawn(_ text: String, besides anchor: String, _ timeout: TimeInterval = 10) async -> Bool {
+    private func notDrawn(
+        _ text: String, besides anchor: String, _ timeout: TimeInterval = 10, file: StaticString = #fileID, line: UInt = #line
+    ) async -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
+        var lines: [String] = []
         repeat {
-            let lines = await readWindow().map(\.text)
+            lines = await readWindow().map(\.text)
             if lines.contains(where: { $0.contains(anchor) }), !lines.contains(where: { $0.contains(text) }) { return true }
             await pause(0.3)
         } while Date() < deadline
+        sawInstead(lines, at: "\(file):\(line)")
         return false
     }
 

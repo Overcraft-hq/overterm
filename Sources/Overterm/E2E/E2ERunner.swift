@@ -105,6 +105,15 @@ final class E2ERunner {
     /// scenario reveals a Secret's value) unless OVERTERM_E2E_READ=1 —
     /// said beside the next check that fails without saying why.
     var unread: String?
+    /// Whether a failure after that read may save a picture of the window
+    /// (`pictureOfFailure`): not when the read was made while a Secret's
+    /// value may show.
+    var unreadPicture = false
+    /// While a part may draw a Secret's value: a read that found nothing
+    /// says none of what it read, and no picture of the window is saved.
+    var withholdPictures = false
+    /// How many pictures of the window this run has saved.
+    var picturesSaved = 0
     /// Scratch space for this run; removed at the end.
     let scratch = FileManager.default.temporaryDirectory
         .appendingPathComponent("overterm-e2e-\(UUID().uuidString)", isDirectory: true)
@@ -120,15 +129,49 @@ final class E2ERunner {
             // Photographing (README's pictures): every scenario in one
             // fixed frame, so the pictures match whichever scenario took them.
             if ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"]?.isEmpty == false { await runner.photoFrame() }
+            // OVERTERM_E2E_BACKGROUND=1: the app behind another, as when a
+            // person uses the Mac during a run — what a scenario must not depend on.
+            if ProcessInfo.processInfo.environment["OVERTERM_E2E_BACKGROUND"] == "1" {
+                await runner.pause(1)
+                await runner.stepBack()
+                // And kept there: activated later (a launch's own), stepped back again.
+                NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+                    MainActor.assumeIsolated { NSApp.deactivate() }
+                }
+            }
             if let scenario = scenarios[name] {
                 await scenario(runner)
             } else {
                 runner.check("scenario exists", false, "unknown scenario \(name)")
             }
+            await runner.endRun()
             try? FileManager.default.removeItem(at: runner.scratch)
             print("E2E DONE \(runner.failures)")
             fflush(stdout)
             exit(Int32(min(runner.failures, 100)))
+        }
+    }
+
+    /// What quitting ends, ended — a scenario exits rather than quits, and
+    /// `applicationWillTerminate` would never run: each context's kubectl
+    /// proxy, a port-forward, an ssh forward outlived every scenario,
+    /// reparented to launchd. Then checked gone, by the pids it started;
+    /// and the run's support folder removed, unless the test handed one in.
+    func endRun() async {
+        let started = ManagedProcess.liveProcesses
+        let asking = KubeProcessRun.livePIDs
+        (NSApp.delegate as? AppDelegate)?.endRun()
+        if !started.isEmpty || !asking.isEmpty {
+            let gone = await eventually(10) {
+                started.allSatisfy { !$0.isRunning } && ManagedProcess.livePIDs.isEmpty && KubeProcessRun.livePIDs.isEmpty
+                    && asking.allSatisfy { kill($0, 0) != 0 }
+            }
+            check(
+                "at the end, every child it started is gone", gone,
+                "running: \(started.filter(\.isRunning).map(\.pid) + ManagedProcess.livePIDs + KubeProcessRun.livePIDs)")
+        }
+        if AppEnvironment.ownsSupportDirectory {
+            try? FileManager.default.removeItem(at: AppEnvironment.supportDirectory)
         }
     }
 
@@ -143,8 +186,12 @@ final class E2ERunner {
     func check(_ name: String, _ ok: Bool, _ detail: @autoclosure () -> String = "") {
         if !ok { failures += 1 }
         var said = ok ? "" : detail()
-        if !ok, let unread { said += said.isEmpty ? unread : " (\(unread))" }
+        if !ok, var unread {
+            if unreadPicture, let path = pictureOfFailure() { unread += " — \(path)" }
+            said += said.isEmpty ? unread : " (\(unread))"
+        }
         unread = nil
+        unreadPicture = false
         let suffix = ok ? "" : " — \(said)"
         print("E2E \(ok ? "PASS" : "FAIL") \(name)\(suffix)")
         fflush(stdout)
@@ -3378,8 +3425,24 @@ final class E2ERunner {
         }
         terminal.mouseMoved(with: mouse(.mouseMoved))
         await pause(0.2)
-        window.sendEvent(mouse(.leftMouseDown))
-        window.sendEvent(mouse(.leftMouseUp))
+        if ProcessInfo.processInfo.environment["OVERTERM_E2E_BACKGROUND"] == "1" {
+            // Behind another app on purpose: through the window, a click on
+            // a window that isn't key only asks to activate it. The
+            // window's routing checked as a press asks it, then the click
+            // given to the terminal itself.
+            let hit = window.contentView?.superview?.hitTest(point)
+            check(
+                "the window gives a press there to the terminal", hit.map { $0 === terminal || $0.isDescendant(of: terminal) } == true,
+                hit.map { "\(Swift.type(of: $0))" } ?? "nothing")
+            terminal.mouseDown(with: mouse(.leftMouseDown))
+            terminal.mouseUp(with: mouse(.leftMouseUp))
+        } else {
+            // Through the window, as a person's ⌘-click goes: its hit-testing
+            // and routing are part of what is checked.
+            if !window.isKeyWindow { window.makeKeyAndOrderFront(nil) }
+            window.sendEvent(mouse(.leftMouseDown))
+            window.sendEvent(mouse(.leftMouseUp))
+        }
         check(
             "⌘-click opens the file in the editor, at that line",
             await eventually(3) {

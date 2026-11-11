@@ -191,8 +191,22 @@ extension E2ERunner {
 
         // A node's tab: against its pods' requests and its allocatable, its pressure a band; its top pods on request.
         guard let nodes = model.discovery?.kind("nodes") else { return check("nodes served", false) }
+        // The Deployment's tab closed first: open beside the Nodes list, it
+        // read its pods (`labelSelector=app=api`) every 15 s, and a read of
+        // it landed among the node's — seen in a full run.
+        page.closeDetail()
         page.showKind(nodes)
         check("its node listed", await eventually(15) { model.kind.fullName == "nodes" && model.rows[KubeRowID(namespace: nil, name: node)] != nil })
+        // And its reads ended before the node's are counted: a poll of its
+        // pods by label already in flight lands, then nothing more.
+        let byLabel: (KubeMetricsTarget) -> Bool = {
+            if case .pods(_, let labels) = $0 { return labels != nil }
+            return false
+        }
+        check(
+            "the Deployment's pods no longer polled", await eventually(10) { !model.metrics.targets.contains(where: byLabel) },
+            "\(model.metrics.targets.map { "\($0)" }.sorted())")
+        await pause(1)
 
         // The Nodes list's heat strips (M3c): the row's last 15 minutes against allocatable, from the list's own read.
         fake.forgetRequests()
@@ -209,6 +223,8 @@ extension E2ERunner {
             strips.strip(cpuStrip, in: scope).map { abs(($0.now ?? 0) - 22.5) < 0.5 && $0.percents.compactMap { $0 }.allSatisfy { KubeHeatStrip.Level($0) == .low } } ?? false,
             strips.strip(cpuStrip, in: scope)?.dump ?? "none")
         check("memory's: 6Gi of 16Gi", strips.strip(memoryStrip, in: scope).map { abs(($0.now ?? 0) - 37.5) < 0.5 } ?? false, strips.strip(memoryStrip, in: scope)?.dump ?? "none")
+        let fit = usageColumnsFit(page)
+        check("CPU and Memory drawn whole beside their strips at this window's width", fit.ok, fit.said)
         check("the unsampled stretch empty, never zero", strips.strip(cpuStrip, in: scope).map { $0.filled < 60 && !$0.percents.contains(0) } ?? false)
         check(
             "nothing read for the strips but the list's own nodes sample",
@@ -230,14 +246,23 @@ extension E2ERunner {
             "its pods read as objects, by field selector",
             fake.requests.contains { $0.path == "/api/v1/pods" && $0.query["fieldSelector"] == "spec.nodeName=\(node)" })
         check("never the kubelet", !fake.requests.contains { $0.path.contains("/proxy") })
-        check("its top pods not read until asked", !fake.requests.contains { $0.path == "/apis/metrics.k8s.io/v1beta1/namespaces/\(namespace)/pods" })
+        let early = fake.requests.filter { $0.path == "/apis/metrics.k8s.io/v1beta1/namespaces/\(namespace)/pods" }
+        check(
+            "its top pods not read until asked", early.isEmpty,
+            "\(early.map { "\($0) \($0.query)" }); polled now: \(model.metrics.targets.map { "\($0)" }.sorted())")
         page.sampleTopPods()
         await revealChart("kubernetes.chart.node.\(node).top.cpu", scope: scope)
         check(
             "Sample Top Pods: its largest pods, stacked",
             await eventually(20) { charts.chart("kubernetes.chart.node.\(node).top.cpu", in: scope)?.data.usage.count == 2 },
             charts.lines(in: scope).joined(separator: "; "))
-        check("from their namespace's list", fake.requests.contains { $0.path == "/apis/metrics.k8s.io/v1beta1/namespaces/\(namespace)/pods" })
+        // The chart can stack from what the ring already holds of these
+        // pods (the Deployment's tab sampled them): the read is waited for.
+        check(
+            "from their namespace's list",
+            await eventually(35) {
+                fake.requests.contains { $0.path == "/apis/metrics.k8s.io/v1beta1/namespaces/\(namespace)/pods" }
+            }, "\(fake.requests.filter { $0.path.hasPrefix("/apis/metrics.k8s.io") }.map { "\($0) \($0.query)" }); polled now: \(model.metrics.targets.map { "\($0)" }.sorted())")
 
         // A namespace's tab: by workload against its quota; its pods by phase.
         page.showKind(.namespaces)

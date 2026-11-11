@@ -98,7 +98,10 @@ extension E2ERunner {
         // Not opted in: the Overview's chart is what was sampled while shown, no picker, no Prometheus asked.
         fake.forgetRequests()
         check("1 is the Overview", page.press("1") && page.section == .overview)
-        check("its usage said as sampled while shown", await shownText(15) { $0.contains("sampled while shown") } != nil)
+        // Said once two samples are kept, 15 s apart (`KubeUsageRing.span`):
+        // shown just now, the second comes at 15 s — read in a full run a
+        // moment after its 15 s were up. Given two intervals.
+        check("its usage said as sampled while shown", await shownText(35) { $0.contains("sampled while shown") } != nil)
         await pause(1)
         check("no range to pick", await pickerStaysAway())
         check("no Prometheus chart", await shownText(1) { $0.contains("from Prometheus") || $0.caseInsensitiveCompare("Usage over time") == .orderedSame } == nil)

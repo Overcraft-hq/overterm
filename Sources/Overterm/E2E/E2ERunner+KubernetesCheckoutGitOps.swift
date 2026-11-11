@@ -399,24 +399,24 @@ extension E2ERunner {
     }
 
     /// Whether the rail draws a line matching, scrolled down a step at a time as a person would read it.
-    private func railShows(_ match: @escaping (String) -> Bool) async -> Bool {
+    private func railShows(file: StaticString = #fileID, line: UInt = #line, _ match: @escaping (String) -> Bool) async -> Bool {
         defer { railScroll(to: 0) }
         for step in 0...5 {
             railScroll(to: CGFloat(step) / 5)
             await pause(0.4)
-            if await shownText(2, match) != nil { return true }
+            if await shownText(2, file: file, line: line, match) != nil { return true }
         }
         return false
     }
 
     /// Whether the rail draws `phrase`, on a line or wrapped onto the next,
     /// scrolled down a step at a time as a person would read it.
-    private func railShowsPhrase(_ phrase: String) async -> Bool {
+    private func railShowsPhrase(_ phrase: String, file: StaticString = #fileID, line: UInt = #line) async -> Bool {
         defer { railScroll(to: 0) }
         for step in 0...5 {
             railScroll(to: CGFloat(step) / 5)
             await pause(0.4)
-            if await shownPhrase(phrase, 2) { return true }
+            if await shownPhrase(phrase, 2, file: file, line: line) { return true }
         }
         return false
     }

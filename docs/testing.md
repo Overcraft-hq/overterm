@@ -137,14 +137,31 @@ tiles was read in halves); a tile's edge can still cut a longer line, so
 a check that picks the first match names everything it needs in the
 match itself. Text below the fold isn't drawn, and a `LazyVStack`
 builds nothing there: scroll to it first (`revealChart`,
-`revealElement`), never wait longer. A failing read says what was read
-instead with `OVERTERM_E2E_READ=1` (off by default: a scenario reveals a
-Secret's value), and saves the window into `OVERTERM_E2E_READ_DIR`;
-without it, the failure still says where the read was asked
-(file:line — a scenario has several checks called "drawn"), how many
-lines were read and the window's size (`unread`). Vision reads `l` as
+`revealElement`), never wait longer. A failing read says where the read was asked
+(file:line — a scenario has several checks called "drawn"; a helper
+that reads passes its caller's `#fileID`/`#line` on), how many lines
+were read and the window's size (`sawInstead`). With
+`OVERTERM_E2E_READ_DIR` set, the check that fails after it also saves a
+picture of the window there (its path in the failure, 20 a run) — only a
+failing check, never a read expected to find nothing, and nothing outside
+a folder the person named. The text itself only with
+`OVERTERM_E2E_READ=1`: a scenario reveals a Secret's value. While a part
+may draw one (`withholdPictures` — the Secret's detail, Apply's diff of a
+Secret, the database form a pod's Secret fills) neither the text nor a
+picture is ever kept. Vision reads `l` as
 `1` and puts a space after a comma (`Ready, SchedulingDisabled`): match
-what it may read, not only what is drawn.
+what it may read, not only what is drawn. It also reads Latin letters as
+their Cyrillic look-alikes (`сpu 250m`, `64Mі`); every read is given back
+with those put back to Latin (`latin`), so match the Latin text.
+
+A value that needs time to be true is waited for as long as it takes: a
+sampled chart's caption needs two samples, 15 s apart — a 15 s read of
+it raced the second sample in a full run.
+
+Each scenario's parts start from a settled window: a part that closes its
+tabs leaves the new selection's keyboard queued for a turn later
+(`kubernetesPart` pauses after each), and a part that opened the editor in
+that same turn saw the terminal take the keyboard back.
 
 ### Kubernetes
 
@@ -360,6 +377,37 @@ view tree and capture the real window — use them when a check isn't enough
 to see what's wrong.
 
 ### The title bar and full screen
+
+A scenario must not depend on the window being key: a person using the
+Mac during `make e2e` keeps another app there, and under macOS 14's
+cooperative activation the run's window is then never key — a hover gated
+on the key window showed nothing. Ask such a thing directly
+(`showHover(…, inKeyWindowOnly: false)`). What is the window's own is
+still checked in every run: its first responder (the editor's keyboard)
+belongs to it whether or not the app is in front. A click goes through the
+window (`window.sendEvent`), so its hit-testing is checked; only
+`OVERTERM_E2E_BACKGROUND=1` — a scenario stepped back behind the
+frontmost app, to try this — gives `link`'s ⌘-click to the terminal
+itself, after checking the window would hand it there.
+
+The display is kept awake while `E2ETests` runs (`beginActivity` with
+`idleDisplaySleepDisabled`, released at the end): a full run takes about
+14 minutes, and a display that slept at 10 would leave every later
+scenario reading a black window.
+
+Known to fail on a Mac whose idle app alone passes the 3% CPU budget (the
+same machine-dependent cause as `performance`'s idle CPU): `kubernetesCharts`'
+"steady, within the idle budget" — the Live tab's absolute budget, held
+over 9 s; the same window with the page hidden is said beside it as a
+guide, never in its place.
+
+A scenario ends as quitting would (`E2ERunner.endRun`, the same
+`AppDelegate.endRun` as `applicationWillTerminate`): every kubectl proxy,
+port-forward and ssh forward it started is closed and checked gone by pid,
+and its temporary support folder removed — it exits rather than quits, and
+85 proxies of earlier runs were found alive, reparented to launchd. A
+scenario that times out is terminated, and what it started is killed by
+the pids found under it first, never by a pattern.
 
 `OVERTERM_E2E_ACTIVATE=1` brings an isolated run to the front for the
 `fullScreen` scenario — full screen's title bar window only shows for the

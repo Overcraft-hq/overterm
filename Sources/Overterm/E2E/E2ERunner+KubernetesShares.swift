@@ -67,6 +67,8 @@ extension E2ERunner {
         // are read again every so often, and reading text can take seconds.
         let asked = ksmAsked()
         check("drawn", await shownText(15) { $0.contains("%CPU/R") } != nil)
+        let fit = usageColumnsFit(page)
+        check("wide, CPU and Memory still drawn whole at this window's width", fit.ok, fit.said)
         check("one instant query for shop", asked.count == 1 && asked.allSatisfy { $0.path == service.queryPath }, "\(asked.map(\.query))")
         check("scoped to it", asked.first?.query["query"]?.contains(#"namespace="shop""#) == true)
         check("given 20 s", asked.allSatisfy { $0.query["timeout"] == "20s" })

@@ -67,18 +67,17 @@ extension E2ERunner {
         // A hover: the field's docs, from fake-dev's own /openapi/v3.
         let replicas = (text as NSString).range(of: "replicas").location + 2
         editor.textView.setSelectedRange(NSRange(location: replicas, length: 0))
-        // The editor's window takes the keyboard as it opens the file, not
-        // at once: waited for, and what had it instead said.
-        let keyed = await eventually(5) { editor.view.window?.isKeyWindow == true }
+        // The editor takes its window's keyboard as it opens the file. The
+        // first responder is the window's, whether or not the app is in
+        // front: checked in every run (the terminal took it back when the
+        // part before left a selection's focus queued — `kubernetesPart`
+        // lets the window settle). Whether the window is key is the
+        // system's to say, so the hover is asked whatever it says.
+        let keyed = await eventually(5) { editor.view.window?.firstResponder === editor.textView }
         check(
-            "the editor's window has the keyboard", keyed,
-            "active \(NSApp.isActive), key \(NSApp.keyWindow.map { "\(type(of: $0)) \($0.title)" } ?? "none"), the editor's \(editor.view.window.map { "\(type(of: $0))" } ?? "none")")
-        if !keyed, let window = editor.view.window {
-            // The rest of the part is about the docs, not the focus: given it, as a person's click would.
-            NSApp.activate(ignoringOtherApps: true)
-            window.makeKeyAndOrderFront(nil)
-        }
-        editor.showHover(at: replicas, fromKeyboard: true)
+            "the editor has its window's keyboard", keyed,
+            "first responder \(editor.view.window?.firstResponder.map { "\(type(of: $0))" } ?? "none"), app active \(NSApp.isActive)")
+        editor.showHover(at: replicas, fromKeyboard: true, inKeyWindowOnly: false)
         check("a hover shows replicas' docs", await eventually(15) { Self.hoverText(editor).contains("Number of desired pods") }, Self.hoverText(editor))
         let hover = Self.hoverText(editor)
         check("its type, its path and whose docs", hover.contains("replicas <integer>") && hover.contains("Deployment.spec.replicas") && hover.contains("fake-dev's API"), hover)

@@ -58,6 +58,8 @@ extension E2ERunner {
         check("the pod's CPU", sampled.map { page.usage(.cpu, of: $0).text } == "250m", sampled.map { page.usage(.cpu, of: $0).text } ?? "no row")
         check("and memory", sampled.map { page.usage(.memory, of: $0).text } == "64Mi")
         check("drawn", await shownText(15) { $0.contains("250m") } != nil)
+        let fit = usageColumnsFit(page)
+        check("CPU and Memory drawn whole at this window's width", fit.ok, fit.said)
         check(
             "asked as kubectl top asks, in the namespace", metricsAsked().contains { $0.path == "/apis/metrics.k8s.io/v1beta1/namespaces/shop/pods" },
             "\(metricsAsked())")
@@ -69,7 +71,8 @@ extension E2ERunner {
         page.open(webRef, from: .list)
         page.detailTab = .overview
         check("a pod's detail reads its own sample", await eventually(10) { metricsAsked().filter { $0.path == own }.count >= 2 }, "\(metricsAsked().map(\.path))")
-        check("its usage drawn from it", await shownText(15) { $0.contains("cpu 250m") } != nil)
+        // Vision reads the monospaced "cpu 250m" with or without its space.
+        check("its usage drawn from it", await shownText(15) { $0.replacingOccurrences(of: " ", with: "").contains("cpu250m") } != nil)
         check(
             "kept in the ring as a detail's, both tiers",
             await eventually(10) {
@@ -165,7 +168,9 @@ extension E2ERunner {
         check("while it shows, its lists are watched", fake.openWatches > watches, "\(fake.openWatches) open, \(watches) before")
         check("the list's verbs aren't keys here", !page.press("r"))
         check("2 is Workloads again", page.press("2") && page.section == .workloads)
-        check("its follows end", await eventually(10) { fake.openWatches <= watches && overview.state == .idle }, "\(fake.openWatches) open")
+        check(
+            "its follows end", await eventually(10) { fake.openWatches <= watches && overview.state == .idle },
+            "\(fake.openWatches) open, \(watches) before: \(fake.watched); \(overview.state)")
         check("Workloads' last kind, its usage again", model.kind.fullName == "pods" && page.columns.map(\.title).contains("CPU"))
 
         // Hidden: no usage asked.
@@ -176,5 +181,36 @@ extension E2ERunner {
         check("and metrics.k8s.io isn't asked", metricsAsked().isEmpty, "\(metricsAsked())")
         app.toggleKubernetesPage(nil)
         check("Metrics and the Overview wrote nothing", fake.writes.isEmpty, "\(fake.writes)")
+    }
+}
+
+extension E2ERunner {
+    /// Whether the list's CPU and Memory columns are as wide as each row's
+    /// value needs — its 12 pt monospaced text, a node's heat strip beside
+    /// it, and the cell's 6 pt either side — at the window's width:
+    /// ellipsized, "250m" read "2..m".
+    func usageColumnsFit(_ page: KubernetesPageModel) -> (ok: Bool, said: String) {
+        guard
+            let table = Self.find(NSTableView.self, in: window.contentView, where: { $0.accessibilityIdentifier() == "kubernetes.list" })
+        else { return (false, "no list") }
+        var said: [String] = []
+        var ok = true
+        for (id, measure) in [(KubernetesPageModel.cpuColumn, KubeUsageCell.Measure.cpu), (KubernetesPageModel.memoryColumn, .memory)] {
+            let index = table.column(withIdentifier: NSUserInterfaceItemIdentifier(id))
+            guard index >= 0 else {
+                ok = false
+                said.append("no \(id) column")
+                continue
+            }
+            let width = table.tableColumns[index].width
+            let needed =
+                page.rows.map {
+                    KubernetesPageModel.usageContentWidth(page.usage(measure, of: $0).text, strip: page.heatStrip(measure, of: $0) != nil) + 12
+                }.max() ?? 0
+            if needed > width { ok = false }
+            said.append("\(id) \(Int(width)) pt, its values need \(Int(needed))")
+        }
+        said.append("window \(Int(window.frame.width)) pt, \(table.tableColumns.count) columns")
+        return (ok, said.joined(separator: "; "))
     }
 }

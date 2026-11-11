@@ -1907,8 +1907,27 @@ extension E2ERunner {
     nonisolated static func recognize(_ pixels: WindowPixels, size: CGSize, tiled: Bool = false, halves: Bool = false) -> [(text: String, frame: CGRect)] {
         recognized(pixels.image, tiled: tiled, halves: halves).map { candidate, place in
             let box = place(candidate.boundingBox)
-            return (candidate.text, CGRect(x: box.minX * size.width, y: box.minY * size.height, width: box.width * size.width, height: box.height * size.height))
+            return (latin(candidate.text), CGRect(x: box.minX * size.width, y: box.minY * size.height, width: box.width * size.width, height: box.height * size.height))
         }
+    }
+
+    /// `text` with the Cyrillic and Greek letters Vision reads in place of
+    /// the Latin ones they look like put back: no scenario draws them, and
+    /// Vision read a pod's "cpu 250m" as "сpu 250m" (Cyrillic с) and
+    /// "64Mi" as "64Mі" in a full run, the check waiting out its 15 s on
+    /// text that was on screen. One character for one, so a range found in
+    /// it is at the same character offsets in Vision's own string.
+    nonisolated static func latin(_ text: String) -> String {
+        guard text.unicodeScalars.contains(where: { $0.value >= 0x370 && $0.value < 0x530 }) else { return text }
+        let map: [Character: Character] = [
+            "а": "a", "в": "B", "е": "e", "к": "k", "м": "m", "н": "H", "о": "o", "р": "p", "с": "c", "т": "T", "у": "y", "х": "x",
+            "і": "i", "ј": "j", "ѕ": "s", "и": "u", "п": "n", "г": "r", "з": "3", "З": "3",
+            "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H", "О": "O", "Р": "P", "С": "C", "Т": "T", "У": "Y", "Х": "X",
+            "І": "I", "Ј": "J", "Ѕ": "S",
+            "α": "a", "ο": "o", "ρ": "p", "ν": "v", "ι": "i", "κ": "k", "Α": "A", "Β": "B", "Ε": "E", "Ζ": "Z", "Η": "H", "Ι": "I",
+            "Κ": "K", "Μ": "M", "Ν": "N", "Ο": "O", "Ρ": "P", "Τ": "T", "Υ": "Y", "Χ": "X",
+        ]
+        return String(text.map { map[$0] ?? $0 })
     }
 
     /// One recognized line, with its box: `boundingBox` is the line's, and
@@ -2000,7 +2019,14 @@ extension E2ERunner {
     nonisolated private static func locate(_ word: String, in pixels: WindowPixels, size: CGSize) -> CGRect? {
         for tiled in [false, true] {
             for (line, place) in recognized(pixels.image, tiled: tiled) {
-                guard let range = line.text.range(of: word), let found = (try? line.candidate.boundingBox(for: range))?.boundingBox else { continue }
+                // Found in its Latin reading, boxed in Vision's own string
+                // at the same character offsets.
+                let raw = line.text
+                let folded = latin(raw)
+                guard let match = folded.range(of: word) else { continue }
+                let start = raw.index(raw.startIndex, offsetBy: folded.distance(from: folded.startIndex, to: match.lowerBound))
+                let end = raw.index(start, offsetBy: folded.distance(from: match.lowerBound, to: match.upperBound))
+                guard let found = (try? line.candidate.boundingBox(for: start..<end))?.boundingBox else { continue }
                 let box = place(found)
                 return CGRect(x: box.minX * size.width, y: box.minY * size.height, width: box.width * size.width, height: box.height * size.height)
             }
@@ -2030,21 +2056,32 @@ extension E2ERunner {
     }
 
     /// Not found: what was read instead, beside the next failing check
-    /// (`unread`) — the window's size and how many lines, always; the
-    /// lines themselves and a picture of the window only when asked
-    /// (OVERTERM_E2E_READ=1, OVERTERM_E2E_READ_DIR): a run that reveals a
-    /// Secret's value never prints what it read.
+    /// (`unread`) — the window's size and how many lines; the lines
+    /// themselves only when asked (OVERTERM_E2E_READ=1) and never while the
+    /// part may draw a Secret's value (`withholdPictures`): a run that
+    /// reveals a Secret's value never prints what it read. A picture of
+    /// the window is taken only if that next check fails (`check`), so a
+    /// read expected to find nothing saves none.
     func sawInstead(_ read: [String], at place: String) {
         var said = "\(place) read \(read.count) lines of a \(Int(window.frame.width))×\(Int(window.frame.height)) window"
-        if ProcessInfo.processInfo.environment["OVERTERM_E2E_READ"] == "1" {
-            said += ": \(read.joined(separator: " | "))"
-            if let folder = ProcessInfo.processInfo.environment["OVERTERM_E2E_READ_DIR"], !folder.isEmpty {
-                let path = folder + "/unread-\(Int(Date().timeIntervalSince1970)).png"
-                app.captureWindow(to: path, window: window)
-                said += " — \(path)"
-            }
-        }
+        if ProcessInfo.processInfo.environment["OVERTERM_E2E_READ"] == "1", !withholdPictures { said += ": \(read.joined(separator: " | "))" }
         unread = said
+        unreadPicture = !withholdPictures
+    }
+
+    /// A picture of the window beside a failure that followed a read which
+    /// found nothing: only when asked, into the folder named
+    /// (OVERTERM_E2E_READ_DIR — the person's, kept or removed by them),
+    /// never while the part may draw a Secret's value, 20 a run at most.
+    func pictureOfFailure() -> String? {
+        guard let folder = ProcessInfo.processInfo.environment["OVERTERM_E2E_READ_DIR"], !folder.isEmpty, !withholdPictures, picturesSaved < 20
+        else { return nil }
+        let url = URL(fileURLWithPath: folder, isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        picturesSaved += 1
+        let path = url.appendingPathComponent("\(AppEnvironment.e2eScenario ?? "run")-\(Int(Date().timeIntervalSince1970))-\(picturesSaved).png").path
+        app.captureWindow(to: path, window: window)
+        return path
     }
 
     /// Whether `phrase` is drawn, on one line or wrapped onto the next: a

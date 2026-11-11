@@ -129,4 +129,20 @@ final class KubeHeatStripTests: XCTestCase {
         XCTAssertEqual(ring.points(node, now: at(124 * 15)).map(\.usage.cpu), [3, 3, 3, 3], "unnamed, the detail's while kept, as before")
         XCTAssertTrue(ring.points(node, .detail, now: at(124 * 15 + 3_700)).isEmpty, "past the hour, the tab's are gone")
     }
+
+    /// A node's usage column holds its strip and its value with its share
+    /// at its least width; a pod's its value, as before.
+    @MainActor
+    func testANodesUsageColumnIsNeverNarrowerThanItsStripAndValue() {
+        for measure in [KubeUsageCell.Measure.cpu, .memory] {
+            let value = measure == .cpu ? "12000m (100%)" : "65536Mi (100%)"
+            let node = KubernetesPageModel.usageMinWidth(measure, node: true)
+            XCTAssertGreaterThanOrEqual(node, KubernetesPageModel.usageContentWidth(value, strip: true) + 12, "\(measure)")
+            XCTAssertGreaterThan(node, KubeHeatStripView.width + 6 + KubernetesPageModel.usageMinWidth(measure) - 12, "the strip counted")
+        }
+        XCTAssertEqual(KubernetesPageModel.usageMinWidth(.cpu), 64)
+        XCTAssertEqual(KubernetesPageModel.usageMinWidth(.memory), 72)
+        let nodes = KubernetesPageModel.metricsColumns(.nodes)
+        XCTAssertTrue(nodes.allSatisfy { $0.width >= $0.minWidth }, "\(nodes.map { ($0.width, $0.minWidth) })")
+    }
 }

@@ -177,6 +177,9 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
         scroll.documentView = table
         scroll.drawsBackground = false
         scroll.hasVerticalScroller = true
+        // Columns at their least widths still wider than the list: scrolled
+        // sideways, never drawn clipped.
+        scroll.hasHorizontalScroller = true
         scroll.autohidesScrollers = true
         context.coordinator.table = table
         return scroll
