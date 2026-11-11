@@ -40,6 +40,8 @@ extension E2ERunner {
             await eventually(15) {
                 KubeHeatStripRegistry.shared.strip(strip, in: scope).map { !$0.sampled && abs(($0.now ?? 0) - 18.75) < 0.5 } == true
             }, KubeHeatStripRegistry.shared.lines(in: scope).joined(separator: "; "))
+        // Under the Overview's charts: scrolled to.
+        await revealElement("kubernetes.overview.nodes")
         check("said as Prometheus' over the hour", await shownText(15) { $0.contains("of allocatable in 1 min cells") } != nil)
         check("only the Service's two query paths", asked().allSatisfy { $0.path == service.rangePath || $0.path == service.queryPath })
         KubeHeatStripRegistry.shared.lines(in: scope).forEach { note("kubernetes \($0)") }

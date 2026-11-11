@@ -127,6 +127,10 @@ final class FakeKubeAPI: @unchecked Sendable {
         /// `metadata.managedFields` as JSON (`setManagedFields`, a server-side
         /// apply's); nil: one kubectl-client-side-apply entry, as before.
         var managedFields: Data? = nil
+        /// `metadata.ownerReferences` its Metadata rows carry too, as a
+        /// server's PartialObjectMetadata does (`setRowOwners`); nil, none —
+        /// as before, for the tests whose owners only a GET shows.
+        var rowOwners: Data? = nil
     }
 
     /// A self-signed certificate for a fake TLS Secret's `tls.crt`: public
@@ -782,6 +786,17 @@ final class FakeKubeAPI: @unchecked Sendable {
 
     /// An object's own fields (`spec`, `status`, `metadata.ownerReferences`)
     /// set — a pod's too, over what its `Pod` makes: a MODIFIED event.
+    /// The owners an object's Metadata rows carry (its GET's are `setFields`').
+    func setRowOwners(_ resource: String, _ name: String, namespace: String? = nil, _ owners: [[String: Any]]) {
+        let key = Self.key(resource, namespace, name)
+        let encoded = try? JSONSerialization.data(withJSONObject: owners)
+        change("MODIFIED") {
+            guard var object = objects[key] else { return nil }
+            object.rowOwners = encoded
+            return object
+        }
+    }
+
     func setFields(_ resource: String, _ name: String, namespace: String? = nil, _ fields: [String: Any]) {
         let key = Self.key(resource, namespace, name)
         let body = Self.encode(fields)
@@ -1828,7 +1843,9 @@ final class FakeKubeAPI: @unchecked Sendable {
             case "None": break
             case "Object": row["object"] = full(object, kind)
             default:
-                row["object"] = ["kind": "PartialObjectMetadata", "apiVersion": "meta.k8s.io/v1", "metadata": metadata(object, managedFields: managedFields)]
+                var meta = metadata(object, managedFields: managedFields)
+                if let owners = object.rowOwners.flatMap({ try? JSONSerialization.jsonObject(with: $0) }) { meta["ownerReferences"] = owners }
+                row["object"] = ["kind": "PartialObjectMetadata", "apiVersion": "meta.k8s.io/v1", "metadata": meta]
             }
             return row
         }

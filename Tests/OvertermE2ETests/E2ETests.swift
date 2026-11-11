@@ -113,14 +113,14 @@ final class E2ETests: XCTestCase {
     /// The Kubernetes page against the fake API server: the run's only
     /// kubeconfig is this temporary file, which the scenario writes once
     /// the fake listens — never ~/.kube/config, whose current context is
-    /// production. 250–380 s on a busy machine, with the detail and the charts.
+    /// production. About 260 s; the charts are `kubernetesCharts`.
     func testKubernetes() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-e2e-kube-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
         let stderr = dir.appendingPathComponent("stderr.log")
         let printed = try run(
-            "kubernetes", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 480, stderr: stderr)
+            "kubernetes", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 420, stderr: stderr)
         // The scenario's Secret value (E2ERunner.secretValue), shown and
         // revealed in the app: never in what it printed, nor its errors.
         // And the Secret's values the editor diffs (E2ERunner.applySecretOld, applySecretNew),
@@ -134,6 +134,16 @@ final class E2ETests: XCTestCase {
         for needle in values + values.map({ Data($0.utf8).base64EncodedString() }) {
             XCTAssertFalse(output.contains(needle), "kubernetes: a Secret's value reached the app's output")
         }
+    }
+    /// The charts — a pod's, a workload's, a node's, a namespace's, then
+    /// over Prometheus — against the fake API server, apart from
+    /// `kubernetes` so each runs well inside its time (about 120 s). Its
+    /// kubeconfig is this temporary file alone.
+    func testKubernetesCharts() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-e2e-kch-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        _ = try run("kubernetesCharts", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 300)
     }
     /// 5,000 pods on the fake API server: the first draw, a burst of 500
     /// events, the scroll. Its kubeconfig is this temporary file alone.

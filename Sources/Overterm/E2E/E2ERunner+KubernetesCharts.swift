@@ -48,6 +48,9 @@ extension E2ERunner {
         check("m opens the pod's Metrics tab", page.press("m") && page.detailTab == .metrics && page.detail?.ref.name == name)
         let memoryID = "kubernetes.chart.container.shop.\(name).app.memory"
         let cpuID = "kubernetes.chart.container.shop.\(name).app.cpu"
+        // The app container's two charts, under the pod's: scrolled to.
+        await revealChart(cpuID, scope: scope, top: true)
+        await revealChart(memoryID, scope: scope)
         let drawn = await eventually(20) {
             guard let memory = charts.chart(memoryID, in: scope), memory.plot != nil else { return false }
             return (memory.data.usage.first?.points.count ?? 0) >= 2
@@ -72,17 +75,22 @@ extension E2ERunner {
         let chips = built?.sections.first?.charts.map { $0.chips.map(\.text) } ?? []
         check("the chips say the shares", chips == [["48% of request", "12% of limit"], ["156% of request", "working set 78% of limit"]], "\(chips)")
         check(". is 6h, what was sampled in minute buckets", page.press(".") && page.metricsRange == .sixHours)
+        await revealChart(memoryID, scope: scope)
         check(
             "drawn from the folded tier",
             await eventually(10) { charts.chart(memoryID, in: scope)?.data.tier?.contains("1-minute") == true }, charts.chart(memoryID, in: scope)?.data.tier ?? "none")
         check(". again stays: 24h needs Prometheus", page.press(".") && page.metricsRange == .sixHours)
         check(", is Live again", page.press(",") && page.metricsRange == .live)
+        await revealChart(memoryID, scope: scope)
         check("drawn from the raw samples", await eventually(10) { charts.chart(memoryID, in: scope)?.data.step == 15 })
 
         // 3. The crosshair at a point: the tooltip said, nothing else drawn again.
+        await revealChart(cpuID, scope: scope, top: true)
+        await revealChart(memoryID, scope: scope)
         await chartsHover(model, scope: scope, cpu: cpuID, memory: memoryID)
 
         // 12. The marker opens the previous log; "Logs from Here" asks from a minute before.
+        await revealChart(memoryID, scope: scope)
         guard let marker = charts.chart(memoryID, in: scope)?.data.shownMarkers.first else { return check("the OOMKill's marker", false) }
         check("the marker is the OOMKill, of app", marker.kind == .oom && marker.container == "app" && marker.title.contains("OOMKilled (exit 137)"), marker.title)
         fake.forgetRequests()
@@ -273,6 +281,7 @@ extension E2ERunner {
         check(
             "never said to need Prometheus",
             page.metricsTabProblem(of: page.detail!.ref) == nil && !(page.detail.flatMap { page.podCharts(of: $0.ref, object: $0.object) }?.notes.contains { $0.contains("needs Prometheus") } ?? true))
+        await revealChart("kubernetes.chart.pod.shop.\(name).network", scope: scope)
         check("its network and restarts beside", await eventually(10) { charts.chart("kubernetes.chart.pod.shop.\(name).network", in: scope) != nil })
 
         // 2. `.` to 1h: every chart from Prometheus, raw over an hour.

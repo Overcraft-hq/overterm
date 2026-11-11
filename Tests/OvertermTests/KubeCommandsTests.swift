@@ -278,10 +278,10 @@ final class KubeCommandsTests: XCTestCase {
     func testARefusedVerbSaysWhy() {
         XCTAssertEqual(KubeAccessState.answered(.yes).unavailable(.exec, namespace: "shop"), nil)
         XCTAssertEqual(
-            KubeAccessState.answered(.no(nil)).unavailable(.attach, namespace: "shop"), "kubectl auth can-i create pods/attach says no in shop.")
+            KubeAccessState.answered(.no(nil)).unavailable(.attach, namespace: "shop"), "Refused: kubectl auth can-i create pods/attach in shop.")
         XCTAssertEqual(
             KubeAccessState.answered(.no("RBAC: denied")).unavailable(.exec, namespace: "shop"),
-            "kubectl auth can-i create pods/exec says no in shop: RBAC: denied")
+            "Refused: kubectl auth can-i create pods/exec in shop: RBAC: denied")
         XCTAssertEqual(
             KubeAccessState.answered(.failed("no kubectl")).unavailable(.logs, namespace: "shop"),
             "Couldn't ask kubectl auth can-i get pods/log: no kubectl")
@@ -679,7 +679,7 @@ final class KubePodCommandsPageTests: XCTestCase {
         let verbs = Dictionary(uniqueKeysWithValues: page.verbs(for: ["shop/web-1"]).map { ($0.title, $0) })
         XCTAssertNil(verbs["Shell in a Tab"]?.unavailable)
         XCTAssertNil(verbs["Follow Logs in a Tab"]?.unavailable)
-        XCTAssertEqual(verbs["Attach in a Tab"]?.unavailable, "kubectl auth can-i create pods/attach says no in shop: RBAC: attach denied")
+        XCTAssertEqual(verbs["Attach in a Tab"]?.unavailable, "Refused: kubectl auth can-i create pods/attach in shop: RBAC: attach denied")
         XCTAssertEqual(verbs["Shell in a Tab"]?.key, "e")
         XCTAssertEqual(page.podVerbs(for: page.ref(for: "shop/web-1")!).map(\.title), titles, "the detail's buttons are the same verbs")
         XCTAssertTrue(page.press("A"))

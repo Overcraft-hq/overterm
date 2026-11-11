@@ -1277,7 +1277,7 @@ final class KubernetesPageModel: ObservableObject {
     var columns: [ResourceColumn] {
         var columns = model.rows.columns.enumerated().filter { wide || $0.element.priority == 0 }.map { index, column in
             ResourceColumn(
-                id: "c\(index)", title: column.name, width: Self.width(of: column.name), minWidth: 40,
+                id: "c\(index)", title: column.name, width: Self.width(of: column.name), minWidth: Self.minWidth(of: column.name),
                 help: column.description.isEmpty ? nil : column.description)
         }
         if model.scope.spansNamespaces, model.kind.namespaced, !columns.isEmpty,
@@ -1315,13 +1315,21 @@ final class KubernetesPageModel: ObservableObject {
         switch column.lowercased() {
         case "name": 280
         case "ready": 64
-        case "status": 170
+        case "status": 210
         case "restarts": 120
         case "age": 72
         case "ip": 120
         case "node": 170
         default: 130
         }
+    }
+
+    /// How narrow a column may be made, by the window or a drag. A
+    /// Status is what a person reads a failing row by — CrashLoopBackOff
+    /// beside its Why button, a node's Ready,SchedulingDisabled — so the
+    /// table shrinks the others before it cuts that; the rest go to 40.
+    static func minWidth(of column: String) -> CGFloat {
+        column.lowercased() == "status" ? 190 : 40
     }
 
     /// The server's column a list column shows; nil for the Namespace one.

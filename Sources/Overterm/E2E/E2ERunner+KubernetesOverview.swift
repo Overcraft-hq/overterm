@@ -140,6 +140,9 @@ extension E2ERunner {
         let frame = window.frame
         window.setFrame(NSRect(x: frame.minX, y: frame.minY, width: 760, height: frame.height), display: true)
         check("narrow, still drawn", await shownText(15) { $0.localizedCaseInsensitiveContains("Needs attention") } != nil)
+        // One column: the usage card can sit below the fold, by how tall
+        // what needs attention came out — scrolled to, as a person would.
+        await revealElement("kubernetes.overview.usage")
         check("and its usage under it", await shownText(15) { $0.contains("Usage of allocatable") } != nil)
         if let attention = await overviewElement("kubernetes.overview.attention"), let usage = await overviewElement("kubernetes.overview.usage") {
             check("narrow, one column: the usage under what needs attention", usage.frame.maxY <= attention.frame.minY + 1, "\(attention.frame) \(usage.frame)")
@@ -148,6 +151,7 @@ extension E2ERunner {
         }
         check("narrow, nothing scrolls sideways", overviewFitsAcross(), overviewWidths())
         await overviewPicture("overview-narrow")
+        _ = scrollOverview(toEnd: false)
         window.setFrame(frame, display: true)
         Settings.shared.set("appearance.theme", .string("Claude Dark"))
 

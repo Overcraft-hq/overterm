@@ -131,7 +131,22 @@ anywhere (`drawn([…])`), never on one line. A check that something is
 to (`notDrawn(_:besides:)`) — an empty read proves nothing. Look for a
 part of a value Vision reads as written: it read `acme` as Cyrillic.
 
+`shownText`'s tiles overlap by half across, so a line up to 350 points
+wide is whole in one of them (a detail's caption that straddled two
+tiles was read in halves); a tile's edge can still cut a longer line, so
+a check that picks the first match names everything it needs in the
+match itself. Text below the fold isn't drawn, and a `LazyVStack`
+builds nothing there: scroll to it first (`revealChart`,
+`revealElement`), never wait longer. A failing read says what was read
+instead with `OVERTERM_E2E_READ=1` (off by default: a scenario reveals a
+Secret's value), and saves the window into `OVERTERM_E2E_READ_DIR`.
+
 ### Kubernetes
+
+`FakeKubeAPI`'s Metadata rows carry an object's owners only when a test
+says so (`setRowOwners`), as a server's `PartialObjectMetadata` always
+does: without them a namespace's chart grouped its pods by their names
+until the rows came and by pod after — the check passed or not by timing.
 
 The unit tests and the `kubernetes` scenarios talk to `FakeKubeAPI`
 (`Sources/Overterm/Kubernetes/`), with the real kubectl as its proxy where

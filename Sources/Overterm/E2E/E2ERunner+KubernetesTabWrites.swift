@@ -172,7 +172,8 @@ extension E2ERunner {
             page.writeStatus = nil
             back()
             page.selection = ["shop/debug-me-0"]
-            check("E once more", page.debugKey())
+            // The page shown again lists its rows again: the pod picked once its row is back.
+            check("E once more", await eventually(10) { page.writeTarget?.name == "debug-me-0" } && page.debugKey(), "\(String(describing: page.writeTarget))")
             check("asked once more", await eventually(10) { self.window.attachedSheet != nil && self.imageField() != nil })
             imageField()?.stringValue = "busybox; rm -rf /"
             if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
