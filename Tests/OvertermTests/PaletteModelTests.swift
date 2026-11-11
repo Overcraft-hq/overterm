@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 @testable import Overterm
@@ -44,5 +45,18 @@ final class PaletteModelTests: XCTestCase {
         model.move(1)
         model.query = "c"
         XCTAssertEqual(model.selectedIndex, 0)
+    }
+
+    /// ⇧⇥ in the Kubernetes `:` bar, whose ⇥ only completes, moves the
+    /// keyboard back; the palette and ⌘F step their tabs back with it.
+    @MainActor
+    func testBacktabStepsOnlyWhereTheFieldStepsTabs() {
+        let tab = #selector(NSResponder.insertTab(_:))
+        let backtab = #selector(NSResponder.insertBacktab(_:))
+        XCTAssertEqual(PaletteField.tabStep(tab, backtabSteps: true), 1)
+        XCTAssertEqual(PaletteField.tabStep(backtab, backtabSteps: true), -1)
+        XCTAssertEqual(PaletteField.tabStep(tab, backtabSteps: false), 1)
+        XCTAssertNil(PaletteField.tabStep(backtab, backtabSteps: false))
+        XCTAssertNil(PaletteField.tabStep(#selector(NSResponder.moveUp(_:)), backtabSteps: true))
     }
 }
