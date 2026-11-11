@@ -20,22 +20,22 @@ struct KubeResizeSheetView: View {
     private func card(_ draft: KubeResizeDraft) -> some View {
         let production = page.model.contexts.context(named: draft.ref.context)?.isProduction == true
         return VStack(alignment: .leading, spacing: 10) {
-            Text(verbatim: "Resize \(KubeWriteOutcome.spoken(draft.ref)) in place").font(.system(size: 14, weight: .semibold)).foregroundStyle(theme.text)
+            Text(verbatim: "Resize \(KubeWriteOutcome.spoken(draft.ref)) in place").font(.system(size: ChromeMetrics.text(14), weight: .semibold)).foregroundStyle(theme.text)
             Text(verbatim: (production ? "PRODUCTION · " : "") + "\(draft.ref.context) · \(draft.ref.namespace.map { "namespace \($0)" } ?? "cluster-wide")")
-                .font(.system(size: 11.5)).foregroundStyle(production ? KubernetesPageView.production : theme.text2)
+                .font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(production ? KubernetesPageView.production : theme.text2)
             if draft.current == nil, draft.problem == nil {
-                Text("Reading its containers…").font(.system(size: 12)).foregroundStyle(theme.text3)
+                Text("Reading its containers…").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
             }
             if !draft.typed.isEmpty {
                 HStack(spacing: 6) {
                     Text("").frame(width: 110, alignment: .leading)
                     ForEach(KubeResize.Field.allCases, id: \.self) { field in
-                        Text(verbatim: field.spoken).font(.system(size: 10.5)).foregroundStyle(theme.text3).frame(width: 74, alignment: .leading)
+                        Text(verbatim: field.spoken).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).frame(width: 74, alignment: .leading)
                     }
                 }
                 ForEach(Array(draft.typed.enumerated()), id: \.offset) { index, container in
                     HStack(spacing: 6) {
-                        Text(verbatim: container.name).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.text)
+                        Text(verbatim: container.name).font(.system(size: ChromeMetrics.text(12), design: .monospaced)).foregroundStyle(theme.text)
                             .lineLimit(1).truncationMode(.middle).frame(width: 110, alignment: .leading)
                         ForEach(KubeResize.Field.allCases, id: \.self) { field in
                             value(index, field, first: index == 0 && field == .cpuRequest)
@@ -43,10 +43,10 @@ struct KubeResizeSheetView: View {
                     }
                 }
             }
-            Text("Only cpu and memory change in place: never removed, nor so that the pod's QoS class changes. Asked again before it is sent.").font(.system(size: 11))
+            Text("Only cpu and memory change in place: never removed, nor so that the pod's QoS class changes. Asked again before it is sent.").font(.system(size: ChromeMetrics.text(11)))
                 .foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
             if let problem = draft.problem {
-                Text(verbatim: problem).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed)
+                Text(verbatim: problem).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.failed)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("kubernetes.resize.problem")
             }

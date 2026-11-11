@@ -23,11 +23,11 @@ struct KubeScaleSheetView: View {
     private func card(_ draft: KubeScaleDraft) -> some View {
         let production = page.model.contexts.context(named: draft.ref.context)?.isProduction == true
         return VStack(alignment: .leading, spacing: 10) {
-            Text(verbatim: "Scale \(KubeWriteOutcome.spoken(draft.ref))").font(.system(size: 14, weight: .semibold)).foregroundStyle(theme.text)
+            Text(verbatim: "Scale \(KubeWriteOutcome.spoken(draft.ref))").font(.system(size: ChromeMetrics.text(14), weight: .semibold)).foregroundStyle(theme.text)
             Text(verbatim: (production ? "PRODUCTION · " : "") + "\(draft.ref.context) · \(draft.ref.namespace.map { "namespace \($0)" } ?? "cluster-wide")")
-                .font(.system(size: 11.5)).foregroundStyle(production ? KubernetesPageView.production : theme.text2)
+                .font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(production ? KubernetesPageView.production : theme.text2)
             HStack(spacing: 8) {
-                Text("Replicas").font(.system(size: 12)).foregroundStyle(theme.text2)
+                Text("Replicas").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
                 // The keyboard is the field's as the sheet appears: the
                 // page's keys stand aside while it shows (`press`), so a
                 // field left without it would take nothing typed.
@@ -44,13 +44,13 @@ struct KubeScaleSheetView: View {
                 .background(RoundedRectangle(cornerRadius: 6).fill(theme.strip))
                 .overlay(RoundedRectangle(cornerRadius: 6).stroke(theme.border))
                 .accessibilityIdentifier("kubernetes.scale.replicas")
-                Text(verbatim: draft.current.map { "now \($0)" } ?? "reading…").font(.system(size: 11.5)).foregroundStyle(theme.text3)
+                Text(verbatim: draft.current.map { "now \($0)" } ?? "reading…").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3)
                 Spacer(minLength: 0)
             }
-            Text("Asked again before it is sent; scaling to 0 on production asks for the name.").font(.system(size: 11))
+            Text("Asked again before it is sent; scaling to 0 on production asks for the name.").font(.system(size: ChromeMetrics.text(11)))
                 .foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
             if let problem = draft.problem {
-                Text(verbatim: problem).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed)
+                Text(verbatim: problem).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.failed)
                     .accessibilityIdentifier("kubernetes.scale.problem")
             }
             HStack {

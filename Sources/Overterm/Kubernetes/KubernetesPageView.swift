@@ -33,7 +33,7 @@ struct KubernetesPageView: View {
                     Text(verbatim: band).lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 0)
                 }
-                .font(.system(size: 12, weight: .semibold))
+                .font(.system(size: ChromeMetrics.text(12), weight: .semibold))
                 .foregroundStyle(.white)
                 .padding(.horizontal, 16)
                 .frame(height: 28)
@@ -134,11 +134,11 @@ struct KubernetesPageView: View {
                     } else if !section.listsKinds {
                         KubeForwardsCount(forwards: page.forwards, theme: theme)
                     } else if !model.catalog.isEmpty {
-                        Text(verbatim: "\(kinds.count)").foregroundStyle(theme.text3).font(.system(size: 10.5, design: .monospaced))
+                        Text(verbatim: "\(kinds.count)").foregroundStyle(theme.text3).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced))
                     }
-                    Text(verbatim: section.key).foregroundStyle(theme.text3).font(.system(size: 10.5, design: .monospaced))
+                    Text(verbatim: section.key).foregroundStyle(theme.text3).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced))
                 }
-                .font(.system(size: 12.5))
+                .font(.system(size: ChromeMetrics.text(12.5)))
                 .foregroundStyle(open ? theme.text : theme.text2)
                 .padding(.horizontal, 10)
                 .frame(height: 28)
@@ -150,13 +150,13 @@ struct KubernetesPageView: View {
                 ForEach(Array(kinds.enumerated()), id: \.element.fullName) { offset, kind in
                     // Custom resources by API group, each named once.
                     if section == .custom, offset == 0 || kinds[offset - 1].group != kind.group {
-                        Text(verbatim: kind.group).font(.system(size: 10)).foregroundStyle(theme.text3).padding(.leading, 36).padding(.top, 4)
+                        Text(verbatim: kind.group).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3).padding(.leading, 36).padding(.top, 4)
                     }
                     kindRow(kind)
                 }
                 if kinds.isEmpty {
                     Text(verbatim: model.catalog.isEmpty ? (model.discoveryProblem ?? "Reading what the cluster serves…") : "None here.")
-                        .font(.system(size: 11)).foregroundStyle(theme.text3).padding(.leading, 36).padding(.vertical, 4)
+                        .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).padding(.leading, 36).padding(.vertical, 4)
                 }
             }
         }
@@ -172,10 +172,10 @@ struct KubernetesPageView: View {
                 Text(verbatim: KubeKindCatalog.title(of: kind)).lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 4)
                 if shown, model.listState == .live {
-                    Text(verbatim: "\(model.rows.count)").foregroundStyle(theme.text3).font(.system(size: 10.5, design: .monospaced))
+                    Text(verbatim: "\(model.rows.count)").foregroundStyle(theme.text3).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced))
                 }
             }
-            .font(.system(size: 12))
+            .font(.system(size: ChromeMetrics.text(12)))
             .foregroundStyle(shown ? theme.text : theme.text2)
             .padding(.leading, 36)
             .padding(.trailing, 10)
@@ -189,7 +189,7 @@ struct KubernetesPageView: View {
     }
 
     private func caption(_ text: String) -> some View {
-        Text(text).font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3).padding(.horizontal, 10)
+        Text(text).font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3).padding(.horizontal, 10)
             .padding(.bottom, 2)
     }
 
@@ -212,10 +212,10 @@ struct KubernetesPageView: View {
                 Text(verbatim: context.displayName).lineLimit(1).truncationMode(.middle)
                 Spacer(minLength: 4)
                 if context.name == model.contexts.current {
-                    Text("current").font(.system(size: 10)).foregroundStyle(theme.text3)
+                    Text("current").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
                 }
             }
-            .font(.system(size: 12))
+            .font(.system(size: ChromeMetrics.text(12)))
             .foregroundStyle(picked ? theme.text : theme.text2)
             .padding(.horizontal, 10)
             .frame(height: 26)
@@ -239,12 +239,12 @@ struct KubernetesPageView: View {
             page.openPicker(.namespace)
         } label: {
             HStack(spacing: 5) {
-                Image(systemName: "square.dashed").font(.system(size: 10)).foregroundStyle(theme.text3)
-                Text(verbatim: page.scopeLabel).font(.system(size: 12)).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
+                Image(systemName: "square.dashed").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
+                Text(verbatim: page.scopeLabel).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
                 if page.scopeNote != nil {
-                    Image(systemName: "exclamationmark.circle").font(.system(size: 10)).foregroundStyle(theme.text3)
+                    Image(systemName: "exclamationmark.circle").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
                 }
-                Image(systemName: "chevron.down").font(.system(size: 8, weight: .semibold)).foregroundStyle(theme.text3)
+                Image(systemName: "chevron.down").font(.system(size: ChromeMetrics.text(8), weight: .semibold)).foregroundStyle(theme.text3)
             }
             .padding(.horizontal, 8)
             .frame(maxWidth: 200, minHeight: 26, maxHeight: 26)
@@ -263,17 +263,17 @@ struct KubernetesPageView: View {
         VStack(alignment: .leading, spacing: 3) {
             HStack(spacing: 6) {
                 DockerStatusDot(color: classColor(context))
-                Text(verbatim: page.classLabel ?? "").font(.system(size: 12, weight: .medium)).foregroundStyle(theme.text)
+                Text(verbatim: page.classLabel ?? "").font(.system(size: ChromeMetrics.text(12), weight: .medium)).foregroundStyle(theme.text)
             }
-            Text(verbatim: context.name).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(theme.text2).lineLimit(2)
+            Text(verbatim: context.name).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text2).lineLimit(2)
                 .truncationMode(.middle).textSelection(.enabled)
             Text(verbatim: [context.auth.map { "\($0)" }, context.server].compactMap { $0 }.joined(separator: " · "))
-                .font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(2).truncationMode(.middle)
+                .font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).lineLimit(2).truncationMode(.middle)
             // The user's own kubectl, pinned to this context: not read-only.
             Button {
                 page.openTerminal()
             } label: {
-                Label("Terminal in This Context", systemImage: "helm").font(.system(size: 11))
+                Label("Terminal in This Context", systemImage: "helm").font(.system(size: ChromeMetrics.text(11)))
             }
             .buttonStyle(.link)
             .foregroundStyle(context.isProduction ? Self.production : theme.accentText)
@@ -284,7 +284,7 @@ struct KubernetesPageView: View {
             Button {
                 page.openContextSettings(context)
             } label: {
-                Label("Context Settings…", systemImage: "gearshape").font(.system(size: 11))
+                Label("Context Settings…", systemImage: "gearshape").font(.system(size: ChromeMetrics.text(11)))
             }
             .buttonStyle(.link)
             .foregroundStyle(theme.accentText)
@@ -298,7 +298,7 @@ struct KubernetesPageView: View {
                     Label(
                         context.sessionWrites ? "Writes On Until Quit — Turn Off" : "Allow Writes Until Quit…",
                         systemImage: context.sessionWrites ? "lock.open.fill" : "lock.fill"
-                    ).font(.system(size: 11))
+                    ).font(.system(size: ChromeMetrics.text(11)))
                 }
                 .buttonStyle(.link)
                 .foregroundStyle(Self.production)
@@ -358,12 +358,12 @@ struct KubernetesPageView: View {
     @ViewBuilder private var metricsNoteBar: some View {
         if let note = page.metricsNote {
             HStack(spacing: 10) {
-                Text(verbatim: note).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(2).truncationMode(.tail)
+                Text(verbatim: note).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(2).truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true).help(note)
                     .accessibilityIdentifier("kubernetes.metricsNote")
                 if page.metricsNoteIsRefusal {
                     // After an RBAC grant (no new credentials): asked again.
-                    Button("Try Again") { model.retry() }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: 11))
+                    Button("Try Again") { model.retry() }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: ChromeMetrics.text(11)))
                         .help("Ask metrics-server again: access may have been granted since")
                         .accessibilityIdentifier("kubernetes.metricsNote.retry")
                 }
@@ -376,35 +376,35 @@ struct KubernetesPageView: View {
 
     private var header: some View {
         HStack(spacing: 10) {
-            Text(verbatim: page.title).font(.system(size: 20, weight: .semibold)).foregroundStyle(theme.text).lineLimit(1).fixedSize()
+            Text(verbatim: page.title).font(.system(size: ChromeMetrics.text(20), weight: .semibold)).foregroundStyle(theme.text).lineLimit(1).fixedSize()
                 .accessibilityIdentifier("kubernetes.title")
             if page.showsSection, model.listState == .live || model.rows.count > 0 {
                 let failing = page.failing.count
                 Text(verbatim: "\(model.rows.count) · \(model.kind.namespaced ? page.scopeLabel : "cluster-wide")" + (failing > 0 ? " · \(failing) failing" : ""))
-                    .font(.system(size: 12)).foregroundStyle(failing > 0 ? TabStatusStyle.failed : theme.text3)
+                    .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(failing > 0 ? TabStatusStyle.failed : theme.text3)
                     .accessibilityIdentifier("kubernetes.counts")
             }
             if page.detail == nil, let problem = page.commandProblem {
                 // Two lines before it is cut: a refusal's reason is the point of it.
-                Text(verbatim: problem).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).lineLimit(2).truncationMode(.tail)
+                Text(verbatim: problem).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.failed).lineLimit(2).truncationMode(.tail)
                     .fixedSize(horizontal: false, vertical: true).help(problem).accessibilityIdentifier("kubernetes.commandProblem")
             } else if page.detail == nil, let status = page.writeStatus {
-                Text(verbatim: status.text).font(.system(size: 11.5)).foregroundStyle(status.isFailure ? TabStatusStyle.failed : theme.text2)
+                Text(verbatim: status.text).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(status.isFailure ? TabStatusStyle.failed : theme.text2)
                     .lineLimit(1).truncationMode(.tail).help(status.text).accessibilityIdentifier("kubernetes.writeStatus")
             } else if page.detail == nil, let status = page.compareStatus {
                 // Compare with… from a row's menu, no detail open: said here.
-                Text(verbatim: status.text).font(.system(size: 11.5)).foregroundStyle(theme.text2)
+                Text(verbatim: status.text).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
                     .lineLimit(1).truncationMode(.tail).help(status.text).accessibilityIdentifier("kubernetes.compareStatus")
             }
             Spacer(minLength: 12)
-            Toggle("Wide", isOn: $page.wide).toggleStyle(.checkbox).font(.system(size: 12)).foregroundStyle(theme.text2).fixedSize()
+            Toggle("Wide", isOn: $page.wide).toggleStyle(.checkbox).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).fixedSize()
                 .help("What kubectl get -o wide adds (\(KubernetesKey.wide.key))")
             namespaceChip
             HStack(spacing: 4) {
-                Image(systemName: "line.3.horizontal.decrease").font(.system(size: 10)).foregroundStyle(theme.text3)
+                Image(systemName: "line.3.horizontal.decrease").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
                 TextField(page.section == .gitops ? "Filter  is: kind: tool: repo:  /" : "Filter  /", text: $page.filter)
                     .textFieldStyle(.plain)
-                    .font(.system(size: 12))
+                    .font(.system(size: ChromeMetrics.text(12)))
                     .focused($focus, equals: .filter)
                     .onSubmit {
                         page.applySelector()
@@ -423,7 +423,7 @@ struct KubernetesPageView: View {
             Button {
                 page.copyKubectl()
             } label: {
-                Image(systemName: "terminal").font(.system(size: 12)).foregroundStyle(theme.text2)
+                Image(systemName: "terminal").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
             }
             .buttonStyle(.plain)
             .help("Copy as kubectl (\(KubernetesKey.copyKubectl.key)) — \(page.listKubectl ?? "")")
@@ -431,7 +431,7 @@ struct KubernetesPageView: View {
             Button {
                 page.exportCSV()
             } label: {
-                Image(systemName: "square.and.arrow.up").font(.system(size: 12)).foregroundStyle(theme.text2)
+                Image(systemName: "square.and.arrow.up").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
             }
             .buttonStyle(.plain)
             .disabled(!page.canExport)
@@ -440,7 +440,7 @@ struct KubernetesPageView: View {
             Button {
                 page.cheatSheet.toggle()
             } label: {
-                Image(systemName: "keyboard").font(.system(size: 12)).foregroundStyle(theme.text2)
+                Image(systemName: "keyboard").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
             }
             .buttonStyle(.plain)
             .help("Keys (?)")
@@ -501,7 +501,7 @@ struct KubernetesPageView: View {
             } else if !page.section.listsKinds {
                 KubeForwardsSection(page: page, forwards: page.forwards, theme: theme)
             } else if !page.showsSection {
-                Text(verbatim: sectionNote).font(.system(size: 12)).foregroundStyle(theme.text3)
+                Text(verbatim: sectionNote).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
                     .frame(maxWidth: .infinity, maxHeight: .infinity).background(Color(nsColor: GhosttyRuntime.shared.backgroundColor))
                     .accessibilityIdentifier("kubernetes.sectionNote")
             } else if let (reason, problem) = failedOutright {
@@ -510,14 +510,14 @@ struct KubernetesPageView: View {
                 VStack(spacing: 8) {
                     ProgressView().controlSize(.small)
                     if let reason = model.proxyStatus.reason {
-                        Text(verbatim: reason).font(.system(size: 12)).foregroundStyle(theme.text2)
+                        Text(verbatim: reason).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
                     }
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .allowsHitTesting(false)
             } else if rows.isEmpty {
                 Text(verbatim: page.filter.isEmpty ? emptyNote : "Nothing matches “\(page.filter)”.")
-                    .font(.system(size: 12)).foregroundStyle(theme.text3)
+                    .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
                     .padding(.horizontal, 20).padding(.top, 34)
                     .allowsHitTesting(false)
             }
@@ -543,7 +543,7 @@ struct KubernetesPageView: View {
         let ours = page.listIsOurs
         if !reading.selectors.isEmpty || !reading.refused.isEmpty || !ours {
             HStack(spacing: 6) {
-                Image(systemName: reading.refused.isEmpty && ours ? "server.rack" : "exclamationmark.triangle").font(.system(size: 10))
+                Image(systemName: reading.refused.isEmpty && ours ? "server.rack" : "exclamationmark.triangle").font(.system(size: ChromeMetrics.text(10)))
                 if !ours {
                     Text(verbatim: "Another window's list (\(model.selectors.said ?? "every row")) — ↩ in the filter asks for this one's")
                         .foregroundStyle(TabStatusStyle.failed)
@@ -555,7 +555,7 @@ struct KubernetesPageView: View {
                 }
                 Spacer(minLength: 0)
             }
-            .font(.system(size: 11))
+            .font(.system(size: ChromeMetrics.text(11)))
             .foregroundStyle(theme.text3)
             .padding(.horizontal, 20)
             .frame(height: 22)
@@ -571,7 +571,7 @@ struct KubernetesPageView: View {
             view = AnyView(Text(verbatim: row.row.id.namespace ?? "").foregroundStyle(theme.text2))
         } else if let column, let measure = KubernetesPageModel.measure(of: column.id) {
             let usage = page.usage(measure, of: row)
-            let text = Text(verbatim: usage.text).font(.system(size: 12, design: .monospaced))
+            let text = Text(verbatim: usage.text).font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                 .foregroundStyle(usage.sort == nil ? theme.text3 : theme.text2)
             if let strip = page.heatStrip(measure, of: row) {
                 // A node's: its last 15 minutes beside the number (metrics.md 2.1).
@@ -596,12 +596,12 @@ struct KubernetesPageView: View {
                 case .normal: cell.sort == nil ? theme.text3 : theme.text2
                 }
             view = AnyView(
-                Text(verbatim: cell.text).font(.system(size: 12, design: .monospaced)).foregroundStyle(color)
+                Text(verbatim: cell.text).font(.system(size: ChromeMetrics.text(12), design: .monospaced)).foregroundStyle(color)
                     .help(cell.help ?? share.help))
         } else if column?.id == KubernetesPageModel.volumeColumn {
             let usage = page.volumeUsage(of: row)
             view = AnyView(
-                Text(verbatim: usage.text).font(.system(size: 12, design: .monospaced))
+                Text(verbatim: usage.text).font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                     .foregroundStyle(usage.sort == nil ? theme.text3 : theme.text2)
                     .help(usage.help ?? ""))
         } else if column?.id == KubeDeploymentHint.column {
@@ -621,7 +621,7 @@ struct KubernetesPageView: View {
             case "status" where row.summary?.isFailing == true:
                 view = AnyView(
                     HStack(spacing: 4) {
-                        Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10))
+                        Image(systemName: "exclamationmark.triangle.fill").font(.system(size: ChromeMetrics.text(10)))
                         Text(verbatim: row.summary?.exitReason ?? text).layoutPriority(1)
                             .help("\(row.row.id.name): \(row.summary?.exitReason ?? text)")
                         Spacer(minLength: 4)
@@ -644,7 +644,7 @@ struct KubernetesPageView: View {
         }
         return AnyView(
             view
-                .font(.system(size: 12))
+                .font(.system(size: ChromeMetrics.text(12)))
                 .lineLimit(1)
                 .truncationMode(.middle)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
@@ -659,8 +659,8 @@ struct KubernetesPageView: View {
             page.askWhy(row: row.id)
         } label: {
             HStack(spacing: 2) {
-                Image(systemName: "sparkles").font(.system(size: 9))
-                Text("Why").font(.system(size: 11))
+                Image(systemName: "sparkles").font(.system(size: ChromeMetrics.text(9)))
+                Text("Why").font(.system(size: ChromeMetrics.text(11)))
             }
             .padding(.horizontal, 5)
             .frame(height: 18)
@@ -676,9 +676,9 @@ struct KubernetesPageView: View {
     private func banner(_ text: String) -> some View {
         HStack(spacing: 8) {
             Image(systemName: "exclamationmark.triangle.fill").foregroundStyle(TabStatusStyle.failed)
-            Text(verbatim: text).font(.system(size: 12)).foregroundStyle(theme.text).lineLimit(3).textSelection(.enabled)
+            Text(verbatim: text).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(3).textSelection(.enabled)
             Spacer()
-            Button("Try Again") { model.retry() }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: 12))
+            Button("Try Again") { model.retry() }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: ChromeMetrics.text(12)))
         }
         .padding(.horizontal, 20)
         .padding(.vertical, 8)
@@ -688,9 +688,9 @@ struct KubernetesPageView: View {
 
     private func failed(_ reason: String, _ problem: KubeProxyProblem?) -> some View {
         VStack(spacing: 12) {
-            Image(systemName: "exclamationmark.triangle").font(.system(size: 30, weight: .light)).foregroundStyle(theme.text3)
-            Text(verbatim: "\(KubeKindCatalog.title(of: model.kind)) couldn't be read").font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text)
-            Text(verbatim: reason).font(.system(size: 12)).foregroundStyle(theme.text2).multilineTextAlignment(.center).frame(maxWidth: 440)
+            Image(systemName: "exclamationmark.triangle").font(.system(size: ChromeMetrics.text(30), weight: .light)).foregroundStyle(theme.text3)
+            Text(verbatim: "\(KubeKindCatalog.title(of: model.kind)) couldn't be read").font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text)
+            Text(verbatim: reason).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).multilineTextAlignment(.center).frame(maxWidth: 440)
                 .textSelection(.enabled)
             HStack(spacing: 10) {
                 if let command = problem?.command {
@@ -729,16 +729,16 @@ struct KubernetesPageView: View {
     private var contextBar: some View {
         HStack(spacing: 8) {
             DockerStatusDot(color: proxyColor)
-            Text(verbatim: proxyText).font(.system(size: 11)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.tail)
+            Text(verbatim: proxyText).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 8)
             if case .stopped(let problem) = model.proxyStatus {
                 if let command = problem.command {
-                    Button("Run \(command)") { page.actions?.run(command) }.font(.system(size: 11))
+                    Button("Run \(command)") { page.actions?.run(command) }.font(.system(size: ChromeMetrics.text(11)))
                 }
-                Button("Try Again") { model.retry() }.font(.system(size: 11))
+                Button("Try Again") { model.retry() }.font(.system(size: ChromeMetrics.text(11)))
             }
             if let label = page.classLabel {
-                Text(verbatim: label).font(.system(size: 11, weight: .medium))
+                Text(verbatim: label).font(.system(size: ChromeMetrics.text(11), weight: .medium))
                     .foregroundStyle(model.selected?.isProduction == true ? Self.production : theme.text3)
             }
         }
@@ -749,9 +749,9 @@ struct KubernetesPageView: View {
 
     private func empty(_ title: String, _ detail: String, button: String, id: String, _ action: @escaping () -> Void) -> some View {
         VStack(spacing: 10) {
-            Image(systemName: "steeringwheel").font(.system(size: 34, weight: .light)).foregroundStyle(theme.text3)
-            Text(title).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text)
-            Text(verbatim: detail).font(.system(size: 12)).foregroundStyle(theme.text2).multilineTextAlignment(.center).frame(maxWidth: 420)
+            Image(systemName: "steeringwheel").font(.system(size: ChromeMetrics.text(34), weight: .light)).foregroundStyle(theme.text3)
+            Text(title).font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text)
+            Text(verbatim: detail).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).multilineTextAlignment(.center).frame(maxWidth: 420)
             Button(button, action: action)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -766,7 +766,7 @@ struct KubeOverviewCount: View {
 
     var body: some View {
         if session.state != .idle, session.overview.problems > 0 {
-            Text(verbatim: "\(session.overview.problems)").foregroundStyle(TabStatusStyle.failed).font(.system(size: 10.5, design: .monospaced))
+            Text(verbatim: "\(session.overview.problems)").foregroundStyle(TabStatusStyle.failed).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced))
         }
     }
 }
@@ -794,7 +794,7 @@ struct KubeSavedFilterMenu: View {
                 }
             }
         } label: {
-            Image(systemName: saved.isEmpty ? "bookmark" : "bookmark.fill").font(.system(size: 12)).foregroundStyle(theme.text2)
+            Image(systemName: saved.isEmpty ? "bookmark" : "bookmark.fill").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
         }
         .menuStyle(.borderlessButton)
         .menuIndicator(.hidden)

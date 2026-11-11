@@ -334,9 +334,9 @@ private struct KubePinLabel: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            if pin.isProduction { Image(systemName: "exclamationmark.octagon.fill").font(.system(size: 10)) }
+            if pin.isProduction { Image(systemName: "exclamationmark.octagon.fill").font(.system(size: ChromeMetrics.text(10))) }
             Text(verbatim: pin.isProduction ? "PRODUCTION " + pin.label : pin.label)
-                .font(.system(size: 11, weight: pin.isProduction ? .semibold : .medium, design: .monospaced))
+                .font(.system(size: ChromeMetrics.text(11), weight: pin.isProduction ? .semibold : .medium, design: .monospaced))
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -356,9 +356,9 @@ private struct KubePinLostLabel: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: 10))
+            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: ChromeMetrics.text(10)))
             Text(verbatim: lost.label)
-                .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                .font(.system(size: ChromeMetrics.text(11), weight: .semibold, design: .monospaced))
                 .lineLimit(1)
                 .truncationMode(.middle)
         }
@@ -388,9 +388,9 @@ struct KubeRunWarningLabel: View {
             warning.shown
         {
             HStack(spacing: 4) {
-                Image(systemName: "exclamationmark.octagon.fill").font(.system(size: 10))
+                Image(systemName: "exclamationmark.octagon.fill").font(.system(size: ChromeMetrics.text(10)))
                 Text(verbatim: warning.label)
-                    .font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    .font(.system(size: ChromeMetrics.text(11), weight: .semibold, design: .monospaced))
                     .lineLimit(1)
                     .truncationMode(.middle)
             }

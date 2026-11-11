@@ -17,7 +17,7 @@ struct KubeForwardsSection: View {
                         "No forwards. \(KubernetesKey.portForward.key) on a pod, a Service or a Deployment forwards one of its ports — "
                         + "a Service's or a Deployment's to a ready pod of theirs, started again on the next one when it goes."
                 )
-                .font(.system(size: 12)).foregroundStyle(theme.text3).frame(maxWidth: 520, alignment: .leading)
+                .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3).frame(maxWidth: 520, alignment: .leading)
                 .padding(.horizontal, 20).padding(.top, 34)
                 .accessibilityIdentifier("kubernetes.forwards.empty")
             } else {
@@ -51,15 +51,15 @@ struct KubeForwardsSection: View {
             DockerStatusDot(color: color(forward))
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(verbatim: spec.hostPort).font(.system(size: 12.5, weight: .semibold, design: .monospaced))
+                    Text(verbatim: spec.hostPort).font(.system(size: ChromeMetrics.text(12.5), weight: .semibold, design: .monospaced))
                         .foregroundStyle(theme.text)
-                    Text(verbatim: "→ \(spec.target):\(spec.remotePort)").font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.text2)
+                    Text(verbatim: "→ \(spec.target):\(spec.remotePort)").font(.system(size: ChromeMetrics.text(12), design: .monospaced)).foregroundStyle(theme.text2)
                     if let pod = forward.pod {
-                        Text(verbatim: "pod \(pod)" + (forward.podPort.map { ":\($0)" } ?? "")).font(.system(size: 11.5, design: .monospaced))
+                        Text(verbatim: "pod \(pod)" + (forward.podPort.map { ":\($0)" } ?? "")).font(.system(size: ChromeMetrics.text(11.5), design: .monospaced))
                             .foregroundStyle(theme.text3)
                     }
                 }
-                Text(verbatim: details(forward)).font(.system(size: 11)).lineLimit(2).truncationMode(.tail)
+                Text(verbatim: details(forward)).font(.system(size: ChromeMetrics.text(11))).lineLimit(2).truncationMode(.tail)
                     .foregroundStyle(forward.state.isStopped ? TabStatusStyle.failed : forward.production ? KubernetesPageView.production : theme.text3)
                     .textSelection(.enabled)
                 if let api = forwards.openAPI[forward.id] {
@@ -68,7 +68,7 @@ struct KubeForwardsSection: View {
                     } icon: {
                         Image(systemName: "antenna.radiowaves.left.and.right")
                     }
-                    .font(.system(size: 11)).foregroundStyle(theme.text2)
+                    .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text2)
                     .accessibilityIdentifier("kubernetes.forward.api.\(spec.localPort)")
                 }
             }
@@ -118,7 +118,7 @@ struct KubeForwardsCount: View {
     var body: some View {
         let live = forwards.forwards.filter { !$0.state.isStopped }.count
         if live > 0 {
-            Text(verbatim: "\(live)").foregroundStyle(theme.text3).font(.system(size: 10.5, design: .monospaced))
+            Text(verbatim: "\(live)").foregroundStyle(theme.text3).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced))
         }
     }
 }
@@ -148,12 +148,12 @@ struct KubeForwardSheetView: View {
         let production = page.model.contexts.context(named: draft.context)?.isProduction == true
         return VStack(alignment: .leading, spacing: 10) {
             Text(verbatim: draft.editing == nil ? "Port-forward \(draft.target)" : "Edit the forward to \(draft.target)")
-                .font(.system(size: 14, weight: .semibold)).foregroundStyle(theme.text)
+                .font(.system(size: ChromeMetrics.text(14), weight: .semibold)).foregroundStyle(theme.text)
             Text(verbatim: (production ? "PRODUCTION · " : "") + "\(draft.context) · \(draft.namespace)")
-                .font(.system(size: 11.5)).foregroundStyle(production ? KubernetesPageView.production : theme.text2)
+                .font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(production ? KubernetesPageView.production : theme.text2)
             field("Remote port") {
                 if draft.editing != nil {
-                    Text(verbatim: draft.remote).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.text2)
+                    Text(verbatim: draft.remote).font(.system(size: ChromeMetrics.text(12), design: .monospaced)).foregroundStyle(theme.text2)
                 } else {
                     TextField("port", text: binding(\.remote)).textFieldStyle(.roundedBorder).frame(width: 90)
                         .accessibilityIdentifier("kubernetes.forward.remote")
@@ -163,7 +163,7 @@ struct KubeForwardSheetView: View {
                                 Button(option.label) { page.forwardDraft?.remote = "\(option.port)" }
                             }
                         } label: {
-                            Text(verbatim: draft.offered.first { "\($0.port)" == draft.remote }?.label ?? "Ports…").font(.system(size: 11.5))
+                            Text(verbatim: draft.offered.first { "\($0.port)" == draft.remote }?.label ?? "Ports…").font(.system(size: ChromeMetrics.text(11.5)))
                         }
                         .menuStyle(.borderlessButton)
                         .fixedSize()
@@ -179,23 +179,23 @@ struct KubeForwardSheetView: View {
                 TextField(KubeForwardAddress.loopback, text: binding(\.address)).textFieldStyle(.roundedBorder).frame(width: 160)
                     .accessibilityIdentifier("kubernetes.forward.address")
                 if !KubeForwardAddress.isLoopback(draft.address.trimmingCharacters(in: .whitespaces)) {
-                    Text("reachable from other machines").font(.system(size: 11)).foregroundStyle(TabStatusStyle.waiting)
+                    Text("reachable from other machines").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.waiting)
                 }
             }
             field("") {
                 Toggle(
                     "HTTPS — open it as https://", isOn: Binding(get: { page.forwardDraft?.https ?? false }, set: { page.forwardDraft?.https = $0 })
                 )
-                .toggleStyle(.checkbox).font(.system(size: 12))
+                .toggleStyle(.checkbox).font(.system(size: ChromeMetrics.text(12)))
             }
-            Text(verbatim: note(draft)).font(.system(size: 11)).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
+            Text(verbatim: note(draft)).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
             if let why = draft.unavailable {
-                Text(verbatim: why).font(.system(size: 11.5)).foregroundStyle(why.hasPrefix("Checking") ? theme.text2 : TabStatusStyle.failed)
+                Text(verbatim: why).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(why.hasPrefix("Checking") ? theme.text2 : TabStatusStyle.failed)
                     .fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("kubernetes.forward.unavailable")
             }
             if let problem = page.forwardProblem {
-                Text(verbatim: problem).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: problem).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.failed).fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("kubernetes.forward.problem")
             }
             HStack {
@@ -225,7 +225,7 @@ struct KubeForwardSheetView: View {
 
     private func field<Content: View>(_ title: String, @ViewBuilder _ content: () -> Content) -> some View {
         HStack(spacing: 8) {
-            Text(title).font(.system(size: 12)).foregroundStyle(theme.text2).frame(width: 84, alignment: .trailing)
+            Text(title).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).frame(width: 84, alignment: .trailing)
             content()
             Spacer(minLength: 0)
         }

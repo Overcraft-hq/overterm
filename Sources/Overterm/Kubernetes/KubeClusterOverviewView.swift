@@ -41,7 +41,7 @@ struct KubeClusterOverviewView: View {
                     VStack(alignment: .leading, spacing: 6) {
                         ResourceCardCaption(text: "Not read", theme: theme)
                         ForEach(session.problems.sorted { $0.key.title < $1.key.title }, id: \.key) { part, why in
-                            Text(verbatim: "\(part.title): \(why)").font(.system(size: 11.5)).foregroundStyle(theme.text3).textSelection(.enabled)
+                            Text(verbatim: "\(part.title): \(why)").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).textSelection(.enabled)
                                 .fixedSize(horizontal: false, vertical: true)
                         }
                     }
@@ -96,9 +96,9 @@ struct KubeClusterOverviewView: View {
         return VStack(alignment: .leading, spacing: 8) {
             HStack(alignment: .firstTextBaseline, spacing: 10) {
                 Text(verbatim: context?.displayName ?? model.selectedName ?? "Overview")
-                    .font(.system(size: 20, weight: .semibold)).foregroundStyle(context?.isProduction == true ? KubernetesPageView.production : theme.text)
+                    .font(.system(size: ChromeMetrics.text(20), weight: .semibold)).foregroundStyle(context?.isProduction == true ? KubernetesPageView.production : theme.text)
                     .lineLimit(1).truncationMode(.middle)
-                Text(verbatim: model.scope.title).font(.system(size: 13)).foregroundStyle(theme.text3).lineLimit(1)
+                Text(verbatim: model.scope.title).font(.system(size: ChromeMetrics.text(13))).foregroundStyle(theme.text3).lineLimit(1)
                 Spacer(minLength: 8)
                 state
             }
@@ -120,7 +120,7 @@ struct KubeClusterOverviewView: View {
     @ViewBuilder private func facts(_ version: String?, _ nodes: String?) -> some View {
         if version != nil || nodes != nil {
             Text(verbatim: [version, nodes].compactMap { $0 }.joined(separator: " · "))
-                .font(.system(size: 12, weight: .medium)).foregroundStyle(theme.text2).textSelection(.enabled).lineLimit(1)
+                .font(.system(size: ChromeMetrics.text(12), weight: .medium)).foregroundStyle(theme.text2).textSelection(.enabled).lineLimit(1)
                 .accessibilityIdentifier("kubernetes.overview.version")
         }
     }
@@ -135,12 +135,12 @@ struct KubeClusterOverviewView: View {
         case .loading:
             HStack(spacing: 6) {
                 ProgressView().controlSize(.mini)
-                Text(verbatim: "Reading the cluster…").font(.system(size: 11.5)).foregroundStyle(theme.text3)
+                Text(verbatim: "Reading the cluster…").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3)
             }
         case .live:
             HStack(spacing: 5) {
                 Circle().fill(TabStatusStyle.done).frame(width: 7, height: 7)
-                Text(verbatim: "Live").font(.system(size: 11.5, weight: .medium)).foregroundStyle(theme.text2)
+                Text(verbatim: "Live").font(.system(size: ChromeMetrics.text(11.5), weight: .medium)).foregroundStyle(theme.text2)
             }
             .help("Followed while the Overview shows")
         case .idle:
@@ -177,17 +177,17 @@ struct KubeClusterOverviewView: View {
         } content: {
             VStack(alignment: .leading, spacing: 6) {
                 HStack(spacing: 6) {
-                    Text(verbatim: kind.title).font(.system(size: 11.5, weight: .medium)).foregroundStyle(theme.text2)
+                    Text(verbatim: kind.title).font(.system(size: ChromeMetrics.text(11.5), weight: .medium)).foregroundStyle(theme.text2)
                     Spacer(minLength: 0)
                     if worst == .failed || worst == .waiting {
                         Circle().fill(fill(worst)).frame(width: 7, height: 7)
                     }
                 }
-                Text(verbatim: "\(kind.total)").font(.system(size: 26, weight: .semibold, design: .rounded)).foregroundStyle(theme.text)
+                Text(verbatim: "\(kind.total)").font(.system(size: ChromeMetrics.text(26), weight: .semibold, design: .rounded)).foregroundStyle(theme.text)
                     .monospacedDigit()
                 KubeOverviewBar(segments: kind.bar.map { (fill($0.tone), $0.count) }, track: theme.rowHover)
                     .frame(height: 4)
-                Text(verbatim: kind.line).font(.system(size: 11)).foregroundStyle(worst == .failed ? words(.failed) : theme.text3)
+                Text(verbatim: kind.line).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(worst == .failed ? words(.failed) : theme.text3)
                     .lineLimit(2, reservesSpace: true).truncationMode(.tail).fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -197,12 +197,12 @@ struct KubeClusterOverviewView: View {
     /// Pods by the server's phase, as a legend under the cards.
     private func phases(_ overview: KubeClusterOverview) -> some View {
         HStack(spacing: 14) {
-            Text(verbatim: "Pods by phase").font(.system(size: 11)).foregroundStyle(theme.text3)
+            Text(verbatim: "Pods by phase").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
             ForEach(KubeClusterOverview.phases, id: \.self) { phase in
                 if let count = overview.phases[phase] {
                     HStack(spacing: 5) {
                         Circle().fill(color(phase)).frame(width: 7, height: 7)
-                        Text(verbatim: "\(phase) \(count)").font(.system(size: 11.5)).foregroundStyle(theme.text2).monospacedDigit()
+                        Text(verbatim: "\(phase) \(count)").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).monospacedDigit()
                     }
                 }
             }
@@ -243,23 +243,23 @@ struct KubeClusterOverviewView: View {
             let rows = KubeOverviewCards.attention(overview)
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    Text(verbatim: "Needs attention").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text)
+                    Text(verbatim: "Needs attention").font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text)
                     if !rows.isEmpty {
-                        Text(verbatim: "\(rows.count)").font(.system(size: 11, weight: .semibold)).foregroundStyle(words(.failed))
+                        Text(verbatim: "\(rows.count)").font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(words(.failed))
                             .padding(.horizontal, 6).padding(.vertical, 1).background(Capsule().fill(TabStatusStyle.failed.opacity(0.14)))
                     }
                     Spacer(minLength: 0)
                 }
                 if rows.isEmpty {
                     Label("No pod, workload or node failing — only warning events, below.", systemImage: "checkmark.circle")
-                        .font(.system(size: 12)).foregroundStyle(theme.text2)
+                        .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
                 } else {
                     VStack(alignment: .leading, spacing: 1) {
                         ForEach(rows.prefix(Self.attentionShown)) { row in attentionRow(row) }
                     }
                     .padding(.horizontal, -8)
                     if rows.count > Self.attentionShown {
-                        Text(verbatim: "and \(rows.count - Self.attentionShown) more — the lists have them all").font(.system(size: 11)).foregroundStyle(theme.text3)
+                        Text(verbatim: "and \(rows.count - Self.attentionShown) more — the lists have them all").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                     }
                 }
             }
@@ -268,11 +268,11 @@ struct KubeClusterOverviewView: View {
             .accessibilityIdentifier("kubernetes.overview.attention")
         } else if session.state == .live {
             HStack(alignment: .top, spacing: 10) {
-                Image(systemName: "checkmark.seal.fill").font(.system(size: 20)).foregroundStyle(TabStatusStyle.done)
+                Image(systemName: "checkmark.seal.fill").font(.system(size: ChromeMetrics.text(20))).foregroundStyle(TabStatusStyle.done)
                 VStack(alignment: .leading, spacing: 3) {
-                    Text(verbatim: "All fine").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text)
+                    Text(verbatim: "All fine").font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text)
                     Text(verbatim: "Nothing fails: every pod, workload and node is fine, and no warning in the last hour.")
-                        .font(.system(size: 12)).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
+                        .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
                 }
             }
             .resourceCard(theme)
@@ -286,11 +286,11 @@ struct KubeClusterOverviewView: View {
             page.openFromOverview(kind: row.resource, row.row)
         } content: {
             HStack(spacing: 8) {
-                Image(systemName: row.symbol).font(.system(size: 11.5)).foregroundStyle(fill(row.tone)).frame(width: 16)
-                Text(verbatim: row.title).font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.text)
+                Image(systemName: row.symbol).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(fill(row.tone)).frame(width: 16)
+                Text(verbatim: row.title).font(.system(size: ChromeMetrics.text(12), design: .monospaced)).foregroundStyle(theme.text)
                     .lineLimit(1).truncationMode(.middle).layoutPriority(1)
                 if let namespace = row.namespace {
-                    Text(verbatim: namespace).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.tail)
+                    Text(verbatim: namespace).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.tail)
                 }
                 Spacer(minLength: 6)
                 ResourcePill(text: row.pill, colour: words(row.tone))
@@ -306,7 +306,7 @@ struct KubeClusterOverviewView: View {
             // The moment's; the charts under it have the history (X1, X2).
             let history = page.chartsFromPrometheus ? [] : page.clusterHistory
             VStack(alignment: .leading, spacing: 12) {
-                Text(verbatim: "Usage of allocatable").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text)
+                Text(verbatim: "Usage of allocatable").font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text)
                 HStack(alignment: .top, spacing: 18) {
                     meter(
                         "CPU", used: KubeMetricsFormat.cpu(usage.used.cpu), of: usage.allocatable.map { KubeMetricsFormat.cpu($0.cpu) },
@@ -319,21 +319,21 @@ struct KubeClusterOverviewView: View {
                         top: usage.allocatable?.memory)
                 }
                 if let span = KubeUsageRing.span(history) {
-                    Text(verbatim: "Usage over \(span)").font(.system(size: 11)).foregroundStyle(theme.text3)
+                    Text(verbatim: "Usage over \(span)").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                         .accessibilityIdentifier("kubernetes.overview.usage.history")
                 }
-                if let note { Text(verbatim: note).font(.system(size: 11)).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true) }
+                if let note { Text(verbatim: note).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true) }
             }
             .resourceCard(theme)
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("kubernetes.overview.usage")
         } else if let note {
             VStack(alignment: .leading, spacing: 6) {
-                Text(verbatim: "Usage of allocatable").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text)
-                Text(verbatim: note).font(.system(size: 11.5)).foregroundStyle(theme.text3).textSelection(.enabled)
+                Text(verbatim: "Usage of allocatable").font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text)
+                Text(verbatim: note).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                 if model.metrics.isRefused(.nodes) {
-                    Button("Try Again") { model.retry() }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: 11.5, weight: .medium))
+                    Button("Try Again") { model.retry() }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: ChromeMetrics.text(11.5), weight: .medium))
                         .help("Ask metrics-server again: access may have been granted since")
                         .accessibilityIdentifier("kubernetes.overview.usage.retry")
                 }
@@ -348,15 +348,15 @@ struct KubeClusterOverviewView: View {
     private func meter(_ title: String, used: String, of total: String?, percent: Int?, history: [Double], top: Double?) -> some View {
         let tone = percent.map(KubeOverviewCards.usageTone) ?? .neutral
         return VStack(alignment: .leading, spacing: 5) {
-            Text(verbatim: title).font(.system(size: 11.5, weight: .medium)).foregroundStyle(theme.text2)
+            Text(verbatim: title).font(.system(size: ChromeMetrics.text(11.5), weight: .medium)).foregroundStyle(theme.text2)
             Text(verbatim: percent.map { "\($0)%" } ?? used)
-                .font(.system(size: 26, weight: .semibold, design: .rounded)).foregroundStyle(percent == nil ? theme.text : words(tone))
+                .font(.system(size: ChromeMetrics.text(26), weight: .semibold, design: .rounded)).foregroundStyle(percent == nil ? theme.text : words(tone))
                 .monospacedDigit()
             if let percent {
                 KubeOverviewBar(segments: [(fill(tone), percent), (.clear, max(0, 100 - percent))], track: theme.rowHover).frame(height: 5)
             }
             Text(verbatim: used + (total.map { " of \($0)" } ?? ""))
-                .font(.system(size: 11.5, design: .monospaced)).foregroundStyle(theme.text2).lineLimit(1).minimumScaleFactor(0.8)
+                .font(.system(size: ChromeMetrics.text(11.5), design: .monospaced)).foregroundStyle(theme.text2).lineLimit(1).minimumScaleFactor(0.8)
             if history.count >= 2 {
                 KubeSparkline(values: history, color: theme.accentText, top: top).frame(height: 28).padding(.top, 2)
             }
@@ -384,13 +384,13 @@ struct KubeClusterOverviewView: View {
         if !overview.systems.isEmpty || overview.unlabelled > 0 {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 8) {
-                    Text(verbatim: "Applications").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text)
-                    Text(verbatim: "by app.kubernetes.io labels").font(.system(size: 11)).foregroundStyle(theme.text3)
+                    Text(verbatim: "Applications").font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text)
+                    Text(verbatim: "by app.kubernetes.io labels").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                 }
                 ForEach(overview.systems) { system in
                     VStack(alignment: .leading, spacing: 6) {
                         if let partOf = system.partOf {
-                            Text(verbatim: partOf).font(.system(size: 11.5, weight: .semibold)).foregroundStyle(theme.text2)
+                            Text(verbatim: partOf).font(.system(size: ChromeMetrics.text(11.5), weight: .semibold)).foregroundStyle(theme.text2)
                         }
                         LazyVGrid(columns: [GridItem(.adaptive(minimum: 190), spacing: 10, alignment: .top)], alignment: .leading, spacing: 10) {
                             ForEach(system.applications) { application in applicationCard(application) }
@@ -399,7 +399,7 @@ struct KubeClusterOverviewView: View {
                 }
                 if overview.unlabelled > 0 {
                     Text(verbatim: "\(overview.unlabelled) workloads carry no app.kubernetes.io/name or instance label.")
-                        .font(.system(size: 11)).foregroundStyle(theme.text3)
+                        .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                 }
             }
             .resourceCard(theme)
@@ -415,9 +415,9 @@ struct KubeClusterOverviewView: View {
         return VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 6) {
                 Circle().fill(fill(tone)).frame(width: 7, height: 7)
-                Text(verbatim: application.name).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
+                Text(verbatim: application.name).font(.system(size: ChromeMetrics.text(12.5), weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
                 Spacer(minLength: 4)
-                Text(verbatim: notReady > 0 ? "\(notReady) not ready" : "ready").font(.system(size: 11, weight: .medium)).foregroundStyle(words(tone))
+                Text(verbatim: notReady > 0 ? "\(notReady) not ready" : "ready").font(.system(size: ChromeMetrics.text(11), weight: .medium)).foregroundStyle(words(tone))
             }
             let place = [
                 application.instance.flatMap { $0 == application.name ? nil : $0 },
@@ -425,8 +425,8 @@ struct KubeClusterOverviewView: View {
             ]
             .compactMap { $0 }
             Text(verbatim: (place + ["\(members.count) workload\(members.count == 1 ? "" : "s")"]).joined(separator: " · "))
-                .font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
-            Text(verbatim: members.joined(separator: ", ")).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text2)
+                .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1)
+            Text(verbatim: members.joined(separator: ", ")).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text2)
                 .lineLimit(1).truncationMode(.tail)
         }
         .padding(10)
@@ -445,8 +445,8 @@ struct KubeClusterOverviewView: View {
         if !overview.warnings.isEmpty {
             VStack(alignment: .leading, spacing: 8) {
                 HStack(spacing: 8) {
-                    Text(verbatim: "Warning events").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text)
-                    Text(verbatim: "the last hour").font(.system(size: 11)).foregroundStyle(theme.text3)
+                    Text(verbatim: "Warning events").font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text)
+                    Text(verbatim: "the last hour").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                 }
                 VStack(alignment: .leading, spacing: 0) {
                     ForEach(Array(overview.warnings.enumerated()), id: \.element.id) { index, warning in
@@ -463,19 +463,19 @@ struct KubeClusterOverviewView: View {
 
     private func warningRow(_ warning: KubeClusterOverview.Warning) -> some View {
         HStack(alignment: .firstTextBaseline, spacing: 10) {
-            Text(verbatim: warning.age.map(KubeAge.format) ?? "").font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
+            Text(verbatim: warning.age.map(KubeAge.format) ?? "").font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text3)
                 .frame(width: 44, alignment: .trailing)
             VStack(alignment: .leading, spacing: 3) {
                 HStack(spacing: 8) {
                     ResourcePill(text: warning.reason, colour: words(.waiting))
-                    Text(verbatim: (warning.namespace.map { "\($0)/" } ?? "") + warning.object).font(.system(size: 12, design: .monospaced))
+                    Text(verbatim: (warning.namespace.map { "\($0)/" } ?? "") + warning.object).font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                         .foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 4)
                     if let count = warning.count, count > 1 {
-                        Text(verbatim: "×\(count)").font(.system(size: 11, weight: .medium)).foregroundStyle(theme.text3).monospacedDigit()
+                        Text(verbatim: "×\(count)").font(.system(size: ChromeMetrics.text(11), weight: .medium)).foregroundStyle(theme.text3).monospacedDigit()
                     }
                 }
-                Text(verbatim: warning.message).font(.system(size: 12)).foregroundStyle(theme.text2).lineLimit(2).textSelection(.enabled)
+                Text(verbatim: warning.message).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).lineLimit(2).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
@@ -600,15 +600,15 @@ struct KubeOverviewGitOpsCard: View {
                 page.giveListTheKeyboard()
             } label: {
                 HStack(spacing: 8) {
-                    Image(systemName: KubeSection.gitops.symbol).font(.system(size: 12, weight: .semibold)).foregroundStyle(theme.text2)
-                    Text(verbatim: line.title).font(.system(size: 12.5, weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
+                    Image(systemName: KubeSection.gitops.symbol).font(.system(size: ChromeMetrics.text(12), weight: .semibold)).foregroundStyle(theme.text2)
+                    Text(verbatim: line.title).font(.system(size: ChromeMetrics.text(12.5), weight: .semibold)).foregroundStyle(theme.text).lineLimit(1)
                     ForEach(line.counts, id: \.text) { pill in
                         ResourcePill(text: pill.text, colour: pill.tone == .failed ? TabStatusStyle.failed : theme.orangeText)
                     }
                     Spacer(minLength: 8)
-                    Text(verbatim: "press \(KubeSection.gitops.key) for what deploys here").font(.system(size: 11.5)).foregroundStyle(theme.text3)
+                    Text(verbatim: "press \(KubeSection.gitops.key) for what deploys here").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3)
                         .lineLimit(1)
-                    Image(systemName: "chevron.right").font(.system(size: 10, weight: .semibold)).foregroundStyle(theme.text3)
+                    Image(systemName: "chevron.right").font(.system(size: ChromeMetrics.text(10), weight: .semibold)).foregroundStyle(theme.text3)
                 }
                 .contentShape(Rectangle())
             }

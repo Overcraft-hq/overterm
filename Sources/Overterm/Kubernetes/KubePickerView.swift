@@ -55,7 +55,7 @@ struct KubePickerView: View {
         let results = picker.results
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 8) {
-                Image(systemName: Self.symbol(picker.kind)).font(.system(size: 13)).foregroundStyle(theme.text3)
+                Image(systemName: Self.symbol(picker.kind)).font(.system(size: ChromeMetrics.text(13))).foregroundStyle(theme.text3)
                 PaletteField(
                     text: Binding(get: { page.picker?.query ?? "" }, set: { page.picker?.query = $0 }),
                     onMove: { page.picker?.move($0) },
@@ -66,13 +66,13 @@ struct KubePickerView: View {
                     onCancel: { page.closePicker() },
                     placeholder: Self.placeholder(picker.kind),
                     textColor: NSColor(theme.text), focusesOnAppear: true, fontSize: 14)
-                Text(verbatim: Self.key(picker.kind)).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text3)
+                Text(verbatim: Self.key(picker.kind)).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text3)
             }
             .padding(.horizontal, 14)
             .frame(height: 42)
             Divider().opacity(0.4)
             if let note = picker.note {
-                Text(verbatim: note).font(.system(size: 11)).foregroundStyle(theme.text2).padding(.horizontal, 14).padding(.vertical, 6)
+                Text(verbatim: note).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text2).padding(.horizontal, 14).padding(.vertical, 6)
                     .accessibilityIdentifier("kubernetes.picker.note")
             }
             ScrollViewReader { scroll in
@@ -86,7 +86,7 @@ struct KubePickerView: View {
                                 }
                         }
                         if results.isEmpty {
-                            Text(verbatim: Self.nothing(picker.kind)).font(.system(size: 12))
+                            Text(verbatim: Self.nothing(picker.kind)).font(.system(size: ChromeMetrics.text(12)))
                                 .foregroundStyle(theme.text3).padding(.horizontal, 10).padding(.vertical, 6)
                         }
                     }
@@ -101,7 +101,7 @@ struct KubePickerView: View {
             if picker.kind == .namespace {
                 Divider().opacity(0.4)
                 Text(verbatim: "↩ this one alone · ⌥↩ or its box ticks it · Esc done")
-                    .font(.system(size: 10.5)).foregroundStyle(theme.text3).padding(.horizontal, 14).padding(.vertical, 6)
+                    .font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).padding(.horizontal, 14).padding(.vertical, 6)
             }
         }
         .frame(width: 440)
@@ -115,7 +115,7 @@ struct KubePickerView: View {
         guard picker.kind == .namespace, case .scope(let scope) = item.choice, scope.names?.count ?? 1 == 1 else { return nil }
         let checked = picker.isChecked(item)
         return AnyView(
-            Image(systemName: checked ? "checkmark.square.fill" : "square").font(.system(size: 12))
+            Image(systemName: checked ? "checkmark.square.fill" : "square").font(.system(size: ChromeMetrics.text(12)))
                 .foregroundStyle(checked ? theme.text : theme.text3)
                 .frame(width: 18, height: 22)
                 .contentShape(Rectangle())
@@ -132,12 +132,12 @@ struct KubePickerView: View {
             if item.production {
                 DockerStatusDot(color: KubernetesPageView.production)
             } else if item.typed {
-                Image(systemName: "keyboard").font(.system(size: 10)).foregroundStyle(theme.text3)
+                Image(systemName: "keyboard").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
             }
-            Text(verbatim: item.title).font(.system(size: 12.5)).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
+            Text(verbatim: item.title).font(.system(size: ChromeMetrics.text(12.5))).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
             Spacer(minLength: 8)
             if let detail = item.detail {
-                Text(verbatim: detail).font(.system(size: 11)).foregroundStyle(item.production ? KubernetesPageView.production : theme.text3)
+                Text(verbatim: detail).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(item.production ? KubernetesPageView.production : theme.text3)
                     .lineLimit(1).truncationMode(.middle)
             }
         }

@@ -38,7 +38,7 @@ struct ResourceCardCaption: View {
     @ObservedObject var theme: ChromeTheme
 
     var body: some View {
-        Text(verbatim: text).font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).tracking(0.4).foregroundStyle(theme.text3)
+        Text(verbatim: text).font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).tracking(0.4).foregroundStyle(theme.text3)
     }
 }
 
@@ -52,8 +52,8 @@ struct ResourcePill: View {
 
     var body: some View {
         HStack(spacing: 4) {
-            if let symbol { Image(systemName: symbol).font(.system(size: 9, weight: .bold)) }
-            Text(verbatim: text).font(.system(size: 11, weight: .medium, design: monospaced ? .monospaced : .default)).lineLimit(1)
+            if let symbol { Image(systemName: symbol).font(.system(size: ChromeMetrics.text(9), weight: .bold)) }
+            Text(verbatim: text).font(.system(size: ChromeMetrics.text(11), weight: .medium, design: monospaced ? .monospaced : .default)).lineLimit(1)
         }
         .foregroundStyle(colour)
         .padding(.horizontal, 8)

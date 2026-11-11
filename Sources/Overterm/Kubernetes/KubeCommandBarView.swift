@@ -22,7 +22,7 @@ struct KubeCommandBarView: View {
         let results = bar.results
         return VStack(alignment: .leading, spacing: 0) {
             HStack(spacing: 6) {
-                Text(verbatim: ":").font(.system(size: 15, weight: .semibold, design: .monospaced)).foregroundStyle(theme.accentText)
+                Text(verbatim: ":").font(.system(size: ChromeMetrics.text(15), weight: .semibold, design: .monospaced)).foregroundStyle(theme.accentText)
                 PaletteField(
                     text: Binding(get: { page.command?.text ?? "" }, set: { page.command?.text = $0 }),
                     onMove: { page.command?.move($0) },
@@ -38,7 +38,7 @@ struct KubeCommandBarView: View {
             .frame(height: 42)
             if let problem = bar.problem {
                 Divider().opacity(0.4)
-                Text(verbatim: problem).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).padding(.horizontal, 14).padding(.vertical, 6)
+                Text(verbatim: problem).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.failed).padding(.horizontal, 14).padding(.vertical, 6)
                     .accessibilityIdentifier("kubernetes.command.problem")
             }
             if !results.isEmpty {
@@ -63,9 +63,9 @@ struct KubeCommandBarView: View {
 
     private func row(_ completion: KubeCommandBar.Completion, highlighted: Bool) -> some View {
         HStack(spacing: 8) {
-            Text(verbatim: completion.text).font(.system(size: 12.5, design: .monospaced)).foregroundStyle(theme.text).lineLimit(1)
+            Text(verbatim: completion.text).font(.system(size: ChromeMetrics.text(12.5), design: .monospaced)).foregroundStyle(theme.text).lineLimit(1)
             Spacer(minLength: 8)
-            Text(verbatim: completion.detail).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
+            Text(verbatim: completion.detail).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
         }
         .padding(.horizontal, 10)
         .frame(height: 26)

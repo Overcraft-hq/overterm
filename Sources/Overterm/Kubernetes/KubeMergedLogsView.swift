@@ -27,13 +27,13 @@ struct KubeMergedLogsView: View {
     private var controls: some View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 10) {
-                Text(verbatim: logs.selector).font(.system(size: 11, design: .monospaced)).foregroundStyle(theme.text2).lineLimit(1)
+                Text(verbatim: logs.selector).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text2).lineLimit(1)
                     .truncationMode(.middle).help("The pods \(logs.title) picks")
                 Spacer(minLength: 4)
                 Button {
                     editing = true
                 } label: {
-                    Text(verbatim: logs.filter.isEmpty ? "Include / Exclude" : "Include / Exclude (\(logs.filter.count))").font(.system(size: 11.5))
+                    Text(verbatim: logs.filter.isEmpty ? "Include / Exclude" : "Include / Exclude (\(logs.filter.count))").font(.system(size: ChromeMetrics.text(11.5)))
                 }
                 .controlSize(.small)
                 .help(
@@ -54,7 +54,7 @@ struct KubeMergedLogsView: View {
             }
             // Its own line: the cap is said whole, never cut off; what
             // couldn't be read is said after it, never in its place.
-            Text(verbatim: note).font(.system(size: 11))
+            Text(verbatim: note).font(.system(size: ChromeMetrics.text(11)))
                 .foregroundStyle(logs.problems.isEmpty ? (logs.capped > 0 ? TabStatusStyle.waiting : theme.text3) : TabStatusStyle.failed)
                 .lineLimit(3).fixedSize(horizontal: false, vertical: true).help(note)
                 .accessibilityIdentifier("kubernetes.logs.streams")
@@ -78,13 +78,13 @@ private struct KubeMergedLogFilterForm: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Regular expressions, case aside; empty picks everything").font(.system(size: 11)).foregroundStyle(.secondary)
+            Text("Regular expressions, case aside; empty picks everything").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(.secondary)
             field("Pods", "web-.*", $draft.pods)
             field("Pods left out", "canary", $draft.excludePods)
             field("Containers", "app|worker", $draft.containers)
             field("Lines", "error|timeout", $draft.lines)
             field("Lines left out", "healthz", $draft.excludeLines)
-            if let problem = draft.problem { Text(verbatim: problem).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed) }
+            if let problem = draft.problem { Text(verbatim: problem).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.failed) }
             HStack {
                 Button("Clear") { draft = KubeMergedLogFilter() }.disabled(draft.isEmpty)
                 Spacer()
@@ -102,8 +102,8 @@ private struct KubeMergedLogFilterForm: View {
 
     private func field(_ title: String, _ placeholder: String, _ text: Binding<String>) -> some View {
         HStack {
-            Text(title).font(.system(size: 11.5)).frame(width: 92, alignment: .trailing)
-            TextField(placeholder, text: text).textFieldStyle(.roundedBorder).font(.system(size: 11.5, design: .monospaced))
+            Text(title).font(.system(size: ChromeMetrics.text(11.5))).frame(width: 92, alignment: .trailing)
+            TextField(placeholder, text: text).textFieldStyle(.roundedBorder).font(.system(size: ChromeMetrics.text(11.5), design: .monospaced))
         }
     }
 }

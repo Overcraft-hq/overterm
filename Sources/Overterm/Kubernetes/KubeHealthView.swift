@@ -14,19 +14,19 @@ struct KubeHealthFindingRows: View {
             ForEach(findings) { finding in
                 HStack(alignment: .firstTextBaseline, spacing: 8) {
                     Image(systemName: finding.severity == .error ? "exclamationmark.triangle.fill" : "exclamationmark.circle")
-                        .font(.system(size: 10.5)).foregroundStyle(color(finding)).frame(width: 14)
-                    Text(verbatim: finding.check.code).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(theme.text3)
+                        .font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(color(finding)).frame(width: 14)
+                    Text(verbatim: finding.check.code).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text3)
                     if showsObject {
                         Button {
                             open(finding.subject)
                         } label: {
                             Text(verbatim: (finding.subject.namespace.map { "\($0)/" } ?? "") + finding.subject.said)
-                                .font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.accentText).underline().lineLimit(1).truncationMode(.middle)
+                                .font(.system(size: ChromeMetrics.text(12), design: .monospaced)).foregroundStyle(theme.accentText).underline().lineLimit(1).truncationMode(.middle)
                         }
                         .buttonStyle(.plain)
                         .help("Open its detail")
                     }
-                    Text(verbatim: finding.sentence).font(.system(size: 12)).foregroundStyle(theme.text2).textSelection(.enabled)
+                    Text(verbatim: finding.sentence).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                     Spacer(minLength: 0)
                 }
@@ -65,10 +65,10 @@ struct KubeOverviewHealthView: View {
                     }
                 }
                 ForEach(session.report.notes, id: \.self) { note in
-                    Text(verbatim: note).font(.system(size: 11)).foregroundStyle(theme.text3).textSelection(.enabled)
+                    Text(verbatim: note).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).textSelection(.enabled)
                         .fixedSize(horizontal: false, vertical: true)
                 }
-                Text("Read once while shown — nothing written, nothing installed, no Secret or ConfigMap read.").font(.system(size: 10.5))
+                Text("Read once while shown — nothing written, nothing installed, no Secret or ConfigMap read.").font(.system(size: ChromeMetrics.text(10.5)))
                     .foregroundStyle(theme.text3)
             }
             .resourceCard(theme)
@@ -79,13 +79,13 @@ struct KubeOverviewHealthView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            Text(verbatim: "Health checks").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text)
+            Text(verbatim: "Health checks").font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text)
             if session.state == .loading {
                 ProgressView().controlSize(.mini)
             } else {
                 let severities = KubeOverviewCards.severities(session.report)
                 if severities.isEmpty {
-                    Text(verbatim: session.report.said).font(.system(size: 11)).foregroundStyle(theme.text3)
+                    Text(verbatim: session.report.said).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                         .accessibilityIdentifier("kubernetes.health.count")
                 }
                 Spacer(minLength: 6)
@@ -106,7 +106,7 @@ struct KubeOverviewHealthView: View {
                 Button {
                     page.refreshHealth()
                 } label: {
-                    Image(systemName: "arrow.clockwise").font(.system(size: 11, weight: .semibold)).foregroundStyle(theme.text3)
+                    Image(systemName: "arrow.clockwise").font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(theme.text3)
                 }
                 .buttonStyle(.plain)
                 .help("Check again")
@@ -125,12 +125,12 @@ struct KubeOverviewHealthView: View {
                 if toggled.contains(check) { toggled.remove(check) } else { toggled.insert(check) }
             } content: {
                 HStack(spacing: 8) {
-                    Image(systemName: "chevron.right").font(.system(size: 9, weight: .bold)).foregroundStyle(theme.text3)
+                    Image(systemName: "chevron.right").font(.system(size: ChromeMetrics.text(9), weight: .bold)).foregroundStyle(theme.text3)
                         .rotationEffect(.degrees(open ? 90 : 0)).frame(width: 10)
                     Image(systemName: check.severity == .error ? "exclamationmark.triangle.fill" : "exclamationmark.circle")
-                        .font(.system(size: 11)).foregroundStyle(check.severity == .error ? TabStatusStyle.failed : TabStatusStyle.waiting).frame(width: 14)
-                    Text(verbatim: check.title).font(.system(size: 12, weight: .medium)).foregroundStyle(theme.text).lineLimit(1)
-                    Text(verbatim: check.code).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(theme.text3)
+                        .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(check.severity == .error ? TabStatusStyle.failed : TabStatusStyle.waiting).frame(width: 14)
+                    Text(verbatim: check.title).font(.system(size: ChromeMetrics.text(12), weight: .medium)).foregroundStyle(theme.text).lineLimit(1)
+                    Text(verbatim: check.code).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text3)
                     Spacer(minLength: 6)
                     ResourcePill(text: "\(findings.count)", colour: tone)
                 }
@@ -140,7 +140,7 @@ struct KubeOverviewHealthView: View {
                 VStack(alignment: .leading, spacing: 3) {
                     KubeHealthFindingRows(findings: Array(findings.prefix(Self.shown)), theme: theme) { page.openFinding($0) }
                     if findings.count > Self.shown {
-                        Text(verbatim: "and \(findings.count - Self.shown) more").font(.system(size: 11)).foregroundStyle(theme.text3)
+                        Text(verbatim: "and \(findings.count - Self.shown) more").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                     }
                 }
                 .padding(.leading, 18)
@@ -191,7 +191,7 @@ struct KubeObjectHealthList: View {
     var body: some View {
         if !findings.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                Text(verbatim: "Health checks").font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+                Text(verbatim: "Health checks").font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
                 KubeHealthFindingRows(findings: findings.sorted(by: KubeHealth.Finding.ordered), showsObject: false, theme: theme) { page.openFinding($0) }
             }
             .accessibilityIdentifier("kubernetes.detail.health")
@@ -227,30 +227,30 @@ struct KubePinnedHealthView: View {
             VStack(alignment: .leading, spacing: 4) {
                 HStack(spacing: 5) {
                     Circle().fill(dot(card)).frame(width: 7, height: 7)
-                    Text(verbatim: card.displayName).font(.system(size: 12, weight: .semibold)).lineLimit(1).truncationMode(.middle)
+                    Text(verbatim: card.displayName).font(.system(size: ChromeMetrics.text(12), weight: .semibold)).lineLimit(1).truncationMode(.middle)
                         .foregroundStyle(card.production ? KubernetesPageView.production : theme.text)
                 }
-                Text(verbatim: (card.production ? "PRODUCTION · " : "") + card.place + (shown ? " · on the page" : "")).font(.system(size: 10.5))
+                Text(verbatim: (card.production ? "PRODUCTION · " : "") + card.place + (shown ? " · on the page" : "")).font(.system(size: ChromeMetrics.text(10.5)))
                     .foregroundStyle(card.production ? KubernetesPageView.production : theme.text3).lineLimit(1)
                 switch card.state {
                 case .waiting:
-                    Text("Reading…").font(.system(size: 11)).foregroundStyle(theme.text3)
+                    Text("Reading…").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                 case .notRead(let why):
-                    Text(verbatim: "Not read: \(why)").font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(3)
+                    Text(verbatim: "Not read: \(why)").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true)
                 case .read(let summary, _):
                     line("\(summary.pods) pods", bad: summary.failingCount, word: "failing")
                     line("\(summary.workloads) workloads", bad: summary.notReadyCount, word: "not ready")
                     if summary.nodes > 0 { line("\(summary.nodes) nodes", bad: summary.notReadyNodes.count, word: "not ready") }
                     ForEach(summary.failing + summary.notReady, id: \.self) { item in
-                        Text(verbatim: item).font(.system(size: 10.5, design: .monospaced)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
+                        Text(verbatim: item).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
                     }
                     if !summary.cut.isEmpty {
-                        Text(verbatim: "First \(KubePinnedHealth.limit) of \(summary.cut.joined(separator: ", ")) read").font(.system(size: 10.5))
+                        Text(verbatim: "First \(KubePinnedHealth.limit) of \(summary.cut.joined(separator: ", ")) read").font(.system(size: ChromeMetrics.text(10.5)))
                             .foregroundStyle(theme.text3)
                     }
                     ForEach(summary.unread, id: \.self) { why in
-                        Text(verbatim: why).font(.system(size: 10.5)).foregroundStyle(theme.text3).lineLimit(2)
+                        Text(verbatim: why).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).lineLimit(2)
                     }
                 }
             }
@@ -264,8 +264,8 @@ struct KubePinnedHealthView: View {
 
     private func line(_ text: String, bad: Int, word: String) -> some View {
         HStack(spacing: 4) {
-            Text(verbatim: text).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(theme.text)
-            Text(verbatim: bad > 0 ? "\(bad) \(word)" : "fine").font(.system(size: 11)).foregroundStyle(bad > 0 ? TabStatusStyle.failed : theme.text3)
+            Text(verbatim: text).font(.system(size: ChromeMetrics.text(11.5), design: .monospaced)).foregroundStyle(theme.text)
+            Text(verbatim: bad > 0 ? "\(bad) \(word)" : "fine").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(bad > 0 ? TabStatusStyle.failed : theme.text3)
         }
     }
 

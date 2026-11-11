@@ -135,7 +135,7 @@ struct LogsPane: View {
             let matcher = filter.matcher()
             let shown = filter.isEmpty ? feed.lines : feed.lines.filter(matcher.matches)
             if let note = Self.note(lines: feed.lines.count, shown: shown.count, filter: filter, following: feed.following) {
-                Text(verbatim: note).font(.system(size: 12)).foregroundStyle(theme.text3)
+                Text(verbatim: note).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 let text = theme.textNS
@@ -169,18 +169,18 @@ struct LogsPane: View {
     private var toolbar: some View {
         HStack(spacing: 8) {
             HStack(spacing: 4) {
-                Image(systemName: "magnifyingglass").font(.system(size: 10)).foregroundStyle(theme.text3)
+                Image(systemName: "magnifyingglass").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
                 TextField(view.wrappedValue.highlight ? "Find in the log" : "Filter the log", text: $filter.text).textFieldStyle(.plain)
-                    .font(.system(size: 12))
+                    .font(.system(size: ChromeMetrics.text(12)))
                     .focused($filterFocused)
                     .accessibilityIdentifier(identifier + ".logs.filter")
                 if let problem = effective.problem {
-                    Text(verbatim: problem).font(.system(size: 10.5)).foregroundStyle(TabStatusStyle.failed).lineLimit(1).fixedSize()
+                    Text(verbatim: problem).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(TabStatusStyle.failed).lineLimit(1).fixedSize()
                 }
                 Button {
                     view.wrappedValue.regex.toggle()
                 } label: {
-                    Text(verbatim: ".*").font(.system(size: 11, weight: .semibold, design: .monospaced))
+                    Text(verbatim: ".*").font(.system(size: ChromeMetrics.text(11), weight: .semibold, design: .monospaced))
                         .foregroundStyle(view.wrappedValue.regex ? theme.accentText : theme.text3)
                 }
                 .buttonStyle(.plain)
@@ -190,7 +190,7 @@ struct LogsPane: View {
                     view.wrappedValue.highlight.toggle()
                 } label: {
                     Image(systemName: view.wrappedValue.highlight ? "highlighter" : "line.3.horizontal.decrease")
-                        .font(.system(size: 10)).foregroundStyle(view.wrappedValue.highlight ? theme.accentText : theme.text3)
+                        .font(.system(size: ChromeMetrics.text(10))).foregroundStyle(view.wrappedValue.highlight ? theme.accentText : theme.text3)
                 }
                 .buttonStyle(.plain)
                 .help(view.wrappedValue.highlight ? "Matches are marked, every line shown — click to show only them" : "Only matching lines — click to mark them instead")
@@ -220,7 +220,7 @@ struct LogsPane: View {
             }
             HStack(spacing: 4) {
                 Circle().fill(feed.following ? TabStatusStyle.done : theme.text3).frame(width: 7, height: 7)
-                Text(feed.following ? "Following" : "Stopped").font(.system(size: 11)).foregroundStyle(theme.text3)
+                Text(feed.following ? "Following" : "Stopped").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
             }
             .help(feed.following ? "New lines appear as they are written" : stoppedHelp)
             Menu {
@@ -238,7 +238,7 @@ struct LogsPane: View {
                 Button("Clear") { feed.clear() }
                 if let command = feed.terminalCommand { Button("Follow in a Terminal Tab") { runInTerminal(command) } }
             } label: {
-                Image(systemName: "ellipsis.circle").font(.system(size: 12))
+                Image(systemName: "ellipsis.circle").font(.system(size: ChromeMetrics.text(12)))
             }
             .menuStyle(.borderlessButton)
             .menuIndicator(.hidden)

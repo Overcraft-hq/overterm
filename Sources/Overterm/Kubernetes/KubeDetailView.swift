@@ -20,7 +20,7 @@ struct KubeDetailView: View {
             tabs
             Rectangle().fill(theme.border).frame(height: 1)
             if let problem = page.linkProblem {
-                Text(verbatim: problem).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed).padding(.horizontal, 16).padding(.vertical, 6)
+                Text(verbatim: problem).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.failed).padding(.horizontal, 16).padding(.vertical, 6)
             }
             switch session.state {
             case .withheld where session.secret == nil: withheld
@@ -35,7 +35,7 @@ struct KubeDetailView: View {
                     } else if let merged = session.merged {
                         KubeMergedLogsView(page: page, logs: merged, theme: theme)
                     } else if session.ref.selectsPods {
-                        Text(verbatim: "It picks no pods by label: there are no logs to merge.").font(.system(size: 12)).foregroundStyle(theme.text3)
+                        Text(verbatim: "It picks no pods by label: there are no logs to merge.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
                             .frame(maxWidth: .infinity, maxHeight: .infinity)
                     } else {
                         overview
@@ -61,12 +61,12 @@ struct KubeDetailView: View {
                 navButton("chevron.left", "Back  [  ⌘[", enabled: page.history.canGoBack, id: "kubernetes.detail.back") { page.goBack() }
                 navButton("chevron.right", "Forward  ]  ⌘]", enabled: page.history.canGoForward, id: "kubernetes.detail.forward") { page.goForward() }
                 Text(verbatim: session.object?.kind ?? (session.ref.kind.kind.isEmpty ? session.ref.kind.resource : session.ref.kind.kind))
-                    .font(.system(size: 11, weight: .medium)).foregroundStyle(theme.text3).padding(.leading, 4)
+                    .font(.system(size: ChromeMetrics.text(11), weight: .medium)).foregroundStyle(theme.text3).padding(.leading, 4)
                 Spacer(minLength: 0)
                 Button {
                     page.copyDetailKubectl()
                 } label: {
-                    Image(systemName: "terminal").font(.system(size: 11, weight: .medium)).foregroundStyle(theme.text2).frame(width: 22, height: 22)
+                    Image(systemName: "terminal").font(.system(size: ChromeMetrics.text(11), weight: .medium)).foregroundStyle(theme.text2).frame(width: 22, height: 22)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
@@ -75,17 +75,17 @@ struct KubeDetailView: View {
                 Button {
                     page.closeDetail()
                 } label: {
-                    Image(systemName: "xmark").font(.system(size: 11, weight: .medium)).foregroundStyle(theme.text2).frame(width: 22, height: 22)
+                    Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(11), weight: .medium)).foregroundStyle(theme.text2).frame(width: 22, height: 22)
                         .contentShape(Rectangle())
                 }
                 .buttonStyle(.plain)
                 .help("Close (Esc)")
                 .accessibilityIdentifier("kubernetes.detail.close")
             }
-            Text(verbatim: session.ref.name).font(.system(size: 15, weight: .semibold)).foregroundStyle(theme.text).lineLimit(2)
+            Text(verbatim: session.ref.name).font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text).lineLimit(2)
                 .truncationMode(.middle).textSelection(.enabled)
                 .accessibilityIdentifier("kubernetes.detail.name")
-            Text(verbatim: subtitle).font(.system(size: 11.5)).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
+            Text(verbatim: subtitle).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
             // Every object can be edited and compared (3.10): its verbs always show.
             KubePodActions(
                 page: page, access: page.model.access, writeAccess: page.model.writeAccess, forwards: page.forwards, ref: session.ref, theme: theme
@@ -112,15 +112,15 @@ struct KubeDetailView: View {
             VStack(alignment: .leading, spacing: 4) {
                 ResourceActionBar(verbs: page.detailVerbs(for: ref), theme: theme, identifier: "kubernetes.detail.actions")
                 if let problem = page.commandProblem {
-                    Text(verbatim: problem).font(.system(size: 11)).foregroundStyle(TabStatusStyle.failed).lineLimit(3)
+                    Text(verbatim: problem).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.failed).lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                         .accessibilityIdentifier("kubernetes.detail.commandProblem")
                 } else if let status = page.writeStatus {
-                    Text(verbatim: status.text).font(.system(size: 11)).foregroundStyle(status.isFailure ? TabStatusStyle.failed : theme.text2)
+                    Text(verbatim: status.text).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(status.isFailure ? TabStatusStyle.failed : theme.text2)
                         .lineLimit(3).fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                         .accessibilityIdentifier("kubernetes.detail.writeStatus")
                 } else if let status = page.compareStatus, status.ref == ref {
-                    Text(verbatim: status.text).font(.system(size: 11)).foregroundStyle(theme.text2).lineLimit(3)
+                    Text(verbatim: status.text).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text2).lineLimit(3)
                         .fixedSize(horizontal: false, vertical: true).textSelection(.enabled)
                         .accessibilityIdentifier("kubernetes.detail.compareStatus")
                 }
@@ -134,7 +134,7 @@ struct KubeDetailView: View {
 
     private func navButton(_ symbol: String, _ help: String, enabled: Bool, id: String, _ action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol).font(.system(size: 11, weight: .semibold)).foregroundStyle(enabled ? theme.text2 : theme.text3.opacity(0.5))
+            Image(systemName: symbol).font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(enabled ? theme.text2 : theme.text3.opacity(0.5))
                 .frame(width: 22, height: 22).contentShape(Rectangle())
         }
         .buttonStyle(.plain)
@@ -150,7 +150,7 @@ struct KubeDetailView: View {
                     page.showTab(item)
                 } label: {
                     Text(item.title)
-                        .font(.system(size: 12, weight: page.detailTab == item ? .semibold : .regular))
+                        .font(.system(size: ChromeMetrics.text(12), weight: page.detailTab == item ? .semibold : .regular))
                         .foregroundStyle(page.detailTab == item ? theme.text : theme.text2)
                         .padding(.horizontal, 9)
                         .frame(height: 24)
@@ -172,12 +172,12 @@ struct KubeDetailView: View {
         VStack(alignment: .leading, spacing: 10) {
             HStack(spacing: 8) {
                 Image(systemName: "lock.fill").foregroundStyle(theme.text3)
-                Text("Not read").font(.system(size: 13, weight: .semibold)).foregroundStyle(theme.text)
+                Text("Not read").font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text)
             }
             Text(
                 "A Secret's keys and values come only with the object itself, and one GET of it returns every value at once — so the detail doesn't ask for it. The list shows its type and how many keys it has."
             )
-            .font(.system(size: 12)).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
+            .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
@@ -186,8 +186,8 @@ struct KubeDetailView: View {
 
     private func failed(_ reason: String) -> some View {
         VStack(spacing: 10) {
-            Image(systemName: "exclamationmark.triangle").font(.system(size: 24, weight: .light)).foregroundStyle(theme.text3)
-            Text(verbatim: reason).font(.system(size: 12)).foregroundStyle(theme.text2).multilineTextAlignment(.center).textSelection(.enabled)
+            Image(systemName: "exclamationmark.triangle").font(.system(size: ChromeMetrics.text(24), weight: .light)).foregroundStyle(theme.text3)
+            Text(verbatim: reason).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).multilineTextAlignment(.center).textSelection(.enabled)
                 .frame(maxWidth: 360)
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
@@ -264,8 +264,8 @@ struct KubeDetailView: View {
         let mark = gitOpsTone(verdict.state.mark)
         VStack(alignment: .leading, spacing: 12) {
             HStack(alignment: .top, spacing: 8) {
-                Text(verbatim: verdict.state.glyph).font(.system(size: 12, weight: .bold)).foregroundStyle(color(mark))
-                Text(verbatim: KubeGitOpsDetail.sentence(verdict, now: now)).font(.system(size: 12)).foregroundStyle(theme.text).textSelection(.enabled)
+                Text(verbatim: verdict.state.glyph).font(.system(size: ChromeMetrics.text(12), weight: .bold)).foregroundStyle(color(mark))
+                Text(verbatim: KubeGitOpsDetail.sentence(verdict, now: now)).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
                 Spacer(minLength: 0)
             }
@@ -275,7 +275,7 @@ struct KubeDetailView: View {
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("kubernetes.detail.gitops.state")
             if !verdict.tags.isEmpty {
-                Text(verbatim: verdict.tags.map { $0.said(now: now) }.joined(separator: " · ")).font(.system(size: 11)).foregroundStyle(theme.text3)
+                Text(verbatim: verdict.tags.map { $0.said(now: now) }.joined(separator: " · ")).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
             }
             items(
                 detail.sourceLines(peers: peers).map { KubeOverview.Item(label: "Source", value: $0, mono: true) }
@@ -334,14 +334,14 @@ struct KubeDetailView: View {
                     // A checkout of its repository open in the window: each entry's diff against the one before, there.
                     if let checkout = historyCheckout, detail.history.count > 1 {
                         HStack(spacing: 8) {
-                            Text(verbatim: "Diff in \(checkout.name):").font(.system(size: 11)).foregroundStyle(theme.text3)
+                            Text(verbatim: "Diff in \(checkout.name):").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                             ForEach(0..<(detail.history.count - 1), id: \.self) { index in
                                 let entry = detail.history[index]
                                 Button(entry.revisions.map(KubeGitOpsRevision.shown).first ?? "entry \(index + 1)") {
                                     page.reviewHistory(detail, entry: index, in: checkout)
                                 }
                                 .buttonStyle(.link)
-                                .font(.system(size: 11, design: .monospaced))
+                                .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
                                 .help("A review tab: what changed under \(checkout.pathspecs.joined(separator: ", ")) since the entry before")
                                 .accessibilityIdentifier("kubernetes.detail.gitops.history.diff.\(index)")
                             }
@@ -362,14 +362,14 @@ struct KubeDetailView: View {
                         Button {
                             page.actions?.copy(detail.conditionsText)
                         } label: {
-                            Image(systemName: "doc.on.doc").font(.system(size: 10.5)).foregroundStyle(theme.text2).frame(width: 18, height: 18).contentShape(Rectangle())
+                            Image(systemName: "doc.on.doc").font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text2).frame(width: 18, height: 18).contentShape(Rectangle())
                         }
                         .buttonStyle(.plain)
                         .help("Copy the conditions")
                         .accessibilityIdentifier("kubernetes.detail.gitops.copyConditions")
                     }
                     ForEach(Array(detail.conditionLines.enumerated()), id: \.offset) { _, line in
-                        Text(verbatim: line).font(.system(size: 11.5, design: .monospaced)).foregroundStyle(theme.text2).textSelection(.enabled)
+                        Text(verbatim: line).font(.system(size: ChromeMetrics.text(11.5), design: .monospaced)).foregroundStyle(theme.text2).textSelection(.enabled)
                             .fixedSize(horizontal: false, vertical: true)
                     }
                 }
@@ -394,7 +394,7 @@ struct KubeDetailView: View {
         let color = rollout.isProblem ? TabStatusStyle.failed : TabStatusStyle.waiting
         return HStack(alignment: .top, spacing: 8) {
             Image(systemName: rollout.isProblem ? "exclamationmark.triangle.fill" : "arrow.triangle.2.circlepath").foregroundStyle(color)
-            Text(verbatim: rollout.message).font(.system(size: 12)).foregroundStyle(theme.text).textSelection(.enabled)
+            Text(verbatim: rollout.message).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).textSelection(.enabled)
                 .fixedSize(horizontal: false, vertical: true)
         }
         .padding(10)
@@ -404,7 +404,7 @@ struct KubeDetailView: View {
     }
 
     private func caption(_ text: String) -> some View {
-        Text(verbatim: text).font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+        Text(verbatim: text).font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
     }
 
     private func color(_ tone: KubeOverview.Tone) -> Color {
@@ -421,12 +421,12 @@ struct KubeDetailView: View {
         VStack(alignment: .leading, spacing: 5) {
             ForEach(Array(items.enumerated()), id: \.offset) { _, item in
                 HStack(alignment: .firstTextBaseline, spacing: 10) {
-                    Text(verbatim: item.label).font(.system(size: 11.5)).foregroundStyle(theme.text3).lineLimit(2).truncationMode(.middle)
+                    Text(verbatim: item.label).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).lineLimit(2).truncationMode(.middle)
                         .frame(width: 128, alignment: .leading)
                     VStack(alignment: .leading, spacing: 2) {
                         value(item)
                         if let detail = item.detail {
-                            Text(verbatim: detail).font(.system(size: 11, design: item.detailMono ? .monospaced : .default)).foregroundStyle(theme.text3)
+                            Text(verbatim: detail).font(.system(size: ChromeMetrics.text(11), design: item.detailMono ? .monospaced : .default)).foregroundStyle(theme.text3)
                                 .textSelection(.enabled).fixedSize(horizontal: false, vertical: true)
                         }
                         if !item.ports.isEmpty { containerPorts(item.ports) }
@@ -445,8 +445,8 @@ struct KubeDetailView: View {
                     page.portForward(session.ref, port: port.port)
                 } label: {
                     HStack(spacing: 3) {
-                        Image(systemName: "arrow.left.arrow.right").font(.system(size: 8, weight: .semibold))
-                        Text(verbatim: port.name.map { "\(port.port) (\($0))" } ?? "\(port.port)").font(.system(size: 11, design: .monospaced))
+                        Image(systemName: "arrow.left.arrow.right").font(.system(size: ChromeMetrics.text(8), weight: .semibold))
+                        Text(verbatim: port.name.map { "\(port.port) (\($0))" } ?? "\(port.port)").font(.system(size: ChromeMetrics.text(11), design: .monospaced))
                     }
                     .padding(.horizontal, 6)
                     .padding(.vertical, 2)
@@ -462,14 +462,14 @@ struct KubeDetailView: View {
     }
 
     @ViewBuilder private func value(_ item: KubeOverview.Item) -> some View {
-        let font = Font.system(size: 12, design: item.mono ? .monospaced : .default)
+        let font = Font.system(size: ChromeMetrics.text(12), design: item.mono ? .monospaced : .default)
         if let link = item.link {
             Button {
                 page.follow(link)
             } label: {
                 HStack(spacing: 3) {
                     Text(verbatim: item.value).font(font).underline()
-                    Image(systemName: "arrow.up.right").font(.system(size: 8, weight: .semibold))
+                    Image(systemName: "arrow.up.right").font(.system(size: ChromeMetrics.text(8), weight: .semibold))
                 }
                 .foregroundStyle(theme.accentText)
                 .contentShape(Rectangle())
@@ -487,21 +487,21 @@ struct KubeDetailView: View {
             caption("Pods it selects")
             switch session.pods {
             case .idle, .loading: ProgressView().controlSize(.small)
-            case .failed(let reason): Text(verbatim: reason).font(.system(size: 11.5)).foregroundStyle(TabStatusStyle.failed)
-            case .loaded(let rows) where rows.isEmpty: Text("None.").font(.system(size: 12)).foregroundStyle(theme.text3)
+            case .failed(let reason): Text(verbatim: reason).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.failed)
+            case .loaded(let rows) where rows.isEmpty: Text("None.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
             case .loaded(let rows):
                 ForEach(rows, id: \.id) { row in
                     HStack(spacing: 8) {
                         Button {
                             page.openPod(row)
                         } label: {
-                            Text(verbatim: row.row.id.name).font(.system(size: 12)).underline().foregroundStyle(theme.accentText)
+                            Text(verbatim: row.row.id.name).font(.system(size: ChromeMetrics.text(12))).underline().foregroundStyle(theme.accentText)
                         }
                         .buttonStyle(.plain)
                         .accessibilityIdentifier("kubernetes.detail.pod.\(row.row.id.name)")
                         if let summary = row.summary {
                             Text(verbatim: summary.isFailing ? (summary.exitReason ?? summary.status) : summary.status)
-                                .font(.system(size: 11.5)).foregroundStyle(summary.isFailing ? TabStatusStyle.failed : theme.text2)
+                                .font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(summary.isFailing ? TabStatusStyle.failed : theme.text2)
                         }
                         Spacer(minLength: 0)
                     }
@@ -516,13 +516,13 @@ struct KubeDetailView: View {
         if let secret = session.secret, session.state == .withheld {
             VStack(alignment: .leading, spacing: 10) {
                 Text("A Secret's YAML is read with its values: Show reads them, and the YAML shows them masked.")
-                    .font(.system(size: 12)).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
+                    .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
                 if secret.state == .hidden || secret.state == .confirming {
                     Button("Show Values") {
                         page.showTab(.overview)
                         _ = page.showSecret()
                     }
-                    .font(.system(size: 12))
+                    .font(.system(size: ChromeMetrics.text(12)))
                 }
             }
             .padding(16)
@@ -542,13 +542,13 @@ struct KubeDetailView: View {
                     verbatim: (session.showsHidden ? "As the server sent it" : "Without managedFields and the last-applied annotation")
                         + (session.secret != nil ? " · every value masked" : " · secret-looking env values hidden")
                 )
-                .font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
+                .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1)
                 Spacer(minLength: 4)
                 if session.hasHidden {
-                    Toggle(page.yamlEditor == nil ? "Show them" : "As served", isOn: $session.showsHidden).toggleStyle(.checkbox).font(.system(size: 11.5))
+                    Toggle(page.yamlEditor == nil ? "Show them" : "As served", isOn: $session.showsHidden).toggleStyle(.checkbox).font(.system(size: ChromeMetrics.text(11.5)))
                         .accessibilityIdentifier("kubernetes.detail.showHidden")
                 }
-                Button("Copy") { page.actions?.copy(session.yaml) }.font(.system(size: 11.5))
+                Button("Copy") { page.actions?.copy(session.yaml) }.font(.system(size: ChromeMetrics.text(11.5)))
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -577,9 +577,9 @@ struct KubeDetailView: View {
     private var events: some View {
         VStack(spacing: 0) {
             HStack(spacing: 10) {
-                Text(verbatim: eventsNote).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1)
+                Text(verbatim: eventsNote).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1)
                 Spacer(minLength: 4)
-                Button("Refresh") { session.loadEvents(again: true) }.font(.system(size: 11.5)).disabled(session.events == .loading)
+                Button("Refresh") { session.loadEvents(again: true) }.font(.system(size: ChromeMetrics.text(11.5))).disabled(session.events == .loading)
             }
             .padding(.horizontal, 12)
             .padding(.vertical, 6)
@@ -589,9 +589,9 @@ struct KubeDetailView: View {
                     VStack(alignment: .leading, spacing: 10) {
                         switch session.events {
                         case .idle, .loading: ProgressView().controlSize(.small).frame(maxWidth: .infinity)
-                        case .failed(let reason): Text(verbatim: reason).font(.system(size: 12)).foregroundStyle(TabStatusStyle.failed)
+                        case .failed(let reason): Text(verbatim: reason).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(TabStatusStyle.failed)
                         case .loaded(let events) where events.isEmpty:
-                            Text("No events: the cluster keeps them about an hour.").font(.system(size: 12)).foregroundStyle(theme.text3)
+                            Text("No events: the cluster keeps them about an hour.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
                         case .loaded(let events):
                             ForEach(events) { event in eventRow(event).id("event/\(event.id)") }
                         }
@@ -618,21 +618,21 @@ struct KubeDetailView: View {
         let marked = page.markedEntry == "event/\(event.id)"
         return HStack(alignment: .top, spacing: 8) {
             Image(systemName: event.isWarning ? "exclamationmark.triangle.fill" : "info.circle")
-                .font(.system(size: 11)).foregroundStyle(event.isWarning ? TabStatusStyle.waiting : theme.text3).frame(width: 14)
+                .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(event.isWarning ? TabStatusStyle.waiting : theme.text3).frame(width: 14)
             VStack(alignment: .leading, spacing: 2) {
                 HStack(spacing: 6) {
-                    Text(verbatim: event.reason).font(.system(size: 12, weight: .semibold)).foregroundStyle(event.isWarning ? TabStatusStyle.waiting : theme.text)
-                    if event.count > 1 { Text(verbatim: "×\(event.count)").font(.system(size: 11)).foregroundStyle(theme.text3) }
+                    Text(verbatim: event.reason).font(.system(size: ChromeMetrics.text(12), weight: .semibold)).foregroundStyle(event.isWarning ? TabStatusStyle.waiting : theme.text)
+                    if event.count > 1 { Text(verbatim: "×\(event.count)").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3) }
                     Spacer(minLength: 0)
                     if let last = event.last {
                         TimelineView(.periodic(from: .now, by: 1)) { context in
-                            Text(verbatim: KubeAge.format(context.date.timeIntervalSince(last)) + " ago").font(.system(size: 11)).foregroundStyle(theme.text3)
+                            Text(verbatim: KubeAge.format(context.date.timeIntervalSince(last)) + " ago").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                         }
                     }
                 }
-                Text(verbatim: event.message).font(.system(size: 12)).foregroundStyle(theme.text2).textSelection(.enabled)
+                Text(verbatim: event.message).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).textSelection(.enabled)
                     .fixedSize(horizontal: false, vertical: true)
-                if !event.source.isEmpty { Text(verbatim: event.source).font(.system(size: 10.5)).foregroundStyle(theme.text3) }
+                if !event.source.isEmpty { Text(verbatim: event.source).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3) }
             }
         }
         .padding(marked ? 6 : 0)
@@ -676,11 +676,11 @@ struct KubePodLogsView: View {
                 .help("The container whose log shows: the pod's default one first")
                 .accessibilityIdentifier("kubernetes.logs.container")
             } else if let name = logs.container {
-                Text(verbatim: name).font(.system(size: 11.5, weight: .medium)).foregroundStyle(theme.text2)
+                Text(verbatim: name).font(.system(size: ChromeMetrics.text(11.5), weight: .medium)).foregroundStyle(theme.text2)
             }
             if logs.shown?.hasPrevious == true {
                 Toggle("Previous", isOn: Binding(get: { logs.previous }, set: { logs.pick(previous: $0) }))
-                    .toggleStyle(.checkbox).font(.system(size: 11.5))
+                    .toggleStyle(.checkbox).font(.system(size: ChromeMetrics.text(11.5)))
                     .help("The last terminated instance's log" + (logs.shown?.lastTerminated.map { ": \($0)" } ?? ""))
                     .accessibilityIdentifier("kubernetes.logs.previous")
             }
@@ -694,7 +694,7 @@ struct KubePodLogsView: View {
             .accessibilityIdentifier("kubernetes.logs.since")
             if let from = logs.from {
                 KubeLogsFromNote(feed: logs.feed, from: from, cut: logs.fromCut, theme: theme)
-                Button("Whole Log") { logs.clearFrom() }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: 11))
+                Button("Whole Log") { logs.clearFrom() }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: ChromeMetrics.text(11)))
                     .help("Back to the log as Since says it")
                     .accessibilityIdentifier("kubernetes.logs.clearFrom")
             }
@@ -702,10 +702,10 @@ struct KubePodLogsView: View {
             if logs.loadingOlder { ProgressView().controlSize(.mini) }
             // kubelet keeps one terminated instance: of several restarts, the last.
             if logs.previous, (logs.shown?.restarts ?? 0) > 1 {
-                Text(verbatim: "Only the last previous instance's log is kept.").font(.system(size: 11)).foregroundStyle(theme.text3).fixedSize()
+                Text(verbatim: "Only the last previous instance's log is kept.").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).fixedSize()
                     .accessibilityIdentifier("kubernetes.logs.previousKept")
             }
-            if let note { Text(verbatim: note).font(.system(size: 11)).foregroundStyle(noteColor).lineLimit(1).truncationMode(.tail) }
+            if let note { Text(verbatim: note).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(noteColor).lineLimit(1).truncationMode(.tail) }
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 5)
@@ -745,14 +745,14 @@ struct KubePodUsageView: View {
     var body: some View {
         if let lines = page.containerUsage(of: session.ref, object: session.object?.json), !lines.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
-                Text(verbatim: "Usage").font(.system(size: 10.5, weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+                Text(verbatim: "Usage").font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
                 ForEach(lines, id: \.container) { line in
                     HStack(alignment: .firstTextBaseline, spacing: 10) {
-                        Text(verbatim: line.container).font(.system(size: 11.5)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
+                        Text(verbatim: line.container).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.middle)
                             .frame(width: 128, alignment: .leading)
                         VStack(alignment: .leading, spacing: 2) {
-                            Text(verbatim: "cpu \(line.cpu)").font(.system(size: 12, design: .monospaced)).foregroundStyle(theme.text)
-                            Text(verbatim: "memory \(line.memory)").font(.system(size: 12, design: .monospaced))
+                            Text(verbatim: "cpu \(line.cpu)").font(.system(size: ChromeMetrics.text(12), design: .monospaced)).foregroundStyle(theme.text)
+                            Text(verbatim: "memory \(line.memory)").font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                                 .foregroundStyle(line.nearLimit ? TabStatusStyle.failed : theme.text)
                                 .help(line.nearLimit ? "Within a tenth of its memory limit: past it, the container is OOMKilled." : "")
                         }
@@ -767,18 +767,18 @@ struct KubePodUsageView: View {
                         sparkline("cpu", history.map(\.usage.cpu))
                         sparkline("memory", history.map(\.usage.memory))
                     }
-                    Text(verbatim: "The pod's total over \(span)").font(.system(size: 10.5)).foregroundStyle(theme.text3)
+                    Text(verbatim: "The pod's total over \(span)").font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3)
                         .accessibilityIdentifier("kubernetes.detail.usage.history")
                 }
             }
             .accessibilityIdentifier("kubernetes.detail.usage")
         } else if let problem = page.podUsageProblem(of: session.ref) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
-                Text(verbatim: problem).font(.system(size: 11)).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: problem).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
                     .accessibilityIdentifier("kubernetes.detail.usage.problem")
                 if page.podUsageRefused(of: session.ref) {
                     // After an RBAC grant (no new credentials): asked again.
-                    Button("Try Again") { page.model.retry() }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: 11))
+                    Button("Try Again") { page.model.retry() }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: ChromeMetrics.text(11)))
                         .help("Ask metrics-server again: access may have been granted since")
                         .accessibilityIdentifier("kubernetes.detail.usage.retry")
                 }
@@ -788,7 +788,7 @@ struct KubePodUsageView: View {
 
     private func sparkline(_ title: String, _ values: [Double]) -> some View {
         HStack(spacing: 6) {
-            Text(verbatim: title).font(.system(size: 10.5)).foregroundStyle(theme.text3)
+            Text(verbatim: title).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3)
             KubeSparkline(values: values, color: theme.accentText).frame(width: 120, height: 18)
         }
     }
@@ -807,7 +807,7 @@ struct KubeLogsFromNote: View {
         let first = feed.lines.first?.timestamp.flatMap { KubeMetricsReader.time($0.replacingOccurrences(of: #"\.\d+"#, with: "", options: .regularExpression)) }
         let said = Self.text(from: from, first: first, lines: feed.lines.count, cut: cut)
         Text(verbatim: said.text)
-            .font(.system(size: 11)).foregroundStyle(said.warns ? TabStatusStyle.waiting : theme.text2).lineLimit(1).truncationMode(.tail)
+            .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(said.warns ? TabStatusStyle.waiting : theme.text2).lineLimit(1).truncationMode(.tail)
             .help(said.text)
             .accessibilityIdentifier("kubernetes.logs.from")
     }
