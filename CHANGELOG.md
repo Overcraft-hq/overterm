@@ -55,6 +55,7 @@ version is tagged `v<version>`.
 - kubernetes: GitOps' performance budget — the GitOps section stays quick with a thousand Argo CD Applications: when many of them change at once, what is read again is ranked and drawn together rather than one object at a time, so a burst of changes shows in about two seconds instead of seven or eight, without the window stalling
 - kubernetes: charts in the registry only while on screen, and the scenarios reliable — a chart a lazy stack built off screen no longer leaves a 0×0 entry behind; a pod's Status column is the last the list narrows, so CrashLoopBackOff and a node's Ready,SchedulingDisabled stay whole beside the Why button (and whole on hover); a refusal says so first — "Refused: kubectl auth can-i create pods/attach in shop" — and the page's header wraps it onto a second line before cutting it
 - kubernetes: why the list's usage columns are empty (no metrics-server, a refusal, shares that need Prometheus) is said on a line of its own under the page's title, whole, instead of cut beside the toolbar
+- kubernetes: the Pods list's CPU and Memory never cut short — in a narrow window or the wide view their values (and the shares' headers) are drawn whole, and the list scrolls sideways rather than squeezing them to "2..m"
 
 ## 1.5.4 — 2026-11-09
 

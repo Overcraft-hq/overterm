@@ -91,6 +91,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        endRun()
+    }
+
+    /// What quitting ends, so nothing Overterm started outlives it: at
+    /// quit, and at the end of an end-to-end scenario, which exits without
+    /// quitting (`E2ERunner.start`).
+    func endRun() {
         // Save first: the autosave is debounced and would miss a quick quit.
         // With each pane's text — unless closing the window already did.
         windowController?.saveFinalSession()

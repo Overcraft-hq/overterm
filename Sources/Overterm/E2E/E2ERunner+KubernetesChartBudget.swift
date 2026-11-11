@@ -244,6 +244,22 @@ extension E2ERunner {
 /// which leaves the tab at 24h: the refreshes counted in the fake's
 /// recorded requests, the tab's clock moved where five minutes would take.
 extension E2ERunner {
+    /// This process's CPU over three windows of 3 s each, in percent of a
+    /// core: each said, so one window's transient (a git status, the
+    /// fake's own threads answering in this process — it moved a single
+    /// 6 s window from 1% to 6.5% between runs of the same code) shows
+    /// for what it is; the budget is held on their mean.
+    func cpuWindows() async -> [Double] {
+        var windows: [Double] = []
+        for _ in 0..<3 {
+            let cpu0 = Self.cpuSeconds()
+            let wall0 = Date()
+            await pause(3)
+            windows.append((Self.cpuSeconds() - cpu0) / Date().timeIntervalSince(wall0) * 100)
+        }
+        return windows
+    }
+
     func kubernetesChartsSteady(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, service: KubePrometheusService) async {
         let interval = model.prometheus.interval
         let metricsInterval = model.metrics.interval
@@ -300,17 +316,21 @@ extension E2ERunner {
         let settled = await eventually(15) { !ranges().isEmpty && model.prometheus.tabs.values.contains { $0.read != nil } }
         await pause(2)  // the last 500 ms polls land, the first Live answers drawn
         fake.forgetRequests()
-        let cpu0 = Self.cpuSeconds()
-        let wall0 = Date()
-        await pause(6)
-        let cpu = (Self.cpuSeconds() - cpu0) / Date().timeIntervalSince(wall0) * 100
+        note("kubernetes Live tab: steady window starts")
+        let windows = await cpuWindows()
+        // The whole 9 s, as the budget is held (a mean, no window left out).
+        let cpu = windows.reduce(0, +) / Double(windows.count)
         let metrics = Dictionary(grouping: fake.requests.filter { $0.path.hasPrefix("/apis/metrics.k8s.io/") }, by: \.path).mapValues(\.count)
         let live = perQuery(ranges())
-        note(String(format: "kubernetes Live tab, quiet, steady: CPU %.2f%%; ", cpu) + "metrics GETs \(metrics), query_range \(live.values.reduce(0, +))")
+        let said = windows.map { String(format: "%.2f%%", $0) }.joined(separator: ", ")
+        note(String(format: "kubernetes Live tab, quiet, steady: CPU %.2f%% ", cpu) + "(mean of \(said)); metrics GETs \(metrics), query_range \(live.values.reduce(0, +))")
         check("Live read, then steady", settled)
-        check("at most one GET a target in 6 s", metrics.values.allSatisfy { $0 <= 1 }, "\(metrics)")
-        check("at most one query_range a chart's query in 6 s (its 30 s step)", live.values.allSatisfy { $0 <= 1 }, "\(live)")
-        check("steady, within the idle budget (< 3% CPU)", cpu < 3, String(format: "%.2f%%", cpu))
+        check("at most one GET a target in 9 s (its 15 s interval)", metrics.values.allSatisfy { $0 <= 1 }, "\(metrics)")
+        check("at most one query_range a chart's query in 9 s (its 30 s step)", live.values.allSatisfy { $0 <= 1 }, "\(live)")
+        // The page's budget is the app's idle one, held absolutely
+        // (analysis.md 10; metrics.md M-tests): it fails, as `performance`'s
+        // idle CPU does, on a Mac whose idle app alone passes 3%.
+        check("steady, within the idle budget (< 3% CPU)", cpu < 3, "mean of \(said)")
 
         // Hidden: no metrics read at all, the metrics proxy closed within 60 s.
         model.prometheus.interval = .milliseconds(300)
@@ -328,6 +348,24 @@ extension E2ERunner {
         await pause(2)
         let read = fake.requests.filter { $0.isPrometheusQuery || $0.path.hasPrefix("/apis/metrics.k8s.io/") }
         check("then nothing of metrics read, at 300 ms intervals", read.isEmpty, "\(read.map(\.path))")
+        // The same window without the page, at the same intervals: what the
+        // app costs here anyway — its agents' process-tree poll and the
+        // checkout's git, which on a Mac running many processes alone
+        // passes 3%. Said beside the absolute budget, never in its place:
+        // with the page hidden the terminal shows and its checkout's git
+        // runs, neither of which costs while the page covers it, so this
+        // baseline is high and the difference only a guide.
+        model.prometheus.interval = nil
+        model.metrics.interval = .seconds(15)
+        // Past what hiding itself sets off (the terminal shown again, its checkout's git).
+        await pause(5)
+        note("kubernetes hidden: baseline window starts")
+        let bare = await cpuWindows()
+        let baseline = bare.reduce(0, +) / Double(bare.count)
+        let bareSaid = bare.map { String(format: "%.2f%%", $0) }.joined(separator: ", ")
+        note(
+            String(format: "kubernetes hidden, the same window without the page: CPU %.2f%% ", baseline)
+                + "(mean of \(bareSaid)); the Live tab's over it: " + String(format: "%+.2f%%", cpu - baseline))
         app.toggleKubernetesPage(nil)
         check("shown again", await eventually(5) { app.store.showingOverlay == .kubernetes })
     }

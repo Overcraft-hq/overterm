@@ -250,6 +250,9 @@ final class ManagedProcess: @unchecked Sendable {
     /// The pids of those running, for tests.
     static var livePIDs: [pid_t] { lock.withLock { live.filter(\.isRunning).map(\.pid) } }
 
+    /// Those running, for an end-to-end run to see each gone after quitting.
+    static var liveProcesses: [ManagedProcess] { lock.withLock { live.filter(\.isRunning) } }
+
     /// What it said on a stream — its last 16 KB: a process lives as long
     /// as the app, and ssh adds a line for every refused connection.
     final class Output: @unchecked Sendable {

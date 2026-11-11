@@ -178,9 +178,12 @@ extension E2ERunner {
           user: api
 
         """.write(to: secretFile, atomically: true, encoding: .utf8)
+        // From here until its diff is checked, a Secret's value may be
+        // drawn: what a failing read saw is never kept.
+        withholdPictures = true
         app.openInEditor(secretFile)
         check("a checkout's manifest gets the bar", await eventually(10) { editor.active?.url?.standardizedFileURL == secretFile.standardizedFileURL && editor.active?.kubeManifest != nil })
-        guard let secret = editor.active?.kubeManifest else { return }
+        guard let secret = editor.active?.kubeManifest else { withholdPictures = false; return }
         secret.contextName = "kind-fake"
         secret.diffWithCluster()
         check("its diff comes", await eventually(15) { secret.result != nil }, "\(secret.state)")
@@ -193,6 +196,7 @@ extension E2ERunner {
         check("drawn masked", await shownText(15) { $0.contains("*** (before)") } != nil)
         check("drawn without its value", await shownText(3) { line in values.contains { line.contains($0) } } == nil)
         check("the Secret unchanged", (fake.object("secrets", "api-creds", namespace: "shop")?["data"] as? [String: String])?["token"] == values[2])
+        withholdPictures = false
 
         // A kustomization: rendered by kubectl kustomize, from files alone.
         let deploy = checkout.appendingPathComponent("deploy")

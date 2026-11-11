@@ -328,8 +328,11 @@ extension EditorViewController {
 
     // MARK: Hover
 
-    func showHover(at index: Int, fromKeyboard: Bool) {
-        guard let buffer = active, view.window?.isKeyWindow == true else { return }
+    /// `inKeyWindowOnly` false: an end-to-end run's, whose window is never
+    /// made key while another app is in front (macOS 14's cooperative
+    /// activation) — the hover itself is what it checks.
+    func showHover(at index: Int, fromKeyboard: Bool, inKeyWindowOnly: Bool = true) {
+        guard let buffer = active, view.window?.isKeyWindow == true || !inKeyWindowOnly else { return }
         let problems = buffer.diagnostics.filter {
             NSLocationInRange(index, $0.range) || ($0.range.length == 0 && $0.range.location == index)
         }

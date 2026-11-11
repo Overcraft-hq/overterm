@@ -1,4 +1,4 @@
-import Foundation
+import AppKit
 
 /// Usage (stage 2d; docs/design/kubernetes/analysis.md, 2.11): CPU and
 /// Memory columns on the pods and nodes lists — a node's with its share of
@@ -25,14 +25,40 @@ extension KubernetesPageModel {
             want == .nodes
             ? " — with its share of the node's allocatable, as kubectl top nodes says it, and the last 15 min of that share as a strip of 15 s cells (taller and warmer as it nears allocatable; blank where nothing was sampled)"
             : " — its containers', summed"
+        // Never narrower than a value: at 1400 pt with the wide view's
+        // columns beside them, 40 pt drew "1.m" and "1..i" (the list
+        // scrolls sideways instead). A node's value has its strip beside
+        // it. `usageMinWidth`.
+        let node = want == .nodes
+        let cpuMin = usageMinWidth(.cpu, node: node)
+        let memoryMin = usageMinWidth(.memory, node: node)
         return [
             ResourceColumn(
-                id: cpuColumn, title: "CPU", width: want == .nodes ? 180 : 80, minWidth: 40,
+                id: cpuColumn, title: "CPU", width: max(node ? 180 : 80, cpuMin), minWidth: cpuMin,
                 help: "CPU used, in millicores, from metrics.k8s.io (kubectl top)\(of). Read every 15 s while shown."),
             ResourceColumn(
-                id: memoryColumn, title: "Memory", width: want == .nodes ? 190 : 90, minWidth: 40,
+                id: memoryColumn, title: "Memory", width: max(node ? 190 : 90, memoryMin), minWidth: memoryMin,
                 help: "Memory used (working set) from metrics.k8s.io (kubectl top)\(of). Read every 15 s while shown."),
         ]
+    }
+
+    /// A usage cell's text font: 12 pt monospaced, as the list draws it.
+    static let usageFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+
+    /// The width a usage cell's content takes: its text, and for a node
+    /// its heat strip and the 6 pt between them (`KubernetesPageView.cell`).
+    static func usageContentWidth(_ text: String, strip: Bool) -> CGFloat {
+        let drawn = (text as NSString).size(withAttributes: [.font: usageFont]).width.rounded(.up)
+        return drawn + (strip ? KubeHeatStripView.width + 6 : 0)
+    }
+
+    /// A usage column's least width: its longest likely value ("12000m",
+    /// "65536Mi"; a node's with its share, "12000m (100%)", and its strip)
+    /// and the cell's 6 pt either side.
+    static func usageMinWidth(_ measure: KubeUsageCell.Measure, node: Bool = false) -> CGFloat {
+        let value = measure == .cpu ? "12000m" : "65536Mi"
+        // At least what a pod's took before it was measured (64, 72 pt).
+        return max(usageContentWidth(node ? value + " (100%)" : value, strip: node) + 12, measure == .cpu ? 64 : 72)
     }
 
     /// The Pods list's shares of request and limit (metrics.md 2.1, M5b):
@@ -40,7 +66,8 @@ extension KubernetesPageModel {
     var showsShareColumns: Bool { wide && metricsWant == .pods }
 
     static var shareColumns: [ResourceColumn] {
-        KubePodShares.Column.allCases.map { ResourceColumn(id: $0.rawValue, title: $0.title, width: 70, minWidth: 40, help: $0.help) }
+        // 56 pt: the header's "%MEM/R" whole, not "%ME…".
+        KubePodShares.Column.allCases.map { ResourceColumn(id: $0.rawValue, title: $0.title, width: 70, minWidth: 56, help: $0.help) }
     }
 
     /// A pod's share cell: without Prometheus a dash and its sentence (no

@@ -2279,8 +2279,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     out += "drag \(divider) at x=\(Int(start.x)) hit=\(hit.map { String(describing: Swift.type(of: $0)) } ?? "nil") widths \(before) -> \(after)\n"
                 }
                 FileHandle.standardError.write(Data(out.utf8))
-                // OVERTERM_DUMP_PNG=<file>: also a picture of the AppKit/SwiftUI
-                // layers (the terminal's Metal layer does not show).
+                // Exits rather than quits: what quitting ends, ended, and
+                // the run's own support folder removed.
+                (NSApp.delegate as? AppDelegate)?.endRun()
+                if AppEnvironment.ownsSupportDirectory { try? FileManager.default.removeItem(at: AppEnvironment.supportDirectory) }
                 exit(0)
             }
         }
