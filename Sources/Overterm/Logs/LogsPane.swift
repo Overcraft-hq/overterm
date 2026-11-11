@@ -198,7 +198,7 @@ struct LogsPane: View {
             }
             .padding(.horizontal, 7)
             .frame(minWidth: 100, maxWidth: .infinity)
-            .frame(height: 24)
+            .frame(height: ChromeMetrics.row(24))
             .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover.opacity(0.7)))
             Picker("", selection: $filter.level) {
                 ForEach(LogFilter.Level.allCases) { Text($0.title).tag($0) }
