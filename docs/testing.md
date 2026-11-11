@@ -139,7 +139,12 @@ match itself. Text below the fold isn't drawn, and a `LazyVStack`
 builds nothing there: scroll to it first (`revealChart`,
 `revealElement`), never wait longer. A failing read says what was read
 instead with `OVERTERM_E2E_READ=1` (off by default: a scenario reveals a
-Secret's value), and saves the window into `OVERTERM_E2E_READ_DIR`.
+Secret's value), and saves the window into `OVERTERM_E2E_READ_DIR`;
+without it, the failure still says where the read was asked
+(file:line — a scenario has several checks called "drawn"), how many
+lines were read and the window's size (`unread`). Vision reads `l` as
+`1` and puts a space after a comma (`Ready, SchedulingDisabled`): match
+what it may read, not only what is drawn.
 
 ### Kubernetes
 
@@ -227,7 +232,12 @@ What makes it end-to-end without being dangerous:
   own queue. Never CGEvent/osascript — those reach whatever has focus.
 - **Isolated state** (`AppEnvironment`): its own defaults suite (wiped at
   launch), a temp support dir (or `OVERTERM_SUPPORT_DIR` for a prepared
-  session), notifications counted not posted, no split autosave, never
+  session), notifications counted not posted, no split autosave, no window
+  frame autosave — its window opens at 1400×880 (or the screen's visible
+  area) every time: macOS keeps the autosaved frame in the standard
+  defaults, the user's, and a scenario that resized the window
+  (`fullScreen`'s 1000×640) opened every scenario after it that small, until
+  text read off the window no longer fit — never
   activated (it stays behind your windows), and Claude Code's transcripts an
   empty projects directory of its own until a scenario points
   `ClaudeUsageReader.projectsDirectory` at the ones it wrote — never the

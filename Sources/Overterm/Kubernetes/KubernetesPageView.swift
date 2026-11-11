@@ -332,6 +332,7 @@ struct KubernetesPageView: View {
                 empty("No kubeconfig", noKubeconfigDetail, button: "Kubernetes Settings…", id: "kubernetes.noKubeconfig") { page.actions?.settings() }
             } else {
                 header
+                metricsNoteBar
                 Rectangle().fill(theme.border).frame(height: 1)
                 content
                 Rectangle().fill(theme.border).frame(height: 1)
@@ -349,6 +350,30 @@ struct KubernetesPageView: View {
         return lines.joined(separator: "\n")
     }
 
+    /// Why the list's usage columns say nothing (no metrics-server, a
+    /// refusal, shares that need Prometheus): a row of its own under the
+    /// header, the page's width — in the header, beside the toolbar, a
+    /// 1400-point window cut the sentence before its point ("turn
+    /// Prometheus on…").
+    @ViewBuilder private var metricsNoteBar: some View {
+        if let note = page.metricsNote {
+            HStack(spacing: 10) {
+                Text(verbatim: note).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(2).truncationMode(.tail)
+                    .fixedSize(horizontal: false, vertical: true).help(note)
+                    .accessibilityIdentifier("kubernetes.metricsNote")
+                if page.metricsNoteIsRefusal {
+                    // After an RBAC grant (no new credentials): asked again.
+                    Button("Try Again") { model.retry() }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: 11))
+                        .help("Ask metrics-server again: access may have been granted since")
+                        .accessibilityIdentifier("kubernetes.metricsNote.retry")
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 20)
+            .padding(.bottom, 8)
+        }
+    }
+
     private var header: some View {
         HStack(spacing: 10) {
             Text(verbatim: page.title).font(.system(size: 20, weight: .semibold)).foregroundStyle(theme.text).lineLimit(1).fixedSize()
@@ -358,16 +383,6 @@ struct KubernetesPageView: View {
                 Text(verbatim: "\(model.rows.count) · \(model.kind.namespaced ? page.scopeLabel : "cluster-wide")" + (failing > 0 ? " · \(failing) failing" : ""))
                     .font(.system(size: 12)).foregroundStyle(failing > 0 ? TabStatusStyle.failed : theme.text3)
                     .accessibilityIdentifier("kubernetes.counts")
-            }
-            if let note = page.metricsNote {
-                Text(verbatim: note).font(.system(size: 11)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.tail).help(note)
-                    .accessibilityIdentifier("kubernetes.metricsNote")
-                if page.metricsNoteIsRefusal {
-                    // After an RBAC grant (no new credentials): asked again.
-                    Button("Try Again") { model.retry() }.buttonStyle(.plain).foregroundStyle(theme.accentText).font(.system(size: 11))
-                        .help("Ask metrics-server again: access may have been granted since")
-                        .accessibilityIdentifier("kubernetes.metricsNote.retry")
-                }
             }
             if page.detail == nil, let problem = page.commandProblem {
                 // Two lines before it is cut: a refusal's reason is the point of it.

@@ -98,6 +98,11 @@ final class E2ERunner {
 
     let app: TerminalWindowController
     private var failures = 0
+    /// What the last read of the window that found nothing saw — the
+    /// window's size and how many lines it read, never the text (a
+    /// scenario reveals a Secret's value) unless OVERTERM_E2E_READ=1 —
+    /// said beside the next check that fails without saying why.
+    var unread: String?
     /// Scratch space for this run; removed at the end.
     let scratch = FileManager.default.temporaryDirectory
         .appendingPathComponent("overterm-e2e-\(UUID().uuidString)", isDirectory: true)
@@ -135,7 +140,10 @@ final class E2ERunner {
 
     func check(_ name: String, _ ok: Bool, _ detail: @autoclosure () -> String = "") {
         if !ok { failures += 1 }
-        let suffix = ok ? "" : " — \(detail())"
+        var said = ok ? "" : detail()
+        if !ok, let unread { said += said.isEmpty ? unread : " (\(unread))" }
+        unread = nil
+        let suffix = ok ? "" : " — \(said)"
         print("E2E \(ok ? "PASS" : "FAIL") \(name)\(suffix)")
         fflush(stdout)
     }

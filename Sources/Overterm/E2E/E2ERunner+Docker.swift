@@ -2012,7 +2012,9 @@ extension E2ERunner {
     /// shows (SwiftUI draws a moment later). A Vision pass can take seconds
     /// on a busy machine, so the wait is long — it only runs out when
     /// something isn't drawn.
-    func shownText(_ timeout: TimeInterval = 15, _ match: @escaping (String) -> Bool) async -> (text: String, frame: CGRect)? {
+    func shownText(
+        _ timeout: TimeInterval = 15, file: StaticString = #fileID, line: UInt = #line, _ match: @escaping (String) -> Bool
+    ) async -> (text: String, frame: CGRect)? {
         let deadline = Date().addingTimeInterval(timeout)
         var read: [String] = []
         repeat {
@@ -2023,32 +2025,47 @@ extension E2ERunner {
             read = tiles.isEmpty ? whole.map(\.text) : tiles.map(\.text)
             await pause(0.3)
         } while Date() < deadline
-        // Not found: what was read instead, beside the failure — only when
-        // asked (OVERTERM_E2E_READ=1): a run that reveals a Secret's value
-        // never prints what it read.
+        sawInstead(read, at: "\(file):\(line)")
+        return nil
+    }
+
+    /// Not found: what was read instead, beside the next failing check
+    /// (`unread`) — the window's size and how many lines, always; the
+    /// lines themselves and a picture of the window only when asked
+    /// (OVERTERM_E2E_READ=1, OVERTERM_E2E_READ_DIR): a run that reveals a
+    /// Secret's value never prints what it read.
+    func sawInstead(_ read: [String], at place: String) {
+        var said = "\(place) read \(read.count) lines of a \(Int(window.frame.width))×\(Int(window.frame.height)) window"
         if ProcessInfo.processInfo.environment["OVERTERM_E2E_READ"] == "1" {
-            note("not drawn — read instead: \(read.joined(separator: " | "))")
+            said += ": \(read.joined(separator: " | "))"
             if let folder = ProcessInfo.processInfo.environment["OVERTERM_E2E_READ_DIR"], !folder.isEmpty {
-                app.captureWindow(to: folder + "/unread-\(Int(Date().timeIntervalSince1970)).png", window: window)
+                let path = folder + "/unread-\(Int(Date().timeIntervalSince1970)).png"
+                app.captureWindow(to: path, window: window)
+                said += " — \(path)"
             }
         }
-        return nil
+        unread = said
     }
 
     /// Whether `phrase` is drawn, on one line or wrapped onto the next: a
     /// narrow column wraps a sentence where its width says, and the two
     /// lines Vision reads are next to each other in what it gives.
-    func shownPhrase(_ phrase: String, _ timeout: TimeInterval = 15) async -> Bool {
+    func shownPhrase(_ phrase: String, _ timeout: TimeInterval = 15, file: StaticString = #fileID, line: UInt = #line) async -> Bool {
         func found(_ lines: [(text: String, frame: CGRect)]) -> Bool {
             let texts = lines.map(\.text)
             return texts.contains { $0.contains(phrase) } || zip(texts, texts.dropFirst()).contains { ($0 + " " + $1).contains(phrase) }
         }
         let deadline = Date().addingTimeInterval(timeout)
+        var read: [String] = []
         repeat {
-            if found(await readWindow()) { return true }
-            if found(await readWindow(tiled: true, halves: true)) { return true }
+            let whole = await readWindow()
+            if found(whole) { return true }
+            let tiles = await readWindow(tiled: true, halves: true)
+            if found(tiles) { return true }
+            read = (tiles.isEmpty ? whole : tiles).map(\.text)
             await pause(0.3)
         } while Date() < deadline
+        sawInstead(read, at: "\(file):\(line)")
         return false
     }
 
@@ -2708,8 +2725,8 @@ extension E2ERunner {
         await drawn("its detail says it runs emulated", await shownText { $0.drop(while: { !$0.isLetter }).hasPrefix("Emulated:") }) { $0.contains("linux/amd64") }
         // The row's value may wrap in the detail's column ("linux/amd64 —"
         // then "emulated here"): the platform read as a line, "emulated"
-        // anywhere after it.
-        let emulatedRow = await shownText { $0.hasPrefix("linux/amd64") }
+        // anywhere after it. Its first letter as Vision may read it: "1inux".
+        let emulatedRow = await shownText { $0.hasPrefix("linux/amd64") || $0.hasPrefix("1inux/amd64") }
         let words = await readWindow().map(\.text)
         let afterRow = emulatedRow.flatMap { row in words.firstIndex(of: row.text).map { Array(words[$0...].prefix(4)) } } ?? []
         check(
