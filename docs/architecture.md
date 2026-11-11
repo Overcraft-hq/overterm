@@ -3246,9 +3246,10 @@ production band are its guard.
   missing first file would send kubectl to the current context): before a
   run writes its first, only the files whose pid no longer runs go —
   another Overterm on the same folder (a dev build beside the installed
-  one) keeps its own. In a unit test's process the default folder is a
-  temporary one (`KubeTerminalFiles.defaultFolder`): `supportDirectory`
-  is the user's real one there.
+  one) keeps its own. The default folder
+  (`KubeTerminalFiles.defaultFolder`) is `supportDirectory`'s
+  `Kubernetes/Contexts`; in a unit test's process, as in any isolated
+  run, `supportDirectory` is a temporary one, so it is never the user's.
 - **The environment** (`KubeTerminalEnvironment`, pure; `KubeTerminalLaunch.prepare`):
   only `KUBECONFIG` — the pin's file, then exactly
   `AppEnvironment.kubeconfigs`' files (the proxies' list), in order, a
