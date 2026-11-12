@@ -128,8 +128,9 @@ final class TerraformStateRead: ObservableObject, Identifiable {
     }
 
     /// Runs it: checks, `state list`, `show -json`, decoded. `binary`: a
-    /// test's terraform, in place of the one the setting resolves.
-    func start(registry: TerraformRunRegistry = .shared, settingPath: String, binary given: URL? = nil) async {
+    /// test's terraform, in place of the one the setting resolves; `setup`
+    /// New Task's, whose init in the root refuses it.
+    func start(registry: TerraformRunRegistry = .shared, setup: TerraformWorktreeSetup = .shared, settingPath: String, binary given: URL? = nil) async {
         let root = card.folder
         let checkout = self.checkout
         let hasVersionFile = card.facts.hasVersionFile
@@ -141,6 +142,8 @@ final class TerraformStateRead: ObservableObject, Identifiable {
                 scratch: try? TerraformGuards.prepareScratch(at: AppEnvironment.terraformScratchDirectory))
         }
         guard !stopped else { return }
+        // New Task's init without a backend writes this .terraform now (2b).
+        if let why = setup.refusal(root) { return refuse(why) }
         let facts = prepared.facts
         guard let binary = prepared.binary else { return refuse("No terraform found: set Settings ▸ Terraform ▸ terraform, or install it.") }
         guard let base = prepared.base, let scratch = prepared.scratch else { return refuse("The environment for terraform couldn't be read.") }

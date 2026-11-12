@@ -304,11 +304,21 @@ final class TerraformWorktreeSetup: ObservableObject {
     func root(_ checkout: URL?, path: String) -> TerraformWorktreeRoot? { report(checkout)?.roots.first { $0.path == path } }
 
     /// Whether New Task's init is running in `root` (a root's folder): the
-    /// panel's Init and Plan wait for it — both write its `.terraform`.
+    /// panel's Init, Plan, Check Drift, Test and State wait for it — they
+    /// write its `.terraform`, or read the providers it is installing.
     func isInitializing(_ root: URL) -> Bool {
         let path = Self.key(root)
         return reports.values.contains { $0.roots.contains { $0.preparation == .running && Self.key($0.folder) == path } }
     }
+
+    /// What a run of `root` that would read or write its `.terraform` says
+    /// while New Task initialises it — Plan, Init, Check Drift, Test, a
+    /// state read, the person's or an agent's —, or nil.
+    func refusal(_ root: URL) -> String? {
+        isInitializing(root) ? Self.initializingRefusal : nil
+    }
+
+    static let initializingRefusal = "New Task is initialising this root without its backend: press again once it is done."
 
     /// Forgets what New Task said of `checkout`'s `root` once the person's
     /// own Init or a plan ran there: it no longer says what the root is.
