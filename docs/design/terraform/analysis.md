@@ -334,7 +334,9 @@ The plan JSON carries both versions: `terraform_version` (the binary) and `prior
 | Plans | `plan … -out` | `TerraformRun`, its stream read line by line on a GCD thread, decoded off main, applied in 120 ms batches |
 | Init | `init -input=false -lockfile=readonly -json` (text below 1.9) | `TerraformRun`, the person's click, serialised per plugin cache (New Task's `init -backend=false`: 4.13) |
 | Applies | `apply -input=false -json -lock=true -lock-timeout=60s /dev/fd/3` | `TerraformApplyRun`: detached (4.7) |
-| Everything else | `console`, `state mv/rm/push`, `force-unlock` (until 2e), `workspace new/delete`, `init -migrate-state`, `taint`, `import` | The user's terminal |
+| Test (2d) | `test -json -no-color [-filter=<file>]` | `TerraformTestRun`, its stream read as plans' are |
+| Lock probe, force-unlock (2e) | `state rm -dry-run …` of an address no configuration has, `force-unlock -force -no-color <id>` | `TerraformRun.short`, not interruptible (they take the lock, or write it): a cancelled task leaves them to end, quitting waits briefly first (4.7) |
+| Everything else | `console`, `state mv/rm/push`, `workspace new/delete`, `init -migrate-state`, `taint`, `import` | The user's terminal |
 
 None of Overterm's terraform processes is a `ManagedProcess`, and none is in `ManagedProcess.closeAll` or `KubeProcessRun.stopAll`: those end with SIGTERM at grace 0 and `killpg(SIGKILL)` respectively, wrong for a plan holding a lock.
 
@@ -352,13 +354,21 @@ None of Overterm's terraform processes is a `ManagedProcess`, and none is in `Ma
 |---|---|
 | Plan, a person's | `plan -input=false -json -detailed-exitcode -lock=true -lock-timeout=10s -out=<run folder>/plan [-var-file=<path inside the root>]… [-parallelism=N]` |
 | Plan, an agent's | the same with `-lock-timeout=0s`: a held lock is reported, never queued behind CI |
-| Show | `show -json /dev/fd/3` |
+| Show | `show -json -no-color /dev/fd/3` |
 | Apply | `apply -input=false -json -lock=true -lock-timeout=60s /dev/fd/3` |
 | Refresh-only (2d) | `plan -refresh-only` with the person's plan flags |
 | Init | `init -input=false -json -lockfile=readonly` (no `-upgrade`, `-reconfigure`, `-migrate-state`, `-force-copy`, ever) |
+| New Task's init (2b) | `init -backend=false -input=false -lockfile=readonly -no-color`, validate's environment (no credential, no workspace) |
+| Validate, version | `validate -json -no-color`, `version -json` |
+| Format | `fmt -no-color -` (a buffer on stdin), `fmt -check -list=true [-recursive] -no-color`, an agent's `fmt -check -diff -no-color` |
+| Workspace list | `workspace list` |
 | Workspace select | `workspace select <name>` with `TF_WORKSPACE` removed (it refuses unknown names; `-or-create` never) |
-| Lock probe (2e) | `state rm -dry-run -lock-timeout=0s 'terraform_data.overterm_lock_probe'` |
+| State (2c) | `state list -no-color`, then `show -json -no-color` (the state, no file named) |
+| Test (2d) | `test -json -no-color [-filter=<test file, relative to the root, inside it>]` |
+| Lock probe (2e) | `state rm -dry-run -lock=true -lock-timeout=0s -no-color terraform_data.overterm_lock_probe` |
+| Force unlock (2e) | `force-unlock -force -no-color <lock ID>` (one ID parsed from Terraform's own diagnostic in this window, probed just before) |
 
+- This table is `TerraformCommands.all`, `plan(…)`, `workspaceSelect(_:)`, `test(file:)` and `forceUnlock(id:)`: nothing else is built, and `TerraformCommands.refusal` refuses any other line before it starts.
 - `TerraformCommands` is pure and cannot express `apply` without a plan, `-auto-approve`, `-lock=false`, `-refresh=false`, `-minimal-refresh`, `-target` on an apply, `-var` with a value, `-backup`, or any `init` flag above. A test enumerates every builder output and asserts it.
 - An exit code decides, never the stream: plan 0 (no changes), 2 (changes), 1 (failed, even though a plan file was written on a failing precondition [verified]).
 - `planArgs` is not free text: `terraform.roots.<r>` allows `parallelism` (an integer) and var files inside the root, nothing else.
@@ -407,7 +417,7 @@ What this leaves: a credential that lives in a file (an SSO cache, `~/.aws/confi
 - **The apply runs detached**: spawned with `POSIX_SPAWN_SETSID`, a new option on `ProcessGroup.spawn` (its own session, so no controlling tty and no SIGHUP), stdout and stderr to 0600 files in its run folder, its pid and start time in a small JSON file there. Overterm tails the files; no pipe can SIGPIPE it [verified that one would].
 - **Crash or quit.** The apply keeps going. At launch the sweep finds a run folder whose apply pid is alive with the same executable and start time, and the right slot says "an apply in envs/prod has been running since 14:41, started before Overterm last quit", with Stop. It reattaches by tailing the files.
 - **Quit while an apply runs** asks "Quit and let it finish / Cancel". It never waits on a minutes-long graceful stop at quit (no `.terminateLater` machinery); Stop is a separate act in the slot.
-- Plans and reads stay in the app's process group; quitting stops them with SIGINT and doesn't wait.
+- Plans and reads stay in the app's process group; quitting stops them with SIGINT and doesn't wait. The short runs that take a lock or write — New Task's `init -backend=false`, the lock probe, `force-unlock` — are given up to 3 s to end first (`TerraformRun.stopAll`), then interrupted; a force-unlock interrupted says the lock may or may not have been removed.
 - Long runs: `apply_progress` every 10 s is the heartbeat; a silence over 2 minutes is said, never acted on.
 
 ### 4.8 Closing a pane where terraform writes

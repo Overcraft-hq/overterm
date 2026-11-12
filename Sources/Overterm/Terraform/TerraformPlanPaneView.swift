@@ -26,6 +26,8 @@ struct TerraformPlanActions {
     var planMode: (TerraformPlanRun, TerraformPlanMode) -> Void = { _, _ in }
     /// A `terraform test` run again, as it was asked (2d).
     var testAgain: (TerraformTestRun) -> Void = { _ in }
+    /// Force Unlock… (2e): the lock probed, the sheet, the root's name typed.
+    var forceUnlock: (TerraformPlanRun) -> Void = { _ in }
 }
 
 /// The plan in the right slot (analysis 6.3): the header — root, branch @
@@ -311,7 +313,9 @@ private struct TerraformRunView: View {
                     HStack(spacing: 6) {
                         button("Wait for It", "hourglass") { actions.planAgain(run, .wait) }.accessibilityIdentifier("terraform.plan.wait")
                         button("Ask Why", "questionmark.bubble") { actions.askWhy(run) }
+                        TerraformForceUnlockButton(run: run, theme: theme) { actions.forceUnlock(run) }
                     }
+                    TerraformUnlockNoteView(run: run, theme: theme)
                 }
             } else {
                 Text(verbatim: why).font(.system(size: ChromeMetrics.text(12), weight: .semibold)).foregroundStyle(red)

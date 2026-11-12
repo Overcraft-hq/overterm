@@ -623,7 +623,7 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
         let root = card.folder.standardizedFileURL.path
         let running = TerraformPaneMonitor.shared.processes.values.joined().contains { $0.folder?.standardizedFileURL.path == root }
         if !running {
-            lockNote = "No Terraform is running on this Mac in \(card.name)" + (lock.age().map { "; the lock is \($0) old" } ?? "") + "."
+            lockNote = "No terraform in Overterm's panes runs in \(card.name)" + (lock.age().map { "; the lock is \($0) old" } ?? "") + "."
         }
     }
 

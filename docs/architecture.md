@@ -7755,6 +7755,60 @@ masked.
   `terraformDriftAndTestB2d`: a test file's runs listed with one failure
   at its line (slot, editor, `tf_test`), the checkout byte for byte the
   same; a drift check finding a changed output, accepted, then none.
+- **Force unlock** (stage 2e, analysis 2.5, 4.10, D-10). A plan refused
+  by a held lock shows its holder (`TerraformLockInfo`, from Terraform's
+  own diagnostic — never a `.lock.info` file) and, beside Wait for It,
+  Force Unlock… (`TerraformForceUnlockButton`), except on the local
+  backend — its lock is the operating system's and went with its
+  process; Terraform refuses to force it — and on HCP's
+  (`TerraformProcessCheck.refused(.forceUnlock, backendType:)`).
+  `TerminalWindowController+TerraformUnlock` takes only that run's
+  parsed ID (`TerraformUnlock.refusalBefore`, pure: a lock, the run the
+  one in this window's pane, not planning again, the backend, Overterm's
+  own run holding the state's turn); refuses while a terraform of this
+  user runs on that state anywhere on the Mac — `TerraformLiveProcesses`
+  lists every pid by name (terraform, tofu, terragrunt, a shell running a
+  script of that name), reads its folder's facts and its `TF_WORKSPACE`
+  or `.terraform/environment` off the main thread, and
+  `TerraformUnlock.holder` matches the same identity, the root's folder,
+  or the same root in another worktree; the panes' identities from
+  `TerraformPaneMonitor` too — before the sheet and again after it; the
+  sheet's "none of yours" note says what can't be seen (another user, a
+  container). It reads the root again (the same workspace, which must
+  exist, and identity; the binary and environment built as the plan's
+  were, credentials included — the backend needs them — but read now,
+  and compared only between the sheet's two reads); then
+  probes: `TerraformCommands.lockProbe`, `state rm -dry-run -lock=true
+  -lock-timeout=0s -no-color terraform_data.overterm_lock_probe`, which
+  takes the lock without refreshing or starting a provider and removes
+  nothing. Never a plan: had the lock gone meanwhile, a plan would run in
+  full. `TerraformUnlock.probe` (pure) reads its text (`state rm` has no
+  `-json`; `TerraformLockInfo.parse(text:)` takes the box off): the same
+  ID goes on; another ID is "changed hands", refused with the new holder;
+  exit 0, or "No state file was found" (state rm locks before it reads —
+  checked against the real terraform), is free, nothing to unlock. The
+  sheet (`TerraformUnlock.sheet`, a `WriteConfirmation`) names the
+  holder, its age, that a still-running apply's state write would collide
+  with the next run, on the http backend (the root's, or the lock's text —
+  `TerraformUnlock.isHTTP`) that its UNLOCK goes with an
+  empty body and so removes whatever lock is there, and the command; the
+  root's name (`@workspace` when not `default`) is typed on every class.
+  After the sheet the place is read and the lock probed again, under the
+  state's turn in `TerraformRunRegistry`, then `force-unlock -force
+  -no-color <id>` (`TerraformCommands.forceUnlock(id:)`, an ID of
+  printable ASCII only). These two, with 2c's `state list`, are the only
+  `state` and `force-unlock` lines `TerraformCommands.refusal` lets through. What it said stays under
+  the lock (`TerraformUnlockModel`, memory only); agents have no tool for
+  it (their briefs say the person decides). Tests: `TerraformUnlockTests`
+  (Terraform 1.17.1's probe text; the refusals before anything runs; a
+  stand-in terraform in a second worktree's checkout of the same http
+  state found and refused), `TerraformRealBackendTests` (opt-in: the
+  probe held, changed hands, free on an empty state, the empty UNLOCK);
+  the `terraformPlan` scenario's
+  `E2ERunner+TerraformA2e` (a lock that changed hands refused at the
+  probe; a run no longer shown and one while the state's turn is held
+  refused with nothing run; a wrong name and Cancel unlock
+  nothing; the name typed probes again, then forces that ID).
 - **The guards** (`Terraform/TerraformGuards.swift`, pure but for
   `prepareScratch`; analysis 4.2, 4.5, 4.13, 5.13 rule 8). Terraform
   changes real infrastructure, so an isolated run or a unit test

@@ -56,11 +56,24 @@ enum TerraformProcessCheck {
     static let remoteExecutionRefusal = "HCP runs remotely: plan it in HCP (stage 3)"
 
     /// Why `verb` may not start in a root whose backend is `backendType`
-    /// — plan and init, never on an HCP root — or nil.
+    /// — plan and init, never on an HCP root; force unlock, never on the
+    /// local backend nor HCP's (2e) — or nil.
     static func refused(_ verb: TerraformVerb, backendType: String) -> String? {
+        if verb == .forceUnlock {
+            if backendType == "local" { return localUnlockRefusal }
+            if remoteExecution.contains(backendType) { return "An HCP workspace's lock is HCP's: unlock it in HCP Terraform." }
+            return nil
+        }
         guard verb == .plan || verb == .initialize, remoteExecution.contains(backendType) else { return nil }
         return remoteExecutionRefusal
     }
+
+    /// The local backend's lock is an OS lock that went with its process
+    /// (4.10): one held is a terraform still running, and Terraform itself
+    /// refuses to force it ("Local state cannot be unlocked by another process").
+    static let localUnlockRefusal =
+        "A local state's lock is the operating system's: it goes with its process. Held, it is a terraform still running on this Mac — stop that one; there is nothing to force."
+
 
     /// Why `verb` may not start in a root of `rootClass`, or nil.
     static func refused(_ verb: TerraformVerb, rootClass: TerraformClass, writable: Bool = false, sessionWrites: Bool = false) -> String? {

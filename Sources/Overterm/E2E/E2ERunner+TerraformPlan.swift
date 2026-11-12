@@ -297,6 +297,7 @@ extension E2ERunner {
         check(
             "Ask Why briefs the lock", await eventually(5) { briefs.all.last?.text.contains("ci@globex-runner-7") == true },
             briefs.all.last?.text ?? "none")
+        await terraformForceUnlockChecks(locked, card: shared, backend: backend, recorder: recorder, pane: pane, root: root)
         backend.releaseLock("acme-shared")
 
         // 6. Two worktrees on one state: the second's plan, stale after the first applies.
@@ -376,7 +377,8 @@ extension E2ERunner {
         let refused = await mcpText("tf_plan", ["root": "envs/prod"], pane: tag)
         check("production is the person's to plan", refused.contains("is production"), refused)
         let why = await mcpText("tf_why", ["root": "envs/shared"], pane: tag)
-        check("tf_why briefs the lock that stopped a plan", why.contains("ci@globex-runner-7"), why)
+        // The last plan the lock stopped is the force-unlock checks' (2e): its holder, ci@globex-runner-9.
+        check("tf_why briefs the lock that stopped a plan", why.contains("ci@globex-runner-9"), why)
         check("no apply by Overterm, ever", !recorder.calls().contains { $0.subcommand == "apply" })
     }
 
