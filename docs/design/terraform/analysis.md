@@ -118,7 +118,7 @@ Columns: **CLI** (what `terraform` gives in a terminal), **Others** (HCP Terrafo
 | Which roots a change touches | — | Atlantis autoplan | Changed files (`DiffModel`) mapped to roots, **and** a shared module mapped back to every root that calls it ("modules/network: 5 roots"), from `module` sources and `modules.json` | Local | 1b |
 | A root's choices | `-var-file` | HCP variables | Var files and the chosen workspace per checkout and root in `TerraformRootStore` (support folder, never the repository). The display name and class in `terraform.roots` (settings.json) | Local | 1b |
 | No state in this worktree | — | — | A local-backend root whose state file is missing here but present in another worktree of the repository: red on the root, the pane header and the plan, "the state is in `main`'s checkout" (5.4) | Local | 1b |
-| Init | `init` | HCP does it | "Init" on the root's verbs, the person's click: `init -input=false -lockfile=readonly -json`. "Upgrade providers…" (`-upgrade`) asked, because it rewrites `.terraform.lock.hcl`, shown as a diff | Run | 1d |
+| Init | `init` | HCP does it | "Init" on the root's verbs, the person's click (New Task's `-backend=false` init aside, 4.13): `init -input=false -lockfile=readonly -json`. "Upgrade providers…" (`-upgrade`) asked, because it rewrites `.terraform.lock.hcl`, shown as a diff | Run | 1d |
 | Shared provider cache | `plugin_cache_dir` | — | Offered at the first Init in a window with two worktrees of one repository: `TF_PLUGIN_CACHE_DIR` under a new `AppEnvironment.terraformCacheDirectory`, Overterm's runs only, inits serialised per cache (4.13) | Run | 1d |
 | New Task's roots | — | — | After `git worktree add`: the roots the branch has, the no-state warning, and `init -backend=false -lockfile=readonly` for validate and the editor (no credentials) | Run | 2b |
 | Terragrunt units, stacks | — | Terragrunt | Detected and labelled in 1b ("Terragrunt unit: run it with terragrunt in a terminal"); units as roots in stage 3 | Local | 1b / 3 |
@@ -332,7 +332,7 @@ The plan JSON carries both versions: `terraform_version` (the binary) and `prior
 | Large reads | `show -json` (plan or state), `providers schema -json` | `TerraformRun`, stdout streamed into a bounded `Data` (`terraform.maxPlanBytes`, 64 MB) on a GCD thread; beyond it, the stream's summary only |
 | Validate | `validate -json` | Credentials stripped (4.5), `-lockfile=readonly` before it if Overterm ran the init |
 | Plans | `plan … -out` | `TerraformRun`, its stream read line by line on a GCD thread, decoded off main, applied in 120 ms batches |
-| Init | `init -input=false -lockfile=readonly -json` (text below 1.9) | `TerraformRun`, the person's click, serialised per plugin cache |
+| Init | `init -input=false -lockfile=readonly -json` (text below 1.9) | `TerraformRun`, the person's click, serialised per plugin cache (New Task's `init -backend=false`: 4.13) |
 | Applies | `apply -input=false -json -lock=true -lock-timeout=60s /dev/fd/3` | `TerraformApplyRun`: detached (4.7) |
 | Everything else | `console`, `state mv/rm/push`, `force-unlock` (until 2e), `workspace new/delete`, `init -migrate-state`, `taint`, `import` | The user's terminal |
 
@@ -465,7 +465,7 @@ The backend is read from `.terraform/terraform.tfstate` (the init record) **and*
 
 ### 4.13 Init and the plugin cache
 
-- Init is a person's click, never an agent's tool, never automatic. Before it, the slot lists what will be fetched, read statically: provider sources and constraints, module sources, and a flag on anything not a registry source with an exact version (a branch ref, a bare git URL, an `http://` source) or a provider not in the lock file. Modules are not locked by the lock file.
+- Init is a person's click, never an agent's tool, never automatic — with one exception: New Task's `init -backend=false -input=false -lockfile=readonly` (stage 2b, `terraform.newWorktreeInit`, on by default) in a worktree it just made: no backend, the lock file read only, validate's environment (no credential, a scratch HOME, no workspace; no agent socket, no system gitconfig), and only in a root whose fetch list flags nothing — every provider the root and its local modules name, required or implied, in the lock file; every module local or a registry module at an exact version, never a remote source outside the registry whatever its ref; never an HCP root. Its CLI config allows registry installs with no `credentials` block (a guarded run's fetches nothing); the panel's Init and Plan of that root wait while it runs. Before the person's Init, the slot lists what will be fetched, read statically: provider sources and constraints, module sources, and a flag on anything not a registry source with an exact version (a branch ref, a bare git URL, an `http://` source) or a provider not in the lock file. Modules are not locked by the lock file.
 - `-lockfile=readonly` always; a lock-file change is a separate, confirmed "Upgrade providers…" whose diff shows in the changes pane, as any edit does.
 - **The plugin cache.** Each worktree's `.terraform/providers` holds its own copies: 50 MB for three tiny providers, hundreds of MB for a cloud one. At the first Init in a window where two worktrees of one repository have roots, Overterm offers `TF_PLUGIN_CACHE_DIR` under a new `AppEnvironment.terraformCacheDirectory` (`~/Library/Caches/<bundle id>/Terraform/plugins`; a scratch folder in isolated runs, so a scenario never writes executables into the real cache) for its own runs only. It never writes `~/.terraformrc`. Inits on one cache run one at a time, app-wide ("not guaranteed to be concurrency safe"). It is not offered when the user already has a CLI config (`TF_CLI_CONFIG_FILE` set, or `~/.terraformrc` exists: checked for existence only, never opened, since it can hold `credentials` blocks) or `TF_PLUGIN_CACHE_DIR` in the environment. `plugin_cache_may_break_dependency_lock_file` is never set.
 
@@ -554,7 +554,7 @@ Said in the panel's help and the page's: "Overterm checks what it runs. What you
 | Verb | Read-only root (production without its switch, remote not writable) | Writable root | Overterm's form |
 |---|---|---|---|
 | `version`, `fmt`, `validate`, `workspace list/show`, `state list`, `show -json`, `modules`, `providers schema` | Started | Started | 4.1; validate with credentials stripped |
-| `init` | Started on the person's click; downloads code, changes no infrastructure | Same | 4.13 |
+| `init` | Started on the person's click; downloads code, changes no infrastructure. The one exception: New Task's `init -backend=false` in a new worktree's root whose fetch list flags nothing (4.13) | Same | 4.13 |
 | `plan -out` | Started. It runs provider code and data sources with the user's credentials and takes the lock: the first plan per root and session on production asks ("Plan on acme-api · prod runs its providers with AWS_PROFILE acme-prod-admin") | Started | 4.3 |
 | `workspace select` | Started, said as a write to the checkout's data dir | Same | 4.9 |
 | `apply <plan>` | **Refused** | 5.4 | The only apply |
@@ -636,7 +636,7 @@ settings.json is a plain file any agent can edit. One edit could make production
 
 - `init` downloads providers (native binaries, run with the user's credentials) and modules (HCL from registries, git with the user's SSH keys, S3, HTTP). The lock file pins **providers only**; a `?ref=main` module changes under the same lock file.
 - `validate` starts every provider binary [verified]. So Overterm's validate runs with every credential variable removed and `HOME` scratch (4.5), only after a lock file exists, with `-lockfile=readonly` on any init Overterm runs before it.
-- Rules: init only on the person's click; the fetch list shown first (4.13); never `-upgrade` silently; agents never run init.
+- Rules: init only on the person's click, but for New Task's `init -backend=false` in a root whose fetch list flags nothing and that has no remote module outside the registry (4.13, stage 2b); the fetch list shown first (4.13); never `-upgrade` silently; agents never run init.
 
 ### 5.10 Agents
 

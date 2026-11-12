@@ -436,6 +436,10 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
             return Prepared(facts: facts, names: names, binary: binary, base: base, scratch: scratch)
         }
         guard !stopping else { return finish(.stopped) }
+        // New Task's init without a backend writes this .terraform now (2b).
+        if TerraformWorktreeSetup.shared.isInitializing(root) {
+            return refuse("New Task is initialising this root without its backend: press again once it is done.")
+        }
         let facts = prepared.facts
         let folder = TerraformRootFolder(path: card.path, kind: .root, files: prepared.names)
         autoVarFiles = folder.autoVarFiles
@@ -494,6 +498,7 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
             case .success(let result):
                 if stopping { return finish(.stopped) }
                 if result.status != 0 { return finish(.failed(failureText(result.stderr))) }
+                TerraformWorktreeSetup.shared.forget(checkout: checkout, root: card.path)
                 finish(.planned)
             }
         case .plan:
@@ -520,6 +525,7 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
             switch read {
             case .failure(let why): return finish(why.tooLarge ? .tooLarge(tooLargeText()) : .failed(why.message))
             case .success(let pair):
+                TerraformWorktreeSetup.shared.forget(checkout: checkout, root: card.path)
                 landed(
                     TerraformPlanRecord(
                         plan: pair.plan, file: file, binary: binary, version: pair.plan.terraformVersion, environment: environment,

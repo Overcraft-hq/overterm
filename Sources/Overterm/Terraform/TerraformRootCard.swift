@@ -42,6 +42,9 @@ struct TerraformRootCard: Equatable, Sendable, Identifiable {
     var stateElsewhere: String?
     /// The other worktrees whose same root has this identity ("also in `bump-eks`").
     var sharedWith: [String] = []
+    /// How its lock file differs from the same root's in other worktrees
+    /// (2.8, stage 2b): "aws 5.80.0 here, 6.2.0 in `main`".
+    var lockDrift: [TerraformLockDrift.Drift] = []
     /// Changed in this branch, directly or through a module it calls.
     var touched = false
     /// The modules it calls, by path.

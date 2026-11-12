@@ -891,6 +891,11 @@ enum SettingsSchema {
             kind: .entries(SettingEntries(noun: "root", fields: TerraformRootSettings.fields)), defaultValue: .entries([:]),
             requires: "terraform.enabled", heldWhenEditedOutside: true),
         SettingSpec(
+            key: "terraform.newWorktreeInit", section: .terraform, group: "Worktrees", title: "Initialise a new task's roots for validate",
+            help:
+                "After New Task makes a worktree: each root whose init fetches nothing to look at first — every provider it and its local modules use in the committed lock file, every module local or a registry module at an exact version, none from git or elsewhere — gets terraform init -backend=false -lockfile=readonly, with no credential, no SSH agent and no workspace, so validate and the editor work there. It never reads the state or writes the lock file; a plan there needs Init first. Its panel says when a root has no state in this worktree, and how its lock file differs from another worktree's.",
+            kind: .toggle, defaultValue: .bool(true), requires: "terraform.enabled"),
+        SettingSpec(
             key: "terraform.agentWriteGuard", section: .terraform, group: "Agents", title: "Start agents with Terraform's writes denied",
             help:
                 "In a checkout with a production root — or one not read yet — Claude Code started from Overterm (New Task, an agent tab, a resumed one) gets --disallowedTools rules for terraform, tofu and terragrunt apply, destroy, import, taint, force-unlock, state, workspace delete, refresh, test, -auto-approve and state migration — for that launch only; nothing is written to its settings. Unverified against Claude Code itself: its parser takes the rules, but whether each one matches, and holds under --dangerously-skip-permissions, is its documentation's word, not tested here. A script, bash -c or make apply get around it, and Codex has no such flag: its pane says \"terraform writes not guarded\". Either way the pane header and the Inbox show an agent's terraform, and Overterm never answers its ask.",

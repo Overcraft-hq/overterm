@@ -101,6 +101,15 @@ enum TerraformGuards {
         return text
     }
 
+    /// The CLI config of New Task's `init -backend=false` in the user's
+    /// app (stage 2b): providers from their registries, as the lock file
+    /// pins them — the installer asks a source for the versions before it
+    /// looks in the plugin cache, so `direct` can't be excluded —, and no
+    /// `credentials` block: a private registry's provider fails there and
+    /// is the person's Init…. A guarded run keeps `cliConfig`'s, nothing
+    /// fetched.
+    static let worktreeInitCLIConfig = "# Overterm's init without a backend: providers from their registries, no credentials.\nprovider_installation {\n  direct {}\n}\n"
+
     /// The environment of every terraform a guarded run starts — the base
     /// `TerraformEnvironment` builds on there, in place of the user's
     /// shell's: nothing inherited.
@@ -121,6 +130,8 @@ enum TerraformGuards {
         var folder: URL
         var home: URL { folder.appendingPathComponent("home", isDirectory: true) }
         var cliConfig: URL { folder.appendingPathComponent("terraformrc") }
+        /// `worktreeInitCLIConfig`, beside it.
+        var worktreeInitConfig: URL { folder.appendingPathComponent("terraformrc-worktree-init") }
         var environment: [String: String] { TerraformGuards.guardedEnvironment(home: home, cliConfig: cliConfig) }
     }
 
@@ -134,6 +145,8 @@ enum TerraformGuards {
         try manager.setAttributes([.posixPermissions: 0o700], ofItemAtPath: folder.path)
         try Data(cliConfig(mirror: mirror).utf8).write(to: scratch.cliConfig, options: .atomic)
         try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: scratch.cliConfig.path)
+        try Data(worktreeInitCLIConfig.utf8).write(to: scratch.worktreeInitConfig, options: .atomic)
+        try manager.setAttributes([.posixPermissions: 0o600], ofItemAtPath: scratch.worktreeInitConfig.path)
         return scratch
     }
 

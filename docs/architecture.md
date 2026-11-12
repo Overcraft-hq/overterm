@@ -7666,6 +7666,53 @@ stage 2a, the apply, with every guard.
   (`TerraformModulesManifest.entries`, folders inside the checkout only). Scenario
   `terraformApply` (a hostile `TF_CLI_ARGS_apply` through
   `TerraformCLI.scenarioEnvironment`, never reaching the run).
+- **New Task's worktrees** (stage 2b, analysis 2.1, 2.8, 3.7). Once
+  `git worktree add` made one, `createTask` hands it to
+  `prepareTerraformWorktree` (`TerminalWindowController+TerraformWorktree`),
+  which gives `TerraformWorktreeSetup` (one for the app, in memory) the
+  repository's other worktrees as the window lists them — or, when that
+  list is still another repository's, one `git worktree list` in the new
+  one. It reads the new
+  checkout's roots as the panel does (`TerraformPanelModel.assemble`, the
+  same listing and facts): a local root whose state is in another
+  worktree is warned ("no state here, it is in main's checkout"), a
+  workspace another worktree selects for the root is named and never
+  copied — `.terraform/environment` and `TerraformRootStore`'s choices are
+  per checkout, so the new one starts at `default`. Then, one root at a
+  time, `init -backend=false -input=false -lockfile=readonly`
+  (`TerraformCommands.initializeWithoutBackend`) in validate's
+  environment (`TerraformEnvironment.Purpose.worktreeInit`: no
+  credential, no `TF_WORKSPACE`, a scratch HOME; a CLI config of its own
+  in the user's app — `TerraformGuards.worktreeInitCLIConfig`, registry
+  installs with no `credentials` block, since the installer asks a source
+  before the plugin cache — and a guarded run's mirror-only one; no
+  `SSH_AUTH_SOCK`, `GIT_CONFIG_NOSYSTEM`, no prompt; the plugin cache
+  when the person took it, its turn taken in `TerraformRunRegistry` as
+  the panel's inits take it): providers and modules for validate and the
+  editor, never the backend, the state or the lock file. Only where
+  `TerraformWorktreeRoot.preparation` (pure) allows: every provider the
+  root and the local modules it calls name (`localModules`, bounded,
+  inside the checkout), required or implied by a resource or a
+  `provider` block, in the root's lock file; every module local or a
+  registry module at an exact version — none from git, S3 or HTTP
+  whatever its ref —; never an HCP root; anything else is said, and left
+  to the panel's Init…, which shows its fetch list first (the one
+  automatic init analysis 4.13, 5.3 and 5.9 allow). While it runs in a
+  root, that root's Init and Plan are greyed and refused
+  (`isInitializing`); a second prepare of a worktree waits for the
+  first's init. Reports are keyed by the path with symlinks resolved
+  (`TerraformWorktreeSetup.key`), and a root's is forgotten once the
+  person's own Init or a plan ran there. `terraform.newWorktreeInit`
+  (on) turns the init off; the warnings stay. What it did shows on the
+  root's card. Every card also compares its lock file with the same
+  root's in the other worktrees (`TerraformLockDrift`, pure: "aws 5.80.0
+  here, 6.2.0 in main", "no lock file here"; one line a card, the first
+  and how many more — `summary`), read from the files
+  themselves — committed or not, what each worktree's init uses — and
+  kept by their size and time. Tests: `TerraformWorktreeTests`; the
+  `terraform` scenario's `E2ERunner+TerraformA2b` (New Task's root warned,
+  initialised through the recording wrapper, validate there — its local
+  module installed by that init; a worktree without it needs init).
 - **The guards** (`Terraform/TerraformGuards.swift`, pure but for
   `prepareScratch`; analysis 4.2, 4.5, 4.13, 5.13 rule 8). Terraform
   changes real infrastructure, so an isolated run or a unit test
