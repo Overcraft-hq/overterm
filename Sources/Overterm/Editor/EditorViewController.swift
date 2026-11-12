@@ -25,6 +25,8 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     var apiWorkspace: APIWorkspace?
     /// The window: a Kubernetes manifest's confirmations and its diff.
     weak var kubernetesHost: KubeManifestHost?
+    /// The window: Ask Why on a Terraform folder's failed validate.
+    weak var terraformHost: TerraformEditorHost?
     /// The file showing changed (another tab, a rename, the last one closed):
     /// the notes panel highlights it.
     var onActiveChanged: ((URL?) -> Void)?

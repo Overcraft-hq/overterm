@@ -226,6 +226,15 @@ enum TerraformLockFile {
         }
     }
 
+    /// Each provider's address and locked version, as the file says them.
+    static func versions(in text: String) -> [(address: String, version: String)] {
+        guard let pattern = try? NSRegularExpression(pattern: #"provider\s+"([^"]{1,200})"\s*\{[^}]*?\bversion\s*=\s*"([^"]{1,60})""#) else { return [] }
+        let string = text as NSString
+        return pattern.matches(in: text, range: NSRange(location: 0, length: string.length)).prefix(50).map {
+            (string.substring(with: $0.range(at: 1)), string.substring(with: $0.range(at: 2)))
+        }
+    }
+
     static func providers(in text: String) -> [Provider] {
         TerraformBlocks.scan(text).blocks.filter { $0.type == "provider" }.compactMap { $0.labels.first.flatMap(Provider.init) }
     }

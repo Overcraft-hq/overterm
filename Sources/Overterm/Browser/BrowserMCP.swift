@@ -123,6 +123,18 @@ enum BrowserMCP {
                     return reply(errorResult(KubeMCPText.scrubbed(KubernetesModel.said(error))))
                 }
             }
+            if name.hasPrefix(TerraformMCP.prefix) {
+                guard settings.terraformAgentAccess else {
+                    return reply(errorResult("Terraform isn't available to agents — Settings ▸ Terraform."))
+                }
+                do {
+                    return reply(try await TerraformMCP.call(name, arguments, pane: pane))
+                } catch let error as ToolError {
+                    return failure(-32602, error.message)
+                } catch {
+                    return reply(errorResult(TerraformMCP.scrubbed(error.localizedDescription)))
+                }
+            }
             if name.hasPrefix("api_") {
                 guard settings.apiAgentControl, let api = api() else {
                     return reply(errorResult("The API client isn't available to agents — Settings ▸ API Client."))
@@ -215,7 +227,7 @@ enum BrowserMCP {
         }
     }
 
-    /// The tools of what Settings gives agents: the browser's, the API client's, the notes', the databases', Docker's, Kubernetes'.
+    /// The tools of what Settings gives agents: the browser's, the API client's, the notes', the databases', Docker's, Kubernetes', Terraform's.
     static var offered: [[String: Any]] { offered(in: .shared) }
 
     static func offered(in settings: Settings) -> [[String: Any]] {
@@ -226,6 +238,7 @@ enum BrowserMCP {
         if settings.databaseAgentAccess { offered += DatabaseMCP.tools }
         if settings.dockerAgentAccess { offered += DockerMCP.tools }
         if settings.kubernetesAgentAccess { offered += KubeMCP.tools }
+        if settings.terraformAgentAccess { offered += TerraformMCP.tools }
         return offered
     }
 
@@ -258,6 +271,7 @@ enum BrowserMCP {
         }
         if settings.dockerAgentAccess { parts.append(DockerMCP.instructions) }
         if settings.kubernetesAgentAccess { parts.append(KubeMCP.instructions) }
+        if settings.terraformAgentAccess { parts.append(TerraformMCP.instructions) }
         return parts.joined(separator: " ")
     }
 

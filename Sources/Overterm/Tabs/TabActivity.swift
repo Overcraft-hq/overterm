@@ -47,6 +47,9 @@ struct TabActivity: Equatable {
     /// The mark is a cluster's (`clusterFailed`): it goes on its own once
     /// what failed has (`clusterRecovered`).
     private(set) var fromCluster = false
+    /// The mark is a Terraform ask's (`terraformAsked`): it goes once the
+    /// ask has left the screen (`terraformAnswered`).
+    private(set) var fromTerraform = false
 
     /// Anything to tell you — the Dock badge counts these.
     var needsAttention: Bool { mark != .none }
@@ -96,6 +99,31 @@ struct TabActivity: Equatable {
         mark = raised
         note = text
         fromCluster = false
+        fromTerraform = false
+        return true
+    }
+
+    /// A pane of the tab asks for a Terraform write (TerraformPrompt,
+    /// analysis 3.3): marked waiting, with what it asks — looked at or not:
+    /// a person's own pane gets the mark, and the caller notifies only for
+    /// an agent's. True when the mark or its words just changed and nobody
+    /// is looking (the moment to notify).
+    @discardableResult
+    mutating func terraformAsked(_ text: String, visible: Bool) -> Bool {
+        let changed = mark != .waiting || note != text
+        mark = .waiting
+        note = text
+        fromCluster = false
+        fromTerraform = true
+        return changed && !visible
+    }
+
+    /// The ask left the screen (answered, in the tab): its mark goes,
+    /// unless something else has marked the tab since.
+    @discardableResult
+    mutating func terraformAnswered() -> Bool {
+        guard fromTerraform, mark == .waiting else { return false }
+        seen()
         return true
     }
 
@@ -108,6 +136,7 @@ struct TabActivity: Equatable {
         mark = .failed
         note = text
         fromCluster = false
+        fromTerraform = false
         return true
     }
 
@@ -122,6 +151,7 @@ struct TabActivity: Equatable {
         mark = .failed
         note = text
         fromCluster = true
+        fromTerraform = false
         return true
     }
 
@@ -148,5 +178,6 @@ struct TabActivity: Equatable {
         mark = .none
         note = nil
         fromCluster = false
+        fromTerraform = false
     }
 }

@@ -890,6 +890,16 @@ enum SettingsSchema {
                 "By the root's path in its repository (envs/prod): a display name, and a class — production or remote — that can only raise what the names say, never lower it.",
             kind: .entries(SettingEntries(noun: "root", fields: TerraformRootSettings.fields)), defaultValue: .entries([:]),
             requires: "terraform.enabled", heldWhenEditedOutside: true),
+        SettingSpec(
+            key: "terraform.agentWriteGuard", section: .terraform, group: "Agents", title: "Start agents with Terraform's writes denied",
+            help:
+                "In a checkout with a production root — or one not read yet — Claude Code started from Overterm (New Task, an agent tab, a resumed one) gets --disallowedTools rules for terraform, tofu and terragrunt apply, destroy, import, taint, force-unlock, state, workspace delete, refresh, test, -auto-approve and state migration — for that launch only; nothing is written to its settings. Unverified against Claude Code itself: its parser takes the rules, but whether each one matches, and holds under --dangerously-skip-permissions, is its documentation's word, not tested here. A script, bash -c or make apply get around it, and Codex has no such flag: its pane says \"terraform writes not guarded\". Either way the pane header and the Inbox show an agent's terraform, and Overterm never answers its ask.",
+            kind: .toggle, defaultValue: .bool(true), requires: "terraform.enabled", heldWhenEditedOutside: true),
+        SettingSpec(
+            key: "terraform.agentAccess", section: .terraform, group: "Agents", title: "Agents can read the checkout's Terraform",
+            help:
+                "Claude Code started from Overterm gets MCP tools for its own checkout: tf_roots (roots, classes, backends), tf_fmt_check, tf_validate (no credential; only where the root is initialised and its lock file committed — never init) and tf_plan_summary (a plan it saved, masked: never a sensitive value). None applies, destroys or changes state.",
+            kind: .toggle, defaultValue: .bool(true), requires: "terraform.enabled", heldWhenEditedOutside: true),
     ]
 
     private static let notifications: [SettingSpec] = [

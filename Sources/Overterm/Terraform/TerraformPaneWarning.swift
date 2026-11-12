@@ -236,12 +236,29 @@ final class TerraformPaneMonitor: ObservableObject {
     static let shared = TerraformPaneMonitor()
 
     @Published private(set) var warnings: [String: TerraformPaneWarning] = [:]
+    /// The Terraform writes asked for on the panes' screens (3.3), by pane:
+    /// an agent's permission prompt, or Terraform's own.
+    @Published private(set) var asks: [String: TerraformAsk] = [:]
     /// The terraform processes found, by pane: Tab Info and the close guard (2a) read them.
     private(set) var processes: [String: [TerraformProcess]] = [:]
     private var loop: Task<Void, Never>?
     static let interval: Duration = .seconds(2)
     /// Walks done: a scenario checks a pane at its prompt costs none.
     private(set) var walks = 0
+    /// Screens read (`ghostty_surface_read_text`, on the main thread): only
+    /// when `readsScreen` says one may hold a prompt.
+    private(set) var screenReads = 0
+    /// Each pane's `PaneBlocks.outputMark` at the last look.
+    private var screenMarks: [String: UInt64] = [:]
+
+    /// Whether a pane's screen is read this look (3.2's budget: the walk
+    /// is the cost, reading the screen is not free): its tab waits on the
+    /// agent (its notification or hook), a terraform runs in its tree
+    /// (Terraform's own prompt), an ask stands there (to see it go), or
+    /// the pane printed, scrolled, rang or titled since the last look.
+    nonisolated static func readsScreen(waiting: Bool, terraformRunning: Bool, asked: Bool, moved: Bool) -> Bool {
+        waiting || terraformRunning || asked || moved
+    }
 
     struct Candidate: Sendable {
         var tag: String
@@ -249,6 +266,22 @@ final class TerraformPaneMonitor: ObservableObject {
         var command: String?
         var commandFolder: String?
         var checkout: URL?
+        /// The pane's screen, its last lines: where an ask is read (3.3).
+        var screen: String?
+        /// The folder the pane's shell is in, when no command said one.
+        var folder: String?
+        /// The checkout's production roots, as the agents' guard last read
+        /// them: an ask whose folder can't be settled is said against them.
+        var productionRoots: [String] = []
+    }
+
+    /// What one look found.
+    struct Found: Sendable {
+        var warnings: [String: TerraformPaneWarning] = [:]
+        var processes: [String: [TerraformProcess]] = [:]
+        var asks: [String: TerraformAsk] = [:]
+        /// Panes that printed, or were asked for, what Terraform keeps secret (5.6 rule 6).
+        var sensitive: Set<String> = []
     }
 
     func start() {
@@ -270,9 +303,11 @@ final class TerraformPaneMonitor: ObservableObject {
     func tick() async {
         guard Settings.shared.terraformEnabled else {
             if !warnings.isEmpty { warnings = [:] }
+            if !asks.isEmpty { asks = [:] }
             processes = [:]
             return
         }
+        var panes: [String: TerminalView] = [:]
         var candidates: [Candidate] = []
         for controller in NSApp.windows.compactMap({ $0.windowController as? TerminalWindowController }) {
             for tab in controller.store.tabs {
@@ -289,17 +324,36 @@ final class TerraformPaneMonitor: ObservableObject {
                     TerraformCheckouts.shared.settle(checkout)
                     continue
                 }
+                let productionRoots = TerraformAgentGuards.shared.productionRoots(checkout)
                 for (pane, command, login) in running {
+                    let tag = pane.processTag
+                    panes[tag] = pane
+                    // The screen's last lines: an agent's permission prompt
+                    // or Terraform's own (3.3) — read only when a cheap
+                    // signal says one may be up (`readsScreen`).
+                    let mark = controller.blocks(of: pane).outputMark
+                    let moved = screenMarks[tag] != mark
+                    screenMarks[tag] = mark
+                    var screen: String?
+                    if Self.readsScreen(
+                        waiting: tab.activity.mark == .waiting, terraformRunning: processes[tag]?.isEmpty == false, asked: asks[tag] != nil, moved: moved)
+                    {
+                        screenReads += 1
+                        screen = pane.visibleText.map {
+                            String($0.split(separator: "\n", omittingEmptySubsequences: false).suffix(TerraformPrompt.window).joined(separator: "\n"))
+                        }
+                    }
                     candidates.append(
                         Candidate(
-                            tag: pane.processTag, login: login, command: command?.command, commandFolder: controller.blocks(of: pane).commandFolder,
-                            checkout: checkout))
+                            tag: tag, login: login, command: command?.command, commandFolder: controller.blocks(of: pane).commandFolder,
+                            checkout: checkout, screen: screen, folder: pane.workingDirectory, productionRoots: productionRoots))
                 }
             }
         }
         walks += candidates.count
         guard !candidates.isEmpty else {
             if !warnings.isEmpty { warnings = [:] }
+            if !asks.isEmpty { asks = [:] }
             processes = [:]
             return
         }
@@ -307,9 +361,13 @@ final class TerraformPaneMonitor: ObservableObject {
         let identities = TerraformRootStore.shared.productionIdentities
         let asked = candidates
         let found = await TerraformPanelModel.blocking { Self.look(at: asked, settings: settings, identities: identities) }
+        screenMarks = screenMarks.filter { panes[$0.key] != nil }
         processes = found.processes
         if warnings != found.warnings { warnings = found.warnings }
-        TerraformRootStore.shared.rememberProduction(found.warnings.values.compactMap(\.rememberIdentity))
+        if asks != found.asks { asks = found.asks }
+        for tag in found.sensitive { panes[tag]?.terraformSensitive = true }
+        TerraformRootStore.shared.rememberProduction(
+            found.warnings.values.compactMap(\.rememberIdentity) + found.asks.values.compactMap { $0.warning?.rememberIdentity })
     }
 
     /// Facts read for a folder, kept a few seconds: a terraform running
@@ -328,14 +386,73 @@ final class TerraformPaneMonitor: ObservableObject {
         return facts
     }
 
-    nonisolated static func look(
-        at candidates: [Candidate], settings: TerraformClassSettings, identities: Set<TerraformStateIdentity>
-    ) -> (warnings: [String: TerraformPaneWarning], processes: [String: [TerraformProcess]]) {
-        var warnings: [String: TerraformPaneWarning] = [:]
-        var processes: [String: [TerraformProcess]] = [:]
+    nonisolated static func look(at candidates: [Candidate], settings: TerraformClassSettings, identities: Set<TerraformStateIdentity>) -> Found {
+        var result = Found()
         for candidate in candidates {
             let found = TerraformProcesses.find(under: candidate.login)
-            if !found.isEmpty { processes[candidate.tag] = found }
+            if !found.isEmpty { result.processes[candidate.tag] = found }
+            if found.contains(where: \.line.printsSecrets) { result.sensitive.insert(candidate.tag) }
+            if let screen = candidate.screen, let prompt = TerraformPrompt.parse(screen) {
+                result.asks[candidate.tag] = ask(prompt, candidate: candidate, processes: found, settings: settings, identities: identities)
+            } else if let screen = candidate.screen, !found.isEmpty, TerraformPrompt.asksForValue(screen) {
+                // Terraform asks for a variable's value: perhaps a secret, typed on screen.
+                result.sensitive.insert(candidate.tag)
+            }
+        }
+        result.warnings = warnings(at: candidates, processes: result.processes, settings: settings, identities: identities)
+        return result
+    }
+
+    /// The ask on a pane, with the root it would touch: an agent's command
+    /// in the folder it names (where the agent works, `cd`, `-chdir`);
+    /// Terraform's own in the folder of the terraform found there.
+    nonisolated static func ask(
+        _ prompt: TerraformPrompt, candidate: Candidate, processes: [TerraformProcess], settings: TerraformClassSettings,
+        identities: Set<TerraformStateIdentity>
+    ) -> TerraformAsk {
+        let folder: URL?
+        var workspace = prompt.line.workspace
+        switch prompt.shape {
+        case .agent(let command):
+            let base = (candidate.commandFolder ?? candidate.folder).map { URL(fileURLWithPath: $0, isDirectory: true) }
+            folder = base.map { TerraformPrompt.folder(of: command, line: prompt.line, base: $0) }
+        case .terraform(_, let said):
+            let process = processes.first(where: \.line.isWrite) ?? processes.first
+            folder = process?.folder
+            workspace = said ?? process?.workspaceVariable
+        }
+        guard let folder, TerraformProcesses.hasConfiguration(folder) else {
+            return TerraformAsk(prompt: prompt, warning: unsettled(prompt, workspace: workspace, productionRoots: candidate.productionRoots))
+        }
+        let checkout =
+            candidate.checkout.flatMap { TerraformPaneWarning.contains($0, folder) ? $0 : nil } ?? TerraformProcesses.checkout(of: folder) ?? folder
+        let warning = TerraformPaneWarning.make(
+            tool: prompt.line.tool, operation: prompt.line.operation, isWrite: true, folder: folder, checkout: checkout, facts: facts(of: folder, checkout: checkout),
+            workspaceVariable: workspace, dataDirVariable: prompt.line.dataDir, awsProfile: nil, runFiles: prompt.line.namedFiles, probably: false,
+            settings: settings, identities: identities)
+        return TerraformAsk(prompt: prompt, warning: warning)
+    }
+
+    /// An ask whose folder holds no configuration — an agent's Bash keeps
+    /// its `cd` from an earlier call, so a bare `terraform apply` may run in
+    /// `envs/prod` while the pane's folder is the checkout's top — in a
+    /// checkout with production roots: said as production, the roots named.
+    nonisolated static func unsettled(_ prompt: TerraformPrompt, workspace: String?, productionRoots: [String]) -> TerraformPaneWarning? {
+        guard !productionRoots.isEmpty else { return nil }
+        let named = productionRoots.prefix(3).joined(separator: ", ") + (productionRoots.count > 3 ? ", …" : "")
+        return TerraformPaneWarning(
+            tool: prompt.line.tool, operation: prompt.line.operation, root: "root unknown — this checkout has production roots (\(named))",
+            workspace: workspace ?? "?", backend: "backend unknown", rootClass: .production,
+            reason: "the command's folder isn't known (an agent keeps its cd from earlier commands) and this checkout has production roots",
+            isWrite: true)
+    }
+
+    nonisolated static func warnings(
+        at candidates: [Candidate], processes all: [String: [TerraformProcess]], settings: TerraformClassSettings, identities: Set<TerraformStateIdentity>
+    ) -> [String: TerraformPaneWarning] {
+        var warnings: [String: TerraformPaneWarning] = [:]
+        for candidate in candidates {
+            let found = all[candidate.tag] ?? []
             // The one that writes, else the first.
             if let process = found.first(where: \.line.isWrite) ?? found.first, let folder = process.folder,
                 TerraformProcesses.hasConfiguration(folder)
@@ -361,7 +478,7 @@ final class TerraformPaneMonitor: ObservableObject {
                 facts: facts(of: folder, checkout: checkout), workspaceVariable: nil, dataDirVariable: nil, awsProfile: nil, probably: true,
                 settings: settings, identities: identities)
         }
-        return (warnings, processes)
+        return warnings
     }
 }
 

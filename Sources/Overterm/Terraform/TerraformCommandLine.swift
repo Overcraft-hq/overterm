@@ -27,6 +27,8 @@ struct TerraformCommandLine: Equatable, Sendable {
     var varFiles: [String] = []
     var backendConfigFiles: [String] = []
     var autoApprove = false
+    /// `init -migrate-state` or `-force-copy`: state copied to a new backend.
+    var migratesState = false
     /// `make apply`, `./deploy-prod.sh`: not terraform's own word.
     var probably = false
 
@@ -35,13 +37,15 @@ struct TerraformCommandLine: Equatable, Sendable {
 
     /// What changes infrastructure, state or the workspaces (3.3's list).
     var isWrite: Bool {
-        guard let operation else { return autoApprove }
-        if autoApprove { return true }
+        guard let operation else { return autoApprove || migratesState }
+        if autoApprove || migratesState { return true }
         let first = operation.split(separator: " ").first.map(String.init) ?? operation
-        if ["apply", "destroy", "import", "taint", "untaint", "force-unlock", "apply-all", "destroy-all"].contains(first) { return true }
+        // `refresh` writes state with no prompt; `test` with real providers
+        // creates and destroys real infrastructure (2.9).
+        if ["apply", "destroy", "import", "taint", "untaint", "force-unlock", "apply-all", "destroy-all", "refresh", "test"].contains(first) { return true }
         if ["state rm", "state mv", "state push", "state replace-provider", "workspace delete"].contains(operation) { return true }
         if operation.hasPrefix("run --all apply") || operation.hasPrefix("run --all destroy") || operation.hasPrefix("run-all apply")
-            || operation.hasPrefix("run-all destroy") || operation == "run apply" || operation == "run destroy"
+            || operation.hasPrefix("run-all destroy") || operation == "run apply" || operation == "run destroy" || operation.hasSuffix(" refresh")
         {
             return true
         }
@@ -52,17 +56,25 @@ struct TerraformCommandLine: Equatable, Sendable {
     /// command that probably runs one.
     static func parse(_ line: String, probable: Bool = true) -> TerraformCommandLine? {
         let commands = ShellCommandLine.commands(in: line)
-        for command in commands where tools.contains(command.tool) {
-            var parsed = make(tool: command.tool, arguments: command.arguments)
-            parsed.workspace = command.assigned("TF_WORKSPACE").flatMap { $0.isEmpty ? nil : $0 }
-            parsed.dataDir = command.assigned("TF_DATA_DIR").flatMap { $0.isEmpty ? nil : $0 }
-            return parsed
-        }
+        if let first = all(in: commands).first { return first }
         guard probable else { return nil }
         for command in commands where isProbable(command.tool) {
             return TerraformCommandLine(tool: command.tool, operation: command.arguments.first { !$0.hasPrefix("-") }, probably: true)
         }
         return nil
+    }
+
+    /// Every terraform-family command of a line, in order: `terraform plan
+    /// && terraform apply` is a plan and an apply (3.3 reads them all).
+    static func all(in line: String) -> [TerraformCommandLine] { all(in: ShellCommandLine.commands(in: line)) }
+
+    private static func all(in commands: [ShellCommandLine.Command]) -> [TerraformCommandLine] {
+        commands.filter { tools.contains($0.tool) }.map { command in
+            var parsed = make(tool: command.tool, arguments: command.arguments)
+            parsed.workspace = command.assigned("TF_WORKSPACE").flatMap { $0.isEmpty ? nil : $0 }
+            parsed.dataDir = command.assigned("TF_DATA_DIR").flatMap { $0.isEmpty ? nil : $0 }
+            return parsed
+        }
     }
 
     static func isProbable(_ tool: String) -> Bool {
@@ -128,6 +140,7 @@ struct TerraformCommandLine: Equatable, Sendable {
             if word == "-auto-approve" || word == "--auto-approve" || word.hasPrefix("-auto-approve=") && word != "-auto-approve=false" {
                 line.autoApprove = true
             }
+            if ["-migrate-state", "--migrate-state", "-force-copy", "--force-copy"].contains(word) { line.migratesState = true }
             words.append(word)
         }
         let plain = words.filter { !$0.hasPrefix("-") }

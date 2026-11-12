@@ -187,7 +187,10 @@ final class TerraformPanelModel: ObservableObject {
         guard relevant else { return }
         // A configuration came or went: whether the checkout has roots is
         // open again, for the pane header too (3.2) — shown or not.
-        if terraformFile { TerraformCheckouts.shared.forget(checkout) }
+        if terraformFile {
+            TerraformCheckouts.shared.forget(checkout)
+            TerraformAgentGuards.shared.forget(checkout)
+        }
         stale = true
         guard panelVisible else { return }
         pending?.cancel()
@@ -281,6 +284,9 @@ final class TerraformPanelModel: ObservableObject {
             self.listedFolders = Set(listing.folders.keys)
             self.state = .read
             TerraformCheckouts.shared.record(checkout, hasRoots: !result.roots.isEmpty)
+            // Whether an agent started here gets Terraform's writes denied (3.4).
+            TerraformAgentGuards.shared.record(
+                checkout, roots: result.roots, complete: !listing.capped, settings: settings, identities: identities)
             // Every production workspace's identity the root's own signals
             // say — never the shell's AWS_PROFILE alone (`identityToRemember`).
             TerraformRootStore.shared.rememberProduction(result.roots.flatMap(\.rememberedIdentities))

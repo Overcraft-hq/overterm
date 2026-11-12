@@ -6990,7 +6990,8 @@ the same process). Reads only.
 
 The design is docs/design/terraform/analysis.md (its Section 9 the
 stages). Built so far: the groundwork of stage 0, stage 1a, HCL in the
-editor, and stage 1b, which root, which workspace, and is it production.
+editor, stage 1b, which root, which workspace, and is it production, and
+stage 1c, guarding agents.
 
 - **Roots** (stage 1b, analysis 4.12, 6.1, 6.2). The rail's Terraform panel
   (`SidebarPanel.terraform`, ⌥⌘E, `terraform.enabled` on by default) is the
@@ -7134,6 +7135,153 @@ editor, and stage 1b, which root, which workspace, and is it production.
   terraform (`TerraformInfoRow`): operation, root, workspace, running
   for, provider plugins, the root's `.terraform` size (`DiskUsage`, a
   minute's cache).
+- **Guarding agents** (stage 1c, analysis 3.3–3.5, 5.6, 5.10, D-8).
+  - **The ask** (`TerraformPrompt`, pure): a pane's last 40 lines read for
+    an agent's permission prompt — Claude Code's question with its command
+    block above it (under its "Bash command" header), Codex's with the
+    command between it and the choices (from its `$ ` line); the choices
+    the newest thing on screen, a hint line at most under them, so an
+    answered one scrolled up is no ask — whose command block holds a
+    write (`TerraformCommandLine.all`, every command of the line:
+    `apply`, `destroy`, `import`, `taint`, `untaint`, `force-unlock`,
+    `state rm|mv|push`, `workspace delete`, `refresh`, `test`, `init
+    -migrate-state|-force-copy`, Terragrunt's `run --all apply`, or
+    `-auto-approve`), or Terraform's own `Enter a value:` under one of its
+    confirmations ("Do you want to perform these actions in workspace
+    "acme-prod"?", "Do you really want to destroy all resources?"…). A
+    block's lines are joined — a long command wraps inside the box, more
+    so in a narrow split — one line, then two, …, the reading whose
+    operation is one Terraform has winning when a word was cut; nothing
+    above the block is read (`commandBlocks`), so a `terraform apply` said
+    earlier in the chat is no ask for an `ls`. The command is kept masked
+    (`masked`: every `-var` value, `Secrets.maskArguments`, the text
+    rules): the Inbox's card, the header's tooltip and their accessibility
+    text show no value. `TerraformPaneMonitor` reads the screens of the
+    panes it already walks (something running, or an agent, in a checkout
+    with roots) — **only on a signal** (`readsScreen`: the tab waits on
+    the agent, which Claude Code's OSC 777 notification sets; a terraform
+    runs in its tree; an ask stands there; or `PaneBlocks.outputMark`
+    moved — a scroll, a title, a bell, a notification, a command's end,
+    never an agent's progress), so an idle agent's pane costs the walk
+    alone — and publishes `asks` by pane: the root from where the agent
+    works, a `cd` on the line and `-chdir` (`TerraformPrompt.folder`), or
+    the terraform found there, classed as the header classes it
+    (`TerraformAsk`, its `TerraformPaneWarning`). A folder with no
+    configuration — an agent's Bash keeps its `cd` from earlier calls, so
+    a bare `terraform apply` from the checkout's top may run in
+    `envs/prod` — in a checkout with production roots is said as
+    production: "root unknown — this checkout has production roots
+    (envs/prod)" (`unsettled`). The window (`+TerraformAgents`) puts each
+    tab's first pane's ask on `Tab.terraformAsk` and marks it waiting with
+    what it asks (`TabActivity.terraformAsked`) — looked at or not; an
+    agent's ask notifies; the mark goes with the ask (`terraformAnswered`)
+    unless something else marked the tab since. The pane header shows the
+    ask before its warning (`pane.terraformAsk`). **Nothing answers it**:
+    the Inbox's card (`InboxModel.Entry.terraform`) has Open Tab only — no
+    choices are read from a screen with a Terraform ask, so Return has
+    nothing to press — and `answer` refuses a tab at an ask; Ask Agent and
+    Ask Why neither offer such a tab as a target nor type into it
+    (`terraformAsking`: the mark, or any pane's screen read again;
+    `type(_:intoAgent:)`).
+  - **The launch** (`TerraformAgentGuard`, pure, and `TerraformAgentGuards`,
+    what is known): every agent Overterm types into a pane — New Task's
+    (its worktree's roots read first, `decide`), an agent tab's, a
+    resumed or restored one's (`agentCommand`) — gets, with
+    `terraform.agentWriteGuard` on (default; held when edited outside the
+    page) and its checkout not known to have no production root, Claude
+    Code's `--disallowedTools '<rules>'` last on its line (the flag takes
+    every word after it), for `terraform`, `tofu`, `terragrunt` × `apply`,
+    `destroy`, `import`, `taint`, `untaint`, `force-unlock`, `state`,
+    `workspace delete`, `refresh`, `test`, `apply-all`, `destroy-all` in
+    three forms — `Bash(terraform apply:*)` (the documented prefix),
+    `Bash(*terraform * apply*)` (after flags: `-chdir=…`, `run --all`),
+    `Bash(* terraform apply*)` (after an assignment: `TF_WORKSPACE=prod
+    terraform apply`) — and `-auto-approve`, `-migrate-state`,
+    `-force-copy` anywhere. **It fails closed**: production is kept until
+    the checkout's Terraform files change (`forget`); "none" only from an
+    uncapped listing (`record(complete:)`), and only while the classes'
+    settings and the remembered production identities are the ones it
+    was read under — a root raised by hand, a pattern changed or an
+    identity the header remembered make it unknown again; unknown — never
+    read, capped, not listable (a folder outside a repository) — is
+    guarded. Each launch starts a read again off the main thread (one
+    `git ls-files`, `decide`, once at a time a checkout), so a production
+    root merged into a worktree the panel never shows reaches the next
+    launch; no walk or file read on the main thread. Codex has no
+    per-command deny: `.notGuarded`, a "terraform writes not guarded"
+    chip on its pane's header for as long as it runs
+    (`TerminalView.terraformAgentGuard`). Nothing is written to the
+    agent's settings, no shim on PATH (D-8). **The rules are unverified
+    against Claude Code itself**: running an agent reaches its model
+    provider, so the spike 3.4 asks for was not run. What was checked,
+    statically, in Claude Code 2.1.322: its `--disallowedTools` splitter
+    keeps commas and spaces inside a rule's parentheses (the one quoted
+    word arrives as every rule — `testTheFlagSplitsIntoTheRules` models
+    it), and its rule linter takes a `*` anywhere in a `Bash` rule. That
+    each rule matches at run time, per command of a compound line, and
+    holds under `--dangerously-skip-permissions` is its documentation's
+    word; `TerraformAgentGuard.denies` is the tests' model of that, not
+    Claude Code. The setting's help says so.
+  - **The tools** (`TerraformMCP`, `terraform.agentAccess`, on; held): on
+    the bridge beside Kubernetes' (`BrowserMCP`, both halves: `offered`
+    and the `tf_` prefix's dispatch), the calling pane's checkout only
+    (`paneCheckout`; no pane, no tool). `tf_roots` (the panel's read: class
+    and why, workspace, backend, modules), `tf_fmt_check` (`fmt -check
+    -diff`), `tf_validate` (only where the root's lock file is committed
+    and unchanged and every module is installed — else "needs init: ask
+    the person"; never init), `tf_plan_summary(path, root?)`: a plan the
+    agent saved, its path resolved with `realpath` inside the checkout —
+    no `..`, absolute path or link out (`TerraformMCPPath`) — opened
+    `O_NOFOLLOW`, the descriptor's own path (`F_GETPATH`) inside the
+    checkout too — a folder on the way swapped for a link after the check
+    shows there —, checked (a regular file, ≤ 64 MB, a zip) and handed to
+    `show -json -no-color /dev/fd/3` as fd 3 (`ProcessGroup.spawn`'s
+    `descriptors`, `TerraformRun.short`'s `file`), so the path is never
+    terraform's to open; the root is resolved again before and after the
+    run, its answer dropped if it moved. `show -json` starts the root's
+    providers for their schemas, so it runs only where validate would
+    (`providersRefusal`: the lock file committed and unchanged from HEAD,
+    no provider missing from it, every module installed) — never a binary
+    an agent put in `.terraform/providers` with a lock file to match. The
+    bridge serves whenever any agent tool is on, Terraform's alone
+    included (`BrowserBridge.wanted(in:)`). Every tool runs in `TerraformEnvironment
+    .Purpose.agentRead` (no credential, a scratch HOME): they run outside
+    the agent's sandbox. No `tf_apply`, `tf_destroy`, `tf_state_*`.
+  - **The plan, masked at decode** (`TerraformPlan`, pure): an allow-list
+    — per resource change its address, previous address, mode, type,
+    name, index, provider, actions, reason, `replace_paths`, the import's
+    ID, and `before`/`after` as `TerraformValue`s walked against the
+    `*_sensitive` mirrors (`.sensitive`) and `after_unknown` (`.unknown`),
+    then `TerraformSecretNames` (narrower than `Secrets.isSecret`:
+    `key_name`, `kms_key_id`, `public_key` stay readable) — what an agent
+    reads (`tf_plan_summary`) decodes with `TerraformSecretNames.forAgents`,
+    which adds `Secrets.isSecret` (`private_key_id`, `session_key`) —, every string
+    through `Secrets`' rules; the changed attribute paths compared raw and
+    kept as paths only; outputs' values only when neither mirror marks
+    them; variables by name; from `configuration` only `references` (the
+    cause chain's first links); `prior_state`'s version; actions masked by
+    `config_sensitive`; checks by status. Everything else is dropped as
+    it is read; a top-level key it doesn't know makes it "partly
+    understood", an unknown major refuses. `TerraformPlanText.summary`:
+    the bar and the CLI's sentence, destroys, replaces and forgets first
+    with their reason and what forces them (`triggers_replace ←
+    var.acme_name`), creates and updates folded ×N with their changed
+    paths, moves, imports, drift, outputs, variables — strings cut at
+    200 characters, non-printables escaped.
+  - **Ask Why** on a failed validate: the editor bar's button
+    (`TerraformEditorHost`) hands `TerraformAgentBrief` — the root, its
+    workspace, backend and class, `terraform version`, the lock file's
+    providers and versions (`TerraformLockFile.versions`), each diagnostic's summary, detail,
+    range and code, scrubbed and bounded — to the checkout's agents first
+    (the Ask Agent sheet).
+  - **Scrollback** (5.6 rules 6, 7): a pane whose shell ran `terraform
+    output|show|console|state show|state pull` (`PaneBlocks
+    .printedTerraformSecrets`), where such a terraform ran under it or
+    Terraform asked for a value (`TerminalView.terraformSensitive`) is
+    saved at quit without its text (`scrollbackPanes`, what the save
+    writes), and ⌘L over it is scrubbed as a pinned tab's is
+    (`askSelection`); the `terraformAgents` scenario runs a stand-in
+    `terraform output` printing the sentinel and checks both.
 - **Init's noise** (4.12 step 6): `DiffModel.isNoise` drops FSEvents'
   folders under `.terraform/` but its own (`environment`,
   `terraform.tfstate`) and `modules/`, and `.terragrunt-cache/`: `init`'s

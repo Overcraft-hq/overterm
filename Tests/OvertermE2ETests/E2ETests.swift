@@ -185,6 +185,13 @@ final class E2ETests: XCTestCase {
         try run("terraformRoots", env: ["OVERTERM_TERRAFORM": try Self.installedTerraform()])
     }
 
+    /// Guarding agents (stage 1c): the deny rules on an agent's launch, a
+    /// fake agent's ask for terraform apply marked and never answered, a
+    /// saved plan read masked through tf_plan_summary.
+    func testTerraformAgents() throws {
+        try run("terraformAgents", env: ["OVERTERM_TERRAFORM": try Self.installedTerraform()])
+    }
+
     /// The installed terraform: `OVERTERM_TF_TEST_TERRAFORM`, else Homebrew's.
     private static func installedTerraform() throws -> String {
         let candidates = [ProcessInfo.processInfo.environment["OVERTERM_TF_TEST_TERRAFORM"], "/opt/homebrew/bin/terraform", "/usr/local/bin/terraform"]
