@@ -219,6 +219,7 @@ extension E2ERunner {
         await terraformNewWorktreeChecks(recorder: recorder)
         await terraformStateB2c(binary: binary)
         await terraformDriftAndTestB2d(binary: binary)
+        await terraformC2fChecks(recorder: recorder)
     }
 
     /// Every file under `folder` but `.git`'s, by path, with its bytes.

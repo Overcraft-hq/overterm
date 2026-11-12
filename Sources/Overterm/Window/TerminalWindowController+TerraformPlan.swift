@@ -126,12 +126,14 @@ extension TerminalWindowController {
     /// Plans `card` — the person's click: asked first where 5.3 and 5.5
     /// say (production's first plan this session, a commit not theirs,
     /// risks new against the base branch), then in the slot.
+    /// `review`: a review tab's plan of what it reviews (2f) — always asked.
     func planTerraformRoot(
-        _ card: TerraformRootCard, checkout: URL? = nil, lock: TerraformCommands.LockWait = .person, mode: TerraformPlanMode = .normal
+        _ card: TerraformRootCard, checkout: URL? = nil, lock: TerraformCommands.LockWait = .person, mode: TerraformPlanMode = .normal,
+        review: TerraformReviewPlan? = nil
     ) {
         guard let checkout = checkout ?? terraformPanel.checkout else { return NSSound.beep() }
         Task { @MainActor [weak self] in
-            guard let self, let run = await self.preparePlan(card, checkout: checkout, lock: lock, agent: nil, mode: mode) else { return }
+            guard let self, let run = await self.preparePlan(card, checkout: checkout, lock: lock, agent: nil, mode: mode, review: review) else { return }
             self.showTerraformPlan(run)
             await run.start(settingPath: Settings.shared.terraformPath)
             self.terraformPanel.objectWillChange.send()
@@ -156,7 +158,8 @@ extension TerminalWindowController {
 
     /// The questions, then the run made and registered (not started).
     private func preparePlan(
-        _ card: TerraformRootCard, checkout: URL, lock: TerraformCommands.LockWait, agent: String?, mode: TerraformPlanMode = .normal
+        _ card: TerraformRootCard, checkout: URL, lock: TerraformCommands.LockWait, agent: String?, mode: TerraformPlanMode = .normal,
+        review: TerraformReviewPlan? = nil
     ) async -> TerraformPlanRun? {
         let registry = TerraformRunRegistry.shared
         if let why = TerraformProcessCheck.refused(.plan, rootClass: card.rootClass)
@@ -168,13 +171,14 @@ extension TerminalWindowController {
         let key = TerraformRootStore.key(checkout: checkout, root: card.path) + "\u{0}" + card.workspace
         let firstOnProduction = card.isProduction && !registry.productionPlanned.contains(key)
         // What its code runs or reaches, now and against the base branch.
-        let base = diff.root?.standardizedFileURL == checkout.standardizedFileURL ? diff.comparison?.mergeBase ?? "HEAD" : "HEAD"
+        let base =
+            review?.base ?? (diff.root?.standardizedFileURL == checkout.standardizedFileURL ? diff.comparison?.mergeBase ?? "HEAD" : "HEAD")
         let baseFacts = await TerraformRunRisks.readBase(checkout: checkout, rootPath: card.path, base: base)
         let config = card.facts.config
         let lockProviders = card.facts.lockProviders
         let fresh = TerraformRunRisks.new(config: config, lockProviders: lockProviders, base: baseFacts)
         let listed = TerraformRunRisks.listed(config: config, lockProviders: lockProviders, plan: nil, base: baseFacts)
-        let all = TerraformRunRisks.risks(config: config, lockProviders: lockProviders)
+        let all = TerraformRunRisks.risks(config: config, lockProviders: lockProviders) + (review?.moduleRisks ?? [])
         let authored = await Self.authoredByPerson(checkout, base: base)
         let changed = await TerraformChangedLines.read(checkout: checkout, root: card.path, base: base)
         let agentKey = key + "\u{0}agent"
@@ -186,7 +190,8 @@ extension TerminalWindowController {
         if !agentAllowed,
             let question = TerraformPlanGate.question(
                 root: card.name, workspace: card.workspace, rootClass: card.rootClass, profile: profile,
-                firstOnProduction: firstOnProduction, authoredByPerson: authored, newRisks: fresh, allRisks: all, agent: agent)
+                firstOnProduction: firstOnProduction, authoredByPerson: authored, newRisks: fresh, allRisks: all, agent: agent,
+                reviewing: review?.reviewing, unreadModules: review?.unreadModules ?? 0)
         {
             let scope = "\(card.rootClass.title.uppercased()) · \(card.name) · workspace \(card.workspace) · \(card.backendSummary)"
             let confirmation = WriteConfirmation(
@@ -203,9 +208,11 @@ extension TerminalWindowController {
         let run = TerraformPlanRun(
             kind: .plan, checkout: checkout, card: card, agent: agent, lockWait: lock,
             varFiles: agent == nil ? TerraformRootStore.shared.varFiles(checkout: checkout, root: card.path) : [],
-            branch: terraformBranch(checkout), mode: agent == nil ? mode : .normal)
-        run.risks = listed
+            branch: review?.branch ?? terraformBranch(checkout), mode: agent == nil ? mode : .normal)
+        run.risks = listed + (review?.moduleRisks ?? [])
         run.changedLines = changed
+        // The commit it plans: what Post to Pull Request weighs it by (2f).
+        (run.commit, run.uncommitted) = await Self.plannedCommit(checkout, root: card.folder)
         registry.add(run)
         return run
     }

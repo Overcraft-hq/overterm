@@ -340,6 +340,18 @@ final class TerraformWorktreeTests: XCTestCase {
         XCTAssertTrue(setup.isInitializing(root))
         XCTAssertTrue(setup.isInitializing(root.resolvingSymlinksInPath()))
         XCTAssertFalse(setup.isInitializing(repo.appendingPathComponent("envs/dev")), "another worktree's root")
+        // Test and State refuse meanwhile, as Plan and Init do: init is installing the providers they start.
+        let card = TerraformRootCard(
+            path: "envs/dev", name: "envs/dev", folder: root, kind: .root, facts: TerraformRootFacts(), backendSummary: "local", identity: nil,
+            verdict: .init(rootClass: .local, reason: "a test's"))
+        let test = await TerraformTestRun.begin(
+            card: card, checkout: worktree, file: nil, agent: nil, writable: false, settingPath: "", binary: URL(fileURLWithPath: "/usr/bin/false"),
+            results: TerraformTestResults(), setup: setup, ask: { _ in true }, show: { _ in XCTFail("nothing shown") })
+        guard case .failure(let refused) = test else { return XCTFail("a test while New Task initialises: refused") }
+        XCTAssertEqual(refused.message, TerraformWorktreeSetup.initializingRefusal)
+        let read = TerraformStateRead(checkout: worktree, card: card, reader: .agent)
+        await read.start(registry: TerraformRunRegistry(), setup: setup, settingPath: "", binary: URL(fileURLWithPath: "/usr/bin/false"))
+        XCTAssertEqual(read.phase, .refused(TerraformWorktreeSetup.initializingRefusal))
         var finished = false
         setup.prepare(worktree, others: [], initialize: true) { finished = true }
         try await Task.sleep(for: .milliseconds(200))

@@ -104,13 +104,21 @@ enum TerraformPlanGate {
     /// theirs — a check that can't answer never lets a plan through
     /// unasked. `firstOnProduction`: no plan of this root this session yet,
     /// on production; `newRisks` against the base branch, `allRisks` now.
+    /// `reviewing`: what a review tab plans ("pull request #42") — code the
+    /// person didn't write by its nature, so always asked, on every class,
+    /// with every risk (5.5).
     static func question(
         root: String, workspace: String, rootClass: TerraformClass, profile: String?, firstOnProduction: Bool, authoredByPerson: Bool?,
-        newRisks: [TerraformRunRisk], allRisks: [TerraformRunRisk], agent: String? = nil
+        newRisks: [TerraformRunRisk], allRisks: [TerraformRunRisk], agent: String? = nil, reviewing: String? = nil, unreadModules: Int = 0
     ) -> Question? {
         var reasons: [String] = []
-        let notTheirs = authoredByPerson != true
+        let notTheirs = authoredByPerson != true || reviewing != nil
         let credentials = profile.map { " with AWS_PROFILE \($0)" } ?? " with your default credentials"
+        if let reviewing {
+            reasons.append(
+                "This plans \(reviewing), which is under review: a plan runs its providers, data sources and modules" + credentials
+                    + ", whoever wrote them.")
+        }
         if let agent {
             // 5.10: naming the root, the profile and the risk list.
             reasons.append(
@@ -121,7 +129,7 @@ enum TerraformPlanGate {
             reasons.append(
                 "\(root) is production. A plan runs its providers and data sources" + credentials + ", and takes its state's lock.")
         }
-        if notTheirs {
+        if notTheirs, reviewing == nil {
             reasons.append(
                 authoredByPerson == nil
                     ? "Whose code this is can't be told (no git user.email, or git couldn't say): a plan runs it with your credentials."
@@ -131,9 +139,16 @@ enum TerraformPlanGate {
         if !risks.isEmpty {
             reasons.append("What its code runs or reaches:\n" + risks.prefix(20).map { "• " + $0.said }.joined(separator: "\n"))
         }
+        if reviewing != nil, unreadModules > 0 {
+            reasons.append(
+                (unreadModules == 1 ? "1 module it calls wasn't" : "\(unreadModules) modules it calls weren't")
+                    + " read (too many, or not in this checkout): what they run isn't listed.")
+        } else if reviewing != nil, risks.isEmpty {
+            reasons.append("Nothing in its root's code runs a command, fetches a URL or reads another state.")
+        }
         guard agent != nil || firstOnProduction || notTheirs || !newRisks.isEmpty else { return nil }
         return Question(
-            title: agent == nil ? "Plan \(root)?" : "Let the agent plan \(root)?", detail: reasons.joined(separator: "\n\n"), button: "Plan",
+            title: agent != nil ? "Let the agent plan \(root)?" : reviewing.map { "Plan \(root) of \($0)?" } ?? "Plan \(root)?", detail: reasons.joined(separator: "\n\n"), button: "Plan",
             production: rootClass == .production)
     }
 

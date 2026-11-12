@@ -364,6 +364,7 @@ private struct RootRow: View {
                 button("Test", "checkmark.circle") { actions.test(card) }
                     .accessibilityIdentifier("terraform.panel.test")
             }
+            .disabled(setup.isInitializing(card.folder))
             if card.isProduction {
                 let on = registry.hasSessionWrites(checkout: panel.checkout ?? card.folder, root: card.path, workspace: card.workspace)
                 button(on ? "Applies On Until Quit — Turn Off" : "Allow Applies Until Quit…", on ? "lock.open.fill" : "lock.fill") {
@@ -397,13 +398,21 @@ private struct RootRow: View {
     }
 
     @ViewBuilder private var menu: some View {
-        Button("Plan") { actions.plan(card) }
-        Button("Plan Destroy…") { actions.planDestroy(card) }
-        Button("Init…") { actions.initialize(card) }
+        // New Task's init writes this root's .terraform now: nothing runs in it meanwhile.
+        let initializing = setup.isInitializing(card.folder)
+        Group {
+            Button("Plan") { actions.plan(card) }
+            Button("Plan Destroy…") { actions.planDestroy(card) }
+            Button("Init…") { actions.initialize(card) }
+        }
+        .disabled(initializing)
         Button("Select Workspace…") { actions.chooseWorkspace(card) }
-        Button("State and Outputs") { actions.showState(card) }
-        Button("Check Drift") { actions.checkDrift(card) }
-        Button("Test") { actions.test(card) }
+        Group {
+            Button("State and Outputs") { actions.showState(card) }
+            Button("Check Drift") { actions.checkDrift(card) }
+            Button("Test") { actions.test(card) }
+        }
+        .disabled(initializing)
         if card.isProduction {
             if registry.hasSessionWrites(checkout: panel.checkout ?? card.folder, root: card.path, workspace: card.workspace) {
                 Button("Turn Applies Off") { actions.endWrites(card) }

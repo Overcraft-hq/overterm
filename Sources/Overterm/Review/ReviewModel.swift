@@ -27,6 +27,8 @@ final class ReviewModel: ObservableObject, Identifiable {
     let id = UUID()
     let root: URL
     let source: ReviewSource
+    /// The roots it touches and their plans (Terraform, stage 2f).
+    let terraform = TerraformReviewModel()
 
     @Published private(set) var phase: Phase = .loading
     /// In the order the list shows them: by folder, then name.

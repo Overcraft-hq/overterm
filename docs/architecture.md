@@ -7074,8 +7074,9 @@ The design is docs/design/terraform/analysis.md (its Section 9 the
 stages). Built so far: the groundwork of stage 0, stage 1a, HCL in the
 editor, stage 1b, which root, which workspace, and is it production,
 stage 1c, guarding agents, stage 1d, the plan in the right slot,
-stage 2a, the apply, with every guard, and stage 2c, state and outputs,
-masked.
+stage 2a, the apply, with every guard, stage 2b, a new worktree's roots,
+stage 2c, state and outputs, masked, stage 2d, drift and terraform test,
+stage 2e, force unlock, and stage 2f, a review's Terraform section.
 
 - **Roots** (stage 1b, analysis 4.12, 6.1, 6.2). The rail's Terraform panel
   (`SidebarPanel.terraform`, ⌥⌘E, `terraform.enabled` on by default) is the
@@ -7891,6 +7892,58 @@ masked.
   probe; a run no longer shown and one while the state's turn is held
   refused with nothing run; a wrong name and Cancel unlock
   nothing; the name typed probes again, then forces that ID).
+- **A review's Terraform section** (stage 2f, analysis 2.2, 2.9, 5.5):
+  "what will this change do in the cloud", above the review's diff
+  (`TerraformReviewSectionView`, `ReviewModel.terraform`, a
+  `TerraformReviewModel`). Read each time its review loads (opened,
+  Reload) while it is the review on screen — never while hidden (one
+  that loaded hidden is read when it shows, `missed`), never
+  for a review whose checkout has no roots and that changes no Terraform
+  file, nothing with `terraform.enabled` off: one `ls-files` of the
+  checkout with the head, the reviewed Terraform files it lacks added (a
+  root the review adds is listed, "new in this review"), the panel's
+  `assemble`, then `TerraformReview.touched` (pure): a file's nearest
+  root, and every root a changed module reaches through others too
+  (`through modules/acme-net`), production first. Which checkout has the
+  head (`TerraformReview.head`, pure): the review's own for its branch
+  and what isn't committed; else one at the reviewed commit (a range's
+  head resolved, a pull request's `headRefOid` — now in `gh pr view`'s
+  fields with `isCrossRepository`), on the reviewed branch first; else
+  one on the branch at another commit, "pull it, then Reload", Plan and
+  Post greyed. A fork's branch name is never matched (its `main` is not
+  the person's): by commit only;
+  the window's `WorktreeModel` list when it is this repository's, else one
+  `git worktree list`. Each root shows its latest plan there (the
+  registry's `latest`: counts, age, stale), pressed into the right slot.
+  **Plan… always asks** (5.5): code under review, whoever wrote it —
+  `TerraformReviewPlan` hands `preparePlan` what is reviewed
+  (`TerraformPlanGate.question(reviewing:)`: asked on every class, with
+  every risk, the risks of the local modules the root calls too —
+  `TerraformReview.moduleRisks`, "data.external in modules/acme-net";
+  modules not read — past 200, or not in the checkout — said, never the
+  all-clear), the root's facts and modules read again at the press
+  (`TerraformReviewModel.reread`), the checkout's HEAD checked against
+  the reviewed commit,
+  the review's base for the risks and the changed lines, and the head as
+  the plan's branch. With no checkout at the head, Check Out in a New
+  Worktree… (asked, saying what is made; a local branch as itself, a
+  commit, remote branch or tag detached, a pull request by `gh pr
+  checkout --detach` in a new detached worktree — no branch made —, the
+  worktree removed when gh fails; it plans and inits nothing). Post to
+  Pull Request… (a pull request's review, or a branch with an open one):
+  only plans made at the pull request's head — every plan records its
+  checkout's HEAD and whether tracked files differed
+  (`TerraformPlanRun.commit`, `uncommitted`) — whole (no destroy, target,
+  replace), nothing uncommitted (`TerraformReview.postable`: the rest left
+  out, said in the question), each named "branch @ commit": every touched root's latest plan as its
+  masked `TerraformPlanText.copySummary` — never `terraform show`'s text
+  —, each in a fence longer than any run of backticks in it, the line
+  above it with nothing GitHub acts on (`inline`: no mention, no
+  reference), cut to GitHub's size with what was left said — a first plan
+  too long alone cut at a line, said (`TerraformReview.comment`); the
+  whole comment shown in the `WriteConfirmation` (a scenario's question
+  recorder stands in for it, never skips it), then `gh pr comment`. Checks: `terraformC2fChecks`,
+  from the `terraform` scenario.
 - **The guards** (`Terraform/TerraformGuards.swift`, pure but for
   `prepareScratch`; analysis 4.2, 4.5, 4.13, 5.13 rule 8). Terraform
   changes real infrastructure, so an isolated run or a unit test

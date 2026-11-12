@@ -228,13 +228,15 @@ final class TerraformTestRun: ObservableObject, Identifiable {
     /// in the window's slot.
     static func begin(
         card: TerraformRootCard, checkout: URL, file: String?, agent: String?, writable: Bool, settingPath: String, binary: URL? = nil,
-        results: TerraformTestResults = .shared, registry: TerraformRunRegistry = .shared,
+        results: TerraformTestResults = .shared, registry: TerraformRunRegistry = .shared, setup: TerraformWorktreeSetup = .shared,
         ask: (TerraformPlanGate.Question) async -> Bool, show: (TerraformTestRun) -> Void
     ) async -> Result<TerraformTestRun, TerraformReadFailure> {
         if let going = results.latest(checkout: checkout, root: card.path), going.isGoing {
             show(going)
             return .success(going)
         }
+        // New Task's init without a backend is installing its providers now (2b).
+        if let why = setup.refusal(card.folder) { return .failure(TerraformReadFailure(message: why)) }
         let key = TerraformRootStore.key(checkout: checkout, root: card.path)
         guard results.starting.insert(key).inserted else {
             return .failure(TerraformReadFailure(message: "A test of \(card.name) is starting already."))
@@ -270,6 +272,7 @@ final class TerraformTestRun: ObservableObject, Identifiable {
         guard let arguments = TerraformCommands.test(file: file) else { return refuse("\(file ?? "?") isn't a test file of the root.") }
         guard !stopping else { return end(.stopped, results: results) }
         let root = card.folder
+        if let why = TerraformWorktreeSetup.shared.refusal(root) { return refuse(why) }
         // Mocked: nothing to reach a cloud with (validate's environment).
         // Real providers: the user's, which the person was asked about.
         let purpose: TerraformEnvironment.Purpose = prepared.read.mocking.isMocked ? .validate : .run(workspace: nil, pluginCache: nil)

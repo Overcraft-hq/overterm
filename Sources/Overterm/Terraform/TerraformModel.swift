@@ -229,6 +229,10 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
     let mode: TerraformPlanMode
     /// The checkout's branch @ commit, as the chip says it.
     let branch: String?
+    /// The checkout's HEAD when it was planned, and whether tracked files
+    /// differed from it: a review posts only a plan of its head (2f).
+    var commit: String?
+    var uncommitted = false
     /// What its code runs or reaches (5.4), listed in the header.
     var risks: [TerraformRunRisk] = []
     /// The lines of the root's files this branch added (`git diff -U0
@@ -442,9 +446,7 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
         }
         guard !stopping else { return finish(.stopped) }
         // New Task's init without a backend writes this .terraform now (2b).
-        if TerraformWorktreeSetup.shared.isInitializing(root) {
-            return refuse("New Task is initialising this root without its backend: press again once it is done.")
-        }
+        if let why = TerraformWorktreeSetup.shared.refusal(root) { return refuse(why) }
         let facts = prepared.facts
         let folder = TerraformRootFolder(path: card.path, kind: .root, files: prepared.names)
         autoVarFiles = folder.autoVarFiles
