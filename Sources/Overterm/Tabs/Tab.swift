@@ -67,6 +67,9 @@ final class Tab: ObservableObject, Identifiable {
     /// Why its checkout's failures won't mark it now ("not watched");
     /// nil while they will, or nothing is bound.
     @Published var kubeNotWatched: String?
+    /// One of its panes asks for a Terraform write (TerraformPrompt, 3.3):
+    /// its tab's mark and the Inbox's card; never answered by Overterm.
+    @Published var terraformAsk: TerraformAsk?
 
     /// The island this tab belongs to, if any. The group is looked up in
     /// `TabStore.groups`; the store keeps a group's tabs contiguous.

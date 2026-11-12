@@ -3,7 +3,9 @@ import Foundation
 /// Every terraform command line Overterm builds (analysis 4.3), and the
 /// forms it can never express (5.13 rule 1). Pure. Stage 1a has only the
 /// editor's: format and validate, which change no state and take no lock;
-/// stage 1b `version -json`, the version pill's.
+/// stage 1b `version -json`, the version pill's; stage 1c the agents'
+/// reads — `fmt -check -diff`, and `show -json` of a saved plan by its
+/// descriptor.
 ///
 /// Every run's cwd is the root (or the checkout for `formatCheck`), never
 /// `-chdir`, so a diagnostic's `range.filename` is relative to it.
@@ -29,17 +31,32 @@ enum TerraformCommands {
     /// `terraform_outdated` is a call home), no credential; reads no state.
     static let version = ["version", "-json"]
 
-    /// Everything this file builds.
-    static let all: [[String]] = [formatStandardInput, formatCheck, formatCheckFolder, validate, version]
+    /// `tf_fmt_check` (analysis 5.10, stage 1c): whether a root's files
+    /// pass `fmt`, and the diff that would make them — exit 0 or 3. With
+    /// `-check`, `fmt` writes nothing; one folder, not below it.
+    static let formatCheckDiff = ["fmt", "-check", "-diff", "-no-color"]
 
-    /// Subcommands the editor never runs: the ones that change state,
+    /// A saved plan as JSON, read from the descriptor the run is handed as
+    /// fd 3 (4.4, spike 18): `tf_plan_summary` over a plan an agent saved
+    /// itself. Never `show` of a state (no file: it prints every secret in
+    /// it), never a path terraform would open after the check — the file
+    /// is opened, checked and handed over by Overterm. Starts the
+    /// providers for their schemas, so its environment has no credential
+    /// (`TerraformEnvironment.Purpose.agentRead`).
+    static let showPlanDescriptor = ["show", "-json", "-no-color", "/dev/fd/3"]
+
+    /// Everything this file builds.
+    static let all: [[String]] = [formatStandardInput, formatCheck, formatCheckFolder, formatCheckDiff, validate, version, showPlanDescriptor]
+
+    /// Subcommands never run yet: the ones that change state,
     /// infrastructure, the checkout's providers or its workspaces (the
     /// writes that come later go only through a shown plan), and the reads
     /// that print secrets or run the configuration, which later stages
-    /// build with their own guards.
+    /// build with their own guards. `show` runs only as
+    /// `showPlanDescriptor`, whole: any other line is no builder's.
     static let refusedSubcommands: Set<String> = [
         "apply", "destroy", "import", "taint", "untaint", "force-unlock", "init", "refresh", "state", "workspace", "login", "logout", "test",
-        "console", "plan", "get", "providers", "output", "show",
+        "console", "plan", "get", "providers", "output",
     ]
 
     /// Flags never built, for anything (4.3).
@@ -50,7 +67,7 @@ enum TerraformCommands {
     static func refusal(_ arguments: [String]) -> String? {
         guard let subcommand = arguments.first(where: { !$0.hasPrefix("-") }) else { return "no subcommand" }
         if arguments.contains(where: { $0.hasPrefix("-chdir") }) { return "-chdir is never passed: the run's folder is its root" }
-        if refusedSubcommands.contains(subcommand) { return "terraform \(subcommand) is not run by Overterm's editor" }
+        if refusedSubcommands.contains(subcommand) { return "terraform \(subcommand) is not run by Overterm" }
         for argument in arguments {
             let forbidden = forbiddenFlags.first { flag in
                 flag.hasSuffix("=") ? argument.hasPrefix(flag) : argument == flag || argument.hasPrefix(flag + "=")

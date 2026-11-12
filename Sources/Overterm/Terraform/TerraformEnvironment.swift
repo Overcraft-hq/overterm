@@ -16,6 +16,11 @@ enum TerraformEnvironment {
         /// `validate -json`: starts every provider binary (spike 19), so
         /// no credential, no HOME of the user's.
         case validate
+        /// An agent's read through a `tf_` tool (`fmt -check -diff`,
+        /// `validate`, `show -json` of its saved plan): run outside the
+        /// agent's sandbox, so the same as validate's — nothing to reach a
+        /// cloud with (analysis 4.5, 5.10).
+        case agentRead
     }
 
     /// Names no run ever gets: `TF_CLI_ARGS` and `TF_CLI_ARGS_*` (they
@@ -34,7 +39,7 @@ enum TerraformEnvironment {
     static func build(base: [String: String], purpose: Purpose, root: URL, scratch: TerraformGuards.Scratch) -> [String: String] {
         var environment = base.filter { name, _ in !isAlwaysRemoved(name) && !TerraformGuards.isCredential(name) }
         switch purpose {
-        case .format, .validate:
+        case .format, .validate, .agentRead:
             environment["HOME"] = scratch.home.path
             environment["TF_CLI_CONFIG_FILE"] = scratch.cliConfig.path
         }

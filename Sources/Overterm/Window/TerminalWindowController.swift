@@ -189,6 +189,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// Ask Why on a tab's mark, in a scenario: the brief handed here
     /// instead of the sheet.
     var kubernetesBriefRecorder: ((KubeAgentBrief, Tab) -> Void)?
+    /// A scenario's: Terraform's Ask Why briefs land here instead of the sheet.
+    var terraformBriefRecorder: ((TerraformAgentBrief) -> Void)?
     /// What Ask Why on a mark couldn't do, said (the scenario reads it).
     var kubernetesAttentionProblem: String?
     /// Cluster failures told under another mark (an agent waiting): the scenario's count.
@@ -593,6 +595,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         }
         editor.workspaceRoot = { [weak self] in self?.diff.root ?? self?.tree.root }
         editor.kubernetesHost = self
+        editor.terraformHost = self
         self.editor = editor
         self.editorItem = editorItem
 
@@ -730,6 +733,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         wireDockerPorts()
         wireDockerAttention()
         wireKubernetesAttention()
+        wireTerraformAgents()
         watchDockerPalette().store(in: &cancellables)
         watchKubernetesPalette().store(in: &cancellables)
         installPageKeys()
@@ -1248,18 +1252,30 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// `command`: what starts the agent, when not its plain command (a resume).
     func newTab(in directory: URL, agent: Agent? = nil, startAgent: Bool = true, command: String? = nil) {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
-        let input = startAgent ? agent.map { (command ?? $0.command(arguments: Settings.shared.arguments(for: $0))) + "\n" } : nil
+        let start = agent.map { agentCommand($0, base: command, in: directory) }
+        let input = startAgent ? start.map { $0.command + "\n" } : nil
         let terminal = TerminalView(workingDirectory: directory.path, initialInput: input, fontSize: fontSize)
+        terminal.terraformAgentGuard = start?.launch ?? .none
         addTab(terminal, .folder, agent: agent, after: store.selected, in: directory.path)
+    }
+
+    /// What starts `agent` in `directory`: its command (`base`, else its
+    /// plain one) with Settings ▸ Agents' arguments, and — in a checkout
+    /// with a production root — Terraform's writes denied for this launch
+    /// (`TerraformAgentGuard`, analysis 3.4).
+    func agentCommand(_ agent: Agent, base: String? = nil, in directory: URL) -> (command: String, launch: TerraformAgentGuard.Launch) {
+        let launch = TerraformAgentGuards.shared.launch(for: agent, in: directory)
+        return (TerraformAgentGuard.command(base ?? agent.command(arguments: Settings.shared.arguments(for: agent)), launch: launch), launch)
     }
 
     /// An agent's tab (or a shell's), pinned as Terminal in this context
     /// pins one: New Task's, its agent's kubectl going to `kubePin`'s context.
     func newTab(in directory: URL, agent: Agent?, environment: [String: String], kubePin: KubeTerminalPin) {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
-        let input = agent.map { $0.command(arguments: Settings.shared.arguments(for: $0)) + "\n" }
+        let start = agent.map { agentCommand($0, in: directory) }
         let terminal = TerminalView(
-            workingDirectory: directory.path, initialInput: input, fontSize: fontSize, environment: environment, kubePin: kubePin)
+            workingDirectory: directory.path, initialInput: start.map { $0.command + "\n" }, fontSize: fontSize, environment: environment, kubePin: kubePin)
+        terminal.terraformAgentGuard = start?.launch ?? .none
         addTab(terminal, .folder, agent: agent, after: store.selected, in: directory.path)
         followKubernetesPins()
     }
@@ -1321,6 +1337,23 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         } else if tab.activity.clusterNewsUnderOtherMark(visible: visible) {
             clusterNotices += 1
             notifyUnlessHeld(tab, note: note, mark: .failed)
+        }
+        updateAttentionBadge()
+    }
+
+    /// A pane of `tab` asks for a Terraform write (3.3), or no longer does
+    /// (`ask` nil): the tab marked waiting with what it asks — looked at or
+    /// not — and, for an agent's ask, told while you are elsewhere; the
+    /// mark goes when the ask does. Nothing answers it.
+    func markTerraformAsk(_ ask: TerraformAsk?, on tab: Tab) {
+        guard tab.terraformAsk != ask else { return }
+        let before = tab.terraformAsk
+        tab.terraformAsk = ask
+        if let ask {
+            let raised = tab.activity.terraformAsked(ask.summary, visible: isVisible(tab))
+            if raised, tab.agent != nil || ask.prompt.isAgents { notifyUnlessHeld(tab) }
+        } else if before != nil, tab.activity.terraformAnswered() {
+            AttentionNotifier.withdraw(tab: tab)
         }
         updateAttentionBadge()
     }
@@ -1510,6 +1543,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 })
     }
 
+    /// The panes whose text the last save keeps: Settings ▸ General's
+    /// reopening tabs and their text, shell tabs only — and never a pane
+    /// that printed what Terraform keeps secret (5.6 rule 6).
+    func scrollbackPanes() -> [TerminalView] {
+        guard Settings.shared.restoreTabs, Settings.shared.restoreScrollback else { return [] }
+        return store.tabs.filter { $0.agent == nil }.flatMap { tab in tab.terminals.filter { !terraformSensitive($0) } }
+    }
+
     /// The last save, at quit or when the window closes (whichever comes
     /// first — after it the terminals are gone): with each shell pane's
     /// text. Agent tabs' aren't kept: their conversation resumes instead.
@@ -1517,11 +1558,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         guard !finalSaveDone else { return }
         finalSaveDone = true
         var saved: [ObjectIdentifier: String] = [:]
-        // Settings ▸ General: reopening tabs, and each shell pane's text with them.
-        for tab in store.tabs where tab.agent == nil && Settings.shared.restoreTabs && Settings.shared.restoreScrollback {
-            for pane in tab.terminals {
-                if let text = pane.scrollbackText, let name = Scrollback.save(text, keeping: Settings.shared.scrollbackLines) { saved[ObjectIdentifier(pane)] = name }
-            }
+        for pane in scrollbackPanes() {
+            if let text = pane.scrollbackText, let name = Scrollback.save(text, keeping: Settings.shared.scrollbackLines) { saved[ObjectIdentifier(pane)] = name }
         }
         Scrollback.removeAll(except: Set(saved.values))
         do {
@@ -1535,6 +1573,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// is gone), agents resuming their last conversation there.
     func restore(_ state: SessionState) {
         func existing(_ path: String?) -> String? { path.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } }
+        // A resumed agent is started as a new one is: Terraform's writes denied where they apply (3.4).
+        func resuming(_ agent: Agent?, in path: String?) -> (input: String?, launch: TerraformAgentGuard.Launch) {
+            guard let agent else { return (nil, .none) }
+            let folder = URL(fileURLWithPath: path ?? FileManager.default.homeDirectoryForCurrentUser.path, isDirectory: true)
+            let made = agentCommand(agent, base: agent.resumeCommand(arguments: Settings.shared.arguments(for: agent)), in: folder)
+            return (made.command + "\n", made.launch)
+        }
         // The islands first, so each tab can point at one as it is made.
         let groups: [TabGroup] = (state.groups ?? []).map {
             let group = TabGroup(
@@ -1571,19 +1616,23 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             var made: [TerminalView] = []
             let layout = saved.panes?.tree { directory, scrollback -> TerminalView in
                 let kube = pinned(saved.kubeContext(ofPane: made.count))
+                let start = made.isEmpty ? resuming(saved.agent, in: existing(directory)) : (nil, .none)
                 let pane = TerminalView(
-                    workingDirectory: existing(directory), initialInput: made.isEmpty ? saved.agent.map { $0.resumeCommand(arguments: Settings.shared.arguments(for: $0)) + "\n" } : nil,
+                    workingDirectory: existing(directory), initialInput: start.input,
                     restoring: Scrollback.file(named: scrollback), environment: kube?.environment ?? [:], kubePin: kube?.pin, kubePinLost: kube?.lost)
+                pane.terraformAgentGuard = start.launch
                 made.append(pane)
                 return pane
             }
             let single = made.isEmpty ? pinned(saved.kubeContext) : nil
+            let start = made.isEmpty ? resuming(saved.agent, in: existing(saved.workingDirectory)) : (nil, .none)
             let terminal =
                 made.first
                 ?? TerminalView(
-                    workingDirectory: existing(saved.workingDirectory), initialInput: saved.agent.map { $0.resumeCommand(arguments: Settings.shared.arguments(for: $0)) + "\n" },
+                    workingDirectory: existing(saved.workingDirectory), initialInput: start.input,
                     restoring: Scrollback.file(named: saved.scrollback), environment: single?.environment ?? [:], kubePin: single?.pin,
                     kubePinLost: single?.lost)
+            if made.isEmpty { terminal.terraformAgentGuard = start.launch }
             // The island is the one the session saved — never a decision
             // taken again at launch (NewTabGroup would ask).
             let island = saved.group.flatMap { groups.indices.contains($0) ? groups[$0].id : nil }
@@ -2902,13 +2951,20 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         else { return }
         hideSelectionBar()
         let folder = pane.workingDirectory ?? tab.workingDirectory
-        // A pod's or a pinned tab's output is the cluster's: scrubbed as the page's Logs tab is.
-        let pinned = pane.kubePin != nil || pane.kubePinLost != nil
+        let asked = askSelection(text, of: pane, in: tab)
+        presentAskAgent(text: asked.text, command: asked.command, folder: folder, targets: store.tabs.filter { $0.agent != nil && $0.id != tab.id })
+    }
+
+    /// What ⌘L hands on of `text` selected in `pane`: a pod's or a pinned
+    /// tab's output is the cluster's, and a pane that printed Terraform's
+    /// secrets is as risky — scrubbed as the page's Logs tab is.
+    func askSelection(_ text: String, of pane: TerminalView, in tab: Tab) -> (text: String, command: CommandBlock?) {
+        let pinned = pane.kubePin != nil || pane.kubePinLost != nil || terraformSensitive(pane)
         let env = pane.kubePodEnv
-        presentAskAgent(
-            text: AskSelection.text(text, kind: tab.kind, pinned: pinned, env: env),
-            command: AskSelection.command(blocks(of: pane).ledger.lastFinished, kind: tab.kind, pinned: pinned, env: env), folder: folder,
-            targets: store.tabs.filter { $0.agent != nil && $0.id != tab.id })
+        return (
+            AskSelection.text(text, kind: tab.kind, pinned: pinned, env: env),
+            AskSelection.command(blocks(of: pane).ledger.lastFinished, kind: tab.kind, pinned: pinned, env: env)
+        )
     }
 
     /// The Ask Agent sheet over `text`: to one of `targets` (agent tabs, in
@@ -3013,10 +3069,22 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             target = store.selected
         }
         guard let target else { return }
+        type(prompt, intoAgent: target)
+    }
+
+    /// Types `prompt` into `target`'s agent, not sent: what it should do
+    /// with it is yours to finish. Never into a tab at a Terraform ask
+    /// (3.3): the text would land in the agent's permission prompt.
+    @discardableResult
+    func type(_ prompt: String, intoAgent target: Tab) -> Bool {
+        guard !terraformAsking(target) else {
+            NSSound.beep()
+            return false
+        }
         store.select(target)
-        // Typed, not sent: what it should do with this is yours to finish.
         target.terminal.insertText(prompt)
         window?.makeFirstResponder(target.terminal)
+        return true
     }
 
     // MARK: Inbox
@@ -3070,6 +3138,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// inside it would arrive as a literal.
     func answer(_ choice: AgentPrompt.Choice, in id: Tab.ID) {
         guard let tab = store.tabs.first(where: { $0.id == id }) else { return }
+        // A Terraform write is never answered by Overterm (3.3): not by a
+        // button, a key or anything automated — read again here, in case
+        // the screen changed since the card was made.
+        guard !terraformAsking(tab) else { return NSSound.beep() }
         tab.terminal.insertText(choice.key)
         tab.terminal.pressReturn()
         refreshInbox()
@@ -3338,6 +3410,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         var checked: (pin: KubeTerminalPin, kubeconfigs: [URL])?
         if let kubeContext { checked = try await kubernetesTaskPin(kubeContext, repo: repo) }
         let path = try await TaskCreator.create(repo: repo, branch: branch, base: base, location: Settings.shared.worktreeLocation)
+        // Its roots read before its agent starts: a production one denies it Terraform's writes (3.4).
+        if agent != nil, Settings.shared.terraformAgentWriteGuard { await TerraformAgentGuards.shared.decide(path) }
         var pinned: (environment: [String: String], pin: KubeTerminalPin)?
         if let checked {
             do {

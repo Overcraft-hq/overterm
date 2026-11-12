@@ -37,12 +37,19 @@ enum TerraformRun {
     static let timeout: TimeInterval = 30
 
     /// Runs `arguments` with `binary` in `folder`, `input` on its stdin.
+    /// `file`: a descriptor the child gets as fd 3 (`show -json /dev/fd/3`,
+    /// analysis 4.4) — the caller's, still open after the run. `limit`:
+    /// stdout's bound.
     static func short(
-        _ binary: URL, _ arguments: [String], in folder: URL, environment: [String: String], input: Data? = nil, timeout: TimeInterval = timeout
+        _ binary: URL, _ arguments: [String], in folder: URL, environment: [String: String], input: Data? = nil, timeout: TimeInterval = timeout,
+        file: Int32? = nil, limit: Int = outputLimit
     ) async throws -> Result {
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Result, Error>) in
             let work: @Sendable () -> Void = {
-                continuation.resume(with: Swift.Result { try runBlocking(binary, arguments, in: folder, environment: environment, input: input, timeout: timeout) })
+                continuation.resume(
+                    with: Swift.Result {
+                        try runBlocking(binary, arguments, in: folder, environment: environment, input: input, timeout: timeout, file: file, limit: limit)
+                    })
             }
             DispatchQueue.global(qos: .userInitiated).async(execute: work)
         }
@@ -50,7 +57,8 @@ enum TerraformRun {
 
     /// The same, blocking the calling thread (a GCD one).
     static func runBlocking(
-        _ binary: URL, _ arguments: [String], in folder: URL, environment: [String: String], input: Data?, timeout: TimeInterval
+        _ binary: URL, _ arguments: [String], in folder: URL, environment: [String: String], input: Data?, timeout: TimeInterval,
+        file: Int32? = nil, limit: Int = outputLimit
     ) throws -> Result {
         if let why = TerraformCommands.refusal(arguments) { throw Failure.refused(why) }
         let out = Pipe()
@@ -58,7 +66,7 @@ enum TerraformRun {
         let stdin = input.map { _ in Pipe() }
         let spawned = ProcessGroup.spawn(
             binary, arguments, environment, directory: folder, stdout: out.fileHandleForWriting.fileDescriptor,
-            stderr: err.fileHandleForWriting.fileDescriptor, stdin: stdin?.fileHandleForReading.fileDescriptor)
+            stderr: err.fileHandleForWriting.fileDescriptor, stdin: stdin?.fileHandleForReading.fileDescriptor, descriptors: file.map { [3: $0] } ?? [:])
         // The child has its own copies; ours would keep the pipes open.
         try? out.fileHandleForWriting.close()
         try? err.fileHandleForWriting.close()
@@ -71,7 +79,7 @@ enum TerraformRun {
             throw Failure.spawn(error.code.rawValue)
         }
         live.insert(pid)
-        let outReader = PipeReader(out, limit: outputLimit)
+        let outReader = PipeReader(out, limit: limit)
         let errReader = PipeReader(err, limit: stderrLimit)
         if let stdin, let input {
             let handle = stdin.fileHandleForWriting

@@ -156,8 +156,11 @@ final class TerraformEditorModel: ObservableObject {
 
     /// One of `TerraformCommands`' lines in `folder`, in the stripped
     /// environment (`TerraformEnvironment`), off the main thread.
+    /// `file`, `limit`, `timeout`: `TerraformRun.short`'s (an agent's
+    /// saved plan by its descriptor, its JSON's bound).
     nonisolated static func run(
-        _ arguments: [String], purpose: TerraformEnvironment.Purpose, in folder: URL, input: Data? = nil
+        _ arguments: [String], purpose: TerraformEnvironment.Purpose, in folder: URL, input: Data? = nil, file: Int32? = nil,
+        limit: Int = TerraformRun.outputLimit, timeout: TimeInterval = TerraformRun.timeout
     ) async -> Result<TerraformRun.Result, RunFailure> {
         let setUp: Result<(URL, [String: String]), RunFailure> = await withCheckedContinuation { continuation in
             let work: @Sendable () -> Void = { continuation.resume(returning: prepare(purpose: purpose, root: folder)) }
@@ -167,7 +170,8 @@ final class TerraformEditorModel: ObservableObject {
         case .failure(let failure): return .failure(failure)
         case .success(let (binary, environment)):
             do {
-                return .success(try await TerraformRun.short(binary, arguments, in: folder, environment: environment, input: input))
+                return .success(
+                    try await TerraformRun.short(binary, arguments, in: folder, environment: environment, input: input, timeout: timeout, file: file, limit: limit))
             } catch {
                 return .failure(.run("\(error)"))
             }
@@ -303,6 +307,9 @@ final class TerraformFolder: ObservableObject {
             validate(manual: true)
         }
     }
+
+    /// Every diagnostic of the last validate, files in order: Ask Why's (5.10).
+    var allDiagnostics: [TerraformDiagnostic] { diagnostics.keys.sorted().flatMap { diagnostics[$0] ?? [] } }
 
     /// The last validate's diagnostics of `file`.
     func diagnostics(for file: URL) -> [TerraformDiagnostic] {

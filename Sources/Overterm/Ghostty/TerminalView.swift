@@ -26,6 +26,14 @@ final class TerminalView: NSView {
     /// opened at, said by its header and its tab's icon. Not a pin: no
     /// `TF_WORKSPACE`, the root's own `.terraform/environment` selects.
     var terraformRoot: String?
+    /// It ran what prints a Terraform secret in clear — `terraform output`,
+    /// `show`, `console`, `state show|pull` — or Terraform asked it for a
+    /// value (5.6 rule 6): saved at quit without its text, and ⌘L over it
+    /// scrubbed. Never cleared while the pane lives.
+    var terraformSensitive = false
+    /// An agent started here and how Terraform's writes were guarded at
+    /// its launch (`TerraformAgentGuard`, 3.4): its header says when not.
+    var terraformAgentGuard: TerraformAgentGuard.Launch = .none
     /// A pod's tab (`e`, `A`, `t`): the pod's plain env values, which ⌘L
     /// on its output scrubs as the page's Logs tab does. In memory only.
     var kubePodEnv: [(key: String, value: String)] = []

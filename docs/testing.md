@@ -282,6 +282,26 @@ writes under `.terraform/providers` don't refresh the changes pane; a
 second worktree says "no state here" and "shares its state". The process
 walk is unit-tested with a stand-in script (`TerraformPaneWarningTests`).
 
+The `terraformAgents` scenario (`E2ERunner+TerraformAgents.swift`, stage 1c)
+checks agents' guards without starting an agent: Claude Code's launch
+command in a checkout with a production root carries the deny rules
+(`agentCommand`, recorded — the tab is made with `startAgent: false`),
+Codex's is "not guarded", a checkout with no Terraform gets nothing. A
+script in the agent tab prints a Claude Code permission prompt for
+`cd envs/prod && terraform apply -auto-approve`: the tab is marked with
+envs/prod, production; the Inbox's card has no answer and `answer` types
+nothing; the mark goes when the screen is cleared. The scenario runs the
+real terraform itself (init and `plan -out`, `terraform_data` only, in the
+guarded scratch environment) and reads the plan through `tf_plan_summary`:
+the sensitive variable's sentinel absent, `show -json /dev/fd/3` the only
+call through the wrapper, with no credential; `tf_validate` runs where the
+lock file is committed and refuses where there is none; Ask Why on a failed
+validate lands in `terraformBriefRecorder`. The decoder's sentinel test
+(`TerraformPlanTests`) reads `Fixtures/terraform-plan-sentinels.json`,
+Terraform 1.17.1's `show -json` of a sandbox plan with a moved, imported
+and forgotten resource, drift, an action and an unknown key planted, a
+sentinel in each path the decoder drops or masks.
+
 ## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one

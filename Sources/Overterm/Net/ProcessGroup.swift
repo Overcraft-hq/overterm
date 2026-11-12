@@ -11,7 +11,7 @@ enum ProcessGroup {
     /// The child's pid (its group's id too), or the errno posix_spawn gave.
     static func spawn(
         _ executable: URL, _ arguments: [String], _ environment: [String: String], directory: URL? = nil, stdout: Int32, stderr: Int32,
-        stdin: Int32? = nil
+        stdin: Int32? = nil, descriptors: [Int32: Int32] = [:]
     ) -> Result<pid_t, POSIXError> {
         var actions: posix_spawn_file_actions_t?
         posix_spawn_file_actions_init(&actions)
@@ -23,6 +23,16 @@ enum ProcessGroup {
         }
         posix_spawn_file_actions_adddup2(&actions, stdout, 1)
         posix_spawn_file_actions_adddup2(&actions, stderr, 2)
+        // Others the child is handed, by its own number (`/dev/fd/3`): every
+        // other descriptor of the app's is closed at exec.
+        for (child, parent) in descriptors.sorted(by: { $0.key < $1.key }) where child > 2 {
+            if child == parent {
+                // dup2 onto itself leaves close-on-exec set: inherited instead.
+                posix_spawn_file_actions_addinherit_np(&actions, child)
+            } else {
+                posix_spawn_file_actions_adddup2(&actions, parent, child)
+            }
+        }
         if let directory { posix_spawn_file_actions_addchdir_np(&actions, directory.path) }
         var attributes: posix_spawnattr_t?
         posix_spawnattr_init(&attributes)

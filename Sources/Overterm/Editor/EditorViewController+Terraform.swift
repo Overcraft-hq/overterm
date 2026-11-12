@@ -29,7 +29,13 @@ extension EditorViewController {
                 format: { [weak self] in
                     guard let self, let buffer = self.active else { return }
                     _ = self.formatTerraform(buffer, manual: true, then: {})
-                }))
+                },
+                askWhy: terraformHost == nil
+                    ? nil
+                    : { [weak self, weak folder] in
+                        guard let folder else { return }
+                        self?.terraformHost?.askWhy(validateOf: folder)
+                    }))
         consoleHeight.constant = TerraformEditorBar.height
     }
 
@@ -177,8 +183,15 @@ struct TerraformEditorBar: View {
     let title: String
     let validate: () -> Void
     let format: () -> Void
+    /// Ask Why on a failed validate: its diagnostics to the checkout's agent.
+    var askWhy: (() -> Void)? = nil
 
     static let height: CGFloat = 33
+
+    private var failed: Bool {
+        if case .problems(let errors, _) = folder.state, errors > 0 { return true }
+        return false
+    }
 
     private var formatNote: String? {
         if let note = folder.formatNote { return note }
@@ -217,6 +230,12 @@ struct TerraformEditorBar: View {
                 Text(verbatim: folder.state.text).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(stateColor).lineLimit(1)
                     .truncationMode(.tail).help(folder.state.text)
                     .accessibilityIdentifier("terraform.editor.state")
+            }
+            if failed, let askWhy {
+                Button("Ask Why") { askWhy() }
+                    .help("Hands validate's errors to the checkout's agent: what's wrong, and what would fix it — never init, plan or apply")
+                    .fixedSize()
+                    .accessibilityIdentifier("terraform.editor.askWhy")
             }
             Spacer(minLength: 0)
             if let note = formatNote {

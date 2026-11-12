@@ -475,6 +475,10 @@ final class Settings: ObservableObject {
     }
     /// Each root's own settings, by its path in the repository.
     var terraformRoots: [String: TerraformRootSettings] { TerraformRootSettings.all(from: value("terraform.roots")) }
+    /// Agents started with Terraform's writes denied (analysis 3.4, D-8).
+    var terraformAgentWriteGuard: Bool { terraformEnabled && bool("terraform.agentWriteGuard") }
+    /// Agents' `tf_` tools (`TerraformMCP`).
+    var terraformAgentAccess: Bool { terraformEnabled && bool("terraform.agentAccess") }
     var editorVimMode: Bool { bool("editor.vimMode") }
     var editorRelativeLineNumbers: Bool { bool("editor.relativeLineNumbers") }
     var browserEnabled: Bool { bool("browser.enabled") }

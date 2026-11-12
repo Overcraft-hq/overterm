@@ -60,7 +60,7 @@ struct PaneHeaderView: View {
                 KubePinLostLabel(lost: lost)
             }
             KubeRunWarningLabel(blocks: blocks, kubeconfig: pane.environment["KUBECONFIG"], pin: pane.kubePin, lost: pane.kubePinLost != nil)
-            TerraformRunWarningLabel(tag: pane.processTag, pinnedRoot: pane.terraformRoot)
+            TerraformRunWarningLabel(tag: pane.processTag, pinnedRoot: pane.terraformRoot, agentGuard: pane.terraformAgentGuard)
             Spacer(minLength: 4)
             if let link = blocks.hoveredLink {
                 // Where the pointer is, since libghostty gives no rectangle
@@ -414,10 +414,51 @@ struct KubeRunWarningLabel: View {
 struct TerraformRunWarningLabel: View {
     let tag: String
     let pinnedRoot: String?
+    /// How the agent started here was guarded (3.4): "not guarded" said beside a warning.
+    var agentGuard: TerraformAgentGuard.Launch = .none
     @ObservedObject var monitor: TerraformPaneMonitor = .shared
 
+    private var notGuarded: String? { if case .notGuarded(let why) = agentGuard { why } else { nil } }
+
     var body: some View {
-        if let warning = monitor.warnings[tag] {
+        HStack(spacing: 6) {
+            said
+            // An agent with no deny flag in a checkout with a production
+            // root (3.4): said for as long as it runs, not only at an ask.
+            if let notGuarded {
+                Text(verbatim: "terraform writes not guarded")
+                    .font(.system(size: ChromeMetrics.text(10), weight: .medium))
+                    .foregroundStyle(TerraformPanelView.remote)
+                    .padding(.horizontal, 5)
+                    .frame(height: 16)
+                    .background(RoundedRectangle(cornerRadius: 4).stroke(TerraformPanelView.remote.opacity(0.6)))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .help(notGuarded)
+                    .accessibilityIdentifier("pane.terraformNotGuarded")
+            }
+        }
+    }
+
+    @ViewBuilder private var said: some View {
+        if let ask = monitor.asks[tag] {
+            // The ask before anyone answers (3.3): said, never answered here.
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.octagon.fill").font(.system(size: ChromeMetrics.text(10)))
+                Text(verbatim: "⛰ " + ask.summary + (notGuarded == nil ? "" : " · agent not guarded"))
+                    .font(.system(size: ChromeMetrics.text(11), weight: .semibold, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .foregroundStyle(ask.isProduction ? Color.white : Color.primary)
+            .padding(.horizontal, 7)
+            .frame(height: 20)
+            .background(RoundedRectangle(cornerRadius: 5).fill(ask.isProduction ? TerraformPanelView.production : TerraformPanelView.remote.opacity(0.35)))
+            .help(ask.preview.joined(separator: "\n") + (notGuarded.map { "\n" + $0 } ?? ""))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text(verbatim: ask.summary))
+            .accessibilityIdentifier("pane.terraformAsk")
+        } else if let warning = monitor.warnings[tag] {
             HStack(spacing: 4) {
                 Image(systemName: warning.isProduction ? "exclamationmark.octagon.fill" : "square.stack.3d.up")
                     .font(.system(size: ChromeMetrics.text(10)))
@@ -439,7 +480,7 @@ struct TerraformRunWarningLabel: View {
                         ? TerraformPanelView.production.opacity(warning.probably ? 0.8 : 1)
                         : (warning.inheritedWorkspace != nil || warning.inheritedDataDir ? TerraformPanelView.remote.opacity(0.25) : Color.gray.opacity(0.18)))
             )
-            .help(warning.help)
+            .help(warning.help + (notGuarded.map { "\n" + $0 } ?? ""))
             .accessibilityElement(children: .combine)
             .accessibilityLabel(Text(verbatim: warning.isProduction ? warning.label + " PRODUCTION" : warning.label))
             .accessibilityIdentifier("pane.terraformWarning")
