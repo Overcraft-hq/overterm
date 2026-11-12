@@ -662,7 +662,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     pane: kubernetesManifest, page: kubernetesPage, theme: theme, onClose: { [weak self] in self?.toggleDiff(nil) },
                     onOpen: { [weak self] in self?.openInEditor($0) }, onShowPage: { [weak self] in self?.showKubernetesExpandedSource($0) }),
                 kubernetes: KubeSlotView(panel: kubernetesPanel, theme: theme, runInTerminal: { [weak self] in self?.runDockerCommand($0, in: nil) }),
-                terraformPlan: TerraformPlanPaneView(pane: terraformPlanPane, theme: theme, actions: terraformPlanActions)))
+                terraformPlan: TerraformPlanPaneView(pane: terraformPlanPane, theme: theme, actions: terraformPlanActions, stateActions: terraformStateActions)))
         diffPanel.sizingOptions = []
         let diffItem = NSSplitViewItem(
             viewController: CardColumnController(diffPanel, fill: .panel, theme: theme))

@@ -144,6 +144,49 @@ final class TerraformRunTests: XCTestCase {
         XCTAssertTrue(swept, "the background sleep (SIGINT ignored there) is swept with its group")
     }
 
+    /// A cancelled task interrupts a read, never a run that writes or takes
+    /// a lock (`interruptible` false: New Task's init, the lock probe,
+    /// force-unlock): that one ends on its own, never half done.
+    func testACancelledTaskLeavesAWriteToEnd() async throws {
+        let slow = try script("slow", "/bin/sleep 1\necho acme-done")
+        let root = try root()
+        let write = Task { try await TerraformRun.short(slow, TerraformCommands.validate, in: root, environment: ["PATH": "/usr/bin:/bin"], interruptible: false) }
+        let read = Task { try await TerraformRun.short(slow, TerraformCommands.validate, in: root, environment: ["PATH": "/usr/bin:/bin"]) }
+        let both = await eventually { TerraformRun.live.all.count == 2 }
+        XCTAssertTrue(both)
+        write.cancel()
+        read.cancel()
+        let interruptedRead = try await read.value
+        XCTAssertNotEqual(interruptedRead.status, 0, "the read is interrupted")
+        let written = try await write.value
+        XCTAssertEqual(written.status, 0, "the write ran to its end")
+        XCTAssertEqual(String(decoding: written.stdout, as: UTF8.self), "acme-done\n")
+    }
+
+    /// Quitting gives a write its grace before interrupting it; a read is
+    /// interrupted at once, and a write past the grace too.
+    func testStopAllWaitsBrieflyForAWrite() async throws {
+        let quick = try script("quick", "/bin/sleep 0.5\necho acme-done")
+        let stuck = try script("stuck", "/bin/sleep 30")
+        let root = try root()
+        let write = Task { try await TerraformRun.short(quick, TerraformCommands.validate, in: root, environment: ["PATH": "/usr/bin:/bin"], interruptible: false) }
+        let going = await eventually { TerraformRun.live.all.count == 1 }
+        XCTAssertTrue(going)
+        let generation = TerraformRun.live.generation
+        TerraformRun.stopAll(grace: 5)
+        XCTAssertEqual(TerraformRun.live.generation, generation + 1, "a write that went meanwhile can tell")
+        let written = try await write.value
+        XCTAssertEqual(written.status, 0, "the write ended on its own within the grace")
+        let held = Task { try await TerraformRun.short(stuck, TerraformCommands.validate, in: root, environment: ["PATH": "/usr/bin:/bin"], interruptible: false) }
+        let stuckGoing = await eventually { TerraformRun.live.all.count == 1 }
+        XCTAssertTrue(stuckGoing)
+        let stopped = Date()
+        TerraformRun.stopAll(grace: 0.3)
+        let interrupted = try await held.value
+        XCTAssertLessThan(Date().timeIntervalSince(stopped), 5, "interrupted past the grace, not left to its timeout")
+        XCTAssertNotEqual(interrupted.status, 0)
+    }
+
     /// A run that exits leaving a child behind (a provider plugin): swept.
     func testAStrayChildIsSweptWhenTerraformExits() async throws {
         let childFile = folder.appendingPathComponent("stray.pid")

@@ -23,6 +23,8 @@ struct TerraformPanelActions {
     var planDestroy: (TerraformRootCard) -> Void = { _ in }
     /// An apply going in this root, shown in the slot with its Stop (4.7).
     var showApply: (TerraformApplyRun) -> Void = { _ in }
+    /// The root's state and outputs, masked, in the slot (2.4, stage 2c).
+    var showState: (TerraformRootCard) -> Void = { _ in }
 }
 
 /// The rail's Terraform panel (analysis 6.1, 6.2): the selected tab's
@@ -338,6 +340,8 @@ private struct RootRow: View {
                     .accessibilityIdentifier("terraform.panel.plan")
                 button("Init…", "arrow.down.circle") { actions.initialize(card) }
                     .accessibilityIdentifier("terraform.panel.init")
+                button("State", "list.bullet.rectangle") { actions.showState(card) }
+                    .accessibilityIdentifier("terraform.panel.state")
             }
             // New Task's init writes this root's .terraform now.
             .disabled(setup.isInitializing(card.folder))
@@ -383,6 +387,7 @@ private struct RootRow: View {
         Button("Plan Destroy…") { actions.planDestroy(card) }
         Button("Init…") { actions.initialize(card) }
         Button("Select Workspace…") { actions.chooseWorkspace(card) }
+        Button("State and Outputs") { actions.showState(card) }
         if card.isProduction {
             if registry.hasSessionWrites(checkout: panel.checkout ?? card.folder, root: card.path, workspace: card.workspace) {
                 Button("Turn Applies Off") { actions.endWrites(card) }

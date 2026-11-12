@@ -160,7 +160,7 @@ final class TerraformEditorModel: ObservableObject {
     /// saved plan by its descriptor, its JSON's bound).
     nonisolated static func run(
         _ arguments: [String], purpose: TerraformEnvironment.Purpose, in folder: URL, input: Data? = nil, file: Int32? = nil,
-        limit: Int = TerraformRun.outputLimit, timeout: TimeInterval = TerraformRun.timeout
+        limit: Int = TerraformRun.outputLimit, timeout: TimeInterval = TerraformRun.timeout, interruptible: Bool = true
     ) async -> Result<TerraformRun.Result, RunFailure> {
         let setUp: Result<(URL, [String: String]), RunFailure> = await withCheckedContinuation { continuation in
             let work: @Sendable () -> Void = { continuation.resume(returning: prepare(purpose: purpose, root: folder)) }
@@ -171,7 +171,9 @@ final class TerraformEditorModel: ObservableObject {
         case .success(let (binary, environment)):
             do {
                 return .success(
-                    try await TerraformRun.short(binary, arguments, in: folder, environment: environment, input: input, timeout: timeout, file: file, limit: limit))
+                    try await TerraformRun.short(
+                        binary, arguments, in: folder, environment: environment, input: input, timeout: timeout, file: file, limit: limit,
+                        interruptible: interruptible))
             } catch {
                 return .failure(.run("\(error)"))
             }

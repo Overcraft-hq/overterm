@@ -17,6 +17,13 @@ final class TerraformPlanPaneModel: ObservableObject {
     /// The apply shown (6.4): its plan's, in place of the plan — or one
     /// followed again after a crash, with no plan of this session's.
     @Published private(set) var apply: TerraformApplyRun?
+    /// A root's state shown in the plan's place (2.4, stage 2c): until a
+    /// plan or an apply is shown again. One that gives way while still
+    /// going is stopped (`TerraformStateRead.stop`): nothing reads on for
+    /// a view nobody has.
+    @Published private(set) var state: TerraformStateRead? {
+        didSet { if let oldValue, oldValue !== state { oldValue.stop() } }
+    }
     @Published var filter = "" { didSet { if filter != oldValue { rebuild() } } }
     @Published var chips: Set<TerraformPlanRows.Chip> = [] { didSet { if chips != oldValue { rebuild() } } }
     @Published var expanded: Set<String> = []
@@ -40,6 +47,7 @@ final class TerraformPlanPaneModel: ObservableObject {
     private var reading: Task<Void, Never>?
 
     func show(_ run: TerraformPlanRun) {
+        if state != nil { state = nil }
         if apply !== run.apply { apply = run.apply }
         guard run !== self.run else { return }
         self.run = run
@@ -64,11 +72,20 @@ final class TerraformPlanPaneModel: ObservableObject {
 
     /// An apply in the slot: its plan's view becomes its progress.
     func showApply(_ apply: TerraformApplyRun) {
+        state = nil
         self.apply = apply
         if let planRun = apply.planRun, planRun !== run { show(planRun) }
     }
 
+    /// A root's state in the slot, over whatever plan it had.
+    func showState(_ read: TerraformStateRead) { state = read }
+
+    /// The slot closed: the state read shown stops if it is still going
+    /// (it stays shown, to be read again).
+    func stopState() { state?.stop() }
+
     func clear() {
+        state = nil
         run = nil
         apply = nil
         rows = []
