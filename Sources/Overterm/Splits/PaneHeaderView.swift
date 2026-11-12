@@ -60,6 +60,7 @@ struct PaneHeaderView: View {
                 KubePinLostLabel(lost: lost)
             }
             KubeRunWarningLabel(blocks: blocks, kubeconfig: pane.environment["KUBECONFIG"], pin: pane.kubePin, lost: pane.kubePinLost != nil)
+            TerraformRunWarningLabel(tag: pane.processTag, pinnedRoot: pane.terraformRoot)
             Spacer(minLength: 4)
             if let link = blocks.hoveredLink {
                 // Where the pointer is, since libghostty gives no rectangle
@@ -401,6 +402,55 @@ struct KubeRunWarningLabel: View {
             .help(warning.help)
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier("pane.kubeWarning")
+        }
+    }
+}
+
+/// Terraform runs in this pane, anywhere in its tree — an agent's own
+/// commands included (analysis 3.2): the root, workspace, backend and
+/// operation, white on red on production; amber when `TF_WORKSPACE` or
+/// `TF_DATA_DIR` in its environment decides silently. A pane opened as
+/// Terminal in this root says its root while nothing runs.
+struct TerraformRunWarningLabel: View {
+    let tag: String
+    let pinnedRoot: String?
+    @ObservedObject var monitor: TerraformPaneMonitor = .shared
+
+    var body: some View {
+        if let warning = monitor.warnings[tag] {
+            HStack(spacing: 4) {
+                Image(systemName: warning.isProduction ? "exclamationmark.octagon.fill" : "square.stack.3d.up")
+                    .font(.system(size: ChromeMetrics.text(10)))
+                Text(verbatim: warning.isProduction ? warning.label + "  PRODUCTION" : warning.label)
+                    .font(.system(size: ChromeMetrics.text(11), weight: warning.isProduction ? .semibold : .medium, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if warning.inheritedWorkspace != nil || warning.inheritedDataDir {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: ChromeMetrics.text(10)))
+                        .foregroundStyle(warning.isProduction ? Color.white : TerraformPanelView.remote)
+                }
+            }
+            .foregroundStyle(warning.isProduction ? Color.white : Color.primary)
+            .padding(.horizontal, 7)
+            .frame(height: 20)
+            .background(
+                RoundedRectangle(cornerRadius: 5).fill(
+                    warning.isProduction
+                        ? TerraformPanelView.production.opacity(warning.probably ? 0.8 : 1)
+                        : (warning.inheritedWorkspace != nil || warning.inheritedDataDir ? TerraformPanelView.remote.opacity(0.25) : Color.gray.opacity(0.18)))
+            )
+            .help(warning.help)
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text(verbatim: warning.isProduction ? warning.label + " PRODUCTION" : warning.label))
+            .accessibilityIdentifier("pane.terraformWarning")
+        } else if let pinnedRoot {
+            Text(verbatim: "⛰ " + pinnedRoot)
+                .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .foregroundStyle(.secondary)
+                .help("Terminal in this root: its terraform selects the workspace the root's .terraform/environment says.")
+                .accessibilityIdentifier("pane.terraformRoot")
         }
     }
 }

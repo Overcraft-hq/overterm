@@ -116,6 +116,10 @@ enum MainMenu {
         command(viewMenu, "Terminal in Kubernetes Context…", #selector(TerminalWindowController.openKubernetesTerminalPicker(_:)), "kubernetes.terminal")
         // Enabled while the page shows a list (TerminalWindowController.validateMenuItem).
         command(viewMenu, "Export Kubernetes List as CSV…", #selector(TerminalWindowController.exportKubernetesList(_:)), "kubernetes.exportCSV")
+        // The rail's Terraform panel; its switcher scopes the palette to the roots.
+        command(viewMenu, "Terraform", #selector(TerminalWindowController.showTerraformPanel(_:)), "terraform.show")
+        command(viewMenu, "Terraform Switcher", #selector(TerminalWindowController.showTerraformSwitcher(_:)), "terraform.switch")
+        command(viewMenu, "Terminal in Terraform Root…", #selector(TerminalWindowController.openTerraformTerminalPicker(_:)), "terraform.terminal")
         command(viewMenu, "Today’s Note", #selector(TerminalWindowController.openDailyNote(_:)), "notes.daily")
         command(viewMenu, "Graph View", #selector(TerminalWindowController.showNotesGraph(_:)), "notes.graph")
         // Ticked while the pane shows (TerminalWindowController.validateMenuItem).

@@ -230,7 +230,7 @@ extension E2ERunner {
         return found
     }
 
-    private func realPath(_ url: URL) -> String {
+    func realPath(_ url: URL) -> String {
         guard let resolved = realpath(url.path, nil) else { return url.path }
         defer { free(resolved) }
         return String(cString: resolved)

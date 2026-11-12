@@ -97,6 +97,7 @@ final class E2ERunner {
         "kubernetesOverview": { await $0.kubernetesOverviewScenario() },
         "kubernetesScale": { await $0.kubernetesScaleScenario() },
         "terraform": { await $0.terraformScenario() },
+        "terraformRoots": { await $0.terraformRootsScenario() },
         "throughput": { await $0.throughputScenario() },
     ]
 

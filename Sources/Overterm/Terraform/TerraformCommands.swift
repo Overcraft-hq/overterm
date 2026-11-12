@@ -2,7 +2,8 @@ import Foundation
 
 /// Every terraform command line Overterm builds (analysis 4.3), and the
 /// forms it can never express (5.13 rule 1). Pure. Stage 1a has only the
-/// editor's: format and validate, which change no state and take no lock.
+/// editor's: format and validate, which change no state and take no lock;
+/// stage 1b `version -json`, the version pill's.
 ///
 /// Every run's cwd is the root (or the checkout for `formatCheck`), never
 /// `-chdir`, so a diagnostic's `range.filename` is relative to it.
@@ -23,8 +24,13 @@ enum TerraformCommands {
     /// takes no lock. Never an `init` before it here.
     static let validate = ["validate", "-json", "-no-color"]
 
+    /// The binary's version, as JSON (4.2): the version pill's, once per
+    /// binary and root. Run with `CHECKPOINT_DISABLE=1` (its
+    /// `terraform_outdated` is a call home), no credential; reads no state.
+    static let version = ["version", "-json"]
+
     /// Everything this file builds.
-    static let all: [[String]] = [formatStandardInput, formatCheck, formatCheckFolder, validate]
+    static let all: [[String]] = [formatStandardInput, formatCheck, formatCheckFolder, validate, version]
 
     /// Subcommands the editor never runs: the ones that change state,
     /// infrastructure, the checkout's providers or its workspaces (the

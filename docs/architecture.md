@@ -7071,8 +7071,156 @@ the same process). Reads only.
 ## Terraform
 
 The design is docs/design/terraform/analysis.md (its Section 9 the
-stages). Built so far: the groundwork of stage 0, and stage 1a, HCL in
-the editor.
+stages). Built so far: the groundwork of stage 0, stage 1a, HCL in the
+editor, and stage 1b, which root, which workspace, and is it production.
+
+- **Roots** (stage 1b, analysis 4.12, 6.1, 6.2). The rail's Terraform panel
+  (`SidebarPanel.terraform`, ⌥⌘E, `terraform.enabled` on by default) is the
+  selected tab's checkout's (`Tab.checkoutSource`, as the other panels).
+  `TerminalWindowController+TerraformPanel` follows the selection, says
+  when it is on screen (the sidebar open on it, the window visible), and
+  hands it the diff's watcher's paths (`DiffModel.changes`) and files —
+  no watcher of its own. `TerraformPanelModel` reads only while shown: a
+  change while hidden marks it stale (`reads` counts, for the scenario).
+  A read is one `git ls-files` of Terraform's patterns, cached and
+  untracked-not-ignored, so `.terraform/`, `.terragrunt-cache/` and
+  `node_modules` stay out, capped at 20,000 matches and 2,000 folders
+  (`TerraformRootScan`; when git can't list it, a repository's top folder
+  — `KubeCheckoutScan.isRepositoryRoot`, a `.git` there, never `~` or `/`
+  — is walked instead, breadth first, 8 deep, 20,000 entries, hidden
+  folders, links, `.terraform`, `.terragrunt-cache` and Kubernetes'
+  skipped folders passed over, names only; any other folder isn't);
+  each folder's `.tf` files (120 names, 256 KB each) into
+  `TerraformConfigFacts` (pure, over `TerraformBlocks`, which now keeps an
+  attribute's literal value and scans a block's body for nested ones):
+  the backend or `cloud` block through an allow-list of keys
+  (`backendKeys` — never `Secrets.isSecret`, whose `KEY` would hide S3's
+  `key`; an `address` kept without its userinfo, query and fragment,
+  `kept`, from the HCL and the init record alike, so no reason, chip or
+  tooltip can show a token), `required_version` and `required_providers`, providers' literal
+  `profile`, `role_arn`, `project`, `subscription_id`, the types declared,
+  provisioners, `terraform_remote_state`, module sources, the account ID
+  of any ARN. `TerraformRootGuess` (pure) calls a folder a root (a
+  backend, else nothing calling it), a module (called — a local `source`
+  or `modules.json`'s `Dir` — or under `modules/`), an example or test, a
+  Terragrunt unit or its configuration; `callers` follows calls through
+  modules (`modules/acme-net: 2 roots`), `touched` maps the diff's files
+  to the roots they change — a file to the nearest root above it
+  (`nearestRoot`: `envs/prod/templates/user_data.sh` is `envs/prod`'s). Each root's `TerraformRootFacts`: the
+  workspace `.terraform/environment` selects, the init record
+  (`TerraformInitRecord`: `.terraform/terraform.tfstate` through the same
+  allow-list — it holds `-backend-config` passwords in clear), installed
+  modules, the lock file's providers, a local backend's workspaces and
+  whether this one's state file is here, the version pins from the root
+  up to the checkout (`.terraform-version`, `.tool-versions`, `mise.toml`;
+  bounded, stopping at `/`). The repository's other worktrees — the
+  window's `WorktreeModel` list (`TerraformWorktree.others`: not bare,
+  not prunable, at most 12, none while the list is another repository's),
+  never a second `git worktree list` — are read for the same root, their
+  backend and workspace only (`TerraformRootFacts.readIdentity`: the init
+  record, else the backend block; kept by the files' size and mtime): one with the same
+  `TerraformStateIdentity` "shares its state"; a local root whose state is
+  missing here but there says "no state in this worktree: the state is in
+  `main`'s checkout" (3.7). Nothing is written but `TerraformRootStore`'s
+  production identities, in Overterm's folder. A file event redoes the
+  read only when it can change what the panel says
+  (`TerraformPanelModel.isRelevant`: a Terraform file anywhere, a version
+  file, a listed folder or a file of one, `.terraform/`'s `environment`,
+  `terraform.tfstate` and `modules/`; another folder, as the diff's
+  watcher says folders, only when a listing of its names finds a
+  Terraform file — a new root) — never a `.swift` edit,
+  `node_modules` or a build's output; a Terraform file also forgets
+  whether the checkout has roots (`TerraformCheckouts.forget`).
+  - **The identity** (`TerraformStateIdentity`, pure, 4.11): the backend in
+    effect (the init record's, else the HCL's, else `local`), its location
+    keys and the workspace as each backend folds it in — a local `path`
+    for `default` only, others under `terraform.tfstate.d/<ws>`; S3's
+    `env:/<ws>/<key>`; GCS's `<prefix>/<ws>.tfstate`; azurerm's
+    `<key>env:<ws>`; an `http` address's host and path (never its
+    credentials or query); `cloud`/`remote`'s organisation and workspace.
+    `pg` has none (its location is a secret). `summary` is the chip's
+    `s3 · acme-tfstate/prod/network.tfstate · eu-west-1`;
+    `changedSinceInit` says when the HCL and the record disagree.
+  - **The class** (`TerraformClassifier`, pure, 5.1): production when any
+    signal matches `terraform.productionPattern` (empty: Kubernetes'
+    pattern with a digit run, `prod1`, `prd01`, `production2`) — the
+    workspace, the root's path (a Terragrunt tree's top `live` is
+    structure), the backend's keys, the auto-loaded var files, the
+    var files and backend-config files the run names on its command line
+    (`TerraformCommandLine.varFiles`/`backendConfigFiles`; a
+    `-backend-config=key=value` is never kept), the process's or shell's
+    `AWS_PROFILE` (the name, never `~/.aws`), a provider's literal profile,
+    role, project or subscription, a backend's namespace or hostname, a
+    Kubernetes backend's or provider's literal `config_context` as
+    Kubernetes classes it (`isProductionContext`: `kubernetes.contexts`'
+    class, else `KubeClassifier`'s names) — or an account in
+    `terraform.productionAccounts`; or when its identity was production
+    once (`TerraformRootStore`, sticky across worktrees and folder names).
+    What is kept is every production verdict's identity — each workspace
+    of a card, the pane header's, Tab Info's — when the root or its state
+    says so (`TerraformRootCard.identityToRemember`): production by
+    `AWS_PROFILE` alone follows whoever exported it, so it is shown (the
+    panel's note) and never kept. Kept identities are never evicted. Then a class set by hand (`terraform.roots`,
+    `TerraformRootSettings`), which only raises; then local by the strict
+    rule (a local backend inside the checkout, no provisioner,
+    `local_command`, `external` or `http`, no other state read, only
+    null/random/local/time/tls/builtin providers, pinned by a lock file);
+    else remote. The branch is never a signal — the chip shows it,
+    `branch @ commit` from the diff's (`branchLabel`). `terraform.roots`,
+    `productionPattern`, `productionAccounts`, `terraform.path` and
+    `terraform.enabled` (off, the pane header goes) are held when edited
+    outside the page (`heldWhenEditedOutside`).
+    `TerraformClassSettings.current` is the snapshot the readers get.
+  - **The binary and the pill** (4.2): `TerraformCLI.binary(forRoot:)` —
+    guarded, `OVERTERM_TERRAFORM`'s; else `terraform.path`, else `mise which
+    terraform` in the root where a version file asks, else the search —
+    and `version -json` (`TerraformCommands.version`, the stripped
+    environment, `CHECKPOINT_DISABLE`), once per binary (per root where a
+    version file lets a shim choose); the only terraform 1b runs, and only
+    while the panel shows. `TerraformVersion`/`TerraformVersionPins` (pure)
+    turn the pill amber: "1.17.1 ≠ required ~> 1.9".
+  - **The view** (`TerraformPanelView`): roots by top folder, each a chip
+    — the class band and pill, workspace, backend, version, "changed",
+    "needs init", "the backend changed since init", the shell's inherited
+    `TF_WORKSPACE`/`TF_DATA_DIR` (`TerraformInheritedEnvironment`) —, a
+    picked one's reason, its workspaces' classes, the modules it calls,
+    Terminal in This Root and Validate; modules with their callers,
+    Terragrunt's folders labelled, examples folded. ⌃⌘E is the palette on
+    `PaletteItem.Group.terraform`: the roots (↩ in the panel, ⌥↩ a
+    terminal), then other checkouts read (`TerraformCheckouts`); opened
+    before the read lands, it is restocked when the roots do.
+  - **Terminal in this root** (4.9): a shell tab at the root with no
+    `TF_WORKSPACE` — the root's `.terraform/environment` selects —, its
+    panes' `terraformRoot` making it `TabKind.terraform` and its header say
+    `⛰ envs/prod`. Not saved with the session: nothing is pinned.
+- **The pane header** (3.2). `TerraformPaneMonitor` (one for the app)
+  looks every 2 s at the panes where a command runs (the ledger's
+  `running`) or an agent works — never one at its prompt, never a tab
+  without a checkout, and only a checkout with roots: settled once, when
+  something first runs there, by the panel's listing
+  (`TerraformCheckouts.settle`, one bounded `ls-files`; not a repository:
+  none) — by one
+  `proc_listchildpids` walk from the pane's `login` and a name a pid
+  (`TerraformProcesses`); argv, folder and the environment's
+  `TF_WORKSPACE`, `TF_DATA_DIR` and `AWS_PROFILE` are read only for a
+  `terraform`, `tofu` or `terragrunt` (or a script of that name a shell
+  runs), and the root's files only then (kept 10 s). Its folder is the cwd —
+  terraform changes to `-chdir`'s itself —, else cwd and `-chdir`.
+  `TerraformCommandLine` (pure) reads an operation from argv or a title
+  (`state rm`, `run --all apply`, `isWrite`), and `make`, `just`, `task`,
+  `atlantis`, `./deploy*.sh` in a folder of `.tf` files as "probably".
+  `TerraformPaneWarning` (pure) is the label — `⛰ envs/prod · workspace
+  default · s3 · … · AWS_PROFILE … · apply` — white on red on production,
+  amber when the process's own `TF_WORKSPACE` or `TF_DATA_DIR` decides; a
+  notice, not a guard (`TerraformRunWarningLabel`). Tab Info lists each
+  terraform (`TerraformInfoRow`): operation, root, workspace, running
+  for, provider plugins, the root's `.terraform` size (`DiskUsage`, a
+  minute's cache).
+- **Init's noise** (4.12 step 6): `DiffModel.isNoise` drops FSEvents'
+  folders under `.terraform/` but its own (`environment`,
+  `terraform.tfstate`) and `modules/`, and `.terragrunt-cache/`: `init`'s
+  ~50 MB of providers never recount the changes pane (`refreshCount`, for
+  the scenario).
 
 - **HCL in the editor** (stage 1a, analysis 4.14; Editor above for what
   it builds on). Colours are tree-sitter-hcl at Helix 25.07.1's pin with
@@ -7107,8 +7255,8 @@ the editor.
     never run `init` or `apply`. The binary is `TerraformCLI.binary()`:
     guarded, `OVERTERM_TERRAFORM`'s with a scenario's recording wrapper in
     front (`scenarioWrapper`) or none; else the login shell's PATH, then
-    Homebrew's places (`terraform.path` and `mise which` come with stage
-    1b's version pill). The environment is `TerraformEnvironment.build`
+    Homebrew's places (per root, `terraform.path` and `mise which` first:
+    stage 1b). The environment is `TerraformEnvironment.build`
     (pure): `terraformBaseEnvironment()` without credentials or the names
     above, HOME and `TF_CLI_CONFIG_FILE` the scratch folder's (no
     `~/.aws`, no `credentials.tfrc.json` for the providers validate
@@ -7214,8 +7362,7 @@ the editor.
   `assigned("TF_WORKSPACE")`); a string a shell runs is read as a line of
   its own, behind what came before (`bash -c '…'`, `zsh -lc`, `env -S`,
   `doppler run --command`, `watch '…'`; four deep at most).
-  `KubeCommandLine` and `TabKind` read through it; `TerraformCommandLine`
-  (stage 1b) will.
+  `KubeCommandLine`, `TabKind` and `TerraformCommandLine` read through it.
 - **The recording wrapper** (`TerraformRecorder`, analysis 11): a
   `bin/terraform` script `OVERTERM_TERRAFORM` names, run `bash -p` (no
   `BASH_ENV`, nothing from startup files), that records each call in a

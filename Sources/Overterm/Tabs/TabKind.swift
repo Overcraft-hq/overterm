@@ -2,19 +2,19 @@ import Foundation
 
 /// What a tab *is*, at a glance: the glyph in its icon tile.
 ///
-/// Seven kinds, because in a window full of worktrees those are the things
+/// Eight kinds, because in a window full of worktrees those are the things
 /// a terminal turns out to be — an agent you are talking to, a server you
 /// left running, a shell you type in, a machine you are on, a container
 /// you are in (`docker exec`, what the Docker page opens), a pod you are in
 /// (`kubectl exec -it`, `attach -it`, what the Kubernetes page opens), a
 /// cluster a plain `kubectl` reaches (Terminal in this context,
-/// `KubeTerminalPin`).
+/// `KubeTerminalPin`), a Terraform root (Terminal in this root).
 /// Shape carries it faster than the title does, and the title is often
 /// truncated anyway.
 ///
 /// Pure, so the rule can be read and tested without a process tree.
 enum TabKind: String, Equatable {
-    case agent, server, shell, ssh, container, pod, kubernetes
+    case agent, server, shell, ssh, container, pod, kubernetes, terraform
 
     /// The SF Symbol for the tile. An agent tab uses its own agent's symbol
     /// instead (`Agent.symbol`); this is the fallback.
@@ -27,6 +27,7 @@ enum TabKind: String, Equatable {
         case .container: "shippingbox"
         case .pod: "shippingbox.circle"
         case .kubernetes: "helm"
+        case .terraform: "square.stack.3d.up"
         }
     }
 
@@ -39,6 +40,7 @@ enum TabKind: String, Equatable {
         case .container: "Container"
         case .pod: "Pod"
         case .kubernetes: "Kubernetes context"
+        case .terraform: "Terraform root"
         }
     }
 
@@ -47,13 +49,15 @@ enum TabKind: String, Equatable {
     /// `hasPort` is whether anything in the tab's process tree listens
     /// (`ListeningPorts`), which is what makes a shell a server. `pinned`:
     /// its shell's `KUBECONFIG` pins a context — what that tab is, unless
-    /// it is in a container, a pod or on another machine now.
-    static func of(agent: Agent?, title: String, hasPort: Bool, pinned: Bool = false) -> TabKind {
+    /// it is in a container, a pod or on another machine now. `terraform`:
+    /// opened as Terminal in this root (Terraform's panel).
+    static func of(agent: Agent?, title: String, hasPort: Bool, pinned: Bool = false, terraform: Bool = false) -> TabKind {
         if agent != nil { return .agent }
         if isContainer(title) { return .container }
         if isPod(title) { return .pod }
         if isRemote(title) { return .ssh }
         if pinned { return .kubernetes }
+        if terraform { return .terraform }
         if hasPort { return .server }
         return .shell
     }

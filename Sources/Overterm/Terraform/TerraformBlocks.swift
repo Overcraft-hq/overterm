@@ -25,6 +25,12 @@ struct TerraformBlocks: Equatable, Sendable {
     struct Attribute: Equatable, Sendable {
         var name: String
         var nameRange: NSRange
+        /// The value when it is one plain literal on its line: a string
+        /// without a template (`"acme-tfstate"`), `true`, `false`, or a
+        /// bare word; nil for anything else (an expression, a number, an
+        /// object). What the root facts read (the backend's keys, a
+        /// module's `source`, `required_version`), never evaluated.
+        var value: String? = nil
     }
 
     var blocks: [Block]
@@ -104,10 +110,11 @@ struct TerraformBlocks: Equatable, Sendable {
                 continue
             case .equals:
                 if statement.count == 1, case .identifier(let name, let range) = statement[0] {
+                    let value = literal(after: index, in: tokens)
                     if depth == 0 {
-                        result.attributes.append(Attribute(name: name, nameRange: range))
+                        result.attributes.append(Attribute(name: name, nameRange: range, value: value))
                     } else if depth == 1, current != nil {
-                        current?.attributes.append(Attribute(name: name, nameRange: range))
+                        current?.attributes.append(Attribute(name: name, nameRange: range, value: value))
                     }
                 }
                 statement = []
@@ -127,6 +134,47 @@ struct TerraformBlocks: Equatable, Sendable {
                     nameRange: block.nameRange, attributes: block.attributes))
         }
         return result
+    }
+
+    /// The literal at `index` when it ends its line (or the block): a
+    /// plain string, or one word (`true`, `false`, `local`).
+    private static func literal(after index: Int, in tokens: [Token]) -> String? {
+        guard index < tokens.count else { return nil }
+        let ends: Bool = {
+            guard index + 1 < tokens.count else { return true }
+            switch tokens[index + 1] {
+            case .newline, .close: return true
+            default: return false
+            }
+        }()
+        guard ends else { return nil }
+        switch tokens[index] {
+        case .string(let text?, _): return text
+        case .identifier(let word, _): return word
+        default: return nil
+        }
+    }
+
+    /// The text between a block's braces, and where it starts in `text`
+    /// (UTF-16): scanned again, its own blocks are the nested ones
+    /// (`terraform { backend "s3" { … } }`, a resource's `provisioner`).
+    static func body(of block: Block, in text: String) -> (text: String, offset: Int)? {
+        let ns = text as NSString
+        let end = min(NSMaxRange(block.range), ns.length)
+        var open = block.nameRange.location + block.nameRange.length
+        while open < end, ns.character(at: open) != 0x7B { open += 1 }
+        guard open < end else { return nil }
+        let start = open + 1
+        // The closing brace is the range's last character when the block closed.
+        let close = end > start && ns.character(at: end - 1) == 0x7D ? end - 1 : end
+        guard close >= start else { return nil }
+        return (ns.substring(with: NSRange(location: start, length: close - start)), start)
+    }
+
+    /// The blocks inside `block`, by a scan of its body.
+    static func nested(in block: Block, of text: String) -> TerraformBlocks {
+        guard let body = body(of: block, in: text) else { return TerraformBlocks() }
+        return scan(body.text)
     }
 
     private static func isIdentifierStart(_ c: unichar) -> Bool {

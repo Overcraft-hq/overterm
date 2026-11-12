@@ -30,13 +30,14 @@ final class SettingsHeldTests: XCTestCase {
 
         """
 
-    /// Kubernetes' now; Terraform's keys will join by the same flag.
+    /// Kubernetes', and Terraform's: what makes a root production, and the terraform it runs.
     func testTheSecuritySettings() {
         XCTAssertEqual(
             Set(SettingsSchema.heldKeys),
             [
                 "kubernetes.contexts", "kubernetes.agentWrites", "kubernetes.agentAccess", "kubernetes.kubectlPath",
-                "kubernetes.helmPath",
+                "kubernetes.helmPath", "terraform.roots", "terraform.productionPattern", "terraform.productionAccounts", "terraform.path",
+                "terraform.enabled",
             ])
         // Agents' access anywhere, and the binaries Overterm runs with a cluster's credentials.
         for spec in SettingsSchema.all where spec.key.hasPrefix("kubernetes.agent") || spec.key.hasSuffix("Path") && spec.key.hasPrefix("kubernetes.") {
@@ -136,6 +137,21 @@ final class SettingsHeldTests: XCTestCase {
         XCTAssertEqual(try SettingsJSON.object(from: text()).count, 2, text())
         settings.reload()
         XCTAssertTrue(settings.held.isEmpty)
+    }
+
+    /// An agent about to apply on production turns Terraform off in the
+    /// file: the pane header would go with it. Held; the app's own toggle isn't.
+    func testTurningTerraformOffOutsideIsHeld() throws {
+        try write(#"{ "appearance.fontSize": 14 }"#)
+        let settings = Settings(url: url, watch: false)
+        XCTAssertTrue(settings.terraformEnabled)
+        try write(#"{ "terraform.enabled": false, "appearance.fontSize": 14 }"#)
+        settings.reload()
+        XCTAssertEqual(Set(settings.held.keys), ["terraform.enabled"])
+        XCTAssertTrue(settings.terraformEnabled, "the header stays until a window's banner keeps it")
+        settings.set("terraform.enabled", .bool(false))
+        XCTAssertTrue(settings.held.isEmpty)
+        XCTAssertFalse(settings.terraformEnabled, "Settings' own toggle applies at once")
     }
 
     /// A security setting removed, or given a value it can't hold, would
