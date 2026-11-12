@@ -114,6 +114,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// The rail's Kubernetes panel (the selected tab's checkout's binding)
     /// and the pod it put on the right.
     let kubernetesPanel = KubernetesPanelModel()
+    /// The rail's Terraform panel (analysis 6.1): the selected tab's checkout's roots.
+    let terraformPanel = TerraformPanelModel()
     /// Whether this window holds `KubernetesModel.show()` for its page.
     var kubernetesPageHeld = false
     /// What an isolated run would have opened in the default browser (an Ingress).
@@ -393,6 +395,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 database: DatabaseModel.shared,
                 dockerPanel: dockerPanel,
                 kubernetesPanel: kubernetesPanel,
+                terraformPanel: terraformPanel,
                 store: store,
                 opener: opener,
                 theme: theme,
@@ -458,6 +461,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 notesActions: notesActions,
                 databaseActions: databaseActions,
                 dockerActions: dockerActions,
+                terraformActions: terraformPanelActions,
                 openKubernetesPage: { [weak self] in self?.toggleKubernetesPage(nil) },
                 onSettings: { [weak self] in self?.openSettings() },
                 onClose: { [weak self] in self?.toggleFileTree(nil) }
@@ -720,6 +724,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         wireKubernetesPage()
         wireDockerPanel()
         wireKubernetesPanel()
+        wireTerraformPanel()
         wireDockerPorts()
         wireDockerAttention()
         wireKubernetesAttention()
@@ -3294,6 +3299,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             }
         }
         for page in pages.all { items += page.paletteItems?() ?? [] }
+        items += terraformPaletteItems()
         // History last in the unranked order — before you type, what you
         // want is an action; once you type, ranking decides.
         items += historyItems(matching: query)
@@ -3602,6 +3608,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     BrowserBridge.shared.update()
                     self.kubernetesPanelSettingsChanged()
                 }
+                if keys.contains(where: { $0.hasPrefix("terraform.") }) { self.terraformPanelSettingsChanged() }
                 if !keys.isDisjoint(with: Self.sidebarPanelKeys) { self.sidebarPanelsChanged() }
                 if keys.contains("general.sidebarRail") { self.sizeSidebarColumn() }
                 let editorKeys = keys.filter { $0.hasPrefix("editor.") }
@@ -4001,6 +4008,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         updateNotesVisibility()
         updateDockerVisibility()
         updateKubernetesPanelVisibility()
+        updateTerraformPanelVisibility()
         // Collapsing can strand keyboard focus in the hidden panel — it goes
         // to the editor while that fills the window, not to the terminal
         // (which would end the zoom).

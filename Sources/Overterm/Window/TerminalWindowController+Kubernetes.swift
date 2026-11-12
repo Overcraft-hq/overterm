@@ -513,6 +513,7 @@ extension TerminalWindowController {
             self?.updateKubernetesWindowVisible()
             self?.updateKubernetesPageHold()
             self?.updateKubernetesPanelVisibility()
+            self?.updateTerraformPanelVisibility()
         }
         page.windowClosing = { [weak self] in self?.kubernetesWindowClosing() }
         page.paletteItems = { [weak self] in self?.kubernetesPaletteItems() ?? [] }

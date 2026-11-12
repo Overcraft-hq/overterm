@@ -466,6 +466,15 @@ final class Settings: ObservableObject {
     var editorCompletions: Bool { bool("editor.completions") }
     var editorFormatOnSave: Bool { bool("editor.formatOnSave") }
     var terraformFormatOnSave: Bool { bool("terraform.formatOnSave") }
+    var terraformEnabled: Bool { bool("terraform.enabled") }
+    /// `terraform.path`, trimmed; empty: mise's or the PATH's (`TerraformCLI`).
+    var terraformPath: String { string("terraform.path").trimmingCharacters(in: .whitespaces) }
+    var terraformProductionPattern: String { string("terraform.productionPattern") }
+    var terraformProductionAccounts: [String] {
+        (value("terraform.productionAccounts")?.list ?? []).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+    /// Each root's own settings, by its path in the repository.
+    var terraformRoots: [String: TerraformRootSettings] { TerraformRootSettings.all(from: value("terraform.roots")) }
     var editorVimMode: Bool { bool("editor.vimMode") }
     var editorRelativeLineNumbers: Bool { bool("editor.relativeLineNumbers") }
     var browserEnabled: Bool { bool("browser.enabled") }

@@ -22,6 +22,10 @@ final class TerminalView: NSView {
     /// A pin that couldn't be restored: the pane's `KUBECONFIG` reaches no
     /// cluster, and its header says so (`KubeTerminalLost`).
     let kubePinLost: KubeTerminalLost?
+    /// Terminal in this root (Terraform, analysis 4.9): the root it was
+    /// opened at, said by its header and its tab's icon. Not a pin: no
+    /// `TF_WORKSPACE`, the root's own `.terraform/environment` selects.
+    var terraformRoot: String?
     /// A pod's tab (`e`, `A`, `t`): the pod's plain env values, which ⌘L
     /// on its output scrubs as the page's Logs tab does. In memory only.
     var kubePodEnv: [(key: String, value: String)] = []

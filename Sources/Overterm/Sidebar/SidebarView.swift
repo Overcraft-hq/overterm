@@ -63,7 +63,7 @@ struct SessionActions {
 /// What the sidebar can show, one at a time — the rail down its left
 /// edge picks between them (`SidebarRail`).
 enum SidebarPanel: String, CaseIterable, Identifiable {
-    case files, git, sessions, snippets, api, notes, database, docker, kubernetes
+    case files, git, sessions, snippets, api, notes, database, docker, kubernetes, terraform
 
     var id: String { rawValue }
 
@@ -113,6 +113,7 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
         case .database: "database.enabled"
         case .docker: "docker.enabled"
         case .kubernetes: "kubernetes.enabled"
+        case .terraform: "terraform.enabled"
         case .sessions: "general.sessions"
         case .snippets: "general.snippets"
         case .files, .git: nil
@@ -148,6 +149,7 @@ enum SidebarPanel: String, CaseIterable, Identifiable {
         case .database: "cylinder.split.1x2"
         case .docker: "shippingbox"
         case .kubernetes: "helm"
+        case .terraform: "square.stack.3d.up"
         }
     }
 
@@ -188,6 +190,7 @@ struct SidebarView: View {
     @ObservedObject var database: DatabaseModel
     @ObservedObject var dockerPanel: DockerPanelModel
     @ObservedObject var kubernetesPanel: KubernetesPanelModel
+    @ObservedObject var terraformPanel: TerraformPanelModel
     /// The tabs, for the island the panels are scoped to.
     @ObservedObject var store: TabStore
     let opener: ExternalOpener
@@ -201,6 +204,7 @@ struct SidebarView: View {
     let notesActions: NotesActions
     let databaseActions: DatabaseActions
     let dockerActions: DockerActions
+    let terraformActions: TerraformPanelActions
     /// The Kubernetes page, from the panel's header.
     let openKubernetesPage: () -> Void
     /// The gear at the foot of the rail.
@@ -234,6 +238,8 @@ struct SidebarView: View {
                     KubernetesPanelView(
                         panel: kubernetesPanel, kubernetes: .shared, forwards: .shared, settings: .shared, theme: theme, group: group,
                         openPage: openKubernetesPage)
+                case .terraform:
+                    TerraformPanelView(panel: terraformPanel, settings: .shared, theme: theme, group: group, actions: terraformActions)
                 }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .top)

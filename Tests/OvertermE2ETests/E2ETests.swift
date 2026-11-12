@@ -179,6 +179,20 @@ final class E2ETests: XCTestCase {
         }
         try run("terraform", env: ["OVERTERM_TERRAFORM": terraform])
     }
+    /// Terraform's roots (stage 1b): the rail panel, the classes, the pane
+    /// header over the real terraform (offline, a cleared environment).
+    func testTerraformRoots() throws {
+        try run("terraformRoots", env: ["OVERTERM_TERRAFORM": try Self.installedTerraform()])
+    }
+
+    /// The installed terraform: `OVERTERM_TF_TEST_TERRAFORM`, else Homebrew's.
+    private static func installedTerraform() throws -> String {
+        let candidates = [ProcessInfo.processInfo.environment["OVERTERM_TF_TEST_TERRAFORM"], "/opt/homebrew/bin/terraform", "/usr/local/bin/terraform"]
+        guard let terraform = candidates.compactMap({ $0 }).first(where: { $0.hasPrefix("/") && FileManager.default.isExecutableFile(atPath: $0) }) else {
+            throw XCTSkip("no terraform installed: the terraform scenarios need one (OVERTERM_TF_TEST_TERRAFORM names it)")
+        }
+        return terraform
+    }
     func testAPI() throws { try run("api") }
     func testAPIImport() throws { try run("apiImport") }
     func testNotes() throws { try run("notes") }

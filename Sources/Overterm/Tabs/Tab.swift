@@ -106,7 +106,10 @@ final class Tab: ObservableObject, Identifiable {
     @Published var forwardPorts: [ListeningPort] = []
 
     /// What this tab is, for the glyph in its icon tile.
-    var kind: TabKind { TabKind.of(agent: agent, title: shellTitle, hasPort: !ports.isEmpty, pinned: kubeBadge != nil) }
+    var kind: TabKind {
+        TabKind.of(
+            agent: agent, title: shellTitle, hasPort: !ports.isEmpty, pinned: kubeBadge != nil, terraform: terminals.contains { $0.terraformRoot != nil })
+    }
 
     /// The Kubernetes context the focused pane is pinned to — Terminal in
     /// this context. A pane moved in from another tab keeps its own, so

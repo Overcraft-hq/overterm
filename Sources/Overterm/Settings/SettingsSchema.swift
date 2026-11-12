@@ -209,8 +209,10 @@ struct SettingSpec: Identifiable, Sendable {
     /// an agent's to change. Any agent can write settings.json, so a change
     /// made there outside the Settings page is held until a window's banner
     /// confirms it (`Settings.held`, D-7): `terraform.roots`,
-    /// `terraform.productionPattern`, `terraform.productionAccounts` and
-    /// `terraform.agent*` when they come, as Kubernetes' now — its contexts,
+    /// `terraform.productionPattern`, `terraform.productionAccounts`, the
+    /// terraform it runs (`terraform.path`), `terraform.enabled` (off, the
+    /// pane header over a production apply goes) and `terraform.agent*`
+    /// when they come; Kubernetes' — its contexts,
     /// agents' access and writes, and the kubectl and helm it runs (a path
     /// in an agent's checkout would run outside any sandbox, with the
     /// user's kubeconfig).
@@ -312,7 +314,8 @@ struct SettingSpec: Identifiable, Sendable {
 /// Every setting, in the order Settings shows them.
 enum SettingsSchema {
     static let all: [SettingSpec] =
-        general + appearance + terminal + agents + editor + browser + api + notes + database + docker + kubernetes + notifications + updates
+        general + appearance + terminal + agents + editor + browser + api + notes + database + docker + kubernetes + terraform + notifications
+        + updates
 
     static let byKey: [String: SettingSpec] = Dictionary(uniqueKeysWithValues: all.map { ($0.key, $0) })
 
@@ -857,6 +860,36 @@ enum SettingsSchema {
             help:
                 "What E runs beside a pod's container (kubectl debug --target) or on a node, in a tab — unless the context's own debugImage (a node: its nodeShellImage, then debugImage) says another. Only on writable contexts.",
             kind: .text(placeholder: "busybox:1.36", monospaced: true), defaultValue: .string("busybox:1.36"), requires: "kubernetes.enabled"),
+    ]
+
+    private static let terraform: [SettingSpec] = [
+        SettingSpec(
+            key: "terraform.enabled", section: .terraform, group: "Terraform", title: "Terraform in Overterm",
+            help:
+                "The checkout's roots in the sidebar (⌥⌘E), their workspaces and backends, which are production, and a header over any pane where terraform runs. Nothing is read until the panel opens, and no terraform runs but `terraform version`.",
+            kind: .toggle, defaultValue: .bool(true), heldWhenEditedOutside: true),
+        SettingSpec(
+            key: "terraform.path", section: .terraform, group: "Terraform", title: "terraform",
+            help:
+                "The terraform Overterm runs, as an absolute path. Empty: mise's where a version file asks for one, else the first on your shell's PATH.",
+            kind: .text(placeholder: "/opt/homebrew/bin/terraform", monospaced: true), defaultValue: .string(""), requires: "terraform.enabled",
+            heldWhenEditedOutside: true),
+        SettingSpec(
+            key: "terraform.productionPattern", section: .terraform, group: "Production", title: "Production names",
+            help:
+                "A regular expression matched against a root's workspace, path, backend bucket, key and organisation, var files, AWS_PROFILE and its providers' profile or project. Empty: prod, prd, production or live as a word, a number allowed after it. A state once production stays production.",
+            kind: .text(placeholder: TerraformClassifier.defaultPattern, monospaced: true), defaultValue: .string(""), requires: "terraform.enabled",
+            heldWhenEditedOutside: true),
+        SettingSpec(
+            key: "terraform.productionAccounts", section: .terraform, group: "Production", title: "Production AWS accounts",
+            help: "Account IDs: a root whose provider or backend names one in an ARN is production.",
+            kind: .list(placeholder: "123456789012"), defaultValue: .list([]), requires: "terraform.enabled", heldWhenEditedOutside: true),
+        SettingSpec(
+            key: "terraform.roots", section: .terraform, group: "Roots", title: "Each root's own settings",
+            help:
+                "By the root's path in its repository (envs/prod): a display name, and a class — production or remote — that can only raise what the names say, never lower it.",
+            kind: .entries(SettingEntries(noun: "root", fields: TerraformRootSettings.fields)), defaultValue: .entries([:]),
+            requires: "terraform.enabled", heldWhenEditedOutside: true),
     ]
 
     private static let notifications: [SettingSpec] = [

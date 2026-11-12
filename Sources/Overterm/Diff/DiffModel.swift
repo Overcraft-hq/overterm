@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 /// The changes of one checkout, in one of two scopes, and — while the panel
@@ -284,7 +285,30 @@ final class DiffModel: ObservableObject {
 
     private func changed(_ paths: [String]) {
         if paths.contains(where: Self.isRemoteRef) { remoteRefsMoved &+= 1 }
+        let counted = paths.filter { !Self.isNoise($0) }
+        guard !counted.isEmpty else { return }
+        changes.send(counted)
         scheduleRefresh()
+    }
+
+    /// What the watchers saw change, noise aside: the Terraform panel's
+    /// "files changed", rather than a second watcher on the checkout.
+    let changes = PassthroughSubject<[String], Never>()
+    /// Refreshes run: a scenario checks `init`'s writes cost none.
+    private(set) var refreshCount = 0
+
+    /// A folder FSEvents reports whose changes say nothing about the
+    /// checkout: what `terraform init` writes under `.terraform/` (~50 MB of
+    /// providers) and Terragrunt's cache. Under `.terraform/`, only the
+    /// folder itself (its `environment`, `terraform.tfstate`) and `modules/`
+    /// count (analysis 4.12 step 6).
+    nonisolated static func isNoise(_ reported: String) -> Bool {
+        // FSEvents ends a folder's path with "/".
+        let path = reported.hasSuffix("/") ? String(reported.dropLast()) : reported
+        if path.contains("/.terragrunt-cache/") || path.hasSuffix("/.terragrunt-cache") { return true }
+        guard let range = path.range(of: "/.terraform/") else { return false }
+        let below = path[range.upperBound...]
+        return !(below == "modules" || below.hasPrefix("modules/"))
     }
 
     /// A directory FSEvents reports (a directory, not a file) that holds
@@ -362,6 +386,7 @@ final class DiffModel: ObservableObject {
 
     private func refreshOnce() async {
         guard let root else { return }
+        refreshCount += 1
         generation += 1
         let ticket = generation
         do {

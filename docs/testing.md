@@ -270,6 +270,18 @@ only in a checkout that passes `fmt -check`, F12 and ⇧⌘O, and the checkout
 byte for byte the same after validate. Without a terraform the test is
 skipped, saying so.
 
+The `terraformRoots` scenario (`E2ERunner+TerraformRoots.swift`, stage 1b)
+writes a checkout of two `terraform_data` roots, a module and an `http`
+backend nobody reaches: the rail panel reads nothing while hidden (no read,
+and the wrapper records no call), lists the roots and the module with its
+caller, `envs/prod` production; `version -json` is the one terraform it
+runs. A pane types the real `terraform -chdir=envs/prod console` through the
+wrapper in `env -i` (a scratch HOME and CLI config, proxies at a dead port)
+and gets the header; the console is ended by its pid. Provider-sized
+writes under `.terraform/providers` don't refresh the changes pane; a
+second worktree says "no state here" and "shares its state". The process
+walk is unit-tested with a stand-in script (`TerraformPaneWarningTests`).
+
 ## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one

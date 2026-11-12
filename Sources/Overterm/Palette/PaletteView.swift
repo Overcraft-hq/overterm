@@ -86,6 +86,7 @@ struct PaletteView: View {
         case .history: "History"
         case .container: "Docker"
         case .kubernetes: "Kubernetes"
+        case .terraform: "Terraform"
         }
     }
 
@@ -113,6 +114,7 @@ struct PaletteView: View {
         HStack(spacing: 16) {
             hint("↩", model.selected.map(Self.verb) ?? "open")
             if let group = model.selected?.group, group == .history || group == .snippet { hint("⌥↩", "type without running") }
+            if model.selected?.group == .terraform { hint("⌥↩", "terminal in this root") }
             hint("⇥", "next tab")
             Spacer()
             hint("esc", "close")
@@ -130,6 +132,7 @@ struct PaletteView: View {
         case .worktree: "open the worktree"
         case .container: "show it on the Docker page"
         case .kubernetes: "show it on the Kubernetes page"
+        case .terraform: "show it in the Terraform panel"
         }
     }
 

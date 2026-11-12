@@ -14,6 +14,8 @@ final class TabInfoModel: ObservableObject {
     }
 
     @Published private(set) var processes: [ProcessNode] = []
+    /// The terraform processes in the tab (analysis 8): what each does, where, for how long.
+    @Published private(set) var terraform: [TerraformInfoRow] = []
     @Published private(set) var ports: [ListeningPort] = []
     /// The Claude Code session in this tab, if there is one.
     @Published private(set) var claude: ClaudeUsage?
@@ -106,6 +108,23 @@ final class TabInfoModel: ObservableObject {
             }
         }
         processes = tree
+        let candidates = tree.flatMap(\.flattened).filter {
+            TerraformCommandLine.tools.contains($0.name) || TerraformProcesses.scriptShells.contains($0.name)
+        }.map { (pid: $0.pid, name: $0.name, children: $0.children.map(\.pid)) }
+        guard !candidates.isEmpty else {
+            if !terraform.isEmpty { terraform = [] }
+            return
+        }
+        let settings = TerraformClassSettings.current
+        let identities = TerraformRootStore.shared.productionIdentities
+        let rows = await TerraformPanelModel.blocking {
+            candidates.compactMap { node -> TerraformInfoRow? in
+                guard let process = TerraformProcesses.inspect(node.pid, name: node.name, children: node.children) else { return nil }
+                return TerraformInfoRow.make(process, settings: settings, identities: identities)
+            }
+        }
+        if terraform != rows { terraform = rows }
+        TerraformRootStore.shared.rememberProduction(rows.compactMap(\.rememberIdentity))
     }
 
     /// Its processes' ports, then what its checkout's containers publish,
