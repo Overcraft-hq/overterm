@@ -293,6 +293,10 @@ private struct SettingRow: View {
             if let help = spec.help {
                 Text(help).font(.caption).foregroundStyle(theme.dimText).fixedSize(horizontal: false, vertical: true)
             }
+            if spec.heldWhenEditedOutside {
+                Text("Changed in settings.json outside this page, it waits for your Keep in a banner first.")
+                    .font(.caption).foregroundStyle(theme.dimText).fixedSize(horizontal: false, vertical: true)
+            }
             Text(verbatim: spec.key).font(.system(size: ChromeMetrics.text(10), design: .monospaced)).foregroundStyle(theme.dimText.opacity(0.7))
         }
     }
