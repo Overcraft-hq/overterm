@@ -117,6 +117,14 @@ final class LanguageServer: @unchecked Sendable {
     let command: Command
     /// The workspace root it was started for.
     let root: URL
+    /// `initialize`'s `initializationOptions`, when the server takes some.
+    let initializationOptions: JSONValue?
+    /// Variables set in its environment over the app's and the command's
+    /// (terraform-ls: `CHECKPOINT_DISABLE`, a scratch `HOME`).
+    let environmentAdded: [String: String]
+    /// Names taken out of its environment — the app's, the command's and the
+    /// added alike; `AWS_*` takes every name it begins.
+    let environmentRemoved: [String]
 
     /// Every publishDiagnostics, on the main actor: the file and its whole
     /// current list (an empty list clears it).
@@ -145,6 +153,16 @@ final class LanguageServer: @unchecked Sendable {
     private var exited = DispatchSemaphore(value: 0)
     private var _restartCount = 0
     private let writeQueue = DispatchQueue(label: "LanguageServer.write")
+    /// What it asked to hear of (`client/registerCapability`), under `lock`.
+    private var watched = LSPWatchedFiles()
+    /// The root as FSEvents names it (`/private/var/…`).
+    private let realRoot: String
+    /// Created, replaced and stopped on the main queue only; not
+    /// main-actor-isolated so deinit can hand it back to main (`deinit`).
+    private var fileWatcher: DirectoryWatcher?
+    @MainActor private var watchedFolders: [String] = []
+    /// Matching events against the globs is off the main thread.
+    private let watchQueue = DispatchQueue(label: "LanguageServer.watch")
 
     private struct OpenDocument {
         var languageID: String
@@ -155,10 +173,40 @@ final class LanguageServer: @unchecked Sendable {
         var owners = 1
     }
 
-    init(name: String, command: Command, root: URL) {
+    init(
+        name: String, command: Command, root: URL, initializationOptions: JSONValue? = nil, environmentAdded: [String: String] = [:],
+        environmentRemoved: [String] = []
+    ) {
         self.name = name
         self.command = command
         self.root = root
+        self.initializationOptions = initializationOptions
+        self.environmentAdded = environmentAdded
+        self.environmentRemoved = environmentRemoved
+        realRoot = LSPWatchedFiles.realPath(root.standardizedFileURL.path)
+    }
+
+    deinit {
+        // The last reference can go on any thread (a request's task, the
+        // global queue `stopAll` stops on); an FSEvents stream is stopped
+        // and invalidated on the main queue it delivers on, never here.
+        if let watcher = fileWatcher {
+            DispatchQueue.main.async { MainActor.assumeIsolated { watcher.stop() } }
+        }
+    }
+
+    /// The environment a server gets: the app's, the command's over it, then
+    /// the spec's `setting` over both, then `removed` taken out of all three
+    /// — a removed name wins; one ending in `*` takes every name it begins.
+    static func environment(
+        _ base: [String: String], adding: [String: String], setting: [String: String] = [:], removing: [String]
+    ) -> [String: String] {
+        var environment = base.merging(adding) { _, new in new }.merging(setting) { _, new in new }
+        guard !removing.isEmpty else { return environment }
+        let exact = Set(removing.filter { !$0.hasSuffix("*") })
+        let prefixes = removing.filter { $0.hasSuffix("*") }.map { String($0.dropLast()) }
+        environment = environment.filter { name, _ in !exact.contains(name) && !prefixes.contains { name.hasPrefix($0) } }
+        return environment
     }
 
     var state: State { lock.withLock { _state } }
@@ -178,7 +226,7 @@ final class LanguageServer: @unchecked Sendable {
         process.executableURL = command.executable
         process.arguments = command.arguments
         process.currentDirectoryURL = root
-        process.environment = ProcessInfo.processInfo.environment.merging(command.environment) { _, new in new }
+        process.environment = Self.environment(ProcessInfo.processInfo.environment, adding: command.environment, setting: environmentAdded, removing: environmentRemoved)
         let stdin = Pipe()
         let stdout = Pipe()
         let stderr = Pipe()
@@ -193,6 +241,8 @@ final class LanguageServer: @unchecked Sendable {
         let generation: Int = lock.withLock {
             self.generation += 1
             self.exited = exited
+            // A new process registers what it watches again.
+            watched.removeAll()
             return self.generation
         }
         process.terminationHandler = { [weak self] process in
@@ -233,7 +283,11 @@ final class LanguageServer: @unchecked Sendable {
         let answered = DispatchSemaphore(value: 0)
         let shutdown = state == .running ? register({ _ in answered.signal() }) : nil
         // From here its exit is expected, not a crash to restart from.
-        lock.withLock { _state = .stopped }
+        lock.withLock {
+            _state = .stopped
+            watched.removeAll()
+        }
+        watchersChanged()
         if let shutdown {
             send(["jsonrpc": "2.0", "id": .int(shutdown), "method": "shutdown"])
             if answered.wait(timeout: .now() + 2) == .timedOut { _ = take(shutdown) }
@@ -250,7 +304,7 @@ final class LanguageServer: @unchecked Sendable {
 
     private func initialize(_ generation: Int) {
         let rootURI = LSP.uri(for: root)
-        let params: JSONValue = [
+        var params: [String: JSONValue] = [
             "processId": .int(Int(getpid())),
             "clientInfo": ["name": "Overterm"],
             "locale": "en",
@@ -259,8 +313,9 @@ final class LanguageServer: @unchecked Sendable {
             "workspaceFolders": [["uri": .string(rootURI), "name": .string(root.lastPathComponent)]],
             "capabilities": Self.clientCapabilities,
         ]
+        if let initializationOptions { params["initializationOptions"] = initializationOptions }
         guard let id = register({ [weak self] result in self?.initialized(generation, result) }) else { return }
-        send(["jsonrpc": "2.0", "id": .int(id), "method": "initialize", "params": params])
+        send(["jsonrpc": "2.0", "id": .int(id), "method": "initialize", "params": .object(params)])
         DispatchQueue.global().asyncAfter(deadline: .now() + Self.initializeTimeout) { [weak self] in
             guard let self, let handler = take(id) else { return }
             handler(.failure(LanguageServerError.timedOut("initialize")))
@@ -275,6 +330,9 @@ final class LanguageServer: @unchecked Sendable {
             "configuration": true,
             "workspaceFolders": true,
             "applyEdit": false,
+            // Servers then leave watching to the client: gopls watches
+            // nothing itself, rust-analyzer stops its own watcher.
+            "didChangeWatchedFiles": ["dynamicRegistration": true, "relativePatternSupport": true],
         ],
         "window": ["workDoneProgress": false],
         "textDocument": [
@@ -333,9 +391,11 @@ final class LanguageServer: @unchecked Sendable {
         let changed: Bool = lock.withLock {
             guard self.generation == generation, _state == .starting || _state == .running else { return false }
             _state = .dead
+            watched.removeAll()
             return true
         }
         guard changed else { return }
+        watchersChanged()
         failAll(error ?? LanguageServerError.exited(status))
     }
 
@@ -676,15 +736,22 @@ final class LanguageServer: @unchecked Sendable {
     }
 
     /// What the server asks of the client. Nothing here edits or
-    /// configures: settings are left to the server's defaults.
+    /// configures: settings are left to the server's defaults. Of the
+    /// registrations, the watched files are kept (and watched); the others
+    /// are acknowledged only.
     private func answer(_ method: String, id: JSONValue, params: Any?) {
         var reply: [String: JSONValue] = ["jsonrpc": "2.0", "id": id]
         switch method {
         case "workspace/configuration":
             let items = (params as? [String: Any])?["items"] as? [Any] ?? []
             reply["result"] = .array(Array(repeating: .null, count: items.count))
-        case "window/workDoneProgress/create", "client/registerCapability", "client/unregisterCapability",
-            "window/showMessageRequest", "window/showDocument":
+        case "client/registerCapability":
+            if lock.withLock({ watched.register(params) }) { watchersChanged() }
+            reply["result"] = .null
+        case "client/unregisterCapability":
+            if lock.withLock({ watched.unregister(params) }) { watchersChanged() }
+            reply["result"] = .null
+        case "window/workDoneProgress/create", "window/showMessageRequest", "window/showDocument":
             reply["result"] = .null
         case "workspace/applyEdit":
             reply["result"] = ["applied": false]
@@ -706,6 +773,63 @@ final class LanguageServer: @unchecked Sendable {
             MainActor.assumeIsolated {
                 self.onDiagnostics?(published.url, published.diagnostics)
             }
+        }
+    }
+}
+
+extension LanguageServer {
+    // MARK: - Watched files
+
+    /// The globs changed (or the server went): the watcher follows, on the
+    /// main queue, where DirectoryWatcher lives.
+    ///
+    /// `self` is held strongly: a stop or an exit must reach main and stop
+    /// the stream there, even when the last other reference is gone by then
+    /// (`stopAll` stops on the global queue, after dropping its own).
+    private func watchersChanged() {
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated { self.updateFileWatcher() }
+        }
+    }
+
+    /// One FSEvents stream over the root (and any folder outside it a
+    /// pattern names), with file events — none while nothing is registered,
+    /// so a server that watches nothing (clangd) costs nothing.
+    @MainActor private func updateFileWatcher() {
+        let (watched, alive) = lock.withLock { (self.watched, _state == .starting || _state == .running) }
+        let folders = alive && !watched.isEmpty ? watched.folders(root: realRoot) : []
+        guard folders != watchedFolders else { return }
+        fileWatcher?.stop()
+        fileWatcher = nil
+        watchedFolders = folders
+        guard !folders.isEmpty else { return }
+        fileWatcher = DirectoryWatcher(
+            roots: folders.map { URL(fileURLWithPath: $0) }, latency: 0.3,
+            fileEvents: { [weak self] events in self?.filesChanged(events) })
+    }
+
+    /// The folders watched for it now: for tests and Tab Info.
+    @MainActor var watchedFileFolders: [String] { watchedFolders }
+
+    private func filesChanged(_ events: [DirectoryWatcher.Event]) {
+        watchQueue.async { [weak self] in self?.sendWatchedChanges(events) }
+    }
+
+    private func sendWatchedChanges(_ events: [DirectoryWatcher.Event]) {
+        let (watched, running) = lock.withLock { (self.watched, _state == .running) }
+        guard running else { return }
+        let changes = watched.changes(for: events, root: realRoot) { FileManager.default.fileExists(atPath: $0) }
+        guard !changes.isEmpty else { return }
+        let rootPath = root.standardizedFileURL.path
+        for start in stride(from: 0, to: changes.count, by: LSPWatchedFiles.batchLimit) {
+            let batch = changes[start..<min(start + LSPWatchedFiles.batchLimit, changes.count)]
+            let items: [JSONValue] = batch.map { change in
+                // As the server spelled it: under the root as it was given
+                // (not /private/var), or under its own folder (/tmp, a link).
+                let path = watched.serverPath(change.path, realRoot: realRoot, rootSpelling: rootPath)
+                return ["uri": .string(LSP.uri(for: URL(fileURLWithPath: path, isDirectory: false))), "type": .int(change.type.rawValue)]
+            }
+            notify(LSPWatchedFiles.method, ["changes": .array(items)])
         }
     }
 }
