@@ -148,4 +148,20 @@ enum TerraformCloseGuard {
             detail:
                 "It runs on its own: quitting lets it finish, and Overterm follows it again at the next launch. Stop it from the Terraform pane to stop it now (gracefully).")
     }
+
+    /// What quitting asks while a `terraform test` with real providers
+    /// runs (4.7, 4.8): it is a write in the app's group, so quitting cuts
+    /// it off, cleanup and all — what it created stays. Interrupt stops
+    /// it gracefully (its cleanup runs) and keeps Overterm open.
+    static func testQuestion(_ tests: [(name: String, since: Date)]) -> Question? {
+        guard let first = tests.first else { return nil }
+        let more = tests.count > 1 ? " and \(tests.count - 1) more" : ""
+        return Question(
+            title: "A terraform test with real providers in \(first.name)\(more) is running.",
+            detail:
+                "Quitting cuts it off: its cleanup would be cut off too, and the resources it created stay. Interrupt stops it gracefully — it destroys what it created — and keeps Overterm open; quit again once it has stopped."
+        )
+    }
+
+    static let testButtons = ["Interrupt", "Quit Anyway", "Cancel"]
 }

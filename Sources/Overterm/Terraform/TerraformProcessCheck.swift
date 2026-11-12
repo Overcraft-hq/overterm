@@ -17,6 +17,12 @@ enum TerraformVerb: String, CaseIterable, Sendable {
     case apply
     /// `apply` of a refresh-only plan: it writes state (2d).
     case refreshOnlyApply
+    /// `terraform test` of files whose every provider is mocked (2.9, 2d):
+    /// nothing reaches a cloud — run without credentials, on any class.
+    case test
+    /// `terraform test` with a real provider: it creates real
+    /// infrastructure with the root's credentials — a write (asked).
+    case testRealProviders
     /// A stale lock blocks the person's own CI: allowed on every class,
     /// from a parsed, probed ID, the root's name typed (2e).
     case forceUnlock
@@ -62,9 +68,9 @@ enum TerraformProcessCheck {
             return "Overterm never runs this: state changes go through moved, removed and import blocks, planned and applied; the rest is typed in a terminal"
         }
         switch verb {
-        case .version, .format, .validate, .show, .workspaceList, .stateList, .initialize, .plan, .workspaceSelect, .forceUnlock:
+        case .version, .format, .validate, .show, .workspaceList, .stateList, .initialize, .plan, .workspaceSelect, .forceUnlock, .test:
             return nil
-        case .apply, .refreshOnlyApply:
+        case .apply, .refreshOnlyApply, .testRealProviders:
             guard isWritable(rootClass, writable: writable, sessionWrites: sessionWrites) else {
                 return rootClass == .production
                     ? "\(rootClass.title) is plan only: writes are turned on for this session from the root, never by a setting"

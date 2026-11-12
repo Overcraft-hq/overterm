@@ -218,6 +218,7 @@ extension E2ERunner {
         check("none ran init", !calls.contains { $0.subcommand == "init" })
         await terraformNewWorktreeChecks(recorder: recorder)
         await terraformStateB2c(binary: binary)
+        await terraformDriftAndTestB2d(binary: binary)
     }
 
     /// Every file under `folder` but `.git`'s, by path, with its bytes.

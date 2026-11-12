@@ -161,6 +161,7 @@ extension TerminalWindowController {
             }
             if let lock = TerraformRootFacts.smallFile(root.appendingPathComponent(".terraform.lock.hcl"), limit: 4 << 20) {
                 facts.lockSHANow = SHA256.hash(data: lock).map { String(format: "%02x", $0) }.joined()
+                facts.lockPinsNothingNow = !String(decoding: lock, as: UTF8.self).contains("provider \"")
             }
             return facts
         }

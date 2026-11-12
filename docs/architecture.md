@@ -7595,7 +7595,8 @@ masked.
   (`readNow`: the descriptor hashed, the binary and its `version -json`,
   the workspace checked to exist, the environment built again and compared
   by name — `changedNames`, never a value —, the data dir, the lock file
-  hashed against the plan zip's) and `TerraformApplyCheck.check` refuses
+  hashed against the plan zip's — none, or one naming no provider, the
+  same as a zip's that pins none) and `TerraformApplyCheck.check` refuses
   in 5.4's order or asks. `TerraformApplySheet` (pure) is the
   `WriteConfirmation`: root, worktree, branch, workspace, backend, class
   (red on production), the counts, every destroy, replace, forget and
@@ -7778,6 +7779,64 @@ masked.
   `terraformStateB2c` presses the card's State, checks the view, the
   accessibility text and the three tools for the sentinel, and the
   agent's own read's argv and environment through the recorder.
+- **Drift and tests** (stage 2d, analysis 2.6, 2.9, 5.3, 5.10, D-14,
+  D-19). Check Drift (the card's, its menu's) is Overterm's plan with
+  `TerraformPlanMode.refreshOnly` (`-refresh-only`, locked, asked as any
+  plan is; never on a timer): the slot says "Drift · <root>", its
+  `resource_drift` rows and the outputs it changes, and how old the check
+  is (`TerraformDrift.line`, pure) — once the state was written or the
+  root's files changed since, its finding is said as "then", never as
+  now; the card keeps the last one (`TerraformRunRegistry.latest(…,
+  drift: true)`; a check is never the root's last plan). Accept into
+  State is the apply of that plan, the one apply line, with every check
+  of 5.4 (`TerraformPlanMode.verb`: `refreshOnlyApply` — refused on a
+  read-only root, the root's name typed on production, never "creates
+  everything"; `TerraformDrift.nothingToAccept` greys it when nothing
+  drifted) and its own sheet (`TerraformDrift.acceptSheet`: it writes the
+  state only; the next plan proposes to change it back unless the code
+  changes too). Test (the card's) runs `terraform test -json -no-color`
+  (`TerraformCommands.test(file:)`, `-filter=` a test file inside the
+  root; never `-verbose`, `-var`, `-cloud-run` — the only `test` line the
+  refusal lets through). `TerraformTestFiles` (pure) reads the root's
+  test files (beside it and under `tests/`) — `run` blocks and lines,
+  `mock_provider`s (an aliased one mocks no default), `provider` blocks,
+  a run's `module` — and the providers its runs start
+  (`TerraformTestFiles.reach`: the root's and every local module's,
+  followed to `maxDepth` levels and `maxModules` folders; a module from
+  outside the checkout, past the bounds, JSON configuration, a file past
+  256 KB or a test file not read can't be told — real, never mocked):
+  every one mocked or built in, and nothing that runs a command
+  (`riskKinds`: a provisioner, `external`, `http`, an action), is a read
+  (`TerraformVerb.test`, any class, the validate environment — no
+  credential, a scratch HOME); else a write (`testRealProviders`:
+  refused on a read-only root, asked every time — the files, what is
+  real, that quitting cuts its cleanup off — the root's name typed on
+  production, the user's environment). A test file that resolves out of
+  the checkout is refused. `TerraformTestRun.begin` is the one way in
+  (the card's, an agent's): a going run of the root, whatever its file,
+  shown again, one being prepared refusing another (`starting`); `gate`
+  decides. Quitting while a real one runs asks (`TerraformCloseGuard.testQuestion`:
+  Interrupt, Quit Anyway, Cancel). The drift and test lines are drawn on
+  a 30 s clock (`TimelineView`), so their age moves and staleness shows. `TerraformTestRun` (memory only) streams it
+  (`TerraformStreamRun`): `TerraformUIMessage.test` decodes the
+  `test_*` lines and a diagnostic's `@testfile`/`@testrun`
+  (`TerraformTestMessage`, every other `test_*` line — `test_plan`,
+  `test_state` — dropped by type), folded by `TerraformTestReport` into
+  runs listed before they start, their status, and failures at their
+  lines (`TerraformTestView` in the plan's place,
+  `TerraformPlanPaneModel.test`). `TerraformTestResults` keeps each
+  root's last failures by file and tells the editors
+  (`.terraformTestDiagnostics`, `EditorViewController+TerraformTest`: over
+  a saved buffer, beside validate's marks, dropped at the next edit).
+  Agents' `tf_test` (`TerraformMCP+Test`): its `file` resolved inside
+  the checkout; a mocked test at once — the providers (root, modules,
+  the tests' mocks) start for their schemas, so only where
+  `providersRefusal` lets them unless the builtin alone is named —, a real one asked in the
+  window every call and never on production; the answer waits for the
+  run (`testWait`), or says it still runs. Scenario `terraform`'s
+  `terraformDriftAndTestB2d`: a test file's runs listed with one failure
+  at its line (slot, editor, `tf_test`), the checkout byte for byte the
+  same; a drift check finding a changed output, accepted, then none.
 - **The guards** (`Terraform/TerraformGuards.swift`, pure but for
   `prepareScratch`; analysis 4.2, 4.5, 4.13, 5.13 rule 8). Terraform
   changes real infrastructure, so an isolated run or a unit test

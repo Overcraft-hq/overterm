@@ -122,10 +122,12 @@ final class TerraformRunRegistry: ObservableObject {
         return true
     }
 
-    /// The newest plan run of `root` (its path in the checkout) in `checkout`.
-    func latest(checkout: URL, root: String, kind: TerraformPlanRun.Kind = .plan) -> TerraformPlanRun? {
+    /// The newest plan run of `root` (its path in the checkout) in
+    /// `checkout`; `drift`: its newest drift check instead (2d), never
+    /// counted as its last plan.
+    func latest(checkout: URL, root: String, kind: TerraformPlanRun.Kind = .plan, drift: Bool = false) -> TerraformPlanRun? {
         let path = checkout.standardizedFileURL.path
-        return runs.last { $0.kind == kind && $0.card.path == root && $0.checkout.standardizedFileURL.path == path }
+        return runs.last { $0.kind == kind && $0.mode.isRefreshOnly == drift && $0.card.path == root && $0.checkout.standardizedFileURL.path == path }
     }
 
     /// The run going on `key` now, if another one is.
@@ -332,8 +334,11 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
 
     /// Why the plan on screen isn't what applying would do now, or nil
     /// (6.3: "envs/prod changed after this plan", "applied from `bump-eks`").
-    func staleReason(_ registry: TerraformRunRegistry, now: Date = Date()) -> String? {
-        guard kind == .plan, let finished, record != nil else { return nil }
+    /// A plan no longer held (applied, discarded) has nothing to apply —
+    /// unless `held` is false: what a drift check found is "then" once its
+    /// own Accept wrote the state (2.6).
+    func staleReason(_ registry: TerraformRunRegistry, now: Date = Date(), held: Bool = true) -> String? {
+        guard kind == .plan, let finished, record != nil || !held else { return nil }
         if let identity, let write = registry.stateWrites[identity], write.at > finished {
             return "\(write.operation) from \(write.worktree) at \(Self.clock(write.at)): plan again"
         }

@@ -115,7 +115,10 @@ extension TerminalWindowController {
             endWrites: { [weak self] card in self?.endTerraformProductionWrites(card) },
             planDestroy: { [weak self] card in self?.planTerraformDestroy(card) },
             showApply: { [weak self] apply in self?.showTerraformApply(apply) },
-            showState: { [weak self] card in self?.showTerraformState(card) })
+            showState: { [weak self] card in self?.showTerraformState(card) },
+            checkDrift: { [weak self] card in self?.checkTerraformDrift(card) },
+            test: { [weak self] card in self?.testTerraformRoot(card) },
+            showTest: { [weak self] run in self?.showTerraformTest(run) })
     }
 
     /// Terminal in this root (4.9): a shell tab at the root, its icon and

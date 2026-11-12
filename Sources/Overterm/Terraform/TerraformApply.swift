@@ -44,6 +44,8 @@ struct TerraformApplyFacts: Sendable {
     var dataDirNow: String?
     /// The root's `.terraform.lock.hcl` hashed now; nil when there is none.
     var lockSHANow: String?
+    /// That file names no provider: builtin ones only, like no file at all.
+    var lockPinsNothingNow = false
     /// Why the plan on screen isn't what applying would do: written since,
     /// its files changed, older than 30 minutes (`TerraformPlanRun.staleReason`).
     var staleReason: String?
@@ -80,7 +82,8 @@ enum TerraformApplyCheck {
         staleReason: String?, busy: String?, versionConfirmed: Bool = true
     ) -> String? {
         guard let plan else { return "No plan to apply." }
-        if let why = TerraformProcessCheck.refused(.apply, rootClass: rootClass, writable: writable, sessionWrites: sessionWrites) { return why }
+        if let why = TerraformProcessCheck.refused(mode.verb, rootClass: rootClass, writable: writable, sessionWrites: sessionWrites) { return why }
+        if let why = TerraformDrift.nothingToAccept(plan, mode: mode) { return why }
         if !plan.applyable || plan.errored { return plan.errored ? "The plan errored: it can't be applied." : "Terraform says this plan can't be applied." }
         if !plan.complete, rootClass == .production {
             return "A partial plan (-target, or deferred changes) isn't applied on production: plan the whole root."
@@ -108,9 +111,10 @@ enum TerraformApplyCheck {
         // The class now, never only the plan's (5.1).
         if let why = risen(name: facts.rootName, planned: facts.rootClass, now: facts.classNow) { return .refused(why) }
         // 0. Writable at all (5.3).
-        if let why = TerraformProcessCheck.refused(.apply, rootClass: facts.rootClass, writable: facts.writable, sessionWrites: facts.sessionWrites) {
+        if let why = TerraformProcessCheck.refused(facts.mode.verb, rootClass: facts.rootClass, writable: facts.writable, sessionWrites: facts.sessionWrites) {
             return .refused(why)
         }
+        if let why = TerraformDrift.nothingToAccept(plan, mode: facts.mode) { return .refused(why) }
         // 1. Applyable; partial refused on production.
         if !plan.applyable || plan.errored {
             return .refused(plan.errored ? "The plan errored: it can't be applied." : "Terraform says this plan can't be applied.")
@@ -143,9 +147,10 @@ enum TerraformApplyCheck {
             return .refused("The environment changed since the plan (\(named)): plan and apply run in one environment — plan again.")
         }
         // No lock file is one that pins nothing: a plan of builtin
-        // providers only carries init's header, its root no file.
-        let sameLock =
-            facts.lockSHANow == facts.zipLockSHA || (facts.lockSHANow == nil && (facts.zipLockSHA == nil || facts.zipLockPinsNothing))
+        // providers only carries init's header, its root no file — or one
+        // naming no provider either.
+        let pinsNothingNow = facts.lockSHANow == nil || facts.lockPinsNothingNow
+        let sameLock = facts.lockSHANow == facts.zipLockSHA || (pinsNothingNow && (facts.zipLockSHA == nil || facts.zipLockPinsNothing))
         if !sameLock {
             return .refused("The lock file changed since the plan: providers aren't the ones planned with — plan again.")
         }
@@ -160,7 +165,8 @@ enum TerraformApplyCheck {
         // 7. Version: a newer minor moves the state (asked, 3.8).
         let move = movesState(root: facts.rootName, planVersion: plan.terraformVersion, priorVersion: plan.priorStateVersion)
         // 8. State exists.
-        let everything = createsEverything(plan: plan, workspace: facts.recordWorkspace, stateElsewhere: facts.stateElsewhere)
+        // A refresh-only plan creates nothing: it records what is there (2d).
+        let everything = !facts.mode.isRefreshOnly && createsEverything(plan: plan, workspace: facts.recordWorkspace, stateElsewhere: facts.stateElsewhere)
         // 9. The risk list is the sheet's.
         let typed = facts.rootClass == .production || facts.mode.isDestroy || everything
         return .ask(typed: typed, versionMove: move, partial: !plan.complete, createsEverything: everything)
@@ -236,6 +242,9 @@ struct TerraformApplySheet: Equatable, Sendable {
         root: Root, plan: TerraformPlan, mode: TerraformPlanMode, typed: Bool, versionMove: String?, partial: Bool, createsEverything: Bool,
         risks: [String], profile: String?, region: String?
     ) -> TerraformApplySheet {
+        if mode.isRefreshOnly {
+            return TerraformDrift.acceptSheet(root: root, plan: plan, typed: typed, versionMove: versionMove, risks: risks, profile: profile, region: region)
+        }
         let production = root.rootClass == .production
         let scope =
             "\(root.rootClass.title.uppercased()) · \(root.name) · workspace \(root.workspace) · \(root.backend)"

@@ -102,7 +102,7 @@ final class TerraformPlanCommandTests: XCTestCase {
                         let refused = TerraformProcessCheck.refused(verb, rootClass: rootClass, writable: writable, sessionWrites: session)
                         if TerraformProcessCheck.neverBuilt.contains(verb) {
                             XCTAssertNotNil(refused, "\(verb) is never built")
-                        } else if verb == .apply || verb == .refreshOnlyApply {
+                        } else if verb == .apply || verb == .refreshOnlyApply || verb == .testRealProviders {
                             let open = rootClass == .local || (rootClass == .remote && writable) || (rootClass == .production && session)
                             XCTAssertEqual(refused == nil, open, "\(verb) \(rootClass) writable \(writable) session \(session)")
                         } else {
@@ -634,6 +634,23 @@ final class TerraformPlanReadingTests: XCTestCase {
         XCTAssertEqual(line?.operation, "apply")
         XCTAssertEqual(line?.chdir, "envs/shared")
         XCTAssertEqual(line?.isWrite, true)
+    }
+
+    /// An applied plan has nothing left to apply, so no stale note — but a
+    /// drift check's finding is "then" once its own Accept wrote the state.
+    @MainActor func testADriftCheckAcceptedIsThen() async throws {
+        let registry = TerraformRunRegistry()
+        let identity = TerraformStateIdentity(product: "terraform", backend: "local", location: "/tmp/acme-2d/envs/dev/terraform.tfstate")
+        let card = TerraformRootCard(
+            path: "envs/dev", name: "envs/dev", folder: URL(fileURLWithPath: "/tmp/acme-2d/envs/dev"), kind: .root, facts: TerraformRootFacts(),
+            backendSummary: "local", identity: identity, verdict: .init(rootClass: .local, reason: "local"))
+        let run = TerraformPlanRun(kind: .plan, checkout: URL(fileURLWithPath: "/tmp/acme-2d"), card: card)
+        let finished = Date(timeIntervalSinceNow: -60)
+        run.landed(try Self.record(), at: finished)
+        registry.stateWritten(identity, by: "acme-2d", operation: "applied", at: finished.addingTimeInterval(1))
+        run.dropRecord()
+        XCTAssertNil(run.staleReason(registry, now: finished.addingTimeInterval(2)), "applied: nothing to plan again for")
+        XCTAssertNotNil(run.staleReason(registry, now: finished.addingTimeInterval(2), held: false), "what it found was then")
     }
 
     /// A held plan over a scratch file's descriptor: what `landed` needs.

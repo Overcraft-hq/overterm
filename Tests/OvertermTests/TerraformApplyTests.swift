@@ -192,6 +192,15 @@ final class TerraformApplyCheckTests: XCTestCase {
         none.lockSHANow = nil
         none.zipLockPinsNothing = true
         XCTAssertNil(refusal(none), "no lock file is one that pins nothing")
+        var empty = facts(plan())
+        empty.lockSHANow = "lock-comment-only"
+        empty.lockPinsNothingNow = true
+        empty.zipLockPinsNothing = true
+        XCTAssertNil(refusal(empty), "nor is a lock file naming no provider, when the plan's pinned none")
+        var emptied = facts(plan())
+        emptied.lockSHANow = "lock-comment-only"
+        emptied.lockPinsNothingNow = true
+        XCTAssertNotNil(refusal(emptied), "a lock file emptied of the providers the plan pinned")
         var understood = facts(plan())
         understood.plan.unknownKeys = ["acme_future"]
         XCTAssertTrue(refusal(understood)?.contains("acme_future") == true)

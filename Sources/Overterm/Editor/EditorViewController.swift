@@ -295,6 +295,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         header.setZoomed(isZoomed)
         observeDiagnostics()
         observeTerraformDiagnostics()
+        observeTerraformTestDiagnostics()
         applySettings()
         refreshChrome()
     }
