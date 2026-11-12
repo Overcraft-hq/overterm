@@ -244,6 +244,9 @@ final class TerraformPaneMonitor: ObservableObject {
     /// The Terraform writes asked for on the panes' screens (3.3), by pane:
     /// an agent's permission prompt, or Terraform's own.
     @Published private(set) var asks: [String: TerraformAsk] = [:]
+    /// The terraform writes a close's Interrupt signalled, by pane, until
+    /// they stop (4.8): the header says "shutting down".
+    @Published private(set) var shutting: [String: String] = [:]
     /// The terraform processes found, by pane: Tab Info and the close guard (2a) read them.
     private(set) var processes: [String: [TerraformProcess]] = [:]
     private var loop: Task<Void, Never>?
@@ -264,6 +267,14 @@ final class TerraformPaneMonitor: ObservableObject {
     /// agent (its notification or hook), a terraform runs in its tree
     /// (Terraform's own prompt), an ask stands there (to see it go), or
     /// the pane printed, scrolled, rang or titled since the last look.
+    func shuttingDown(_ running: [TerraformCloseGuard.Running]) {
+        for item in running { if let tag = item.tag { shutting[tag] = TerraformCloseGuard.shuttingDown(item) } }
+    }
+
+    func stopped(_ running: [TerraformCloseGuard.Running]) {
+        for item in running { if let tag = item.tag { shutting[tag] = nil } }
+    }
+
     nonisolated static func readsScreen(waiting: Bool, terraformRunning: Bool, asked: Bool, moved: Bool) -> Bool {
         waiting || terraformRunning || asked || moved
     }

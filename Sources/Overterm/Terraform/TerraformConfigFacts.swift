@@ -278,8 +278,22 @@ enum TerraformInitRecord {
 /// root. Pure.
 enum TerraformModulesManifest {
     static func directories(from data: Data) -> [String] {
+        entries(from: data).map(\.dir)
+    }
+
+    /// Each module call's key — `globex_worker`, a nested one's
+    /// `globex_app.globex_worker` — and its folder, relative to the root.
+    static func entries(from data: Data) -> [(key: String, dir: String)] {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let modules = object["Modules"] as? [[String: Any]]
         else { return [] }
-        return modules.compactMap { $0["Dir"] as? String }.filter { !$0.isEmpty && $0 != "." }
+        return modules.compactMap { module in
+            guard let key = module["Key"] as? String, let dir = module["Dir"] as? String, !key.isEmpty, !dir.isEmpty, dir != "." else { return nil }
+            return (key, dir)
+        }
+    }
+
+    /// The address prefix of a module key: `module.a.module.b`.
+    static func addressPrefix(_ key: String) -> String {
+        key.split(separator: ".").map { "module.\($0)" }.joined(separator: ".")
     }
 }

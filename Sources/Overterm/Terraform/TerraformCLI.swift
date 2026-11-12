@@ -22,6 +22,17 @@ enum TerraformCLI {
         set { lock.withLock { _scenarioWrapper = newValue } }
     }
 
+    nonisolated(unsafe) private static var _scenarioEnvironment: [String: String] = [:]
+
+    /// A scenario's hostile shell (5.13 rule 3): `TF_CLI_ARGS_apply` and
+    /// the like, laid over a guarded run's scratch environment so the
+    /// recording wrapper can show they never reach a run. Honoured only in
+    /// a guarded run, never a credential's name.
+    static var scenarioEnvironment: [String: String] {
+        get { lock.withLock { _scenarioEnvironment } }
+        set { lock.withLock { _scenarioEnvironment = newValue.filter { !TerraformGuards.isCredential($0.key) } } }
+    }
+
     /// The binary for `choice` — pure but for `isExecutable`.
     static func resolve(
         _ choice: TerraformGuards.Binary, wrapper: URL?, shellEnvironment: () -> [String: String],

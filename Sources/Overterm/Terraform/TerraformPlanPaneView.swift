@@ -7,11 +7,23 @@ struct TerraformPlanActions {
     var discard: (TerraformPlanRun) -> Void
     var copySummary: (TerraformPlanRun) -> Void
     var askWhy: (TerraformPlanRun) -> Void
+    /// Ask Why on a failed apply: the apply's diagnostics and log (6.4).
+    var askWhyApply: (TerraformApplyRun) -> Void = { _ in }
+    /// Plan Again after an apply, a reattached one's too.
+    var planAfterApply: (TerraformApplyRun) -> Void = { _ in }
+    /// An apply shown in the slot: its progress and Stop (4.7).
+    var showApply: (TerraformApplyRun) -> Void = { _ in }
     /// The root's var files chosen for its plans (Missing variables, 2.2).
     var chooseVarFiles: (TerraformPlanRun, [String]) -> Void
     /// A file of the checkout at a line.
     var open: (URL, Int?) -> Void
     var close: () -> Void
+    /// Apply… (6.4): the checks, the sheet, the detached apply.
+    var apply: (TerraformPlanRun) -> Void = { _ in }
+    /// Stop (`.`): asked the second time.
+    var stopApply: (TerraformApplyRun) -> Void = { _ in }
+    /// Plan again with a mode (2a): only this address, replacing it.
+    var planMode: (TerraformPlanRun, TerraformPlanMode) -> Void = { _, _ in }
 }
 
 /// The plan in the right slot (analysis 6.3): the header — root, branch @
@@ -28,7 +40,10 @@ struct TerraformPlanPaneView: View {
 
     var body: some View {
         VStack(spacing: 0) {
-            if let run = pane.run {
+            TerraformGoingApplies(registry: .shared, pane: pane, theme: theme, show: actions.showApply)
+            if let apply = pane.apply {
+                TerraformApplyView(apply: apply, pane: pane, theme: theme, actions: actions)
+            } else if let run = pane.run {
                 TerraformRunView(run: run, pane: pane, registry: .shared, theme: theme, actions: actions)
             } else {
                 Text("No plan yet: Plan a root from the Terraform panel (⌥⌘E).")
@@ -38,6 +53,31 @@ struct TerraformPlanPaneView: View {
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("terraform.plan")
+    }
+}
+
+/// The applies going that the slot doesn't show (4.7): each a button
+/// to its progress and Stop — another plan shown over one, a second apply
+/// found at launch. Nothing when none is.
+private struct TerraformGoingApplies: View {
+    @ObservedObject var registry: TerraformRunRegistry
+    @ObservedObject var pane: TerraformPlanPaneModel
+    @ObservedObject var theme: ChromeTheme
+    let show: (TerraformApplyRun) -> Void
+
+    var body: some View {
+        let others = registry.applies.filter { $0 !== pane.apply && $0.isGoing }
+        if !others.isEmpty {
+            VStack(alignment: .leading, spacing: 2) {
+                ForEach(others) { apply in
+                    TerraformGoingApplyButton(apply: apply, theme: theme, words: "Apply · \(apply.marker.name) · \(apply.worktree)", show: show)
+                }
+            }
+            .padding(.horizontal, 12).padding(.vertical, 3)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("terraform.plan.goingApplies")
+        }
     }
 }
 
@@ -89,7 +129,7 @@ private struct TerraformRunView: View {
                     Text("PRODUCTION").font(.system(size: ChromeMetrics.text(9.5), weight: .bold)).foregroundStyle(Color.white)
                         .padding(.horizontal, 5).frame(height: 16).background(RoundedRectangle(cornerRadius: 4).fill(red))
                 }
-                Text(verbatim: (run.kind == .plan ? "Plan · " : "Init · ") + run.card.name)
+                Text(verbatim: (run.kind == .plan ? (run.mode.isDestroy ? "Destroy plan · " : "Plan · ") : "Init · ") + run.card.name)
                     .font(.system(size: ChromeMetrics.text(12.5), weight: .semibold, design: .monospaced)).foregroundStyle(theme.text)
                     .lineLimit(1).truncationMode(.middle)
                 Text(verbatim: headerDetail).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).lineLimit(1)
@@ -104,6 +144,23 @@ private struct TerraformRunView: View {
                     .buttonStyle(.plain).foregroundStyle(theme.text3).help("Close the pane")
             }
             HStack(spacing: 6) {
+                if run.kind == .plan, !run.isGoing, run.record != nil {
+                    let greyed = run.applyGreyed(registry, writable: Settings.shared.terraformRoots[run.card.path]?.writable ?? false)
+                    Button {
+                        actions.apply(run)
+                    } label: {
+                        Label(run.mode.isDestroy ? "Destroy…" : "Apply…", systemImage: "play.fill").font(.system(size: ChromeMetrics.text(11), weight: .semibold))
+                            .padding(.horizontal, 7).frame(height: ChromeMetrics.row(22))
+                            .background(RoundedRectangle(cornerRadius: 5).fill(greyed == nil ? (run.card.isProduction ? red.opacity(0.85) : theme.accentText.opacity(0.85)) : theme.iconBg))
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(greyed == nil ? Color.white : theme.text3)
+                    .disabled(greyed != nil)
+                    .help(greyed ?? "Apply this plan, and nothing else (⇧A): asked first")
+                    .accessibilityIdentifier("terraform.plan.apply")
+                    .accessibilityValue(Text(verbatim: greyed ?? "ready"))
+                }
                 if run.isGoing {
                     button("Stop", "stop.circle") { run.stop() }.accessibilityIdentifier("terraform.plan.stop")
                 } else {
@@ -116,6 +173,15 @@ private struct TerraformRunView: View {
                 if case .failed = run.phase { button("Ask Why", "questionmark.bubble") { actions.askWhy(run) } }
                 if !run.isGoing { button("Discard", "trash") { actions.discard(run) }.accessibilityIdentifier("terraform.plan.discard") }
                 Spacer(minLength: 0)
+            }
+            if let label = run.mode.label {
+                Text(verbatim: "A \(label) plan" + (run.mode.isDestroy ? ": its apply destroys everything listed." : "."))
+                    .font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(run.mode.isDestroy ? red : theme.orangeText)
+                    .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("terraform.plan.mode")
+            }
+            if let plan = run.plan, !plan.complete, !run.mode.isDestroy {
+                Text(verbatim: run.card.isProduction ? "Partial: not applied on production — plan the whole root." : "Partial: only some of the root's changes.")
+                    .font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.orangeText)
             }
             if let stale = run.staleReason(registry) {
                 Text(verbatim: stale).font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(red)
@@ -282,6 +348,7 @@ private struct TerraformRunView: View {
                             TerraformPlanRowView(
                                 row: row, causes: pane.causes(row), expanded: pane.expanded.contains(row.id), selected: pane.selected == row.id,
                                 block: pane.block(of: row.address), checkout: run.checkout, theme: theme, actions: actions,
+                                plan: { mode in actions.planMode(run, mode) },
                                 press: {
                                     pane.toggle(row)
                                     pane.takeKeyboard()
@@ -373,6 +440,8 @@ private struct TerraformPlanRowView: View, Equatable {
     let checkout: URL
     @ObservedObject var theme: ChromeTheme
     let actions: TerraformPlanActions
+    /// Plan again with a mode: only this address, or replacing it (2a).
+    let plan: (TerraformPlanMode) -> Void
     let press: () -> Void
 
     nonisolated static func == (a: Self, b: Self) -> Bool {
@@ -441,6 +510,13 @@ private struct TerraformPlanRowView: View, Equatable {
             if let block {
                 Button("Open Block") { actions.open(checkout.appendingPathComponent(block.file), block.line) }
             }
+            if row.section != .drift, TerraformCommands.isAddress(row.address) {
+                Divider()
+                Button("Plan Only This (Partial)") { plan(.targets(row.count > 1 ? row.members.map(\.address) : [row.address])) }
+                if row.first?.action != .delete, row.first?.mode == "managed" {
+                    Button("Plan Replacing This") { plan(.replace(row.count > 1 ? row.members.map(\.address) : [row.address])) }
+                }
+            }
         }
         .accessibilityElement(children: .contain)
         .accessibilityIdentifier("terraform.plan.row.\(row.address)")
@@ -502,7 +578,7 @@ private struct TerraformPlanRowView: View, Equatable {
 /// takes the keyboard when a row is pressed — SwiftUI's own key handling
 /// is macOS 14. Letters reach it only while it is the first responder, so
 /// the terminal and the filter field keep theirs. Clicks pass through.
-private struct TerraformPlanKeyCatcher: NSViewRepresentable {
+struct TerraformPlanKeyCatcher: NSViewRepresentable {
     /// Bumped by a row's press: take the keyboard.
     let request: Int
     let press: (UInt16, String?) -> Bool

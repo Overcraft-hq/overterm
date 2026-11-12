@@ -16,6 +16,13 @@ struct TerraformPanelActions {
     var chooseWorkspace: (TerraformRootCard) -> Void
     /// The root's last plan, shown in the slot.
     var showPlan: (TerraformPlanRun) -> Void
+    /// Production's switch (5.3): applies allowed until quit, asked; off again.
+    var allowWrites: (TerraformRootCard) -> Void = { _ in }
+    var endWrites: (TerraformRootCard) -> Void = { _ in }
+    /// A destroy plan, asked first (2a).
+    var planDestroy: (TerraformRootCard) -> Void = { _ in }
+    /// An apply going in this root, shown in the slot with its Stop (4.7).
+    var showApply: (TerraformApplyRun) -> Void = { _ in }
 }
 
 /// The rail's Terraform panel (analysis 6.1, 6.2): the selected tab's
@@ -189,6 +196,7 @@ struct TerraformPanelView: View {
 private struct RootRow: View {
     let card: TerraformRootCard
     @ObservedObject var panel: TerraformPanelModel
+    @ObservedObject var registry = TerraformRunRegistry.shared
     @ObservedObject var theme: ChromeTheme
     let actions: TerraformPanelActions
 
@@ -262,6 +270,13 @@ private struct RootRow: View {
             line("Shares its state with " + card.sharedWith.joined(separator: ", "), theme.text3)
                 .accessibilityIdentifier("terraform.panel.shared.\(card.path)")
         }
+        // An apply going here — this session's, or one followed again after
+        // a quit — reachable whatever the slot shows: its progress and Stop.
+        ForEach(registry.applies.filter { $0.isGoing && $0.marker.root == card.path && $0.marker.checkout == (panel.checkout ?? card.folder).standardizedFileURL.path }) {
+            apply in
+            TerraformGoingApplyButton(apply: apply, theme: theme, words: "applying", show: actions.showApply)
+                .accessibilityIdentifier("terraform.panel.apply.\(card.path)")
+        }
         if let run = TerraformRunRegistry.shared.latest(checkout: panel.checkout ?? card.folder, root: card.path), let plan = run.plan {
             Button {
                 actions.showPlan(run)
@@ -319,6 +334,23 @@ private struct RootRow: View {
                     .accessibilityIdentifier("terraform.panel.terminal")
                 button("Validate", "checkmark.seal") { actions.validate(card) }
             }
+            if card.isProduction {
+                let on = registry.hasSessionWrites(checkout: panel.checkout ?? card.folder, root: card.path, workspace: card.workspace)
+                button(on ? "Applies On Until Quit — Turn Off" : "Allow Applies Until Quit…", on ? "lock.open.fill" : "lock.fill") {
+                    if on { actions.endWrites(card) } else { actions.allowWrites(card) }
+                }
+                .accessibilityIdentifier("terraform.panel.writes")
+                Text(
+                    verbatim: on
+                        ? "Shown plans may be applied here until Overterm quits; each apply asks for the root's name."
+                        : "Plan only: applies are turned on for this session from here, never by a setting."
+                )
+                .font(.system(size: ChromeMetrics.text(10))).foregroundStyle(on ? TerraformPanelView.production : theme.text3)
+                .fixedSize(horizontal: false, vertical: true)
+            } else if card.rootClass == .remote, !(Settings.shared.terraformRoots[card.path]?.writable ?? false) {
+                Text(verbatim: "Plan only: a remote root is applied once terraform.roots sets it writable.")
+                    .font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
+            }
         }
         .padding(.top, 3)
     }
@@ -336,8 +368,16 @@ private struct RootRow: View {
 
     @ViewBuilder private var menu: some View {
         Button("Plan") { actions.plan(card) }
+        Button("Plan Destroy…") { actions.planDestroy(card) }
         Button("Init…") { actions.initialize(card) }
         Button("Select Workspace…") { actions.chooseWorkspace(card) }
+        if card.isProduction {
+            if registry.hasSessionWrites(checkout: panel.checkout ?? card.folder, root: card.path, workspace: card.workspace) {
+                Button("Turn Applies Off") { actions.endWrites(card) }
+            } else {
+                Button("Allow Applies Until Quit…") { actions.allowWrites(card) }
+            }
+        }
         Divider()
         Button("Terminal in This Root") { actions.openTerminal(card) }
         Button("Validate") { actions.validate(card) }
@@ -352,5 +392,34 @@ private struct RootRow: View {
         let main = card.folder.appendingPathComponent("main.tf")
         if FileManager.default.fileExists(atPath: main.path) { return main }
         return nil
+    }
+}
+
+/// An apply that is going, as a button that shows it in the slot (4.7):
+/// the panel's card, and the slot's list when it shows something else.
+/// It observes its apply, so it goes once the apply ends.
+struct TerraformGoingApplyButton: View {
+    @ObservedObject var apply: TerraformApplyRun
+    @ObservedObject var theme: ChromeTheme
+    /// "applying", or the root's name and worktree for the slot's list.
+    let words: String
+    let show: (TerraformApplyRun) -> Void
+
+    var body: some View {
+        if apply.isGoing {
+            Button {
+                show(apply)
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: "play.circle.fill").font(.system(size: ChromeMetrics.text(10)))
+                    Text(verbatim: "\(words) · \(apply.progressText()) — Show")
+                        .font(.system(size: ChromeMetrics.text(10.5), weight: .semibold, design: .monospaced)).lineLimit(1).truncationMode(.middle)
+                }
+                .foregroundStyle(apply.marker.rootClass == TerraformClass.production.rawValue ? TerraformPanelView.production : theme.orangeText)
+                .contentShape(Rectangle())
+            }
+            .buttonStyle(.plain)
+            .help("Show this apply's progress, with Stop")
+        }
     }
 }

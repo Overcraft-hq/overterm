@@ -6991,8 +6991,8 @@ the same process). Reads only.
 The design is docs/design/terraform/analysis.md (its Section 9 the
 stages). Built so far: the groundwork of stage 0, stage 1a, HCL in the
 editor, stage 1b, which root, which workspace, and is it production,
-stage 1c, guarding agents, and stage 1d, the plan in the right slot.
-Nothing yet applies.
+stage 1c, guarding agents, stage 1d, the plan in the right slot, and
+stage 2a, the apply, with every guard.
 
 - **Roots** (stage 1b, analysis 4.12, 6.1, 6.2). The rail's Terraform panel
   (`SidebarPanel.terraform`, ⌥⌘E, `terraform.enabled` on by default) is the
@@ -7490,6 +7490,100 @@ Nothing yet applies.
   analysis' stage notes: a hunk in the changes pane lighting its plan
   rows and back, "Open block" through `modules.json`, the rows as a
   `ResourceTable`.
+- **The apply** (stage 2a, analysis 2.3, 4.7, 4.8, 5.3, 5.4, 6.4, D-1,
+  D-3, D-18, D-21). The only apply is `TerraformCommands.apply` —
+  `apply -input=false -json -lock=true -lock-timeout=60s /dev/fd/3` —
+  of the plan Overterm holds by its descriptor; any other `apply` line is
+  no builder's and refused before spawning. Plans gain modes
+  (`TerraformPlanMode`: destroy, `-target` — "partial", refused at apply on
+  production —, `-replace`; addresses only, `isAddress`: one argument
+  each, no flag, no control or invisible character), from the root's
+  menu (Plan Destroy…, asked) and a row's (Plan Only This, Plan Replacing
+  This). Apply… (`⇧A`) is greyed with why by `TerraformApplyCheck.greyed`
+  (nothing read: the class — `TerraformProcessCheck`, production by its
+  session switch, a remote root by `terraform.roots`' `writable`, never a
+  setting for production —, errored, partial on production, partly
+  understood, `dev_overrides`, stale or older than 30 min, another run on
+  the state); the click reads 5.4's facts again off the main thread
+  (`readNow`: the descriptor hashed, the binary and its `version -json`,
+  the workspace checked to exist, the environment built again and compared
+  by name — `changedNames`, never a value —, the data dir, the lock file
+  hashed against the plan zip's) and `TerraformApplyCheck.check` refuses
+  in 5.4's order or asks. `TerraformApplySheet` (pure) is the
+  `WriteConfirmation`: root, worktree, branch, workspace, backend, class
+  (red on production), the counts, every destroy, replace, forget and
+  action by address (50, escaped), risky updates by name — a heuristic,
+  said —, the plan's code risks, the profile and region, the exact
+  command; the root's name typed (`@<workspace>` past `default`) on every
+  production apply, a destroy, and "creates everything"; a newer minor
+  Terraform than the state's asked on its own (`movesState`, D-18).
+  Production's switch is the card's Allow Applies Until Quit
+  (`TerraformRunRegistry.sessionWrites`, by root and workspace, asked).
+  The apply itself (`TerraformApplyRun`, `TerraformApplyLaunch`) is
+  detached (D-1): a `bash -p` launcher in a session of its own
+  (`ProcessGroup.spawn(newSession:)`, `POSIX_SPAWN_SETSID` — no terminal,
+  no SIGHUP), the plan's binary in the plan's recorded environment
+  (`TerraformApplyLaunch.environment` takes out again whatever injects
+  flags or logs values), fd 3 the plan, stdout and stderr 0600 files in
+  its run folder (never a pipe: no SIGPIPE), its exit code written beside
+  them, `apply.json` (`TerraformApplyMarker`: pid, start time,
+  executable, root — names only) saying who it is, written before the
+  launcher starts terraform (it waits for `go` on fd 4: an app that dies
+  between the spawn and the marker, or a marker that can't be written,
+  leaves no apply nobody could find). `TerraformApplyTail`
+  follows the files on a GCD thread (120 ms batches; `apply_*`,
+  `provision_*`, diagnostics by `address` — `TerraformUIMessage.apply`,
+  `.provision`; never `id_value`), every string through the plan's
+  `TerraformValueMask` first — the values the plan marks sensitive, kept
+  in memory with the record, never described or reflected — since a
+  provisioner's output and an error's detail print values in clear
+  (5.6); rows go waiting → running → done or
+  errored, by address (a dictionary beside them: 6,000 hook lines, no
+  scans), a replace's two steps counted; the end is the exit code and an
+  `apply` `change_summary` (spike 24). It is going while its launcher is,
+  or while anything but a provider plugin is in its group
+  (`TerraformApplyGroup`, pure over `proc_listpids(PROC_PGRP_ONLY)`'s
+  members, counted only when they started no earlier than the launcher, in
+  its session, and none when the leader's pid is another process's): a
+  launcher killed with SIGKILL leaves terraform followed, never killed;
+  plugins are swept by pid once terraform is gone, never `killpg` after
+  the group may be empty. Stop (`.`) is one SIGINT to the
+  group whenever anything of it is there (D-3); a second asks, then
+  another. A failed apply's Ask Why is its own (`TerraformApplyRun.brief`:
+  its diagnostics by address, its log, a lock it couldn't take), a
+  reattached one's too, and Plan Again finds a reattached apply's root
+  on the panel. Applies going that the slot doesn't show are listed above
+  it and on their root's card (`TerraformGoingApplyButton`), each showing
+  its progress and Stop. The class is decided again when Apply is pressed
+  and after the sheet (`TerraformPlanRun.classNow`,
+  `TerraformApplyCheck.risen`: a root become production or remote since
+  its plan is planned again), and every fact of 5.4 is read again after
+  the sheet — the same verdict, or nothing runs. The plan's record and
+  descriptor go once its apply starts; its end marks the state written
+  (every other plan of it stale) and gives back the state's turn
+  (`TerraformRunRegistry.take`: an apply never queues). The slot shows it
+  in the plan's place (`TerraformApplyView`, `TerraformPlanPaneModel.apply`).
+  It outlives the app: the launch sweep keeps a run folder whose apply is
+  alive by its pid, start time and executable (`TerraformApplyMarker.isAlive`)
+  and follows it again (`sweepTerraformRunsAtLaunch` →
+  `reattachTerraformApplies`, "started before Overterm last quit"; every
+  one found listed, the last in the slot; the scenario starts its apply
+  in a dead pid's process folder, `TerraformRunFolder.crashedProcess`,
+  and runs this same path again); quitting while one runs asks "Quit and
+  Let It Finish", never waits. `TerraformCloseGuard` (decision pure) is asked by
+  all four close paths — `closePane`, `closeTabs`, `windowShouldClose`,
+  `applicationShouldTerminate` — whatever the close setting: a terraform
+  apply, destroy, import, `state`, force-unlock or workspace delete in a
+  pane's tree (found by pid) asks Interrupt / Close Anyway / Cancel;
+  Interrupt sends SIGINT to terraform's own group, or terraform alone when
+  it shares an agent's; the pane's header says "shutting down"
+  (`TerraformPaneMonitor.shutting`), and once it has stopped a notice
+  offers Close Now — the close Interrupt held back, a quit sent again —
+  waiting for any sheet already on the window. A plan's "Open block"
+  reaches a module's resources through init's `modules.json`
+  (`TerraformModulesManifest.entries`, folders inside the checkout only). Scenario
+  `terraformApply` (a hostile `TF_CLI_ARGS_apply` through
+  `TerraformCLI.scenarioEnvironment`, never reaching the run).
 - **The guards** (`Terraform/TerraformGuards.swift`, pure but for
   `prepareScratch`; analysis 4.2, 4.5, 4.13, 5.13 rule 8). Terraform
   changes real infrastructure, so an isolated run or a unit test

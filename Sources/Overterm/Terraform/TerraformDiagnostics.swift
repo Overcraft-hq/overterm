@@ -23,6 +23,8 @@ struct TerraformDiagnostic: Equatable, Sendable {
     var start: Position?
     var end: Position?
     var code: String?
+    /// The resource an apply's error is about (`diagnostic.address`, 2a).
+    var address: String? = nil
 
     /// What the editor says over the squiggle.
     var message: String { detail.isEmpty ? summary : "\(summary): \(detail)" }
@@ -83,7 +85,7 @@ struct TerraformValidation: Equatable, Sendable {
             severity: (object["severity"] as? String).flatMap(TerraformDiagnostic.Severity.init(rawValue:)) ?? .error,
             summary: scrub(object["summary"] as? String ?? ""), detail: scrub(object["detail"] as? String ?? ""),
             file: range?["filename"] as? String, start: position(range?["start"]), end: position(range?["end"]),
-            code: (snippet?["code"] as? String).map(scrub))
+            code: (snippet?["code"] as? String).map(scrub), address: (object["address"] as? String).map { scrub(String($0.prefix(1_024))) })
     }
 
     /// The UTF-16 range of `start`..`end` in `text`, by line and column

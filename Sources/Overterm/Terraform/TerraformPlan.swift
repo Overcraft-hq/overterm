@@ -209,9 +209,12 @@ struct TerraformPlan: Equatable, Sendable {
         return try decode(object, scrub: scrub, secretName: secretName)
     }
 
-    static func decode(_ object: [String: Any], scrub: (String) -> String, secretName: (String) -> Bool = TerraformSecretNames.isSecret) throws
-        -> TerraformPlan
-    {
+    /// `secrets`: the plan's sensitive values when the caller read them
+    /// already (`TerraformValueMask`, an apply's); else read here.
+    static func decode(
+        _ object: [String: Any], scrub: (String) -> String, secretName: (String) -> Bool = TerraformSecretNames.isSecret,
+        secrets known: TerraformSensitiveValues? = nil
+    ) throws -> TerraformPlan {
         let format = object["format_version"] as? String ?? ""
         guard format.split(separator: ".").first == "1" else { throw DecodeError.unknownFormat(format.isEmpty ? "none" : format) }
         // A value Terraform marks sensitive anywhere in the plan is masked
@@ -221,7 +224,7 @@ struct TerraformPlan: Equatable, Sendable {
         // Redacted before `scrub`: a secret the scrubber altered would no
         // longer be found. A leaf equal to one is masked whole, whatever
         // its length or type; only a longer one is hunted inside strings.
-        let secrets = TerraformSensitiveValues(sensitiveValues(in: object))
+        let secrets = known ?? TerraformSensitiveValues(sensitiveValues(in: object))
         return try withoutActuallyEscaping(scrub) { given in
             // Keys and short values repeat across a plan's resources (every
             // `tags`, `input`, `label0`): each is scrubbed once.

@@ -86,6 +86,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             alert.alertStyle = .warning
             guard alert.runModal() == .alertSecondButtonReturn else { return .terminateCancel }
         }
+        // A terraform write typed in a pane dies with it (4.8): asked
+        // whatever the close setting says; Interrupt cancels the quit.
+        let controllers = NSApp.windows.compactMap { $0.windowController as? TerminalWindowController }
+        let writes = controllers.flatMap { $0.terraformWrites(tabs: $0.store.tabs, path: .quit) }
+        if let question = TerraformCloseGuard.question(writes, path: .quit) {
+            switch TerminalWindowController.terraformCloseAlert(question).runModal() {
+            case .alertFirstButtonReturn:
+                // Close Now, once they have stopped, quits again (asked as any quit is).
+                controllers.first?.interruptTerraform(writes, path: .quit) { NSApp.terminate(nil) }
+                return .terminateCancel
+            case .alertSecondButtonReturn:
+                break
+            default:
+                return .terminateCancel
+            }
+        }
+        // Overterm's own applies go on, detached (4.7): said, never waited for.
+        let applies = TerraformRunRegistry.shared.goingApplies.map { (name: $0.marker.name, since: $0.started) }
+        if let question = TerraformCloseGuard.quitQuestion(applies) {
+            let alert = NSAlert()
+            alert.messageText = question.title
+            alert.informativeText = question.detail
+            alert.addButton(withTitle: "Quit and Let It Finish")
+            alert.addButton(withTitle: "Cancel")
+            alert.alertStyle = .warning
+            guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
+        }
         guard let controller = windowController, !controller.closeConfirmed, !controller.store.tabs.isEmpty,
             TerminalWindowController.needsCloseConfirmation(controller.store.tabs, quitting: true)
         else { return .terminateNow }
@@ -128,6 +155,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         ManagedProcess.closeAll()
         // A kubectl auth can-i still asking, with its exec plugin: its group.
         KubeProcessRun.stopAll()
+        // A scenario's detached applies (never the user's: those go on, 4.7).
+        if AppEnvironment.guardsTerraform { TerraformRunRegistry.shared.goingApplies.forEach { $0.stop() } }
         // A validate or fmt still running, with the providers it started: its group.
         TerraformRun.stopAll()
         // The proxies' sockets' folder, once kubectl is gone.

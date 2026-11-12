@@ -1,3 +1,5 @@
+import CryptoKit
+import Darwin
 import Foundation
 
 /// The values a plan marks sensitive somewhere, looked for everywhere else
@@ -126,5 +128,144 @@ struct TerraformSensitiveValues: Sendable {
         if let result = text.utf8.withContiguousStorageIfAvailable(body) { return result }
         let copy = Array(text.utf8)
         return copy.withUnsafeBufferPointer(body)
+    }
+}
+
+/// A plan's sensitive values kept for its apply (analysis 5.6): the
+/// stream prints values in clear where Terraform's marks don't reach —
+/// `provision_progress.output`, an `apply_errored` diagnostic's detail — and
+/// a provisioner echoing a sensitive variable is that value. Every string
+/// of the apply's stream goes through `scrub`: a whole line equal to one,
+/// or one inside it, becomes ••••••, then `Secrets`' rules. The values in
+/// memory only, beside the record's environment; the apply's run folder
+/// keeps them as salted digests (`TerraformHashedValues`) for an apply
+/// followed again after a crash. It never describes, reflects or prints a
+/// value, so a model holding it says nothing of them.
+final class TerraformValueMask: Sendable, CustomStringConvertible, CustomDebugStringConvertible, CustomReflectable {
+    static let none = TerraformValueMask(.none)
+
+    private let values: TerraformSensitiveValues
+    private let hashed: TerraformHashedValues?
+
+    init(_ values: TerraformSensitiveValues) {
+        self.values = values
+        hashed = nil
+    }
+
+    /// An apply's found again: its run folder's digests.
+    init(hashed: TerraformHashedValues) {
+        values = .none
+        self.hashed = hashed
+    }
+
+    var isEmpty: Bool { values.isEmpty && (hashed?.exact.isEmpty ?? true) }
+
+    /// `text` masked by the plan's values, then scrubbed.
+    func scrub(_ text: String) -> String {
+        if let hashed { return TerraformPlan.scrub(hashed.redact(text)) }
+        guard !values.isEmpty else { return TerraformPlan.scrub(text) }
+        if values.exact.contains(text) || values.exact.contains(text.trimmingCharacters(in: .whitespacesAndNewlines)) { return TerraformPlan.redaction }
+        return TerraformPlan.scrub(values.redact(text))
+    }
+
+    /// What the run folder keeps: digests, salted, never a value.
+    func digests() -> TerraformHashedValues { hashed ?? TerraformHashedValues(values.exact) }
+
+    /// Kept in `folder` (0600, a new file): the apply's, removed with it.
+    func write(to folder: URL) throws {
+        guard !isEmpty else { return }
+        let data = try JSONEncoder().encode(digests())
+        let fd = open(folder.appendingPathComponent(TerraformHashedValues.file).path, O_WRONLY | O_CREAT | O_EXCL | O_NOFOLLOW | O_CLOEXEC, 0o600)
+        guard fd >= 0 else { throw POSIXError(POSIXErrorCode(rawValue: errno) ?? .EIO) }
+        defer { close(fd) }
+        let written = data.withUnsafeBytes { Darwin.write(fd, $0.baseAddress, $0.count) }
+        guard written == data.count else { throw POSIXError(.EIO) }
+    }
+
+    /// An apply's run folder's, or `none`.
+    static func read(_ folder: URL) -> TerraformValueMask {
+        let url = folder.appendingPathComponent(TerraformHashedValues.file)
+        var info = stat()
+        guard lstat(url.path, &info) == 0, info.st_mode & S_IFMT == S_IFREG, info.st_uid == getuid(), info.st_size < 64 << 20,
+            let data = try? Data(contentsOf: url), let hashed = try? JSONDecoder().decode(TerraformHashedValues.self, from: data)
+        else { return .none }
+        return TerraformValueMask(hashed: hashed)
+    }
+
+    var description: String { "TerraformValueMask(\(hashed?.exact.count ?? values.exact.count) values)" }
+    var debugDescription: String { description }
+    var customMirror: Mirror { Mirror(self, children: [], displayStyle: .class) }
+}
+
+/// A plan's sensitive values as salted SHA-256 digests (4.7, 5.6): what a
+/// detached apply's run folder keeps, so an apply followed again after
+/// Overterm crashed is masked as it was — never a value on disk. A whole
+/// string equal to one is masked; values at least `minimumSecret` long are
+/// hunted inside strings, window by window, by their lengths (the longest
+/// `maxLengths`). Pure.
+struct TerraformHashedValues: Codable, Equatable, Sendable {
+    static let file = "mask.json"
+    static let maxLengths = 32
+    /// Hunted inside a string's first bytes only; the rest is cut.
+    static let maxHunted = 16 << 10
+
+    var salt: Data
+    var exact: Set<Data>
+    /// The hunted values' digests by their length in bytes.
+    var byLength: [Int: Set<Data>]
+
+    init(_ values: Set<String>, salt: Data? = nil) {
+        let salt = salt ?? Data((0..<16).map { _ in UInt8.random(in: 0...255) })
+        self.salt = salt
+        func digest(_ bytes: [UInt8]) -> Data { Self.digest(bytes[...], salt: salt) }
+        exact = Set(values.map { digest(Array($0.utf8)) })
+        var byLength: [Int: Set<Data>] = [:]
+        for value in values where value.utf8.count >= TerraformPlan.minimumSecret {
+            byLength[value.utf8.count, default: []].insert(digest(Array(value.utf8)))
+        }
+        let kept = byLength.keys.sorted(by: >).prefix(Self.maxLengths)
+        self.byLength = byLength.filter { kept.contains($0.key) }
+    }
+
+    static func digest(_ bytes: ArraySlice<UInt8>, salt: Data) -> Data {
+        var hasher = SHA256()
+        hasher.update(data: salt)
+        bytes.withUnsafeBytes { hasher.update(bufferPointer: $0) }
+        return Data(hasher.finalize())
+    }
+
+    /// `text` with each value found replaced by ••••••.
+    func redact(_ text: String) -> String {
+        let all = Array(text.utf8)
+        if exact.contains(Self.digest(all[...], salt: salt)) { return TerraformPlan.redaction }
+        let trimmed = Array(text.trimmingCharacters(in: .whitespacesAndNewlines).utf8)
+        if trimmed.count != all.count, exact.contains(Self.digest(trimmed[...], salt: salt)) { return TerraformPlan.redaction }
+        guard !byLength.isEmpty else { return text }
+        let bytes = all.prefix(Self.maxHunted)
+        var found: [(start: Int, length: Int)] = []
+        for length in byLength.keys.sorted(by: >) where length <= bytes.count {
+            guard let digests = byLength[length] else { continue }
+            var start = 0
+            while start + length <= bytes.count {
+                if digests.contains(Self.digest(bytes[start..<(start + length)], salt: salt)) {
+                    found.append((start, length))
+                    start += length
+                } else {
+                    start += 1
+                }
+            }
+        }
+        let cut = all.count > bytes.count
+        guard !found.isEmpty || cut else { return text }
+        found.sort { $0.start != $1.start ? $0.start < $1.start : $0.length > $1.length }
+        var out: [UInt8] = []
+        var at = 0
+        for match in found where match.start >= at {
+            out.append(contentsOf: bytes[at..<match.start])
+            out.append(contentsOf: Array(TerraformPlan.redaction.utf8))
+            at = match.start + match.length
+        }
+        out.append(contentsOf: bytes[at...])
+        return String(decoding: out, as: UTF8.self) + (cut ? " (cut: too long to check)" : "")
     }
 }

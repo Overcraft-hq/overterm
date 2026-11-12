@@ -247,7 +247,9 @@ enum AppEnvironment {
     /// shell is asked): off the main thread.
     static func terraformBaseEnvironment() throws -> [String: String] {
         guard guardsTerraform else { return ShellEnvironment.environment() }
-        return try TerraformGuards.prepareScratch(at: terraformScratchDirectory).environment
+        var environment = try TerraformGuards.prepareScratch(at: terraformScratchDirectory).environment
+        for (name, value) in TerraformCLI.scenarioEnvironment { environment[name] = value }
+        return environment
     }
 
     /// Whether the user configures Terraform's CLI themselves, so the

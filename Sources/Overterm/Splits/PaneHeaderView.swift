@@ -441,7 +441,20 @@ struct TerraformRunWarningLabel: View {
     }
 
     @ViewBuilder private var said: some View {
-        if let ask = monitor.asks[tag] {
+        if let shutting = monitor.shutting[tag] {
+            // Interrupted by a close (4.8): Terraform stops gracefully, then a notice offers to close.
+            HStack(spacing: 4) {
+                ProgressView().controlSize(.mini)
+                Text(verbatim: shutting).font(.system(size: ChromeMetrics.text(11), weight: .semibold, design: .monospaced)).lineLimit(1)
+            }
+            .foregroundStyle(TerraformPanelView.remote)
+            .padding(.horizontal, 7)
+            .frame(height: 20)
+            .background(RoundedRectangle(cornerRadius: 5).fill(TerraformPanelView.remote.opacity(0.18)))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text(verbatim: shutting))
+            .accessibilityIdentifier("pane.terraformShuttingDown")
+        } else if let ask = monitor.asks[tag] {
             // The ask before anyone answers (3.3): said, never answered here.
             HStack(spacing: 4) {
                 Image(systemName: "exclamationmark.octagon.fill").font(.system(size: ChromeMetrics.text(10)))
