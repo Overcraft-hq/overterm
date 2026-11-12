@@ -21,6 +21,14 @@ enum TerraformEnvironment {
         /// agent's sandbox, so the same as validate's — nothing to reach a
         /// cloud with (analysis 4.5, 5.10).
         case agentRead
+        /// Overterm's own runs that reach the backend and the cloud —
+        /// `plan`, `show -json` of its plan, `init`, `workspace list` and
+        /// `select` (stage 1d): the user's environment, so credential
+        /// chains reach the providers unchanged; `TF_WORKSPACE` the
+        /// checked workspace (4.9), or none (`workspace list`/`select`,
+        /// which refuse a pinned shell); the plugin cache when the person
+        /// took it (4.13).
+        case run(workspace: String?, pluginCache: String?)
     }
 
     /// Names no run ever gets: `TF_CLI_ARGS` and `TF_CLI_ARGS_*` (they
@@ -37,17 +45,30 @@ enum TerraformEnvironment {
     /// login shell's, or a guarded run's scratch one —
     /// `AppEnvironment.terraformBaseEnvironment`).
     static func build(base: [String: String], purpose: Purpose, root: URL, scratch: TerraformGuards.Scratch) -> [String: String] {
-        var environment = base.filter { name, _ in !isAlwaysRemoved(name) && !TerraformGuards.isCredential(name) }
+        var environment: [String: String]
         switch purpose {
         case .format, .validate, .agentRead:
+            environment = base.filter { name, _ in !isAlwaysRemoved(name) && !TerraformGuards.isCredential(name) }
             environment["HOME"] = scratch.home.path
             environment["TF_CLI_CONFIG_FILE"] = scratch.cliConfig.path
+        case .run(let workspace, let pluginCache):
+            // Credentials pass through, unread (5.7); what injects flags,
+            // logs values or decides the state silently never does.
+            environment = base.filter { name, _ in !isAlwaysRemoved(name) }
+            if let workspace { environment["TF_WORKSPACE"] = workspace }
+            if let pluginCache { environment["TF_PLUGIN_CACHE_DIR"] = pluginCache }
         }
         environment["CHECKPOINT_DISABLE"] = "1"
         environment["TF_INPUT"] = "0"
         environment["TF_IN_AUTOMATION"] = "1"
         environment["TF_DATA_DIR"] = root.appendingPathComponent(".terraform", isDirectory: true).path
         return environment
+    }
+
+    /// The `TF_VAR_*` names of an environment — never their values: what
+    /// the plan's header says changes it (2.2, "Inputs that change a plan").
+    static func variableNames(in environment: [String: String]) -> [String] {
+        environment.keys.filter { $0.hasPrefix("TF_VAR_") && $0.count > 7 }.map { String($0.dropFirst(7)) }.sorted()
     }
 
     /// What terraform-ls never has in its environment, nor the

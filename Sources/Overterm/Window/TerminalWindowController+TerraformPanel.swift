@@ -106,7 +106,11 @@ extension TerminalWindowController {
         TerraformPanelActions(
             openTerminal: { [weak self] card in self?.openTerraformTerminal(card) },
             openFile: { [weak self] url in self?.openInEditor(url) },
-            validate: { [weak self] card in self?.validateTerraformRoot(card) })
+            validate: { [weak self] card in self?.validateTerraformRoot(card) },
+            plan: { [weak self] card in self?.planTerraformRoot(card) },
+            initialize: { [weak self] card in self?.initTerraformRoot(card) },
+            chooseWorkspace: { [weak self] card in self?.chooseTerraformWorkspace(card) },
+            showPlan: { [weak self] run in self?.showTerraformPlan(run) })
     }
 
     /// Terminal in this root (4.9): a shell tab at the root, its icon and

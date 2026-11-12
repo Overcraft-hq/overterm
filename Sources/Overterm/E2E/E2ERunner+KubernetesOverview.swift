@@ -221,7 +221,7 @@ extension E2ERunner {
         _ = NSApp.perform(Selector(("accessibilitySetValue:forAttribute:")), with: NSNumber(value: on), with: "AXEnhancedUserInterface")
     }
 
-    private static func accessibilityElement(_ identifier: String, in root: NSView) -> (frame: CGRect, text: String)? {
+    static func accessibilityElement(_ identifier: String, in root: NSView) -> (frame: CGRect, text: String)? {
         var seen: Set<ObjectIdentifier> = []
         var frame: CGRect?
         var words: [String] = []

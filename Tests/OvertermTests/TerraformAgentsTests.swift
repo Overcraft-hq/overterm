@@ -519,7 +519,12 @@ final class TerraformMCPTests: XCTestCase {
     }
 
     func testListedOnlyWhenOn() {
-        XCTAssertEqual(TerraformMCP.tools.compactMap { $0["name"] as? String }, ["tf_roots", "tf_fmt_check", "tf_validate", "tf_plan_summary"])
+        XCTAssertEqual(
+            TerraformMCP.tools.compactMap { $0["name"] as? String },
+            [
+                "tf_roots", "tf_fmt_check", "tf_validate", "tf_plan_summary", "tf_plan", "tf_run_status", "tf_plan_resource", "tf_why",
+            ])
+        XCTAssertEqual(TerraformMCP.tools.compactMap { $0["name"] as? String }, TerraformMCP.names)
         XCTAssertFalse(TerraformMCP.tools.contains { ($0["name"] as? String)?.contains("apply") == true })
     }
 }

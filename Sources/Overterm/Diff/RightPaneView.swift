@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor
 final class RightPane: ObservableObject {
     enum Mode: String {
-        case changes, pullRequest, usage, commit, runner, graph, compare, object, container, manifest, kubernetes
+        case changes, pullRequest, usage, commit, runner, graph, compare, object, container, manifest, kubernetes, terraformPlan
     }
 
     @Published var mode: Mode = .changes
@@ -20,6 +20,8 @@ final class RightPane: ObservableObject {
     @Published var manifestOpened = false
     /// A pod was picked in the Kubernetes panel: its tab stays from then on.
     @Published var kubernetesOpened = false
+    /// A Terraform root was planned (or init run): its tab stays from then on.
+    @Published var terraformPlanOpened = false
 }
 
 /// The pane on the right: the checkout's changes (uncommitted, or the
@@ -47,6 +49,7 @@ struct RightPaneView: View {
     let graph: NotesGraphView
     let manifest: KubeManifestDiffView
     let kubernetes: KubeSlotView
+    let terraformPlan: TerraformPlanPaneView
 
     private var pr: PullRequestSummary? { diff.branch.flatMap { worktrees.pullRequests[$0] } }
 
@@ -115,6 +118,11 @@ struct RightPaneView: View {
                         Image(systemName: "helm").font(.system(size: ChromeMetrics.text(11)))
                     }
                 }
+                if pane.terraformPlanOpened {
+                    tab(.terraformPlan, help: "The Terraform plan, beside the changes that caused it") {
+                        Image(systemName: "square.stack.3d.up").font(.system(size: ChromeMetrics.text(11)))
+                    }
+                }
                 if pane.manifestOpened {
                     tab(.manifest, help: "A Kubernetes manifest against its cluster") {
                         Text(verbatim: "⎈").font(.system(size: ChromeMetrics.text(12)))
@@ -146,6 +154,7 @@ struct RightPaneView: View {
             case .container: container
             case .manifest: manifest
             case .kubernetes: kubernetes
+            case .terraformPlan: terraformPlan
             }
         }
         .background(theme.panelGround)

@@ -151,6 +151,10 @@ struct TerraformPaneWarning: Equatable, Sendable {
     /// The state identity to keep as production (`TerraformRootCard.identityToRemember`):
     /// production by the root's own signals, the run's var files among them.
     var rememberIdentity: TerraformStateIdentity?
+    /// The state it touches: a write there makes Overterm's plans of it stale (3.6).
+    var identity: TerraformStateIdentity?
+    /// The checkout it runs in, by its folder's name: "applied from `bump-eks`".
+    var worktree: String?
 
     var isProduction: Bool { rootClass == .production }
 
@@ -207,7 +211,8 @@ struct TerraformPaneWarning: Equatable, Sendable {
             tool: tool, operation: operation, root: settings.roots[path]?.displayName ?? (path.isEmpty ? folder.lastPathComponent : path),
             workspace: workspace, backend: TerraformStateIdentity.summary(of: facts.backend, workspace: workspace), awsProfile: awsProfile,
             rootClass: verdict.rootClass, reason: verdict.reason, probably: probably, inheritedWorkspace: workspaceVariable,
-            inheritedDataDir: dataDirVariable != nil, isWrite: isWrite, rememberIdentity: remember)
+            inheritedDataDir: dataDirVariable != nil, isWrite: isWrite, rememberIdentity: remember, identity: identity,
+            worktree: checkout?.lastPathComponent)
     }
 
     /// The checkout `folder` is in, of the tab's: the same folder or one
@@ -250,6 +255,9 @@ final class TerraformPaneMonitor: ObservableObject {
     private(set) var screenReads = 0
     /// Each pane's `PaneBlocks.outputMark` at the last look.
     private var screenMarks: [String: UInt64] = [:]
+    /// Each pane's last finished command seen, and the folder a running one ran in.
+    private var finishedSeen: [String: Int] = [:]
+    private var runningFolders: [String: (id: Int, folder: String)] = [:]
 
     /// Whether a pane's screen is read this look (3.2's budget: the walk
     /// is the cost, reading the screen is not free): its tab waits on the
@@ -309,9 +317,11 @@ final class TerraformPaneMonitor: ObservableObject {
         }
         var panes: [String: TerminalView] = [:]
         var candidates: [Candidate] = []
+        var finished: [FinishedWrite] = []
         for controller in NSApp.windows.compactMap({ $0.windowController as? TerminalWindowController }) {
             for tab in controller.store.tabs {
                 guard let checkout = tab.checkoutSource?.root, TerraformCheckouts.shared.hasRoots(checkout) != false else { continue }
+                finished += finishedWrites(in: tab, controller: controller, checkout: checkout)
                 // Paired once (a scan of the app's children), then kept.
                 let running = tab.terminals.compactMap { pane -> (TerminalView, CommandBlock?, pid_t)? in
                     let command = controller.blocks(of: pane).ledger.running
@@ -351,7 +361,9 @@ final class TerraformPaneMonitor: ObservableObject {
             }
         }
         walks += candidates.count
+        if !finished.isEmpty { await recordWrites(finished) }
         guard !candidates.isEmpty else {
+            noteWritesEnded(in: [:])
             if !warnings.isEmpty { warnings = [:] }
             if !asks.isEmpty { asks = [:] }
             processes = [:]
@@ -363,11 +375,86 @@ final class TerraformPaneMonitor: ObservableObject {
         let found = await TerraformPanelModel.blocking { Self.look(at: asked, settings: settings, identities: identities) }
         screenMarks = screenMarks.filter { panes[$0.key] != nil }
         processes = found.processes
+        noteWritesEnded(in: found.warnings)
         if warnings != found.warnings { warnings = found.warnings }
         if asks != found.asks { asks = found.asks }
         for tag in found.sensitive { panes[tag]?.terraformSensitive = true }
         TerraformRootStore.shared.rememberProduction(
             found.warnings.values.compactMap(\.rememberIdentity) + found.asks.values.compactMap { $0.warning?.rememberIdentity })
+    }
+
+    /// A terraform write a pane's command line finished: its folder, its line.
+    struct FinishedWrite: Sendable {
+        var folder: String
+        var line: TerraformCommandLine
+        var worktree: String
+    }
+
+    /// The writes the pane's ledger finished since the last look — `terraform
+    /// apply` typed, done in under the walk's 2 s — read from the command's
+    /// line and the folder it ran in (3.6: "applied from `bump-eks`").
+    private func finishedWrites(in tab: Tab, controller: TerminalWindowController, checkout: URL) -> [FinishedWrite] {
+        var found: [FinishedWrite] = []
+        for pane in tab.terminals {
+            let tag = pane.processTag
+            let blocks = controller.blocks(of: pane)
+            if let running = blocks.ledger.running, let folder = blocks.commandFolder ?? pane.workingDirectory {
+                runningFolders[tag] = (running.id, folder)
+            }
+            // A pane seen the first time: what it finished before is history.
+            let lastID = blocks.ledger.lastFinished?.id ?? -1
+            guard let previous = finishedSeen[tag] else {
+                finishedSeen[tag] = lastID
+                continue
+            }
+            guard lastID != previous, let last = blocks.ledger.lastFinished else { continue }
+            finishedSeen[tag] = lastID
+            guard let line = TerraformCommandLine.parse(last.command, probable: false), line.isWrite else { continue }
+            let folder = runningFolders[tag].flatMap { $0.id == last.id ? $0.folder : nil } ?? pane.workingDirectory
+            guard let folder else { continue }
+            found.append(FinishedWrite(folder: folder, line: line, worktree: checkout.lastPathComponent))
+        }
+        return found
+    }
+
+    /// Each finished write's state, told to the registry.
+    private func recordWrites(_ writes: [FinishedWrite]) async {
+        let resolved = await TerraformPanelModel.blocking { () -> [(TerraformStateIdentity, String, String)] in
+            writes.compactMap { write in
+                let process = TerraformProcess(pid: 0, line: write.line, cwd: write.folder)
+                guard let folder = process.folder, TerraformProcesses.hasConfiguration(folder) else { return nil }
+                let checkout = TerraformProcesses.checkout(of: folder) ?? folder
+                let facts = Self.facts(of: folder, checkout: checkout)
+                guard let identity = TerraformStateIdentity.of(backend: facts.backend, workspace: write.line.workspace ?? facts.workspace, root: folder)
+                else { return nil }
+                return (identity, write.worktree, write.line.operation ?? "apply")
+            }
+        }
+        for (identity, worktree, operation) in resolved {
+            TerraformRunRegistry.shared.stateWritten(identity, by: worktree, operation: Self.past(operation))
+        }
+    }
+
+    /// A write a pane ran that is gone now (an agent's, without a ledger):
+    /// its state was written, or may have been.
+    private func noteWritesEnded(in next: [String: TerraformPaneWarning]) {
+        for (tag, warning) in warnings where warning.isWrite && !warning.probably {
+            guard next[tag]?.isWrite != true || next[tag]?.identity != warning.identity, let identity = warning.identity else { continue }
+            TerraformRunRegistry.shared.stateWritten(identity, by: warning.worktree ?? warning.root, operation: Self.past(warning.operation ?? "apply"))
+        }
+    }
+
+    /// "applied", "destroyed": how the stale note says it.
+    nonisolated static func past(_ operation: String) -> String {
+        switch operation.split(separator: " ").first.map(String.init) ?? operation {
+        case "apply", "apply-all": "applied"
+        case "destroy", "destroy-all": "destroyed"
+        case "import": "imported"
+        case "state": "state changed"
+        case "taint", "untaint": "tainted"
+        case "refresh": "refreshed"
+        default: operation
+        }
     }
 
     /// Facts read for a folder, kept a few seconds: a terraform running

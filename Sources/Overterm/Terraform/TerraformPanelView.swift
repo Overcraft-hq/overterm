@@ -8,6 +8,14 @@ struct TerraformPanelActions {
     var openFile: (URL) -> Void
     /// `terraform validate` of the root (stage 1a's, credentials stripped).
     var validate: (TerraformRootCard) -> Void
+    /// Overterm's plan, in the right slot (stage 1d).
+    var plan: (TerraformRootCard) -> Void
+    /// Init, the fetch list shown first (4.13).
+    var initialize: (TerraformRootCard) -> Void
+    /// The workspace chip's menu (4.9).
+    var chooseWorkspace: (TerraformRootCard) -> Void
+    /// The root's last plan, shown in the slot.
+    var showPlan: (TerraformPlanRun) -> Void
 }
 
 /// The rail's Terraform panel (analysis 6.1, 6.2): the selected tab's
@@ -206,10 +214,18 @@ private struct RootRow: View {
                     classPill
                 }
                 HStack(spacing: 6) {
-                    Text(verbatim: "workspace \(card.workspace)").font(.system(size: ChromeMetrics.text(10.5), design: .monospaced))
-                        .padding(.horizontal, 5).frame(height: 17)
-                        .background(RoundedRectangle(cornerRadius: 4).fill(theme.rowSel))
-                        .foregroundStyle(theme.text2)
+                    Button {
+                        actions.chooseWorkspace(card)
+                    } label: {
+                        Text(verbatim: "workspace \(card.workspace) ▾").font(.system(size: ChromeMetrics.text(10.5), design: .monospaced))
+                            .padding(.horizontal, 5).frame(height: 17)
+                            .background(RoundedRectangle(cornerRadius: 4).fill(theme.rowSel))
+                            .foregroundStyle(theme.text2)
+                            .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .help("Select a workspace: it writes \(card.name)/.terraform/environment, which every terminal there follows")
+                    .accessibilityIdentifier("terraform.panel.workspace.\(card.path)")
                     Text(verbatim: card.backendSummary).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text2)
                         .lineLimit(1).truncationMode(.middle)
                 }
@@ -246,6 +262,21 @@ private struct RootRow: View {
             line("Shares its state with " + card.sharedWith.joined(separator: ", "), theme.text3)
                 .accessibilityIdentifier("terraform.panel.shared.\(card.path)")
         }
+        if let run = TerraformRunRegistry.shared.latest(checkout: panel.checkout ?? card.folder, root: card.path), let plan = run.plan {
+            Button {
+                actions.showPlan(run)
+            } label: {
+                Text(verbatim: "last plan \(plan.counts.bar) · \(run.age())").font(.system(size: ChromeMetrics.text(10.5), design: .monospaced))
+                    .foregroundStyle(run.staleReason(.shared) == nil ? theme.text2 : theme.orangeText)
+            }
+            .buttonStyle(.plain)
+            .help(run.staleReason(.shared) ?? plan.counts.sentence)
+            .accessibilityIdentifier("terraform.panel.lastPlan.\(card.path)")
+        }
+        let varFiles = TerraformRootStore.shared.varFiles(checkout: panel.checkout ?? card.folder, root: card.path)
+        if !varFiles.isEmpty {
+            line("var files: " + varFiles.joined(separator: ", "), theme.text3).accessibilityIdentifier("terraform.panel.varFiles.\(card.path)")
+        }
         if card.backendChanged { line("The backend changed since init: run init in a terminal.", theme.orangeText) }
         if card.facts.needsInit { line("Needs init: a provider it requires isn't in its lock file.", theme.orangeText) }
         HStack(spacing: 6) {
@@ -278,6 +309,12 @@ private struct RootRow: View {
                     .foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
             }
             HStack(spacing: 6) {
+                button("Plan", "play.circle") { actions.plan(card) }
+                    .accessibilityIdentifier("terraform.panel.plan")
+                button("Init…", "arrow.down.circle") { actions.initialize(card) }
+                    .accessibilityIdentifier("terraform.panel.init")
+            }
+            HStack(spacing: 6) {
                 button("Terminal in This Root", "terminal") { actions.openTerminal(card) }
                     .accessibilityIdentifier("terraform.panel.terminal")
                 button("Validate", "checkmark.seal") { actions.validate(card) }
@@ -298,6 +335,10 @@ private struct RootRow: View {
     }
 
     @ViewBuilder private var menu: some View {
+        Button("Plan") { actions.plan(card) }
+        Button("Init…") { actions.initialize(card) }
+        Button("Select Workspace…") { actions.chooseWorkspace(card) }
+        Divider()
         Button("Terminal in This Root") { actions.openTerminal(card) }
         Button("Validate") { actions.validate(card) }
         if let file = mainFile { Button("Open \(file.lastPathComponent)") { actions.openFile(file) } }

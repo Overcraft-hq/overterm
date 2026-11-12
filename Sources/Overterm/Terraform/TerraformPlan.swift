@@ -214,20 +214,75 @@ struct TerraformPlan: Equatable, Sendable {
     {
         let format = object["format_version"] as? String ?? ""
         guard format.split(separator: ".").first == "1" else { throw DecodeError.unknownFormat(format.isEmpty ? "none" : format) }
+        // A value Terraform marks sensitive anywhere in the plan is masked
+        // everywhere it appears: a sensitive variable's value copied into
+        // an attribute nothing marks (`terraform_data`'s `output` keeps
+        // its `input` unmarked in state) is still that value.
+        // Redacted before `scrub`: a secret the scrubber altered would no
+        // longer be found. A leaf equal to one is masked whole, whatever
+        // its length or type; only a longer one is hunted inside strings.
+        let secrets = TerraformSensitiveValues(sensitiveValues(in: object))
+        return try withoutActuallyEscaping(scrub) { given in
+            // Keys and short values repeat across a plan's resources (every
+            // `tags`, `input`, `label0`): each is scrubbed once.
+            var redacted: [String: String] = [:]
+            var plain: [String: TerraformValue] = [:]
+            var kept = 0
+            let scrub: (String) -> String = { bridged in
+                var text = bridged
+                text.makeContiguousUTF8()
+                if let known = redacted[text] { return known }
+                let done = secrets.isEmpty ? given(text) : given(secrets.redact(text))
+                if redacted.count < memoEntries, kept < memoBytes {
+                    redacted[text] = done
+                    kept += text.utf8.count
+                }
+                return done
+            }
+            // A value's string, once per distinct string: masked whole when
+            // it is, or holds, a sensitive value; else scrubbed.
+            let leaf: (String) -> TerraformValue = { bridged in
+                var text = bridged
+                text.makeContiguousUTF8()
+                if let known = plain[text] { return known }
+                let done: TerraformValue = secrets.isSecret(text) ? .sensitive : .string(given(text))
+                if plain.count < memoEntries, kept < memoBytes {
+                    plain[text] = done
+                    kept += text.utf8.count
+                }
+                return done
+            }
+            return try decodeMasked(object, format: format, scrub: scrub, leaf: leaf, secrets: secrets, secretName: secretName)
+        }
+    }
+
+    /// What `decode` remembers of `scrub`'s answers: this many strings,
+    /// this many bytes of them.
+    static let memoEntries = 100_000
+    static let memoBytes = 16 << 20
+
+    private static func decodeMasked(
+        _ object: [String: Any], format: String, scrub: (String) -> String, leaf: (String) -> TerraformValue, secrets: TerraformSensitiveValues,
+        secretName: (String) -> Bool
+    ) throws -> TerraformPlan {
         var plan = TerraformPlan(
             formatVersion: format, terraformVersion: (object["terraform_version"] as? String).map(scrub), applyable: object["applyable"] as? Bool ?? false,
             complete: object["complete"] as? Bool ?? true, errored: object["errored"] as? Bool ?? false,
             timestamp: (object["timestamp"] as? String).map(scrub))
         plan.unknownKeys = object.keys.filter { !knownKeys.contains($0) }.sorted().map(scrub)
-        plan.resourceChanges = (object["resource_changes"] as? [[String: Any]] ?? []).prefix(maxResources).map { change($0, scrub: scrub, secretName: secretName) }
-        plan.drift = (object["resource_drift"] as? [[String: Any]] ?? []).prefix(maxResources).map { change($0, scrub: scrub, secretName: secretName) }
+        plan.resourceChanges = (object["resource_changes"] as? [[String: Any]] ?? []).prefix(maxResources).map { change($0, scrub: scrub, leaf: leaf, secrets: secrets, secretName: secretName) }
+        plan.drift = (object["resource_drift"] as? [[String: Any]] ?? []).prefix(maxResources).map { change($0, scrub: scrub, leaf: leaf, secrets: secrets, secretName: secretName) }
         if let outputs = object["output_changes"] as? [String: Any] {
             plan.outputs = outputs.keys.sorted().compactMap { name in
                 guard let change = outputs[name] as? [String: Any] else { return nil }
                 let sensitive = isMarked(change["before_sensitive"]) || isMarked(change["after_sensitive"])
                 return OutputChange(
                     name: scrub(name), actions: strings(change["actions"]), sensitive: sensitive,
-                    after: sensitive ? nil : value(change["after"], sensitive: change["after_sensitive"], unknown: change["after_unknown"], name: name, scrub: scrub, secretName: secretName))
+                    after: sensitive
+                        ? nil
+                        : value(
+                            change["after"], sensitive: change["after_sensitive"], unknown: change["after_unknown"], name: name, scrub: scrub, leaf: leaf,
+                            secrets: secrets, secretName: secretName))
             }
         }
         if let prior = object["prior_state"] as? [String: Any] {
@@ -250,7 +305,9 @@ struct TerraformPlan: Equatable, Sendable {
             }
             return ActionInvocation(
                 address: scrub(invocation["address"] as? String ?? "?"), type: scrub(invocation["type"] as? String ?? "?"), trigger: trigger.map(scrub),
-                config: value(invocation["config_values"], sensitive: invocation["config_sensitive"], unknown: invocation["config_unknown"], scrub: scrub, secretName: secretName))
+                config: value(
+                    invocation["config_values"], sensitive: invocation["config_sensitive"], unknown: invocation["config_unknown"], scrub: scrub, leaf: leaf,
+                    secrets: secrets, secretName: secretName))
         }
         plan.checks = (object["checks"] as? [[String: Any]] ?? []).prefix(maxItems).compactMap { check in
             let address = (check["address"] as? [String: Any])?["to_display"] as? String
@@ -260,7 +317,9 @@ struct TerraformPlan: Equatable, Sendable {
         return plan
     }
 
-    private static func change(_ object: [String: Any], scrub: (String) -> String, secretName: (String) -> Bool) -> ResourceChange {
+    private static func change(
+        _ object: [String: Any], scrub: (String) -> String, leaf: (String) -> TerraformValue, secrets: TerraformSensitiveValues, secretName: (String) -> Bool
+    ) -> ResourceChange {
         let change = object["change"] as? [String: Any] ?? [:]
         let index: String? = {
             switch object["index"] {
@@ -283,8 +342,10 @@ struct TerraformPlan: Equatable, Sendable {
             name: scrub(object["name"] as? String ?? "?"), index: index, provider: scrub(object["provider_name"] as? String ?? "?"),
             actions: strings(change["actions"]), reason: (object["action_reason"] as? String).map(scrub), replacePaths: Array(replacePaths),
             importingID: ((change["importing"] as? [String: Any])?["id"] as? String).map(scrub),
-            before: value(change["before"], sensitive: change["before_sensitive"], scrub: scrub, secretName: secretName),
-            after: value(change["after"], sensitive: change["after_sensitive"], unknown: change["after_unknown"], scrub: scrub, secretName: secretName),
+            before: value(change["before"], sensitive: change["before_sensitive"], scrub: scrub, leaf: leaf, secrets: secrets, secretName: secretName),
+            after: value(
+                change["after"], sensitive: change["after_sensitive"], unknown: change["after_unknown"], scrub: scrub, leaf: leaf, secrets: secrets,
+                secretName: secretName),
             changedPaths: Array(changed.prefix(200)).map(scrub))
     }
 
@@ -295,18 +356,21 @@ struct TerraformPlan: Equatable, Sendable {
 
     /// `raw` masked by its `sensitive` mirror, its `unknown` one, and its
     /// attribute's `name`; nil for an absent value (a delete's `after`).
+    /// `leaf`: what scrubs a value's string (`scrub` without the redaction:
+    /// a leaf is checked against `secrets` whole first, and masked whole).
     static func value(
-        _ raw: Any?, sensitive: Any?, unknown: Any? = nil, name: String? = nil, scrub: (String) -> String,
-        secretName: (String) -> Bool = TerraformSecretNames.isSecret
+        _ raw: Any?, sensitive: Any?, unknown: Any? = nil, name: String? = nil, scrub: (String) -> String, leaf: (String) -> TerraformValue,
+        secrets: TerraformSensitiveValues = .none, secretName: (String) -> Bool = TerraformSecretNames.isSecret
     ) -> TerraformValue? {
         if isMarked(sensitive) { return .sensitive }
         if isMarked(unknown) { return .unknown }
         guard let raw, !(raw is NSNull) else { return nil }
-        return masked(raw, sensitive: sensitive, unknown: unknown, name: name, scrub: scrub, secretName: secretName, depth: 0)
+        return masked(raw, sensitive: sensitive, unknown: unknown, name: name, scrub: scrub, leaf: leaf, secrets: secrets, secretName: secretName, depth: 0)
     }
 
     private static func masked(
-        _ raw: Any, sensitive: Any?, unknown: Any?, name: String?, scrub: (String) -> String, secretName: (String) -> Bool, depth: Int
+        _ raw: Any, sensitive: Any?, unknown: Any?, name: String?, scrub: (String) -> String, leaf: (String) -> TerraformValue, secrets: TerraformSensitiveValues,
+        secretName: (String) -> Bool, depth: Int
     ) -> TerraformValue {
         if isMarked(sensitive) { return .sensitive }
         if isMarked(unknown) { return .unknown }
@@ -316,9 +380,14 @@ struct TerraformPlan: Equatable, Sendable {
             return .null
         case let number as NSNumber:
             if CFGetTypeID(number) == CFBooleanGetTypeID() { return .bool(number.boolValue) }
-            return name.map(secretName) == true ? .sensitive : .number(number.stringValue)
+            // A sensitive number (a PIN, an account) copied where nothing marks it.
+            return name.map(secretName) == true || secrets.isSecret(number.stringValue) ? .sensitive : .number(number.stringValue)
         case let string as String:
-            return name.map(secretName) == true ? .sensitive : .string(scrub(string))
+            if name.map(secretName) == true { return .sensitive }
+            // Equal to, or holding, a value marked sensitive elsewhere: the
+            // whole leaf is — `leaf` decides, once per distinct string, on
+            // native UTF-8 (one bridged from JSONSerialization walks slowly).
+            return leaf(string)
         case let list as [Any]:
             let marks = sensitive as? [Any]
             let unknowns = unknown as? [Any]
@@ -326,14 +395,16 @@ struct TerraformPlan: Equatable, Sendable {
                 list.prefix(maxItems).enumerated().map { index, item in
                     masked(
                         item, sensitive: marks.flatMap { index < $0.count ? $0[index] : nil }, unknown: unknowns.flatMap { index < $0.count ? $0[index] : nil },
-                        name: name, scrub: scrub, secretName: secretName, depth: depth + 1)
+                        name: name, scrub: scrub, leaf: leaf, secrets: secrets, secretName: secretName, depth: depth + 1)
                 })
         case let object as [String: Any]:
             let marks = sensitive as? [String: Any]
             let unknowns = unknown as? [String: Any]
             var fields: [String: TerraformValue] = [:]
             for key in object.keys.sorted().prefix(maxItems) {
-                fields[scrub(key)] = masked(object[key]!, sensitive: marks?[key], unknown: unknowns?[key], name: key, scrub: scrub, secretName: secretName, depth: depth + 1)
+                fields[scrub(key)] = masked(
+                    object[key]!, sensitive: marks?[key], unknown: unknowns?[key], name: key, scrub: scrub, leaf: leaf, secrets: secrets, secretName: secretName,
+                    depth: depth + 1)
             }
             // Attributes known only after apply have no value in `after`.
             for (key, mark) in unknowns ?? [:] where object[key] == nil && isMarked(mark) { fields[scrub(key)] = .unknown }
@@ -393,6 +464,72 @@ struct TerraformPlan: Equatable, Sendable {
 
     /// What runs over every kept string: credentials in text, URLs' passwords.
     static func scrub(_ text: String) -> String { TerraformValidation.scrub(text) }
+
+    static let redaction = "••••••"
+    /// A value shorter than this isn't hunted for inside other strings
+    /// (`a`, `1`, `true` are everywhere); a leaf equal to it is still masked.
+    static let minimumSecret = 4
+    /// Bounds the values collected: a plan of 20,000 `random_password`s still has every one.
+    static let maxSecrets = 50_000
+
+    /// The strings a plan marks sensitive, wherever it marks them: a
+    /// resource's or a drift's `before`/`after` under its mirrors, an
+    /// output's value when either mirror marks it, a variable whose
+    /// configuration says `sensitive`, an action's `config_values` under
+    /// `config_sensitive`. Numbers by their text. Only what is hunted for;
+    /// never kept.
+    static func sensitiveValues(in object: [String: Any]) -> Set<String> {
+        var found: Set<String> = []
+        func collect(_ raw: Any?, _ mirror: Any?, marked: Bool, depth: Int) {
+            guard found.count < maxSecrets, depth < maxDepth, let raw, !(raw is NSNull) else { return }
+            let here = marked || isMarked(mirror)
+            // Nothing marked here and no mirror to go down: nothing below is.
+            guard here || mirror is [Any] || mirror is [String: Any] else { return }
+            switch raw {
+            case let string as String:
+                if here, !string.isEmpty { found.insert(string) }
+            case let number as NSNumber:
+                if here, CFGetTypeID(number) != CFBooleanGetTypeID() { found.insert(number.stringValue) }
+            case let list as [Any]:
+                let marks = mirror as? [Any]
+                for (index, item) in list.prefix(maxItems).enumerated() {
+                    collect(item, marks.flatMap { index < $0.count ? $0[index] : nil }, marked: here, depth: depth + 1)
+                }
+            case let fields as [String: Any]:
+                let marks = mirror as? [String: Any]
+                if !here, let marks {
+                    // Only where the mirror goes: the rest is unmarked.
+                    for (key, mark) in marks.prefix(maxItems) { collect(fields[key], mark, marked: false, depth: depth + 1) }
+                } else {
+                    for (key, item) in fields.prefix(maxItems) { collect(item, marks?[key], marked: here, depth: depth + 1) }
+                }
+            default:
+                break
+            }
+        }
+        for key in ["resource_changes", "resource_drift"] {
+            for change in (object[key] as? [[String: Any]] ?? []).prefix(maxResources) {
+                let inner = change["change"] as? [String: Any] ?? [:]
+                collect(inner["before"], inner["before_sensitive"], marked: false, depth: 0)
+                collect(inner["after"], inner["after_sensitive"], marked: false, depth: 0)
+            }
+        }
+        for (_, change) in object["output_changes"] as? [String: Any] ?? [:] {
+            guard let change = change as? [String: Any] else { continue }
+            let sensitive = isMarked(change["before_sensitive"]) || isMarked(change["after_sensitive"])
+            collect(change["before"], change["before_sensitive"], marked: sensitive, depth: 0)
+            collect(change["after"], change["after_sensitive"], marked: sensitive, depth: 0)
+        }
+        let configured = ((object["configuration"] as? [String: Any])?["root_module"] as? [String: Any])?["variables"] as? [String: Any] ?? [:]
+        for (name, value) in object["variables"] as? [String: Any] ?? [:] {
+            guard (configured[name] as? [String: Any])?["sensitive"] as? Bool == true else { continue }
+            collect((value as? [String: Any])?["value"], nil, marked: true, depth: 0)
+        }
+        for invocation in (object["action_invocations"] as? [[String: Any]] ?? []).prefix(maxItems) {
+            collect(invocation["config_values"], invocation["config_sensitive"], marked: false, depth: 0)
+        }
+        return found
+    }
 
     // MARK: Counts
 
@@ -471,7 +608,8 @@ enum TerraformPlanText {
         return out
     }
 
-    static func summary(_ plan: TerraformPlan, root: String, file: String?, limit: Int = 400) -> String {
+    /// `causes`: each risky row's cause chain, said, by address (3.1, 3.5).
+    static func summary(_ plan: TerraformPlan, root: String, file: String?, causes: [String: String] = [:], limit: Int = 400) -> String {
         let counts = plan.counts
         var lines: [String] = []
         var head = "Plan of \(escaped(root))"
@@ -496,6 +634,7 @@ enum TerraformPlanText {
             lines.append("Destroys, replaces and forgets first:")
             for change in risky.sorted(by: { rank($0) < rank($1) }) {
                 add(riskyLine(change, plan: plan))
+                if let cause = causes[change.address], !cause.isEmpty { add("    why: " + cut(escaped(cause), to: 600)) }
             }
             for action in plan.actions {
                 var line = "⚡ \(escaped(action.address)) (\(escaped(action.type)))"

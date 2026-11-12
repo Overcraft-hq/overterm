@@ -5,7 +5,9 @@ import Foundation
 /// editor's: format and validate, which change no state and take no lock;
 /// stage 1b `version -json`, the version pill's; stage 1c the agents'
 /// reads — `fmt -check -diff`, and `show -json` of a saved plan by its
-/// descriptor.
+/// descriptor; stage 1d Overterm's plan (`plan`, with its fixed flags),
+/// `init` (`-lockfile=readonly`, never `-upgrade`), and the workspace
+/// chip's `workspace list` and `workspace select`.
 ///
 /// Every run's cwd is the root (or the checkout for `formatCheck`), never
 /// `-chdir`, so a diagnostic's `range.filename` is relative to it.
@@ -45,18 +47,119 @@ enum TerraformCommands {
     /// (`TerraformEnvironment.Purpose.agentRead`).
     static let showPlanDescriptor = ["show", "-json", "-no-color", "/dev/fd/3"]
 
-    /// Everything this file builds.
-    static let all: [[String]] = [formatStandardInput, formatCheck, formatCheckFolder, formatCheckDiff, validate, version, showPlanDescriptor]
+    /// Init, the person's click (4.13): the lock file read, never
+    /// rewritten (`-lockfile=readonly`); no `-upgrade`, `-reconfigure`,
+    /// `-migrate-state`, `-force-copy`, ever. JSON (1.9+).
+    static let initialize = ["init", "-input=false", "-json", "-lockfile=readonly"]
 
-    /// Subcommands never run yet: the ones that change state,
-    /// infrastructure, the checkout's providers or its workspaces (the
-    /// writes that come later go only through a shown plan), and the reads
-    /// that print secrets or run the configuration, which later stages
-    /// build with their own guards. `show` runs only as
-    /// `showPlanDescriptor`, whole: any other line is no builder's.
+    /// The workspaces a backend has (4.9): the chip's list, and the check
+    /// every run makes before it starts. Run with `TF_WORKSPACE` removed.
+    static let workspaceList = ["workspace", "list"]
+
+    /// The chip's Select (4.9): writes the checkout's
+    /// `.terraform/environment`. Never `-or-create`: an unknown name is
+    /// refused by terraform. Run with `TF_WORKSPACE` removed. Nil for a
+    /// name that isn't a workspace's.
+    static func workspaceSelect(_ name: String) -> [String]? {
+        isWorkspaceName(name) ? ["workspace", "select", name] : nil
+    }
+
+    /// A workspace's name as Terraform allows it: letters, digits, `-`,
+    /// `_`, `.`, at most 90, never a flag.
+    static func isWorkspaceName(_ name: String) -> Bool {
+        guard (1...90).contains(name.count), !name.hasPrefix("-"), name != ".", name != ".." else { return false }
+        return name.unicodeScalars.allSatisfy { CharacterSet.alphanumerics.contains($0) && $0.isASCII || "-_.".unicodeScalars.contains($0) }
+    }
+
+    /// How long a plan waits for the state's lock (4.10, D-6): a person's
+    /// 10 s, an agent's 0 s (a held lock is reported, never queued behind
+    /// CI), "Wait for it" 5 min. `-lock=false` is never built.
+    enum LockWait: String, Sendable, CaseIterable {
+        case person = "10s"
+        case agent = "0s"
+        case wait = "5m"
+    }
+
+    /// The fixed head of every plan (4.3).
+    static let planHead = ["plan", "-input=false", "-json", "-detailed-exitcode", "-lock=true"]
+
+    /// Overterm's plan (4.3): cwd the root; `out` the plan file in the
+    /// run's own folder (`TerraformRunFolder`); `varFiles` relative to the
+    /// root, inside it; `parallelism` 1…256. Nil when an argument is
+    /// none of those. `planArgs` is never free text (4.3).
+    static func plan(out: String, varFiles: [String] = [], lock: LockWait = .person, parallelism: Int? = nil) -> [String]? {
+        guard isPlanFile(out), varFiles.allSatisfy(isVarFile), parallelism.map({ (1...256).contains($0) }) ?? true else { return nil }
+        var arguments = planHead + ["-lock-timeout=" + lock.rawValue, "-out=" + out]
+        arguments += varFiles.map { "-var-file=" + $0 }
+        if let parallelism { arguments.append("-parallelism=\(parallelism)") }
+        return arguments
+    }
+
+    /// A plan's file: `<…>/ot-tf-<uid>-<pid>/<run>/plan`, an absolute path
+    /// in a run folder of Overterm's (4.4), nothing that walks out.
+    static func isPlanFile(_ path: String) -> Bool {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false).map(String.init)
+        guard path.hasPrefix("/"), parts.last == "plan", parts.count >= 4, !parts.contains(".."), !parts.contains("."),
+            parts[parts.count - 3].hasPrefix(TerraformRunFolder.prefix), !path.contains("\u{0}")
+        else { return false }
+        return true
+    }
+
+    /// A var file a plan may name: relative to the root and inside it, a
+    /// `.tfvars` or `.tfvars.json` (4.3: "var files inside the root").
+    static func isVarFile(_ path: String) -> Bool {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+        guard !path.isEmpty, !path.hasPrefix("/"), !path.hasPrefix("~"), !path.hasPrefix("-"), !parts.contains(".."), !parts.contains(""),
+            !path.contains("\u{0}"), path.count <= 512
+        else { return false }
+        return path.hasSuffix(".tfvars") || path.hasSuffix(".tfvars.json")
+    }
+
+    /// Whether `arguments` is a plan `plan(…)` builds.
+    static func isPlan(_ arguments: [String]) -> Bool {
+        guard arguments.count >= planHead.count + 2, Array(arguments.prefix(planHead.count)) == planHead else { return false }
+        let timeout = arguments[planHead.count]
+        guard let wait = LockWait.allCases.first(where: { "-lock-timeout=" + $0.rawValue == timeout }) else { return false }
+        let out = arguments[planHead.count + 1]
+        guard out.hasPrefix("-out=") else { return false }
+        var varFiles: [String] = []
+        var parallelism: Int?
+        for (index, argument) in arguments.dropFirst(planHead.count + 2).enumerated() {
+            if argument.hasPrefix("-var-file="), parallelism == nil {
+                varFiles.append(String(argument.dropFirst("-var-file=".count)))
+            } else if argument.hasPrefix("-parallelism="), index == arguments.count - planHead.count - 3,
+                let count = Int(argument.dropFirst("-parallelism=".count))
+            {
+                parallelism = count
+            } else {
+                return false
+            }
+        }
+        return plan(out: String(out.dropFirst("-out=".count)), varFiles: varFiles, lock: wait, parallelism: parallelism) == arguments
+    }
+
+    /// Everything this file builds, as fixed lines (a plan's and a
+    /// workspace select's are checked by `isBuilt`).
+    static let all: [[String]] = [
+        formatStandardInput, formatCheck, formatCheckFolder, formatCheckDiff, validate, version, showPlanDescriptor, initialize, workspaceList,
+    ]
+
+    /// Whether a builder of this file made `arguments`.
+    static func isBuilt(_ arguments: [String]) -> Bool {
+        if all.contains(arguments) || isPlan(arguments) { return true }
+        if arguments.count == 3, arguments[0] == "workspace", arguments[1] == "select" { return workspaceSelect(arguments[2]) == arguments }
+        return false
+    }
+
+    /// Subcommands never run yet: the ones that change state or
+    /// infrastructure (the apply that comes later goes only through a
+    /// shown plan), and the reads that print secrets, which later stages
+    /// build with their own guards. `show`, `plan`, `init` and
+    /// `workspace` run only as this file builds them, whole: any other
+    /// line is no builder's.
     static let refusedSubcommands: Set<String> = [
-        "apply", "destroy", "import", "taint", "untaint", "force-unlock", "init", "refresh", "state", "workspace", "login", "logout", "test",
-        "console", "plan", "get", "providers", "output",
+        "apply", "destroy", "import", "taint", "untaint", "force-unlock", "refresh", "state", "login", "logout", "test", "console", "get",
+        "providers", "output",
     ]
 
     /// Flags never built, for anything (4.3).
@@ -77,7 +180,7 @@ enum TerraformCommands {
             }
             if argument == "-var" { return "-var is never passed" }
         }
-        guard all.contains(arguments) else { return "not a command Overterm builds" }
+        guard isBuilt(arguments) else { return "not a command Overterm builds" }
         return nil
     }
 }

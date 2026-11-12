@@ -192,6 +192,19 @@ final class E2ETests: XCTestCase {
         try run("terraformAgents", env: ["OVERTERM_TERRAFORM": try Self.installedTerraform()])
     }
 
+    /// The plan in the right slot (stage 1d): Overterm's plan of a
+    /// checkout's roots read as data, the sentinel never in it, a missing
+    /// workspace refused, a lock on the fake backend named, a worktree's
+    /// plan stale after another applies, an agent's tf_plan.
+    func testTerraformPlan() throws {
+        try run("terraformPlan", env: ["OVERTERM_TERRAFORM": try Self.installedTerraform()])
+    }
+
+    /// A 2,000-resource plan at Section 10's budgets: decoded and masked
+    /// in under 0.5 s, its rows shown and filtered in under 150 ms. No
+    /// terraform runs.
+    func testTerraformPerf() throws { try run("terraformPerf") }
+
     /// The installed terraform: `OVERTERM_TF_TEST_TERRAFORM`, else Homebrew's.
     private static func installedTerraform() throws -> String {
         let candidates = [ProcessInfo.processInfo.environment["OVERTERM_TF_TEST_TERRAFORM"], "/opt/homebrew/bin/terraform", "/usr/local/bin/terraform"]

@@ -54,6 +54,8 @@ struct TerraformRootCard: Equatable, Sendable, Identifiable {
     /// The binary's version, once asked (`version -json`), and the pill's mismatch.
     var version: String?
     var versionMismatch: String?
+    /// The checkout is a Terragrunt tree (`root.hcl`): a signal the class reads, kept to decide it again at a run.
+    var terragruntTree = false
 
     var id: String { path }
     var workspace: String { facts.workspace }
@@ -118,6 +120,7 @@ struct TerraformRootCard: Equatable, Sendable, Identifiable {
             path: path, name: settings.roots[path]?.displayName ?? (path.isEmpty ? "." : path), folder: url, kind: root.kind, facts: facts,
             backendSummary: TerraformStateIdentity.summary(of: facts.backend, workspace: facts.workspace), identity: identity, verdict: verdict)
         card.backendChanged = TerraformStateIdentity.changedSinceInit(config: facts.config.backend, record: facts.initRecord)
+        card.terragruntTree = terragruntTree
         for workspace in Set(facts.localWorkspaces + [facts.workspace, "default"]).sorted() {
             let (each, eachIdentity) = Self.verdict(
                 path: path, folder: url, facts: facts, workspace: workspace, varFiles: root.autoVarFiles, awsProfile: awsProfile,

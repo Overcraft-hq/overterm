@@ -80,7 +80,7 @@ final class TerraformCommandsTests: XCTestCase {
     func testWhatIsNeverRun() {
         let refused: [[String]] = [
             ["apply"], ["apply", "-auto-approve"], ["destroy"], ["init"], ["init", "-upgrade"], ["state", "rm", "acme.x"], ["force-unlock", "1"],
-            ["workspace", "select", "acme-prod"], ["import", "a.b", "id"], ["taint", "a.b"], ["output", "-json"], ["show", "-json"], ["plan"],
+            ["workspace", "select", "-or-create", "acme-prod"], ["import", "a.b", "id"], ["taint", "a.b"], ["output", "-json"], ["show", "-json"], ["plan"],
             ["validate", "-json", "-no-color", "-lock=false"], ["fmt", "-no-color", "-", "-var=x=1"], ["-chdir=envs/prod", "validate", "-json", "-no-color"],
             ["validate", "-json"], ["fmt", "-write=true"], [], ["-help"], ["validate", "-var", "x=1"],
         ]

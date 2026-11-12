@@ -302,6 +302,38 @@ Terraform 1.17.1's `show -json` of a sandbox plan with a moved, imported
 and forgotten resource, drift, an action and an unknown key planted, a
 sentinel in each path the decoder drops or masks.
 
+The `terraformPlan` scenario (`E2ERunner+TerraformPlan.swift`, stage 1d)
+plans through the app as a person does, the questions answered by
+`terraformPlanQuestionRecorder` and the plugin cache's offer by
+`terraformCacheOfferRecorder` (no sheet). Its checkout has a local root
+whose state the scenario makes with the CLI (guarded scratch environment)
+before changing a tfvars line, a root on `FakeTerraformBackend` (in the
+app's process, 127.0.0.1), one whose `.terraform/environment` names a
+workspace that doesn't exist, a production root and a sandbox root:
+the first plan fails on a variable with no value and offers the var file;
+with it, the replace is first, its cause chain ends at the changed line,
+the plan file was 0600 in a 0700 folder left empty, the wrapper saw
+`plan … -lock=true -lock-timeout=10s … -var-file=dev.tfvars` and `show
+-json /dev/fd/3`, and three sentinels (a sensitive variable's value — also
+copied, unmarked, into `terraform_data`'s `output` —, an unmarked password,
+a token) are in neither the model, the log, Copy Summary nor the
+accessibility text; the missing workspace is refused with no terraform run
+there; Init asks with its fetch list; a lock `holdLock` holds is named
+with Wait for It and Ask Why; a second worktree's plan of the shared state
+turns stale once the first worktree's pane runs `terraform apply` typed
+(a cleared environment, the fake backend, a `sleep 5` provisioner so the
+header sees it); an agent's `tf_plan` is asked once, runs with
+`-lock-timeout=0s` and no var file, and what `tf_run_status`,
+`tf_plan_resource` and `tf_plan_summary` say has no sentinel; production
+is refused. The stage's pure parts — the plan line and what it can never
+be, the run's environment, 5.3's verbs by class, the workspace check,
+locks in Terraform's words, the UI stream, the plan zip, the run folder,
+the stream run against stand-ins (the umask launcher, the file held and
+unlinked, exit 1 keeping nothing), rows, attributes, the cause chain, the
+risk list and the questions, init's fetch list, the queue — are
+`TerraformPlanTests.swift`, with a planted plan whose every sentinel path
+is checked against everything said from it.
+
 ## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one
