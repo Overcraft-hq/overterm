@@ -6,12 +6,18 @@ documentSymbol and formatting with fixed shapes real servers use; publishes
 diagnostics after didOpen; asks workspace/configuration. Hover at line 99
 never answers (a timeout); hover at line 666 exits at once (a crash).
 Every message it gets is logged, one line each, to the file in argv[1].
+With "watch" as argv[2], it registers watched files once initialized (a
+RelativePattern on its root and a string pattern, as gopls does — and a
+folder outside it, FAKE_LSP_EXTRA_BASE, when set) and logs each change it is
+told of: "watched <uri> <type>".
 """
 import json
 import os
 import sys
 
 log_path = sys.argv[1]
+watch = len(sys.argv) > 2 and sys.argv[2] == "watch"
+root_uri = ""
 stdin = sys.stdin.buffer
 stdout = sys.stdout.buffer
 
@@ -64,7 +70,16 @@ while True:
         continue
     log(method)
     if method == "initialize":
-        log("rootUri " + params.get("rootUri", ""))
+        root_uri = params.get("rootUri", "")
+        log("rootUri " + root_uri)
+        if watch:
+            if "initializationOptions" in params:
+                log("initializationOptions " + json.dumps(params["initializationOptions"], sort_keys=True))
+            names = sorted(n for n in os.environ if n.startswith("ACME_") or n.startswith("AWS_") or n == "CHECKPOINT_DISABLE")
+            log("env " + ",".join(names))
+            log("envValues CHECKPOINT_DISABLE=%s HOME=%s" % (os.environ.get("CHECKPOINT_DISABLE", ""), os.environ.get("HOME", "")))
+            capability = params["capabilities"].get("workspace", {}).get("didChangeWatchedFiles")
+            log("watchCapability " + json.dumps(capability, sort_keys=True))
         reply(msg, {
             "capabilities": {
                 "textDocumentSync": {"openClose": True, "change": 2, "save": {"includeText": True}},
@@ -77,6 +92,19 @@ while True:
             },
             "serverInfo": {"name": "fake"},
         })
+    elif method == "initialized" and watch:
+        send({"jsonrpc": "2.0", "id": "watch-1", "method": "client/registerCapability", "params": {"registrations": [{
+            "id": "watched-files", "method": "workspace/didChangeWatchedFiles", "registerOptions": {"watchers": [
+                {"globPattern": {"baseUri": root_uri, "pattern": "**/*.{go,mod}"}, "kind": 7},
+                {"globPattern": "**/*.tf", "kind": 5},
+            ] + ([
+                # A folder outside the root, as the server spells it (a
+                # link, /var for /private/var).
+                {"globPattern": {"baseUri": "file://" + os.environ["FAKE_LSP_EXTRA_BASE"], "pattern": "**/*.py"}, "kind": 7},
+            ] if os.environ.get("FAKE_LSP_EXTRA_BASE") else [])}}]}})
+    elif method == "workspace/didChangeWatchedFiles":
+        for change in params["changes"]:
+            log("watched %s %d" % (change["uri"], change["type"]))
     elif method == "textDocument/didOpen":
         doc = params["textDocument"]
         log("open %s %s %d" % (doc["uri"], doc["languageId"], doc["version"]))

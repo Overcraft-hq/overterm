@@ -941,6 +941,40 @@ like Zed needs a GPU renderer.
   file's own words, `CompletionMatch`), hover, definition, references,
   symbols, formatting. Nothing launches in tests or isolated runs unless
   `discoveryOverride` hands in a fake.
+  - **Watched files.** The client says it can watch
+    (`workspace.didChangeWatchedFiles.dynamicRegistration`, relative
+    patterns too), so servers leave it to us: gopls watches nothing itself,
+    rust-analyzer stops its own watcher, sourcekit-lsp asks for `**/*`,
+    clangd for nothing, and terraform-ls (#953) hears of an `init` or an
+    agent's files only this way. A server's `client/registerCapability` is
+    kept (`LSPWatchedFiles`, pure: the registrations by id, their `LSPGlob`s
+    — `*`, `?`, `**`, `{a,b}`, `[!a-z]`, a `RelativePattern`'s base, matched
+    as one anchored regular expression), and one `DirectoryWatcher` with
+    `fileEvents:` (FSEvents' file events, its flags passed through) watches
+    the root and any folder a pattern names outside it — never `/`, a
+    volume's top, the home folder or above it, the root included (a file
+    opened from `~` with no marker makes `~` its root: then only the
+    registered folders that pass are watched) — only while something is
+    registered. The watcher is stopped on the main queue, always: the stop's
+    hop holds the server, and a server freed elsewhere hands its watcher to
+    main. Events are
+    matched off the main thread; whether a file came or went is what the
+    disk says now (FSEvents' flags are coalesced and sticky); git's objects
+    and the inside of node_modules' packages are never sent (VS Code's
+    `files.watcherExclude`); paths go back under the root as the server was
+    given it, not `/private/var`, and under a folder outside it as the
+    server spelled it (`/tmp`, a link), not its real path. Each server's
+    registration is a fixture in `LSPWatchedFilesTests` (pyright's library
+    folders and vtsls's tsserver watches among them).
+  - **A spec's options and environment.** `Spec.initializationOptions` (a
+    `JSONValue`: Spec is a dictionary key) goes in `initialize`;
+    `Spec.environmentAdded` is set over the app's environment and the
+    command's (terraform-ls: `CHECKPOINT_DISABLE=1`, a scratch `HOME`);
+    `Spec.environmentRemoved` (names, `AWS_*` for a prefix) is taken out of
+    all three after, so a removed name wins and a server that runs tools
+    hands them no credentials. `ServerDiscovery.zedTerraformLS` finds
+    the newest terraform-ls Zed's Terraform extension downloaded
+    (`extensions/work/terraform/terraform-ls-<version>/`), run as `serve`.
 - **Vim** (`Vim/`, Settings ▸ Editor): a pure engine over a `VimBuffer`, which
   the pane is; Zed's choices — yanks go to the clipboard.
 - **Markdown preview** (⇧⌘V, the header's eye on a markdown file): the

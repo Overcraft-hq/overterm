@@ -22,6 +22,18 @@ final class LanguageServers {
         var rootMarkers: [String] = []
         /// Tried in order; the first found is used.
         var launch: [ServerDiscovery.Candidate]
+        /// Sent as `initialize`'s `initializationOptions` (terraform-ls takes
+        /// its settings there). A JSON value, Hashable: Spec is a key.
+        var initializationOptions: JSONValue? = nil
+        /// Set in its environment, and so in what it runs (terraform-ls:
+        /// `CHECKPOINT_DISABLE=1`, `HOME` a scratch folder, so the providers
+        /// `terraform validate` starts find no credential files). Over the
+        /// app's and the command's; a removed name still wins.
+        var environmentAdded: [String: String] = [:]
+        /// Names never in its environment, nor in what it runs: a server
+        /// that starts tools (terraform-ls runs `terraform validate`) gets
+        /// no credentials. `AWS_*` takes every name it begins.
+        var environmentRemoved: [String] = []
     }
 
     nonisolated static let specs: [Spec] = [
@@ -178,7 +190,9 @@ final class LanguageServers {
             }
         }
         guard let command = command(for: spec) else { return nil }
-        let server = LanguageServer(name: spec.id, command: command, root: root)
+        let server = LanguageServer(
+            name: spec.id, command: command, root: root, initializationOptions: spec.initializationOptions,
+            environmentAdded: spec.environmentAdded, environmentRemoved: spec.environmentRemoved)
         server.onDiagnostics = { [weak self] url, diagnostics in self?.onDiagnostics?(url, diagnostics) }
         do {
             try server.start()
@@ -237,6 +251,10 @@ struct ServerDiscovery: Sendable {
         case xcrun(String, [String] = [])
         /// Zed's gopls: `languages/gopls/gopls_<version>_go_<version>`.
         case zedGopls
+        /// Zed's terraform-ls, which its Terraform extension downloads:
+        /// `extensions/work/terraform/terraform-ls-<version>/terraform-ls`,
+        /// run as `terraform-ls serve`.
+        case zedTerraformLS
         /// A script under Zed's `languages/`, run with node.
         case zedNode(String, [String])
     }
@@ -298,6 +316,9 @@ struct ServerDiscovery: Sendable {
         case .zedGopls:
             guard let executable = zedGopls() else { return nil }
             return LanguageServer.Command(executable: executable, environment: environment)
+        case .zedTerraformLS:
+            guard let executable = zedTerraformLS() else { return nil }
+            return LanguageServer.Command(executable: executable, arguments: ["serve"], environment: environment)
         case .zedNode(let script, let arguments):
             let script = zedDirectory.appendingPathComponent("languages").appendingPathComponent(script)
             guard FileManager.default.fileExists(atPath: script.path), let node = node() else { return nil }
@@ -356,6 +377,24 @@ struct ServerDiscovery: Sendable {
         }
         let gobin = directory.appendingPathComponent("gobin/gopls")
         return FileManager.default.isExecutableFile(atPath: gobin.path) ? gobin : nil
+    }
+
+    /// The newest terraform-ls Zed's Terraform extension keeps
+    /// (`terraform-ls-0.36.4`, or the release tag's `terraform-ls-v0.36.4`).
+    func zedTerraformLS() -> URL? {
+        let directory = zedDirectory.appendingPathComponent("extensions/work/terraform")
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        func version(_ name: String) -> String {
+            let rest = name.dropFirst("terraform-ls-".count)
+            return String(rest.hasPrefix("v") ? rest.dropFirst() : rest)
+        }
+        let versions = names.filter { $0.hasPrefix("terraform-ls-") }
+            .sorted { version($0).compare(version($1), options: .numeric) == .orderedDescending }
+        for name in versions {
+            let binary = directory.appendingPathComponent("\(name)/terraform-ls")
+            if FileManager.default.isExecutableFile(atPath: binary.path) { return binary }
+        }
+        return nil
     }
 
     /// node from the search directories, else the one Zed downloaded

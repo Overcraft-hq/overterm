@@ -1252,7 +1252,9 @@ final class E2ERunner {
             .appendingPathComponent("../../../Tests/OvertermTests/Fixtures/fake-lsp.py").standardizedFileURL
         let serverLog = scratch.appendingPathComponent("fake-lsp.log")
         LanguageServers.shared.discoveryOverride = { spec in
-            spec.id == "go" ? LanguageServer.Command(executable: URL(fileURLWithPath: "/usr/bin/python3"), arguments: [script.path, serverLog.path]) : nil
+            spec.id == "go"
+                ? LanguageServer.Command(executable: URL(fileURLWithPath: "/usr/bin/python3"), arguments: [script.path, serverLog.path, "watch"])
+                : nil
         }
         defer { LanguageServers.shared.discoveryOverride = nil }
 
@@ -1269,6 +1271,18 @@ final class E2ERunner {
             "the language server's problems show", await eventually(8) { editor.active?.diagnostics.first?.message == "unused" },
             (try? String(contentsOf: serverLog, encoding: .utf8)) ?? "no server log")
         check("…drawn under the text", textView.diagnostics.count == 1)
+        // The files it registered are watched for it: a file an agent writes
+        // beside it is told to it, a README isn't.
+        let server = LanguageServers.shared.existingServer(for: main)
+        check("the server's watched files are watched", await eventually(5) { server?.watchedFileFolders.isEmpty == false })
+        await pause(0.3)
+        try? "package main\n".write(to: repo.appendingPathComponent("helper.go"), atomically: false, encoding: .utf8)
+        try? "notes\n".write(to: repo.appendingPathComponent("NOTES.md"), atomically: false, encoding: .utf8)
+        check(
+            "…and a new .go file is told to it (workspace/didChangeWatchedFiles)",
+            await eventually(5) { ((try? String(contentsOf: serverLog, encoding: .utf8)) ?? "").contains("helper.go 1") },
+            (try? String(contentsOf: serverLog, encoding: .utf8)) ?? "no server log")
+        check("…but not a file it didn't ask for", ((try? String(contentsOf: serverLog, encoding: .utf8)) ?? "").contains("NOTES.md") == false)
         check(
             "…counted in the status bar",
             Self.find(NSButton.self, in: editor.view) { $0.identifier?.rawValue == "editorProblems" }?.accessibilityLabel() == "0 errors, 1 warnings")
