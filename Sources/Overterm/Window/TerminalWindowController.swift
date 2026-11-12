@@ -45,6 +45,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// The find bar, over the terminal's top-right corner; shows the
     /// selected terminal's search while it is active.
     private(set) var searchBar: NSHostingView<AnyView>?
+    /// settings.json's security settings changed outside the page, waiting
+    /// for Keep or Revert (`Settings.held`); hidden while none is.
+    private(set) var settingsHeldBanner: NSHostingView<SettingsHeldBanner>?
     private var searchSubscription: AnyCancellable?
     /// The ⌘F overlay over the terminal (terminal + files + contents).
     let spotlight = SpotlightModel()
@@ -797,6 +800,25 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             reviewView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
         ])
         self.reviewView = reviewView
+
+        // Security settings changed in settings.json outside the page: over
+        // the body and the pages alike, under the title bar, until answered.
+        let heldBanner = NSHostingView(rootView: SettingsHeldBanner(settings: .shared, theme: theme))
+        heldBanner.translatesAutoresizingMaskIntoConstraints = false
+        heldBanner.isHidden = Settings.shared.held.isEmpty
+        content.addSubview(heldBanner)
+        NSLayoutConstraint.activate([
+            heldBanner.topAnchor.constraint(equalTo: titleBottom, constant: 14),
+            heldBanner.centerXAnchor.constraint(equalTo: content.centerXAnchor),
+            heldBanner.widthAnchor.constraint(lessThanOrEqualTo: content.widthAnchor, constant: -40),
+        ])
+        // `@Published` emits before the value lands: the emitted one decides.
+        Settings.shared.$held
+            .map(\.isEmpty)
+            .removeDuplicates()
+            .sink { [weak heldBanner] empty in heldBanner?.isHidden = empty }
+            .store(in: &cancellables)
+        settingsHeldBanner = heldBanner
 
         // The palette floats over everything, hidden until ⌘P.
         let paletteView = NSHostingView(

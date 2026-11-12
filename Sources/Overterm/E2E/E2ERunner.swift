@@ -4491,6 +4491,7 @@ final class E2ERunner {
         check(
             "a hand edit applies at once (the pane dim)",
             await eventually(4) { abs((self.app.host(of: tab)?.dimColor.alphaComponent ?? 0) - 0.6) < 0.01 })
+        await heldSettingsChecks()
         settings.set("general.newTabDirectory", .string("home"))
         check(
             "the page edits the file in place, comments kept",

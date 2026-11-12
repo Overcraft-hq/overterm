@@ -205,6 +205,16 @@ struct SettingSpec: Identifiable, Sendable {
     var ghostty: String? = nil
     /// Greyed out unless this toggle is on.
     var requires: String? = nil
+    /// A security setting — what makes something production, writable, or
+    /// an agent's to change. Any agent can write settings.json, so a change
+    /// made there outside the Settings page is held until a window's banner
+    /// confirms it (`Settings.held`, D-7): `terraform.roots`,
+    /// `terraform.productionPattern`, `terraform.productionAccounts` and
+    /// `terraform.agent*` when they come, as Kubernetes' now — its contexts,
+    /// agents' access and writes, and the kubectl and helm it runs (a path
+    /// in an agent's checkout would run outside any sandbox, with the
+    /// user's kubeconfig).
+    var heldWhenEditedOutside = false
 
     var id: String { key }
 
@@ -305,6 +315,9 @@ enum SettingsSchema {
         general + appearance + terminal + agents + editor + browser + api + notes + database + docker + kubernetes + notifications + updates
 
     static let byKey: [String: SettingSpec] = Dictionary(uniqueKeysWithValues: all.map { ($0.key, $0) })
+
+    /// The security settings: changed outside the page, held (`Settings.held`).
+    static let heldKeys: [String] = all.filter(\.heldWhenEditedOutside).map(\.key)
 
     static func specs(in section: SettingsSection) -> [SettingSpec] { all.filter { $0.section == section } }
 
@@ -783,7 +796,7 @@ enum SettingsSchema {
             help:
                 "By the context's name: its class (production, remote or local; unset, its name decides), whether a remote or local one may be written to — a production one never is, its writes are turned on for a session — its namespaces, and its saved queries (charts: your own Prometheus charts on a workload's Metrics tab).",
             kind: .entries(SettingEntries(noun: "context", fields: KubeContextSettings.fields)), defaultValue: .entries([:]),
-            requires: "kubernetes.enabled"),
+            requires: "kubernetes.enabled", heldWhenEditedOutside: true),
         SettingSpec(
             key: "kubernetes.pinnedContexts", section: .kubernetes, group: "Contexts", title: "Pinned contexts",
             help:
@@ -807,12 +820,14 @@ enum SettingsSchema {
             key: "kubernetes.helmPath", section: .kubernetes, group: "Connections", title: "helm",
             help:
                 "Empty: /usr/local/bin's, /opt/homebrew/bin's, else your shell's PATH. Overterm runs only helm template itself — a chart rendered from its files, KUBECONFIG=/dev/null, no cluster asked; an upgrade is typed into a tab. Never downloaded.",
-            kind: .text(placeholder: "/opt/homebrew/bin/helm", monospaced: true), defaultValue: .string(""), requires: "kubernetes.enabled"),
+            kind: .text(placeholder: "/opt/homebrew/bin/helm", monospaced: true), defaultValue: .string(""), requires: "kubernetes.enabled",
+            heldWhenEditedOutside: true),
         SettingSpec(
             key: "kubernetes.kubectlPath", section: .kubernetes, group: "Connections", title: "kubectl",
             help:
                 "Empty: the installed kubectl closest to the cluster's version — /usr/local/bin, /opt/homebrew/bin, Docker Desktop's, your shell's PATH. Overterm never downloads one.",
-            kind: .text(placeholder: "/usr/local/bin/kubectl", monospaced: true), defaultValue: .string(""), requires: "kubernetes.enabled"),
+            kind: .text(placeholder: "/usr/local/bin/kubectl", monospaced: true), defaultValue: .string(""), requires: "kubernetes.enabled",
+            heldWhenEditedOutside: true),
         SettingSpec(
             key: "kubernetes.notifyOnFailure", section: .kubernetes, group: "Attention", title: "Mark a bound checkout's tab when what it deploys fails",
             help:
@@ -827,12 +842,12 @@ enum SettingsSchema {
             key: "kubernetes.agentAccess", section: .kubernetes, group: "Agents", title: "Agents can read the clusters",
             help:
                 "Claude Code started from Overterm gets MCP tools to list a context's objects, describe one, read a pod's logs and events, a rollout's status and history, what pods and nodes use (metrics-server's), and why a pod fails — through the context's proxy, production included. On the contexts Contexts agents may change names, it also gets k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply (a manifest, its dry-run diff shown; on production only where the context sets applyOnProduction), each call asked in the window first. None reads a Secret's values; what looks like a secret is taken out of every answer.",
-            kind: .toggle, defaultValue: .bool(true), requires: "kubernetes.enabled"),
+            kind: .toggle, defaultValue: .bool(true), requires: "kubernetes.enabled", heldWhenEditedOutside: true),
         SettingSpec(
             key: "kubernetes.agentWrites", section: .kubernetes, group: "Agents", title: "Contexts agents may change",
             help:
                 "By name: the contexts where agents get k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply — empty, agents only read. Only while Overterm may write there too: a local or remote one by its writable setting, a production one while its writes are on for the session. Each call is still asked in the window, naming the context. An agent started before a name was added needs a restart to see the tools.",
-            kind: .list(placeholder: "a context's name"), defaultValue: .list([]), requires: "kubernetes.agentAccess"),
+            kind: .list(placeholder: "a context's name"), defaultValue: .list([]), requires: "kubernetes.agentAccess", heldWhenEditedOutside: true),
         SettingSpec(
             key: "kubernetes.debugImage", section: .kubernetes, group: "Tabs", title: "Debug container's image",
             help:

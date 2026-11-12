@@ -316,6 +316,39 @@ below). `changes` names the keys that
 changed, for whatever acts on them. Before 1.17 settings were UserDefaults
 (`settings.*`): `Settings.migrate` carries them over once.
 
+**Security settings, held.** settings.json is a plain file any agent can
+write, so one edit could make production writable or name a context for
+agents' writes. A spec marked `heldWhenEditedOutside` (`SettingsSchema.heldKeys`:
+`kubernetes.contexts`, `kubernetes.agentWrites`, `kubernetes.agentAccess`,
+and `kubernetes.kubectlPath`/`helmPath` — the binaries Overterm runs with the
+user's kubeconfig, outside any agent's sandbox; Terraform's `roots`,
+`productionPattern`, `productionAccounts` and `agent*` will be, as the
+Terraform design's 5.8 says — a unit test holds them to it) changed in the
+file by anyone but the app is held (`Settings.held`, a `HeldSetting` each):
+the value before stays in `values`, so nothing that reads a setting sees
+the new one and `changes` doesn't name it; the rest of the edit applies.
+`apply(_:trusting:)` says whose text it takes: the app's own `set` of a key
+(the page, the Kubernetes context sheet: that key applies), the JSON view's
+Save (a security setting is the person's own only where the saved text
+changes it from the file on disk before the save — the draft is the file,
+an agent's edit included, and a file that didn't parse changes nothing),
+or the watcher's reload (every change held). `set`, `save`, Keep and Revert
+read the file again first, so an edit the watcher hasn't reported yet is
+held before an in-app edit builds on it; `fileValue` answers a security
+setting's last trusted value (`taken`), never what is on disk. `taken` is
+kept on disk too, `settings-confirmed.json` beside settings.json (no
+secret in it): at launch the file is held against it, so an edit left
+unanswered at quit, or made while Overterm wasn't running, is held then
+(with no record yet, the file is taken as it is). Every window shows
+`SettingsHeldBanner` under the title bar — a line for each name or entry
+changed, names quoted, every character visible (`DockerMCP.displayed`),
+what widens first, never cut silently: when the change is longer than the
+banner holds (`HeldBannerSummary`), the banner offers Review instead of
+Keep, a popover with every line whose Keep turns on once each has been on
+screen (`HeldReviewProgress`). Keep takes the shown values (a file changed
+again since is shown again first); Revert writes the values before back in
+place, comments kept.
+
 Appearance and Terminal are Ghostty's own settings: unset, the user's
 Ghostty config decides; set, `writeGhosttyOverrides` puts them in
 `ghostty-overrides.conf`, which `GhosttyRuntime.makeConfig()` loads after
