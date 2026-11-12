@@ -95,6 +95,8 @@ enum TerraformPlanGate {
         var detail: String
         var button: String
         var production: Bool
+        /// What is typed to go ahead (D-21, 5.4: a write to production), or nil.
+        var typedName: String? = nil
     }
 
     /// `authoredByPerson`: every commit since the base is the person's

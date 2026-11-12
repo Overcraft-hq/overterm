@@ -10,7 +10,10 @@ import Foundation
 /// chip's `workspace list` and `workspace select`; stage 2a the apply —
 /// one line, of a plan Overterm holds by its descriptor — and the plan's
 /// modes: destroy, only some addresses (`-target`), some replaced; stage
-/// 2b a new worktree's init without its backend; stage 2c the state's reads — `state list`, and `show -json` of the state.
+/// 2b a new worktree's init without its backend; stage 2c the state's
+/// reads — `state list`, and `show -json` of the state; stage 2d the drift
+/// check (a `-refresh-only` plan, whose apply accepts it into state) and
+/// `terraform test` (`test(file:)`).
 ///
 /// Every run's cwd is the root (or the checkout for `formatCheck`), never
 /// `-chdir`, so a diagnostic's `range.filename` is relative to it.
@@ -176,11 +179,14 @@ enum TerraformCommands {
         var varFiles: [String] = []
         var parallelism: Int?
         var destroy = false
+        var refreshOnly = false
         var targets: [String] = []
         var replaces: [String] = []
         for (index, argument) in arguments.dropFirst(planHead.count + 2).enumerated() {
             if argument == "-destroy", varFiles.isEmpty, parallelism == nil {
                 destroy = true
+            } else if argument == "-refresh-only", varFiles.isEmpty, parallelism == nil {
+                refreshOnly = true
             } else if argument.hasPrefix("-target="), varFiles.isEmpty, parallelism == nil {
                 targets.append(String(argument.dropFirst("-target=".count)))
             } else if argument.hasPrefix("-replace="), varFiles.isEmpty, parallelism == nil {
@@ -195,9 +201,9 @@ enum TerraformCommands {
                 return false
             }
         }
-        let modes = [destroy, !targets.isEmpty, !replaces.isEmpty].filter { $0 }.count
+        let modes = [destroy, refreshOnly, !targets.isEmpty, !replaces.isEmpty].filter { $0 }.count
         guard modes <= 1 else { return false }
-        let mode: TerraformPlanMode = destroy ? .destroy : !targets.isEmpty ? .targets(targets) : !replaces.isEmpty ? .replace(replaces) : .normal
+        let mode: TerraformPlanMode = destroy ? .destroy : refreshOnly ? .refreshOnly : !targets.isEmpty ? .targets(targets) : !replaces.isEmpty ? .replace(replaces) : .normal
         return plan(out: String(out.dropFirst("-out=".count)), varFiles: varFiles, lock: wait, parallelism: parallelism, mode: mode) == arguments
     }
 
@@ -211,6 +217,7 @@ enum TerraformCommands {
     /// Whether a builder of this file made `arguments`.
     static func isBuilt(_ arguments: [String]) -> Bool {
         if all.contains(arguments) || isPlan(arguments) { return true }
+        if isTest(arguments) { return true }
         if arguments.count == 3, arguments[0] == "workspace", arguments[1] == "select" { return workspaceSelect(arguments[2]) == arguments }
         return false
     }
@@ -234,6 +241,8 @@ enum TerraformCommands {
     static func refusal(_ arguments: [String]) -> String? {
         guard let subcommand = arguments.first(where: { !$0.hasPrefix("-") }) else { return "no subcommand" }
         if arguments.contains(where: { $0.hasPrefix("-chdir") }) { return "-chdir is never passed: the run's folder is its root" }
+        // `test` only as `test(file:)` builds it (2d): never `-verbose`, `-var`, `-cloud-run`.
+        if subcommand == "test" { return isTest(arguments) ? nil : "terraform test is run only as Overterm builds it" }
         // `state list` alone of `state`'s, exactly as built (2c).
         if refusedSubcommands.contains(subcommand), arguments != stateList { return "terraform \(subcommand) is not run by Overterm" }
         for argument in arguments {
@@ -250,6 +259,40 @@ enum TerraformCommands {
     }
 }
 
+extension TerraformCommands {
+    /// `terraform test` (2.9, stage 2d): every test file of the root, or
+    /// one (`-filter=`, relative to the root). Never `-verbose` (it prints
+    /// each run's plan and state, values and all), never `-var` or
+    /// `-var-file`, never `-cloud-run`. Takes no lock and touches no state
+    /// of the root's: a test's state lives in memory. Nil for a file that
+    /// isn't a test file inside the root.
+    static func test(file: String? = nil) -> [String]? {
+        let head = ["test", "-json", "-no-color"]
+        guard let file else { return head }
+        return isTestFile(file) ? head + ["-filter=" + file] : nil
+    }
+
+    /// Whether `test(file:)` made `arguments`.
+    static func isTest(_ arguments: [String]) -> Bool {
+        guard arguments.count == 3 || arguments.count == 4 else { return false }
+        if arguments.count == 3 { return test() == arguments }
+        let filter = arguments[3]
+        guard filter.hasPrefix("-filter=") else { return false }
+        return test(file: String(filter.dropFirst("-filter=".count))) == arguments
+    }
+
+    /// A test file a run may name: relative to the root and inside it, a
+    /// `.tftest.hcl` or `.tftest.json`, one argument.
+    static func isTestFile(_ path: String) -> Bool {
+        let parts = path.split(separator: "/", omittingEmptySubsequences: false)
+        guard !path.isEmpty, !path.hasPrefix("/"), !path.hasPrefix("~"), !path.hasPrefix("-"), !parts.contains(".."), !parts.contains("."),
+            !parts.contains(""), path.count <= 512,
+            path.unicodeScalars.allSatisfy({ !CharacterSet.controlCharacters.contains($0) && $0 != "\u{0}" })
+        else { return false }
+        return path.hasSuffix(".tftest.hcl") || path.hasSuffix(".tftest.json")
+    }
+}
+
 /// What a plan is asked for (2.2, stage 2a): the root's whole change; a
 /// destroy of everything in it; only some addresses (`-target`, labelled
 /// partial — break-glass, refused on production at apply); some objects
@@ -260,12 +303,17 @@ enum TerraformPlanMode: Equatable, Hashable, Sendable {
     case destroy
     case targets([String])
     case replace([String])
+    /// Drift (2.6, stage 2d): what the providers read now against the
+    /// state, nothing of the configuration — its apply accepts it into
+    /// the state and changes no infrastructure.
+    case refreshOnly
 
     /// Its flags, or nil when an address isn't one.
     var flags: [String]? {
         switch self {
         case .normal: return []
         case .destroy: return ["-destroy"]
+        case .refreshOnly: return ["-refresh-only"]
         case .targets(let addresses), .replace(let addresses):
             guard !addresses.isEmpty, addresses.count <= TerraformCommands.maxAddresses, addresses.allSatisfy(TerraformCommands.isAddress),
                 Set(addresses).count == addresses.count
@@ -281,10 +329,12 @@ enum TerraformPlanMode: Equatable, Hashable, Sendable {
         switch self {
         case .normal: nil
         case .destroy: "destroy"
+        case .refreshOnly: "drift check (refresh-only)"
         case .targets(let addresses): "partial: only \(addresses.count == 1 ? addresses[0] : "\(addresses.count) addresses")"
         case .replace(let addresses): "replacing \(addresses.count == 1 ? addresses[0] : "\(addresses.count) addresses")"
         }
     }
 
     var isDestroy: Bool { self == .destroy }
+    var isRefreshOnly: Bool { self == .refreshOnly }
 }

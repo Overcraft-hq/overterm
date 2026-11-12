@@ -16,6 +16,7 @@ extension EditorViewController {
         buffer.terraform = folder
         folder.attach(buffer)
         TerraformEditorModel.shared.checkFormat(for: folder)
+        applyTerraformTestDiagnostics(buffer)
         // terraform-ls is told the terraform Overterm runs: the login shell's PATH, asked off the main thread.
         if Settings.shared.editorLanguageServers, LanguageServers.spec(for: url)?.id == "terraform" { TerraformCLI.warm() }
     }
@@ -89,12 +90,18 @@ extension EditorViewController {
         for buffer in buffers where buffer.terraform === folder && folder.describes(buffer) {
             guard let url = buffer.url else { continue }
             let text = buffer.storage.string as NSString
-            buffer.terraformDiagnostics = folder.diagnostics(for: url).compactMap { diagnostic in
-                guard let start = diagnostic.start else { return nil }
-                return EditorDiagnostic(
-                    range: TerraformValidation.range(from: start, to: diagnostic.end, in: text), severity: diagnostic.severity == .error ? .error : .warning,
-                    message: diagnostic.message, source: "terraform validate")
-            }
+            // Validate's marks replace validate's only: a test run's
+            // (`terraformTestSource`) share the array and stay until the
+            // next test run says otherwise.
+            let tests = buffer.terraformDiagnostics.filter { $0.source == Self.terraformTestSource }
+            buffer.terraformDiagnostics =
+                tests
+                + folder.diagnostics(for: url).compactMap { diagnostic in
+                    guard let start = diagnostic.start else { return nil }
+                    return EditorDiagnostic(
+                        range: TerraformValidation.range(from: start, to: diagnostic.end, in: text), severity: diagnostic.severity == .error ? .error : .warning,
+                        message: diagnostic.message, source: "terraform validate")
+                }
             if buffer === active {
                 textView.diagnostics = buffer.diagnostics
                 updateProblemLines()

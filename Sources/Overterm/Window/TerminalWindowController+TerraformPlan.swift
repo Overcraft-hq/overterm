@@ -25,6 +25,7 @@ extension TerminalWindowController {
             return .failure(TerraformReadFailure(message: "The pane that asked isn't in any window."))
         }
         TerraformMCP.paneModels = { NSApp.windows.compactMap { ($0.windowController as? TerminalWindowController)?.terraformPlanPane } }
+        wireTerraformTest()
         sweepTerraformRunsAtLaunch()
     }
 
@@ -62,7 +63,8 @@ extension TerminalWindowController {
             close: { [weak self] in self?.toggleDiff(nil) },
             apply: { [weak self] run in self?.applyTerraformPlan(run) },
             stopApply: { [weak self] apply in self?.stopTerraformApply(apply) },
-            planMode: { [weak self] run, mode in self?.planTerraformAgain(run, mode: mode) })
+            planMode: { [weak self] run, mode in self?.planTerraformAgain(run, mode: mode) },
+            testAgain: { [weak self] test in self?.testTerraformRoot(test.card, checkout: test.checkout, file: test.file) })
     }
 
     /// The run in the right slot, which takes it (`RightSlot`).

@@ -24,6 +24,8 @@ struct TerraformPlanActions {
     var stopApply: (TerraformApplyRun) -> Void = { _ in }
     /// Plan again with a mode (2a): only this address, replacing it.
     var planMode: (TerraformPlanRun, TerraformPlanMode) -> Void = { _, _ in }
+    /// A `terraform test` run again, as it was asked (2d).
+    var testAgain: (TerraformTestRun) -> Void = { _ in }
 }
 
 /// The plan in the right slot (analysis 6.3): the header — root, branch @
@@ -43,7 +45,9 @@ struct TerraformPlanPaneView: View {
     var body: some View {
         VStack(spacing: 0) {
             TerraformGoingApplies(registry: .shared, pane: pane, theme: theme, show: actions.showApply)
-            if let state = pane.state, let stateActions {
+            if let test = pane.test {
+                TerraformTestView(run: test, theme: theme, actions: actions)
+            } else if let state = pane.state, let stateActions {
                 TerraformStateView(read: state, theme: theme, actions: stateActions)
             } else if let apply = pane.apply {
                 TerraformApplyView(apply: apply, pane: pane, theme: theme, actions: actions)
@@ -133,7 +137,7 @@ private struct TerraformRunView: View {
                     Text("PRODUCTION").font(.system(size: ChromeMetrics.text(9.5), weight: .bold)).foregroundStyle(Color.white)
                         .padding(.horizontal, 5).frame(height: 16).background(RoundedRectangle(cornerRadius: 4).fill(red))
                 }
-                Text(verbatim: (run.kind == .plan ? (run.mode.isDestroy ? "Destroy plan · " : "Plan · ") : "Init · ") + run.card.name)
+                Text(verbatim: (run.kind == .plan ? (run.mode.isDestroy ? "Destroy plan · " : run.mode.isRefreshOnly ? "Drift · " : "Plan · ") : "Init · ") + run.card.name)
                     .font(.system(size: ChromeMetrics.text(12.5), weight: .semibold, design: .monospaced)).foregroundStyle(theme.text)
                     .lineLimit(1).truncationMode(.middle)
                 Text(verbatim: headerDetail).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).lineLimit(1)
@@ -153,7 +157,7 @@ private struct TerraformRunView: View {
                     Button {
                         actions.apply(run)
                     } label: {
-                        Label(run.mode.isDestroy ? "Destroy…" : "Apply…", systemImage: "play.fill").font(.system(size: ChromeMetrics.text(11), weight: .semibold))
+                        Label(applyTitle, systemImage: "play.fill").font(.system(size: ChromeMetrics.text(11), weight: .semibold))
                             .padding(.horizontal, 7).frame(height: ChromeMetrics.row(22))
                             .background(RoundedRectangle(cornerRadius: 5).fill(greyed == nil ? (run.card.isProduction ? red.opacity(0.85) : theme.accentText.opacity(0.85)) : theme.iconBg))
                             .contentShape(Rectangle())
@@ -161,15 +165,17 @@ private struct TerraformRunView: View {
                     .buttonStyle(.plain)
                     .foregroundStyle(greyed == nil ? Color.white : theme.text3)
                     .disabled(greyed != nil)
-                    .help(greyed ?? "Apply this plan, and nothing else (⇧A): asked first")
+                    .help(greyed ?? applyHelp)
                     .accessibilityIdentifier("terraform.plan.apply")
                     .accessibilityValue(Text(verbatim: greyed ?? "ready"))
                 }
                 if run.isGoing {
                     button("Stop", "stop.circle") { run.stop() }.accessibilityIdentifier("terraform.plan.stop")
                 } else {
-                    button(run.kind == .plan ? "Plan Again" : "Init Again", "arrow.clockwise") { actions.planAgain(run, .person) }
-                        .accessibilityIdentifier("terraform.plan.again")
+                    button(run.kind == .plan ? (run.mode.isRefreshOnly ? "Check Again" : "Plan Again") : "Init Again", "arrow.clockwise") {
+                        actions.planAgain(run, .person)
+                    }
+                    .accessibilityIdentifier("terraform.plan.again")
                 }
                 if run.plan != nil {
                     button("Copy Summary", "doc.on.doc") { actions.copySummary(run) }.accessibilityIdentifier("terraform.plan.copy")
@@ -178,7 +184,15 @@ private struct TerraformRunView: View {
                 if !run.isGoing { button("Discard", "trash") { actions.discard(run) }.accessibilityIdentifier("terraform.plan.discard") }
                 Spacer(minLength: 0)
             }
-            if let label = run.mode.label {
+            if run.mode.isRefreshOnly, run.plan != nil {
+                // On a clock: its age moves, and past 30 minutes it says stale.
+                TimelineView(.periodic(from: .now, by: 30)) { context in
+                    let line = run.driftLine(registry, now: context.date)
+                    Text(verbatim: line.text).font(.system(size: ChromeMetrics.text(11), weight: .semibold))
+                        .foregroundStyle(line.drifted ? theme.orangeText : theme.text2).fixedSize(horizontal: false, vertical: true)
+                        .accessibilityIdentifier("terraform.plan.drift")
+                }
+            } else if let label = run.mode.label {
                 Text(verbatim: "A \(label) plan" + (run.mode.isDestroy ? ": its apply destroys everything listed." : "."))
                     .font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(run.mode.isDestroy ? red : theme.orangeText)
                     .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("terraform.plan.mode")
@@ -187,11 +201,13 @@ private struct TerraformRunView: View {
                 Text(verbatim: run.card.isProduction ? "Partial: not applied on production — plan the whole root." : "Partial: only some of the root's changes.")
                     .font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.orangeText)
             }
-            if let stale = run.staleReason(registry) {
-                Text(verbatim: stale).font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(red)
-                    .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("terraform.plan.stale")
+            TimelineView(.periodic(from: .now, by: 30)) { context in
+                if let stale = run.staleReason(registry, now: context.date) {
+                    Text(verbatim: stale).font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(red)
+                        .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("terraform.plan.stale")
+                }
             }
-            if let plan = run.plan, !plan.hasPriorState {
+            if let plan = run.plan, !plan.hasPriorState, !run.mode.isRefreshOnly {
                 Text(verbatim: "Creates everything: no state found" + (run.workspace == "default" ? "." : " in workspace \(run.workspace)."))
                     .font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(run.workspace == "default" ? theme.orangeText : red)
                     .accessibilityIdentifier("terraform.plan.noState")
@@ -211,6 +227,13 @@ private struct TerraformRunView: View {
             }
         }
         .padding(.horizontal, 12).padding(.vertical, 8)
+    }
+
+    /// Apply's words: a refresh-only plan's accepts the drift (2d).
+    private var applyTitle: String { run.mode.isDestroy ? "Destroy…" : run.mode.isRefreshOnly ? "Accept into State…" : "Apply…" }
+    private var applyHelp: String {
+        run.mode.isRefreshOnly
+            ? "Write what the providers read into the state, and nothing else (⇧A): asked first" : "Apply this plan, and nothing else (⇧A): asked first"
     }
 
     private var headerDetail: String {
@@ -342,8 +365,11 @@ private struct TerraformRunView: View {
             filterBar
             Divider().opacity(0.4)
             if run.phase == .noChanges {
-                message("No changes: the infrastructure matches the configuration.", color: theme.text2)
-                    .accessibilityIdentifier("terraform.plan.noChanges")
+                message(
+                    run.mode.isRefreshOnly ? "No drift: what the providers read matches the state." : "No changes: the infrastructure matches the configuration.",
+                    color: theme.text2
+                )
+                .accessibilityIdentifier("terraform.plan.noChanges")
             }
             ScrollViewReader { scroller in
                 ScrollView {

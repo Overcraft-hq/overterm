@@ -25,6 +25,11 @@ struct TerraformPanelActions {
     var showApply: (TerraformApplyRun) -> Void = { _ in }
     /// The root's state and outputs, masked, in the slot (2.4, stage 2c).
     var showState: (TerraformRootCard) -> Void = { _ in }
+    /// Check Drift: a refresh-only plan (2.6, stage 2d).
+    var checkDrift: (TerraformRootCard) -> Void = { _ in }
+    /// `terraform test` of the root, in the slot (2.9, stage 2d).
+    var test: (TerraformRootCard) -> Void = { _ in }
+    var showTest: (TerraformTestRun) -> Void = { _ in }
 }
 
 /// The rail's Terraform panel (analysis 6.1, 6.2): the selected tab's
@@ -300,6 +305,9 @@ private struct RootRow: View {
             .help(run.staleReason(.shared) ?? plan.counts.sentence)
             .accessibilityIdentifier("terraform.panel.lastPlan.\(card.path)")
         }
+        TerraformRootChecksView(
+            card: card, checkout: panel.checkout ?? card.folder, registry: registry, tests: .shared, theme: theme, showPlan: actions.showPlan,
+            showTest: actions.showTest)
         let varFiles = TerraformRootStore.shared.varFiles(checkout: panel.checkout ?? card.folder, root: card.path)
         if !varFiles.isEmpty {
             line("var files: " + varFiles.joined(separator: ", "), theme.text3).accessibilityIdentifier("terraform.panel.varFiles.\(card.path)")
@@ -350,6 +358,12 @@ private struct RootRow: View {
                     .accessibilityIdentifier("terraform.panel.terminal")
                 button("Validate", "checkmark.seal") { actions.validate(card) }
             }
+            HStack(spacing: 6) {
+                button("Check Drift", "arrow.triangle.2.circlepath") { actions.checkDrift(card) }
+                    .accessibilityIdentifier("terraform.panel.drift")
+                button("Test", "checkmark.circle") { actions.test(card) }
+                    .accessibilityIdentifier("terraform.panel.test")
+            }
             if card.isProduction {
                 let on = registry.hasSessionWrites(checkout: panel.checkout ?? card.folder, root: card.path, workspace: card.workspace)
                 button(on ? "Applies On Until Quit — Turn Off" : "Allow Applies Until Quit…", on ? "lock.open.fill" : "lock.fill") {
@@ -388,6 +402,8 @@ private struct RootRow: View {
         Button("Init…") { actions.initialize(card) }
         Button("Select Workspace…") { actions.chooseWorkspace(card) }
         Button("State and Outputs") { actions.showState(card) }
+        Button("Check Drift") { actions.checkDrift(card) }
+        Button("Test") { actions.test(card) }
         if card.isProduction {
             if registry.hasSessionWrites(checkout: panel.checkout ?? card.folder, root: card.path, workspace: card.workspace) {
                 Button("Turn Applies Off") { actions.endWrites(card) }

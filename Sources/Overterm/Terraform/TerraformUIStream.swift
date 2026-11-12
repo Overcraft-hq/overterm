@@ -31,6 +31,9 @@ enum TerraformUIMessage: Equatable, Sendable {
     case diagnostic(TerraformDiagnostic)
     /// Any other line, by its `@message` (`log`, `init_output`, `outputs`…).
     case message(type: String, level: String, text: String)
+    /// `terraform test -json`'s lines (2d): its files, runs, summary, and
+    /// the diagnostics it ties to a file and run (`TerraformTestMessage`).
+    case test(TerraformTestMessage)
     /// Not JSON at all: crash output, a panic.
     case raw(String)
     /// A `ui` major this doesn't read.
@@ -53,6 +56,9 @@ enum TerraformUIMessage: Equatable, Sendable {
         let text = scrub(String((object["@message"] as? String ?? "").prefix(maxLine)))
         func address(_ key: String) -> String? {
             ((object[key] as? [String: Any])?["resource"] as? [String: Any])?["addr"] as? String
+        }
+        if type.hasPrefix("test_") || (type == "diagnostic" && object["@testfile"] != nil) {
+            return .test(TerraformTestMessage.decode(type: type, object: object, scrub: scrub))
         }
         switch type {
         case "version":
@@ -125,6 +131,7 @@ enum TerraformUIMessage: Equatable, Sendable {
         case .diagnostic(let diagnostic):
             "\(diagnostic.severity == .error ? "Error" : "Warning"): \(diagnostic.summary)" + (diagnostic.detail.isEmpty ? "" : " — " + diagnostic.detail)
         case .message(_, _, let text): text
+        case .test(let message): message.logLine
         case .raw(let text): text
         case .unknownMajor(let ui): "This Terraform's output is a version Overterm doesn't read (ui \(ui)): run it in a terminal."
         }

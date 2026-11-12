@@ -102,6 +102,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 return .terminateCancel
             }
         }
+        // A terraform test with real providers runs in the app's group: quitting cuts its cleanup off.
+        let tests = TerraformTestResults.shared.goingReal
+        if let question = TerraformCloseGuard.testQuestion(tests.map { (name: $0.card.name, since: $0.started) }) {
+            let alert = NSAlert()
+            alert.messageText = question.title
+            alert.informativeText = question.detail
+            alert.alertStyle = .critical
+            for title in TerraformCloseGuard.testButtons { alert.addButton(withTitle: title) }
+            switch alert.runModal() {
+            case .alertFirstButtonReturn:
+                tests.forEach { $0.stop() }
+                return .terminateCancel
+            case .alertSecondButtonReturn:
+                break
+            default:
+                return .terminateCancel
+            }
+        }
         // Overterm's own applies go on, detached (4.7): said, never waited for.
         let applies = TerraformRunRegistry.shared.goingApplies.map { (name: $0.marker.name, since: $0.started) }
         if let question = TerraformCloseGuard.quitQuestion(applies) {
