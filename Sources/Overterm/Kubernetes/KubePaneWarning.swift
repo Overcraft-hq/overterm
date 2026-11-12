@@ -15,61 +15,20 @@ struct KubeCommandLine: Equatable, Sendable {
     var kubeconfig: String?
 
     /// The first kubectl-family command of the line — in a pipeline, after
-    /// `&&` or `;`, behind `sudo`, `env`, `time`, `watch` or assignments.
+    /// `&&` or `;`, behind `sudo`, `env`, `time`, `watch` or assignments
+    /// (`ShellCommandLine`).
     static func parse(_ line: String) -> KubeCommandLine? {
-        for segment in segments(of: line) {
-            if let found = command(in: segment) { return found }
+        for command in ShellCommandLine.commands(in: line) where tools.contains(command.tool) {
+            return make(command)
         }
         return nil
     }
 
-    /// The wrappers, each with its options that take the next word as a
-    /// value (`sudo -u root`, `env -u FOO`, `watch -n 2`): that word is the
-    /// option's, not the command.
-    private static let wrappers: [String: Set<String>] = [
-        "sudo": [
-            "-u", "-g", "-C", "-D", "-h", "-p", "-r", "-t", "-U", "-T", "-R", "--user", "--group", "--close-from", "--chdir", "--host", "--prompt",
-            "--role", "--type", "--other-user", "--command-timeout", "--chroot",
-        ],
-        "env": ["-u", "-C", "-S", "-P", "--unset", "--chdir", "--split-string"],
-        "watch": ["-n", "--interval"],
-        "time": ["-f", "-o", "--format", "--output"],
-        "caffeinate": ["-t", "-w"],
-        "exec": ["-a"],
-        "command": [], "nohup": [], "noglob": [], "nocorrect": [], "builtin": [],
-    ]
-
-    private static func command(in words: [String]) -> KubeCommandLine? {
-        var index = 0
-        var assigned: String?
-        var wrapper: String?
-        while index < words.count {
-            let word = words[index]
-            if let equals = word.firstIndex(of: "="), equals != word.startIndex,
-                word[..<equals].allSatisfy({ $0.isLetter || $0.isNumber || $0 == "_" })
-            {
-                if word[..<equals] == "KUBECONFIG" { assigned = String(word[word.index(after: equals)...]) }
-                index += 1
-                continue
-            }
-            // A wrapper's own options (`watch -n 2`, `sudo -u root -E`) come before the command.
-            if let wrapper, word.hasPrefix("-") || Double(word) != nil {
-                index += wrappers[wrapper]?.contains(word) == true ? 2 : 1
-                continue
-            }
-            if wrappers[word] != nil {
-                wrapper = word
-                index += 1
-                continue
-            }
-            break
-        }
-        guard index < words.count else { return nil }
-        let tool = (words[index] as NSString).lastPathComponent
-        guard tools.contains(tool) else { return nil }
-        var line = KubeCommandLine(tool: tool, context: nil, kubeconfig: assigned.flatMap { $0.isEmpty ? nil : $0 })
-        let contextFlag = tool == "helm" ? "--kube-context" : "--context"
-        var rest = words[(index + 1)...].makeIterator()
+    private static func make(_ command: ShellCommandLine.Command) -> KubeCommandLine {
+        let assigned = command.assigned("KUBECONFIG")
+        var line = KubeCommandLine(tool: command.tool, context: nil, kubeconfig: assigned.flatMap { $0.isEmpty ? nil : $0 })
+        let contextFlag = command.tool == "helm" ? "--kube-context" : "--context"
+        var rest = command.arguments.makeIterator()
         while let word = rest.next() {
             if word == "--" { break }
             for (flag, set) in [(contextFlag, true), ("--kubeconfig", false)] {
@@ -86,63 +45,6 @@ struct KubeCommandLine: Equatable, Sendable {
             }
         }
         return line
-    }
-
-    /// The line's commands, each its words: split at `|`, `||`, `&&`, `;`,
-    /// `&`, parentheses and newlines outside quotes; quotes and backslashes
-    /// read as zsh reads them.
-    static func segments(of line: String) -> [[String]] {
-        var segments: [[String]] = []
-        var words: [String] = []
-        var word = ""
-        var inWord = false
-        var quote: Character?
-        var escaped = false
-        func endWord() {
-            if inWord { words.append(word) }
-            word = ""
-            inWord = false
-        }
-        func endSegment() {
-            endWord()
-            if !words.isEmpty { segments.append(words) }
-            words = []
-        }
-        for character in line {
-            if escaped {
-                word.append(character)
-                inWord = true
-                escaped = false
-                continue
-            }
-            if let open = quote {
-                if character == open {
-                    quote = nil
-                } else if character == "\\", open == "\"" {
-                    escaped = true
-                } else {
-                    word.append(character)
-                }
-                continue
-            }
-            switch character {
-            case "\\":
-                escaped = true
-                inWord = true
-            case "'", "\"":
-                quote = character
-                inWord = true
-            case " ", "\t":
-                endWord()
-            case "|", "&", ";", "(", ")", "\n":
-                endSegment()
-            default:
-                word.append(character)
-                inWord = true
-            }
-        }
-        endSegment()
-        return segments
     }
 }
 

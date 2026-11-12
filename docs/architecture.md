@@ -2242,7 +2242,7 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   `docker exec -it …` (or attach, debug, an interactive run, Compose's
   exec and run, past Compose's own `-p`/`-f`/`--profile`) is a
   `TabKind.container`, its icon the shippingbox. The title is read in the
-  shell's words (`TabKind.shellWords`): a path with a space is quoted, and
+  shell's words (`ShellCommandLine.words`): a path with a space is quoted, and
   split on spaces its second half would pass for the command.
 - **A debug shell** (`E`, `DockerCommands.debugShell`): for an image
   with no shell of its own (distroless, scratch), a toolbox container
@@ -5198,7 +5198,8 @@ fake-prod asked first, compared by hashes.
 - *The pane-header warning* (`KubePaneWarning.swift`): `KubeCommandLine`
   (pure) reads the command a pane runs — or ran last
   (`PaneBlocks.latestCommand`, the title shell integration sets) — as zsh
-  splits it, only `kubectl`, `helm`, `k9s` and `stern` (behind `sudo`,
+  splits it (`ShellCommandLine`, shared with `TabKind` and Terraform),
+  only `kubectl`, `helm`, `k9s` and `stern` (behind `sudo`,
   `env`, `watch`, assignments, in a pipeline), with `--context`
   (`--kube-context` for helm) and `--kubeconfig` or a `KUBECONFIG=` before
   it. `KubePaneWarning.resolve` (pure) settles the context in the design's
@@ -6950,6 +6951,96 @@ the 200-pod Deployment's dependency tree (under 2 s; ~0.3 s; its pods one
 bounded read by its selector, 150 counted not drawn), late again (0.71 s,
 0.36), and the footprint after (under 900 MB; ~310, the fake's objects in
 the same process). Reads only.
+
+## Terraform
+
+The design is docs/design/terraform/analysis.md (its Section 9 the
+stages). Built so far: the groundwork of stage 0 — nothing visible.
+
+- **The editor's part** (stage 0, Editor above): language servers hear of
+  files changed outside the editor (`DirectoryWatcher(fileEvents:)`,
+  `LSPGlob`), `Spec.initializationOptions`, `environmentAdded`/`Removed`,
+  `ServerDiscovery.zedTerraformLS`; and every pane's MCP token its own
+  (Browser above).
+- **The guards** (`Terraform/TerraformGuards.swift`, pure but for
+  `prepareScratch`; analysis 4.2, 4.5, 4.13, 5.13 rule 8). Terraform
+  changes real infrastructure, so an isolated run or a unit test
+  (`AppEnvironment.guardsTerraform`) keeps off the user's own: no
+  terraform but `OVERTERM_TERRAFORM`'s (`AppEnvironment.terraformBinary`:
+  `.variable` only for an absolute path to an executable — a name would
+  be resolved by a PATH search or against a checkout —, else `.none`;
+  unguarded always `.search`, the user's, found by `TerraformCLI` in stage
+  1b, so a stray variable never redirects their applies), and every run built on
+  `AppEnvironment.terraformBaseEnvironment()` — the login shell's in the
+  user's app (credential chains reach the providers unchanged), and in a
+  guarded run nothing of the shell's: a HOME and a CLI config of the run's
+  own (`TerraformGuards.Scratch`; the config's `direct { exclude =
+  ["*/*/*"] }` fetches no provider, a `filesystem_mirror` when a test
+  gives one), `CHECKPOINT_DISABLE=1`, proxies at 127.0.0.1:9 with
+  127.0.0.1 and localhost exempt. Everything Terraform keeps has its
+  place in `AppEnvironment`, a guarded run's under its own support
+  directory: `terraformDirectory` (the caches' `Terraform`) with the
+  plugin cache Overterm offers its own runs (`terraformCacheDirectory`)
+  and the scratch HOME validate, agents' reads and terraform-ls get
+  (`terraformScratchDirectory`); `terraformRunsBase`, where the 0700
+  per-process plan folder goes (`$TMPDIR`); `terraformRootsFile`, the
+  root store's names. `terraformUserConfiguresCLI` checks
+  `~/.terraformrc` for existence only — it can hold `credentials` — and a
+  guarded run never looks. `TerraformGuards.credentials(in:)` names the
+  variables that carry or choose a credential (`AWS_*`, `GOOGLE_*`,
+  `CLOUDSDK_*`, `ARM_*`, `AZURE_*`, `TF_TOKEN_*`, `TF_CLOUD_*`,
+  `TF_VAR_*`, the http backend's `TF_HTTP_*`, `VAULT_*`, `CONSUL_HTTP_*`,
+  `TFE_*`, providers' own — `OCI_*`, `ALICLOUD_*`, `CLOUDFLARE_*`… —,
+  `KUBECONFIG`, `TF_REATTACH_PROVIDERS`, `TF_ENCRYPTION`, `PG_CONN_STR`,
+  `PGPASSWORD`, and any name ending `_TOKEN`, `_PASSWORD`, `_API_KEY`… or
+  holding `_SECRET`), never their values: what validate and agents' reads
+  will go without, and what a run refuses to start with — the opt-in
+  suite, and a scenario (`refusedCredentials(scenario:environment:)`,
+  checked first thing in `AppDelegate`, before any pane could inherit one:
+  one failed check naming them, exit 1). The E2E harness drops them from
+  the environment it launches the app with, by the same rule.
+- **The command-line splitter** (`ShellCommandLine.swift`, pure): a line's
+  words as zsh splits them, its commands (split at `|`, `&&`, `;`, `&`,
+  parentheses, newlines outside quotes), and in each the command behind
+  reserved words (`if`, `then`, `do`, `{`, `!`; a `for`/`case` header or
+  a closer has none), its assignments and wrappers (`ShellCommandLine.Wrapper`:
+  the options that take a value, a subcommand — `aws-vault exec`, `op
+  run`, `doppler run`, `mise exec`, `direnv exec` —, its own words before
+  the command — `timeout 600` — and `--`; `sudo`, `doas`, `env`, `watch`,
+  `time`, `nice`, `xargs`, `nohup`…) with what it assigns (`env
+  TF_WORKSPACE=prod terraform -chdir=envs/prod apply`:
+  `assigned("TF_WORKSPACE")`); a string a shell runs is read as a line of
+  its own, behind what came before (`bash -c '…'`, `zsh -lc`, `env -S`,
+  `doppler run --command`, `watch '…'`; four deep at most).
+  `KubeCommandLine` and `TabKind` read through it; `TerraformCommandLine`
+  (stage 1b) will.
+- **The recording wrapper** (`TerraformRecorder`, analysis 11): a
+  `bin/terraform` script `OVERTERM_TERRAFORM` names, run `bash -p` (no
+  `BASH_ENV`, nothing from startup files), that records each call in a
+  folder of its own under `records/` — its argv (NUL-separated), its
+  folder, its environment's names, and the values of only the variables
+  Overterm sets (`recordedValues`: `TF_WORKSPACE`, `TF_DATA_DIR`, `HOME`…;
+  never a credential's) — then `exec`s the real terraform or a stand-in
+  (`writeStandIn`: canned output and exit code). `calls()` reads them back
+  oldest first. What asserts the argv and environment rules against real
+  runs.
+- **`FakeTerraformBackend`** (SwiftNIO, 127.0.0.1, a port of the
+  system's): Terraform's `http` state backend as its client speaks it —
+  GET (404: no state yet), POST/PUT/DELETE (refused with 409 while a lock
+  is held unless `?ID=` is the lock's), LOCK (423 with the holder's lock
+  info, which Terraform turns into "Error acquiring the state lock …
+  HTTP remote state already locked"), UNLOCK (by the holder's ID, or with
+  an empty body — force-unlock's — whatever lock is there). `holdLock(who:)`
+  plays another machine's run (its `Created` as Terraform writes it:
+  UTC, `Z`, the fraction's trailing zeros dropped — `goTime`, checked
+  against the real lock's shape), `failCredentials` a refused endpoint,
+  `backendBlock(_:)` writes a root's backend with its lock addresses, and
+  every request is recorded (whether it had credentials, never their
+  value). `TerraformRealBackendTests` (`OVERTERM_TF_TESTS=1`) runs the real
+  terraform against it through the wrapper: a plan and its apply lock and
+  write, a held lock named, the lock probe (`state rm -dry-run
+  -lock-timeout=0s`) refused by it and changing nothing, force-unlock's
+  empty UNLOCK, two roots on one state.
 
 ## Simulator
 

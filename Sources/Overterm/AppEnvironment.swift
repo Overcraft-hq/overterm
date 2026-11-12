@@ -185,6 +185,80 @@ enum AppEnvironment {
         return KubeconfigSources.paths(overterm: overterm, guarded: guarded, kubeconfig: variable, extra: extra, home: home)
     }
 
+    /// Whether Terraform must keep off the user's own — their terraform,
+    /// shell environment, credentials, CLI config, plugin cache: an
+    /// isolated run or a unit test (analysis 4.5, 5.13 rule 8). Terraform
+    /// changes real infrastructure.
+    static var guardsTerraform: Bool { isIsolated || isUnitTest }
+
+    /// The terraform Overterm runs: guarded, `OVERTERM_TERRAFORM`'s (a
+    /// scenario's recording wrapper) when it is an absolute path to an
+    /// executable, else none; else the user's, searched for by
+    /// `TerraformCLI` — the variable ignored there.
+    static var terraformBinary: TerraformGuards.Binary {
+        TerraformGuards.binary(variable: env["OVERTERM_TERRAFORM"], guarded: guardsTerraform)
+    }
+
+    /// The credential variables, by name, a scenario run refuses to start
+    /// with (`AppDelegate`, before any pane): its panes would inherit them
+    /// (analysis 4.5). Empty outside a scenario.
+    static var terraformRefusedCredentials: [String] {
+        TerraformGuards.refusedCredentials(scenario: e2eScenario, environment: env)
+    }
+
+    /// Terraform's folder of Overterm's: the plugin cache Overterm offers
+    /// its own runs, and the scratch HOME validate, agents' reads and
+    /// terraform-ls get. The caches — `~/Library/Caches/<bundle id>/Terraform`;
+    /// a guarded run's own support directory, so a scenario never writes
+    /// provider executables into the real cache.
+    static let terraformDirectory: URL = {
+        if guardsTerraform { return supportDirectory.appendingPathComponent("Terraform", isDirectory: true) }
+        return FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
+            .appendingPathComponent("\(bundleIdentifier)/Terraform", isDirectory: true)
+    }()
+
+    /// `TF_PLUGIN_CACHE_DIR` for Overterm's own runs, when the person took
+    /// the offer (analysis 4.13). Never `~/.terraformrc`'s.
+    static var terraformCacheDirectory: URL { terraformDirectory.appendingPathComponent("plugins", isDirectory: true) }
+
+    /// A HOME and a CLI config with nothing of the user's in them
+    /// (`TerraformGuards.prepareScratch`): every guarded run's, and in the
+    /// user's app validate's and terraform-ls's HOME.
+    static var terraformScratchDirectory: URL { terraformDirectory.appendingPathComponent("scratch", isDirectory: true) }
+
+    /// Where the per-process plan folder goes (`$TMPDIR/ot-tf-<uid>-<pid>`,
+    /// analysis 4.4): the temporary directory, never the support folder; a
+    /// guarded run's under its own support directory, so a scenario never
+    /// touches the user's app's runs — nor its sweep the scenario's.
+    static var terraformRunsBase: URL {
+        if guardsTerraform { return supportDirectory.appendingPathComponent("terraform-runs", isDirectory: true) }
+        return FileManager.default.temporaryDirectory
+    }
+
+    /// `TerraformRootStore`'s file: var files and workspaces chosen per
+    /// checkout and root, and the state identities seen production — names
+    /// only, never a value. In the support directory, an isolated run's own.
+    static var terraformRootsFile: URL { supportDirectory.appendingPathComponent("terraform-roots.json") }
+
+    /// The environment Terraform's runs are built on (`TerraformEnvironment`):
+    /// the user's login shell's, so credential chains reach the providers
+    /// unchanged; in a guarded run, nothing of the user's — a scratch HOME
+    /// and CLI config, proxies at a dead port. Blocking the first time (the
+    /// shell is asked): off the main thread.
+    static func terraformBaseEnvironment() throws -> [String: String] {
+        guard guardsTerraform else { return ShellEnvironment.environment() }
+        return try TerraformGuards.prepareScratch(at: terraformScratchDirectory).environment
+    }
+
+    /// Whether the user configures Terraform's CLI themselves, so the
+    /// plugin cache isn't offered: `~/.terraformrc` checked for existence,
+    /// never opened. A guarded run never looks.
+    static func terraformUserConfiguresCLI(shell: [String: String]) -> Bool {
+        TerraformGuards.userConfiguresCLI(
+            environment: shell, home: FileManager.default.homeDirectoryForCurrentUser, guarded: guardsTerraform,
+            exists: { FileManager.default.fileExists(atPath: $0) })
+    }
+
     /// Codex's rollouts: ~/.codex/sessions, or $CODEX_HOME/sessions. Every
     /// turn ends with the quota the server reported.
     static var codexSessionsDirectory: URL {

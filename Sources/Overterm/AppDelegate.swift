@@ -6,6 +6,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var windowController: TerminalWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // A scenario whose environment carries a credential variable stops
+        // before any pane could inherit it (analysis 4.5): its names, never
+        // their values, as the run's one failed check.
+        let refused = AppEnvironment.terraformRefusedCredentials
+        if !refused.isEmpty {
+            print("E2E FAIL no credential variables — refusing to run with \(refused.joined(separator: ", ")) set; unset them first")
+            print("E2E DONE 1")
+            fflush(stdout)
+            exit(1)
+        }
         AppEnvironment.carryOverFormerDefaults()
         NSApp.mainMenu = MainMenu.build()
         NSApp.servicesProvider = self

@@ -233,6 +233,34 @@ kind's Kubernetes v1.37.0 answers them (2026-11-07, kubectl v1.36.1):
 - a Deployment's tree (ReplicaSet, pod, ConfigMap, PVC, Service) and the
   namespace's health findings on real objects.
 
+### Terraform
+
+Terraform changes real infrastructure: no test runs it against anything
+of the user's. Unit tests are guarded (`AppEnvironment.guardsTerraform`):
+no terraform but `OVERTERM_TERRAFORM`'s, nothing of the shell in a run's
+environment, a HOME and CLI config of the run's own, proxies at a dead
+port. A unit test that needs a terraform process uses a stand-in
+(`TerraformRecorder.writeStandIn`) behind the recording wrapper
+(`TerraformRecorder`), which records each call's argv, folder and
+environment names — never a value but the few Overterm sets.
+
+`TerraformRealBackendTests` runs the real terraform, offline, against
+`FakeTerraformBackend` (an `http` state backend on 127.0.0.1):
+
+```
+OVERTERM_TF_TESTS=1 swift test --filter TerraformRealBackendTests
+```
+
+The binary is `OVERTERM_TF_TEST_TERRAFORM`, else Homebrew's. Every run is
+in a temporary folder the test makes, through the wrapper, with the
+guarded environment — its CLI config fetches no provider
+(`direct { exclude = ["*/*/*"] }`) — and only `terraform_data`, which is
+built in. It refuses to start when its own environment sets any
+credential variable (`AWS_*`, `GOOGLE_*`, `ARM_*`, `TF_TOKEN_*`,
+`TF_VAR_*`, `KUBECONFIG`…) rather than unsetting it. Without
+`OVERTERM_TF_TESTS=1` it is skipped, so `make test` and CI need no
+terraform.
+
 ## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one

@@ -49,6 +49,9 @@ final class E2ETests: XCTestCase {
         var env = ProcessInfo.processInfo.environment
         env["OVERTERM_E2E"] = scenario
         env.removeValue(forKey: "OVERTERM_E2E_TESTS")
+        // No credential of the shell's reaches a scenario's panes; the app
+        // refuses to run with one (TerraformGuards.refusedCredentials).
+        for name in env.keys where Self.carriesCredential(name) { env.removeValue(forKey: name) }
         extra.forEach { env[$0.key] = $0.value }
         process.environment = env
         let out = Pipe()
@@ -114,6 +117,24 @@ final class E2ETests: XCTestCase {
         XCTAssertFalse(passed.isEmpty, "\(scenario): no checks ran")
         print("\(scenario): \(passed.count) checks passed")
         return printed
+    }
+
+    /// `TerraformGuards.isCredential`'s rule, by name (this target doesn't
+    /// link the app): should the two drift, the app's refusal names what
+    /// was missed.
+    private static func carriesCredential(_ name: String) -> Bool {
+        let upper = name.uppercased()
+        let prefixes = [
+            "AWS_", "GOOGLE_", "CLOUDSDK_", "ARM_", "AZURE_", "TF_TOKEN_", "TF_CLOUD_", "TF_VAR_", "TF_HTTP_", "VAULT_", "CONSUL_HTTP_", "TFE_",
+            "OCI_", "ALICLOUD_", "CLOUDFLARE_", "DIGITALOCEAN_", "HCLOUD_", "LINODE_", "SCW_",
+        ]
+        let names: Set<String> = [
+            "KUBECONFIG", "TF_REATTACH_PROVIDERS", "GOOGLE_APPLICATION_CREDENTIALS", "TF_ENCRYPTION", "PG_CONN_STR", "PGPASSWORD", "PGPASSFILE",
+            "PGSERVICEFILE",
+        ]
+        let suffixes = ["_TOKEN", "_PASSWORD", "_PASSWD", "_API_KEY", "_APIKEY", "_ACCESS_KEY", "_PRIVATE_KEY", "_CREDENTIALS"]
+        return names.contains(upper) || prefixes.contains { upper.hasPrefix($0) } || suffixes.contains { upper.hasSuffix($0) }
+            || upper.contains("_SECRET") || upper.hasPrefix("SECRET")
     }
 
     /// Every process under `root`, children before theirs.
