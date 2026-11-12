@@ -898,7 +898,7 @@ enum SettingsSchema {
         SettingSpec(
             key: "terraform.agentAccess", section: .terraform, group: "Agents", title: "Agents can read the checkout's Terraform",
             help:
-                "Claude Code started from Overterm gets MCP tools for its own checkout: tf_roots (roots, classes, backends), tf_fmt_check, tf_validate (no credential; only where the root is initialised and its lock file committed — never init) and tf_plan_summary (a plan it saved, masked: never a sensitive value). None applies, destroys or changes state.",
+                "Claude Code started from Overterm gets MCP tools for its own checkout: tf_roots (roots, classes, backends), tf_fmt_check, tf_validate (no credential; only where the root is initialised and its lock file committed — never init), tf_plan_summary and tf_plan_resource (Overterm's plan, or one it saved, masked: never a sensitive value), tf_run_status and tf_why. tf_plan runs a plan in Overterm: the root's providers and data sources run with your credentials, outside the agent's sandbox — so its first plan of each root this session is asked in the window, naming the profile and what the code runs, and asked again when that grows; never on production. None applies, destroys or changes state.",
             kind: .toggle, defaultValue: .bool(true), requires: "terraform.enabled", heldWhenEditedOutside: true),
     ]
 

@@ -120,6 +120,8 @@ enum MainMenu {
         command(viewMenu, "Terraform", #selector(TerminalWindowController.showTerraformPanel(_:)), "terraform.show")
         command(viewMenu, "Terraform Switcher", #selector(TerminalWindowController.showTerraformSwitcher(_:)), "terraform.switch")
         command(viewMenu, "Terminal in Terraform Root…", #selector(TerminalWindowController.openTerraformTerminalPicker(_:)), "terraform.terminal")
+        command(viewMenu, "Plan Terraform Root", #selector(TerminalWindowController.planSelectedTerraformRoot(_:)), "terraform.plan")
+        command(viewMenu, "Copy Terraform Plan Summary", #selector(TerminalWindowController.copyTerraformPlanSummary(_:)), "terraform.copySummary")
         command(viewMenu, "Today’s Note", #selector(TerminalWindowController.openDailyNote(_:)), "notes.daily")
         command(viewMenu, "Graph View", #selector(TerminalWindowController.showNotesGraph(_:)), "notes.graph")
         // Ticked while the pane shows (TerminalWindowController.validateMenuItem).

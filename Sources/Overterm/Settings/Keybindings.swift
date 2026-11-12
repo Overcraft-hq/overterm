@@ -320,6 +320,9 @@ enum KeyCommands {
         .init("terraform.switch", "Terraform Switcher", group: "Panels", key: "ctrl+cmd+e"),
         // No key by default (the design's Section 7): the user can bind it.
         .init("terraform.terminal", "Terminal in Terraform Root…", group: "Panels"),
+        // No keys by default either (Section 7): bindable.
+        .init("terraform.plan", "Plan Terraform Root", group: "Panels"),
+        .init("terraform.copySummary", "Copy Terraform Plan Summary", group: "Panels"),
         .init("notes.daily", "Today’s Note", group: "Panels", key: "alt+cmd+t"),
         .init("notes.graph", "Graph View", group: "Panels", key: "alt+cmd+k"),
         .init("changes.toggle", "Changes", group: "Panels", key: "alt+cmd+d"),

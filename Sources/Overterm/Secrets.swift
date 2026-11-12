@@ -91,7 +91,7 @@ enum Secrets {
     /// line can name two databases. No `/`, `?` or `#` in a password, as
     /// in `maskURL`: a request's path with an email in it stays.
     static func maskURLs(in text: String) -> String {
-        guard text.contains("://") else { return text }
+        guard hasBytes(text, Array("://".utf8)) else { return text }
         return text.replacingOccurrences(of: #"(://[^:/?#@\s]*:)([^/?#@\s]+)(@)"#, with: "$1••••••$3", options: .regularExpression)
     }
 
@@ -233,10 +233,45 @@ extension Secrets {
     /// every base64-looking blob.
     static func scrubCredentials(_ text: String) -> String {
         var out = text
-        for (pattern, template) in credentialPatterns {
-            out = out.replacingOccurrences(of: pattern, with: template, options: .regularExpression)
+        // ASCII lowercased once: what the patterns' needles are looked for in.
+        let lowered = text.utf8.map { $0 >= 0x41 && $0 <= 0x5A ? $0 | 0x20 : $0 }
+        for (index, (pattern, template)) in credentialPatterns.enumerated() {
+            // Only where the pattern could match: running nine patterns
+            // over every string was most of the time a 2,000-resource
+            // Terraform plan took to read.
+            guard mayMatch(index, lowered: lowered) else { continue }
+            if let regex = credentialRegexes[index] {
+                out = regex.stringByReplacingMatches(in: out, range: NSRange(location: 0, length: (out as NSString).length), withTemplate: template)
+            } else {
+                out = out.replacingOccurrences(of: pattern, with: template, options: .regularExpression)
+            }
         }
         return maskBase64Blobs(in: out)
+    }
+
+    /// `credentialPatterns`, compiled, in their order.
+    private static let credentialRegexes: [NSRegularExpression?] = credentialPatterns.map { try? NSRegularExpression(pattern: $0.0) }
+
+    /// What each of `credentialPatterns` can't match without, in any case:
+    /// one of these words — and, for the three of a key and its value, `:`
+    /// or `=`. Lowercase ASCII.
+    private static let credentialNeedles: [[[UInt8]]] = [
+        ["-----begin"], ["bearer"], ["authorization"], ["eyj"], ["akia", "asia", "agpa", "aida", "aroa", "anpa"],
+        ["gh", "github_pat_", "xox", "glpat-", "k_live_", "k_test_"],
+        ["token", "secret", "key", "pass", "pwd", "data"], ["token", "secret", "key", "pass", "pwd", "data"], ["token", "secret", "key", "pass", "pwd", "data"],
+    ].map { $0.map { Array($0.utf8) } }
+
+    /// Whether pattern `index` could match the text whose ASCII-lowercased
+    /// bytes are `lowered`. A pattern past the needles' list always runs.
+    static func mayMatch(_ index: Int, lowered: [UInt8]) -> Bool {
+        guard index < credentialNeedles.count else { return true }
+        let found = lowered.withUnsafeBytes { hay in
+            credentialNeedles[index].contains { needle in
+                needle.withUnsafeBytes { memmem(hay.baseAddress, hay.count, $0.baseAddress, $0.count) != nil }
+            }
+        }
+        guard found else { return false }
+        return index < 6 || lowered.contains(0x3A) || lowered.contains(0x3D)
     }
 
     /// The shortest run taken for a blob: 32 characters of base64 is 24
@@ -253,7 +288,7 @@ extension Secrets {
     /// a word has no digits. A path (`/var/lib/…`, a slash in front, or
     /// `//`) isn't one.
     static func maskBase64Blobs(in text: String) -> String {
-        guard text.utf8.count >= blobLength, let blobPattern else { return text }
+        guard text.utf8.count >= blobLength, hasBase64Run(text), let blobPattern else { return text }
         let string = text as NSString
         let matches = blobPattern.matches(in: text, range: NSRange(location: 0, length: string.length))
         guard !matches.isEmpty else { return text }
@@ -262,6 +297,43 @@ extension Secrets {
             out = out.replacingCharacters(in: match.range, with: credentialMask) as NSString
         }
         return out as String
+    }
+
+    /// Whether `text` has a run of `blobLength` base64 characters with an
+    /// upper- and a lowercase letter and a digit in it — what the pattern
+    /// and `looksLikeBlob` both need — checked byte by byte before the
+    /// pattern runs.
+    static func hasBase64Run(_ text: String) -> Bool {
+        var run = 0
+        var upper = false
+        var lower = false
+        var digit = false
+        for byte in text.utf8 {
+            switch byte {
+            case 0x41...0x5A: upper = true
+            case 0x61...0x7A: lower = true
+            case 0x30...0x39: digit = true
+            case 0x2B, 0x2F, 0x5F, 0x2D: break
+            default:
+                run = 0
+                upper = false
+                lower = false
+                digit = false
+                continue
+            }
+            run += 1
+            if run >= blobLength, upper, lower, digit { return true }
+        }
+        return false
+    }
+
+    /// Whether `text`'s UTF-8 holds `needle`.
+    static func hasBytes(_ text: String, _ needle: [UInt8]) -> Bool {
+        func search(_ hay: UnsafeBufferPointer<UInt8>) -> Bool {
+            needle.withUnsafeBytes { memmem(hay.baseAddress, hay.count, $0.baseAddress, $0.count) != nil }
+        }
+        if let found = text.utf8.withContiguousStorageIfAvailable(search) { return found }
+        return Array(text.utf8).withUnsafeBufferPointer(search)
     }
 
     static func looksLikeBlob(_ run: String) -> Bool {

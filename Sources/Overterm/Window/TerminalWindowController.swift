@@ -116,6 +116,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     let kubernetesPanel = KubernetesPanelModel()
     /// The rail's Terraform panel (analysis 6.1): the selected tab's checkout's roots.
     let terraformPanel = TerraformPanelModel()
+    /// The right slot's Terraform tab: the plan shown (analysis 6.3).
+    let terraformPlanPane = TerraformPlanPaneModel()
     /// Whether this window holds `KubernetesModel.show()` for its page.
     var kubernetesPageHeld = false
     /// What an isolated run would have opened in the default browser (an Ingress).
@@ -191,6 +193,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     var kubernetesBriefRecorder: ((KubeAgentBrief, Tab) -> Void)?
     /// A scenario's: Terraform's Ask Why briefs land here instead of the sheet.
     var terraformBriefRecorder: ((TerraformAgentBrief) -> Void)?
+    /// A scenario's: the questions before a plan or an init (5.3, 5.5) answered here instead of the sheet.
+    var terraformPlanQuestionRecorder: ((TerraformPlanGate.Question) -> Bool)?
+    /// A scenario's: the plugin cache's offer (4.13) answered here.
+    var terraformCacheOfferRecorder: (() -> Bool)?
     /// What Ask Why on a mark couldn't do, said (the scenario reads it).
     var kubernetesAttentionProblem: String?
     /// Cluster failures told under another mark (an agent waiting): the scenario's count.
@@ -650,7 +656,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 manifest: KubeManifestDiffView(
                     pane: kubernetesManifest, page: kubernetesPage, theme: theme, onClose: { [weak self] in self?.toggleDiff(nil) },
                     onOpen: { [weak self] in self?.openInEditor($0) }, onShowPage: { [weak self] in self?.showKubernetesExpandedSource($0) }),
-                kubernetes: KubeSlotView(panel: kubernetesPanel, theme: theme, runInTerminal: { [weak self] in self?.runDockerCommand($0, in: nil) })))
+                kubernetes: KubeSlotView(panel: kubernetesPanel, theme: theme, runInTerminal: { [weak self] in self?.runDockerCommand($0, in: nil) }),
+                terraformPlan: TerraformPlanPaneView(pane: terraformPlanPane, theme: theme, actions: terraformPlanActions)))
         diffPanel.sizingOptions = []
         let diffItem = NSSplitViewItem(
             viewController: CardColumnController(diffPanel, fill: .panel, theme: theme))
@@ -734,6 +741,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         wireDockerAttention()
         wireKubernetesAttention()
         wireTerraformAgents()
+        wireTerraformPlan()
         watchDockerPalette().store(in: &cancellables)
         watchKubernetesPalette().store(in: &cancellables)
         installPageKeys()
@@ -3374,6 +3382,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         }
         for page in pages.all { items += page.paletteItems?() ?? [] }
         items += terraformPaletteItems()
+        items += terraformPlanPaletteItems()
         // History last in the unranked order — before you type, what you
         // want is an action; once you type, ranking decides.
         items += historyItems(matching: query)

@@ -61,4 +61,44 @@ struct TerraformAgentBrief: Equatable, Sendable {
         let text = parts.map { "\($0.title):\n\($0.text)" }.joined(separator: "\n\n")
         return TerraformAgentBrief(message: message, subject: subject, text: text, parts: parts, checkout: checkout, production: root.rootClass == .production)
     }
+
+    static let logLines = 60
+
+    /// Ask Why on a failed plan or init, or a held lock (5.10): the root,
+    /// the operation and its diagnostics, the parsed holder and its age,
+    /// the last 60 lines of its log — every word through `Secrets` again.
+    static func run(
+        operation: String, diagnostics: [TerraformDiagnostic], lock: TerraformLockInfo?, log: [String], root: Root, checkout: String?,
+        now: Date = Date(), scrub: (String) -> String = TerraformValidation.scrub
+    ) -> TerraformAgentBrief {
+        var about = ["Root: \(scrub(root.name))", "Workspace: \(scrub(root.workspace))", "Backend: \(scrub(root.backend))"]
+        if let rootClass = root.rootClass { about.append("Class: \(rootClass.title)" + (rootClass == .production ? " — plan only; never apply, destroy or change its state" : "")) }
+        if let version = root.version { about.append("Terraform \(scrub(version))") }
+        if !root.providers.isEmpty { about.append("Providers (lock file): " + root.providers.prefix(20).map(scrub).joined(separator: ", ")) }
+        var parts = [AskAgentModel.Part(title: "The root", text: about.joined(separator: "\n"))]
+        if let lock {
+            var lines = [scrub(lock.said(now: now))]
+            if let age = lock.age(now: now) { lines.append("Held for \(age).") }
+            lines.append("Lock ID \(scrub(lock.id))" + (lock.path.map { " · path \(scrub($0))" } ?? ""))
+            if lock.http { lines.append("An http backend: its force-unlock removes whatever lock is there.") }
+            parts.append(AskAgentModel.Part(title: "The state's lock", text: lines.joined(separator: "\n")))
+        }
+        var lines: [String] = []
+        for diagnostic in diagnostics.prefix(maxDiagnostics) {
+            var line = "\(diagnostic.severity == .error ? "Error" : "Warning"): \(scrub(diagnostic.summary))"
+            if let file = diagnostic.file { line += " — \(scrub(file))" + (diagnostic.start.map { ":\($0.line):\($0.column)" } ?? "") }
+            lines.append(line)
+            if !diagnostic.detail.isEmpty { lines.append("  " + TerraformPlanText.cut(scrub(diagnostic.detail).replacingOccurrences(of: "\n", with: " "), to: 600)) }
+        }
+        if !lines.isEmpty { parts.append(AskAgentModel.Part(title: "\(operation)'s diagnostics", text: lines.joined(separator: "\n"))) }
+        let tail = log.suffix(logLines).map { TerraformPlanText.cut(scrub($0), to: 300) }
+        if !tail.isEmpty { parts.append(AskAgentModel.Part(title: "The last lines of its log", text: tail.joined(separator: "\n"))) }
+        let subject = "terraform \(operation) in \(root.name)"
+        let message =
+            lock != nil
+            ? "terraform \(operation) in \(scrub(root.name)) can't take the state's lock. Who holds it, is it stale, and what should the person do? Don't run force-unlock, plan or apply — the person decides."
+            : "terraform \(operation) fails in \(scrub(root.name)). Why, and what would fix it? Edit the configuration; don't run init, plan or apply — the person runs those."
+        let text = parts.map { "\($0.title):\n\($0.text)" }.joined(separator: "\n\n")
+        return TerraformAgentBrief(message: message, subject: subject, text: text, parts: parts, checkout: checkout, production: root.rootClass == .production)
+    }
 }

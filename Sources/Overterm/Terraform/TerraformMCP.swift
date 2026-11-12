@@ -7,10 +7,14 @@ import Foundation
 /// its checkout's roots, checks their format, validates them, and reads a
 /// plan it saved itself as a masked summary.
 ///
-/// **Reads, and none that writes.** No tool runs `init`, `plan`, `apply`,
+/// **Reads, and one plan — never a write.** No tool runs `init`, `apply`,
 /// or anything of `state`: `tf_apply`, `tf_destroy`, `tf_state_*` and the
 /// rest don't exist (an agent writes `removed`, `moved` and `import` blocks,
-/// which a person plans and applies). The terraform a tool starts is only a
+/// which a person plans and applies). `tf_plan` (stage 1d, D-12) starts
+/// Overterm's own plan of a non-production root — asked in the window the
+/// first time per root and session, `-lock-timeout=0s`, no flag at all —
+/// and returns at once; `tf_run_status` follows it, `tf_plan_summary` and
+/// `tf_plan_resource` read it masked, `tf_why` briefs a failed one. The terraform a tool starts is only a
 /// line `TerraformCommands` builds — `fmt -check -diff`, `validate -json`,
 /// `show -json /dev/fd/3` — in the stripped environment
 /// (`TerraformEnvironment.Purpose.agentRead`: no credential, a scratch
@@ -30,7 +34,12 @@ import Foundation
 @MainActor
 enum TerraformMCP {
     static let prefix = "tf_"
-    static let names = ["tf_roots", "tf_fmt_check", "tf_validate", "tf_plan_summary"]
+    static let names = ["tf_roots", "tf_fmt_check", "tf_validate", "tf_plan_summary", "tf_plan", "tf_run_status", "tf_plan_resource", "tf_why"]
+
+    /// Starts an agent's plan of a root in the window of the pane that
+    /// asked (`TerminalWindowController.agentPlan`): asked there, never
+    /// production. The window answers; nil outside any window.
+    static var startPlan: ((TerraformRootCard, URL, String) async -> Result<TerraformPlanRun, TerraformReadFailure>)?
 
     /// The checkout a pane's tab works in — the window answers (nil
     /// outside any window's tabs, and in tests that set none).
@@ -41,7 +50,7 @@ enum TerraformMCP {
     static let maxAnswer = 48 << 10
 
     static let instructions =
-        "Terraform in your checkout (Overterm's Terraform panel): tf_roots lists its roots with their workspace, backend and class (production is plan-only), tf_fmt_check and tf_validate check a root without credentials, tf_plan_summary reads a plan you saved (terraform plan -out=FILE) as a masked summary — counts, what is destroyed or replaced and why, the attributes that change. Never run terraform apply, destroy, import or state commands yourself: the person does, after reading the plan."
+        "Terraform in your checkout (Overterm's Terraform panel): tf_roots lists its roots with their workspace, backend and class (production is plan-only), tf_fmt_check and tf_validate check a root without credentials, tf_plan starts Overterm's plan of a non-production root (the person is asked the first time; follow it with tf_run_status), tf_plan_summary reads that plan — or one you saved with terraform plan -out=FILE — as a masked summary: counts, what is destroyed or replaced and why, the attributes that change; tf_plan_resource one resource's masked diff, tf_why the brief of a failed plan or a held lock. Never run terraform apply, destroy, import or state commands yourself: the person does, after reading the plan."
 
     static let tools: [[String: Any]] = [
         tool("tf_roots", "The Terraform roots of your checkout: path, class (production, remote, local), workspace, backend, modules and who calls them.", [:]),
@@ -54,11 +63,29 @@ enum TerraformMCP {
             ["root": ["type": "string", "description": "The root's folder, relative to the checkout. Optional when there is one root."]]),
         tool(
             "tf_plan_summary",
-            "A plan you saved (terraform plan -out=FILE inside the checkout), read as a masked summary: counts, every destroy, replace and forget with its reason and the attribute forcing it, updates with the attribute paths that change, moves, imports, drift, outputs. Never a sensitive value.",
+            "A plan as a masked summary: Overterm's last plan of a root (no path), or a plan you saved (terraform plan -out=FILE inside the checkout). Counts, every destroy, replace and forget with its reason and what forces it, updates with the attribute paths that change, moves, imports, drift, outputs. Never a sensitive value.",
             [
-                "path": ["type": "string", "description": "The plan file, relative to the checkout (envs/dev/acme.tfplan)."],
-                "root": ["type": "string", "description": "The root it was planned in, when it isn't the folder above the file."],
-            ], required: ["path"]),
+                "path": ["type": "string", "description": "A plan file you saved, relative to the checkout (envs/dev/acme.tfplan). Without it: Overterm's last plan of the root."],
+                "root": ["type": "string", "description": "The root, relative to the checkout. Optional when there is one root, or when path's folder is it."],
+            ]),
+        tool(
+            "tf_plan",
+            "Starts Overterm's plan of a non-production root (terraform plan, no flags, -lock-timeout=0s): the person is asked the first time per root. Returns a run ID at once; a plan takes minutes — follow it with tf_run_status. Never applies.",
+            [
+                "root": ["type": "string", "description": "The root's folder, relative to the checkout. Optional when there is one root."]
+            ]),
+        tool(
+            "tf_run_status", "A run tf_plan started: running, failed (and why), or planned — then its masked summary.",
+            ["id": ["type": "string", "description": "The run ID tf_plan returned."]], required: ["id"]),
+        tool(
+            "tf_plan_resource", "One resource of Overterm's last plan of a root: its masked attribute diff, what forces a replace and why.",
+            [
+                "address": ["type": "string", "description": "The resource's address (module.net.aws_subnet.a[0])."],
+                "root": ["type": "string", "description": "The root, relative to the checkout. Optional when there is one root."],
+            ], required: ["address"]),
+        tool(
+            "tf_why", "The brief of a root's last failed plan or init, or of the lock that stopped it: diagnostics, the lock's holder, the log's last lines — masked.",
+            ["root": ["type": "string", "description": "The root, relative to the checkout. Optional when there is one root."]]),
     ]
 
     private static func tool(_ name: String, _ description: String, _ properties: [String: Any], required: [String] = []) -> [String: Any] {
@@ -80,7 +107,12 @@ enum TerraformMCP {
         case "tf_roots": text = await roots(in: checkout)
         case "tf_fmt_check": text = try await formatCheck(arguments, in: checkout)
         case "tf_validate": text = try await validate(arguments, in: checkout)
-        case "tf_plan_summary": text = try await planSummary(arguments, in: checkout)
+        case "tf_plan_summary":
+            text = argument(arguments, "path") == nil ? try await lastPlanSummary(arguments, in: checkout) : try await planSummary(arguments, in: checkout)
+        case "tf_plan": text = try await plan(arguments, in: checkout, pane: pane)
+        case "tf_run_status": text = try await runStatus(arguments, in: checkout)
+        case "tf_plan_resource": text = try await planResource(arguments, in: checkout)
+        case "tf_why": text = try await why(arguments, in: checkout)
         default: throw BrowserMCP.ToolError(message: "Unknown tool: \(name)")
         }
         return BrowserMCP.textResult(TerraformPlanText.cut(Self.scrubbed(text), to: maxAnswer))
@@ -223,6 +255,145 @@ enum TerraformMCP {
             }
             return lines.joined(separator: "\n")
         }
+    }
+
+    // MARK: Overterm's plans (stage 1d)
+
+    /// The root a call names, with its card, read as the panel reads it.
+    static func card(_ arguments: [String: Any], in checkout: URL, tool: String) async throws -> TerraformRootCard {
+        guard let read = await read(checkout), !read.roots.isEmpty else { throw BrowserMCP.ToolError(message: "No Terraform roots in this checkout.") }
+        if let named = argument(arguments, "root") {
+            let url = try TerraformMCPPath.resolve(named == "." ? "" : named, in: checkout, folder: true)
+            let path = url.resolvingSymlinksInPath().standardizedFileURL.path
+            guard let card = read.roots.first(where: { $0.folder.resolvingSymlinksInPath().standardizedFileURL.path == path }) else {
+                throw BrowserMCP.ToolError(message: "\(named) isn't a root of this checkout: " + read.roots.map { $0.path.isEmpty ? "." : $0.path }.joined(separator: ", ") + ".")
+            }
+            return card
+        }
+        guard read.roots.count == 1, let only = read.roots.first else {
+            throw BrowserMCP.ToolError(message: "\(tool) needs “root”: one of " + read.roots.map { $0.path.isEmpty ? "." : $0.path }.joined(separator: ", ") + ".")
+        }
+        return only
+    }
+
+    /// The newest plan run of `card` in `checkout`.
+    static func lastRun(of card: TerraformRootCard, in checkout: URL) -> TerraformPlanRun? {
+        TerraformRunRegistry.shared.latest(checkout: checkout, root: card.path)
+            ?? TerraformRunRegistry.shared.latest(checkout: checkout.resolvingSymlinksInPath(), root: card.path)
+    }
+
+    static func plan(_ arguments: [String: Any], in checkout: URL, pane: String) async throws -> String {
+        let card = try await card(arguments, in: checkout, tool: "tf_plan")
+        if let why = TerraformProcessCheck.refused(.plan, rootClass: card.rootClass) { return "\(card.name): \(why)." }
+        if card.isProduction {
+            return "\(card.name) is production: an agent doesn't plan it — the person does, from Overterm's Terraform panel."
+        }
+        guard let startPlan else { return "Overterm can't plan from here: no window has your pane." }
+        switch await startPlan(card, checkout, pane) {
+        case .failure(let failure): return "\(card.name): \(failure.message)"
+        case .success(let run):
+            return "Planning \(card.name) · workspace \(card.workspace): run \(run.id). A plan can take minutes: ask tf_run_status with id \(run.id)."
+        }
+    }
+
+    /// A run's state; once planned, its summary as an agent reads it —
+    /// masked again for agents, every destroy and replace with its cause
+    /// chain to the line this branch changed (3.5, 5.10).
+    static func status(of run: TerraformPlanRun) async -> String {
+        let name = run.card.name
+        switch run.phase {
+        case .preparing: return "Run \(run.id) (\(name)): starting."
+        case .waiting(let why): return "Run \(run.id) (\(name)): waiting — \(why)."
+        case .running: return "Run \(run.id) (\(name)): running — refreshed \(run.refreshed), planned \(run.plannedChanges). Ask again shortly."
+        case .refused(let why): return "Run \(run.id) (\(name)): refused before it ran — \(why)"
+        case .stopped: return "Run \(run.id) (\(name)): stopped."
+        case .tooLarge(let why): return "Run \(run.id) (\(name)): \(why)"
+        case .failed(let why):
+            var text = "Run \(run.id) (\(name)): failed — \(why)."
+            if run.lock != nil { text += " The state's lock is held; tf_why says by whom. Don't force-unlock: the person decides." }
+            let errors = run.diagnostics.filter { $0.severity == .error }.prefix(8)
+            for diagnostic in errors {
+                text += "\nError: \(diagnostic.summary)" + (diagnostic.file.map { " — \($0)" + (diagnostic.start.map { ":\($0.line)" } ?? "") } ?? "")
+                if !diagnostic.detail.isEmpty { text += "\n  " + TerraformPlanText.cut(diagnostic.detail.replacingOccurrences(of: "\n", with: " "), to: 400) }
+            }
+            return text
+        case .planned, .noChanges:
+            guard let plan = run.plan else { return "Run \(run.id) (\(name)): init done." }
+            var text = "Run \(run.id) (\(name)): " + (run.phase == .noChanges ? "no changes." : "planned.")
+            if let stale = run.staleReason(.shared) { text += " Stale: \(stale)." }
+            let masked = plan.forAgents()
+            let causes = TerraformCauseChain.texts(plan: masked, sources: await sources(of: run), changed: changedLines(of: run))
+            return text + "\n\n"
+                + TerraformPlanText.summary(
+                    masked, root: "\(name) · workspace \(run.workspace) · \(run.card.backendSummary) · \(run.card.rootClass.title.uppercased())", file: nil,
+                    causes: causes)
+        }
+    }
+
+    static func runStatus(_ arguments: [String: Any], in checkout: URL) async throws -> String {
+        guard let id = argument(arguments, "id") else { throw BrowserMCP.ToolError(message: "tf_run_status needs “id”: the run ID tf_plan returned.") }
+        // Only a run of this pane's checkout: another worktree's is not this agent's to read.
+        let top = checkout.resolvingSymlinksInPath().standardizedFileURL.path
+        guard let run = TerraformRunRegistry.shared.run(id: id), run.checkout.resolvingSymlinksInPath().standardizedFileURL.path == top else {
+            return "No run \(id) in this checkout."
+        }
+        return await status(of: run)
+    }
+
+    /// Where a run's root's variables and locals come from, read off the main thread.
+    static func sources(of run: TerraformPlanRun) async -> TerraformCauseChain.Sources {
+        let folder = run.card.folder
+        let prefix = run.card.path.isEmpty ? "" : run.card.path + "/"
+        let varFiles = run.autoVarFiles + run.varFiles
+        return await TerraformPanelModel.blocking { TerraformPlanPaneModel.sources(folder: folder, prefix: prefix, varFiles: varFiles) }
+    }
+
+    /// The lines this branch changed, as the run read them — and, when its
+    /// window shows it, what the changes pane has uncommitted too.
+    static func changedLines(of run: TerraformPlanRun) -> [String: Set<Int>] {
+        var lines = run.changedLines
+        for pane in paneModels() where pane.run === run { lines = pane.effectiveChangedLines }
+        return lines
+    }
+
+    /// Every window's plan pane: set by the windows (nothing in tests).
+    static var paneModels: () -> [TerraformPlanPaneModel] = { [] }
+
+    static func lastPlanSummary(_ arguments: [String: Any], in checkout: URL) async throws -> String {
+        let card = try await card(arguments, in: checkout, tool: "tf_plan_summary")
+        guard let run = lastRun(of: card, in: checkout) else {
+            return "Overterm hasn't planned \(card.name) this session. tf_plan starts one (non-production roots), or pass “path” for a plan you saved."
+        }
+        return await status(of: run)
+    }
+
+    static func planResource(_ arguments: [String: Any], in checkout: URL) async throws -> String {
+        guard let address = argument(arguments, "address") else { throw BrowserMCP.ToolError(message: "tf_plan_resource needs “address”.") }
+        let card = try await card(arguments, in: checkout, tool: "tf_plan_resource")
+        guard let run = lastRun(of: card, in: checkout), let plan = run.plan?.forAgents() else {
+            return "No plan of \(card.name) in Overterm this session: tf_plan starts one."
+        }
+        guard let change = (plan.resourceChanges + plan.drift).first(where: { $0.address == address }) else {
+            let near = plan.resourceChanges.map(\.address).filter { $0.contains(address) || address.contains($0) }.prefix(8)
+            return "\(address) isn't in the plan of \(card.name)." + (near.isEmpty ? "" : " Close: " + near.joined(separator: ", "))
+        }
+        let links = TerraformCauseChain.chain(for: change, plan: plan, sources: await sources(of: run), changed: changedLines(of: run))
+        return TerraformPlanText.resource(change, plan: plan, cause: links.isEmpty ? nil : TerraformCauseChain.said(links))
+    }
+
+    static func why(_ arguments: [String: Any], in checkout: URL) async throws -> String {
+        let card = try await card(arguments, in: checkout, tool: "tf_why")
+        let runs = TerraformRunRegistry.shared.runs.filter {
+            $0.card.path == card.path && $0.checkout.resolvingSymlinksInPath().standardizedFileURL.path == checkout.resolvingSymlinksInPath().standardizedFileURL.path
+        }
+        guard let run = runs.last(where: { if case .failed = $0.phase { return true } else { return false } }) else {
+            return "No failed plan or init of \(card.name) this session, and no lock that stopped one."
+        }
+        let brief = TerraformAgentBrief.run(
+            operation: run.kind == .plan ? "plan" : "init", diagnostics: run.diagnostics, lock: run.lock, log: run.log,
+            root: .init(name: card.name, workspace: run.workspace, backend: card.backendSummary, rootClass: card.rootClass, version: run.record?.version ?? card.version),
+            checkout: checkout.path)
+        return brief.message + "\n\n" + brief.text
     }
 
     // MARK: tf_plan_summary

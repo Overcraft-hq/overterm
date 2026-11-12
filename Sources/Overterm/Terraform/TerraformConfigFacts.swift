@@ -85,6 +85,8 @@ struct TerraformConfigFacts: Equatable, Sendable {
     var remoteStates: [RemoteState] = []
     /// Each `module` block's literal `source`.
     var moduleSources: [String] = []
+    /// A module source's literal `version`, when it has one (init's fetch list, 4.13).
+    var moduleVersions: [String: String] = [:]
     /// AWS account IDs from `arn:aws:…::<12 digits>:` anywhere in the text.
     var accountIDs: Set<String> = []
     /// Any top-level block at all.
@@ -140,7 +142,10 @@ struct TerraformConfigFacts: Equatable, Sendable {
                     remoteStates.append(state)
                 }
             case "module":
-                if let source = block.attributes.first(where: { $0.name == "source" })?.value { moduleSources.append(source) }
+                if let source = block.attributes.first(where: { $0.name == "source" })?.value {
+                    moduleSources.append(source)
+                    if let version = block.attributes.first(where: { $0.name == "version" })?.value { moduleVersions[source] = version }
+                }
             default:
                 break
             }

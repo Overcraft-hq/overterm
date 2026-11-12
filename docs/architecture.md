@@ -7072,8 +7072,9 @@ the same process). Reads only.
 
 The design is docs/design/terraform/analysis.md (its Section 9 the
 stages). Built so far: the groundwork of stage 0, stage 1a, HCL in the
-editor, stage 1b, which root, which workspace, and is it production, and
-stage 1c, guarding agents.
+editor, stage 1b, which root, which workspace, and is it production,
+stage 1c, guarding agents, and stage 1d, the plan in the right slot.
+Nothing yet applies.
 
 - **Roots** (stage 1b, analysis 4.12, 6.1, 6.2). The rail's Terraform panel
   (`SidebarPanel.terraform`, ⌥⌘E, `terraform.enabled` on by default) is the
@@ -7460,6 +7461,117 @@ stage 1c, guarding agents.
   `LSPGlob`), `Spec.initializationOptions`, `environmentAdded`/`Removed`,
   `ServerDiscovery.zedTerraformLS`; and every pane's MCP token its own
   (Browser above).
+- **The plan** (stage 1d, analysis 2.2, 3.1, 4.3–4.10, 4.13, 5.5, 5.6,
+  6.3). Overterm's own process, never a terminal: `TerraformPlanRun` (one
+  run of a root, a plan or an init, in memory) checks first — never an
+  HCP root (`cloud {}`, `remote`: `TerraformProcessCheck.refused(_:backendType:)`,
+  "HCP runs remotely", D-20), **the root read and classed again**
+  (`changedSinceCard`: a workspace selected since the card, a backend
+  edited, a class now production where the card's wasn't — refused, and
+  an agent's run on production always), the
+  backend unchanged since init, and **the workspace it will use exists**
+  (`TerraformWorkspaceCheck`, pure: a local backend's
+  `terraform.tfstate.d`, else the backend's `workspace list`, cached in
+  the registry by identity; a missing one — by `.terraform/environment`
+  too — is refused before anything runs, since `plan` would create it) —
+  then takes its state's turn in `TerraformRunRegistry` (the app's: one
+  run per state identity, a second waiting and saying for whom; the runs
+  of the session; `stateWrites`, a terraform write a pane ran — the
+  ledger's finished command, or a write the pane monitor saw end
+  (`TerraformPaneMonitor.finishedWrites`, `noteWritesEnded`) — which makes
+  every plan of that state made before it stale at once, "applied from
+  `acme-live` at 14:52: plan again"; production's first plan and an
+  agent's first `tf_plan` per root, asked — the agent's again whenever its
+  code runs or reaches something the approved one didn't,
+  `TerraformPlanGate.agentAsks`; a run stopped while it waits leaves the
+  queue at once, `cancelWaiting`). The line is
+  `TerraformCommands.plan` (`-input=false -json -detailed-exitcode
+  -lock=true -lock-timeout=10s|0s|5m -out=<run folder>/plan
+  [-var-file=…]`: var files only inside the root, the out file only in a
+  run folder — `isPlan` checks a line against it, `refusal` refuses any
+  other; init is `init -input=false -json -lockfile=readonly`, the
+  workspace chip's `workspace list` and `workspace select <name>`, never
+  `-or-create`), in `TerraformEnvironment.Purpose.run` (the user's
+  environment, credentials passed through unread, `TF_CLI_ARGS*`,
+  `TF_LOG*`, `TF_REATTACH_PROVIDERS` out, `TF_WORKSPACE` the checked
+  name). `TerraformStreamRun` spawns it into a group of its own through
+  `/bin/sh -c 'umask 077; exec "$0" "$@"'`, reads its `-json` stream line
+  by line on its GCD thread (`TerraformUIMessage`, pure: an unknown `ui`
+  major refused, a non-JSON line raw, a diagnostic by the allow-list)
+  and hands it to the main queue in 120 ms batches; the exit code decides
+  (0, 2, else failed — a file written on exit 1 is dropped; a plan past
+  64 MB is `tooLarge`, said with the stream's `change_summary`). The plan
+  file is written in `TerraformRunFolder` (`$TMPDIR/ot-tf-<uid>-<pid>/<run>`,
+  0700, owner and mode checked, never a link; swept at launch of dead
+  processes' folders only, `sweepable`), then opened, hashed and
+  unlinked: `TerraformPlanFile` holds it by its descriptor for `show
+  -json /dev/fd/3` (and stage 2a's apply), `TerraformPlanZip` (pure: a
+  zip's central directory over `pread`, stored or deflated) reads only
+  the prior state's lineage and serial and the lock file's SHA-256. The
+  JSON is decoded off the main thread through `TerraformPlan`'s
+  allow-list, and **a value Terraform marks sensitive anywhere is masked
+  everywhere it appears** (`sensitiveValues`: a sensitive variable's
+  value copied into an unmarked attribute — `terraform_data`'s `output` —
+  is still that value; `TerraformSensitiveValues`, pure: a leaf equal to
+  one masked whole, numbers and short strings too, a longer one hunted
+  inside strings by a rolling hash per length — one pass whatever their
+  number — and redacted before `scrub`); `TerraformPlanRecord` keeps the masked model, the
+  descriptor, the binary and the run's whole environment, in memory
+  only. The slot: `RightPane.Mode.terraformPlan` (`terraformPlanOpened`),
+  `TerraformPlanPaneModel` (the run shown; the filter and chips; the rows
+  and their chains kept, built again only when the plan, filter, chips or
+  sources change; the selection and the list's keys — ↑↓, ↩, `o`, `a`,
+  `/`, ⌫, ⌘C — through `TerraformPlanKeyView`, which takes the keyboard
+  when a row is pressed; the diff's added lines, `addedLines`, joined to
+  the run's `changedLines` — `TerraformChangedLines`, `git diff -U0 <merge
+  base> -- <root>` read when the plan is asked, committed lines too —; the
+  root's files read once a plan lands) + `TerraformPlanPaneView` — rows
+  that observe nothing, Equatable — the header (root, branch @ commit,
+  age, the profile's and region's names, the counts bar with the CLI's
+  sentence on hover; stale, "creates everything: no state found", partly
+  understood, the risk list, the var files and `TF_VAR_` names), then
+  `TerraformPlanRows` (pure: drift, replace/delete/forget, actions,
+  creates and updates folded ×N, moves, imports, data sources), each
+  risky row's `TerraformCauseChain` (pure: `replace_paths` →
+  `references` → the var file line that sets it last, or its default, or
+  the local's line — "changed in this branch" from the diff), a row's
+  `TerraformAttributeDiff` (pure: ••••••, "known after apply", forcing
+  attributes, unchanged counted, a long string — JSON pretty-printed first
+  — by `LineDiff`); while running its progress and log; on
+  failure the diagnostics, a held lock (`TerraformLockInfo`, pure, from
+  Terraform's own words only — never `.lock.info` —, "no Terraform runs
+  on this Mac" when the holder is this Mac's) with Wait for It (5 min),
+  missing variables with the root's var files offered (read with the
+  run, off the main thread, `offeredVarFiles`; remembered in
+  `TerraformRootStore` per checkout and root). Before a person's plan
+  `TerminalWindowController+TerraformPlan` asks where `TerraformPlanGate`
+  says (pure: production's first plan this session, a branch with a
+  commit not the person's — every author since the merge base, an
+  unknown one counted as not theirs —, `TerraformRunRisks` new against the base branch — command and
+  fetch data sources, provisioners, remote states, actions, providers
+  added to the lock file, module sources —, read by `git show`); never
+  an automatic plan. Init shows `TerraformInitPlan`'s fetch list first
+  (pure: providers not in the lock file, modules not at an exact
+  registry version, branch refs, plain HTTP) and offers the plugin cache
+  once two worktrees of the repository have roots (`TerraformRootStore`
+  keeps the answer; `AppEnvironment.terraformCacheDirectory`, inits one at
+  a time per cache). `TerraformProcessCheck` (pure) is 5.3's table: what
+  starts on which class, the never-built verbs. Copy Summary
+  (`TerraformPlanText.copySummary`) and Ask Why
+  (`TerraformAgentBrief.run`: diagnostics, the lock's holder, the log's
+  last lines) read the masked model only. Agents: `tf_plan` (never
+  production; asked once per root and session; `-lock-timeout=0s`, no
+  flag; returns a run ID — `TerraformMCP.startPlan` reaches the pane's
+  window), `tf_run_status`, `tf_plan_summary` without a path (Overterm's
+  last plan), `tf_plan_resource` and `tf_why`, all through
+  `TerraformPlan.forAgents()` (`Secrets.isSecret`'s names masked too),
+  every risky row with its cause chain (`TerraformCauseChain.texts`); the
+  question names the profile the plan uses. Scenarios `terraformPlan`
+  and `terraformPerf` (Section 10's 2,000 resources: decoded and masked
+  under 0.5 s, rows shown and filtered under 150 ms). Deferred, in the
+  analysis' stage notes: a hunk in the changes pane lighting its plan
+  rows and back, "Open block" through `modules.json`, the rows as a
+  `ResourceTable`.
 - **The guards** (`Terraform/TerraformGuards.swift`, pure but for
   `prepareScratch`; analysis 4.2, 4.5, 4.13, 5.13 rule 8). Terraform
   changes real infrastructure, so an isolated run or a unit test

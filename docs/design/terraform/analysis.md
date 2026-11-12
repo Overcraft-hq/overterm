@@ -879,6 +879,11 @@ Each stage is usable on its own and has its own E2E check. Security comes first:
 | **2f. Review** | The review tab's Terraform section; "Post to pull request…" | "What will this PR change in the cloud" beside its diff | A branch's touched roots listed; planning it asks with its risk list | MINOR |
 | **3. Optional** | The page across checkouts; Terragrunt units; OpenTofu (after a real-binary spike); HCP saved cloud plans or the JSON plan API (keychain token); tflint/trivy/checkov/conftest if on PATH; Infracost if configured; policy results; plan diff across worktrees; `terraform query` → import blocks; agent apply (D-12) | — | — | MINOR each |
 
+**Stage notes: deferred from 1d.** Built in 1d and its review pass: the plan view, the cause chain from the branch's own lines (`git diff -U0 <merge base>`, committed lines too), the list's keys (↑↓, ↩, `o`, `a`, `/`, ⌫, ⌘C), long strings and JSON in a string diffed by line, the `terraformPerf` scenario. Left for stage 2a, with the plan view's progress rows:
+- a hunk in the changes pane lighting the plan rows it causes, and back (3.1);
+- "Open block" for a module's resources through `modules.json` (2.2): 1d finds only the root's own blocks;
+- the rows as a `ResourceTable` (6.3): 1d keeps them in the model and the rows observe nothing, which a 2,000-resource plan's filter and scroll needed; the verb menu on right-click comes with Apply.
+
 ## 10. Performance and reliability at scale
 
 Measured in `sandbox-ux` (M-series, Terraform 1.17.1, `terraform_data` × 2,000 with 20 labels and a 1 KB string each):

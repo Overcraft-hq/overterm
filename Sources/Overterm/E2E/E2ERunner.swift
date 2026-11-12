@@ -99,6 +99,8 @@ final class E2ERunner {
         "terraform": { await $0.terraformScenario() },
         "terraformRoots": { await $0.terraformRootsScenario() },
         "terraformAgents": { await $0.terraformAgentsScenario() },
+        "terraformPlan": { await $0.terraformPlanScenario() },
+        "terraformPerf": { await $0.terraformPerfScenario() },
         "throughput": { await $0.throughputScenario() },
     ]
 
