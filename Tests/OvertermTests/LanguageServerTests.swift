@@ -383,7 +383,72 @@ final class LanguageServerTests: XCTestCase {
         XCTAssertNotEqual(added, options)
         XCTAssertEqual(Set([plain, options, options, added]).count, 3)
         XCTAssertTrue(
-            LanguageServers.specs.allSatisfy { $0.initializationOptions == nil && $0.environmentAdded.isEmpty && $0.environmentRemoved.isEmpty })
+            LanguageServers.specs.filter { $0.id != "terraform" }.allSatisfy {
+                $0.initializationOptions == nil && $0.environmentAdded.isEmpty && $0.environmentRemoved.isEmpty
+            })
+    }
+
+    /// terraform-ls (analysis 4.14): its files, its validate on save off, and
+    /// what it and the `terraform validate` it runs never get — a hostile
+    /// shell's credentials, the variables that inject flags or log values —
+    /// with a scratch HOME and CLI config, and no call home.
+    func testTerraformLSSpec() throws {
+        func id(_ name: String) -> String? { LanguageServers.languageID(for: URL(fileURLWithPath: "/acme/envs/dev/\(name)")) }
+        XCTAssertEqual(id("main.tf"), "terraform")
+        XCTAssertEqual(id("prod.tfvars"), "terraform-vars")
+        XCTAssertEqual(id("main.tofu"), "opentofu")
+        XCTAssertNil(id(".terraform.lock.hcl"))
+        XCTAssertNil(id("terragrunt.hcl"))
+        XCTAssertEqual(id("main.tf.json"), "json")
+        let spec = try XCTUnwrap(LanguageServers.specs.first { $0.id == "terraform" })
+        XCTAssertEqual(spec.rootMarkers, [], "rooted at the checkout's top: one server a worktree")
+        XCTAssertEqual(spec.launch, [.executable("terraform-ls", ["serve"]), .zedTerraformLS])
+        guard case .object(let options)? = spec.initializationOptions, case .object(let features)? = options["experimentalFeatures"] else {
+            return XCTFail("initializationOptions: \(String(describing: spec.initializationOptions))")
+        }
+        XCTAssertEqual(features["validateOnSave"], .bool(false))
+        let hostile = [
+            "PATH": "/usr/bin", "HOME": "/Users/acme", "AWS_PROFILE": "acme-prod-admin", "AWS_SECRET_ACCESS_KEY": "acme-hunter2-SECRET",
+            "GOOGLE_APPLICATION_CREDENTIALS": "/Users/acme/key.json", "ARM_CLIENT_SECRET": "globex-BKPW", "TF_TOKEN_app_terraform_io": "tok-acme-123",
+            "GITHUB_TOKEN": "tok-acme-123", "ACME_CLIENT_SECRET_ID": "x", "KUBECONFIG": "/Users/acme/.kube/config",
+            "TF_CLI_ARGS_apply": "-auto-approve", "TF_CLI_ARGS": "-lock=false", "TF_LOG": "trace", "TF_LOG_PATH": "/tmp/acme.log",
+            "TF_REATTACH_PROVIDERS": "{}", "TF_WORKSPACE": "acme-prod", "TF_DATA_DIR": "/tmp/acme", "TF_VAR_db_password": "acme-hunter2-SECRET",
+            "TF_CLI_CONFIG_FILE": "/Users/acme/.terraformrc", "LANG": "en_US.UTF-8",
+            "KUBE_CONFIG_PATH": "/Users/acme/.kube/acme-prod", "KUBE_CTX": "acme-prod", "KUBE_CLIENT_KEY_DATA": "acme-hunter2-SECRET",
+            "KUBE_HOST": "https://acme-prod.example", "HELM_KUBETOKEN": "tok-acme-123",
+            "aws_secret_access_key": "acme-hunter2-SECRET", "vault_token": "tok-acme-123", "acme_client_secret": "globex-BKPW",
+        ]
+        let environment = LanguageServer.environment(hostile, adding: [:], setting: spec.environmentAdded, removing: spec.environmentRemoved)
+        let scratch = AppEnvironment.terraformScratchDirectory
+        XCTAssertEqual(environment["HOME"], scratch.appendingPathComponent("home").path)
+        XCTAssertEqual(environment["TF_CLI_CONFIG_FILE"], scratch.appendingPathComponent("terraformrc").path)
+        XCTAssertEqual(environment["CHECKPOINT_DISABLE"], "1")
+        XCTAssertEqual(Set(environment.keys), ["PATH", "HOME", "LANG", "CHECKPOINT_DISABLE", "TF_CLI_CONFIG_FILE"])
+        XCTAssertEqual(
+            Set(hostile.keys.filter(TerraformGuards.isCredential)).intersection(environment.keys), [], "the same names validate's environment loses")
+        // terraform.path: the terraform Overterm runs, added at launch.
+        guard case .object(let launched)? = LanguageServers.launchOptions(spec, terraformPath: "/opt/acme/bin/terraform") else {
+            return XCTFail("launch options")
+        }
+        XCTAssertEqual(launched["terraform"], .object(["path": .string("/opt/acme/bin/terraform")]))
+        XCTAssertEqual(launched["experimentalFeatures"], options["experimentalFeatures"])
+        XCTAssertNotNil(launched["indexing"])
+        XCTAssertEqual(LanguageServers.launchOptions(spec, terraformPath: nil), spec.initializationOptions)
+        let go = try XCTUnwrap(LanguageServers.specs.first { $0.id == "go" })
+        XCTAssertNil(LanguageServers.launchOptions(go, terraformPath: "/opt/acme/bin/terraform"), "only terraform-ls is told")
+    }
+
+    func testRemovalPatterns() {
+        XCTAssertTrue(LanguageServer.pattern("AWS_*", matches: "AWS_PROFILE"))
+        XCTAssertFalse(LanguageServer.pattern("AWS_*", matches: "MY_AWS_PROFILE"))
+        XCTAssertTrue(LanguageServer.pattern("*_TOKEN", matches: "GITHUB_TOKEN"))
+        XCTAssertFalse(LanguageServer.pattern("*_TOKEN", matches: "GITHUB_TOKEN_PATH"))
+        XCTAssertTrue(LanguageServer.pattern("*_SECRET*", matches: "ACME_SECRET_ID"))
+        XCTAssertTrue(LanguageServer.pattern("TF_LOG", matches: "TF_LOG"))
+        XCTAssertFalse(LanguageServer.pattern("TF_LOG", matches: "TF_LOG_PATH"))
+        XCTAssertFalse(LanguageServer.pattern("*", matches: "PATH"), "a lone star removes nothing")
+        XCTAssertTrue(LanguageServer.pattern("AWS_*", matches: "aws_secret_access_key"), "a name in lower case too")
+        XCTAssertTrue(LanguageServer.pattern("*_TOKEN", matches: "vault_token"))
     }
 
     @MainActor

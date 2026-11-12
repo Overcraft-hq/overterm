@@ -126,7 +126,7 @@ final class E2ETests: XCTestCase {
         let upper = name.uppercased()
         let prefixes = [
             "AWS_", "GOOGLE_", "CLOUDSDK_", "ARM_", "AZURE_", "TF_TOKEN_", "TF_CLOUD_", "TF_VAR_", "TF_HTTP_", "VAULT_", "CONSUL_HTTP_", "TFE_",
-            "OCI_", "ALICLOUD_", "CLOUDFLARE_", "DIGITALOCEAN_", "HCLOUD_", "LINODE_", "SCW_",
+            "OCI_", "ALICLOUD_", "CLOUDFLARE_", "DIGITALOCEAN_", "HCLOUD_", "LINODE_", "SCW_", "KUBE_", "HELM_",
         ]
         let names: Set<String> = [
             "KUBECONFIG", "TF_REATTACH_PROVIDERS", "GOOGLE_APPLICATION_CREDENTIALS", "TF_ENCRYPTION", "PG_CONN_STR", "PGPASSWORD", "PGPASSFILE",
@@ -169,6 +169,16 @@ final class E2ETests: XCTestCase {
     func testPin() throws { try run("pin") }
     func testClose() throws { try run("close") }
     func testEditor() throws { try run("editor") }
+    /// Terraform's editor (stage 1a) with the installed terraform, offline,
+    /// behind the recording wrapper, over checkouts the scenario writes:
+    /// `OVERTERM_TF_TEST_TERRAFORM`, else Homebrew's. Skipped, loudly, without one.
+    func testTerraform() throws {
+        let candidates = [ProcessInfo.processInfo.environment["OVERTERM_TF_TEST_TERRAFORM"], "/opt/homebrew/bin/terraform", "/usr/local/bin/terraform"]
+        guard let terraform = candidates.compactMap({ $0 }).first(where: { $0.hasPrefix("/") && FileManager.default.isExecutableFile(atPath: $0) }) else {
+            throw XCTSkip("no terraform installed: the terraform scenario needs one (OVERTERM_TF_TEST_TERRAFORM names it)")
+        }
+        try run("terraform", env: ["OVERTERM_TERRAFORM": terraform])
+    }
     func testAPI() throws { try run("api") }
     func testAPIImport() throws { try run("apiImport") }
     func testNotes() throws { try run("notes") }

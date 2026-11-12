@@ -26,6 +26,7 @@ extension EditorViewController {
         guard let console = buffer?.sqlConsole else {
             // The detail's YAML tab draws its bar over the editor itself.
             if let manifest = buffer?.kubeManifest, !embedded { return showManifestBar(manifest) }
+            if let folder = buffer?.terraform, !embedded { return showTerraformBar(folder) }
             consoleHost.rootView = AnyView(EmptyView())
             consoleHeight.constant = 0
             return

@@ -1,0 +1,67 @@
+import Foundation
+
+/// The environment of a terraform Overterm starts (analysis 4.5). Pure.
+///
+/// Stage 1a runs only what needs no credentials — `fmt` and `validate` —
+/// so both get the stripped environment: every credential variable
+/// (`TerraformGuards.isCredential`) taken out, and `HOME` and the CLI
+/// config a scratch folder's, so the providers `validate` starts find
+/// neither `~/.aws` nor `~/.terraform.d/credentials.tfrc.json`, and nothing
+/// is downloaded. Whatever the purpose, what injects flags or logs values
+/// never reaches a run (`isAlwaysRemoved`).
+enum TerraformEnvironment {
+    enum Purpose: Sendable, Equatable {
+        /// `fmt -`, `fmt -check`: reads HCL, runs no provider.
+        case format
+        /// `validate -json`: starts every provider binary (spike 19), so
+        /// no credential, no HOME of the user's.
+        case validate
+    }
+
+    /// Names no run ever gets: `TF_CLI_ARGS` and `TF_CLI_ARGS_*` (they
+    /// inject `-auto-approve` and `-lock=false`, verified), `TF_LOG*`
+    /// (logs `-var` values), `TF_REATTACH_PROVIDERS` (bypasses the lock
+    /// file's hashes), and an inherited `TF_WORKSPACE` or `TF_DATA_DIR`
+    /// (each decides silently which state a run touches).
+    static func isAlwaysRemoved(_ name: String) -> Bool {
+        name == "TF_CLI_ARGS" || name.hasPrefix("TF_CLI_ARGS_") || name == "TF_LOG" || name.hasPrefix("TF_LOG_")
+            || name == "TF_REATTACH_PROVIDERS" || name == "TF_WORKSPACE" || name == "TF_DATA_DIR"
+    }
+
+    /// The environment for `purpose`, in `root`, over `base` (the user's
+    /// login shell's, or a guarded run's scratch one —
+    /// `AppEnvironment.terraformBaseEnvironment`).
+    static func build(base: [String: String], purpose: Purpose, root: URL, scratch: TerraformGuards.Scratch) -> [String: String] {
+        var environment = base.filter { name, _ in !isAlwaysRemoved(name) && !TerraformGuards.isCredential(name) }
+        switch purpose {
+        case .format, .validate:
+            environment["HOME"] = scratch.home.path
+            environment["TF_CLI_CONFIG_FILE"] = scratch.cliConfig.path
+        }
+        environment["CHECKPOINT_DISABLE"] = "1"
+        environment["TF_INPUT"] = "0"
+        environment["TF_IN_AUTOMATION"] = "1"
+        environment["TF_DATA_DIR"] = root.appendingPathComponent(".terraform", isDirectory: true).path
+        return environment
+    }
+
+    /// What terraform-ls never has in its environment, nor the
+    /// `terraform validate` it runs, in `LanguageServers.Spec`'s patterns
+    /// (`X*` begins, `*X` ends, `*X*` contains): the credentials of
+    /// `TerraformGuards` and `isAlwaysRemoved`'s names.
+    static let languageServerRemoved: [String] = {
+        var patterns = TerraformGuards.credentialPrefixes.map { $0 + "*" }
+        patterns += TerraformGuards.credentialNames.sorted()
+        patterns += TerraformGuards.credentialSuffixes.map { "*" + $0 }
+        patterns += ["*_SECRET*", "SECRET*", "TF_CLI_ARGS", "TF_CLI_ARGS_*", "TF_LOG", "TF_LOG_*", "TF_REATTACH_PROVIDERS", "TF_WORKSPACE", "TF_DATA_DIR"]
+        return patterns
+    }()
+
+    /// What terraform-ls has set (analysis 4.14, 5.13 rule 11): no call
+    /// home, and a scratch HOME and CLI config — the stripped variables
+    /// alone leave `~/.aws` and `~/.terraform.d` readable to the providers
+    /// its `validate` starts.
+    static func languageServerAdded(scratch: TerraformGuards.Scratch) -> [String: String] {
+        ["CHECKPOINT_DISABLE": "1", "HOME": scratch.home.path, "TF_CLI_CONFIG_FILE": scratch.cliConfig.path]
+    }
+}

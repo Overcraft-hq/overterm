@@ -158,6 +158,7 @@ enum EditCommands {
         case "htm": return "html"
         case "plist", "svg": return "xml"
         case "scss", "less": return "css"
+        case "tf", "tfvars", "hcl", "tofu", "nomad": return "hcl"
         default: return nil
         }
     }
@@ -167,7 +168,7 @@ enum EditCommands {
         switch id {
         case "swift", "go", "rust", "c", "cpp", "objc", "javascript", "typescript", "tsx", "jsx", "java", "kotlin", "zig", "json", "jsonc":
             .line("// ")
-        case "python", "ruby", "shell", "yaml", "toml", "make", "dockerfile", "elixir": .line("# ")
+        case "python", "ruby", "shell", "yaml", "toml", "make", "dockerfile", "elixir", "hcl": .line("# ")
         case "sql", "lua", "haskell": .line("-- ")
         case "markdown", "html", "xml": .block(open: "<!--", close: "-->")
         case "css": .block(open: "/*", close: "*/")

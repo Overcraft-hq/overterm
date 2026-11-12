@@ -87,7 +87,8 @@ extension EditorViewController: CodeTextViewHost {
         case "editor.previousProblem": goToProblem(forward: false)
         case "editor.showHover": showHover(at: textView.selectedRange().location, fromKeyboard: true)
         case "editor.complete": triggerCompletion(manual: true)
-        case "editor.format": formatDocument {}
+        case "editor.format":
+            if !formatTerraform(buffer, manual: true, then: {}) { formatDocument {} }
         case "editor.toggleComment":
             guard let style = commentStyle(for: buffer) else { return true }
             apply(EditCommands.toggleLineComment(in: text, selections: selections, style: style))
@@ -115,6 +116,9 @@ extension EditorViewController: CodeTextViewHost {
             buffer.wrapOverride = !(textView.textContainer?.widthTracksTextView ?? false)
             applyWrap()
         case "editor.toggleZoom": onToggleZoom?()
+        case "terraform.validate":
+            guard buffer.terraform != nil else { return false }
+            validateTerraform(manual: true)
         case "editor.markdownPreview":
             guard buffer.language?.id == "markdown" else { return false }
             toggleMarkdownPreview()
@@ -214,11 +218,12 @@ extension EditorViewController: CodeTextViewHost {
     }
 
     func codeTextViewContextMenu(_ view: CodeTextView, for menu: NSMenu) -> NSMenu {
-        let items: [(String, String)] = [
+        var items: [(String, String)] = [
             ("Go to Definition", "editor.goToDefinition"), ("Find All References", "editor.findReferences"),
             ("Go to Symbol in File…", "editor.goToSymbol"), ("Format Document", "editor.format"),
             ("Toggle Line Comment", "editor.toggleComment"),
         ]
+        if active?.terraform != nil { items.append(("Validate Terraform", "terraform.validate")) }
         var index = 0
         for (title, id) in items {
             let item = NSMenuItem(title: title, action: #selector(runMenuCommand(_:)), keyEquivalent: "")
