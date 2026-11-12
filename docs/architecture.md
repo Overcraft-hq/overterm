@@ -1005,7 +1005,8 @@ like Zed needs a GPU renderer.
     command's (terraform-ls: `CHECKPOINT_DISABLE=1`, a scratch `HOME`);
     `Spec.environmentRemoved` (names, `AWS_*` for a prefix) is taken out of
     all three after, so a removed name wins and a server that runs tools
-    hands them no credentials. `ServerDiscovery.zedTerraformLS` finds
+    hands them no credentials (`*_TOKEN` for an ending, `*_SECRET*` for a
+    part). `ServerDiscovery.zedTerraformLS` finds
     the newest terraform-ls Zed's Terraform extension downloaded
     (`extensions/work/terraform/terraform-ls-<version>/`), run as `serve`.
 - **Vim** (`Vim/`, Settings ▸ Editor): a pure engine over a `VimBuffer`, which
@@ -7070,7 +7071,93 @@ the same process). Reads only.
 ## Terraform
 
 The design is docs/design/terraform/analysis.md (its Section 9 the
-stages). Built so far: the groundwork of stage 0 — nothing visible.
+stages). Built so far: the groundwork of stage 0, and stage 1a, HCL in
+the editor.
+
+- **HCL in the editor** (stage 1a, analysis 4.14; Editor above for what
+  it builds on). Colours are tree-sitter-hcl at Helix 25.07.1's pin with
+  Helix's `hcl/` queries (`EditorLanguage("hcl")`: `.tf`, `.tfvars`,
+  `.tofu`, `.hcl`, `.nomad`, `.terraform.lock.hcl`, `terragrunt.hcl`,
+  `root.hcl`; `x.tftest.hcl` by its last extension, `*.tf.json` stays
+  JSON); its `comment` injection has no grammar here and is skipped.
+  terraform-ls is a `LanguageServers.Spec` when found (on the PATH's
+  places or Zed's download), rooted at the checkout's top — one server a
+  worktree —, its validate on save off (`initializationOptions`), started
+  with no credential and none of `TF_CLI_ARGS*`, `TF_LOG*`,
+  `TF_REATTACH_PROVIDERS`, `TF_WORKSPACE`, `TF_DATA_DIR` in its
+  environment (`TerraformEnvironment.languageServerRemoved`, in the
+  patterns `environmentRemoved` takes: `X*`, `*X`, `*X*`, in any case), a
+  scratch HOME and CLI config — made before it is spawned
+  (`LanguageServers.prepareLaunch`) —, `CHECKPOINT_DISABLE=1`, and
+  `terraform.path` the terraform Overterm runs, as far as it is known
+  without waiting (`TerraformCLI.knownBinary`; `warm` asks the login
+  shell when a Terraform file opens — `launchOptions`).
+  - **Runs** (`TerraformRun.short`): a `ProcessGroup` child, cwd the
+    folder (never `-chdir`), stdin from a pipe written off the thread
+    (`F_SETNOSIGPIPE`), output bounded (1 MB, stderr 64 KB), 30 s then
+    SIGTERM and SIGKILL to the group, on a GCD thread. Every live group is
+    in `TerraformRun.live`: quitting (`endRun`) sends each SIGINT
+    (`stopAll`), and a group is swept with SIGKILL once terraform has
+    exited, so no provider plugin validate started is left. It starts only
+    a line `TerraformCommands` builds — `fmt -no-color -`, `fmt -check
+    -list=true [-recursive] -no-color`, `validate -json -no-color` —, which
+    refuses anything else before spawning (`refusal`: a writing or
+    secret-printing subcommand, `-auto-approve`, `-lock=false`,
+    `-refresh=false`, `-upgrade`, `-var`, `-chdir`…), so the editor can
+    never run `init` or `apply`. The binary is `TerraformCLI.binary()`:
+    guarded, `OVERTERM_TERRAFORM`'s with a scenario's recording wrapper in
+    front (`scenarioWrapper`) or none; else the login shell's PATH, then
+    Homebrew's places (`terraform.path` and `mise which` come with stage
+    1b's version pill). The environment is `TerraformEnvironment.build`
+    (pure): `terraformBaseEnvironment()` without credentials or the names
+    above, HOME and `TF_CLI_CONFIG_FILE` the scratch folder's (no
+    `~/.aws`, no `credentials.tfrc.json` for the providers validate
+    starts, nothing downloaded), `CHECKPOINT_DISABLE`, `TF_INPUT=0`,
+    `TF_IN_AUTOMATION`, `TF_DATA_DIR` the root's own `.terraform`.
+  - **Validate** (`TerraformFolder`, one per module folder, the app's
+    `TerraformEditorModel`): on the bar's button or the editor's menu's
+    Validate Terraform (`terraform.validate`, bindable, no default key), and after a save
+    where terraform-ls isn't running. Its JSON is decoded through an
+    allow-list (`TerraformValidation`, pure: severity, summary, detail,
+    range, the snippet's code — never its `values`; every string through
+    `scrub`; a `format_version` major other than 1 refused). Diagnostics
+    land on their lines (`TerraformValidation.range`: line and column in
+    characters, as HCL counts them, to UTF-16, clamped) as the buffer's
+    `terraformDiagnostics`, beside the server's and Kubernetes'; an edit
+    drops them, and a result is laid only over a buffer unedited since
+    that validate started and saved (`TerraformFolder.describes`, by the
+    buffers' versions then). Validate on a buffer with edits saves it and
+    validates once the save has written it (`terraformValidatesOnSave`:
+    format on save writes later than `save` returns). "Needs init" is a diagnostic (`Missing required provider`,
+    `Module not installed`…, analysis 4.12), said once on the bar; a save
+    doesn't validate that folder again until asked. Nothing ever runs
+    `init`, and validate writes nothing in the checkout (the scenario
+    compares it byte for byte).
+  - **Format**: ⇧⌥F or the bar's Format runs `terraform fmt -` over the
+    buffer and applies what comes back as one edit (`replaceText`: one
+    undo); a file that doesn't parse is left as it was, the bar saying
+    the line. On save (`terraform.formatOnSave`, Settings ▸ Terraform, on)
+    only where the checkout already passes `fmt -check` — asked once a
+    run, when its first Terraform file opens, and again on a manual
+    Format or Validate —, so a team that doesn't format isn't
+    reformatted; a Terraform file never gets the language server's format
+    on save. Where `fmt -check` looks is the folder's `formatScope`, found
+    once when the folder is: its git top, recursively, when that passes
+    `LSPWatchedFiles.watchable` (not `/`, a volume's top, the home folder
+    or above — a dotfiles repository at `~`); else the file's own folder
+    alone, never below it.
+  - **Without terraform-ls**: F12 on `var.x`, `local.x`, `module.y`,
+    `data.t.n`, `t.n` (in a `.tfvars`, an assignment's name) by
+    `TerraformConfigIndex` over the folder's `.tf` and `.tofu` files (open
+    buffers as they are on screen; `load` reads the rest off the main
+    thread, 500 names, 2 MB a file, 8 MB in all), and ⇧⌘O and the breadcrumb
+    from the file's own definitions. Both read `TerraformBlocks` (pure): a
+    scan of top-level blocks — type, labels, range, a `locals` block's
+    names — that steps over strings, `${…}` templates (their own strings
+    and braces), heredocs and comments, bounded, never throwing.
+  - **The bar** (`TerraformEditorBar`, under the text where a `.sql`
+    file's console goes): the folder as the checkout names it, Validate,
+    Format, the last validate's state, and whether save formats here.
 
 - **The editor's part** (stage 0, Editor above): language servers hear of
   files changed outside the editor (`DirectoryWatcher(fileEvents:)`,

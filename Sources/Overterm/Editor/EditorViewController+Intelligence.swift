@@ -103,6 +103,7 @@ extension EditorViewController {
     /// An edit: the server hears it once typing pauses (or before any request).
     func bufferDidChange(_ buffer: EditorBuffer) {
         if buffer.kubeManifest != nil { scheduleKubeFieldMarks(buffer) }
+        if !buffer.terraformDiagnostics.isEmpty { dropTerraformDiagnostics(buffer) }
         guard buffer.serverOpen else { return }
         pendingServerChange?.cancel()
         let work = DispatchWorkItem { [weak self, weak buffer] in
@@ -134,6 +135,7 @@ extension EditorViewController {
     }
 
     func bufferDidSave(_ buffer: EditorBuffer) {
+        terraformSaved(buffer)
         guard buffer.serverOpen, let url = buffer.url else { return }
         flushServerChange(buffer)
         server(for: buffer)?.didSave(url, text: buffer.storage.string)

@@ -370,6 +370,8 @@ enum KeyCommands {
         .init("editor.toggleSoftWrap", "Toggle Soft Wrap", group: "Editor", key: "alt+z", editor: true),
         .init("editor.toggleZoom", "Zoom Editor", group: "Editor", key: "shift+escape", editor: true),
         .init("editor.markdownPreview", "Toggle Markdown Preview", group: "Editor", key: "shift+cmd+v", editor: true),
+        // No default key (analysis 7: bindable); ⌥⌘E and ⌃⌘E, free in Ghostty's defaults, are the panel's and the switcher's (1b).
+        .init("terraform.validate", "Validate Terraform", group: "Editor", editor: true),
         .init("editor.closeFile", "Close File", group: "Editor", key: "cmd+w", editor: true),
         .init("editor.nextFile", "Next File", group: "Editor", key: "alt+cmd+right", editor: true),
         .init("editor.previousFile", "Previous File", group: "Editor", key: "alt+cmd+left", editor: true),

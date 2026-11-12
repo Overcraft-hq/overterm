@@ -292,6 +292,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         view = root
         header.setZoomed(isZoomed)
         observeDiagnostics()
+        observeTerraformDiagnostics()
         applySettings()
         refreshChrome()
     }
@@ -331,6 +332,7 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         attachDrawing(buffer)
         attachConsole(buffer)
         attachManifest(buffer)
+        attachTerraform(buffer)
         // A new tab goes after the one showing, as Zed's.
         let index = activeIndex >= 0 ? activeIndex + 1 : buffers.count
         buffers.insert(buffer, at: index)
@@ -1165,7 +1167,13 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
         }
         // A new request: saving it is naming it and putting it in its collection.
         if isDraft(buffer) { return saveDraft(buffer) }
-        if !formatted, Settings.shared.editorFormatOnSave, Settings.shared.editorLanguageServers {
+        // A Terraform file: terraform fmt, only where the checkout already passes fmt -check — never the server's formatter.
+        if !formatted, let url = buffer.url, TerraformEditorModel.isFormattable(url) {
+            if TerraformEditorModel.shared.formatsOnSave(url) {
+                formatTerraform(buffer) { [weak self] in self?.save(buffer, overwriting: overwriting, formatted: true) }
+                return
+            }
+        } else if !formatted, Settings.shared.editorFormatOnSave, Settings.shared.editorLanguageServers {
             formatDocument(buffer) { [weak self] in self?.save(buffer, overwriting: overwriting, formatted: true) }
             return
         }

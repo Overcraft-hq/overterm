@@ -192,6 +192,11 @@ extension EditorViewController {
     }
 
     private func loadTags(_ buffer: EditorBuffer, _ done: @escaping ([EditorSymbol]) -> Void) {
+        if buffer.terraform != nil {
+            let symbols = terraformSymbols(buffer)
+            if buffer === active { currentSymbols = symbols }
+            return done(symbols)
+        }
         guard let syntax = buffer.syntax else { return done([]) }
         // Called back on the main queue (SyntaxDocument.symbols).
         nonisolated(unsafe) let done = done
@@ -244,6 +249,8 @@ extension EditorViewController {
     // MARK: Definitions and references
 
     func goToDefinition(at index: Int) {
+        // Terraform without terraform-ls: the module's own index.
+        if let buffer = active, buffer.terraform != nil, server(for: buffer) == nil { return terraformDefinition(at: index) }
         guard let buffer = active, let server = server(for: buffer), let url = buffer.url else { return NSSound.beep() }
         flushServerChange(buffer)
         let position = lspPosition(of: index)

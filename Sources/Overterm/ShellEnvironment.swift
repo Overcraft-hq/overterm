@@ -42,6 +42,13 @@ enum ShellEnvironment {
         return answer
     }
 
+    /// What the login shell said, if it has been asked already: never asks,
+    /// never waits (the main thread may call it).
+    static func known() -> [String: String]? {
+        if AppEnvironment.isIsolated { return nil }
+        return lock.withLock { asked?.answer }
+    }
+
     /// The environment to hand a command: the login shell's, else the one
     /// Overterm was started with.
     static func environment() -> [String: String] {

@@ -197,16 +197,33 @@ final class LanguageServer: @unchecked Sendable {
 
     /// The environment a server gets: the app's, the command's over it, then
     /// the spec's `setting` over both, then `removed` taken out of all three
-    /// — a removed name wins; one ending in `*` takes every name it begins.
+    /// — a removed name wins; `X*` takes every name it begins, `*X` every
+    /// name it ends, `*X*` every name it is in.
     static func environment(
         _ base: [String: String], adding: [String: String], setting: [String: String] = [:], removing: [String]
     ) -> [String: String] {
         var environment = base.merging(adding) { _, new in new }.merging(setting) { _, new in new }
         guard !removing.isEmpty else { return environment }
-        let exact = Set(removing.filter { !$0.hasSuffix("*") })
-        let prefixes = removing.filter { $0.hasSuffix("*") }.map { String($0.dropLast()) }
-        environment = environment.filter { name, _ in !exact.contains(name) && !prefixes.contains { name.hasPrefix($0) } }
+        environment = environment.filter { name, _ in !removing.contains { Self.pattern($0, matches: name) } }
         return environment
+    }
+
+    /// `environmentRemoved`'s patterns: a name, `X*`, `*X`, `*X*` — in
+    /// any case: a credential spelt `aws_secret_access_key` is still one
+    /// (`TerraformGuards.isCredential` reads names the same way).
+    static func pattern(_ pattern: String, matches name: String) -> Bool {
+        let name = name.uppercased()
+        let pattern = pattern.uppercased()
+        let leading = pattern.hasPrefix("*")
+        let trailing = pattern.hasSuffix("*") && pattern.count > 1
+        let core = String(pattern.dropFirst(leading ? 1 : 0).dropLast(trailing ? 1 : 0))
+        guard !core.isEmpty else { return false }
+        switch (leading, trailing) {
+        case (true, true): return name.contains(core)
+        case (true, false): return name.hasSuffix(core)
+        case (false, true): return name.hasPrefix(core)
+        case (false, false): return name == core
+        }
     }
 
     var state: State { lock.withLock { _state } }

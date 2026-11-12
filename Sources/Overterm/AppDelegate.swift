@@ -128,6 +128,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         ManagedProcess.closeAll()
         // A kubectl auth can-i still asking, with its exec plugin: its group.
         KubeProcessRun.stopAll()
+        // A validate or fmt still running, with the providers it started: its group.
+        TerraformRun.stopAll()
         // The proxies' sockets' folder, once kubectl is gone.
         KubeSocketFolder.app.remove()
         // The Kubernetes objects' copies the editor had open (`y`).

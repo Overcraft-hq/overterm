@@ -53,14 +53,25 @@ final class EditorBuffer {
     /// The note's frontmatter and code blocks, for the text's `version`.
     var liveBlocks: (version: Int, blocks: [NoteLivePreview.Block])?
 
-    /// The language server's problems, and the fields a Kubernetes
-    /// manifest's cluster doesn't know (3.15): shown together.
+    /// A Terraform file: its module folder — validate, Format — and the bar under it.
+    var terraform: TerraformFolder?
+    /// Validate asked for while it had edits: it is saved first, and its
+    /// folder validated once the save has written it (format on save
+    /// writes later than `save` returns).
+    var terraformValidatesOnSave = false
+
+    /// The language server's problems, the fields a Kubernetes manifest's
+    /// cluster doesn't know (3.15), and `terraform validate`'s: shown together.
     var diagnostics: [EditorDiagnostic] {
-        get { serverDiagnostics + kubeDiagnostics }
+        get { serverDiagnostics + kubeDiagnostics + terraformDiagnostics }
         set { serverDiagnostics = newValue }
     }
     var serverDiagnostics: [EditorDiagnostic] = []
     var kubeDiagnostics: [EditorDiagnostic] = []
+    /// The last validate's, laid over the text it was saved as — never over
+    /// one edited since that validate started (`TerraformFolder.describes`):
+    /// dropped at the next edit, which they no longer describe.
+    var terraformDiagnostics: [EditorDiagnostic] = []
     /// The file as the last commit has it; nil outside git or when new.
     var gitBase: String?
     var gitMarks: [GitGutterMark] = []

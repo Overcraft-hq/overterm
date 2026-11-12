@@ -95,7 +95,30 @@ final class SyntaxDocumentTests: XCTestCase {
         XCTAssertNil(theme.style(for: "something.else"))
     }
 
+    /// Terraform (analysis 4.14): HCL's grammar at Helix's pin, its comments'
+    /// `comment` injection — no grammar here — skipped, not a failure.
+    func testHCL() {
+        let text = "# acme\nresource \"terraform_data\" \"acme\" {\n  input = var.acme_name\n  count = 2\n  enabled = true\n}\n"
+        let found = spans(text, "main.tf")
+        XCTAssertEqual(winner("# acme", in: found).map { $0.hasPrefix("comment") }, true, "\(found)")
+        XCTAssertEqual(winner("terraform_data", in: found).map { $0.hasPrefix("string") }, true, "\(found)")
+        XCTAssertEqual(winner("resource", in: found).map { $0.hasPrefix("type") || $0.hasPrefix("keyword") }, true, "\(found)")
+        XCTAssertEqual(winner("var", in: found), "variable.builtin", "\(found)")
+        XCTAssertEqual(winner("2", in: found).map { $0.hasPrefix("constant.numeric") }, true, "\(found)")
+        XCTAssertEqual(winner("true", in: found).map { $0.hasPrefix("constant") }, true, "\(found)")
+        XCTAssertNotNil(EditorLanguage.named("hcl")?.injections, "the injections query compiles")
+        let tfvars = spans("acme_name = \"acme-prod\" # the env\n", "prod.tfvars")
+        XCTAssertEqual(winner("acme-prod", in: tfvars).map { $0.hasPrefix("string") }, true, "\(tfvars)")
+        XCTAssertEqual(winner("# the env", in: tfvars), "comment", "\(tfvars)")
+    }
+
     func testLanguageByFile() {
+        for name in ["main.tf", "prod.tfvars", "main.tofu", "acme.tftest.hcl", ".terraform.lock.hcl", "terragrunt.hcl", "root.hcl", "job.nomad"] {
+            XCTAssertEqual(EditorLanguage.language(for: URL(fileURLWithPath: "/acme/\(name)"))?.id, "hcl", name)
+        }
+        XCTAssertEqual(EditorLanguage.language(for: URL(fileURLWithPath: "/acme/main.tf.json"))?.id, "json")
+        XCTAssertEqual(EditorLanguage.named("terraform")?.id, "hcl")
+        XCTAssertEqual(EditCommands.commentPrefix(forLanguageID: EditCommands.languageID(forFileName: "main.tf")), .line("# "))
         XCTAssertEqual(EditorLanguage.language(for: URL(fileURLWithPath: "/r/Dockerfile"))?.id, "dockerfile")
         XCTAssertEqual(EditorLanguage.language(for: URL(fileURLWithPath: "/r/Makefile"))?.id, "make")
         XCTAssertEqual(EditorLanguage.language(for: URL(fileURLWithPath: "/r/x.tsx"))?.id, "tsx")

@@ -622,8 +622,12 @@ enum SettingsSchema {
             help: "⌃Space shows them either way.", kind: .toggle, defaultValue: .bool(true)),
         SettingSpec(
             key: "editor.formatOnSave", section: .editor, group: "Code intelligence", title: "Format on save",
-            help: "With the language server's formatter.", kind: .toggle, defaultValue: .bool(false),
+            help: "With the language server's formatter. Terraform files have their own setting.", kind: .toggle, defaultValue: .bool(false),
             requires: "editor.languageServers"),
+        SettingSpec(
+            key: "terraform.formatOnSave", section: .terraform, group: "Editor", title: "Format Terraform files on save",
+            help: "With terraform fmt, and only in a checkout whose files already pass terraform fmt -check: a team that doesn't format isn't reformatted.",
+            kind: .toggle, defaultValue: .bool(true)),
         SettingSpec(
             key: "editor.vimMode", section: .editor, group: "Vim", title: "Vim mode", help: "As Zed's: yanks go to the clipboard.",
             kind: .toggle, defaultValue: .bool(false)),

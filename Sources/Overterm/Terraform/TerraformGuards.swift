@@ -42,10 +42,14 @@ enum TerraformGuards {
     /// validate, an agent's reads and terraform-ls never get, and what a
     /// guarded run refuses to start with (analysis 4.5, 11). `TF_HTTP_` is
     /// the http backend's (GitLab's managed state: its username and
-    /// password); `CONSUL_HTTP_` the consul backend's.
+    /// password); `CONSUL_HTTP_` the consul backend's; `KUBE_` the
+    /// kubernetes and helm providers' and the kubernetes backend's
+    /// (`KUBE_CONFIG_PATH` names a kubeconfig by absolute path, which a
+    /// scratch HOME doesn't hide; `KUBE_CLIENT_KEY_DATA`, `KUBE_HOST`);
+    /// `HELM_` helm's (its kube context, token, API server, repositories).
     static let credentialPrefixes = [
         "AWS_", "GOOGLE_", "CLOUDSDK_", "ARM_", "AZURE_", "TF_TOKEN_", "TF_CLOUD_", "TF_VAR_", "TF_HTTP_", "VAULT_", "CONSUL_HTTP_", "TFE_",
-        "OCI_", "ALICLOUD_", "CLOUDFLARE_", "DIGITALOCEAN_", "HCLOUD_", "LINODE_", "SCW_",
+        "OCI_", "ALICLOUD_", "CLOUDFLARE_", "DIGITALOCEAN_", "HCLOUD_", "LINODE_", "SCW_", "KUBE_", "HELM_",
     ]
     /// Whole names: a kube context's files (a `kubernetes` provider or
     /// backend), a provider attached by hand (it bypasses the lock file's

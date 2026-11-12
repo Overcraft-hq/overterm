@@ -238,7 +238,10 @@ final class SettingsTests: XCTestCase {
         XCTAssertTrue(settings.problems.contains { $0.contains("\"kind-x\": \"class\" must be one of") })
         XCTAssertFalse(settings.restoreTabs)
 
-        // Not an object of objects: the whole setting is a problem.
+        // Not an object of objects: the whole setting is a problem. A first
+        // launch's read (no values confirmed yet): this is the file's shape,
+        // not an outside edit held against the ones above.
+        try? FileManager.default.removeItem(at: settings.confirmedURL)
         try write("{\n  \"kubernetes.contexts\": { \"a\": true }\n}\n")
         let wrong = Settings(url: url, watch: false)
         XCTAssertEqual(wrong.kubernetesContexts, [:])

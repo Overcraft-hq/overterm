@@ -465,6 +465,7 @@ final class Settings: ObservableObject {
     var editorLanguageServers: Bool { bool("editor.languageServers") }
     var editorCompletions: Bool { bool("editor.completions") }
     var editorFormatOnSave: Bool { bool("editor.formatOnSave") }
+    var terraformFormatOnSave: Bool { bool("terraform.formatOnSave") }
     var editorVimMode: Bool { bool("editor.vimMode") }
     var editorRelativeLineNumbers: Bool { bool("editor.relativeLineNumbers") }
     var browserEnabled: Bool { bool("browser.enabled") }

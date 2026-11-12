@@ -261,6 +261,15 @@ credential variable (`AWS_*`, `GOOGLE_*`, `ARM_*`, `TF_TOKEN_*`,
 `OVERTERM_TF_TESTS=1` it is skipped, so `make test` and CI need no
 terraform.
 
+The `terraform` scenario (`E2ERunner+Terraform.swift`) runs the installed
+terraform — `OVERTERM_TF_TEST_TERRAFORM`, else Homebrew's, passed to the
+app as `OVERTERM_TERRAFORM` — behind the recording wrapper, in the guarded
+environment, over checkouts it writes (`terraform_data` only, no init):
+colours, validate's diagnostic on its line, Format undone, format on save
+only in a checkout that passes `fmt -check`, F12 and ⇧⌘O, and the checkout
+byte for byte the same after validate. Without a terraform the test is
+skipped, saying so.
+
 ## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one
