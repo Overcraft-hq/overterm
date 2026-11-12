@@ -197,6 +197,7 @@ private struct RootRow: View {
     let card: TerraformRootCard
     @ObservedObject var panel: TerraformPanelModel
     @ObservedObject var registry = TerraformRunRegistry.shared
+    @ObservedObject var setup = TerraformWorktreeSetup.shared
     @ObservedObject var theme: ChromeTheme
     let actions: TerraformPanelActions
 
@@ -266,6 +267,15 @@ private struct RootRow: View {
             line("No state in this worktree: the state is in \(elsewhere)'s checkout. A plan here would create everything again.", TerraformPanelView.production)
                 .accessibilityIdentifier("terraform.panel.noState.\(card.path)")
         }
+        if let drift = TerraformLockDrift.summary(card.lockDrift) {
+            line("Lock file: " + drift, theme.orangeText).accessibilityIdentifier("terraform.panel.lockDrift.\(card.path)")
+        }
+        // What New Task did here (stage 2b).
+        if let made = setup.root(panel.checkout, path: card.path) {
+            ForEach(made.notes, id: \.self) { note in line(note, theme.orangeText) }
+            line(made.preparation.words, made.preparation.isProblem ? theme.orangeText : theme.text3)
+                .accessibilityIdentifier("terraform.panel.newWorktree.\(card.path)")
+        }
         if !card.sharedWith.isEmpty {
             line("Shares its state with " + card.sharedWith.joined(separator: ", "), theme.text3)
                 .accessibilityIdentifier("terraform.panel.shared.\(card.path)")
@@ -329,6 +339,8 @@ private struct RootRow: View {
                 button("Init…", "arrow.down.circle") { actions.initialize(card) }
                     .accessibilityIdentifier("terraform.panel.init")
             }
+            // New Task's init writes this root's .terraform now.
+            .disabled(setup.isInitializing(card.folder))
             HStack(spacing: 6) {
                 button("Terminal in This Root", "terminal") { actions.openTerminal(card) }
                     .accessibilityIdentifier("terraform.panel.terminal")

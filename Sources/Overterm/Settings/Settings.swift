@@ -477,6 +477,8 @@ final class Settings: ObservableObject {
     var terraformRoots: [String: TerraformRootSettings] { TerraformRootSettings.all(from: value("terraform.roots")) }
     /// Agents started with Terraform's writes denied (analysis 3.4, D-8).
     var terraformAgentWriteGuard: Bool { terraformEnabled && bool("terraform.agentWriteGuard") }
+    /// New Task initialises a new worktree's roots without their backend (stage 2b).
+    var terraformNewWorktreeInit: Bool { terraformEnabled && bool("terraform.newWorktreeInit") }
     /// Agents' `tf_` tools (`TerraformMCP`).
     var terraformAgentAccess: Bool { terraformEnabled && bool("terraform.agentAccess") }
     var editorVimMode: Bool { bool("editor.vimMode") }

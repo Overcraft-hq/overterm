@@ -3446,6 +3446,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         }
         store.selected?.customTitle = branch
         await worktrees.refresh()
+        await prepareTerraformWorktree(path)
         // Its own stack, in a tab beside it — the page's Up, which looks at
         // its ports and its name first, and which a scenario records.
         if startStack, ComposeProjects.composeFile(in: path) != nil { await dockerPage.up(.checkout(path)) }

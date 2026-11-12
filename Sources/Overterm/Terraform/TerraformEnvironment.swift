@@ -21,6 +21,15 @@ enum TerraformEnvironment {
         /// agent's sandbox, so the same as validate's — nothing to reach a
         /// cloud with (analysis 4.5, 5.10).
         case agentRead
+        /// New Task's `init -backend=false` in a new worktree's root
+        /// (stage 2b, 2.1): as validate's — no credential, a scratch HOME
+        /// and CLI config, no workspace — with the plugin cache when the
+        /// person took it (4.13). It reaches no backend. Its CLI config
+        /// installs providers from their registries (no `credentials`) in
+        /// the user's app, the guarded run's none; git and ssh reach
+        /// nothing of the user's (no agent socket, no system gitconfig and
+        /// its keychain helper, no prompt).
+        case worktreeInit(pluginCache: String?)
         /// Overterm's own runs that reach the backend and the cloud —
         /// `plan`, `show -json` of its plan, `init`, `workspace list` and
         /// `select` (stage 1d): the user's environment, so credential
@@ -44,13 +53,27 @@ enum TerraformEnvironment {
     /// The environment for `purpose`, in `root`, over `base` (the user's
     /// login shell's, or a guarded run's scratch one —
     /// `AppEnvironment.terraformBaseEnvironment`).
-    static func build(base: [String: String], purpose: Purpose, root: URL, scratch: TerraformGuards.Scratch) -> [String: String] {
+    /// `guarded`: a guarded run's (`AppEnvironment.guardsTerraform`), whose
+    /// New Task init fetches nothing.
+    static func build(
+        base: [String: String], purpose: Purpose, root: URL, scratch: TerraformGuards.Scratch, guarded: Bool = AppEnvironment.guardsTerraform
+    ) -> [String: String] {
         var environment: [String: String]
         switch purpose {
-        case .format, .validate, .agentRead:
+        case .format, .validate, .agentRead, .worktreeInit:
             environment = base.filter { name, _ in !isAlwaysRemoved(name) && !TerraformGuards.isCredential(name) }
             environment["HOME"] = scratch.home.path
             environment["TF_CLI_CONFIG_FILE"] = scratch.cliConfig.path
+            if case .worktreeInit(let cache) = purpose {
+                if let cache { environment["TF_PLUGIN_CACHE_DIR"] = cache }
+                if !guarded { environment["TF_CLI_CONFIG_FILE"] = scratch.worktreeInitConfig.path }
+                for name in worktreeInitRemoved { environment[name] = nil }
+                environment["GIT_CONFIG_NOSYSTEM"] = "1"
+                environment["GIT_CONFIG_GLOBAL"] = "/dev/null"
+                environment["GIT_TERMINAL_PROMPT"] = "0"
+                environment["GIT_ASKPASS"] = "/usr/bin/false"
+                environment["SSH_ASKPASS"] = "/usr/bin/false"
+            }
         case .run(let workspace, let pluginCache):
             // Credentials pass through, unread (5.7); what injects flags,
             // logs values or decides the state silently never does.
@@ -64,6 +87,10 @@ enum TerraformEnvironment {
         environment["TF_DATA_DIR"] = root.appendingPathComponent(".terraform", isDirectory: true).path
         return environment
     }
+
+    /// What New Task's init never has, besides the credentials: the agent
+    /// socket ssh would sign with, and git's own overrides.
+    static let worktreeInitRemoved = ["SSH_AUTH_SOCK", "GIT_SSH", "GIT_SSH_COMMAND", "GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_ASKPASS", "SSH_ASKPASS"]
 
     /// The `TF_VAR_*` names of an environment — never their values: what
     /// the plan's header says changes it (2.2, "Inputs that change a plan").

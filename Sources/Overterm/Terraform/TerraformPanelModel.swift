@@ -392,7 +392,8 @@ final class TerraformPanelModel: ObservableObject {
                 productionIdentities: identities)
             card.touched = touched.contains(folder.path)
             card.modules = (calls[folder.path] ?? []).sorted()
-            // The same root in the repository's other worktrees (3.6, 3.7).
+            // The same root in the repository's other worktrees (3.6, 3.7), its lock file too (2.8).
+            let lock = worktrees.isEmpty ? nil : TerraformLockDrift.versions(at: url)
             for worktree in worktrees {
                 let other = folder.path.isEmpty ? worktree.url : worktree.url.appendingPathComponent(folder.path, isDirectory: true)
                 guard FileManager.default.fileExists(atPath: other.path) else { continue }
@@ -400,6 +401,10 @@ final class TerraformPanelModel: ObservableObject {
                 let otherFacts = TerraformRootFacts.readIdentity(root: other)
                 if let identity = card.identity, TerraformStateIdentity.of(backend: otherFacts.backend, workspace: otherFacts.workspace, root: other) == identity {
                     card.sharedWith.append(worktree.name)
+                }
+                if var drift = TerraformLockDrift.drift(here: lock, there: TerraformLockDrift.versions(at: other), worktree: worktree.name) {
+                    drift.worktreePath = worktree.url.path
+                    card.lockDrift.append(drift)
                 }
                 if card.facts.backend.type == "local", !card.facts.localStateExists, card.stateElsewhere == nil {
                     let state = TerraformStateIdentity.localStatePath(backend: otherFacts.backend, workspace: card.workspace, root: other)

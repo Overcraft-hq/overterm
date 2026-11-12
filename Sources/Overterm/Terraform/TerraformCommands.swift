@@ -9,7 +9,8 @@ import Foundation
 /// `init` (`-lockfile=readonly`, never `-upgrade`), and the workspace
 /// chip's `workspace list` and `workspace select`; stage 2a the apply —
 /// one line, of a plan Overterm holds by its descriptor — and the plan's
-/// modes: destroy, only some addresses (`-target`), some replaced.
+/// modes: destroy, only some addresses (`-target`), some replaced; stage
+/// 2b a new worktree's init without its backend.
 ///
 /// Every run's cwd is the root (or the checkout for `formatCheck`), never
 /// `-chdir`, so a diagnostic's `range.filename` is relative to it.
@@ -53,6 +54,13 @@ enum TerraformCommands {
     /// rewritten (`-lockfile=readonly`); no `-upgrade`, `-reconfigure`,
     /// `-migrate-state`, `-force-copy`, ever. JSON (1.9+).
     static let initialize = ["init", "-input=false", "-json", "-lockfile=readonly"]
+
+    /// New Task's init of a new worktree's root (stage 2b, 2.1): providers
+    /// and modules for validate and the editor, the backend left alone —
+    /// no state read, no workspace made, no credential (its environment is
+    /// validate's) — and the lock file read, never written. Text: its
+    /// first error is what the panel says.
+    static let initializeWithoutBackend = ["init", "-backend=false", "-input=false", "-lockfile=readonly", "-no-color"]
 
     /// The workspaces a backend has (4.9): the chip's list, and the check
     /// every run makes before it starts. Run with `TF_WORKSPACE` removed.
@@ -184,7 +192,8 @@ enum TerraformCommands {
     /// Everything this file builds, as fixed lines (a plan's and a
     /// workspace select's are checked by `isBuilt`).
     static let all: [[String]] = [
-        formatStandardInput, formatCheck, formatCheckFolder, formatCheckDiff, validate, version, showPlanDescriptor, initialize, workspaceList, apply,
+        formatStandardInput, formatCheck, formatCheckFolder, formatCheckDiff, validate, version, showPlanDescriptor, initialize, initializeWithoutBackend,
+        workspaceList, apply,
     ]
 
     /// Whether a builder of this file made `arguments`.
