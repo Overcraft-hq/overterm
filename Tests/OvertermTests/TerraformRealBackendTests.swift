@@ -136,24 +136,60 @@ final class TerraformRealBackendTests: XCTestCase {
         XCTAssertTrue(plan.err.contains(held.id), plan.err)
 
         backend.forgetRequests()
-        let probe = try terraform(["state", "rm", "-dry-run", "-lock-timeout=0s", "-no-color", "terraform_data.overterm_lock_probe"], in: root)
+        let probe = try terraform(TerraformCommands.lockProbe, in: root)
         XCTAssertNotEqual(probe.status, 0)
         XCTAssertTrue(probe.err.contains(held.id), probe.err)
         XCTAssertFalse(backend.requests.contains { $0.method == "POST" || $0.method == "DELETE" })
         XCTAssertEqual(backend.heldLock("acme-prod"), held)
+        // The probe's text says the same lock the plan's did (2e).
+        let parsed = try XCTUnwrap(TerraformLockInfo.parse(text: plan.err), plan.err)
+        XCTAssertEqual(parsed.id, held.id)
+        XCTAssertTrue(parsed.http)
+        guard case .held(let holder) = TerraformUnlock.probe(parsed: parsed, status: probe.status, stderr: probe.err) else {
+            return XCTFail("the probe holds the same lock: \(probe.err)")
+        }
+        XCTAssertEqual(holder.who, "ci@globex-runner-7")
 
-        let forced = try terraform(["force-unlock", "-force", held.id], in: root)
+        let forced = try terraform(XCTUnwrap(TerraformCommands.forceUnlock(id: held.id)), in: root)
         XCTAssertEqual(forced.status, 0, forced.err)
         let unlock = try XCTUnwrap(backend.requests.last { $0.method == "UNLOCK" })
         XCTAssertEqual(unlock.body, Data(), "force-unlock sends no lock info")
         XCTAssertNil(backend.heldLock("acme-prod"))
 
         backend.forgetRequests()
-        let free = try terraform(["state", "rm", "-dry-run", "-lock-timeout=0s", "-no-color", "terraform_data.overterm_lock_probe"], in: root)
+        let free = try terraform(TerraformCommands.lockProbe, in: root)
         XCTAssertEqual(free.status, 0, free.err)
         XCTAssertTrue(free.out.contains("Would have removed nothing"), free.out)
         XCTAssertEqual(backend.state("acme-prod"), Data(state.utf8), "the probe changed nothing")
         XCTAssertEqual(backend.requests.filter { $0.method != "GET" }.map(\.method), ["LOCK", "UNLOCK"])
+    }
+
+    /// The probe of a lock that changed hands names the new holder, and
+    /// is refused; on a state with nothing in it yet, the probe still
+    /// takes the lock and gives it back — free, not a failure (2e).
+    func testTheProbeSeesALockChangeHandsAndAnEmptyState() throws {
+        let root = try root("envs/stage", state: "acme-stage")
+        XCTAssertEqual(try terraform(["init", "-input=false", "-no-color"], in: root).status, 0)
+        let first = backend.holdLock("acme-stage", who: "ci@globex-runner-7")
+        let plan = try terraform(["plan", "-input=false", "-no-color", "-lock=true", "-lock-timeout=0s"], in: root)
+        let parsed = try XCTUnwrap(TerraformLockInfo.parse(text: plan.err), plan.err)
+        XCTAssertEqual(parsed.id, first.id)
+        backend.releaseLock("acme-stage")
+        let second = backend.holdLock("acme-stage", who: "ci@globex-runner-9", id: "5b1d0c7e-acme-0000-0000-00000000beef")
+        let probe = try terraform(TerraformCommands.lockProbe, in: root)
+        guard case .changedHands(let now) = TerraformUnlock.probe(parsed: parsed, status: probe.status, stderr: probe.err) else {
+            return XCTFail("changed hands: \(probe.err)")
+        }
+        XCTAssertEqual(now.id, second.id)
+        XCTAssertEqual(now.who, "ci@globex-runner-9")
+        XCTAssertEqual(backend.heldLock("acme-stage"), second, "a probe changes no lock")
+
+        backend.releaseLock("acme-stage")
+        backend.forgetRequests()
+        let empty = try terraform(TerraformCommands.lockProbe, in: root)
+        XCTAssertEqual(TerraformUnlock.probe(parsed: parsed, status: empty.status, stderr: empty.err), .free, empty.err)
+        XCTAssertEqual(backend.requests.filter { $0.method != "GET" }.map(\.method), ["LOCK", "UNLOCK"], "\(backend.requests)")
+        XCTAssertNil(backend.state("acme-stage"), "nothing written")
     }
 
     /// Two "worktrees" on one state: the second sees the first's apply.

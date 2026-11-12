@@ -13,7 +13,8 @@ import Foundation
 /// 2b a new worktree's init without its backend; stage 2c the state's
 /// reads — `state list`, and `show -json` of the state; stage 2d the drift
 /// check (a `-refresh-only` plan, whose apply accepts it into state) and
-/// `terraform test` (`test(file:)`).
+/// `terraform test` (`test(file:)`); stage 2e the lock probe and the
+/// force-unlock of one parsed, probed lock ID.
 ///
 /// Every run's cwd is the root (or the checkout for `formatCheck`), never
 /// `-chdir`, so a diagnostic's `range.filename` is relative to it.
@@ -114,6 +115,32 @@ enum TerraformCommands {
     /// `-var` (the plan decided), the lock taken for at most 60 s.
     static let apply = ["apply", "-input=false", "-json", "-lock=true", "-lock-timeout=60s", "/dev/fd/3"]
 
+    /// The lock probe (4.3, 4.10, stage 2e): `state rm -dry-run` of an
+    /// address no configuration has, the lock taken for 0 s. It takes the
+    /// state's lock — failing with the holder's lock info when another
+    /// holds it — without refreshing or starting a provider, and removes
+    /// nothing ("Would have removed nothing."). Never a `plan`: if the
+    /// lock was released meanwhile, a plan would run in full. `-lock=true`
+    /// written, as on every run that locks (5.13 rule 9).
+    static let lockProbe = ["state", "rm", "-dry-run", "-lock=true", "-lock-timeout=0s", "-no-color", lockProbeAddress]
+    static let lockProbeAddress = "terraform_data.overterm_lock_probe"
+
+    /// Force unlock (2.5, 4.10, D-10): of one lock ID, parsed from
+    /// Terraform's own diagnostic in this window and probed just before.
+    /// `-force` skips terraform's own question: Overterm's sheet asked,
+    /// the root's name typed. Nil for an ID that isn't one.
+    static func forceUnlock(id: String) -> [String]? {
+        isLockID(id) ? ["force-unlock", "-force", "-no-color", id] : nil
+    }
+
+    /// A lock ID as backends write them (a UUID; an http backend's or
+    /// GitLab's any short token): 1…256 printable ASCII characters, no
+    /// space, never a flag.
+    static func isLockID(_ id: String) -> Bool {
+        guard (1...256).contains(id.count), !id.hasPrefix("-") else { return false }
+        return id.unicodeScalars.allSatisfy { $0.isASCII && $0.value > 0x20 && $0.value < 0x7f }
+    }
+
     /// The most addresses a targeted or replacing plan names.
     static let maxAddresses = 50
 
@@ -211,7 +238,7 @@ enum TerraformCommands {
     /// workspace select's are checked by `isBuilt`).
     static let all: [[String]] = [
         formatStandardInput, formatCheck, formatCheckFolder, formatCheckDiff, validate, version, showPlanDescriptor, initialize, initializeWithoutBackend,
-        workspaceList, apply, stateList, showState,
+        workspaceList, apply, stateList, showState, lockProbe,
     ]
 
     /// Whether a builder of this file made `arguments`.
@@ -219,6 +246,7 @@ enum TerraformCommands {
         if all.contains(arguments) || isPlan(arguments) { return true }
         if isTest(arguments) { return true }
         if arguments.count == 3, arguments[0] == "workspace", arguments[1] == "select" { return workspaceSelect(arguments[2]) == arguments }
+        if arguments.count == 4, arguments[0] == "force-unlock" { return forceUnlock(id: arguments[3]) == arguments }
         return false
     }
 
@@ -227,7 +255,8 @@ enum TerraformCommands {
     /// secrets, which later stages build with their own guards. `apply`,
     /// `show`, `plan`, `init` and `workspace` run only as this file builds
     /// them, whole: any other line is no builder's — an apply only of
-    /// `/dev/fd/3`, exactly `apply`.
+    /// `/dev/fd/3`, exactly `apply`. Two of these run only as built, whole
+    /// (2e): `state` as the lock probe, `force-unlock` of one lock ID.
     static let refusedSubcommands: Set<String> = [
         "destroy", "import", "taint", "untaint", "force-unlock", "refresh", "state", "login", "logout", "test", "console", "get",
         "providers", "output",
@@ -243,8 +272,9 @@ enum TerraformCommands {
         if arguments.contains(where: { $0.hasPrefix("-chdir") }) { return "-chdir is never passed: the run's folder is its root" }
         // `test` only as `test(file:)` builds it (2d): never `-verbose`, `-var`, `-cloud-run`.
         if subcommand == "test" { return isTest(arguments) ? nil : "terraform test is run only as Overterm builds it" }
-        // `state list` alone of `state`'s, exactly as built (2c).
-        if refusedSubcommands.contains(subcommand), arguments != stateList { return "terraform \(subcommand) is not run by Overterm" }
+        // `state` and `force-unlock` only exactly as built: `state list` (2c),
+        // the lock probe and the force-unlock of one ID (2e).
+        if refusedSubcommands.contains(subcommand), !isBuilt(arguments) { return "terraform \(subcommand) is not run by Overterm" }
         for argument in arguments {
             let forbidden = forbiddenFlags.first { flag in
                 flag.hasSuffix("=") ? argument.hasPrefix(flag) : argument == flag || argument.hasPrefix(flag + "=")

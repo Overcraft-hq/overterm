@@ -64,7 +64,8 @@ extension TerminalWindowController {
             apply: { [weak self] run in self?.applyTerraformPlan(run) },
             stopApply: { [weak self] apply in self?.stopTerraformApply(apply) },
             planMode: { [weak self] run, mode in self?.planTerraformAgain(run, mode: mode) },
-            testAgain: { [weak self] test in self?.testTerraformRoot(test.card, checkout: test.checkout, file: test.file) })
+            testAgain: { [weak self] test in self?.testTerraformRoot(test.card, checkout: test.checkout, file: test.file) },
+            forceUnlock: { [weak self] run in self?.forceUnlockTerraform(run) })
     }
 
     /// The run in the right slot, which takes it (`RightSlot`).
