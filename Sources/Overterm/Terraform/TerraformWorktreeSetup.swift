@@ -322,7 +322,8 @@ final class TerraformWorktreeSetup: ObservableObject {
     /// Reads `worktree`'s roots against `others` and initialises the ones it
     /// may; `finished` once every one is done (the panel reads again). A
     /// second prepare of the same worktree waits for the first's init to
-    /// end — cancelling a task leaves its terraform running.
+    /// end — cancelling a task leaves its terraform running (the init isn't
+    /// `interruptible`: never a half-written `.terraform`).
     func prepare(
         _ worktree: URL, others: [TerraformWorktree], initialize: Bool, finished: @escaping @MainActor () -> Void = {}
     ) {
@@ -400,13 +401,16 @@ final class TerraformWorktreeSetup: ObservableObject {
             var waited = 0
             while !registry.take(turn, id: id) {
                 waited += 1
+                // A prepare made again meanwhile takes the root over: not run, not failed.
+                guard !Task.isCancelled else { return .waiting }
                 guard waited < 600 else { return .failed("the provider cache stayed busy with another init") }
                 try? await Task.sleep(for: .milliseconds(500))
             }
         }
         defer { if let turn { registry.release(turn) } }
         let result = await TerraformEditorModel.run(
-            TerraformCommands.initializeWithoutBackend, purpose: .worktreeInit(pluginCache: cache), in: root, timeout: initTimeout)
+            TerraformCommands.initializeWithoutBackend, purpose: .worktreeInit(pluginCache: cache), in: root, timeout: initTimeout,
+            interruptible: false)
         switch result {
         case .failure(.noTerraform): return .skipped("no terraform found — set Settings ▸ Terraform ▸ terraform, or install it.")
         case .failure(let failure): return .failed(TerraformPlan.scrub(failure.description))

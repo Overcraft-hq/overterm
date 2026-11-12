@@ -10,7 +10,7 @@ import Foundation
 /// chip's `workspace list` and `workspace select`; stage 2a the apply —
 /// one line, of a plan Overterm holds by its descriptor — and the plan's
 /// modes: destroy, only some addresses (`-target`), some replaced; stage
-/// 2b a new worktree's init without its backend.
+/// 2b a new worktree's init without its backend; stage 2c the state's reads — `state list`, and `show -json` of the state.
 ///
 /// Every run's cwd is the root (or the checkout for `formatCheck`), never
 /// `-chdir`, so a diagnostic's `range.filename` is relative to it.
@@ -43,12 +43,24 @@ enum TerraformCommands {
 
     /// A saved plan as JSON, read from the descriptor the run is handed as
     /// fd 3 (4.4, spike 18): `tf_plan_summary` over a plan an agent saved
-    /// itself. Never `show` of a state (no file: it prints every secret in
-    /// it), never a path terraform would open after the check — the file
+    /// itself. Never a path terraform would open after the check — the file
     /// is opened, checked and handed over by Overterm. Starts the
     /// providers for their schemas, so its environment has no credential
     /// (`TerraformEnvironment.Purpose.agentRead`).
     static let showPlanDescriptor = ["show", "-json", "-no-color", "/dev/fd/3"]
+
+    /// The state's addresses (2.4, stage 2c): one a line. Takes no lock
+    /// (spike 27) and starts no provider. Run in the checked workspace.
+    static let stateList = ["state", "list", "-no-color"]
+
+    /// The current workspace's state as JSON (2.4, stage 2c): what the
+    /// state view, one resource and the outputs are read from — decoded
+    /// through `TerraformState`'s allow-list, masked at decode; there is no
+    /// `state show -json`, and `output -json`/`output NAME` (which print
+    /// sensitive values) are never run. Starts the providers for their
+    /// schemas; takes no lock. Never with a file: a plan is only ever read
+    /// by its descriptor (`showPlanDescriptor`).
+    static let showState = ["show", "-json", "-no-color"]
 
     /// Init, the person's click (4.13): the lock file read, never
     /// rewritten (`-lockfile=readonly`); no `-upgrade`, `-reconfigure`,
@@ -193,7 +205,7 @@ enum TerraformCommands {
     /// workspace select's are checked by `isBuilt`).
     static let all: [[String]] = [
         formatStandardInput, formatCheck, formatCheckFolder, formatCheckDiff, validate, version, showPlanDescriptor, initialize, initializeWithoutBackend,
-        workspaceList, apply,
+        workspaceList, apply, stateList, showState,
     ]
 
     /// Whether a builder of this file made `arguments`.
@@ -222,7 +234,8 @@ enum TerraformCommands {
     static func refusal(_ arguments: [String]) -> String? {
         guard let subcommand = arguments.first(where: { !$0.hasPrefix("-") }) else { return "no subcommand" }
         if arguments.contains(where: { $0.hasPrefix("-chdir") }) { return "-chdir is never passed: the run's folder is its root" }
-        if refusedSubcommands.contains(subcommand) { return "terraform \(subcommand) is not run by Overterm" }
+        // `state list` alone of `state`'s, exactly as built (2c).
+        if refusedSubcommands.contains(subcommand), arguments != stateList { return "terraform \(subcommand) is not run by Overterm" }
         for argument in arguments {
             let forbidden = forbiddenFlags.first { flag in
                 flag.hasSuffix("=") ? argument.hasPrefix(flag) : argument == flag || argument.hasPrefix(flag + "=")

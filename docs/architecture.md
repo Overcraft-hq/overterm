@@ -6991,8 +6991,9 @@ the same process). Reads only.
 The design is docs/design/terraform/analysis.md (its Section 9 the
 stages). Built so far: the groundwork of stage 0, stage 1a, HCL in the
 editor, stage 1b, which root, which workspace, and is it production,
-stage 1c, guarding agents, stage 1d, the plan in the right slot, and
-stage 2a, the apply, with every guard.
+stage 1c, guarding agents, stage 1d, the plan in the right slot,
+stage 2a, the apply, with every guard, and stage 2c, state and outputs,
+masked.
 
 - **Roots** (stage 1b, analysis 4.12, 6.1, 6.2). The rail's Terraform panel
   (`SidebarPanel.terraform`, ⌥⌘E, `terraform.enabled` on by default) is the
@@ -7312,8 +7313,12 @@ stage 2a, the apply, with every guard.
     (`F_SETNOSIGPIPE`), output bounded (1 MB, stderr 64 KB), 30 s then
     SIGTERM and SIGKILL to the group, on a GCD thread. Every live group is
     in `TerraformRun.live`: quitting (`endRun`) sends each SIGINT
-    (`stopAll`), and a group is swept with SIGKILL once terraform has
-    exited, so no provider plugin validate started is left. It starts only
+    (`stopAll`) — a run that writes or takes a lock (`interruptible`
+    false: New Task's init, the lock probe, force-unlock) given up to 3 s
+    to end first, and never interrupted by a cancelled task —, and a group
+    is swept with SIGKILL once terraform has exited, so no provider plugin
+    validate started is left. A read is interrupted when its task is
+    cancelled. It starts only
     a line `TerraformCommands` builds — `fmt -no-color -`, `fmt -check
     -list=true [-recursive] -no-color`, `validate -json -no-color` —, which
     refuses anything else before spawning (`refusal`: a writing or
@@ -7631,6 +7636,66 @@ stage 2a, the apply, with every guard.
   `terraform` scenario's `E2ERunner+TerraformA2b` (New Task's root warned,
   initialised through the recording wrapper, validate there — its local
   module installed by that init; a worktree without it needs init).
+- **State and outputs** (stage 2c, analysis 2.4, 5.6 rules 1–3 and 9,
+  5.10). The card's State (and its menu's State and Outputs) shows a
+  root's state in the plan's place in the slot (`TerraformPlanPaneModel
+  .state`, `TerraformStateView`; a plan or an apply shown takes the place
+  back). `TerraformStateRead` (memory only) checks first, as a plan does:
+  the backend unchanged since init, and the workspace it reads exists
+  (`TerraformWorkspaceCheck`; `state pull` creates a missing one, spike
+  13) — then runs two short reads, the only state lines
+  `TerraformCommands` builds: `state list -no-color` (no lock, no
+  provider: the addresses at once, `TerraformStateList`, grouped by
+  module, `TerraformStateRows`) and `show -json -no-color` of the state
+  (the values; `TerraformRun.short`, bounded by `maxPlanBytes`, 300 s),
+  decoded off the main thread through `TerraformState`'s allow-list and
+  dropped once read. A person's read runs in `Purpose.run` (a remote
+  backend's state needs the user's credentials, passed through unread),
+  an agent's in `agentRead`. The decode keeps per object its address,
+  module, mode, type, name, index, provider, `tainted`, `deposed_key`,
+  `depends_on` and its `values` walked against `sensitive_values`, then
+  `TerraformSecretNames`, then — as a plan's — every value marked
+  sensitive anywhere (a sensitive output, an attribute under its mirror)
+  masked wherever it appears (`TerraformState.sensitiveValues` →
+  `TerraformSensitiveValues`: `terraform_data`'s `output` copies its
+  `input` unmarked, and an output can carry that on); every string through
+  `scrub`; an output's name, its type in words (`typeName`), and its value
+  only when not sensitive — an output that doesn't say is taken as
+  sensitive. There is no Show: a sensitive output says "sensitive", and
+  `output -json`/`output NAME` are never run. A non-sensitive output
+  offers what it opens (`TerraformOutputLinks`, pure, over the masked
+  value only): an `http(s)` URL with no userinfo → Open in Browser
+  (`openDockerLink`: the browser column) and Add to API Environment… (the
+  picked environment's `.bru` of the checkout's collection, asked, written
+  through `BruFile` with every other block kept — never over one of its
+  secrets); a database's host (a name saying host or endpoint, and
+  database words in it or the host — `rds`, `postgres`…; or a
+  `postgres://`/`mysql://` URL, its password never carried) → New
+  Database Connection… (`newDatabaseConnection`: the password typed in
+  the form, into the keychain); an EKS ARN or API server, an AKS server, a
+  GKE cluster's ID → Open in Kubernetes (the kubeconfig context with that
+  server's host, else whose name or cluster ends with the cluster's name;
+  none said with the command that adds one, never run). An isolated run
+  records offers (`TerraformStateReads.offerRecorder`). Agents
+  (`TerraformMCP+State`): `tf_state_list`, `tf_state_show` (off on
+  production) and `tf_outputs` answer from the person's read of the same
+  root and workspace in the last 15 minutes, masked again
+  (`TerraformState.forAgents`: `Secrets.isSecret`'s names too, an output
+  so named sensitive), else from the agent's own read — a local
+  backend's only (initialising any other uses what its init record holds,
+  `-backend-config` credentials in clear, spike 4: refused, the person
+  asked to open State — `agentReadRefusal`), in `agentRead`, and `show
+  -json` only where `providersRefusal` lets the root's providers start.
+  A read is kept by its task (`begin`): the card's State, its menu's and
+  Read Again show a read of the same root still going instead of
+  starting another, and one that gives way in the slot, or whose slot is
+  closed, stops (`stop`: `TerraformRun.short` interrupts its group when
+  its task is cancelled; nothing lands after). The view filters groups
+  and objects made once, off the main thread, when the addresses come
+  (`arrange`, `TerraformStateRows.filtered`). The `terraform` scenario's
+  `terraformStateB2c` presses the card's State, checks the view, the
+  accessibility text and the three tools for the sentinel, and the
+  agent's own read's argv and environment through the recorder.
 - **The guards** (`Terraform/TerraformGuards.swift`, pure but for
   `prepareScratch`; analysis 4.2, 4.5, 4.13, 5.13 rule 8). Terraform
   changes real infrastructure, so an isolated run or a unit test

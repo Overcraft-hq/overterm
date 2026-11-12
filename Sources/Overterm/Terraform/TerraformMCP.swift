@@ -8,8 +8,9 @@ import Foundation
 /// plan it saved itself as a masked summary.
 ///
 /// **Reads, and one plan — never a write.** No tool runs `init`, `apply`,
-/// or anything of `state`: `tf_apply`, `tf_destroy`, `tf_state_*` and the
-/// rest don't exist (an agent writes `removed`, `moved` and `import` blocks,
+/// or anything of `state` but its reads (stage 2c: `tf_state_list`,
+/// `tf_state_show`, `tf_outputs` — `TerraformMCP+State`); `tf_apply`,
+/// `tf_destroy`, `tf_state_rm` and the rest don't exist (an agent writes `removed`, `moved` and `import` blocks,
 /// which a person plans and applies). `tf_plan` (stage 1d, D-12) starts
 /// Overterm's own plan of a non-production root — asked in the window the
 /// first time per root and session, `-lock-timeout=0s`, no flag at all —
@@ -34,7 +35,7 @@ import Foundation
 @MainActor
 enum TerraformMCP {
     static let prefix = "tf_"
-    static let names = ["tf_roots", "tf_fmt_check", "tf_validate", "tf_plan_summary", "tf_plan", "tf_run_status", "tf_plan_resource", "tf_why"]
+    static let names = ["tf_roots", "tf_fmt_check", "tf_validate", "tf_plan_summary", "tf_plan", "tf_run_status", "tf_plan_resource", "tf_why"] + stateNames
 
     /// Starts an agent's plan of a root in the window of the pane that
     /// asked (`TerminalWindowController.agentPlan`): asked there, never
@@ -50,7 +51,7 @@ enum TerraformMCP {
     static let maxAnswer = 48 << 10
 
     static let instructions =
-        "Terraform in your checkout (Overterm's Terraform panel): tf_roots lists its roots with their workspace, backend and class (production is plan-only), tf_fmt_check and tf_validate check a root without credentials, tf_plan starts Overterm's plan of a non-production root (the person is asked the first time; follow it with tf_run_status), tf_plan_summary reads that plan — or one you saved with terraform plan -out=FILE — as a masked summary: counts, what is destroyed or replaced and why, the attributes that change; tf_plan_resource one resource's masked diff, tf_why the brief of a failed plan or a held lock. Never run terraform apply, destroy, import or state commands yourself: the person does, after reading the plan."
+        "Terraform in your checkout (Overterm's Terraform panel): tf_roots lists its roots with their workspace, backend and class (production is plan-only), tf_fmt_check and tf_validate check a root without credentials, tf_plan starts Overterm's plan of a non-production root (the person is asked the first time; follow it with tf_run_status), tf_plan_summary reads that plan — or one you saved with terraform plan -out=FILE — as a masked summary: counts, what is destroyed or replaced and why, the attributes that change; tf_plan_resource one resource's masked diff, tf_why the brief of a failed plan or a held lock; tf_state_list, tf_state_show and tf_outputs read a root's state, masked (a sensitive output's value is never given). Never run terraform apply, destroy, import or state commands yourself: the person does, after reading the plan."
 
     static let tools: [[String: Any]] = [
         tool("tf_roots", "The Terraform roots of your checkout: path, class (production, remote, local), workspace, backend, modules and who calls them.", [:]),
@@ -86,6 +87,20 @@ enum TerraformMCP {
         tool(
             "tf_why", "The brief of a root's last failed plan or init, or of the lock that stopped it: diagnostics, the lock's holder, the log's last lines — masked.",
             ["root": ["type": "string", "description": "The root, relative to the checkout. Optional when there is one root."]]),
+        // Stage 2c, the state's reads (`TerraformMCP+State`).
+        tool(
+            "tf_state_list", "A root's state: the addresses of every object in it, grouped by module (terraform state list). Reads nothing sensitive.",
+            ["root": ["type": "string", "description": "The root's folder, relative to the checkout. Optional when there is one root."]]),
+        tool(
+            "tf_state_show",
+            "One object of a root's state, masked: its attributes as the state has them, every value Terraform marks sensitive — or that looks like a secret — masked. Not on production roots.",
+            [
+                "address": ["type": "string", "description": "The object's address (module.net.aws_subnet.a[0]), as tf_state_list gives it."],
+                "root": ["type": "string", "description": "The root, relative to the checkout. Optional when there is one root."],
+            ], required: ["address"]),
+        tool(
+            "tf_outputs", "A root's outputs from its state: name, type and value — a sensitive output only said to be one, its value never given.",
+            ["root": ["type": "string", "description": "The root, relative to the checkout. Optional when there is one root."]]),
     ]
 
     private static func tool(_ name: String, _ description: String, _ properties: [String: Any], required: [String] = []) -> [String: Any] {
@@ -113,6 +128,7 @@ enum TerraformMCP {
         case "tf_run_status": text = try await runStatus(arguments, in: checkout)
         case "tf_plan_resource": text = try await planResource(arguments, in: checkout)
         case "tf_why": text = try await why(arguments, in: checkout)
+        case "tf_state_list", "tf_state_show", "tf_outputs": text = try await stateCall(name, arguments, in: checkout)
         default: throw BrowserMCP.ToolError(message: "Unknown tool: \(name)")
         }
         return BrowserMCP.textResult(TerraformPlanText.cut(Self.scrubbed(text), to: maxAnswer))
@@ -121,7 +137,7 @@ enum TerraformMCP {
     /// Every answer, once more: credentials in text, URLs' passwords.
     static func scrubbed(_ text: String) -> String { TerraformValidation.scrub(text) }
 
-    private static func argument(_ arguments: [String: Any], _ key: String) -> String? {
+    static func argument(_ arguments: [String: Any], _ key: String) -> String? {
         (arguments[key] as? String).map { $0.trimmingCharacters(in: .whitespaces) }.flatMap { $0.isEmpty ? nil : $0 }
     }
 

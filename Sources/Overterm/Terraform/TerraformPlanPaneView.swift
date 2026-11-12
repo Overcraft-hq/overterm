@@ -37,11 +37,15 @@ struct TerraformPlanPaneView: View {
     @ObservedObject var pane: TerraformPlanPaneModel
     @ObservedObject var theme: ChromeTheme
     let actions: TerraformPlanActions
+    /// The state view's (2c).
+    var stateActions: TerraformStateActions?
 
     var body: some View {
         VStack(spacing: 0) {
             TerraformGoingApplies(registry: .shared, pane: pane, theme: theme, show: actions.showApply)
-            if let apply = pane.apply {
+            if let state = pane.state, let stateActions {
+                TerraformStateView(read: state, theme: theme, actions: stateActions)
+            } else if let apply = pane.apply {
                 TerraformApplyView(apply: apply, pane: pane, theme: theme, actions: actions)
             } else if let run = pane.run {
                 TerraformRunView(run: run, pane: pane, registry: .shared, theme: theme, actions: actions)

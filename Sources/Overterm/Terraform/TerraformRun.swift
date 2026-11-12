@@ -8,8 +8,10 @@ import Foundation
 /// (`TerraformCommands.refusal`). Not `KubeProcessRun` (Kubernetes', with
 /// its SIGKILL at quit) and not a `ManagedProcess`. Every live group is
 /// kept (`live`): quitting stops them with SIGINT (`stopAll`, analysis
-/// 4.7), and once terraform has exited its group is swept with SIGKILL, so
-/// a provider plugin validate started is never left behind.
+/// 4.7) — the ones that take a lock or write (New Task's init, the lock
+/// probe, force-unlock: `interruptible` false) given a moment to end
+/// first —, and once terraform has exited its group is swept with SIGKILL,
+/// so a provider plugin validate started is never left behind.
 enum TerraformRun {
     struct Result: Sendable, Equatable {
         var status: Int32
@@ -39,28 +41,57 @@ enum TerraformRun {
     /// Runs `arguments` with `binary` in `folder`, `input` on its stdin.
     /// `file`: a descriptor the child gets as fd 3 (`show -json /dev/fd/3`,
     /// analysis 4.4) — the caller's, still open after the run. `limit`:
-    /// stdout's bound.
+    /// stdout's bound. Cancelling the task stops an `interruptible` run
+    /// (a read: fmt, validate, a state read, a workspace list): SIGINT to
+    /// its group, as Ctrl-C would, and it is swept once terraform has
+    /// exited. A run that writes or takes a lock — New Task's `init
+    /// -backend=false`, the lock probe, `force-unlock` — passes false: a
+    /// cancelled task leaves it to end on its own (its timeout still holds),
+    /// never half done.
     static func short(
         _ binary: URL, _ arguments: [String], in folder: URL, environment: [String: String], input: Data? = nil, timeout: TimeInterval = timeout,
-        file: Int32? = nil, limit: Int = outputLimit
+        file: Int32? = nil, limit: Int = outputLimit, interruptible: Bool = true
     ) async throws -> Result {
-        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Result, Error>) in
-            let work: @Sendable () -> Void = {
-                continuation.resume(
-                    with: Swift.Result {
-                        try runBlocking(binary, arguments, in: folder, environment: environment, input: input, timeout: timeout, file: file, limit: limit)
-                    })
+        guard interruptible else {
+            return try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Result, Error>) in
+                let work: @Sendable () -> Void = {
+                    continuation.resume(
+                        with: Swift.Result {
+                            try runBlocking(
+                                binary, arguments, in: folder, environment: environment, input: input, timeout: timeout, file: file, limit: limit,
+                                interruptible: false)
+                        })
+                }
+                DispatchQueue.global(qos: .userInitiated).async(execute: work)
             }
-            DispatchQueue.global(qos: .userInitiated).async(execute: work)
+        }
+        let stopper = Stopper()
+        return try await withTaskCancellationHandler {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Result, Error>) in
+                let work: @Sendable () -> Void = {
+                    continuation.resume(
+                        with: Swift.Result {
+                            try runBlocking(
+                                binary, arguments, in: folder, environment: environment, input: input, timeout: timeout, file: file, limit: limit,
+                                stopper: stopper)
+                        })
+                }
+                DispatchQueue.global(qos: .userInitiated).async(execute: work)
+            }
+        } onCancel: {
+            stopper.stop()
         }
     }
 
-    /// The same, blocking the calling thread (a GCD one).
+    /// The same, blocking the calling thread (a GCD one). `stopper`: what
+    /// stops it from elsewhere (a cancelled task); `interruptible`: whether
+    /// quitting interrupts it at once (`stopAll`).
     static func runBlocking(
         _ binary: URL, _ arguments: [String], in folder: URL, environment: [String: String], input: Data?, timeout: TimeInterval,
-        file: Int32? = nil, limit: Int = outputLimit
+        file: Int32? = nil, limit: Int = outputLimit, stopper: Stopper? = nil, interruptible: Bool = true
     ) throws -> Result {
         if let why = TerraformCommands.refusal(arguments) { throw Failure.refused(why) }
+        if stopper?.isStopped == true { throw CancellationError() }
         let out = Pipe()
         let err = Pipe()
         let stdin = input.map { _ in Pipe() }
@@ -78,7 +109,8 @@ enum TerraformRun {
             try? stdin?.fileHandleForWriting.close()
             throw Failure.spawn(error.code.rawValue)
         }
-        live.insert(pid)
+        live.insert(pid, interruptible: interruptible)
+        stopper?.started(pid)
         let outReader = PipeReader(out, limit: limit)
         let errReader = PipeReader(err, limit: stderrLimit)
         if let stdin, let input {
@@ -91,8 +123,8 @@ enum TerraformRun {
             }
             DispatchQueue.global(qos: .userInitiated).async(execute: write)
         }
-        // Past the timeout: SIGTERM to the group, then SIGKILL. Short runs
-        // hold no lock and write nothing, so nothing is left half done.
+        // Past the timeout: SIGTERM to the group, then SIGKILL — terraform
+        // takes SIGTERM as an interrupt, releasing a lock it holds.
         let timedOut = TimedOut()
         let timer = DispatchSource.makeTimerSource(queue: .global(qos: .utility))
         timer.schedule(deadline: .now() + timeout, repeating: 2)
@@ -103,6 +135,7 @@ enum TerraformRun {
         timer.resume()
         var raw: Int32 = 0
         while waitpid(pid, &raw, 0) == -1, errno == EINTR {}
+        stopper?.finished()
         timer.cancel()
         // terraform is gone: whatever it left in its group (a provider
         // plugin) goes too, before the pipes it may still hold are read out.
@@ -120,20 +153,64 @@ enum TerraformRun {
     /// The process groups of the runs going now, by their leader's pid.
     static let live = LiveGroups()
 
+    /// The longest quitting waits for a run that writes or holds a lock.
+    static let quitGrace: TimeInterval = 3
+
     /// Stops every run going (at quit, at a scenario's end — `endRun`):
-    /// SIGINT to each group, as Ctrl-C would, without waiting. A short run
-    /// holds no lock and writes nothing; its waiting thread reaps it and
-    /// sweeps the group if the app is still there.
-    static func stopAll() {
+    /// SIGINT to each read's group at once, as Ctrl-C would; a run that
+    /// writes or holds a lock (`interruptible` false: an init, the lock
+    /// probe, force-unlock) is given up to `grace` to end on its own first,
+    /// then interrupted too — terraform releases a lock it took on SIGINT.
+    /// Each waiting thread reaps its run and sweeps the group if the app is
+    /// still there.
+    static func stopAll(grace: TimeInterval = quitGrace) {
+        live.stopped()
+        for group in live.all where live.isInterruptible(group) { killpg(group, SIGINT) }
+        let deadline = Date().addingTimeInterval(grace)
+        while live.all.contains(where: { !live.isInterruptible($0) }), Date() < deadline { usleep(50_000) }
         for group in live.all { killpg(group, SIGINT) }
     }
 
     final class LiveGroups: @unchecked Sendable {
         private let lock = NSLock()
-        private var groups: Set<pid_t> = []
-        var all: [pid_t] { lock.withLock { Array(groups) } }
-        func insert(_ group: pid_t) { _ = lock.withLock { groups.insert(group) } }
-        func remove(_ group: pid_t) { _ = lock.withLock { groups.remove(group) } }
+        /// Each group, and whether quitting interrupts it at once.
+        private var groups: [pid_t: Bool] = [:]
+        var all: [pid_t] { lock.withLock { Array(groups.keys) } }
+        func isInterruptible(_ group: pid_t) -> Bool { lock.withLock { groups[group] ?? true } }
+        func insert(_ group: pid_t, interruptible: Bool = true) { lock.withLock { groups[group] = interruptible } }
+        func remove(_ group: pid_t) { _ = lock.withLock { groups.removeValue(forKey: group) } }
+        /// How many times `stopAll` ran: a run that sees it change while it
+        /// went may have been interrupted.
+        private var stops = 0
+        var generation: Int { lock.withLock { stops } }
+        func stopped() { lock.withLock { stops += 1 } }
+    }
+
+    /// Stops one run from another thread: SIGINT to its group once it has
+    /// started (at once if it already has), never after it was reaped.
+    final class Stopper: @unchecked Sendable {
+        private let lock = NSLock()
+        private var group: pid_t?
+        private var stopped = false
+        var isStopped: Bool { lock.withLock { stopped } }
+
+        func started(_ pid: pid_t) {
+            let stop = lock.withLock {
+                group = pid
+                return stopped
+            }
+            if stop { killpg(pid, SIGINT) }
+        }
+
+        func finished() { lock.withLock { group = nil } }
+
+        func stop() {
+            let running = lock.withLock {
+                stopped = true
+                return group
+            }
+            if let running { killpg(running, SIGINT) }
+        }
     }
 
     /// Whether the timeout fired: the first time it says so (SIGTERM), then SIGKILL.
