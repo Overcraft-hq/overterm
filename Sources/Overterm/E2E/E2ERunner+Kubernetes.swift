@@ -1528,7 +1528,7 @@ extension E2ERunner {
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("application/json, text/event-stream", forHTTPHeaderField: "Accept")
-            request.setValue("Bearer \(BrowserBridge.shared.token)", forHTTPHeaderField: "Authorization")
+            request.setValue("Bearer \(BrowserBridge.shared.token(forPane: tag))", forHTTPHeaderField: "Authorization")
             request.httpBody = try? JSONSerialization.data(withJSONObject: body)
             guard let (data, _) = try? await URLSession.shared.data(for: request) else { return nil }
             return try? JSONSerialization.jsonObject(with: data) as? [String: Any]

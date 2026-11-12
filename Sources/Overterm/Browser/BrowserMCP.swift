@@ -29,10 +29,21 @@ protocol AgentBrowser: AnyObject {
 enum BrowserMCP {
     static let protocolVersion = "2025-06-18"
 
-    /// The answer to one JSON-RPC message; nil for a notification.
+    /// The answer to one JSON-RPC message; nil for a notification. A
+    /// pane's call runs with `MCPAsker.pane` set: every confirmation it
+    /// asks names that pane's tab and agent.
     static func handle(
         _ message: [String: Any], browser: () -> AgentBrowser?, api: () -> AgentAPI? = { nil }, pane: String? = nil, settings: Settings = .shared,
         kubernetes: KubernetesModel = .shared
+    ) async -> [String: Any]? {
+        guard let pane else { return await answer(message, browser: browser, api: api, pane: nil, settings: settings, kubernetes: kubernetes) }
+        return await MCPAsker.$pane.withValue(pane) {
+            await answer(message, browser: browser, api: api, pane: pane, settings: settings, kubernetes: kubernetes)
+        }
+    }
+
+    private static func answer(
+        _ message: [String: Any], browser: () -> AgentBrowser?, api: () -> AgentAPI?, pane: String?, settings: Settings, kubernetes: KubernetesModel
     ) async -> [String: Any]? {
         let id = message["id"]
         let method = message["method"] as? String ?? ""

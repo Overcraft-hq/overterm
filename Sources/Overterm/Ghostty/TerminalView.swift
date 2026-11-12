@@ -163,14 +163,16 @@ final class TerminalView: NSView {
             free(tagValue)
         }
         var env = [ghostty_env_var_s(key: tagKey, value: tagValue)]
-        // The browser's MCP config for an agent started here (BrowserBridge).
-        let mcpKey = strdup(BrowserBridge.configVariable)
-        let mcpValue = BrowserBridge.shared.configPath(forPane: processTag).map { strdup($0) }
+        // The bridge's MCP config and this pane's token, for an agent
+        // started here (BrowserBridge): the token in this environment only.
+        let mcp = (BrowserBridge.shared.environment(forPane: processTag) ?? [:]).sorted { $0.key < $1.key }.map { (strdup($0.key), strdup($0.value)) }
         defer {
-            free(mcpKey)
-            mcpValue.map { free($0) }
+            for (key, value) in mcp {
+                free(key)
+                free(value)
+            }
         }
-        if let mcpValue { env.append(ghostty_env_var_s(key: mcpKey, value: mcpValue)) }
+        for (key, value) in mcp { env.append(ghostty_env_var_s(key: key, value: value)) }
         // The caller's, sorted so the order is the same each time.
         let extra = environment.sorted { $0.key < $1.key }.map { (strdup($0.key), strdup($0.value)) }
         defer {

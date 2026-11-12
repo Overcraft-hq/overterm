@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import CryptoKit
 import GhosttyKit
 import UniformTypeIdentifiers
 
@@ -841,7 +842,7 @@ final class E2ERunner {
                     var request = URLRequest(url: endpoint)
                     request.httpMethod = "POST"
                     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                    request.setValue("Bearer \(BrowserBridge.shared.token)", forHTTPHeaderField: "Authorization")
+                    request.setValue("Bearer \(BrowserBridge.shared.token(forPane: tab.terminal.processTag))", forHTTPHeaderField: "Authorization")
                     request.httpBody = try? JSONSerialization.data(
                         withJSONObject: ["jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": ["name": name, "arguments": arguments]])
                     guard let (data, _) = try? await URLSession.shared.data(for: request),
@@ -976,6 +977,12 @@ final class E2ERunner {
         let configText = (try? String(contentsOf: config, encoding: .utf8)) ?? ""
         check("the pane gets its MCP config", configText.contains("127.0.0.1:\(port)/mcp/\(tag)") && configText.contains("Bearer"), configText)
         check("Claude is started with it", Settings.shared.arguments(for: .claude).contains("--mcp-config \"$OVERTERM_MCP_CONFIG\""))
+        // The token is in the pane's environment (checked at the end),
+        // never in its file (analysis D-15).
+        let token = BrowserBridge.shared.token(forPane: tag)
+        check(
+            "the config names the token, and holds none",
+            configText.contains("Bearer ${\(BrowserBridge.tokenVariable)}") && !configText.contains(token), configText)
 
         app.toggleBrowser(nil)
         check("⇧⌘B shows the browser", await eventually(2) { self.app.browserItem?.isCollapsed == false })
@@ -1011,7 +1018,7 @@ final class E2ERunner {
 
         // MCP, over HTTP with the token, as an agent in that pane would.
         let endpoint = URL(string: "http://127.0.0.1:\(port)/mcp/\(tag)")!
-        func post(_ body: [String: Any], token: String = BrowserBridge.shared.token) async -> (Int, [String: Any]?) {
+        func post(_ body: [String: Any], token: String = BrowserBridge.shared.token(forPane: tag), at endpoint: URL = endpoint) async -> (Int, [String: Any]?) {
             var request = URLRequest(url: endpoint)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -1031,6 +1038,42 @@ final class E2ERunner {
         check("MCP initialize answers", status == 200 && ((initialized?["result"] as? [String: Any])?["serverInfo"] as? [String: Any])?["name"] as? String == "overterm-browser", "\(status)")
         let (rejected, _) = await post(["jsonrpc": "2.0", "id": 2, "method": "tools/list"], token: "wrong")
         check("a wrong token is turned away", rejected == 401, "\(rejected)")
+        // What an agent in another worktree finds listing the folder: no
+        // header in any file opens any pane's tools.
+        let folder = AppEnvironment.supportDirectory.appendingPathComponent("mcp", isDirectory: true)
+        let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+        let headers = files.compactMap { file -> String? in
+            guard let data = try? Data(contentsOf: file), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let servers = json["mcpServers"] as? [String: Any], let server = servers["overterm-browser"] as? [String: Any]
+            else { return nil }
+            return (server["headers"] as? [String: String])?["Authorization"]
+        }
+        let panes = app.store.tabs.flatMap(\.terminals).map(\.processTag)
+        let opening = headers.filter { header in
+            panes.contains {
+                BridgeServer.route(HTTPRequest(method: "POST", path: "/mcp/\($0)", headers: ["authorization": header], body: Data()), tokens: BrowserBridge.shared.tokens) != .refused(status: 401)
+            }
+        }
+        check("no config file in the folder opens any pane's tools", !headers.isEmpty && opening.isEmpty, "\(headers.count) headers, \(opening.count) open")
+        // Another pane's token opens only that pane's tools (analysis D-15):
+        // every config file is readable by the same user.
+        if let other = app.store.tabs.first(where: { $0 !== tab })?.terminal.processTag,
+            let otherEndpoint = URL(string: "http://127.0.0.1:\(port)/mcp/\(other)")
+        {
+            let list: [String: Any] = ["jsonrpc": "2.0", "id": 3, "method": "tools/list"]
+            let (crossed, _) = await post(list, token: BrowserBridge.shared.token(forPane: other))
+            check("pane B's token on A's path is a 401", crossed == 401, "\(crossed)")
+            let (crossedBack, _) = await post(list, at: otherEndpoint)
+            check("pane A's token on B's path is a 401", crossedBack == 401, "\(crossedBack)")
+            let (own, _) = await post(list, token: BrowserBridge.shared.token(forPane: other), at: otherEndpoint)
+            check("B's own token on B's path answers", own == 200, "\(own)")
+            // B's file, as A would read it, sent to B's path: what it says is a name, not a key.
+            let otherFile = (try? String(contentsOf: folder.appendingPathComponent("\(other).json"), encoding: .utf8)) ?? ""
+            let (fromFile, _) = await post(list, token: "${\(BrowserBridge.tokenVariable)}", at: otherEndpoint)
+            check("B's file read by A opens nothing", !otherFile.contains(BrowserBridge.shared.token(forPane: other)) && fromFile == 401, "\(fromFile)")
+        } else {
+            check("a second tab to cross tokens with", false)
+        }
         let snapshot = text(await tool("browser_snapshot"))
         check("browser_snapshot reads the page and its controls", snapshot.contains("Hello") && snapshot.contains("“Click me”"), snapshot)
         let ref =
@@ -1119,6 +1162,20 @@ final class E2ERunner {
             "…its MCP config only for the API client's tools",
             Settings.shared.arguments(for: .claude).contains("--mcp-config") == Settings.shared.apiAgentControl)
         Settings.shared.set("browser.enabled", nil)
+
+        // The token is in the pane's own environment (analysis D-15): the
+        // shell hashes it, so it isn't written here either. A tab of its
+        // own, at the end — typed earlier, the browser's address bar came
+        // up empty.
+        check("the bridge is back", await eventually(5) { BrowserBridge.shared.isServing })
+        app.newTab(nil)
+        guard let typing = app.store.selected else { return check("a tab to type in", false) }
+        let own = BrowserBridge.shared.token(forPane: typing.terminal.processTag)
+        let hashed = scratch.appendingPathComponent("mcp-token.sha256")
+        await runAndExpect(
+            "printf %s \"$\(BrowserBridge.tokenVariable)\" | shasum -a 256 | cut -c1-64 > \(DockerCommands.quote(hashed.path))", file: hashed,
+            content: SHA256.hash(data: Data(own.utf8)).map { String(format: "%02x", $0) }.joined(), "the pane's environment has its own token")
+        app.closeTabsWithoutAsking([typing])
     }
 
     /// The file tree's New File…, Rename… and Move to Trash…, each through

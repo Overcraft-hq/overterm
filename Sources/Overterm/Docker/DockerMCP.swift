@@ -245,11 +245,13 @@ enum DockerMCP {
 
     static func allow(_ title: String, _ detail: String) async -> Bool {
         let shown = displayed(detail)
-        if let answer = askOverride { return answer(title + "\n" + shown) }
+        // Who asks: the calling pane's tab and agent (MCPAsker).
+        let asker = await MCPAsker.current()
+        if let answer = askOverride { return answer(([title, asker].compactMap(\.self) + [shown]).joined(separator: "\n")) }
         // The one confirmation every write is asked with; all of it shown,
-        // never cut.
-        let confirmation = WriteConfirmation(title: title, detail: shown, button: "Allow", cancel: "Don't")
-        let window = NSApp.mainWindow ?? NSApp.windows.first(where: \.isVisible)
+        // never cut — in the calling pane's window.
+        let confirmation = WriteConfirmation(title: title, detail: shown, button: "Allow", cancel: "Don't", asker: asker)
+        let window = MCPAsker.window(forPane: MCPAsker.pane) ?? NSApp.windows.first(where: \.isVisible)
         if window != nil { NSApp.activate(ignoringOtherApps: true) }
         return await confirmation.ask(on: window) != nil
     }

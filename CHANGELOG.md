@@ -21,6 +21,7 @@ version is tagged `v<version>`.
 - build: Xcode 27 builds the app, and an app built with it takes clicks on macOS 27; double-clicking the strip's empty space zooms the window there again
 - window: built with macOS 26's SDK or later, the tab strip no longer sits on a grey glass band across the title bar
 - usage: an isolated run never runs your own claude for its usage
+- browser: each pane's MCP token opens only its own tools — the browser, API client, notes, database, Docker and Kubernetes tools of one agent's pane are no longer reachable with another pane's config, and every write an agent asks for names its tab and agent, "asked through MCP"
 
 ## 1.5.6 — 2026-11-13
 
