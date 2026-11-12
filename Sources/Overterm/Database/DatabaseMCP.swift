@@ -112,17 +112,16 @@ enum DatabaseMCP {
     /// unless they say so.
     static func allow(_ statement: String, on connection: DatabaseConnection) async -> Bool {
         if let answer = askOverride { return answer(statement) }
-        let alert = NSAlert()
-        alert.messageText = "An agent wants to run this on “\(connection.name)”"
-        alert.informativeText = String(statement.prefix(2000)) + (SQLText.danger(of: statement).map { "\n\n\($0)" } ?? "")
-        alert.addButton(withTitle: "Run It")
-        alert.addButton(withTitle: "Don't Run")
-        alert.alertStyle = .warning
-        guard let window = NSApp.mainWindow ?? NSApp.windows.first(where: \.isVisible) else { return alert.runModal() == .alertFirstButtonReturn }
-        NSApp.activate(ignoringOtherApps: true)
-        return await withCheckedContinuation { continuation in
-            alert.beginSheetModal(for: window) { continuation.resume(returning: $0 == .alertFirstButtonReturn) }
-        }
+        // The one confirmation every write is asked with: all of the
+        // statement, every character visible, and who asks (MCPAsker) —
+        // in the calling pane's window.
+        let confirmation = WriteConfirmation(
+            title: "An agent wants to run this on “\(connection.name)”",
+            detail: DockerMCP.displayed(statement) + (SQLText.danger(of: statement).map { "\n\n\($0)" } ?? ""), button: "Run It",
+            cancel: "Don't Run", asker: await MCPAsker.current())
+        let window = MCPAsker.window(forPane: MCPAsker.pane) ?? NSApp.windows.first(where: \.isVisible)
+        if window != nil { NSApp.activate(ignoringOtherApps: true) }
+        return await confirmation.ask(on: window) != nil
     }
 
     /// Set by tests and the E2E runner: answers instead of the alert.

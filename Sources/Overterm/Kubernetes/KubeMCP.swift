@@ -802,13 +802,7 @@ enum KubeMCP {
 
     /// The window of the pane that called, else the main one, else any
     /// terminal window on screen.
-    static func window(forPane pane: String?) -> NSWindow? {
-        let terminals = NSApp.windows.compactMap { $0.windowController as? TerminalWindowController }
-        if let pane, let own = terminals.first(where: { $0.store.tabs.contains { $0.terminals.contains { $0.processTag == pane } } }) {
-            return own.window
-        }
-        return NSApp.mainWindow ?? terminals.first { $0.window?.isVisible == true }?.window
-    }
+    static func window(forPane pane: String?) -> NSWindow? { MCPAsker.window(forPane: pane) }
 
     // MARK: Tools
 

@@ -978,9 +978,26 @@ driving it are in the same window as the code.
 - **Reload on save** (off by default): an editor save, or the checkout's
   files changing under an agent, reloads a local page.
 - **Agents** (`BrowserBridge`, `BrowserMCP`): an MCP server (streamable
-  HTTP, JSON answers) on 127.0.0.1, a random port and a bearer token, one
-  path per pane — `/mcp/<the pane's OVERTERM_TAB_ID>` — so an agent reaches
-  its own tab's browser. Each pane gets `OVERTERM_MCP_CONFIG`, a Claude Code
+  HTTP, JSON answers) on 127.0.0.1, a random port, one path per pane —
+  `/mcp/<the pane's OVERTERM_TAB_ID>` — so an agent reaches its own tab's
+  browser. Each pane has a bearer token of its own (`PaneTokens`: 32 random
+  bytes, made with its config, dropped when it closes), and a token opens
+  only its own pane's path: any other is a 401 before a tool is reached
+  (`BridgeServer.route`). The token is in no file: every config sits in
+  one folder the same user can list, so a token there let an agent in
+  worktree A read B's file and call B's Docker, Kubernetes or database
+  tools — the window's confirmation naming B's checkout (Terraform
+  analysis, D-15). The file's header is `Bearer ${OVERTERM_MCP_TOKEN}`,
+  which Claude Code expands, and `OVERTERM_MCP_TOKEN` is in that pane's
+  environment only (`BrowserBridge.environment(forPane:)`). Every write an
+  MCP call asks about says who asks — "Asked through MCP by Claude in the
+  tab “…”" (`MCPAsker`: the call's pane as a task-local, its tab by
+  `tab.terminals`, the agent by `tab.agent` or its process) — in that
+  pane's window (`WriteConfirmation.ask` fills it in; Docker's, Kubernetes'
+  and the databases' writes). Left open: a same-user process outside a
+  sandbox can read another process's environment (`KERN_PROCARGS2`), and
+  so another pane's token; the sheet then names the pane it pretends to
+  be. Each pane gets `OVERTERM_MCP_CONFIG`, a Claude Code
   config file (0600) written for it, and Overterm starts `claude` with
   `--mcp-config "$OVERTERM_MCP_CONFIG"`. Tools: navigate, snapshot (text and
   the controls, each with a ref), click, type, screenshot, console,
@@ -3841,7 +3858,7 @@ group from `tools/list`, the instructions and the calls (a `Settings` of
 the test's own) — every test ending with only GETs, no subresource but a
 log, no Secret's object. `KubeMCPTextTests`: durations, names, the table,
 the bounds and the scrubbing. The `kubernetes` scenario calls them through
-the bridge's real HTTP endpoint at a pane's path, with its token: the list
+the bridge's real HTTP endpoint at a pane's path, with that pane's token: the list
 without a write tool, `k8s_get` on fake-prod, the page's context when none
 is named, an unknown context refused, a Secret without its value,
 `k8s_why`, a write on read-only production refused, only GETs; `kubernetes.agentAccess` off

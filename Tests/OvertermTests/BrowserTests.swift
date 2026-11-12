@@ -1,3 +1,4 @@
+import AppKit
 import XCTest
 
 @testable import Overterm
@@ -186,5 +187,188 @@ final class SessionBrowserTests: XCTestCase {
         XCTAssertEqual(again.tabs.first?.browserURL, "http://localhost:3000/")
         XCTAssertEqual(again.tabs.first?.browserPages, ["http://localhost:3000/", "https://docs.dev/"])
         XCTAssertEqual(again.tabs.first?.browserPage, 1)
+    }
+}
+
+/// The bridge's per-pane tokens (analysis D-15): a pane's token opens its
+/// own path and no other, for every tool group the bridge carries.
+final class PaneTokenTests: XCTestCase {
+    private func request(_ path: String, bearer: String?) -> HTTPRequest {
+        HTTPRequest(method: "POST", path: path, headers: bearer.map { ["authorization": "Bearer \($0)"] } ?? [:], body: Data())
+    }
+
+    func testEachPaneHasItsOwnToken() {
+        let tokens = PaneTokens()
+        let a = tokens.token(for: "pane-a")
+        let b = tokens.token(for: "pane-b")
+        XCTAssertNotEqual(a, b)
+        XCTAssertEqual(tokens.token(for: "pane-a"), a, "asked again, the same token")
+        XCTAssertEqual(a.count, 64)
+    }
+
+    func testAPanesTokenOnAnotherPanesPathIsRefused() {
+        let tokens = PaneTokens()
+        let a = tokens.token(for: "pane-a")
+        let b = tokens.token(for: "pane-b")
+        XCTAssertEqual(BridgeServer.route(request("/mcp/pane-a", bearer: a), tokens: tokens), .pane("pane-a"))
+        XCTAssertEqual(BridgeServer.route(request("/mcp/pane-b", bearer: b), tokens: tokens), .pane("pane-b"))
+        XCTAssertEqual(BridgeServer.route(request("/mcp/pane-b", bearer: a), tokens: tokens), .refused(status: 401))
+        XCTAssertEqual(BridgeServer.route(request("/mcp/pane-a", bearer: b), tokens: tokens), .refused(status: 401))
+        XCTAssertEqual(BridgeServer.route(request("/mcp/pane-a?x=1", bearer: a), tokens: tokens), .pane("pane-a"))
+    }
+
+    func testNoTokenAWrongOneAndAnUnknownPaneAreRefused() {
+        let tokens = PaneTokens()
+        let a = tokens.token(for: "pane-a")
+        XCTAssertEqual(BridgeServer.route(request("/mcp/pane-a", bearer: nil), tokens: tokens), .refused(status: 401))
+        XCTAssertEqual(BridgeServer.route(request("/mcp/pane-a", bearer: "wrong"), tokens: tokens), .refused(status: 401))
+        XCTAssertEqual(BridgeServer.route(request("/mcp/pane-a", bearer: String(a.dropLast()) + "0"), tokens: tokens).isRefused, true)
+        XCTAssertEqual(BridgeServer.route(request("/mcp/pane-z", bearer: a), tokens: tokens), .refused(status: 401), "a pane with no token")
+        XCTAssertEqual(BridgeServer.route(request("/mcp/pane-a/extra", bearer: a), tokens: tokens), .refused(status: 404))
+        let bare = HTTPRequest(method: "POST", path: "/mcp/pane-a", headers: ["authorization": a], body: Data())
+        XCTAssertEqual(BridgeServer.route(bare, tokens: tokens), .refused(status: 401), "not a bearer")
+    }
+
+    func testAClosedPanesTokenIsDropped() {
+        let tokens = PaneTokens()
+        let a = tokens.token(for: "pane-a")
+        tokens.revoke("pane-a")
+        XCTAssertEqual(BridgeServer.route(request("/mcp/pane-a", bearer: a), tokens: tokens), .refused(status: 401))
+        XCTAssertNotEqual(tokens.token(for: "pane-a"), a, "a new token, never the old one again")
+    }
+
+    /// Over the server's real HTTP on loopback, as an agent would call it.
+    @MainActor
+    func testOverHTTPOnlyTheOwnPaneIsServed() async throws {
+        let tokens = PaneTokens()
+        let a = tokens.token(for: "pane-a")
+        let b = tokens.token(for: "pane-b")
+        var served: [String] = []
+        let server = BridgeServer(tokens: tokens) { tag, message in
+            served.append(tag)
+            return ["jsonrpc": "2.0", "id": message["id"] ?? NSNull(), "result": [:] as [String: Any]]
+        }
+        let ready = expectation(description: "listening")
+        nonisolated(unsafe) var port: UInt16 = 0
+        server.start { listening in
+            port = listening
+            ready.fulfill()
+        }
+        await fulfillment(of: [ready], timeout: 5)
+        defer { server.stop() }
+        func status(_ tag: String, _ token: String) async throws -> Int {
+            var request = URLRequest(url: URL(string: "http://127.0.0.1:\(port)/mcp/\(tag)")!)
+            request.httpMethod = "POST"
+            request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+            request.httpBody = Data(#"{"jsonrpc":"2.0","id":1,"method":"tools/list"}"#.utf8)
+            let (_, response) = try await URLSession.shared.data(for: request)
+            return (response as? HTTPURLResponse)?.statusCode ?? 0
+        }
+        let crossed = try await status("pane-b", a)
+        XCTAssertEqual(crossed, 401, "pane A's token on B's tag")
+        let own = try await status("pane-a", a)
+        XCTAssertEqual(own, 200)
+        let other = try await status("pane-b", b)
+        XCTAssertEqual(other, 200)
+        XCTAssertEqual(served, ["pane-a", "pane-b"], "the refused request reached no tool")
+    }
+}
+
+/// The token stays out of the config files (analysis D-15): an agent in
+/// worktree A that lists the folder and reads B's file gets B's address and
+/// the name of a variable, nothing that opens B's tools.
+final class PaneConfigTests: XCTestCase {
+    private func written(_ tag: String, port: UInt16, in folder: URL) throws -> URL {
+        let file = folder.appendingPathComponent("\(tag).json")
+        let config = BrowserBridge.config(port: port, tag: tag)
+        try JSONSerialization.data(withJSONObject: config, options: [.sortedKeys, .withoutEscapingSlashes]).write(to: file)
+        return file
+    }
+
+    func testTheConfigNamesTheTokenAndHoldsNone() throws {
+        let config = BrowserBridge.config(port: 4242, tag: "pane-a")
+        let server = (config["mcpServers"] as? [String: Any])?["overterm-browser"] as? [String: Any]
+        XCTAssertEqual(server?["url"] as? String, "http://127.0.0.1:4242/mcp/pane-a")
+        XCTAssertEqual((server?["headers"] as? [String: String])?["Authorization"], "Bearer ${OVERTERM_MCP_TOKEN}")
+        XCTAssertEqual(BrowserBridge.tokenVariable, "OVERTERM_MCP_TOKEN")
+    }
+
+    func testReadingEveryPanesFileGivesNoWorkingCredential() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("mcp-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let tokens = PaneTokens()
+        let a = tokens.token(for: "pane-a")
+        let b = tokens.token(for: "pane-b")
+        _ = try written("pane-a", port: 4242, in: folder)
+        _ = try written("pane-b", port: 4242, in: folder)
+        // A, as `cat mcp/*.json` would.
+        var headers: [String] = []
+        for file in try FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil) {
+            let text = try String(contentsOf: file, encoding: .utf8)
+            XCTAssertFalse(text.contains(a) || text.contains(b), "\(file.lastPathComponent) holds a token")
+            let json = try JSONSerialization.jsonObject(with: Data(contentsOf: file)) as? [String: Any]
+            let server = (json?["mcpServers"] as? [String: Any])?["overterm-browser"] as? [String: Any]
+            if let header = (server?["headers"] as? [String: String])?["Authorization"] { headers.append(header) }
+        }
+        XCTAssertEqual(headers.count, 2)
+        for header in headers {
+            for tag in ["pane-a", "pane-b"] {
+                let request = HTTPRequest(method: "POST", path: "/mcp/\(tag)", headers: ["authorization": header], body: Data())
+                XCTAssertEqual(BridgeServer.route(request, tokens: tokens), .refused(status: 401), "\(header) on \(tag)")
+            }
+        }
+    }
+}
+
+/// What a write's confirmation says of who asks, when an agent's MCP call
+/// does (analysis D-15).
+@MainActor
+final class MCPAskerTests: XCTestCase {
+    func testTheLineNamesTheTabAndTheAgent() {
+        XCTAssertEqual(MCPAsker.line(tab: "acme-api", agent: "Claude"), "Asked through MCP by Claude in the tab “acme-api”")
+        XCTAssertEqual(
+            MCPAsker.line(tab: "server", checkout: "globex-web", agent: nil), "Asked through MCP by an agent in the tab “server” (globex-web)")
+        XCTAssertEqual(MCPAsker.line(tab: "acme-api", checkout: "acme-api", agent: "Codex"), "Asked through MCP by Codex in the tab “acme-api”")
+        XCTAssertEqual(MCPAsker.line(tab: nil, agent: "Claude"), "Asked through MCP by a pane that is no longer open")
+    }
+
+    func testATitleCannotHideWhatItIs() {
+        // A shell sets its own title: a direction override or a newline is shown as its code.
+        let line = MCPAsker.line(tab: "acme\u{202E}ipa\nprod", agent: nil)
+        XCTAssertFalse(line.contains("\u{202E}"))
+        XCTAssertFalse(line.contains("\n"))
+    }
+
+    func testOutsideACallNobodyIsNamed() async {
+        let none = await MCPAsker.current()
+        XCTAssertNil(none)
+        let closed = await MCPAsker.$pane.withValue("no-such-pane") { await MCPAsker.current() }
+        XCTAssertEqual(closed, "Asked through MCP by a pane that is no longer open")
+    }
+
+    func testTheConfirmationShowsWhoAsks() {
+        let confirmation = WriteConfirmation(
+            title: "An agent wants to stop “acme-web-1”", detail: "nginx — Up 2 hours", button: "Allow", cancel: "Don't",
+            asker: "Asked through MCP by Claude in the tab “acme-api”")
+        let (alert, _) = confirmation.alert()
+        func labels(_ view: NSView?) -> [NSTextField] {
+            guard let view else { return [] }
+            let own = (view as? NSTextField).map { [$0] } ?? []
+            return own + view.subviews.flatMap(labels)
+        }
+        let shown = labels(alert.accessoryView)
+        let asker = shown.first { $0.accessibilityIdentifier() == WriteConfirmation.askerLabel }
+        XCTAssertEqual(asker?.stringValue, "Asked through MCP by Claude in the tab “acme-api”")
+        XCTAssertTrue(shown.contains { $0.stringValue == "nginx — Up 2 hours" }, "the detail under it")
+        let plain = WriteConfirmation(title: "Stop?", detail: "nginx", button: "Allow").alert().0
+        XCTAssertNil(plain.accessoryView, "nobody named when the user asked")
+    }
+}
+
+extension BridgeServer.Route {
+    fileprivate var isRefused: Bool {
+        if case .refused = self { return true }
+        return false
     }
 }

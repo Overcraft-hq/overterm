@@ -203,7 +203,7 @@ extension E2ERunner {
             request.timeoutInterval = 60
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
             request.setValue("application/json, text/event-stream", forHTTPHeaderField: "Accept")
-            request.setValue("Bearer \(BrowserBridge.shared.token)", forHTTPHeaderField: "Authorization")
+            request.setValue("Bearer \(BrowserBridge.shared.token(forPane: tag))", forHTTPHeaderField: "Authorization")
             request.httpBody = try? JSONSerialization.data(withJSONObject: body)
             guard let (data, _) = try? await URLSession.shared.data(for: request) else { return nil }
             return try? JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -261,6 +261,10 @@ extension E2ERunner {
             "the context and namespace in its title",
             asked.contains("An agent asks, in kind-fake · namespace shop: Scale deployment shop/batch from 3 to 2 replicas?"), asked)
         check("and the kubectl it equals", asked.contains("kubectl scale deploy/batch --replicas=2 --context kind-fake -n shop"), asked)
+        // Who asks (analysis D-15): the calling pane's tab, "asked through MCP".
+        check(
+            "it says it was asked through MCP, naming the tab", asked.contains("Asked through MCP by ") && asked.contains("in the tab “\(tab.title)”"),
+            asked)
         check("nothing is written while it asks", !fake.writes.contains { !$0.isAccessReview }, "\(fake.writes)")
         if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
         let scaled = await scaling.value

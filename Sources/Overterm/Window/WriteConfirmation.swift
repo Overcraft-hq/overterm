@@ -23,9 +23,14 @@ struct WriteConfirmation {
     var image: String? = nil
     /// The critical style: production, or a name asked.
     var critical = false
+    /// Who asks, when an agent's MCP call does (`MCPAsker`): the tab and
+    /// the agent, "asked through MCP". `ask(on:)` fills it in for a call.
+    var asker: String? = nil
 
     /// Production's colour, as the Kubernetes page draws it.
     static let productionRed = NSColor(srgbRed: 0.86, green: 0.17, blue: 0.17, alpha: 1)
+    /// The asker's line's identifier, for the scenario.
+    static let askerLabel = "write.asker"
     /// The typed-name field's identifier, for the scenario.
     static let typedNameField = "write.typedName"
     /// The image field's identifier, for the scenario.
@@ -59,6 +64,13 @@ struct WriteConfirmation {
         alert.addButton(withTitle: cancel)
         let width: CGFloat = 320
         var views: [NSView] = []
+        if let asker {
+            let label = NSTextField(wrappingLabelWithString: asker)
+            label.font = .systemFont(ofSize: 11.5, weight: .medium)
+            label.textColor = .secondaryLabelColor
+            label.setAccessibilityIdentifier(Self.askerLabel)
+            views.append(label)
+        }
         if let scope {
             let label = NSTextField(wrappingLabelWithString: scope)
             label.font = .systemFont(ofSize: 12, weight: .semibold)
@@ -78,7 +90,7 @@ struct WriteConfirmation {
             }
             alert.informativeText = "\(detail.count) characters — all of it below."
             views.append(scroll)
-        } else if scope != nil, !detail.isEmpty {
+        } else if scope != nil || asker != nil, !detail.isEmpty {
             // Under the scope, so the context is read first.
             let label = NSTextField(wrappingLabelWithString: detail)
             label.font = .systemFont(ofSize: 11.5)
@@ -144,8 +156,11 @@ struct WriteConfirmation {
     }
 
     /// Asked on `window` (else on its own): what was typed, nil when cancelled.
+    /// An agent's MCP call's confirmation says so, naming its tab and agent.
     func ask(on window: NSWindow?) async -> String? {
-        let (alert, field) = alert()
+        var asked = self
+        if asked.asker == nil { asked.asker = await MCPAsker.current() }
+        let (alert, field) = asked.alert()
         guard let window else { return alert.runModal() == .alertFirstButtonReturn ? field?.stringValue ?? "" : nil }
         let response = await withCheckedContinuation { continuation in
             alert.beginSheetModal(for: window) { continuation.resume(returning: $0) }
