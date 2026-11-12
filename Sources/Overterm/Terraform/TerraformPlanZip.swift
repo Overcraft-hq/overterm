@@ -16,6 +16,10 @@ struct TerraformPlanZip: Equatable, Sendable {
     var lineage: String?
     var serial: Int?
     var lockFileSHA256: String?
+    /// The lock file pins no provider: the header `init` writes for a
+    /// configuration of builtin providers only — what a root with no lock
+    /// file at all plans with.
+    var lockFilePinsNothing = false
 
     struct Entry: Equatable, Sendable {
         var name: String
@@ -106,6 +110,7 @@ struct TerraformPlanZip: Equatable, Sendable {
         }
         if let lock = entries.first(where: { $0.name == ".terraform.lock.hcl" }), let data = try? contents(of: lock, read: read) {
             facts.lockFileSHA256 = SHA256.hash(data: data).map { String(format: "%02x", $0) }.joined()
+            facts.lockFilePinsNothing = !String(decoding: data, as: UTF8.self).contains("provider \"")
         }
         return facts
     }

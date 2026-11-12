@@ -25,14 +25,25 @@ extension TerminalWindowController {
             return .failure(TerraformReadFailure(message: "The pane that asked isn't in any window."))
         }
         TerraformMCP.paneModels = { NSApp.windows.compactMap { ($0.windowController as? TerminalWindowController)?.terraformPlanPane } }
-        TerraformRunFolder.sweepAtLaunch()
+        sweepTerraformRunsAtLaunch()
+    }
+
+    /// The launch's sweep (4.7): what a crashed or quit Overterm left is
+    /// removed, its applies still running followed again in the slot.
+    /// `again`: a scenario's relaunch, the same path a second time.
+    func sweepTerraformRunsAtLaunch(again: Bool = false) {
+        TerraformRunFolder.sweepAtLaunch(again: again) { [weak self] found in self?.reattachTerraformApplies(found) }
     }
 
     var terraformPlanActions: TerraformPlanActions {
         TerraformPlanActions(
             planAgain: { [weak self] run, lock in
                 guard let self else { return }
-                if run.kind == .initialize { self.initTerraformRoot(run.card, checkout: run.checkout) } else { self.planTerraformRoot(run.card, checkout: run.checkout, lock: lock) }
+                if run.kind == .initialize {
+                    self.initTerraformRoot(run.card, checkout: run.checkout)
+                } else {
+                    self.planTerraformRoot(run.card, checkout: run.checkout, lock: lock, mode: run.mode)
+                }
             },
             discard: { [weak self] run in
                 TerraformRunRegistry.shared.discard(run)
@@ -40,17 +51,35 @@ extension TerminalWindowController {
             },
             copySummary: { [weak self] run in self?.copyTerraformSummary(run) },
             askWhy: { [weak self] run in self?.askWhy(run: run) },
+            askWhyApply: { [weak self] apply in self?.askWhy(apply: apply) },
+            planAfterApply: { [weak self] apply in self?.planAgain(after: apply) },
+            showApply: { [weak self] apply in self?.showTerraformApply(apply) },
             chooseVarFiles: { [weak self] run, files in
                 TerraformRootStore.shared.setVarFiles(files, checkout: run.checkout, root: run.card.path)
                 self?.planTerraformRoot(run.card, checkout: run.checkout)
             },
             open: { [weak self] url, line in self?.openInEditor(url, line: line) },
-            close: { [weak self] in self?.toggleDiff(nil) })
+            close: { [weak self] in self?.toggleDiff(nil) },
+            apply: { [weak self] run in self?.applyTerraformPlan(run) },
+            stopApply: { [weak self] apply in self?.stopTerraformApply(apply) },
+            planMode: { [weak self] run, mode in self?.planTerraformAgain(run, mode: mode) })
     }
 
     /// The run in the right slot, which takes it (`RightSlot`).
     func showTerraformPlan(_ run: TerraformPlanRun) {
         terraformPlanPane.show(run)
+        if let apply = run.apply { terraformPlanPane.showApply(apply) }
+        rightPane.terraformPlanOpened = true
+        rightPane.mode = .terraformPlan
+        if diffItem?.isCollapsed == true { toggleDiff(nil) }
+        updateRightPaneVisibility()
+    }
+
+    /// An apply in the right slot: its progress and Stop (4.7, 6.4) —
+    /// from the slot's list of the applies going, the root's card, or a
+    /// plan held back by one.
+    func showTerraformApply(_ apply: TerraformApplyRun) {
+        terraformPlanPane.showApply(apply)
         rightPane.terraformPlanOpened = true
         rightPane.mode = .terraformPlan
         if diffItem?.isCollapsed == true { toggleDiff(nil) }
@@ -94,10 +123,12 @@ extension TerminalWindowController {
     /// Plans `card` — the person's click: asked first where 5.3 and 5.5
     /// say (production's first plan this session, a commit not theirs,
     /// risks new against the base branch), then in the slot.
-    func planTerraformRoot(_ card: TerraformRootCard, checkout: URL? = nil, lock: TerraformCommands.LockWait = .person) {
+    func planTerraformRoot(
+        _ card: TerraformRootCard, checkout: URL? = nil, lock: TerraformCommands.LockWait = .person, mode: TerraformPlanMode = .normal
+    ) {
         guard let checkout = checkout ?? terraformPanel.checkout else { return NSSound.beep() }
         Task { @MainActor [weak self] in
-            guard let self, let run = await self.preparePlan(card, checkout: checkout, lock: lock, agent: nil) else { return }
+            guard let self, let run = await self.preparePlan(card, checkout: checkout, lock: lock, agent: nil, mode: mode) else { return }
             self.showTerraformPlan(run)
             await run.start(settingPath: Settings.shared.terraformPath)
             self.terraformPanel.objectWillChange.send()
@@ -121,7 +152,9 @@ extension TerminalWindowController {
     }
 
     /// The questions, then the run made and registered (not started).
-    private func preparePlan(_ card: TerraformRootCard, checkout: URL, lock: TerraformCommands.LockWait, agent: String?) async -> TerraformPlanRun? {
+    private func preparePlan(
+        _ card: TerraformRootCard, checkout: URL, lock: TerraformCommands.LockWait, agent: String?, mode: TerraformPlanMode = .normal
+    ) async -> TerraformPlanRun? {
         let registry = TerraformRunRegistry.shared
         if let why = TerraformProcessCheck.refused(.plan, rootClass: card.rootClass)
             ?? TerraformProcessCheck.refused(.plan, backendType: card.facts.backend.type)
@@ -167,7 +200,7 @@ extension TerminalWindowController {
         let run = TerraformPlanRun(
             kind: .plan, checkout: checkout, card: card, agent: agent, lockWait: lock,
             varFiles: agent == nil ? TerraformRootStore.shared.varFiles(checkout: checkout, root: card.path) : [],
-            branch: terraformBranch(checkout))
+            branch: terraformBranch(checkout), mode: agent == nil ? mode : .normal)
         run.risks = listed
         run.changedLines = changed
         registry.add(run)
@@ -327,14 +360,42 @@ extension TerminalWindowController {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
+    /// The providers a root's lock file pins, said. Blocking.
+    nonisolated static func lockProviders(_ root: URL) -> [String] {
+        let lock = (try? String(contentsOf: root.appendingPathComponent(".terraform.lock.hcl"), encoding: .utf8)) ?? ""
+        return TerraformLockFile.versions(in: String(lock.prefix(1 << 20))).map { "\($0.address) \($0.version)" }
+    }
+
+    /// Ask Why on a failed apply (2.3, 6.4): the apply's diagnostics and
+    /// log, not its plan's — a reattached apply's too, which has no plan.
+    func askWhy(apply: TerraformApplyRun) {
+        let root = apply.rootFolder
+        Task { @MainActor [weak self] in
+            let providers = await TerraformPanelModel.blocking { Self.lockProviders(root) }
+            guard let self else { return }
+            let card = apply.planRun?.card
+            let brief = apply.brief(backend: card?.backendSummary, version: apply.planRun?.card.version, providers: providers)
+            if let recorder = self.terraformBriefRecorder { return recorder(brief) }
+            self.presentTerraformBrief(brief)
+        }
+    }
+
+    /// Plan Again after an apply: its plan's root again — a reattached
+    /// one's from the panel's cards, when the panel shows its checkout.
+    func planAgain(after apply: TerraformApplyRun) {
+        if let run = apply.planRun { return planTerraformRoot(run.card, checkout: run.checkout, mode: .normal) }
+        let checkout = URL(fileURLWithPath: apply.marker.checkout).standardizedFileURL
+        guard terraformPanel.checkout?.standardizedFileURL == checkout, let card = terraformPanel.roots.first(where: { $0.path == apply.marker.root }) else {
+            return presentTerraformRefusal("Plan \(apply.marker.name) from the Terraform panel of \(apply.worktree) (⌥⌘E).")
+        }
+        planTerraformRoot(card, checkout: checkout)
+    }
+
     /// Ask Why on a failed plan or init, or a held lock (5.10).
     func askWhy(run: TerraformPlanRun) {
         let root = run.card.folder
         Task { @MainActor [weak self] in
-            let providers = await TerraformPanelModel.blocking { () -> [String] in
-                let lock = (try? String(contentsOf: root.appendingPathComponent(".terraform.lock.hcl"), encoding: .utf8)) ?? ""
-                return TerraformLockFile.versions(in: String(lock.prefix(1 << 20))).map { "\($0.address) \($0.version)" }
-            }
+            let providers = await TerraformPanelModel.blocking { Self.lockProviders(root) }
             guard let self else { return }
             let brief = TerraformAgentBrief.run(
                 operation: run.kind == .plan ? "plan" : "init", diagnostics: run.diagnostics, lock: run.lock, log: run.log,
@@ -385,11 +446,15 @@ extension TerminalWindowController {
 
 extension TerraformRunFolder {
     /// The sweep, once per app, off the main thread.
-    @MainActor static func sweepAtLaunch() {
-        guard !swept else { return }
+    /// Applies still running after another launch quit or crashed (4.7)
+    /// are handed to `reattach`, on the main thread.
+    @MainActor static func sweepAtLaunch(again: Bool = false, reattach: @escaping @MainActor ([(folder: URL, marker: TerraformApplyMarker)]) -> Void) {
+        guard !swept || (again && AppEnvironment.guardsTerraform) else { return }
         swept = true
-        let work: @Sendable () -> Void = { TerraformRunFolder.sweep() }
-        DispatchQueue.global(qos: .utility).async(execute: work)
+        Task { @MainActor in
+            let found = await TerraformPanelModel.blocking { TerraformRunFolder.sweep() }
+            if !found.isEmpty { reattach(found) }
+        }
     }
 
     @MainActor private static var swept = false

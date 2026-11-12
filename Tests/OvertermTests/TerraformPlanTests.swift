@@ -38,9 +38,11 @@ final class TerraformPlanCommandTests: XCTestCase {
         XCTAssertNil(TerraformCommands.plan(out: out, parallelism: 0))
         let base = TerraformCommands.plan(out: out)!
         let refused: [[String]] = [
-            base + ["-lock=false"], base + ["-refresh=false"], base + ["-auto-approve"], base + ["-var=acme=1"], base + ["-target=a.b"],
+            base + ["-lock=false"], base + ["-refresh=false"], base + ["-auto-approve"], base + ["-var=acme=1"], base + ["-target=-a.b"],
+            base + ["-target=a.b", "-destroy"], base + ["-var-file=dev.tfvars", "-target=a.b"],
             base + ["-minimal-refresh"], base.map { $0 == "-lock=true" ? "-lock=false" : $0 }, base.map { $0 == "-lock-timeout=10s" ? "-lock-timeout=1h" : $0 },
-            ["-chdir=envs/prod"] + base, ["apply", "-input=false", "-json", "-lock=true", "-lock-timeout=60s", "/dev/fd/3"], ["apply", out],
+            ["-chdir=envs/prod"] + base, ["apply", "-input=false", "-json", "-lock=true", "-lock-timeout=60s", "/dev/fd/4"], ["apply", out],
+            ["apply", "-input=false", "-json", "-lock=true", "-lock-timeout=60s", "-auto-approve", "/dev/fd/3"],
             ["init"], ["init", "-input=false", "-json", "-lockfile=readonly", "-upgrade"], ["init", "-reconfigure"], ["init", "-migrate-state"],
             ["workspace", "select", "-or-create", "acme"], ["workspace", "new", "acme"], ["workspace", "delete", "acme"], ["workspace", "select", "../x"],
             ["state", "rm", "a.b"], ["force-unlock", "1"], ["output", "-json"], ["show", "-json"], ["plan"], ["plan", "-destroy"],
@@ -60,7 +62,7 @@ final class TerraformPlanCommandTests: XCTestCase {
         for line in lines {
             XCTAssertNil(TerraformCommands.refusal(line), "\(line)")
             for flag in TerraformCommands.forbiddenFlags { XCTAssertFalse(line.contains { $0.hasPrefix(flag) && !(flag == "-var=" && $0.hasPrefix("-var-file=")) }, "\(line) \(flag)") }
-            XCTAssertFalse(line.contains("apply"))
+            XCTAssertTrue(!line.contains("apply") || line == TerraformCommands.apply, "the one apply: \(line)")
             XCTAssertFalse(line.contains { $0.hasPrefix("-target") })
         }
         XCTAssertEqual(TerraformCommands.initialize, ["init", "-input=false", "-json", "-lockfile=readonly"])

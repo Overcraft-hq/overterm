@@ -20,6 +20,9 @@ struct TerraformPlanRecord: Sendable {
     var zip: TerraformPlanZip?
     /// 0: no changes; 2: changes.
     var status: Int32
+    /// The values the plan marks sensitive, for what its apply prints in
+    /// clear (5.6): provisioner output, an error's detail. Memory only.
+    var mask: TerraformValueMask = .none
 }
 
 /// The app's one register of Overterm's Terraform runs (analysis 3.6): one
@@ -44,6 +47,10 @@ final class TerraformRunRegistry: ObservableObject {
     /// The runs of this session, oldest first; at most `keep`, a dropped one's plan file closed.
     @Published private(set) var runs: [TerraformPlanRun] = []
     static let keep = 40
+    /// The applies of this session (6.4, "a runs row in memory"): time, who
+    /// started it, counts, result — and those followed again after a
+    /// crash or a quit (4.7).
+    @Published private(set) var applies: [TerraformApplyRun] = []
 
     /// Who holds each identity's turn, by its key; a waiting run's
     /// continuation, resumed true with the turn or false when it left the queue.
@@ -55,9 +62,10 @@ final class TerraformRunRegistry: ObservableObject {
     /// what their code ran or reached when the person said yes: a risk
     /// that isn't in it asks again (`TerraformPlanGate.agentAsks`).
     var agentAllowed: [String: Set<TerraformRunRisk>] = [:]
-    /// Production roots whose writes are on for this session (5.3): none in
-    /// stage 1, which never applies; the check's input.
-    var sessionWrites: Set<String> = []
+    /// Production roots whose writes are on for this session (5.3), by
+    /// `sessionKey`: turned on from the root's card, asked, never by a
+    /// setting; gone at quit.
+    @Published var sessionWrites: Set<String> = []
     /// A remote backend's workspaces, by identity of its default workspace.
     var workspaceLists: [String: [String]] = [:]
 
@@ -67,6 +75,52 @@ final class TerraformRunRegistry: ObservableObject {
     }
 
     func run(id: String) -> TerraformPlanRun? { runs.last { $0.id == id } }
+
+    /// A root and workspace's key for its session switch (5.3).
+    static func sessionKey(checkout: URL, root: String, workspace: String) -> String {
+        TerraformRootStore.key(checkout: checkout, root: root) + "\u{0}" + workspace
+    }
+
+    func hasSessionWrites(checkout: URL, root: String, workspace: String) -> Bool {
+        sessionWrites.contains(Self.sessionKey(checkout: checkout, root: root, workspace: workspace))
+    }
+
+    func addApply(_ apply: TerraformApplyRun) {
+        applies.append(apply)
+        if applies.count > Self.keep, let drop = applies.firstIndex(where: { !$0.isGoing }) { applies.remove(at: drop) }
+    }
+
+    /// Forgets an apply without touching its process: the scenario's
+    /// crash, after `detach`.
+    func forgetApply(_ apply: TerraformApplyRun) {
+        apply.detach()
+        applies.removeAll { $0 === apply }
+        if holders[apply.key] == apply.id { release(apply.key) }
+    }
+
+    /// The applies still going, the app's: what quitting asks about.
+    var goingApplies: [TerraformApplyRun] { applies.filter(\.isGoing) }
+
+    /// The apply holding `key`'s turn, if one does.
+    func applyHolder(of key: String) -> TerraformApplyRun? { holders[key].flatMap { id in applies.last { $0.id == id } } }
+
+    /// Why a run on `key` can't go now — another holds its turn — or nil.
+    func busy(_ key: String, except id: String? = nil) -> String? {
+        guard let holder = holders[key], holder != id else { return nil }
+        if let apply = applyHolder(of: key) { return "An apply of \(apply.marker.name) in \(apply.worktree) is running on this state." }
+        if let run = run(id: holder) {
+            return "The \(run.kind == .plan ? "plan" : "init") of \(run.card.name) in \(run.checkout.lastPathComponent) is running on this state."
+        }
+        return "Another run holds this state."
+    }
+
+    /// Takes `key`'s turn for `id` now, or false when another holds it: an
+    /// apply never queues — it is pressed again.
+    func take(_ key: String, id: String) -> Bool {
+        guard holders[key] == nil else { return holders[key] == id }
+        holders[key] = id
+        return true
+    }
 
     /// The newest plan run of `root` (its path in the checkout) in `checkout`.
     func latest(checkout: URL, root: String, kind: TerraformPlanRun.Kind = .plan) -> TerraformPlanRun? {
@@ -169,6 +223,8 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
     let lockWait: TerraformCommands.LockWait
     let varFiles: [String]
     let pluginCache: String?
+    /// Destroy, only some addresses, some replaced (2a): said in the header.
+    let mode: TerraformPlanMode
     /// The checkout's branch @ commit, as the chip says it.
     let branch: String?
     /// What its code runs or reaches (5.4), listed in the header.
@@ -185,6 +241,8 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
     @Published private(set) var diagnostics: [TerraformDiagnostic] = []
     @Published private(set) var lock: TerraformLockInfo?
     @Published private(set) var record: TerraformPlanRecord?
+    /// Its apply (6.4): the plan view becomes its progress in place.
+    @Published var apply: TerraformApplyRun?
     /// A file of its root changed after it finished.
     @Published var configChanged = false
     @Published private(set) var workspace: String
@@ -210,9 +268,10 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
 
     init(
         kind: Kind, checkout: URL, card: TerraformRootCard, agent: String? = nil, lockWait: TerraformCommands.LockWait = .person, varFiles: [String] = [],
-        pluginCache: String? = nil, branch: String? = nil
+        pluginCache: String? = nil, branch: String? = nil, mode: TerraformPlanMode = .normal
     ) {
         self.id = "tf-" + UUID().uuidString.prefix(8).lowercased()
+        self.mode = mode
         self.kind = kind
         self.checkout = checkout
         self.card = card
@@ -233,6 +292,34 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
     }
 
     var plan: TerraformPlan? { record?.plan }
+
+    /// The plan's stream warned that provider development overrides are on (4.5).
+    var devOverrides: Bool { TerraformApplyCheck.hasDevOverrides(diagnostics) }
+
+    /// Its plan applied (or its apply started): the record and its
+    /// descriptor dropped — a plan is applied once (6.4).
+    func dropRecord() { record = nil }
+
+    /// The root's class decided now, by the same classifier, settings and
+    /// sticky identities as a card's, over `facts` (the plan's own when
+    /// nil): what an apply is guarded as, never the card's alone (5.1).
+    func classNow(_ classing: Classing, facts: TerraformRootFacts? = nil) -> TerraformClassifier.Verdict {
+        TerraformRootCard.verdict(
+            path: card.path, folder: card.folder, facts: facts ?? card.facts, workspace: workspace, varFiles: autoVarFiles, awsProfile: profile,
+            terragruntTree: card.terragruntTree, settings: classing.settings, productionIdentities: classing.identities
+        ).0
+    }
+
+    /// Why Apply is greyed now (6.4), or nil: what needs nothing read.
+    func applyGreyed(_ registry: TerraformRunRegistry, writable: Bool, now: Date = Date(), classing: Classing? = nil) -> String? {
+        if apply != nil { return "Applied: plan again for another apply." }
+        if let why = TerraformApplyCheck.risen(name: card.name, planned: card.rootClass, now: classNow(classing ?? .current)) { return why }
+        let sessionWrites = registry.hasSessionWrites(checkout: checkout, root: card.path, workspace: workspace)
+        let key = identity?.description ?? card.folder.path
+        return TerraformApplyCheck.greyed(
+            plan: plan, rootClass: card.rootClass, writable: writable, sessionWrites: sessionWrites, mode: mode, devOverrides: devOverrides,
+            staleReason: staleReason(registry, now: now), busy: registry.busy(key))
+    }
 
     /// The variables a failed plan said have no value: offered the root's var files (2.2).
     var missingVariables: [String] {
@@ -414,8 +501,8 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
             do { folder = try TerraformRunFolder.makeRun() } catch { return refuse("\(error)") }
             defer { TerraformRunFolder.remove(folder) }
             let planFile = folder.appendingPathComponent("plan")
-            guard let arguments = TerraformCommands.plan(out: planFile.path, varFiles: varFiles, lock: lockWait) else {
-                return refuse("A var file outside the root can't be passed: \(varFiles.joined(separator: ", "))")
+            guard let arguments = TerraformCommands.plan(out: planFile.path, varFiles: varFiles, lock: lockWait, mode: mode) else {
+                return refuse("A var file outside the root, or an address that isn't one, can't be passed: \(varFiles.joined(separator: ", "))")
             }
             let outcome = await Self.stream(binary, arguments, in: root, environment: environment, planFile: planFile, run: self)
             let result: TerraformStreamRun.Outcome
@@ -437,7 +524,7 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
                     TerraformPlanRecord(
                         plan: pair.plan, file: file, binary: binary, version: pair.plan.terraformVersion, environment: environment,
                         dataDir: environment["TF_DATA_DIR"] ?? root.appendingPathComponent(".terraform").path, workspace: pinned ?? "default", zip: pair.zip,
-                        status: result.status))
+                        status: result.status, mask: pair.mask))
             }
         }
     }
@@ -448,6 +535,8 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
         self.registry = registry
         if let other = registry.holder(of: key) {
             phase = .waiting("Waiting for the \(other.kind == .plan ? "plan" : "init") of \(other.card.name) in \(other.checkout.lastPathComponent)")
+        } else if let apply = registry.applyHolder(of: key) {
+            phase = .waiting("Waiting for the apply of \(apply.marker.name) in \(apply.worktree)")
         }
         guard await registry.acquire(key, for: self) else {
             finish(.stopped)
@@ -565,6 +654,7 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
     struct Read: Sendable {
         var plan: TerraformPlan
         var zip: TerraformPlanZip?
+        var mask: TerraformValueMask
     }
 
     /// `show -json /dev/fd/3` of the held plan, decoded through the
@@ -590,8 +680,14 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
                     .init(message: "The plan's JSON is over \(TerraformStreamRun.maxPlanBytes >> 20) MB: too large to show attribute diffs.", tooLarge: true))
             }
             do {
-                let plan = try TerraformPlan.decode(shown.stdout, scrub: TerraformPlan.scrub)
-                return .success(Read(plan: plan, zip: TerraformPlanZip.read(descriptor: file.descriptor)))
+                guard let object = try? JSONSerialization.jsonObject(with: shown.stdout, options: [.fragmentsAllowed]) as? [String: Any] else {
+                    throw TerraformPlan.DecodeError.notJSON
+                }
+                // The sensitive values, read once: the decode masks by them,
+                // and the apply masks what it prints in clear (5.6).
+                let secrets = TerraformSensitiveValues(TerraformPlan.sensitiveValues(in: object))
+                let plan = try TerraformPlan.decode(object, scrub: TerraformPlan.scrub, secrets: secrets)
+                return .success(Read(plan: plan, zip: TerraformPlanZip.read(descriptor: file.descriptor), mask: TerraformValueMask(secrets)))
             } catch {
                 return .failure(.init(message: "\(error)"))
             }

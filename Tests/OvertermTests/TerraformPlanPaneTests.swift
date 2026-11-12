@@ -20,6 +20,26 @@ final class TerraformPlanPaneTests: XCTestCase {
 
     override func tearDownWithError() throws { try? FileManager.default.removeItem(at: folder) }
 
+    /// "Open block" for a module's resources (2.2): through init's
+    /// `modules.json`, a call's folder inside the checkout — never one outside it.
+    func testAModulesResourcesOpenAtTheirBlock() throws {
+        let manager = FileManager.default
+        try manager.createDirectory(at: folder.appendingPathComponent("modules/worker"), withIntermediateDirectories: true)
+        try manager.createDirectory(at: folder.appendingPathComponent("envs/dev/.terraform/modules"), withIntermediateDirectories: true)
+        try "# the worker\n\nresource \"terraform_data\" \"globex\" {\n  input = 1\n}\n".write(
+            to: folder.appendingPathComponent("modules/worker/main.tf"), atomically: true, encoding: .utf8)
+        let manifest =
+            #"{"Modules":[{"Key":"","Source":"","Dir":"."},{"Key":"globex_worker","Source":"../../modules/worker","Dir":"../../modules/worker"},"#
+            + #"{"Key":"globex_app.globex_worker","Source":"../../modules/worker","Dir":"../../modules/worker"},{"Key":"outside","Source":"/","Dir":"/etc"}]}"#
+        try manifest.write(to: folder.appendingPathComponent("envs/dev/.terraform/modules/modules.json"), atomically: true, encoding: .utf8)
+        let sources = TerraformPlanPaneModel.sources(folder: folder.appendingPathComponent("envs/dev"), prefix: "envs/dev/", varFiles: [])
+        XCTAssertEqual(sources.blocks["terraform_data.acme"], .init(file: "envs/dev/main.tf", line: 5), "the root's own")
+        XCTAssertEqual(sources.blocks["module.globex_worker.terraform_data.globex"], .init(file: "modules/worker/main.tf", line: 3))
+        XCTAssertEqual(sources.blocks["module.globex_app.module.globex_worker.terraform_data.globex"], .init(file: "modules/worker/main.tf", line: 3))
+        XCTAssertFalse(sources.blocks.keys.contains { $0.hasPrefix("module.outside") }, "never a folder outside the checkout")
+        XCTAssertEqual(TerraformModulesManifest.addressPrefix("a.b"), "module.a.module.b")
+    }
+
     private func planned() throws -> TerraformPlanRun {
         let card = TerraformRootCard(
             path: "envs/dev", name: "envs/dev", folder: folder.appendingPathComponent("envs/dev"), kind: .root, facts: TerraformRootFacts(),

@@ -33,22 +33,30 @@ struct TerraformRootSettings: Equatable, Sendable {
     /// Set by hand: only ever raises the class its names give.
     var rootClass: TerraformClass?
     var displayName: String?
+    /// A remote root Overterm may apply shown plans to (5.1, 5.3). Never a
+    /// production one: that is its session switch, never a setting.
+    var writable = false
 
     static let fields: [SettingField] = [
         SettingField(
             name: "class", kind: .choice([TerraformClass.production, .remote].map { SettingOption(value: $0.rawValue, label: $0.title) }),
             help: "production or remote: raises the class the names give, never lowers it."),
         SettingField(name: "displayName", kind: .text(placeholder: "", monospaced: false)),
+        SettingField(
+            name: "writable", kind: .toggle,
+            help: "A remote root Overterm may apply shown plans to, each asked first. Never a production one: its writes are turned on for the session, from its card."),
     ]
 
-    init(rootClass: TerraformClass? = nil, displayName: String? = nil) {
+    init(rootClass: TerraformClass? = nil, displayName: String? = nil, writable: Bool = false) {
         self.rootClass = rootClass
         self.displayName = displayName
+        self.writable = writable
     }
 
     init(fields: [String: SettingValue]) {
         rootClass = fields["class"]?.string.flatMap(TerraformClass.init(rawValue:))
         displayName = fields["displayName"]?.string.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
+        writable = fields["writable"]?.bool ?? false
     }
 
     static func all(from value: SettingValue?) -> [String: TerraformRootSettings] {

@@ -197,6 +197,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     var terraformPlanQuestionRecorder: ((TerraformPlanGate.Question) -> Bool)?
     /// A scenario's: the plugin cache's offer (4.13) answered here.
     var terraformCacheOfferRecorder: (() -> Bool)?
+    /// A scenario's: an apply's sheets (5.4) answered here — what was
+    /// typed, or nil for Cancel — instead of on the window.
+    var terraformApplyQuestionRecorder: ((TerraformApplySheet) -> String?)?
+    /// The terraform writes a close's Interrupt signalled, until they stop (4.8).
+    var terraformInterrupted: [TerraformCloseGuard.Running] = []
     /// What Ask Why on a mark couldn't do, said (the scenario reads it).
     var kubernetesAttentionProblem: String?
     /// Cluster failures told under another mark (an agent waiting): the scenario's count.
@@ -1193,6 +1198,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// something runs in it (closing the whole tab always asks).
     func closePane(_ pane: TerminalView, in tab: Tab) {
         guard tab.isSplit else { return closeTab(tab) }
+        // A terraform write in it asks whatever else is said (4.8).
+        let guarded = terraformCloseGuard(tabs: [tab], panes: [pane], path: .pane) { [weak self, weak tab, weak pane] in
+            guard let self, let tab, let pane else { return }
+            self.removePane(pane, from: tab)
+        }
+        if guarded { return }
         guard pane.needsConfirmClose, let window else { return removePane(pane, from: tab) }
         let alert = NSAlert()
         alert.messageText = "Close this pane?"
@@ -3555,6 +3566,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// Closes several tabs behind one confirmation.
     func closeTabs(_ tabs: [Tab]) {
         guard !tabs.isEmpty, let window else { return }
+        // A terraform write in one of their panes asks first, whatever the setting (4.8).
+        if terraformCloseGuard(tabs: tabs, path: .tabs, proceed: { [weak self] in tabs.forEach { self?.removeTab($0) } }) { return }
         // Settings ▸ General ▸ Ask before closing: only when something runs.
         if !Self.needsCloseConfirmation(tabs) { return tabs.forEach { removeTab($0) } }
         if tabs.count == 1 { store.select(tabs[0]) }
@@ -4228,6 +4241,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             return false
         }
         guard !store.tabs.isEmpty else { return true }
+        // A terraform write in a pane asks first, whatever the setting (4.8).
+        let guarded = terraformCloseGuard(tabs: store.tabs, path: .window) { [weak self] in
+            self?.closeConfirmed = true
+            sender.close()
+        }
+        if guarded { return false }
         // The last window's close quits, which stops every forward.
         let last = !NSApp.windows.contains { $0 !== sender && $0.isVisible && $0.windowController is TerminalWindowController }
         if !Self.needsCloseConfirmation(store.tabs, quitting: last) {

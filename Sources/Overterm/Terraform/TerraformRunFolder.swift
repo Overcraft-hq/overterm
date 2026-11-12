@@ -39,10 +39,22 @@ enum TerraformRunFolder {
         }
     }
 
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var _crashedProcess: pid_t?
+
+    /// A scenario's "crashed Overterm" (4.7): new runs' process folder
+    /// names this pid, one that is gone, instead of the app's — so the
+    /// launch's sweep finds their applies as another launch's. Isolated
+    /// runs only; nil otherwise.
+    static var crashedProcess: pid_t? {
+        get { AppEnvironment.guardsTerraform ? lock.withLock { _crashedProcess } : nil }
+        set { lock.withLock { _crashedProcess = newValue } }
+    }
+
     /// This process's folder under `base`.
     static func processFolder(base: URL = AppEnvironment.terraformRunsBase) throws -> URL {
         try FileManager.default.createDirectory(at: base, withIntermediateDirectories: true)
-        let folder = base.appendingPathComponent(name(), isDirectory: true)
+        let folder = base.appendingPathComponent(name(pid: crashedProcess ?? getpid()), isDirectory: true)
         try ensurePrivate(folder)
         return folder
     }
@@ -73,15 +85,30 @@ enum TerraformRunFolder {
 
     static func isAlive(_ pid: pid_t) -> Bool { kill(pid, 0) == 0 || errno == EPERM }
 
-    /// At launch: the folders a crashed Overterm left. Blocking (a few
-    /// stats): off the main thread.
-    static func sweep(base: URL = AppEnvironment.terraformRunsBase) {
+    /// At launch: the folders a crashed Overterm left — but never a run
+    /// folder whose detached apply is still alive (4.7): those are kept,
+    /// and returned, to be followed again. Blocking (a few stats): off
+    /// the main thread.
+    @discardableResult
+    static func sweep(base: URL = AppEnvironment.terraformRunsBase) -> [(folder: URL, marker: TerraformApplyMarker)] {
         let names = (try? FileManager.default.contentsOfDirectory(atPath: base.path)) ?? []
+        var alive: [(URL, TerraformApplyMarker)] = []
         for name in sweepable(names, uid: getuid(), me: getpid(), alive: isAlive) {
             let url = base.appendingPathComponent(name, isDirectory: true)
             var info = stat()
             guard lstat(url.path, &info) == 0, info.st_mode & S_IFMT == S_IFDIR, info.st_uid == getuid() else { continue }
-            try? FileManager.default.removeItem(at: url)
+            var kept = false
+            for run in ((try? FileManager.default.contentsOfDirectory(atPath: url.path)) ?? []).prefix(256) {
+                let folder = url.appendingPathComponent(run, isDirectory: true)
+                if let marker = TerraformApplyMarker.read(folder), TerraformApplyMarker.liveNow(marker) {
+                    alive.append((folder, marker))
+                    kept = true
+                } else {
+                    try? FileManager.default.removeItem(at: folder)
+                }
+            }
+            if !kept { try? FileManager.default.removeItem(at: url) }
         }
+        return alive
     }
 }

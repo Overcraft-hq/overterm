@@ -200,6 +200,16 @@ final class E2ETests: XCTestCase {
         try run("terraformPlan", env: ["OVERTERM_TERRAFORM": try Self.installedTerraform()])
     }
 
+    /// The apply (stage 2a): a local root's plan applied in the plan's
+    /// environment, a hostile TF_CLI_ARGS_apply never reaching it; a destroy
+    /// and production asking for the root's name, production only after its
+    /// switch; closing a pane, the window or a tab where the real terraform
+    /// applies asks, Interrupt leaving the resource tainted and the lock
+    /// free; an apply whose record is lost found again by its pid.
+    func testTerraformApply() throws {
+        try run("terraformApply", env: ["OVERTERM_TERRAFORM": try Self.installedTerraform()])
+    }
+
     /// A 2,000-resource plan at Section 10's budgets: decoded and masked
     /// in under 0.5 s, its rows shown and filtered in under 150 ms. No
     /// terraform runs.

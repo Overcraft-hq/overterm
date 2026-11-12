@@ -7,11 +7,14 @@ import Foundation
 /// exited, or one started a moment before the signal — ends with it. Stdin
 /// /dev/null unless given, stdout and stderr the descriptors given, no other
 /// descriptor of the app's, the signals as a new process has them.
+/// `newSession`: a session of its own as well (`POSIX_SPAWN_SETSID`), so no
+/// controlling terminal and no SIGHUP when the app's goes — Terraform's
+/// detached apply; its group is still its own, led by it.
 enum ProcessGroup {
     /// The child's pid (its group's id too), or the errno posix_spawn gave.
     static func spawn(
         _ executable: URL, _ arguments: [String], _ environment: [String: String], directory: URL? = nil, stdout: Int32, stderr: Int32,
-        stdin: Int32? = nil, descriptors: [Int32: Int32] = [:]
+        stdin: Int32? = nil, descriptors: [Int32: Int32] = [:], newSession: Bool = false
     ) -> Result<pid_t, POSIXError> {
         var actions: posix_spawn_file_actions_t?
         posix_spawn_file_actions_init(&actions)
@@ -37,9 +40,11 @@ enum ProcessGroup {
         var attributes: posix_spawnattr_t?
         posix_spawnattr_init(&attributes)
         defer { posix_spawnattr_destroy(&attributes) }
-        posix_spawnattr_setflags(
-            &attributes, Int16(POSIX_SPAWN_SETPGROUP | POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK))
-        posix_spawnattr_setpgroup(&attributes, 0)
+        // A new session makes the child its own group's leader: setsid after
+        // a setpgid that made it one already would fail.
+        let grouping = newSession ? POSIX_SPAWN_SETSID : POSIX_SPAWN_SETPGROUP
+        posix_spawnattr_setflags(&attributes, Int16(grouping | POSIX_SPAWN_CLOEXEC_DEFAULT | POSIX_SPAWN_SETSIGDEF | POSIX_SPAWN_SETSIGMASK))
+        if !newSession { posix_spawnattr_setpgroup(&attributes, 0) }
         var defaults = sigset_t()
         sigemptyset(&defaults)
         for signal in [SIGPIPE, SIGINT, SIGTERM, SIGHUP, SIGQUIT, SIGTSTP, SIGTTIN, SIGTTOU, SIGCHLD, SIGALRM, SIGUSR1, SIGUSR2] {

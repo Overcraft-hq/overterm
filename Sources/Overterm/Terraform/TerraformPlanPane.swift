@@ -14,6 +14,9 @@ import Foundation
 @MainActor
 final class TerraformPlanPaneModel: ObservableObject {
     @Published private(set) var run: TerraformPlanRun?
+    /// The apply shown (6.4): its plan's, in place of the plan — or one
+    /// followed again after a crash, with no plan of this session's.
+    @Published private(set) var apply: TerraformApplyRun?
     @Published var filter = "" { didSet { if filter != oldValue { rebuild() } } }
     @Published var chips: Set<TerraformPlanRows.Chip> = [] { didSet { if chips != oldValue { rebuild() } } }
     @Published var expanded: Set<String> = []
@@ -37,6 +40,7 @@ final class TerraformPlanPaneModel: ObservableObject {
     private var reading: Task<Void, Never>?
 
     func show(_ run: TerraformPlanRun) {
+        if apply !== run.apply { apply = run.apply }
         guard run !== self.run else { return }
         self.run = run
         filter = ""
@@ -58,8 +62,15 @@ final class TerraformPlanPaneModel: ObservableObject {
             }
     }
 
+    /// An apply in the slot: its plan's view becomes its progress.
+    func showApply(_ apply: TerraformApplyRun) {
+        self.apply = apply
+        if let planRun = apply.planRun, planRun !== run { show(planRun) }
+    }
+
     func clear() {
         run = nil
+        apply = nil
         rows = []
         chains = [:]
         selected = nil
@@ -113,7 +124,7 @@ final class TerraformPlanPaneModel: ObservableObject {
     /// open the block, `a` Ask Why, `/` the filter, ⌫ discard the plan;
     /// ⌘C copies the address (`copyAddress`). False: not the plan's.
     enum Key: Equatable, Sendable {
-        case up, down, detail, open, askWhy, filter, discard, escape
+        case up, down, detail, open, askWhy, filter, discard, escape, apply, stop
     }
 
     /// A key down as the list reads it: arrows, Return and Delete by
@@ -131,6 +142,8 @@ final class TerraformPlanPaneModel: ObservableObject {
         case "o": return .open
         case "a": return .askWhy
         case "/": return .filter
+        case "A": return .apply
+        case ".": return .stop
         case "j": return .down
         case "k": return .up
         default: return nil
@@ -138,6 +151,15 @@ final class TerraformPlanPaneModel: ObservableObject {
     }
 
     func press(_ key: Key, actions: TerraformPlanActions) -> Bool {
+        if key == .stop, let apply, apply.isGoing {
+            actions.stopApply(apply)
+            return true
+        }
+        // A failed apply shown: Ask Why is about it, not its plan.
+        if key == .askWhy, let apply, case .failed = apply.phase {
+            actions.askWhyApply(apply)
+            return true
+        }
         guard let run else { return false }
         switch key {
         case .up: move(-1)
@@ -157,8 +179,14 @@ final class TerraformPlanPaneModel: ObservableObject {
         case .filter:
             filterFocus += 1
         case .discard:
-            guard !run.isGoing else { return false }
+            guard !run.isGoing, apply?.isGoing != true else { return false }
             actions.discard(run)
+        case .apply:
+            guard run.kind == .plan, run.record != nil, apply == nil else { return false }
+            actions.apply(run)
+        case .stop:
+            guard let apply, apply.isGoing else { return false }
+            actions.stopApply(apply)
         }
         return true
     }
@@ -208,10 +236,43 @@ final class TerraformPlanPaneModel: ObservableObject {
         }
     }
 
+    /// The most module calls whose blocks are read for "Open block".
+    nonisolated static let maxModules = 64
+
     nonisolated static func sources(folder: URL, prefix: String, varFiles: [String]) -> TerraformCauseChain.Sources {
+        var budget = TerraformConfigIndex.byteLimit
+        let config = moduleFiles(folder, prefix: prefix, budget: &budget)
+        var vars: [(path: String, text: String)] = []
+        for name in varFiles where TerraformCommands.isVarFile(name) {
+            guard let data = TerraformRootFacts.smallFile(folder.appendingPathComponent(name), limit: 1 << 20) else { continue }
+            vars.append((prefix + name, String(decoding: data, as: UTF8.self)))
+        }
+        var sources = TerraformCauseChain.Sources.make(config: config, varFiles: vars)
+        // A module's own resources (2.2, "Open block"): through init's
+        // `modules.json`, each call's folder — inside the checkout only
+        // (a local `./modules/…`, or what init put under `.terraform`).
+        // The checkout: the root's folder, up as many folders as its path has.
+        var checkout = folder.standardizedFileURL
+        for _ in prefix.split(separator: "/") { checkout.deleteLastPathComponent() }
+        let base = checkout.standardizedFileURL.path
+        guard let manifest = TerraformRootFacts.smallFile(folder.appendingPathComponent(".terraform/modules/modules.json"), limit: 4 << 20) else { return sources }
+        for entry in TerraformModulesManifest.entries(from: manifest).prefix(maxModules) {
+            let dir = (entry.dir.hasPrefix("/") ? URL(fileURLWithPath: entry.dir) : folder.appendingPathComponent(entry.dir)).standardizedFileURL
+            guard dir.path.hasPrefix(base + "/") else { continue }
+            let relative = String(dir.path.dropFirst(base.count + 1)) + "/"
+            let made = TerraformCauseChain.Sources.make(config: moduleFiles(dir, prefix: relative, budget: &budget), varFiles: [])
+            let module = TerraformModulesManifest.addressPrefix(entry.key)
+            for (address, location) in made.blocks where sources.blocks[module + "." + address] == nil {
+                sources.blocks[module + "." + address] = location
+            }
+        }
+        return sources
+    }
+
+    /// A folder's `.tf` files, within `budget` bytes in all.
+    nonisolated private static func moduleFiles(_ folder: URL, prefix: String, budget: inout Int) -> [(path: String, text: String)] {
         let names = ((try? FileManager.default.contentsOfDirectory(atPath: folder.path)) ?? []).sorted()
         var config: [(path: String, text: String)] = []
-        var budget = TerraformConfigIndex.byteLimit
         for name in names.prefix(TerraformConfigIndex.fileLimit) where TerraformConfigIndex.isModuleFile(folder.appendingPathComponent(name)) {
             guard let data = TerraformRootFacts.smallFile(folder.appendingPathComponent(name), limit: TerraformConfigIndex.fileByteLimit),
                 data.count <= budget
@@ -219,12 +280,7 @@ final class TerraformPlanPaneModel: ObservableObject {
             budget -= data.count
             config.append((prefix + name, String(decoding: data, as: UTF8.self)))
         }
-        var vars: [(path: String, text: String)] = []
-        for name in varFiles where TerraformCommands.isVarFile(name) {
-            guard let data = TerraformRootFacts.smallFile(folder.appendingPathComponent(name), limit: 1 << 20) else { continue }
-            vars.append((prefix + name, String(decoding: data, as: UTF8.self)))
-        }
-        return TerraformCauseChain.Sources.make(config: config, varFiles: vars)
+        return config
     }
 
     /// The added lines of the diff's files: what "changed in this branch" reads.

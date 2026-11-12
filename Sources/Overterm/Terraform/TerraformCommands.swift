@@ -7,7 +7,9 @@ import Foundation
 /// reads — `fmt -check -diff`, and `show -json` of a saved plan by its
 /// descriptor; stage 1d Overterm's plan (`plan`, with its fixed flags),
 /// `init` (`-lockfile=readonly`, never `-upgrade`), and the workspace
-/// chip's `workspace list` and `workspace select`.
+/// chip's `workspace list` and `workspace select`; stage 2a the apply —
+/// one line, of a plan Overterm holds by its descriptor — and the plan's
+/// modes: destroy, only some addresses (`-target`), some replaced.
 ///
 /// Every run's cwd is the root (or the checkout for `formatCheck`), never
 /// `-chdir`, so a diagnostic's `range.filename` is relative to it.
@@ -83,16 +85,45 @@ enum TerraformCommands {
     /// The fixed head of every plan (4.3).
     static let planHead = ["plan", "-input=false", "-json", "-detailed-exitcode", "-lock=true"]
 
+    /// The only apply (4.3, 5.13 rule 1): of the plan Overterm holds, handed
+    /// to the run as fd 3 — never a path, never without a plan, never
+    /// `-auto-approve` (a saved plan asks nothing), never `-target` or
+    /// `-var` (the plan decided), the lock taken for at most 60 s.
+    static let apply = ["apply", "-input=false", "-json", "-lock=true", "-lock-timeout=60s", "/dev/fd/3"]
+
+    /// The most addresses a targeted or replacing plan names.
+    static let maxAddresses = 50
+
     /// Overterm's plan (4.3): cwd the root; `out` the plan file in the
-    /// run's own folder (`TerraformRunFolder`); `varFiles` relative to the
-    /// root, inside it; `parallelism` 1…256. Nil when an argument is
-    /// none of those. `planArgs` is never free text (4.3).
-    static func plan(out: String, varFiles: [String] = [], lock: LockWait = .person, parallelism: Int? = nil) -> [String]? {
-        guard isPlanFile(out), varFiles.allSatisfy(isVarFile), parallelism.map({ (1...256).contains($0) }) ?? true else { return nil }
+    /// run's own folder (`TerraformRunFolder`); `mode` its flags (2a:
+    /// destroy, targets, replaces — addresses only, `isAddress`);
+    /// `varFiles` relative to the root, inside it; `parallelism` 1…256.
+    /// Nil when an argument is none of those. `planArgs` is never free
+    /// text (4.3).
+    static func plan(
+        out: String, varFiles: [String] = [], lock: LockWait = .person, parallelism: Int? = nil, mode: TerraformPlanMode = .normal
+    ) -> [String]? {
+        guard isPlanFile(out), varFiles.allSatisfy(isVarFile), parallelism.map({ (1...256).contains($0) }) ?? true, let flags = mode.flags else {
+            return nil
+        }
         var arguments = planHead + ["-lock-timeout=" + lock.rawValue, "-out=" + out]
+        arguments += flags
         arguments += varFiles.map { "-var-file=" + $0 }
         if let parallelism { arguments.append("-parallelism=\(parallelism)") }
         return arguments
+    }
+
+    /// A resource address a plan may name (`-target=`, `-replace=`):
+    /// `module.acme["eu"].aws_instance.web["a b"]` — one argument, never a
+    /// flag, no control or invisible character (a `for_each` key may hold
+    /// bidi or zero-width ones), at most 512 characters, a `.` in it.
+    static func isAddress(_ address: String) -> Bool {
+        guard (3...512).contains(address.count), !address.hasPrefix("-"), address.contains("."), !address.hasPrefix("."), !address.hasSuffix(".")
+        else { return false }
+        let refused: Set<Unicode.GeneralCategory> = [.control, .format, .unassigned, .privateUse, .surrogate, .lineSeparator, .paragraphSeparator]
+        return address.unicodeScalars.allSatisfy { scalar in
+            !refused.contains(scalar.properties.generalCategory) && (scalar == " " || !scalar.properties.isWhitespace)
+        }
     }
 
     /// A plan's file: `<…>/ot-tf-<uid>-<pid>/<run>/plan`, an absolute path
@@ -124,8 +155,17 @@ enum TerraformCommands {
         guard out.hasPrefix("-out=") else { return false }
         var varFiles: [String] = []
         var parallelism: Int?
+        var destroy = false
+        var targets: [String] = []
+        var replaces: [String] = []
         for (index, argument) in arguments.dropFirst(planHead.count + 2).enumerated() {
-            if argument.hasPrefix("-var-file="), parallelism == nil {
+            if argument == "-destroy", varFiles.isEmpty, parallelism == nil {
+                destroy = true
+            } else if argument.hasPrefix("-target="), varFiles.isEmpty, parallelism == nil {
+                targets.append(String(argument.dropFirst("-target=".count)))
+            } else if argument.hasPrefix("-replace="), varFiles.isEmpty, parallelism == nil {
+                replaces.append(String(argument.dropFirst("-replace=".count)))
+            } else if argument.hasPrefix("-var-file="), parallelism == nil {
                 varFiles.append(String(argument.dropFirst("-var-file=".count)))
             } else if argument.hasPrefix("-parallelism="), index == arguments.count - planHead.count - 3,
                 let count = Int(argument.dropFirst("-parallelism=".count))
@@ -135,13 +175,16 @@ enum TerraformCommands {
                 return false
             }
         }
-        return plan(out: String(out.dropFirst("-out=".count)), varFiles: varFiles, lock: wait, parallelism: parallelism) == arguments
+        let modes = [destroy, !targets.isEmpty, !replaces.isEmpty].filter { $0 }.count
+        guard modes <= 1 else { return false }
+        let mode: TerraformPlanMode = destroy ? .destroy : !targets.isEmpty ? .targets(targets) : !replaces.isEmpty ? .replace(replaces) : .normal
+        return plan(out: String(out.dropFirst("-out=".count)), varFiles: varFiles, lock: wait, parallelism: parallelism, mode: mode) == arguments
     }
 
     /// Everything this file builds, as fixed lines (a plan's and a
     /// workspace select's are checked by `isBuilt`).
     static let all: [[String]] = [
-        formatStandardInput, formatCheck, formatCheckFolder, formatCheckDiff, validate, version, showPlanDescriptor, initialize, workspaceList,
+        formatStandardInput, formatCheck, formatCheckFolder, formatCheckDiff, validate, version, showPlanDescriptor, initialize, workspaceList, apply,
     ]
 
     /// Whether a builder of this file made `arguments`.
@@ -151,14 +194,14 @@ enum TerraformCommands {
         return false
     }
 
-    /// Subcommands never run yet: the ones that change state or
-    /// infrastructure (the apply that comes later goes only through a
-    /// shown plan), and the reads that print secrets, which later stages
-    /// build with their own guards. `show`, `plan`, `init` and
-    /// `workspace` run only as this file builds them, whole: any other
-    /// line is no builder's.
+    /// Subcommands never run: the ones that change state or
+    /// infrastructure without a shown plan, and the reads that print
+    /// secrets, which later stages build with their own guards. `apply`,
+    /// `show`, `plan`, `init` and `workspace` run only as this file builds
+    /// them, whole: any other line is no builder's — an apply only of
+    /// `/dev/fd/3`, exactly `apply`.
     static let refusedSubcommands: Set<String> = [
-        "apply", "destroy", "import", "taint", "untaint", "force-unlock", "refresh", "state", "login", "logout", "test", "console", "get",
+        "destroy", "import", "taint", "untaint", "force-unlock", "refresh", "state", "login", "logout", "test", "console", "get",
         "providers", "output",
     ]
 
@@ -183,4 +226,43 @@ enum TerraformCommands {
         guard isBuilt(arguments) else { return "not a command Overterm builds" }
         return nil
     }
+}
+
+/// What a plan is asked for (2.2, stage 2a): the root's whole change; a
+/// destroy of everything in it; only some addresses (`-target`, labelled
+/// partial — break-glass, refused on production at apply); some objects
+/// replaced though unchanged. Addresses only, checked; nothing else is
+/// ever passed.
+enum TerraformPlanMode: Equatable, Hashable, Sendable {
+    case normal
+    case destroy
+    case targets([String])
+    case replace([String])
+
+    /// Its flags, or nil when an address isn't one.
+    var flags: [String]? {
+        switch self {
+        case .normal: return []
+        case .destroy: return ["-destroy"]
+        case .targets(let addresses), .replace(let addresses):
+            guard !addresses.isEmpty, addresses.count <= TerraformCommands.maxAddresses, addresses.allSatisfy(TerraformCommands.isAddress),
+                Set(addresses).count == addresses.count
+            else { return nil }
+            var flag = "-replace="
+            if case .targets = self { flag = "-target=" }
+            return addresses.map { flag + $0 }
+        }
+    }
+
+    /// How the header says it: nil for a whole plan.
+    var label: String? {
+        switch self {
+        case .normal: nil
+        case .destroy: "destroy"
+        case .targets(let addresses): "partial: only \(addresses.count == 1 ? addresses[0] : "\(addresses.count) addresses")"
+        case .replace(let addresses): "replacing \(addresses.count == 1 ? addresses[0] : "\(addresses.count) addresses")"
+        }
+    }
+
+    var isDestroy: Bool { self == .destroy }
 }

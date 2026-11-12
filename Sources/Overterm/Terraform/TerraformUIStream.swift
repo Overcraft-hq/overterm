@@ -19,6 +19,13 @@ enum TerraformUIMessage: Equatable, Sendable {
     case refresh(address: String, done: Bool)
     /// `resource_drift`.
     case drift(address: String, action: String)
+    /// `apply_start`, `apply_progress`, `apply_complete`, `apply_errored`
+    /// (stage 2a): a resource's step, by its address and the hook's action
+    /// — a replace has two, `delete` and `create`, in either order. Never
+    /// `apply_complete`'s `id_value`: an object's ID can be anything.
+    case apply(address: String, action: String, step: ApplyStep, elapsed: Int?)
+    /// `provision_*`: a provisioner's output under its resource, scrubbed.
+    case provision(address: String, provisioner: String, step: ApplyStep, output: String?)
     /// `change_summary`: the CLI's own counts; `operation` `plan` or `apply`.
     case summary(add: Int, change: Int, remove: Int, importing: Int, operation: String)
     case diagnostic(TerraformDiagnostic)
@@ -28,6 +35,10 @@ enum TerraformUIMessage: Equatable, Sendable {
     case raw(String)
     /// A `ui` major this doesn't read.
     case unknownMajor(String)
+
+    enum ApplyStep: String, Sendable {
+        case start, progress, complete, errored
+    }
 
     static let supportedMajor = "1"
     /// A line past this is kept cut: a stream is an agent's or a cloud's, of any size.
@@ -54,6 +65,24 @@ enum TerraformUIMessage: Equatable, Sendable {
         case "resource_drift":
             let change = object["change"] as? [String: Any]
             return .drift(address: scrub(address("change") ?? "?"), action: scrub(change?["action"] as? String ?? "?"))
+        case "apply_start", "apply_progress", "apply_complete", "apply_errored":
+            let hook = object["hook"] as? [String: Any]
+            let step = ApplyStep(rawValue: String(type.dropFirst("apply_".count))) ?? .progress
+            return .apply(
+                address: scrub(address("hook") ?? "?"), action: scrub(hook?["action"] as? String ?? "?"), step: step,
+                elapsed: (hook?["elapsed_seconds"] as? NSNumber)?.intValue)
+        case "provision_start", "provision_progress", "provision_complete", "provision_errored":
+            let hook = object["hook"] as? [String: Any]
+            let step: ApplyStep =
+                switch type {
+                case "provision_start": .start
+                case "provision_complete": .complete
+                case "provision_errored": .errored
+                default: .progress
+                }
+            return .provision(
+                address: scrub(address("hook") ?? "?"), provisioner: scrub(hook?["provisioner"] as? String ?? "?"), step: step,
+                output: (hook?["output"] as? String).map { scrub(String($0.prefix(4_096))) })
         case "refresh_start", "refresh_complete":
             return .refresh(address: scrub(address("hook") ?? "?"), done: type == "refresh_complete")
         case "change_summary":
@@ -77,6 +106,20 @@ enum TerraformUIMessage: Equatable, Sendable {
         case .plannedChange(let address, let action): "\(address): plan to \(action)"
         case .refresh(let address, let done): done ? "\(address): refresh complete" : "\(address): refreshing state…"
         case .drift(let address, let action): "\(address): changed outside Terraform (\(action))"
+        case .apply(let address, let action, let step, let elapsed):
+            switch step {
+            case .start: "\(address): \(Self.progressive(action))…"
+            case .progress: "\(address): still \(Self.progressive(action))… [\(elapsed ?? 0)s elapsed]"
+            case .complete: "\(address): \(Self.done(action)) after \(elapsed ?? 0)s"
+            case .errored: "\(address): \(action) failed after \(elapsed ?? 0)s"
+            }
+        case .provision(let address, let provisioner, let step, let output):
+            switch step {
+            case .start: "\(address): provisioning with '\(provisioner)'…"
+            case .progress: "\(address) (\(provisioner)): \(output ?? "")"
+            case .complete: "\(address): \(provisioner) done"
+            case .errored: "\(address): \(provisioner) failed"
+            }
         case .summary(let add, let change, let remove, let importing, let operation):
             "\(operation == "apply" ? "Apply" : "Plan"): \(importing > 0 ? "\(importing) to import, " : "")\(add) to add, \(change) to change, \(remove) to destroy."
         case .diagnostic(let diagnostic):
@@ -84,6 +127,31 @@ enum TerraformUIMessage: Equatable, Sendable {
         case .message(_, _, let text): text
         case .raw(let text): text
         case .unknownMajor(let ui): "This Terraform's output is a version Overterm doesn't read (ui \(ui)): run it in a terminal."
+        }
+    }
+}
+
+extension TerraformUIMessage {
+    /// "Creating", as the CLI says a hook's action going.
+    static func progressive(_ action: String) -> String {
+        switch action {
+        case "create": "Creating"
+        case "update": "Modifying"
+        case "delete": "Destroying"
+        case "read": "Reading"
+        case "noop": "Checking"
+        default: action.capitalized
+        }
+    }
+
+    /// "Creation complete".
+    static func done(_ action: String) -> String {
+        switch action {
+        case "create": "Creation complete"
+        case "update": "Modifications complete"
+        case "delete": "Destruction complete"
+        case "read": "Read complete"
+        default: action.capitalized + " complete"
         }
     }
 }
