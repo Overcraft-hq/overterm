@@ -79,12 +79,23 @@ final class TerraformApplyCommandTests: XCTestCase {
         XCTAssertEqual(said.start?.line, 4)
     }
 
-    func testARootIsWritableBySettingOnlyWhenRemote() {
-        let settings = TerraformRootSettings(fields: ["writable": .bool(true), "class": .string("production")])
-        XCTAssertTrue(settings.writable)
-        XCTAssertTrue(TerraformProcessCheck.isWritable(.remote, writable: settings.writable, sessionWrites: false))
-        XCTAssertFalse(TerraformProcessCheck.isWritable(.production, writable: settings.writable, sessionWrites: false), "never a setting")
-        XCTAssertFalse(TerraformRootSettings(fields: [:]).writable)
+    /// The owner's decision: every root is writable unless its entry says
+    /// `writable: false` — production too, no session switch.
+    func testARootIsWritableUnlessItsSettingSaysNo() {
+        XCTAssertTrue(TerraformRootSettings(fields: [:]).writable, "unset: writable")
+        XCTAssertTrue(TerraformRootSettings().writable)
+        for rootClass in TerraformClass.allCases {
+            XCTAssertTrue(TerraformProcessCheck.isWritable(rootClass, writable: true), "\(rootClass)")
+            XCTAssertFalse(TerraformProcessCheck.isWritable(rootClass, writable: false), "\(rootClass)")
+        }
+        let planOnly = TerraformRootSettings(fields: ["writable": .bool(false), "class": .string("production")])
+        XCTAssertFalse(planOnly.writable)
+        XCTAssertEqual(
+            TerraformProcessCheck.refused(.apply, rootClass: .production, writable: planOnly.writable),
+            "This root is plan only: its terraform.roots entry sets writable to false")
+        XCTAssertNil(TerraformProcessCheck.refused(.apply, rootClass: .production), "production applies with no switch")
+        XCTAssertNil(TerraformProcessCheck.refused(.refreshOnlyApply, rootClass: .remote))
+        XCTAssertNil(TerraformProcessCheck.refused(.plan, rootClass: .production, writable: false), "plan only still plans")
     }
 
     func testThePlanListsApplyAndStopKeys() {
@@ -149,7 +160,6 @@ final class TerraformApplyCheckTests: XCTestCase {
         risen.classNow = TerraformClassifier.Verdict(rootClass: .remote, reason: "set by hand")
         XCTAssertEqual(refusal(risen)?.contains("is remote now"), true)
         var same = facts(plan(), rootClass: .production)
-        same.sessionWrites = true
         same.classNow = TerraformClassifier.Verdict(rootClass: .production, reason: "the pattern")
         XCTAssertEqual(TerraformApplyCheck.check(same), .ask(typed: true, versionMove: nil, partial: false, createsEverything: false), "unchanged: asked as before")
         XCTAssertNil(TerraformApplyCheck.risen(name: "envs/dev", planned: .production, now: .init(rootClass: .local, reason: "")), "a class only rises")
@@ -157,12 +167,15 @@ final class TerraformApplyCheckTests: XCTestCase {
 
     /// 5.4, each check its refusal (5.13 rule 2).
     func testEachCheckRefuses() {
-        XCTAssertTrue(refusal(facts(plan(), rootClass: .production))?.contains("plan only") == true, "production without its switch")
-        XCTAssertTrue(refusal(facts(plan(), rootClass: .remote))?.contains("set writable") == true)
+        var planOnly = facts(plan(), rootClass: .production)
+        planOnly.writable = false
+        XCTAssertTrue(refusal(planOnly)?.contains("plan only") == true, "production set writable: false")
+        var remote = facts(plan(), rootClass: .remote)
+        remote.writable = false
+        XCTAssertTrue(refusal(remote)?.contains("writable to false") == true)
         XCTAssertNotNil(refusal(facts(plan(errored: true))))
         XCTAssertNotNil(refusal(facts(plan(applyable: false))))
-        var production = facts(plan(complete: false), rootClass: .production)
-        production.sessionWrites = true
+        let production = facts(plan(complete: false), rootClass: .production)
         XCTAssertTrue(refusal(production)?.contains("partial") == true, "a partial plan isn't applied on production")
         var swapped = facts(plan())
         swapped.descriptorSHA = "def"
@@ -222,8 +235,7 @@ final class TerraformApplyCheckTests: XCTestCase {
     }
 
     func testTypedNamesWhereTheyAreAsked() {
-        var production = facts(plan(), rootClass: .production)
-        production.sessionWrites = true
+        let production = facts(plan(), rootClass: .production)
         XCTAssertEqual(TerraformApplyCheck.check(production), .ask(typed: true, versionMove: nil, partial: false, createsEverything: false), "every production apply (D-21)")
         var destroy = facts(plan())
         destroy.mode = .destroy
@@ -236,6 +248,20 @@ final class TerraformApplyCheckTests: XCTestCase {
         XCTAssertEqual(TerraformApplyCheck.check(elsewhere), .ask(typed: true, versionMove: nil, partial: false, createsEverything: true))
         XCTAssertEqual(TerraformApplyCheck.check(facts(plan(priorState: false))), .ask(typed: false, versionMove: nil, partial: false, createsEverything: false), "a first apply on default")
         XCTAssertEqual(TerraformApplyCheck.check(facts(plan(complete: false))), .ask(typed: false, versionMove: nil, partial: true, createsEverything: false), "partial, labelled")
+    }
+
+    /// A production root applies with no switch turned on, its name typed;
+    /// set `writable: false`, it is plan only.
+    func testAProductionRootAppliesWithItsNameTypedNoSwitch() {
+        XCTAssertEqual(
+            TerraformApplyCheck.check(facts(plan(), rootClass: .production)), .ask(typed: true, versionMove: nil, partial: false, createsEverything: false))
+        var planOnly = facts(plan(), rootClass: .production)
+        planOnly.writable = false
+        XCTAssertEqual(refusal(planOnly)?.contains("plan only"), true, refusal(planOnly) ?? "")
+        var remote = facts(plan(), rootClass: .remote)
+        remote.writable = false
+        XCTAssertEqual(refusal(remote)?.contains("plan only"), true)
+        XCTAssertEqual(TerraformApplyCheck.check(facts(plan(), rootClass: .remote)), .ask(typed: false, versionMove: nil, partial: false, createsEverything: false))
     }
 
     /// 3.8, D-18: a newer minor moves the state, asked with the sentence.
@@ -251,12 +277,15 @@ final class TerraformApplyCheckTests: XCTestCase {
     }
 
     func testTheGreyedApplyNeedsNothingRead() {
-        XCTAssertNil(TerraformApplyCheck.greyed(plan: plan(), rootClass: .local, writable: false, sessionWrites: false, mode: .normal, devOverrides: false, staleReason: nil, busy: nil))
-        XCTAssertNotNil(TerraformApplyCheck.greyed(plan: nil, rootClass: .local, writable: false, sessionWrites: false, mode: .normal, devOverrides: false, staleReason: nil, busy: nil))
-        XCTAssertNotNil(TerraformApplyCheck.greyed(plan: plan(), rootClass: .production, writable: true, sessionWrites: false, mode: .normal, devOverrides: false, staleReason: nil, busy: nil))
-        XCTAssertNil(TerraformApplyCheck.greyed(plan: plan(), rootClass: .production, writable: false, sessionWrites: true, mode: .normal, devOverrides: false, staleReason: nil, busy: nil))
+        XCTAssertNil(TerraformApplyCheck.greyed(plan: plan(), rootClass: .local, writable: true, mode: .normal, devOverrides: false, staleReason: nil, busy: nil))
+        XCTAssertNotNil(TerraformApplyCheck.greyed(plan: nil, rootClass: .local, writable: true, mode: .normal, devOverrides: false, staleReason: nil, busy: nil))
+        XCTAssertNil(
+            TerraformApplyCheck.greyed(plan: plan(), rootClass: .production, writable: true, mode: .normal, devOverrides: false, staleReason: nil, busy: nil),
+            "production: no switch")
+        XCTAssertNotNil(TerraformApplyCheck.greyed(plan: plan(), rootClass: .production, writable: false, mode: .normal, devOverrides: false, staleReason: nil, busy: nil))
+        XCTAssertNotNil(TerraformApplyCheck.greyed(plan: plan(), rootClass: .local, writable: false, mode: .normal, devOverrides: false, staleReason: nil, busy: nil))
         XCTAssertTrue(
-            TerraformApplyCheck.greyed(plan: plan(), rootClass: .local, writable: false, sessionWrites: false, mode: .normal, devOverrides: false, staleReason: "older than 30 minutes", busy: nil)?
+            TerraformApplyCheck.greyed(plan: plan(), rootClass: .local, writable: true, mode: .normal, devOverrides: false, staleReason: "older than 30 minutes", busy: nil)?
                 .hasPrefix("Stale") == true)
         XCTAssertTrue(TerraformApplyCheck.hasDevOverrides([TerraformDiagnostic(severity: .warning, summary: "Provider development overrides are in effect", detail: "")]))
     }

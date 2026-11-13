@@ -19,7 +19,7 @@ extension TerraformMCP {
     static let testTool: [String: Any] = [
         "name": "tf_test",
         "description":
-            "Runs terraform test in a root of your checkout and answers each run's status and each failure at its file and line. Test files whose every provider is mocked (mock_provider) run at once, without credentials; a test with a real provider creates real infrastructure, so the person is asked every time (never on production).",
+            "Runs terraform test in a root of your checkout and answers each run's status and each failure at its file and line. Test files whose every provider is mocked (mock_provider) run at once, without credentials; a test with a real provider creates real infrastructure, so the person is asked every time (never on production; on a remote root only where terraform.roots sets it writable).",
         "inputSchema": [
             "type": "object",
             "properties": [

@@ -5,9 +5,10 @@ import AppKit
 /// typed; the apply is `apply … /dev/fd/3` in the plan's environment, a
 /// hostile `TF_CLI_ARGS_apply`/`TF_CLI_ARGS`/`TF_LOG` never reaching it;
 /// the plan's descriptor dropped; nothing of the sensitive variable in its
-/// log. A destroy plan asks for the root's name. `envs/prod` refused until
-/// its session switch, then the name typed — a wrong one refused. A
-/// remote root refused until `terraform.roots` sets it writable. A pane
+/// log. A destroy plan asks for the root's name. `envs/prod` refused while
+/// `terraform.roots` sets it `writable: false`; without that, applied with
+/// no switch, the name typed — a wrong one refused. A remote root set
+/// `writable: false` refused, then writable again. A pane
 /// where the real terraform applies: closing the pane, the window or the
 /// tab asks; Interrupt leaves the resource tainted and the lock free. An
 /// apply whose record is lost (the app's "crash") is found again by its
@@ -121,7 +122,10 @@ extension E2ERunner {
 
         // 1. A local root: planned, applied — asked, no name typed.
         guard let local = await plan(sandbox, pane: pane) else { return check("the sandbox's plan", false) }
-        check("Apply is offered", local.applyGreyed(registry, writable: false) == nil, local.applyGreyed(registry, writable: false) ?? "")
+        check("Apply is offered", local.applyGreyed(registry, writable: true) == nil, local.applyGreyed(registry, writable: true) ?? "")
+        check(
+            "a root set writable: false is plan only", local.applyGreyed(registry, writable: false)?.contains("plan only") == true,
+            local.applyGreyed(registry, writable: false) ?? "")
         let before = asked.sheets.count
         let outcome = await app.applyPlan(local)
         guard case .started(let apply) = outcome else { return check("the local apply starts", false, "\(outcome)") }
@@ -173,20 +177,27 @@ extension E2ERunner {
             check("destroyed", await eventually(60) { if case .applied = gone.phase { true } else { false } }, "\(gone.phase)")
         }
 
-        // 3. Production: refused until its switch, then its name typed.
+        // 3. Production: plan only while its entry says writable: false;
+        // without it, no switch — the name typed.
         guard let prodPlan = await plan(prod, pane: pane) else { return check("prod's plan", false) }
         check("asked before production's first plan", asked.planQuestions.contains { $0.production })
+        settings.set("terraform.roots", .entries(["envs/prod": ["writable": .bool(false)]]))
         if case .refused(let why) = await app.applyPlan(prodPlan) {
-            check("refused without the session switch", why.contains("plan only"), why)
+            check("refused while terraform.roots sets it plan only", why.contains("plan only"), why)
         } else {
-            check("refused without the session switch", false)
+            check("refused while terraform.roots sets it plan only", false)
         }
-        app.allowTerraformProductionWrites(prod)
-        check("the switch is asked, then on", await eventually(5) { registry.hasSessionWrites(checkout: checkout, root: "envs/prod", workspace: "default") })
         panel.selectedPath = "envs/prod"
         check(
-            "the card says so",
-            await eventually(5) { Self.accessibilityElement("terraform.panel.writes", in: root)?.text.contains("Applies On Until Quit") == true }, "")
+            "the card says plan only",
+            await eventually(5) { Self.accessibilityElement("terraform.panel.planOnly", in: root)?.text.contains("Plan only") == true }, "")
+        settings.set("terraform.roots", nil)
+        check(
+            "its entry gone: no plan-only line, production's name asked instead — nothing to turn on",
+            await eventually(5) {
+                Self.accessibilityElement("terraform.panel.planOnly", in: root) == nil
+                    && Self.accessibilityElement("terraform.panel.productionAsks", in: root)?.text.contains("each apply asks for the root's name") == true
+            }, "")
         asked.answers = ["envs/pro"]
         if case .refused(let why) = await app.applyPlan(prodPlan) {
             check("a wrong name is refused", why.contains("wasn't envs/prod"), why)
@@ -200,8 +211,6 @@ extension E2ERunner {
         } else {
             check("production applies with its name", false)
         }
-        app.endTerraformProductionWrites(prod)
-        check("the switch off again", !registry.hasSessionWrites(checkout: checkout, root: "envs/prod", workspace: "default"))
 
         // 4. A pane where the real terraform applies: every close asks.
         app.initTerraformRoot(shared)
@@ -257,15 +266,16 @@ extension E2ERunner {
         check("Close Now finishes the close Interrupt held back", await eventually(5) { !self.app.store.tabs.contains { $0 === cliTab } })
         check("the header's shutting-down said no more", TerraformPaneMonitor.shared.shutting.isEmpty)
 
-        // 5. A remote root: refused until writable; then the apply, the
+        // 5. A remote root: refused while set plan only; then the apply, the
         // app "killed" mid-way: its record lost, its run folder a crashed
         // launch's, found again by the launch's own sweep.
         guard let remotePlan = await plan(shared, pane: pane) else { return check("shared's plan", false) }
         check("the tainted resource is replaced", remotePlan.plan?.counts.replace == 1, remotePlan.plan?.counts.bar ?? "")
+        settings.set("terraform.roots", .entries(["envs/shared": ["writable": .bool(false)]]))
         if case .refused(let why) = await app.applyPlan(remotePlan) {
-            check("a remote root is plan only until writable", why.contains("set writable"), why)
+            check("a root set writable: false is plan only", why.contains("writable to false"), why)
         } else {
-            check("a remote root is plan only until writable", false)
+            check("a root set writable: false is plan only", false)
         }
         settings.set("terraform.roots", .entries(["envs/shared": ["writable": .bool(true)]]))
         check("terraform.roots sets it writable", settings.terraformRoots["envs/shared"]?.writable == true)

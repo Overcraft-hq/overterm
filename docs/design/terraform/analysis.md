@@ -41,7 +41,7 @@ Every behaviour marked **[verified]** was run with Terraform v1.17.1 (darwin_arm
   - the plan JSON is decoded through an **allow-list** of keys, masked by Terraform's `*_sensitive` mirrors, then by `Secrets`;
   - a plan file lives seconds as a path in a 0700 per-process folder in `$TMPDIR`, then only as an open file descriptor;
   - nothing of a run is written where Overterm keeps things: not the support folder, the session, the scrollback of a Terraform pane, or a log.
-- **Production is a class, as in Kubernetes, and stickier.** It is recognised by name in the workspace, the backend's bucket, key, prefix or organisation, the root's path, the var files, the backend-config files and the AWS profile. Once a state identity has been production, it stays production in every worktree and under every folder name. A class set by hand can only raise it. Every apply on production asks for the root's name to be typed, and writes there last one session.
+- **Production is a class, as in Kubernetes, and stickier.** It is recognised by name in the workspace, the backend's bucket, key, prefix or organisation, the root's path, the var files, the backend-config files and the AWS profile. Once a state identity has been production, it stays production in every worktree and under every folder name. A class set by hand can only raise it. A root is writable unless `terraform.roots` sets `writable: false` (the owner's decision, 1.6.0); every apply on production asks for the root's name to be typed.
 - **Wrong-target accidents are the ones that hurt.** The DataTalks.Club incident (February 2026) was an agent running `terraform destroy` against a state it had swapped in. Three verified traps get their own guards:
   - a workspace that doesn't exist, whether named by `TF_WORKSPACE` **or by `.terraform/environment`**, is silently created, and its plan creates everything again [verified];
   - a new worktree of a local-backend root has no state, so its plan creates everything again;
@@ -512,9 +512,9 @@ A class belongs to a (root, workspace): one folder with three workspaces can be 
 
 | Class | Recognised by | Default |
 |---|---|---|
-| **Production** | Any signal matches `terraform.productionPattern`, or the state identity was ever production | Read-only: plan only, red everywhere. Writes for the session only, per root |
+| **Production** | Any signal matches `terraform.productionPattern`, or the state identity was ever production | Red everywhere; writable like any root, each plan gate's question and every apply asked with the root's name typed. `writable: false` makes it plan only (the owner's decision, 1.6.0: no session switch) |
 | **Local** | A local backend inside the checkout **and** every condition below | Writable |
-| **Remote** | Everything else | Read-only until the root's `writable` is set |
+| **Remote** | Everything else | Writable unless the root's `writable` is false |
 
 **Signals**, all read without running Terraform and without credentials, by name only:
 1. the workspace (the checked one, 4.9);
@@ -537,7 +537,7 @@ The branch is shown on the chip but is **not** a signal: branches name the work 
 
 **Precedence:**
 1. production by any signal, or by identity;
-2. a class set by hand in `terraform.roots` — which can only **raise**: "remote" over local, "production" over anything. "Not production after all" is the root's session switch or a change to the pattern, never a setting;
+2. a class set by hand in `terraform.roots` — which can only **raise**: "remote" over local, "production" over anything. "Not production after all" is a change to the pattern, never a setting (a production root is writable anyway: what its class adds is confirmation);
 3. local by the rule above;
 4. remote.
 
@@ -561,7 +561,7 @@ Said in the panel's help and the page's: "Overterm checks what it runs. What you
 
 ### 5.3 What changes infrastructure: verbs by class
 
-| Verb | Read-only root (production without its switch, remote not writable) | Writable root | Overterm's form |
+| Verb | Read-only root (`writable: false`, any class) | Writable root | Overterm's form |
 |---|---|---|---|
 | `version`, `fmt`, `validate`, `workspace list/show`, `state list`, `show -json`, `modules`, `providers schema` | Started | Started | 4.1; validate with credentials stripped |
 | `init` | Started on the person's click; downloads code, changes no infrastructure. The one exception: New Task's `init -backend=false` in a new worktree's root whose fetch list flags nothing (4.13) | Same | 4.13 |
@@ -574,9 +574,9 @@ Said in the panel's help and the page's: "Overterm checks what it runs. What you
 | `state rm/mv`, CLI `import`, `taint`/`untaint`, `state push`, `apply` without a plan, `-auto-approve`, `-lock=false`, `workspace new/delete`, `init -upgrade` by an agent | **Never built**, any class | Never | `removed`/`moved`/`import` blocks through plan and apply; the rest in a terminal |
 | A terminal in a root | Opened; header red on production; nothing enforced | Opened | 4.9 |
 
-`TerraformProcessCheck.refused(verb, root, session)` (pure, the analogue of `KubeProcessCheck`) is the one place this table lives; a unit test runs every verb against every class.
+`TerraformProcessCheck.refused(verb, rootClass, writable)` (pure, the analogue of `KubeProcessCheck`) is the one place this table lives; a unit test runs every verb against every class and writable value.
 
-**Writes on production** are turned on per root from its card, for this session (`TerraformRunRegistry.sessionWrites`, the analogue of `KubeProxies.sessionWrites`), and end at quit. There is no setting that makes production writable.
+**Writes on production** — the owner's decision (1.6.0), replacing the session switch this section first had: a root is writable by default whatever its class, and `terraform.roots`' `writable: false` makes one plan only. Production keeps every confirmation: red everywhere, the plan gate's questions (its first plan asked, risks), the apply sheet with the root's name typed, every 5.4 check. Nothing has to be turned on first. Agents are unchanged: `tf_plan` is never offered on production, there is no `tf_apply`, and an agent's `tf_test` with real providers is refused on production and runs on a remote root only where its entry sets `writable: true` (`TerraformTestRun.writable`), as before the default changed.
 
 ### 5.4 Applying a shown plan
 
@@ -659,12 +659,12 @@ The `tf_` tools are built like `KubeMCP`'s, dispatched in `BrowserMCP.handle` by
 | `tf_validate` | `validate -json` diagnostics | on | Only when the root's lock file exists and is unchanged from `HEAD` and every module is already in `modules.json`; credentials removed, `HOME` scratch; otherwise "needs init: ask the person". Never an init |
 | `tf_plan_summary(root?, path?)` | The last plan Overterm made for the root, or a plan file the agent saved (`path`, resolved inside the checkout): counts, rows by action with reasons, cause chains, moves, imports, drift, actions, changed attribute paths | on | The masked model only (5.6); strings cut at 200 characters |
 | `tf_plan_resource(address)` | One resource's masked diff | on | as above |
-| `tf_plan(root, workspace?)` | Starts a plan in Overterm's registry and run folder; returns a run ID at once | **offered** on non-production roots | No flags at all: not `-var-file` (it reads any file into the plan), not `-refresh=false`, not `-generate-config-out` (it writes files). The first call per root and session is asked in the window, naming the root, the profile and the risk list. Production: only with the root's session switch, asked every call. `-lock-timeout=0s` |
+| `tf_plan(root, workspace?)` | Starts a plan in Overterm's registry and run folder; returns a run ID at once | **offered** on non-production roots | No flags at all: not `-var-file` (it reads any file into the plan), not `-refresh=false`, not `-generate-config-out` (it writes files). The first call per root and session is asked in the window, naming the root, the profile and the risk list. Production: never — the person plans there. `-lock-timeout=0s` |
 | `tf_run_status(id)` | A plan run's state and, when done, its summary | on | A plan can take minutes; one loopback HTTP request must not hold the lock, and an MCP client's tool timeout must not cancel it. The window keeps the record |
 | `tf_state_list` | Addresses | on (2c) | |
 | `tf_state_show(address)` | One object, masked | on (2c), off on production | `sensitive_values`, then `Secrets` |
 | `tf_outputs` | Names, types, non-sensitive values | on (2c) | Never a sensitive value; no tool for one, as there is none for Kubernetes Secrets |
-| `tf_test(root, file?)` | `terraform test -json` | on (2d) | Only test files whose every provider is mocked; otherwise asked, since a real run creates real infrastructure |
+| `tf_test(root, file?)` | `terraform test -json` | on (2d) | Only test files whose every provider is mocked; otherwise asked, since a real run creates real infrastructure — never on production, on a remote root only where `terraform.roots` sets it `writable: true` |
 | `tf_why(root)` | The brief of the last failed run or held lock | on | `TerraformAgentBrief` |
 | `tf_apply`, `tf_destroy`, `tf_state_*`, `tf_unlock`, `tf_import`, `tf_init`, `tf_workspace_*` | **Do not exist** in stages 1–2 | — | An agent writes `removed`, `moved` and `import` blocks, which go through plan and apply. Agent apply is decision D-12 for stage 3 |
 
@@ -692,7 +692,7 @@ The `tf_` tools are built like `KubeMCP`'s, dispatched in `BrowserMCP.handle` by
 | Two worktrees with different configs on one state | Identity, queue, stale marking | Their terminals, CI |
 | A secret no provider marked | `Secrets` on every kept string, the narrower attribute list | Heuristic |
 | Future plan fields, actions, unknown verbs | Allow-list decode; unknown top-level keys grey Apply; unknown actions destructive | — |
-| A default AWS profile that is production | Never local | Remote roots are read-only by default anyway |
+| A default AWS profile that is production | Never local | Its applies are still asked, every 5.4 check made |
 | HCP remote runs | Guards and a link | Stage 3 |
 | An agent calls another pane's MCP tools | A token per pane, good on its own path only, in that pane's environment and in no file; every MCP confirmation names the asking tab and agent, in that pane's window (D-15) | A same-user process outside a sandbox can read another process's environment (`KERN_PROCARGS2`, `ps eww`) and so another pane's token; the confirmation then names the pane it pretends to be. Agents' sandboxes that deny reading other processes close it; Overterm can't |
 
@@ -702,7 +702,7 @@ The `tf_` tools are built like `KubeMCP`'s, dispatched in `BrowserMCP.handle` by
 2. **The plan applied is the plan shown.** 5.4's checks, each with a test: a swapped fd, an edited lock file, an old plan, another worktree's apply (stale), an environment changed between plan and apply (refused), a newer-minor binary.
 3. **One environment.** A hostile environment (`TF_CLI_ARGS_apply=-lock=false`, `TF_CLI_ARGS_apply=-auto-approve`, `TF_LOG=trace`, `TF_REATTACH_PROVIDERS`) never reaches a run; the recording wrapper (11) asserts argv and environment names.
 4. **A workspace that doesn't exist refuses every run** before it starts, whichever variable or file names it.
-5. **Writes are turned on in one place.** `writable` off production; the session switch on it; agents' settings only say whether a tool exists where Overterm itself may write.
+5. **Writes are turned off in one place.** `terraform.roots`' `writable: false`, on any class (there is no session switch: the owner's decision); agents' settings only say whether a tool exists where Overterm itself may write.
 6. **Every write is confirmed** with `WriteConfirmation`, the typed names of 5.4.
 7. **Secrets are masked at decode** through the allow-list; the sentinel test of 5.6.
 8. **No credentials file is read**, and `guardsTerraform` holds in isolated runs and unit tests.
@@ -881,7 +881,7 @@ Each stage is usable on its own and has its own E2E check. Security comes first:
 | **1b. Knowing where you are** | Binaries per root and the version pill. Root discovery, the rail panel (⌥⌘E), the chip, `TerraformClassifier` with stickiness and the settings banner, the identity, the no-state warning, shared module → roots, inherited `TF_WORKSPACE`/`TF_DATA_DIR` warnings. The pane header for terraform anywhere in a pane's tree. Terminal in this root. Tab Info's rows. The `.terraform` noise filter in `DiffModel`. No terraform process except `version -json` | "Which root, which workspace, is it production?" before anyone runs anything, the agent's pane included | Two roots and a module listed; `envs/prod` red; a pane running the real terraform (offline) gets the header; the panel reads nothing while hidden; `init`'s writes don't recount the changes pane | MINOR |
 | **1c. Guarding agents** | `TerraformPrompt` (both shapes) in the Inbox; `agentWriteGuard` for Claude Code after its spike, Codex's answer; the scrollback rule; `tf_roots`, `tf_fmt_check`, `tf_validate` (guarded), `tf_plan_summary` over an agent's own saved plan; Ask Why on a validate failure | The one moment a person can still say no to an agent's apply is marked; agents get masked plans | A fake agent's permission prompt for `terraform apply` marks its tab; the launch command carries the deny flags; a sentinel absent from `tf_plan_summary` | MINOR |
 | **1d. The plan in the right slot** | Init (the fetch list, `-lockfile=readonly`) and the plugin cache offer. Overterm's plan: the run folder, the fd, the cleared environment, the workspace check, the risk list and "code you didn't write". The allow-list decoder; the plan view: risky first, ×N, the cause chain for replace and delete, drift, actions, moves and imports, stale and "applied elsewhere", missing variables, inputs named; Copy summary. Locks parsed, Wait. The registry's queue. `tf_plan`, `tf_run_status`, `tf_plan_resource`, `tf_why` | The plan read as data, beside its cause, for people and agents | A plan in the slot with the sentinel absent from every view and the accessibility text; the cause chain to the changed tfvars line; a missing workspace refused; a lock from `FakeTerraformBackend` named; the second worktree's plan marked stale after the first's apply (from the CLI) | MINOR |
-| **2a. Apply** | The detached apply in the plan's environment, every 5.4 check, typed names, the risky-update highlight, Stop, reattach after a crash, Quit's question. `TerraformCloseGuard` on all four close paths. Production's session switch. Targeted, replace and destroy plans | The first time Overterm changes infrastructure, with every guard in place | Apply on a local root lands; on `envs/prod` it is refused until the switch, then asks for the name; a hostile `TF_CLI_ARGS_apply` doesn't reach it; closing a pane where the real terraform applies asks, Interrupt leaves the resource tainted and the lock free; the app killed mid-apply, relaunched, finds it | MINOR |
+| **2a. Apply** | The detached apply in the plan's environment, every 5.4 check, typed names, the risky-update highlight, Stop, reattach after a crash, Quit's question. `TerraformCloseGuard` on all four close paths. Production writable with its name typed (the session switch it first had was removed by the owner's decision). Targeted, replace and destroy plans | The first time Overterm changes infrastructure, with every guard in place | Apply on a local root lands; on `envs/prod` it asks for the name (refused only while `writable: false`); a hostile `TF_CLI_ARGS_apply` doesn't reach it; closing a pane where the real terraform applies asks, Interrupt leaves the resource tainted and the lock free; the app killed mid-apply, relaunched, finds it | MINOR |
 | **2b. Worktrees** | New Task's roots: the no-state warning, `init -backend=false -lockfile=readonly`, the workspace not copied; lock files compared across worktrees | A new worktree that validates and doesn't plan "create everything" | A New Task worktree's root warned; validate works there | MINOR |
 | **2c. State and outputs** | State list and one resource, masked; outputs; outputs into the Browser, Database, API client and Kubernetes; `tf_state_list`, `tf_state_show`, `tf_outputs` | State without `state show` in a terminal | A sensitive output never valued in the view or a tool | MINOR |
 | **2d. Drift and tests** | Check drift and Accept into state; `terraform test` in the slot, `tf_test` (mocked only, else asked) | The one write-free feedback loop for agents | A mocked test file's runs listed with one failure at its line | MINOR |
@@ -929,7 +929,7 @@ Tests never reach a cloud, a registry, the user's state or the user's configurat
 - `TerraformClassifierTests`: 5.1's names; strict local; precedence (a hand-set class lowers nothing); stickiness by identity; the Terragrunt `live/`.
 - `TerraformStateIdentityTests`: every backend of 4.11, local non-default workspaces under `terraform.tfstate.d/<ws>/terraform.tfstate`.
 - `TerraformLockTests`: the local and http diagnostic texts, `Info`, the Go time format; a `.lock.info` file never consulted.
-- `TerraformProcessCheckTests`: every verb against every class and session state.
+- `TerraformProcessCheckTests`: every verb against every class and writable value.
 - `TerraformCommandsTests`: every output enumerated, none with a forbidden form; quoting of `aws_instance.web["a b"]`; the agent's `-lock-timeout=0s`.
 - `TerraformEnvironmentTests`: a hostile environment in, none of 4.5's names out; the guarded environment carries no credential name; validate's carries none either.
 - `TerraformCommandLineTests`: `env TF_WORKSPACE=prod terraform -chdir=envs/prod apply`, `sudo`, pipelines, `terragrunt run --all apply`, `run-all`.
@@ -994,7 +994,7 @@ When no terraform is found, the Terraform scenarios are reported as skipped, lou
 1. **D-0. The floor:** stage 1 (1a–1d) plans but never applies; apply is stage 2a (**recommended**) / apply in stage 1.
 2. **D-7. Security keys edited outside Settings** wait for a banner's confirmation, for Terraform, and the same fix for `kubernetes.*` in its own commit (**recommended**) / Terraform only / neither.
 3. **D-8. The agent guard:** `terraform.agentWriteGuard`, per-launch deny flags for agents Overterm starts in a checkout with a production root, on by default (**recommended**) / off by default / a PATH shim refusing writes (strongest, but invasive: it changes the agent's PATH and every terraform there).
-4. **D-12. Agent plans and applies:** `tf_plan` offered on non-production roots, the first call per root and session asked; production only with the session switch, asked every time; **no `tf_apply` in stages 1–2** (**recommended**) / `tf_plan` only for roots listed in a setting / `tf_apply` in stage 2 for writable non-production roots, each call confirmed.
+4. **D-12. Agent plans and applies:** `tf_plan` offered on non-production roots, the first call per root and session asked; never on production (as built; the session switch this first named is gone); **no `tf_apply` in stages 1–2** (**recommended**) / `tf_plan` only for roots listed in a setting / `tf_apply` in stage 2 for writable non-production roots, each call confirmed.
 5. **D-15. The stage-0 per-pane MCP token**, a security fix that also changes the existing Docker, Kubernetes and Database tools (**recommended**) / Terraform's tools only / leave it.
 6. **D-16. `terraform.enabled` on by default**, nothing run until the panel opens, as `docker.enabled` and `kubernetes.enabled` (**recommended**) / off until turned on.
 7. **D-17. The plugin cache:** offered at the first Init in a window with two worktrees of one repository, for Overterm's runs only (**recommended**) / on by default / never.
@@ -1084,7 +1084,7 @@ Overterm (read only, branch `kubernetes`): CLAUDE.md; `docs/design/kubernetes/an
 
 **Review 2, user value and scope.**
 - C1 (rail and slot first), C2 (a child process), C3 (no agent apply in the floor), C5 (no scheduled drift), C6 (plan files), C8 (group SIGINT), C11 (enabled by default): taken.
-- C4 and V3 (agents' plans default off loses the safer channel): taken in part. `tf_plan` is offered by default, but its first call per root and session is asked (review 1's B5–B6: a plan runs the agent's code with the user's credentials); production needs the session switch (D-12).
+- C4 and V3 (agents' plans default off loses the safer channel): taken in part. `tf_plan` is offered by default, but its first call per root and session is asked (review 1's B5–B6: a plan runs the agent's code with the user's credentials); production never offers it (D-12).
 - C7 (pin or not): settled by not pinning tabs (D-4). C9 (saved cloud plans): stage 3, unverified (D-20). C10 and V5 (plugin cache in the floor): taken in part: Init and the cache offer are in 1d, the cache is not on by default.
 - V1 (guard the path agents take): taken, all four points, with one correction found while writing: agents run commands as their own children, without the pane's tty, so Terraform's prompt rarely reaches the screen; the agent's own permission prompt is the moment to read, and the header looks in the pane's whole tree (3.2, 3.3). The Claude Code flag's syntax and its hold under `--dangerously-skip-permissions`, and Codex's lever, are verified in stage 1c.
 - V2 (the cause chain in the floor, replace and delete only), V4 (version safety), V6 (say who it is for): taken (3.1, 3.8, 2.10).

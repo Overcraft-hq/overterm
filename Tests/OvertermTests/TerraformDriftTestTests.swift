@@ -54,10 +54,11 @@ final class TerraformDriftCommandTests: XCTestCase {
         for rootClass in TerraformClass.allCases {
             XCTAssertNil(TerraformProcessCheck.refused(.test, rootClass: rootClass), "\(rootClass)")
         }
-        XCTAssertNotNil(TerraformProcessCheck.refused(.testRealProviders, rootClass: .production))
-        XCTAssertNil(TerraformProcessCheck.refused(.testRealProviders, rootClass: .production, sessionWrites: true))
-        XCTAssertNotNil(TerraformProcessCheck.refused(.testRealProviders, rootClass: .remote))
-        XCTAssertNil(TerraformProcessCheck.refused(.testRealProviders, rootClass: .local))
+        // Writable unless its entry says no, production too: a real test is then asked, never locked.
+        for rootClass in TerraformClass.allCases {
+            XCTAssertNil(TerraformProcessCheck.refused(.testRealProviders, rootClass: rootClass), "\(rootClass)")
+            XCTAssertNotNil(TerraformProcessCheck.refused(.testRealProviders, rootClass: rootClass, writable: false), "\(rootClass)")
+        }
     }
 }
 
@@ -298,7 +299,7 @@ final class TerraformTestFilesTests: XCTestCase {
             XCTAssertTrue(read.files.isEmpty)
             let prepared = TerraformTestRun.Prepared(read: read)
             XCTAssertTrue(
-                TerraformTestRun.refusal(prepared, file: files?.first, rootClass: .local, writable: true, sessionWrites: false)?.contains("outside the checkout") == true)
+                TerraformTestRun.refusal(prepared, file: files?.first, rootClass: .local, writable: true)?.contains("outside the checkout") == true)
         }
     }
 }
@@ -417,7 +418,7 @@ final class TerraformTestRunTests: XCTestCase {
         let card = card()
         let prepared = await TerraformTestRun.prepare(card: card, checkout: checkout, file: nil, settingPath: "", binary: recorder.wrapper)
         XCTAssertEqual(prepared.read.mocking, .mocked, "terraform_data alone: nothing to mock")
-        XCTAssertNil(TerraformTestRun.refusal(prepared, file: nil, rootClass: .production, writable: false, sessionWrites: false), "a read on any class")
+        XCTAssertNil(TerraformTestRun.refusal(prepared, file: nil, rootClass: .production, writable: false), "a read on any class")
         let run = TerraformTestRun(checkout: checkout, card: card)
         await run.start(prepared)
         guard case .failed(let said) = run.phase else { return XCTFail("\(run.phase)") }
@@ -444,10 +445,12 @@ final class TerraformTestRunTests: XCTestCase {
         try "resource \"aws_s3_bucket\" \"acme\" {}\n".write(to: checkout.appendingPathComponent("envs/dev/s3.tf"), atomically: true, encoding: .utf8)
         let prepared = await TerraformTestRun.prepare(card: card(), checkout: checkout, file: nil, settingPath: "", binary: URL(fileURLWithPath: "/usr/bin/false"))
         XCTAssertEqual(prepared.read.mocking, .real("tests/acme.tftest.hcl: not mocked: aws"))
-        let refused = TerraformTestRun.refusal(prepared, file: nil, rootClass: .production, writable: false, sessionWrites: false)
+        let refused = TerraformTestRun.refusal(prepared, file: nil, rootClass: .production, writable: false)
         XCTAssertTrue(refused?.contains("creates real infrastructure") == true, refused ?? "")
-        XCTAssertNotNil(TerraformTestRun.refusal(prepared, file: nil, rootClass: .remote, writable: false, sessionWrites: false))
-        XCTAssertNil(TerraformTestRun.refusal(prepared, file: nil, rootClass: .local, writable: false, sessionWrites: false), "asked, by the caller")
+        XCTAssertNotNil(TerraformTestRun.refusal(prepared, file: nil, rootClass: .remote, writable: false))
+        XCTAssertNotNil(TerraformTestRun.refusal(prepared, file: nil, rootClass: .local, writable: false), "plan only on any class")
+        XCTAssertNil(TerraformTestRun.refusal(prepared, file: nil, rootClass: .local, writable: true), "asked, by the caller")
+        XCTAssertNil(TerraformTestRun.refusal(prepared, file: nil, rootClass: .production, writable: true), "production too: asked, its name typed")
     }
 
     // MARK: The question (review of 2d)
@@ -466,7 +469,7 @@ final class TerraformTestRunTests: XCTestCase {
         var shown = 0
         for _ in 0..<2 {
             let outcome = await TerraformTestRun.begin(
-                card: card(), checkout: checkout, file: nil, agent: nil, writable: false, settingPath: "", binary: recorder.wrapper,
+                card: card(), checkout: checkout, file: nil, agent: nil, writable: true, settingPath: "", binary: recorder.wrapper,
                 ask: {
                     asked.append($0); return false
                 }, show: { _ in shown += 1 })
@@ -487,10 +490,9 @@ final class TerraformTestRunTests: XCTestCase {
         try realProviderRoot()
         let recorder = try recorder()
         let registry = TerraformRunRegistry()
-        registry.sessionWrites.insert(TerraformRunRegistry.sessionKey(checkout: checkout, root: "envs/dev", workspace: "default"))
         var asked: [TerraformPlanGate.Question] = []
         let agent = await TerraformTestRun.begin(
-            card: card(.production), checkout: checkout, file: nil, agent: "Claude Code in “acme”", writable: false, settingPath: "", binary: recorder.wrapper,
+            card: card(.production), checkout: checkout, file: nil, agent: "Claude Code in “acme”", writable: true, settingPath: "", binary: recorder.wrapper,
             registry: registry,
             ask: {
                 asked.append($0); return true
@@ -499,7 +501,7 @@ final class TerraformTestRunTests: XCTestCase {
         XCTAssertTrue(refused.message.contains("is production"), refused.message)
         XCTAssertTrue(asked.isEmpty)
         let person = await TerraformTestRun.begin(
-            card: card(.production), checkout: checkout, file: nil, agent: nil, writable: false, settingPath: "", binary: recorder.wrapper,
+            card: card(.production), checkout: checkout, file: nil, agent: nil, writable: true, settingPath: "", binary: recorder.wrapper,
             registry: registry,
             ask: {
                 asked.append($0); return false
@@ -508,7 +510,7 @@ final class TerraformTestRunTests: XCTestCase {
         XCTAssertEqual(asked.first?.typedName, "envs/dev", "the root's name typed on production (D-21)")
         XCTAssertEqual(asked.first?.production, true)
         XCTAssertTrue(recorder.calls().isEmpty)
-        // Without the session's switch: refused before any question.
+        // Set plan-only (`writable: false`): refused before any question.
         let off = await TerraformTestRun.begin(
             card: card(.production), checkout: checkout, file: nil, agent: nil, writable: false, settingPath: "", binary: recorder.wrapper,
             registry: TerraformRunRegistry(),
@@ -520,6 +522,42 @@ final class TerraformTestRunTests: XCTestCase {
         XCTAssertEqual(asked.count, 1)
     }
 
+    /// The owner's decision makes roots writable by default for a person;
+    /// an agent's real-provider test keeps the rule agents had: a remote
+    /// root only where its terraform.roots entry sets writable true.
+    func testAnAgentsRealTestOnAnUnsetRemoteRootIsRefused() async throws {
+        XCTAssertTrue(TerraformTestRun.writable(rootClass: .remote, setting: nil, agent: false), "a person's: writable by default")
+        XCTAssertTrue(TerraformTestRun.writable(rootClass: .production, setting: nil, agent: false), "production too, for a person")
+        XCTAssertFalse(TerraformTestRun.writable(rootClass: .remote, setting: nil, agent: true), "an agent's: unset remote is plan only")
+        XCTAssertTrue(TerraformTestRun.writable(rootClass: .remote, setting: true, agent: true))
+        XCTAssertFalse(TerraformTestRun.writable(rootClass: .production, setting: nil, agent: true))
+        XCTAssertTrue(TerraformTestRun.writable(rootClass: .local, setting: nil, agent: true), "local as before")
+        XCTAssertFalse(TerraformTestRun.writable(rootClass: .local, setting: false, agent: true))
+        try realProviderRoot()
+        let recorder = try recorder()
+        var asked: [TerraformPlanGate.Question] = []
+        let agent = await TerraformTestRun.begin(
+            card: card(.remote), checkout: checkout, file: nil, agent: "Claude Code in “acme”",
+            writable: TerraformTestRun.writable(rootClass: .remote, setting: nil, agent: true), settingPath: "", binary: recorder.wrapper,
+            registry: TerraformRunRegistry(),
+            ask: {
+                asked.append($0); return true
+            }, show: { _ in })
+        guard case .failure(let refused) = agent else { return XCTFail("an agent's real test on an unset remote root is refused") }
+        XCTAssertTrue(refused.message.contains("only where its terraform.roots entry sets writable to true"), refused.message)
+        XCTAssertTrue(asked.isEmpty, "refused before any question")
+        let person = await TerraformTestRun.begin(
+            card: card(.remote), checkout: checkout, file: nil, agent: nil,
+            writable: TerraformTestRun.writable(rootClass: .remote, setting: nil, agent: false), settingPath: "", binary: recorder.wrapper,
+            registry: TerraformRunRegistry(),
+            ask: {
+                asked.append($0); return false
+            }, show: { _ in })
+        guard case .failure(let declined) = person, declined.message.isEmpty else { return XCTFail("a person's is asked") }
+        XCTAssertEqual(asked.count, 1)
+        XCTAssertTrue(recorder.calls().isEmpty)
+    }
+
     /// An agent's mocked test starts the mocked providers for their
     /// schemas: only where a committed lock file pins them.
     func testAnAgentsMockedTestNeedsTheLockFileForItsMocks() async throws {
@@ -527,7 +565,7 @@ final class TerraformTestRunTests: XCTestCase {
             to: checkout.appendingPathComponent("envs/dev/tests/acme.tftest.hcl"), atomically: true, encoding: .utf8)
         let recorder = try recorder()
         let outcome = await TerraformTestRun.begin(
-            card: card(), checkout: checkout, file: nil, agent: "Claude Code in “acme”", writable: false, settingPath: "", binary: recorder.wrapper,
+            card: card(), checkout: checkout, file: nil, agent: "Claude Code in “acme”", writable: true, settingPath: "", binary: recorder.wrapper,
             ask: { _ in
                 XCTFail("a mocked test isn't asked"); return true
             }, show: { _ in })
@@ -544,14 +582,14 @@ final class TerraformTestRunTests: XCTestCase {
         TerraformTestResults.shared.add(going)
         var shown: [TerraformTestRun] = []
         let again = await TerraformTestRun.begin(
-            card: card(), checkout: checkout, file: nil, agent: nil, writable: false, settingPath: "", binary: recorder.wrapper,
+            card: card(), checkout: checkout, file: nil, agent: nil, writable: true, settingPath: "", binary: recorder.wrapper,
             ask: { _ in true }, show: { shown.append($0) })
         XCTAssertTrue((try? again.get()) === going, "every file while one file's run goes: that run, shown")
         XCTAssertTrue(shown.first === going)
         TerraformTestResults.shared.reset()
         TerraformTestResults.shared.starting.insert(TerraformRootStore.key(checkout: checkout, root: "envs/dev"))
         let twice = await TerraformTestRun.begin(
-            card: card(), checkout: checkout, file: nil, agent: nil, writable: false, settingPath: "", binary: recorder.wrapper,
+            card: card(), checkout: checkout, file: nil, agent: nil, writable: true, settingPath: "", binary: recorder.wrapper,
             ask: { _ in true }, show: { _ in })
         guard case .failure(let starting) = twice else { return XCTFail("a second press while the first prepares") }
         XCTAssertTrue(starting.message.contains("starting already"), starting.message)
@@ -579,8 +617,8 @@ final class TerraformTestRunTests: XCTestCase {
         try FileManager.default.removeItem(at: checkout.appendingPathComponent("envs/dev/tests"))
         let prepared = await TerraformTestRun.prepare(card: card(), checkout: checkout, file: nil, settingPath: "", binary: nil)
         XCTAssertTrue(
-            TerraformTestRun.refusal(prepared, file: nil, rootClass: .local, writable: false, sessionWrites: false)?.hasPrefix("No test files") == true)
-        XCTAssertNotNil(TerraformTestRun.refusal(prepared, file: "../x.tftest.hcl", rootClass: .local, writable: false, sessionWrites: false))
+            TerraformTestRun.refusal(prepared, file: nil, rootClass: .local, writable: false)?.hasPrefix("No test files") == true)
+        XCTAssertNotNil(TerraformTestRun.refusal(prepared, file: "../x.tftest.hcl", rootClass: .local, writable: false))
     }
 }
 
@@ -648,12 +686,12 @@ final class TerraformDriftTests: XCTestCase {
         XCTAssertEqual(TerraformDrift.line(phase: .running, plan: nil, age: "just now", stale: nil).text, "Checking drift…")
     }
 
-    private func facts(_ plan: TerraformPlan, rootClass: TerraformClass, sessionWrites: Bool = false) -> TerraformApplyFacts {
+    private func facts(_ plan: TerraformPlan, rootClass: TerraformClass, writable: Bool = true) -> TerraformApplyFacts {
         let environment = ["PATH": "/usr/bin", "TF_WORKSPACE": "default"]
         var facts = TerraformApplyFacts(
             plan: plan, mode: .refreshOnly, recordSHA: "abc", recordBinary: "/opt/acme/terraform", recordVersion: "1.17.1", recordWorkspace: "default",
             recordDataDir: "/acme/envs/dev/.terraform", recordEnvironment: environment, zipLockSHA: "lock1", rootName: "envs/prod", rootClass: rootClass,
-            sessionWrites: sessionWrites)
+            writable: writable)
         facts.descriptorSHA = "abc"
         facts.binaryNow = "/opt/acme/terraform"
         facts.versionNow = "1.17.1"
@@ -670,11 +708,13 @@ final class TerraformDriftTests: XCTestCase {
         let plan = try Self.decoded()
         XCTAssertNotNil(
             TerraformApplyCheck.greyed(
-                plan: plan, rootClass: .production, writable: false, sessionWrites: false, mode: .refreshOnly, devOverrides: false, staleReason: nil, busy: nil))
-        guard case .refused(let why) = TerraformApplyCheck.check(facts(plan, rootClass: .production)) else { return XCTFail("refused without the switch") }
+                plan: plan, rootClass: .production, writable: false, mode: .refreshOnly, devOverrides: false, staleReason: nil, busy: nil))
+        guard case .refused(let why) = TerraformApplyCheck.check(facts(plan, rootClass: .production, writable: false)) else {
+            return XCTFail("refused where the root is set plan only")
+        }
         XCTAssertTrue(why.contains("plan only"), why)
         XCTAssertEqual(
-            TerraformApplyCheck.check(facts(plan, rootClass: .production, sessionWrites: true)),
+            TerraformApplyCheck.check(facts(plan, rootClass: .production)),
             .ask(typed: true, versionMove: nil, partial: false, createsEverything: false))
         var empty = Self.plan
         empty["prior_state"] = nil

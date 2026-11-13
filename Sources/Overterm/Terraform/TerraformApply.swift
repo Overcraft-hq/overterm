@@ -26,8 +26,8 @@ struct TerraformApplyFacts: Sendable {
     // The root's.
     var rootName = ""
     var rootClass: TerraformClass
-    var writable = false
-    var sessionWrites = false
+    /// Its `terraform.roots` `writable`: yes unless it says no.
+    var writable = true
     /// A local backend's state is in another worktree, not here (3.7).
     var stateElsewhere: String?
 
@@ -78,11 +78,11 @@ enum TerraformApplyCheck {
     /// The checks that need nothing read now: what greys Apply in the
     /// header (6.4), with why, or nil when Apply may be pressed.
     static func greyed(
-        plan: TerraformPlan?, rootClass: TerraformClass, writable: Bool, sessionWrites: Bool, mode: TerraformPlanMode, devOverrides: Bool,
+        plan: TerraformPlan?, rootClass: TerraformClass, writable: Bool, mode: TerraformPlanMode, devOverrides: Bool,
         staleReason: String?, busy: String?, versionConfirmed: Bool = true
     ) -> String? {
         guard let plan else { return "No plan to apply." }
-        if let why = TerraformProcessCheck.refused(mode.verb, rootClass: rootClass, writable: writable, sessionWrites: sessionWrites) { return why }
+        if let why = TerraformProcessCheck.refused(mode.verb, rootClass: rootClass, writable: writable) { return why }
         if let why = TerraformDrift.nothingToAccept(plan, mode: mode) { return why }
         if !plan.applyable || plan.errored { return plan.errored ? "The plan errored: it can't be applied." : "Terraform says this plan can't be applied." }
         if !plan.complete, rootClass == .production {
@@ -111,7 +111,7 @@ enum TerraformApplyCheck {
         // The class now, never only the plan's (5.1).
         if let why = risen(name: facts.rootName, planned: facts.rootClass, now: facts.classNow) { return .refused(why) }
         // 0. Writable at all (5.3).
-        if let why = TerraformProcessCheck.refused(facts.mode.verb, rootClass: facts.rootClass, writable: facts.writable, sessionWrites: facts.sessionWrites) {
+        if let why = TerraformProcessCheck.refused(facts.mode.verb, rootClass: facts.rootClass, writable: facts.writable) {
             return .refused(why)
         }
         if let why = TerraformDrift.nothingToAccept(plan, mode: facts.mode) { return .refused(why) }

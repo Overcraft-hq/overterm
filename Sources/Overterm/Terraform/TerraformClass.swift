@@ -33,9 +33,9 @@ struct TerraformRootSettings: Equatable, Sendable {
     /// Set by hand: only ever raises the class its names give.
     var rootClass: TerraformClass?
     var displayName: String?
-    /// A remote root Overterm may apply shown plans to (5.1, 5.3). Never a
-    /// production one: that is its session switch, never a setting.
-    var writable = false
+    /// Whether Overterm may apply shown plans here (5.1, 5.3): yes unless
+    /// it says no, on every class; `false` makes the root plan-only.
+    var writable = true
 
     static let fields: [SettingField] = [
         SettingField(
@@ -44,10 +44,12 @@ struct TerraformRootSettings: Equatable, Sendable {
         SettingField(name: "displayName", kind: .text(placeholder: "", monospaced: false)),
         SettingField(
             name: "writable", kind: .toggle,
-            help: "A remote root Overterm may apply shown plans to, each asked first. Never a production one: its writes are turned on for the session, from its card."),
+            help:
+                "Whether Overterm may apply shown plans here, each asked first (production's with its name typed); unset, it may. Off: plan only. An agent's test with real providers on a remote root needs it set on."
+        ),
     ]
 
-    init(rootClass: TerraformClass? = nil, displayName: String? = nil, writable: Bool = false) {
+    init(rootClass: TerraformClass? = nil, displayName: String? = nil, writable: Bool = true) {
         self.rootClass = rootClass
         self.displayName = displayName
         self.writable = writable
@@ -56,7 +58,7 @@ struct TerraformRootSettings: Equatable, Sendable {
     init(fields: [String: SettingValue]) {
         rootClass = fields["class"]?.string.flatMap(TerraformClass.init(rawValue:))
         displayName = fields["displayName"]?.string.flatMap { $0.trimmingCharacters(in: .whitespaces).isEmpty ? nil : $0 }
-        writable = fields["writable"]?.bool ?? false
+        writable = fields["writable"]?.bool ?? true
     }
 
     static func all(from value: SettingValue?) -> [String: TerraformRootSettings] {

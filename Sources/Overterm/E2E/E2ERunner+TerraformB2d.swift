@@ -266,8 +266,8 @@ extension E2ERunner {
             "\(String(describing: pane.run?.phase))")
         if let again = pane.run {
             check(
-                "2d: nothing to accept", again.applyGreyed(.shared, writable: false)?.hasPrefix("No drift to accept") == true,
-                again.applyGreyed(.shared, writable: false) ?? "")
+                "2d: nothing to accept", again.applyGreyed(.shared, writable: true)?.hasPrefix("No drift to accept") == true,
+                again.applyGreyed(.shared, writable: true) ?? "")
         }
         TerraformTestResults.shared.reset()
     }
@@ -295,9 +295,6 @@ extension E2ERunner {
         check("2d: the question names the file and what is real", asked.first.map { $0.detail.contains("Files: tests/real.tftest.hcl") && $0.detail.contains("aws") } == true)
         var production = card
         production.verdict = .init(rootClass: .production, reason: "a scenario's")
-        let key = TerraformRunRegistry.sessionKey(checkout: checkout, root: card.path, workspace: card.workspace)
-        TerraformRunRegistry.shared.sessionWrites.insert(key)
-        defer { TerraformRunRegistry.shared.sessionWrites.remove(key) }
         let agent = await app.startTerraformTest(production, checkout: checkout, file: "tests/real.tftest.hcl", agent: "an agent")
         if case .failure(let why) = agent {
             check("2d: an agent's real test on production refused", why.message.contains("is production"), why.message)

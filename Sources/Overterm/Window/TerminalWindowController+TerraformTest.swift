@@ -43,8 +43,10 @@ extension TerminalWindowController {
     /// there). A failure whose message is empty was declined.
     @discardableResult
     func startTerraformTest(_ card: TerraformRootCard, checkout: URL, file: String?, agent: String?) async -> Result<TerraformTestRun, TerraformReadFailure> {
-        await TerraformTestRun.begin(
-            card: card, checkout: checkout, file: file, agent: agent, writable: Settings.shared.terraformRoots[card.path]?.writable ?? false,
+        let entry = Settings.shared.value("terraform.roots")?.entries?[card.path]
+        let writable = TerraformTestRun.writable(rootClass: card.rootClass, setting: entry?["writable"]?.bool, agent: agent != nil)
+        return await TerraformTestRun.begin(
+            card: card, checkout: checkout, file: file, agent: agent, writable: writable,
             settingPath: Settings.shared.terraformPath,
             ask: { [weak self] question in await self?.askTerraformTest(question, card: card) ?? false },
             show: { [weak self] run in self?.showTerraformTest(run) })
