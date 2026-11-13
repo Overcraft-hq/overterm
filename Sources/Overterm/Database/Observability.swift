@@ -130,8 +130,10 @@ struct LogLine: Equatable, Sendable, Identifiable {
         return id
     }
 
+    /// 16 to 32 hex digits: Tempo's search gives ids without their leading
+    /// zeros (`198686e9…`, 31 of them).
     static func isTraceID(_ text: String) -> Bool {
-        (text.count == 16 || text.count == 32) && text.allSatisfy(\.isHexDigit)
+        (16...32).contains(text.count) && text.allSatisfy(\.isHexDigit)
     }
 }
 
@@ -341,7 +343,10 @@ enum ObservabilityParse {
                 let name = scope["name"] as? String ?? ""
                 for tag in scope["tags"] as? [String] ?? [] { out.append(name == "intrinsic" || name.isEmpty ? tag : "\(name).\(tag)") }
             }
-            return out
+            // The server's order changes between asks: resource's first (the
+            // services), then span's, then the rest, each alphabetical.
+            func rank(_ tag: String) -> Int { tag.hasPrefix("resource.") ? 0 : tag.hasPrefix("span.") ? 1 : 2 }
+            return out.sorted { (rank($0), $0) < (rank($1), $1) }
         }
         return (object["tagNames"] as? [String] ?? []).sorted()
     }

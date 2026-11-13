@@ -45,7 +45,8 @@ extension DatabaseSession {
         case .tempo:
             // status and kind are words, not strings.
             let bare = ["status", "kind", "span:status", "span:kind"].contains(name)
-            return "{ \(name.contains(".") || bare ? name : "." + name) = \(bare ? value : quoted) }"
+            // `resource.x` and `span:name` are whole; a bare tag is any scope's (`.x`).
+            return "{ \(name.contains(".") || name.contains(":") || bare ? name : "." + name) = \(bare ? value : quoted) }"
         default: return "\(name){\(value)!=\"\"}"
         }
     }

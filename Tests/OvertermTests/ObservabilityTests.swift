@@ -55,6 +55,9 @@ final class ObservabilityParseTests: XCTestCase {
         XCTAssertEqual(line.traceID, "4bf92f3577b34da6a3ce929d0e0e4736")
         XCTAssertEqual(LogLine(nanos: 0, labels: [:], line: #"{"trace_id":"00f067aa0ba902b7"}"#).traceID, "00f067aa0ba902b7")
         XCTAssertNil(LogLine(nanos: 0, labels: [:], line: "no trace here").traceID)
+        // Tempo's search drops an id's leading zeros.
+        XCTAssertTrue(LogLine.isTraceID("198686e929454322f5c0e1a2b3c4d5e"))
+        XCTAssertFalse(LogLine.isTraceID("deadbeef"), "too short to be one")
     }
 
     func testTempoSearchTagsAndValues() throws {
@@ -65,6 +68,8 @@ final class ObservabilityParseTests: XCTestCase {
         XCTAssertEqual(traces.first?.durationMs, 12)
         let v2 = Data(#"{"scopes":[{"name":"resource","tags":["service.name"]},{"name":"intrinsic","tags":["duration"]}]}"#.utf8)
         XCTAssertEqual(try ObservabilityParse.tempoTags(v2), ["resource.service.name", "duration"])
+        let mixed = Data(#"{"scopes":[{"name":"intrinsic","tags":["name"]},{"name":"span","tags":["http.route"]},{"name":"resource","tags":["service.name"]}]}"#.utf8)
+        XCTAssertEqual(try ObservabilityParse.tempoTags(mixed), ["resource.service.name", "span.http.route", "name"], "resource's, then span's, then the rest")
         XCTAssertEqual(try ObservabilityParse.tempoTags(Data(#"{"tagNames":["b","a"]}"#.utf8)), ["a", "b"])
         XCTAssertEqual(try ObservabilityParse.tempoValues(Data(#"{"tagValues":[{"type":"string","value":"x"}]}"#.utf8)), ["x"])
         XCTAssertEqual(try ObservabilityParse.tempoValues(Data(#"{"tagValues":["y"]}"#.utf8)), ["y"])
@@ -111,6 +116,7 @@ final class ObservabilityParseTests: XCTestCase {
         XCTAssertEqual(DatabaseSession.selector(.loki, name: "app", value: "a\"b"), #"{app="a\"b"}"#)
         XCTAssertEqual(DatabaseSession.selector(.tempo, name: "resource.service.name", value: "api"), #"{ resource.service.name = "api" }"#)
         XCTAssertEqual(DatabaseSession.selector(.tempo, name: "status", value: "error"), "{ status = error }")
+        XCTAssertEqual(DatabaseSession.selector(.tempo, name: "span:name", value: "GET /"), #"{ span:name = "GET /" }"#)
     }
 
     func testTheTimeWindow() {
@@ -212,7 +218,7 @@ final class ObservabilityDriverTests: XCTestCase {
         guard case .trace(let detail)? = trace.payload else { return XCTFail("a trace") }
         XCTAssertEqual(detail.spans.count, 3)
         let tags = try await driver.names()
-        XCTAssertEqual(tags.first, "resource.service.name")
+        XCTAssertEqual(Array(tags.prefix(3)), ["resource.k8s.namespace.name", "resource.service.name", "span.http.route"])
         let services = try await driver.values(of: "resource.service.name")
         XCTAssertEqual(services, ["api", "worker"])
     }
