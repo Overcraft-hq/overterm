@@ -50,7 +50,7 @@ extension E2ERunner {
     }
 
     /// A held record over a scratch descriptor (nothing to apply).
-    private static func perfRecord(_ plan: TerraformPlan) -> TerraformPlanRecord? {
+    static func perfRecord(_ plan: TerraformPlan) -> TerraformPlanRecord? {
         let url = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-tf-perf-\(UUID().uuidString)")
         guard (try? Data("PK\u{3}\u{4}".utf8).write(to: url)) != nil else { return nil }
         let fd = open(url.path, O_RDONLY | O_CLOEXEC)

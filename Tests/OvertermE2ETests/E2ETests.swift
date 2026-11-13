@@ -316,7 +316,14 @@ final class E2ETests: XCTestCase {
     func testSnippets() throws { try run("snippets") }
     func testAttention() throws { try run("attention") }
     func testMarks() throws { try run("marks") }
-    func testShowcase() throws { try run("showcase") }
+    /// The README's pictures, Kubernetes' against the fake: its
+    /// kubeconfig is this temporary file alone.
+    func testShowcase() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-e2e-show-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        try run("showcase", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 180)
+    }
     func testPalette() throws { try run("palette") }
     func testReorder() throws { try run("reorder") }
     func testInfo() throws { try run("info") }

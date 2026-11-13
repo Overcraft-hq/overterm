@@ -2750,9 +2750,11 @@ final class E2ERunner {
     /// edge. This stages the same scene every time and photographs it:
     ///
     ///     OVERTERM_E2E=showcase OVERTERM_DUMP_PNG=docs/assets/screenshot \
+    ///       OVERTERM_KUBECONFIG=<a scratch file> \
     ///       ./Overterm.app/Contents/MacOS/Overterm
     ///
-    /// writes `-window`, `-tabs`, `-changes`, `-peek` and `-editor` beside that
+    /// writes `-window`, `-tabs`, `-changes`, `-peek`, `-editor`, `-kubernetes`
+    /// (with OVERTERM_KUBECONFIG, the fake's file) and `-terraform` beside that
     /// path. Nothing is typed into the UI to arrange it: the scenario
     /// opens the tabs and panes through the same calls the menus use.
     /// The frame README's pictures are taken in: the same size every time,
@@ -2893,10 +2895,15 @@ final class E2ERunner {
         _ = await eventually(3) { self.app.editor?.document.url == handler }
         await pause(1.0)
         dump("editor")
+
+        // Kubernetes and Terraform, on fakes only (E2ERunner+Showcase).
+        app.editorItem?.isCollapsed = true
+        await showcaseKubernetes()
+        await showcaseTerraform()
     }
 
     /// One of the showcase's pictures, named after what it shows.
-    private func dump(_ name: String) {
+    func dump(_ name: String) {
         guard let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] else { return }
         app.captureWindow(to: "\(png)-\(name).png")
     }
