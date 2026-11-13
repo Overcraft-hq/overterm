@@ -98,21 +98,20 @@ final class TerraformPlanCommandTests: XCTestCase {
         for verb in TerraformVerb.allCases {
             for rootClass in TerraformClass.allCases {
                 for writable in [false, true] {
-                    for session in [false, true] {
-                        let refused = TerraformProcessCheck.refused(verb, rootClass: rootClass, writable: writable, sessionWrites: session)
-                        if TerraformProcessCheck.neverBuilt.contains(verb) {
-                            XCTAssertNotNil(refused, "\(verb) is never built")
-                        } else if verb == .apply || verb == .refreshOnlyApply || verb == .testRealProviders {
-                            let open = rootClass == .local || (rootClass == .remote && writable) || (rootClass == .production && session)
-                            XCTAssertEqual(refused == nil, open, "\(verb) \(rootClass) writable \(writable) session \(session)")
-                        } else {
-                            XCTAssertNil(refused, "\(verb) is started on any class")
-                        }
+                    let refused = TerraformProcessCheck.refused(verb, rootClass: rootClass, writable: writable)
+                    if TerraformProcessCheck.neverBuilt.contains(verb) {
+                        XCTAssertNotNil(refused, "\(verb) is never built")
+                    } else if verb == .apply || verb == .refreshOnlyApply || verb == .testRealProviders {
+                        // The owner's decision: the setting alone, on every class.
+                        XCTAssertEqual(refused == nil, writable, "\(verb) \(rootClass) writable \(writable)")
+                    } else {
+                        XCTAssertNil(refused, "\(verb) is started on any class")
                     }
                 }
             }
         }
-        XCTAssertFalse(TerraformProcessCheck.isWritable(.production, writable: true, sessionWrites: false), "no setting makes production writable")
+        XCTAssertTrue(TerraformProcessCheck.isWritable(.production, writable: true), "production writable unless its setting says no")
+        XCTAssertNil(TerraformProcessCheck.refused(.apply, rootClass: .production), "writable by default")
     }
 
     func testAWorkspaceThatDoesntExistIsRefused() {

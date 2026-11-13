@@ -62,10 +62,6 @@ final class TerraformRunRegistry: ObservableObject {
     /// what their code ran or reached when the person said yes: a risk
     /// that isn't in it asks again (`TerraformPlanGate.agentAsks`).
     var agentAllowed: [String: Set<TerraformRunRisk>] = [:]
-    /// Production roots whose writes are on for this session (5.3), by
-    /// `sessionKey`: turned on from the root's card, asked, never by a
-    /// setting; gone at quit.
-    @Published var sessionWrites: Set<String> = []
     /// A remote backend's workspaces, by identity of its default workspace.
     var workspaceLists: [String: [String]] = [:]
 
@@ -75,15 +71,6 @@ final class TerraformRunRegistry: ObservableObject {
     }
 
     func run(id: String) -> TerraformPlanRun? { runs.last { $0.id == id } }
-
-    /// A root and workspace's key for its session switch (5.3).
-    static func sessionKey(checkout: URL, root: String, workspace: String) -> String {
-        TerraformRootStore.key(checkout: checkout, root: root) + "\u{0}" + workspace
-    }
-
-    func hasSessionWrites(checkout: URL, root: String, workspace: String) -> Bool {
-        sessionWrites.contains(Self.sessionKey(checkout: checkout, root: root, workspace: workspace))
-    }
 
     func addApply(_ apply: TerraformApplyRun) {
         applies.append(apply)
@@ -320,10 +307,9 @@ final class TerraformPlanRun: ObservableObject, Identifiable {
     func applyGreyed(_ registry: TerraformRunRegistry, writable: Bool, now: Date = Date(), classing: Classing? = nil) -> String? {
         if apply != nil { return "Applied: plan again for another apply." }
         if let why = TerraformApplyCheck.risen(name: card.name, planned: card.rootClass, now: classNow(classing ?? .current)) { return why }
-        let sessionWrites = registry.hasSessionWrites(checkout: checkout, root: card.path, workspace: workspace)
         let key = identity?.description ?? card.folder.path
         return TerraformApplyCheck.greyed(
-            plan: plan, rootClass: card.rootClass, writable: writable, sessionWrites: sessionWrites, mode: mode, devOverrides: devOverrides,
+            plan: plan, rootClass: card.rootClass, writable: writable, mode: mode, devOverrides: devOverrides,
             staleReason: staleReason(registry, now: now), busy: registry.busy(key))
     }
 

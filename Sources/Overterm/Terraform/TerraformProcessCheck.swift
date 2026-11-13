@@ -31,22 +31,20 @@ enum TerraformVerb: String, CaseIterable, Sendable {
 }
 
 /// Whether Overterm may start `verb` in a root (5.3, 5.13 rule 5): the
-/// analogue of `KubeProcessCheck`. A read-only root is production without
-/// its session switch, or remote not set writable. Pure.
+/// analogue of `KubeProcessCheck`. A plan-only root is one whose
+/// `terraform.roots` entry says `writable: false`, whatever its class. Pure.
 enum TerraformProcessCheck {
     static let neverBuilt: Set<TerraformVerb> = [
         .stateSurgery, .cliImport, .taint, .statePush, .applyWithoutPlan, .autoApprove, .lockFalse, .workspaceNew, .workspaceDelete, .initUpgrade,
     ]
 
-    /// Whether a root of `rootClass` is writable now: local always;
-    /// remote when its `writable` is set; production only by its session
-    /// switch (`TerraformRunRegistry.sessionWrites`), never a setting.
-    static func isWritable(_ rootClass: TerraformClass, writable: Bool, sessionWrites: Bool) -> Bool {
-        switch rootClass {
-        case .local: true
-        case .remote: writable
-        case .production: sessionWrites
-        }
+    /// Whether a root of `rootClass` is writable: its `writable` setting,
+    /// yes unless it says no, on every class — the owner's decision, which
+    /// replaced production's session switch. Production's applies are
+    /// still asked, its name typed (`TerraformApplySheet`); that is a
+    /// confirmation, not a lock.
+    static func isWritable(_ rootClass: TerraformClass, writable: Bool) -> Bool {
+        writable
     }
 
     /// The backends whose runs happen in HCP Terraform (2.8, D-20): a
@@ -76,7 +74,7 @@ enum TerraformProcessCheck {
 
 
     /// Why `verb` may not start in a root of `rootClass`, or nil.
-    static func refused(_ verb: TerraformVerb, rootClass: TerraformClass, writable: Bool = false, sessionWrites: Bool = false) -> String? {
+    static func refused(_ verb: TerraformVerb, rootClass: TerraformClass, writable: Bool = true) -> String? {
         if neverBuilt.contains(verb) {
             return "Overterm never runs this: state changes go through moved, removed and import blocks, planned and applied; the rest is typed in a terminal"
         }
@@ -84,10 +82,8 @@ enum TerraformProcessCheck {
         case .version, .format, .validate, .show, .workspaceList, .stateList, .initialize, .plan, .workspaceSelect, .forceUnlock, .test:
             return nil
         case .apply, .refreshOnlyApply, .testRealProviders:
-            guard isWritable(rootClass, writable: writable, sessionWrites: sessionWrites) else {
-                return rootClass == .production
-                    ? "\(rootClass.title) is plan only: writes are turned on for this session from the root, never by a setting"
-                    : "\(rootClass.title) roots are plan only until the root is set writable"
+            guard isWritable(rootClass, writable: writable) else {
+                return "This root is plan only: its terraform.roots entry sets writable to false"
             }
             return nil
         default:

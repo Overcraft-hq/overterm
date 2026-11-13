@@ -160,9 +160,21 @@ final class TerraformTestRun: ObservableObject, Identifiable {
         }
     }
 
+    /// Whether a test with real providers may write in a root of
+    /// `rootClass` whose `terraform.roots` entry says `setting` (nil: not
+    /// set). A person's: yes unless it says no, on every class (the
+    /// owner's decision). An agent's keeps the rule agents had: a local
+    /// root unless it says no, a remote or production one only where its
+    /// entry sets `writable: true` — production refused to agents anyway
+    /// (`gate`). Pure.
+    static func writable(rootClass: TerraformClass, setting: Bool?, agent: Bool) -> Bool {
+        guard agent, rootClass != .local else { return setting ?? true }
+        return setting == true
+    }
+
     /// Why a test of `prepared` may not start in a root of `rootClass`,
     /// or nil; `real`: a real provider runs, which the caller asks about.
-    static func refusal(_ prepared: Prepared, file: String?, rootClass: TerraformClass, writable: Bool, sessionWrites: Bool) -> String? {
+    static func refusal(_ prepared: Prepared, file: String?, rootClass: TerraformClass, writable: Bool) -> String? {
         if let file, !TerraformCommands.isTestFile(file) { return "\(file) isn't a test file of the root (a .tftest.hcl inside it)." }
         if let outside = prepared.read.outside.first {
             return "\(outside) resolves outside the checkout (a link out of it): not read, not run."
@@ -172,7 +184,7 @@ final class TerraformTestRun: ObservableObject, Identifiable {
                 ?? "No test files: terraform test reads *.tftest.hcl beside the root's files and under tests/."
         }
         if case .real = prepared.read.mocking,
-            let why = TerraformProcessCheck.refused(.testRealProviders, rootClass: rootClass, writable: writable, sessionWrites: sessionWrites)
+            let why = TerraformProcessCheck.refused(.testRealProviders, rootClass: rootClass, writable: writable)
         {
             return "A test with real providers creates real infrastructure: \(why)"
         }
@@ -194,11 +206,18 @@ final class TerraformTestRun: ObservableObject, Identifiable {
     /// on production, asked everywhere else — naming the files, what is
     /// real, that quitting cuts its cleanup off — with the root's name
     /// typed on production.
-    static func gate(_ prepared: Prepared, card: TerraformRootCard, file: String?, agent: String?, writable: Bool, sessionWrites: Bool) -> Gate {
-        if let why = refusal(prepared, file: file, rootClass: card.rootClass, writable: writable, sessionWrites: sessionWrites) { return .refused(why) }
+    static func gate(_ prepared: Prepared, card: TerraformRootCard, file: String?, agent: String?, writable: Bool) -> Gate {
+        // An agent's, on a root not writable for agents (`writable(rootClass:setting:agent:)`): said as agents' rule.
+        let agentPlanOnly = agent != nil && !writable && card.rootClass != .local
+        if let why = refusal(prepared, file: file, rootClass: card.rootClass, writable: writable || agentPlanOnly) { return .refused(why) }
         guard case .real(let why) = prepared.read.mocking else { return .run }
         if agent != nil, card.isProduction {
             return .refused("\(card.name) is production: an agent's test with real providers isn't run there (\(why)).")
+        }
+        if agentPlanOnly {
+            return .refused(
+                "A test with real providers creates real infrastructure: an agent's runs on a \(card.rootClass.title.lowercased()) root only where its terraform.roots entry sets writable to true (\(why))."
+            )
         }
         let typed = card.isProduction ? TerraformApplySheet.typedName(root: card.name, workspace: card.workspace) : nil
         var lines = [
@@ -243,8 +262,7 @@ final class TerraformTestRun: ObservableObject, Identifiable {
         }
         defer { results.starting.remove(key) }
         let prepared = await prepare(card: card, checkout: checkout, file: file, settingPath: settingPath, binary: binary)
-        let sessionWrites = registry.hasSessionWrites(checkout: checkout, root: card.path, workspace: card.workspace)
-        let gate = gate(prepared, card: card, file: file, agent: agent, writable: writable, sessionWrites: sessionWrites)
+        let gate = gate(prepared, card: card, file: file, agent: agent, writable: writable)
         if case .refused(let why) = gate { return .failure(TerraformReadFailure(message: why)) }
         if agent != nil, !prepared.read.complete || !prepared.read.providerNames.subtracting(TerraformTestFiles.builtin).isEmpty,
             let why = await TerraformMCP.providersRefusal(root: card.folder, checkout: checkout)

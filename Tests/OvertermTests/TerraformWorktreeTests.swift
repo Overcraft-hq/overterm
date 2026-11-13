@@ -345,7 +345,7 @@ final class TerraformWorktreeTests: XCTestCase {
             path: "envs/dev", name: "envs/dev", folder: root, kind: .root, facts: TerraformRootFacts(), backendSummary: "local", identity: nil,
             verdict: .init(rootClass: .local, reason: "a test's"))
         let test = await TerraformTestRun.begin(
-            card: card, checkout: worktree, file: nil, agent: nil, writable: false, settingPath: "", binary: URL(fileURLWithPath: "/usr/bin/false"),
+            card: card, checkout: worktree, file: nil, agent: nil, writable: true, settingPath: "", binary: URL(fileURLWithPath: "/usr/bin/false"),
             results: TerraformTestResults(), setup: setup, ask: { _ in true }, show: { _ in XCTFail("nothing shown") })
         guard case .failure(let refused) = test else { return XCTFail("a test while New Task initialises: refused") }
         XCTAssertEqual(refused.message, TerraformWorktreeSetup.initializingRefusal)

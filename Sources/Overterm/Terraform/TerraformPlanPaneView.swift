@@ -155,7 +155,7 @@ private struct TerraformRunView: View {
             }
             HStack(spacing: 6) {
                 if run.kind == .plan, !run.isGoing, run.record != nil {
-                    let greyed = run.applyGreyed(registry, writable: Settings.shared.terraformRoots[run.card.path]?.writable ?? false)
+                    let greyed = run.applyGreyed(registry, writable: Settings.shared.terraformRoots[run.card.path]?.writable ?? true)
                     Button {
                         actions.apply(run)
                     } label: {

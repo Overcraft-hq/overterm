@@ -16,9 +16,6 @@ struct TerraformPanelActions {
     var chooseWorkspace: (TerraformRootCard) -> Void
     /// The root's last plan, shown in the slot.
     var showPlan: (TerraformPlanRun) -> Void
-    /// Production's switch (5.3): applies allowed until quit, asked; off again.
-    var allowWrites: (TerraformRootCard) -> Void = { _ in }
-    var endWrites: (TerraformRootCard) -> Void = { _ in }
     /// A destroy plan, asked first (2a).
     var planDestroy: (TerraformRootCard) -> Void = { _ in }
     /// An apply going in this root, shown in the slot with its Stop (4.7).
@@ -365,22 +362,15 @@ private struct RootRow: View {
                     .accessibilityIdentifier("terraform.panel.test")
             }
             .disabled(setup.isInitializing(card.folder))
-            if card.isProduction {
-                let on = registry.hasSessionWrites(checkout: panel.checkout ?? card.folder, root: card.path, workspace: card.workspace)
-                button(on ? "Applies On Until Quit — Turn Off" : "Allow Applies Until Quit…", on ? "lock.open.fill" : "lock.fill") {
-                    if on { actions.endWrites(card) } else { actions.allowWrites(card) }
-                }
-                .accessibilityIdentifier("terraform.panel.writes")
-                Text(
-                    verbatim: on
-                        ? "Shown plans may be applied here until Overterm quits; each apply asks for the root's name."
-                        : "Plan only: applies are turned on for this session from here, never by a setting."
-                )
-                .font(.system(size: ChromeMetrics.text(10))).foregroundStyle(on ? TerraformPanelView.production : theme.text3)
-                .fixedSize(horizontal: false, vertical: true)
-            } else if card.rootClass == .remote, !(Settings.shared.terraformRoots[card.path]?.writable ?? false) {
-                Text(verbatim: "Plan only: a remote root is applied once terraform.roots sets it writable.")
+            if !(Settings.shared.terraformRoots[card.path]?.writable ?? true) {
+                Text(verbatim: "Plan only: terraform.roots sets this root's writable to false.")
                     .font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("terraform.panel.planOnly")
+            } else if card.isProduction {
+                Text(verbatim: "Production: each apply asks for the root's name.")
+                    .font(.system(size: ChromeMetrics.text(10))).foregroundStyle(TerraformPanelView.production)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("terraform.panel.productionAsks")
             }
         }
         .padding(.top, 3)
@@ -413,13 +403,6 @@ private struct RootRow: View {
             Button("Test") { actions.test(card) }
         }
         .disabled(initializing)
-        if card.isProduction {
-            if registry.hasSessionWrites(checkout: panel.checkout ?? card.folder, root: card.path, workspace: card.workspace) {
-                Button("Turn Applies Off") { actions.endWrites(card) }
-            } else {
-                Button("Allow Applies Until Quit…") { actions.allowWrites(card) }
-            }
-        }
         Divider()
         Button("Terminal in This Root") { actions.openTerminal(card) }
         Button("Validate") { actions.validate(card) }

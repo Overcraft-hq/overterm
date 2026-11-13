@@ -24,7 +24,7 @@ extension TerminalWindowController {
     /// with why, cancelled at a sheet, or started.
     func applyPlan(_ run: TerraformPlanRun) async -> TerraformApplyOutcome {
         let registry = TerraformRunRegistry.shared
-        let writable = Settings.shared.terraformRoots[run.card.path]?.writable ?? false
+        let writable = Settings.shared.terraformRoots[run.card.path]?.writable ?? true
         if let why = run.applyGreyed(registry, writable: writable) { return .refused(why) }
         guard let record = run.record, let plan = run.plan else { return .refused("No plan to apply.") }
         let key = run.identity?.description ?? run.card.folder.path
@@ -32,13 +32,12 @@ extension TerminalWindowController {
         // and what is read off the main thread — gathered before the sheet
         // and again after it, which may have stood for minutes.
         func gather() async -> TerraformApplyFacts {
-            let writable = Settings.shared.terraformRoots[run.card.path]?.writable ?? false
-            let sessionWrites = registry.hasSessionWrites(checkout: run.checkout, root: run.card.path, workspace: run.workspace)
+            let writable = Settings.shared.terraformRoots[run.card.path]?.writable ?? true
             var facts = TerraformApplyFacts(
                 plan: plan, mode: run.mode, recordSHA: record.file.sha256, recordBinary: record.binary.path, recordVersion: record.version,
                 recordWorkspace: record.workspace, recordDataDir: record.dataDir, recordEnvironment: record.environment, zipLockSHA: record.zip?.lockFileSHA256,
                 zipLockPinsNothing: record.zip?.lockFilePinsNothing ?? false,
-                devOverrides: run.devOverrides, rootName: run.card.name, rootClass: run.card.rootClass, writable: writable, sessionWrites: sessionWrites,
+                devOverrides: run.devOverrides, rootName: run.card.name, rootClass: run.card.rootClass, writable: writable,
                 stateElsewhere: run.card.stateElsewhere)
             facts.staleReason = run.staleReason(registry)
             facts.busy = registry.busy(key)
@@ -93,7 +92,7 @@ extension TerminalWindowController {
         // Asked: what may have moved while the sheet was up — every fact of
         // 5.4 read again (the binary, its version, the environment, the
         // workspace, the lock file, the class), the same verdict or nothing.
-        if let why = run.applyGreyed(registry, writable: Settings.shared.terraformRoots[run.card.path]?.writable ?? false) { return .refused(why) }
+        if let why = run.applyGreyed(registry, writable: Settings.shared.terraformRoots[run.card.path]?.writable ?? true) { return .refused(why) }
         guard let current = run.record, current.file.sha256 == record.file.sha256 else { return .refused("The plan changed while asked: plan again.") }
         let after = TerraformApplyCheck.check(await gather())
         if case .refused(let why) = after { return .refused("Changed while asked: " + why) }
@@ -197,35 +196,6 @@ extension TerminalWindowController {
             }
             if answer != nil { apply.interruptAgain() }
         }
-    }
-
-    // MARK: Production's switch (5.3)
-
-    /// The card's Allow Applies Until Quit, asked first, naming the root.
-    func allowTerraformProductionWrites(_ card: TerraformRootCard, checkout: URL? = nil) {
-        guard card.isProduction, let checkout = checkout ?? terraformPanel.checkout else { return }
-        Task { @MainActor [weak self] in
-            guard let self else { return }
-            let question = TerraformPlanGate.Question(
-                title: "Allow applies to \(card.name) until you quit?",
-                detail:
-                    "PRODUCTION · \(card.name) · workspace \(card.workspace) · \(card.backendSummary)\nOverterm may then apply plans it showed in this root: each apply still asks, naming the root, with its name to type. Until Overterm quits, or you turn applies off. Agents never apply.",
-                button: "Allow Applies Until Quit", production: true)
-            if let recorder = self.terraformPlanQuestionRecorder {
-                guard recorder(question) else { return }
-            } else {
-                let confirmation = WriteConfirmation(
-                    title: question.title, scope: "PRODUCTION · \(card.name) · workspace \(card.workspace)", production: true,
-                    detail: String(question.detail.split(separator: "\n", maxSplits: 1).last ?? ""), button: question.button, critical: true)
-                guard await confirmation.ask(on: self.window) != nil else { return }
-            }
-            TerraformRunRegistry.shared.sessionWrites.insert(TerraformRunRegistry.sessionKey(checkout: checkout, root: card.path, workspace: card.workspace))
-        }
-    }
-
-    func endTerraformProductionWrites(_ card: TerraformRootCard, checkout: URL? = nil) {
-        guard let checkout = checkout ?? terraformPanel.checkout else { return }
-        TerraformRunRegistry.shared.sessionWrites.remove(TerraformRunRegistry.sessionKey(checkout: checkout, root: card.path, workspace: card.workspace))
     }
 
     // MARK: Destroy, targets, replaces (2.2)

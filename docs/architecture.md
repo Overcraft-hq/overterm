@@ -7507,9 +7507,9 @@ stage 2e, force unlock, and stage 2f, a review's Terraform section.
   each, no flag, no control or invisible character), from the root's
   menu (Plan Destroy…, asked) and a row's (Plan Only This, Plan Replacing
   This). Apply… (`⇧A`) is greyed with why by `TerraformApplyCheck.greyed`
-  (nothing read: the class — `TerraformProcessCheck`, production by its
-  session switch, a remote root by `terraform.roots`' `writable`, never a
-  setting for production —, errored, partial on production, partly
+  (nothing read: `TerraformProcessCheck` — a root `terraform.roots` sets
+  `writable: false` is plan only, whatever its class; every other is
+  writable, production too —, errored, partial on production, partly
   understood, `dev_overrides`, stale or older than 30 min, another run on
   the state); the click reads 5.4's facts again off the main thread
   (`readNow`: the descriptor hashed, the binary and its `version -json`,
@@ -7525,8 +7525,10 @@ stage 2e, force unlock, and stage 2f, a review's Terraform section.
   command; the root's name typed (`@<workspace>` past `default`) on every
   production apply, a destroy, and "creates everything"; a newer minor
   Terraform than the state's asked on its own (`movesState`, D-18).
-  Production's switch is the card's Allow Applies Until Quit
-  (`TerraformRunRegistry.sessionWrites`, by root and workspace, asked).
+  There is no production switch: the owner decided (1.6.0) that a
+  production root applies like any other, its confirmations kept — the
+  plan gate's questions, this sheet with the name typed, every 5.4
+  check; `writable: false` makes a root plan-only.
   The apply itself (`TerraformApplyRun`, `TerraformApplyLaunch`) is
   detached (D-1): a `bash -p` launcher in a session of its own
   (`ProcessGroup.spawn(newSession:)`, `POSIX_SPAWN_SETSID` — no terminal,

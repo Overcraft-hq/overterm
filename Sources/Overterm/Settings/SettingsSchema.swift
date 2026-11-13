@@ -887,7 +887,7 @@ enum SettingsSchema {
         SettingSpec(
             key: "terraform.roots", section: .terraform, group: "Roots", title: "Each root's own settings",
             help:
-                "By the root's path in its repository (envs/prod): a display name; a class — production or remote — that can only raise what the names say, never lower it; writable, for a remote root Overterm may apply shown plans to (production never: its card turns writes on until quit).",
+                "By the root's path in its repository (envs/prod): a display name; a class — production or remote — that can only raise what the names say, never lower it; writable — every root is unless it says false: writable false makes a root plan-only, production included (production's applies are still asked, with the root's name typed). An agent's test with real providers runs on a remote root only where writable is set true.",
             kind: .entries(SettingEntries(noun: "root", fields: TerraformRootSettings.fields)), defaultValue: .entries([:]),
             requires: "terraform.enabled", heldWhenEditedOutside: true),
         SettingSpec(

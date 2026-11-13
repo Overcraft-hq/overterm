@@ -111,8 +111,6 @@ extension TerminalWindowController {
             initialize: { [weak self] card in self?.initTerraformRoot(card) },
             chooseWorkspace: { [weak self] card in self?.chooseTerraformWorkspace(card) },
             showPlan: { [weak self] run in self?.showTerraformPlan(run) },
-            allowWrites: { [weak self] card in self?.allowTerraformProductionWrites(card) },
-            endWrites: { [weak self] card in self?.endTerraformProductionWrites(card) },
             planDestroy: { [weak self] card in self?.planTerraformDestroy(card) },
             showApply: { [weak self] apply in self?.showTerraformApply(apply) },
             showState: { [weak self] card in self?.showTerraformState(card) },

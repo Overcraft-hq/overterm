@@ -140,8 +140,8 @@ extension TerminalWindowController {
         }
     }
 
-    /// An agent's `tf_plan` (D-12): never production in stage 1 (writes
-    /// there need the session switch, which stage 2a brings); the first per
+    /// An agent's `tf_plan` (D-12): never production — the person plans
+    /// and applies there; the first per
     /// root and session asked; `-lock-timeout=0s`; no var file, no flag.
     func agentPlan(_ card: TerraformRootCard, checkout: URL) async -> Result<TerraformPlanRun, TerraformReadFailure> {
         if card.isProduction {
