@@ -860,8 +860,8 @@ final class KubeClientTests: XCTestCase {
         defer { proxies.closeAll() }
         let context = KubeContext(
             name: "fake-dev", cluster: "fake", server: "http://127.0.0.1:\(port)", namespace: nil, user: "anonymous", auth: KubeAuth.none, file: kubeconfig,
-            contextClass: KubeClassifier.classify(context: "fake-dev", cluster: "fake", set: nil), settings: KubeContextSettings())
-        XCTAssertFalse(context.isWritable, "remote, so its proxy refuses every write")
+            contextClass: KubeClassifier.classify(context: "fake-dev", cluster: "fake", set: nil), settings: KubeContextSettings(writable: false))
+        XCTAssertFalse(context.isWritable, "set read-only, so its proxy refuses every write")
         var client = KubeClient(KubeProxyConnection(proxies: proxies, context: context))
         client.watchTimeout = { 600 }
 

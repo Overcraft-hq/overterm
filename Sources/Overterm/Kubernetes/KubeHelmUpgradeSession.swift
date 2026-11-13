@@ -20,8 +20,8 @@ protocol KubeHelmUpgradeHost: AnyObject {
 /// renders the checkout's chart with its values (`helm template`, no
 /// cluster), and shows what would change, masked, in the changes pane;
 /// Upgrade… is a step of its own through the writes' guard path: the
-/// class check (writable contexts only; production with its switch for
-/// the session), a fresh diff, the access review, the confirmation naming
+/// class check (writable contexts only: any not set `writable: false`),
+/// a fresh diff, the access review, the confirmation naming
 /// the context and namespace (the name typed on production), the context
 /// checked again at the button, then `helm upgrade` in a pinned tab.
 @MainActor
@@ -207,7 +207,7 @@ final class KubeHelmUpgradeSession: ObservableObject, Identifiable {
         guard !state.isWorking, let release = binding.release else { return }
         state = .working("Checking… \(title)")
         guard let context = await contextNow() else { return }
-        // 1. The class check: writable contexts only, production with its switch on.
+        // 1. The class check: writable contexts only (its `writable` setting).
         if let refused = KubeProcessCheck.rule(.helmUpgrade, for: context).refused {
             return state = .failed(refused)
         }

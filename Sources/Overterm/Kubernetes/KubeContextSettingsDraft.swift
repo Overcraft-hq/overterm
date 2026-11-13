@@ -13,18 +13,16 @@ import Foundation
 /// doesn't know) and every other entry are kept as they are. A production
 /// context made less strict — its class by name or by its entry
 /// production, saved as another — needs its name typed (`typedName`).
-/// Production's session write switch is not a setting (decision 4): only
-/// shown, never written. Pure.
+/// Writes are on by default on every class, production too; `writable`
+/// set to no makes the context read-only (the owner's decision). Pure.
 struct KubeContextSettingsDraft: Equatable, Sendable {
     let context: String
     /// The class its name gives, for "Unset: by name (…)".
     let classByName: KubeContextClass
-    /// Production's switch for this session — shown, never a setting.
-    let sessionWrites: Bool
 
     /// Nil: its name decides.
     var contextClass: KubeContextClass?
-    /// Nil: its class's default (local writable, remote not).
+    /// Nil: writable, on every class.
     var writable: Bool?
     var metrics: KubeMetricsSource?
     var prometheus: String
@@ -54,7 +52,6 @@ struct KubeContextSettingsDraft: Equatable, Sendable {
     init(context: KubeContext, contexts: SettingValue?, agentWrites: [String]) {
         self.context = context.name
         classByName = KubeClassifier.classify(context: context.name, cluster: context.cluster, set: nil)
-        sessionWrites = context.sessionWrites
         let settings = KubeContextSettings(fields: contexts?.entries?[context.name] ?? [:])
         contextClass = settings.contextClass
         savedClass = settings.contextClass
@@ -70,7 +67,7 @@ struct KubeContextSettingsDraft: Equatable, Sendable {
     }
 
     /// The entry's fields the sheet holds, as the draft says them now: nil
-    /// takes the field out. `writable` isn't one on production (no switch).
+    /// takes the field out.
     var fields: [String: SettingValue?] {
         func text(_ value: String) -> SettingValue? {
             let trimmed = value.trimmingCharacters(in: .whitespaces)
@@ -85,8 +82,7 @@ struct KubeContextSettingsDraft: Equatable, Sendable {
             "defaultNamespace": text(defaultNamespace),
             "applyOnProduction": applyOnProduction ? .bool(true) : nil,
         ]
-        // Ignored on production; kept out of a production entry so it can't read as a switch.
-        if resolvedClass != .production { said["writable"] = .some(writable.map { .bool($0) }) }
+        said["writable"] = .some(writable.map { .bool($0) })
         return said
     }
 
@@ -96,14 +92,16 @@ struct KubeContextSettingsDraft: Equatable, Sendable {
 
     /// What writable means for it, as the page will treat it.
     var writableSaid: String {
-        switch resolvedClass {
-        case .production:
-            sessionWrites
-                ? "Production: writes are on for this session, until Overterm quits — never by a setting."
-                : "Production: read-only. Writes are turned on for a session from the context card, never by a setting."
-        case .remote: (writable ?? false) ? "Writable." : "Read-only" + (writable == nil ? " (a remote context's default)." : ".")
-        case .local: (writable ?? true) ? "Writable" + (writable == nil ? " (a local context's default)." : ".") : "Read-only."
+        let production = resolvedClass == .production
+        guard writable ?? true else {
+            return "Read-only: Overterm changes nothing here, and its socket refuses every write."
         }
+        var said = "Writable" + (writable == nil ? " (the default)." : ".")
+        if production { said += " Production: each change is asked, naming the context, and a destructive one asks for its name." }
+        if resolvedClass != .local, writable == nil {
+            said += " Agents write here only with Writable set, as well as Agents below."
+        }
+        return said
     }
 
     /// Whether saving makes a production context — by its name, or by
@@ -119,17 +117,9 @@ struct KubeContextSettingsDraft: Equatable, Sendable {
     var lessStrictSaid: String {
         let becomes = resolvedClass.title.lowercased()
         let writes =
-            switch resolvedClass {
-            case .production: ""
-            case .local:
-                (writable ?? true)
-                    ? "it is writable — by this setting, every day, not by a switch turned on for a session"
-                    : "it stays read-only until Writes says otherwise, no longer asked for a session"
-            case .remote:
-                (writable ?? false)
-                    ? "it is writable — by this setting, every day, not by a switch turned on for a session"
-                    : "it stays read-only until Writes says otherwise, no longer asked for a session"
-            }
+            (writable ?? true)
+            ? "its changes are no longer asked as production's — no name typed for a delete or a scale to 0"
+            : "it stays read-only until Writes says otherwise"
         return "\(context) is production. Saved as \(becomes), it no longer is: \(writes), its page and tabs lose the red band"
             + (agentWrites ? ", and agents may change it (kubernetes.agentWrites)" : "")
             + ". Type \(context) to confirm."

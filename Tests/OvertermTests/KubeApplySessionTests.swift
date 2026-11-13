@@ -6,8 +6,8 @@ import XCTest
 /// A manifest diffed with and applied to `FakeKubeAPI` on a socket of the
 /// test's own (stage 2b), over three fictional contexts on it — never
 /// ~/.kube: `kind-fake` (local, writable), `fake-dev` (remote, read-only)
-/// and `fake-prod` (production: read-only until its switch, apply off
-/// until its `applyOnProduction`). The dry run is a PATCH with
+/// and `fake-prod` (production: writable, no switch; a person's apply
+/// with the name typed, an agent's only with `applyOnProduction`). The dry run is a PATCH with
 /// `dryRun=All` and changes nothing; read-only — or refused — the diff is
 /// client-side, labelled, and nothing is sent; an apply lands only after
 /// its access review and confirmation; a 409 names its managers and Force
@@ -21,6 +21,10 @@ final class KubeApplySessionTests: XCTestCase {
     /// What fake-prod's kubernetes.contexts entry says, read as the kubeconfig is.
     final class Flags: @unchecked Sendable {
         var applyOnProduction = false
+        /// Its `writable: false`: production set read-only by its entry.
+        var prodReadOnly = false
+        /// Its `writable: true`: agents' own step on production.
+        var prodSetWritable = false
     }
     private let flags = Flags()
     private var applyOnProduction: Bool {
@@ -70,7 +74,8 @@ final class KubeApplySessionTests: XCTestCase {
         let model = KubernetesModel(proxies: KubeProxies())
         let flags = self.flags
         model.load = { _ in
-            let prod = flags.applyOnProduction ? KubeContextSettings(applyOnProduction: true) : KubeContextSettings()
+            var prod = flags.applyOnProduction ? KubeContextSettings(applyOnProduction: true) : KubeContextSettings()
+            if flags.prodReadOnly { prod.writable = false } else if flags.prodSetWritable { prod.writable = true }
             return KubeContextList(
                 contexts: [KubeWritesTests.context("fake-dev"), KubeWritesTests.context("fake-prod", settings: prod), KubeWritesTests.context("kind-fake")],
                 current: "kind-fake")
@@ -108,12 +113,11 @@ final class KubeApplySessionTests: XCTestCase {
         ((api.object("deployments.apps", "web", namespace: "shop")?["spec"] as? [String: Any])?["replicas"] as? NSNumber)?.intValue
     }
 
-    /// fake-prod's writes on for the session, as its card turns them on.
+    /// fake-prod as read: writable, with no switch (the owner's decision).
     private func switchOn(_ model: KubernetesModel) async {
         model.reloadContexts()
         for _ in 0..<250 where model.contexts.context(named: "fake-prod") == nil { try? await Task.sleep(for: .milliseconds(10)) }
-        await model.setProductionWrites(true, for: "fake-prod")
-        XCTAssertTrue(model.productionWrites.isOn("fake-prod"))
+        XCTAssertEqual(model.contexts.context(named: "fake-prod")?.isWritable, true)
     }
 
     // MARK: Diff with Cluster
@@ -331,26 +335,23 @@ final class KubeApplySessionTests: XCTestCase {
 
     // MARK: Production
 
-    func testNoApplyOnProductionWithWritesOnUnlessItsSettingSays() async throws {
+    func testAPersonsApplyOnWritableProductionNeedsNoSetting() async throws {
         let model = model()
         await switchOn(model)
         let (session, host) = session(model, deployment, context: "fake-prod")
         await session.refreshContexts()
-        XCTAssertEqual(
-            session.applyRefusal,
-            "Apply is off on production, even with its writes on: the context's applyOnProduction setting turns it on. Diff with Cluster still works.")
+        XCTAssertNil(session.applyRefusal, "writable production: Apply offered, nothing turned on first")
         let resultDiffed = await session.runDiff()
         let result = try XCTUnwrap(resultDiffed)
-        XCTAssertTrue(result.isServerSide, "the diff works everywhere: writes are on, so the dry run is sent")
+        XCTAssertTrue(result.isServerSide, "the diff is a dry run sent")
         XCTAssertTrue(result.production)
-        api.forgetRequests()
+        host.typed = "web"
         await session.runApply()
-        XCTAssertEqual(session.state, .failed(session.applyRefusal ?? "?"))
-        XCTAssertTrue(api.writes.isEmpty && host.asked.isEmpty)
+        XCTAssertEqual(host.asked.first?.typedName, "web", "the name typed on production")
+        XCTAssertEqual(replicas(), 3)
     }
 
     func testApplyOnProductionAsksTheNameAndNeverForces() async throws {
-        applyOnProduction = true
         let model = model()
         await switchOn(model)
         let (session, host) = session(model, deployment, context: "fake-prod")
@@ -367,9 +368,14 @@ final class KubeApplySessionTests: XCTestCase {
         XCTAssertEqual(replicas(), 3)
         await session.runApply(force: true)
         XCTAssertEqual(session.state, .failed("An apply is never forced on production: change the field's owner, or the manifest."))
-        await model.setProductionWrites(false, for: "fake-prod")
+        // Its entry set `writable: false`: read-only.
+        flags.prodReadOnly = true
+        model.reloadContexts()
+        for _ in 0..<250 where model.contexts.context(named: "fake-prod")?.isWritable != false { try? await Task.sleep(for: .milliseconds(10)) }
         await session.refreshContexts()
-        XCTAssertNotNil(session.applyRefusal, "writes off: read-only again")
+        XCTAssertEqual(
+            session.applyRefusal, "This context is read-only: Overterm changes nothing here (its writable setting). Diff with Cluster still shows what would change.",
+            "set read-only by its entry")
     }
 
     // MARK: GitOps objects (gitops.md, G0d)
@@ -741,6 +747,7 @@ final class KubeApplySessionTests: XCTestCase {
     }
 
     func testAgentsApplyOnProductionNeedsApplyOnProduction() async throws {
+        flags.prodSetWritable = true
         let model = model()
         await switchOn(model)
         agentWrites = ["fake-prod"]

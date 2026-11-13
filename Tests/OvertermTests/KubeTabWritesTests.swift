@@ -9,8 +9,8 @@ import XCTest
 /// rule 4 asks, the confirmation's words, and the revisions a rollback is
 /// picked from. Pure.
 final class KubeTabWritesTests: XCTestCase {
-    private func context(_ name: String, settings: KubeContextSettings = KubeContextSettings(), session: Bool = false) -> KubeContext {
-        KubeWritesTests.context(name, settings: settings, session: session)
+    private func context(_ name: String, settings: KubeContextSettings = KubeContextSettings(), readOnly: Bool = false) -> KubeContext {
+        KubeWritesTests.context(name, settings: settings, readOnly: readOnly)
     }
 
     func testTheLinesNameTheContextAndNamespaceAlways() {
@@ -46,12 +46,13 @@ final class KubeTabWritesTests: XCTestCase {
         XCTAssertTrue(asked.detail.contains("node-debugger-fake-node-1-"), "the pod it leaves is named")
         XCTAssertTrue(asked.detail.contains(shell.line(context: "kind-fake")), "the command the tab runs")
         XCTAssertEqual(asked.kubectl, shell.line(context: "kind-fake"))
-        let prod = context("fake-prod", settings: KubeContextSettings(nodeShell: true), session: true)
+        let prod = context("fake-prod", settings: KubeContextSettings(nodeShell: true))
         let onProduction = shell.confirmation(context: prod, rule: KubeProcessCheck.rule(.nodeShell, for: prod))
         XCTAssertTrue(onProduction.production && onProduction.scope.hasPrefix("PRODUCTION · fake-prod"), onProduction.scope)
         XCTAssertEqual(shell.opened(context: "kind-fake"), "A shell on node fake-node-1 in a new tab, in kind-fake.")
+        XCTAssertNoThrow(try KubeCommands.command(shell, in: prod), "production: writable, no switch")
         XCTAssertThrowsError(
-            try KubeCommands.command(shell, in: context("fake-prod", settings: KubeContextSettings(nodeShell: true))), "production without its switch")
+            try KubeCommands.command(shell, in: context("fake-prod", settings: KubeContextSettings(writable: false, nodeShell: true))), "production set read-only")
     }
 
     func testEveryWordNotOursIsQuotedForZsh() {
@@ -70,13 +71,13 @@ final class KubeTabWritesTests: XCTestCase {
         for write in writes {
             XCTAssertTrue(write.verb.writes, "\(write.verb) is a writing process")
             for name in ["fake-dev", "fake-prod", "globex-eu-west-1-prod", "arn:aws:eks:eu-west-1:123456789012:cluster/acme-dev"] {
-                XCTAssertThrowsError(try KubeCommands.command(write, in: context(name, settings: nodeShell)), "\(write) on \(name)") { error in
+                XCTAssertThrowsError(try KubeCommands.command(write, in: context(name, settings: nodeShell, readOnly: true)), "\(write) on \(name)") { error in
                     XCTAssertEqual((error as? KubeCommands.Refused)?.reason, KubeProcessCheck.readOnly(self.context(name).contextClass))
                 }
             }
             XCTAssertThrowsError(try KubeCommands.command(write, in: context("kind-fake", settings: KubeContextSettings(writable: false))), "turned off")
             XCTAssertNoThrow(try KubeCommands.command(write, in: context("kind-fake", settings: nodeShell)), "\(write) on kind-fake")
-            XCTAssertNoThrow(try KubeCommands.command(write, in: context("fake-prod", settings: nodeShell, session: true)), "production, writes on")
+            XCTAssertNoThrow(try KubeCommands.command(write, in: context("fake-prod", settings: nodeShell)), "production, writable by default")
             XCTAssertNoThrow(try KubeCommands.command(write, in: context("fake-dev", settings: KubeContextSettings(writable: true, nodeShell: true))))
         }
     }
@@ -100,7 +101,7 @@ final class KubeTabWritesTests: XCTestCase {
     func testShellsOffRefusesADebugShellAndANodesToo() {
         let off = KubeContextSettings(shells: false, nodeShell: true)
         for name in ["kind-fake", "fake-prod"] {
-            let context = context(name, settings: off, session: true)
+            let context = context(name, settings: off)
             for write in [
                 KubeTabWrite.debug(pod: "p", namespace: "shop", container: nil, image: "busybox:1.36"),
                 .nodeShell(node: "n", namespace: "shop", image: "busybox:1.36"),
@@ -132,7 +133,7 @@ final class KubeTabWritesTests: XCTestCase {
     }
 
     func testTypedNamesWhereRuleFourSays() {
-        let prod = context("fake-prod", session: true)
+        let prod = context("fake-prod")
         let local = context("kind-fake")
         XCTAssertTrue(KubeProcessCheck.rule(.drain, for: prod).typedName)
         XCTAssertTrue(KubeProcessCheck.rule(.rolloutUndo, for: prod).typedName)
@@ -147,7 +148,7 @@ final class KubeTabWritesTests: XCTestCase {
     }
 
     func testTheConfirmationNamesTheContextNamespaceAndCommand() {
-        let prod = context("fake-prod", session: true)
+        let prod = context("fake-prod")
         let drain = KubeTabWrite.drain(node: "fake-node-1", namespace: "shop").confirmation(context: prod, rule: KubeProcessCheck.rule(.drain, for: prod))
         XCTAssertEqual(drain.title, "Drain node fake-node-1?")
         XCTAssertEqual(drain.scope, "PRODUCTION · fake-prod · cluster-wide", "it evicts across the cluster, whatever its -n")
@@ -259,10 +260,13 @@ final class KubeTabWritesPageTests: XCTestCase {
         var commands: [(String, String, String)] = []
     }
 
-    private func page(current: String, kindFake settings: KubeContextSettings = KubeContextSettings()) async throws -> (KubernetesPageModel, Box) {
+    private func page(current: String, kindFake settings: KubeContextSettings = KubeContextSettings(), readOnly: Set<String> = []) async throws -> (
+        KubernetesPageModel, Box
+    ) {
         let model = KubernetesModel(proxies: KubeProxies())
         let list = KubeContextList(
-            contexts: ["fake-dev", "fake-prod"].map { KubeWritesTests.context($0) } + [KubeWritesTests.context("kind-fake", settings: settings)], current: current)
+            contexts: ["fake-dev", "fake-prod"].map { KubeWritesTests.context($0, readOnly: readOnly.contains($0)) } + [KubeWritesTests.context("kind-fake", settings: settings)],
+            current: current)
         model.load = { _ in list }
         model.readConfiguration = { KubernetesModel.Configuration() }
         model.watchesSettings = false
@@ -342,7 +346,8 @@ final class KubeTabWritesPageTests: XCTestCase {
 
     func testOnAReadOnlyContextNothingIsSentOrTyped() async throws {
         for current in ["fake-dev", "fake-prod"] {
-            let (page, box) = try await page(current: current)
+            // fake-dev set read-only as the fixture's remote; fake-prod by its entry.
+            let (page, box) = try await page(current: current, readOnly: [current])
             defer { page.model.hide() }
             let readOnly = KubeProcessCheck.readOnly(page.model.selected?.contextClass ?? .remote)
             for verb in [KubeProcessVerb.drain, .nodeShell] {
@@ -452,7 +457,6 @@ final class KubeTabWritesPageTests: XCTestCase {
     func testOnProductionTheNameIsTypedAndAWrongOneRunsNothing() async throws {
         let (page, box) = try await page(current: "fake-prod")
         defer { page.model.hide() }
-        await page.model.setProductionWrites(true, for: "fake-prod")
         try await until("writable") { page.model.selected?.isWritable == true }
         page.runTabWrite(.drain, on: node("fake-prod"))
         try await until("asked") { box.confirmations.count == 1 }
@@ -461,10 +465,14 @@ final class KubeTabWritesPageTests: XCTestCase {
         box.confirmations[0].1("fake-node-2")
         XCTAssertEqual(page.writeStatus, .failed("The name typed wasn't fake-node-1: nothing was run."))
         XCTAssertTrue(box.commands.isEmpty)
-        // Writes off while it asks: the button runs nothing.
+        // Set read-only while it asks: the button runs nothing.
         page.runTabWrite(.drain, on: node("fake-prod"))
         try await until("asked again") { box.confirmations.count == 2 }
-        await page.model.setProductionWrites(false, for: "fake-prod")
+        let readOnlyList = KubeContextList(
+            contexts: ["fake-dev", "kind-fake"].map { KubeWritesTests.context($0) } + [KubeWritesTests.context("fake-prod", readOnly: true)], current: "fake-prod")
+        page.model.load = { _ in readOnlyList }
+        page.model.reloadContexts()
+        try await until("read-only") { page.model.contexts.context(named: "fake-prod")?.isWritable == false }
         box.confirmations[1].1("fake-node-1")
         XCTAssertEqual(page.writeStatus, .failed(KubeProcessCheck.readOnly(.production)))
         XCTAssertTrue(box.commands.isEmpty)

@@ -64,20 +64,16 @@ struct KubeContextSettingsSheetView: View {
                 .labelsHidden().frame(width: 260)
                 .accessibilityIdentifier("kubernetes.contextSettings.class")
             }
-            if production {
-                note(draft.writableSaid)
-            } else {
-                row("Writes") {
-                    Picker("", selection: binding(\.writable, nil)) {
-                        Text(verbatim: "Its class's default (\(draft.resolvedClass == .local ? "writable" : "read-only"))").tag(Bool?.none)
-                        Text("Writable").tag(Bool?.some(true))
-                        Text("Read-only").tag(Bool?.some(false))
-                    }
-                    .labelsHidden().frame(width: 260)
-                    .accessibilityIdentifier("kubernetes.contextSettings.writable")
+            row("Writes") {
+                Picker("", selection: binding(\.writable, nil)) {
+                    Text("Default (writable)").tag(Bool?.none)
+                    Text("Writable").tag(Bool?.some(true))
+                    Text("Read-only").tag(Bool?.some(false))
                 }
-                note(draft.writableSaid)
+                .labelsHidden().frame(width: 260)
+                .accessibilityIdentifier("kubernetes.contextSettings.writable")
             }
+            note(draft.writableSaid)
             row("Usage from") {
                 Picker("", selection: binding(\.metrics, nil)) {
                     Text("metrics-server when served").tag(KubeMetricsSource?.none)
@@ -101,7 +97,7 @@ struct KubeContextSettingsSheetView: View {
             }
             if production {
                 row("Apply") {
-                    Toggle("From the editor while writes are on, the name typed", isOn: binding(\.applyOnProduction, false))
+                    Toggle("Agents' k8s_apply too (with Agents above), the name typed", isOn: binding(\.applyOnProduction, false))
                         .toggleStyle(.checkbox).font(.system(size: ChromeMetrics.text(12)))
                         .accessibilityIdentifier("kubernetes.contextSettings.applyOnProduction")
                 }

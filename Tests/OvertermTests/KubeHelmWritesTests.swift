@@ -10,8 +10,8 @@ import XCTest
 /// uninstall's on every class), the confirmation's words, the revisions
 /// offered and the kinds a manifest names for the access review. Pure.
 final class KubeHelmWritesTests: XCTestCase {
-    private func context(_ name: String, settings: KubeContextSettings = KubeContextSettings(), session: Bool = false) -> KubeContext {
-        KubeWritesTests.context(name, settings: settings, session: session)
+    private func context(_ name: String, settings: KubeContextSettings = KubeContextSettings(), readOnly: Bool = false) -> KubeContext {
+        KubeWritesTests.context(name, settings: settings, readOnly: readOnly)
     }
 
     private let rollback = KubeHelmWrite.rollback(release: "web", namespace: "shop", storage: .secret, revision: 1, from: 2)
@@ -74,13 +74,14 @@ final class KubeHelmWritesTests: XCTestCase {
         for write in [rollback, uninstall] {
             XCTAssertTrue(write.verb.writes)
             for name in ["fake-dev", "fake-prod", "globex-eu-west-1-prod", "arn:aws:eks:eu-west-1:123456789012:cluster/acme-dev"] {
-                XCTAssertThrowsError(try KubeCommands.command(write, in: context(name)), "\(write) on \(name)") { error in
+                XCTAssertThrowsError(try KubeCommands.command(write, in: context(name, readOnly: true)), "\(write) on \(name)") { error in
                     XCTAssertEqual((error as? KubeCommands.Refused)?.reason, KubeProcessCheck.readOnly(self.context(name).contextClass))
                 }
             }
             XCTAssertThrowsError(try KubeCommands.command(write, in: context("kind-fake", settings: KubeContextSettings(writable: false))), "turned off")
             XCTAssertEqual(try KubeCommands.command(write, in: context("kind-fake")), write.line(context: "kind-fake"))
-            XCTAssertNoThrow(try KubeCommands.command(write, in: context("fake-prod", session: true)), "production, writes on for the session")
+            XCTAssertNoThrow(try KubeCommands.command(write, in: context("fake-prod")), "production, writable by default")
+            XCTAssertNoThrow(try KubeCommands.command(write, in: context("globex-eu-west-1-prod")), "production, writable by default")
             XCTAssertNoThrow(try KubeCommands.command(write, in: context("fake-dev", settings: KubeContextSettings(writable: true))))
         }
     }
@@ -96,7 +97,7 @@ final class KubeHelmWritesTests: XCTestCase {
 
     func testTheNameIsTypedForARollbackOnProductionAndAnUninstallEverywhere() {
         let local = context("kind-fake")
-        let prod = context("fake-prod", session: true)
+        let prod = context("fake-prod")
         let dev = context("fake-dev", settings: KubeContextSettings(writable: true))
         XCTAssertFalse(KubeProcessCheck.rule(.helmRollback, for: local).typedName)
         XCTAssertFalse(KubeProcessCheck.rule(.helmRollback, for: dev).typedName)
@@ -120,7 +121,7 @@ final class KubeHelmWritesTests: XCTestCase {
         XCTAssertTrue(asked.detail.contains("Runs in a new tab pinned to kind-fake: \(KubeHelmWritesTests.env) HELM_DRIVER=secret helm rollback web 1"), asked.detail)
         XCTAssertNil(asked.verb, "no request: a tab's")
         XCTAssertFalse(asked.production)
-        let prod = context("fake-prod", session: true)
+        let prod = context("fake-prod")
         let gone = uninstall.confirmation(context: prod, rule: KubeProcessCheck.rule(.helmUninstall, for: prod))
         XCTAssertEqual(gone.title, "Uninstall Helm release shop/web?")
         XCTAssertEqual(gone.scope, "PRODUCTION · fake-prod · namespace shop")
@@ -267,9 +268,10 @@ final class KubeHelmWritesPageTests: XCTestCase {
         var commands: [(String, String, String)] = []
     }
 
-    private func page(current: String, releases: [String] = ["cache", "web"]) async throws -> (KubernetesPageModel, Box) {
+    private func page(current: String, releases: [String] = ["cache", "web"], readOnly: Set<String> = []) async throws -> (KubernetesPageModel, Box) {
         let model = KubernetesModel(proxies: KubeProxies())
-        let list = KubeContextList(contexts: ["fake-dev", "fake-prod", "kind-fake"].map { KubeWritesTests.context($0) }, current: current)
+        let list = KubeContextList(
+            contexts: ["fake-dev", "fake-prod", "kind-fake"].map { KubeWritesTests.context($0, readOnly: readOnly.contains($0)) }, current: current)
         model.load = { _ in list }
         model.readConfiguration = { KubernetesModel.Configuration() }
         model.watchesSettings = false
@@ -413,7 +415,8 @@ final class KubeHelmWritesPageTests: XCTestCase {
 
     func testOnAReadOnlyContextNothingIsSentOrTyped() async throws {
         for current in ["fake-dev", "fake-prod"] {
-            let (page, box) = try await page(current: current)
+            // fake-dev set read-only as the fixture's remote; fake-prod by its entry.
+            let (page, box) = try await page(current: current, readOnly: [current])
             defer { page.model.hide() }
             let readOnly = KubeProcessCheck.readOnly(page.model.selected?.contextClass ?? .remote)
             let web = try XCTUnwrap(release(page, "web"))
@@ -455,10 +458,9 @@ final class KubeHelmWritesPageTests: XCTestCase {
         XCTAssertTrue(box.confirmations.isEmpty && box.choices.isEmpty)
     }
 
-    func testOnProductionWithWritesOnARollbackAsksForTheName() async throws {
+    func testOnProductionARollbackAsksForTheName() async throws {
         let (page, box) = try await page(current: "fake-prod")
         defer { page.model.hide() }
-        await page.model.setProductionWrites(true, for: "fake-prod")
         try await until("writable") { page.model.selected?.isWritable == true }
         let web = try XCTUnwrap(release(page, "web"))
         page.runHelmWrite(.helmRollback, on: web, revision: 1)
@@ -468,10 +470,14 @@ final class KubeHelmWritesPageTests: XCTestCase {
         box.confirmations[0].1("wbe")
         XCTAssertEqual(page.writeStatus, .failed("The name typed wasn't web: nothing was run."))
         XCTAssertTrue(box.commands.isEmpty)
-        // Writes off while it asks: the button runs nothing.
+        // Set read-only while it asks: the button runs nothing.
         page.runHelmWrite(.helmRollback, on: web, revision: 1)
         try await until("asked again") { box.confirmations.count == 2 }
-        await page.model.setProductionWrites(false, for: "fake-prod")
+        let readOnlyList = KubeContextList(
+            contexts: ["fake-dev", "kind-fake"].map { KubeWritesTests.context($0) } + [KubeWritesTests.context("fake-prod", readOnly: true)], current: "fake-prod")
+        page.model.load = { _ in readOnlyList }
+        page.model.reloadContexts()
+        try await until("read-only") { page.model.contexts.context(named: "fake-prod")?.isWritable == false }
         box.confirmations[1].1("web")
         XCTAssertEqual(page.writeStatus, .failed(KubeProcessCheck.readOnly(.production)))
         XCTAssertTrue(box.commands.isEmpty)

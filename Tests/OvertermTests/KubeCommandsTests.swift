@@ -131,7 +131,7 @@ final class KubeCommandsTests: XCTestCase {
                 }
             }
         }
-        // Production with its writes on for the session (a later stage): a typed name where rule 4 says.
+        // Production, writable (no switch): a typed name where rule 4 says.
         let session = KubeProcessCheck.rule(.drain, class: .production, writable: true, settings: settings)
         XCTAssertEqual(session, KubeProcessRule(confirm: true, typedName: true))
         XCTAssertTrue(KubeProcessCheck.rule(.helmUpgrade, class: .production, writable: true, settings: settings).typedName, "an upgrade on production")
@@ -156,18 +156,23 @@ final class KubeCommandsTests: XCTestCase {
         XCTAssertTrue(KubeContextSettings.fields.contains { $0.name == "shells" }, "the setting checks it")
     }
 
-    func testTheContextsOfThisMacAreReadOnlyForEveryWritingProcess() {
+    /// Every class is writable unless its `writable` setting says no (the
+    /// owner's decision): with no entry no writing process is refused,
+    /// production's still asked; set `writable: false`, every one is.
+    func testTheContextsOfThisMacAreWritableUnlessTheirSettingSaysNo() {
         for name in [
             "arn:aws:eks:eu-west-1:123456789012:cluster/acme-dev", "arn:aws:eks:eu-west-1:123456789012:cluster/acme-prod", "globex-eu-west-1-dev",
-            "globex-eu-west-1-prod", "kubernetes-admin@k8s-cluster", "fake-dev", "fake-prod",
+            "globex-eu-west-1-prod", "kubernetes-admin@k8s-cluster", "fake-dev", "fake-prod", "kind-fake",
         ] {
             let context = Self.context(name)
+            let readOnly = Self.context(name, settings: KubeContextSettings(writable: false))
             for verb in KubeProcessVerb.allCases where verb.writes {
-                XCTAssertNotNil(KubeProcessCheck.rule(verb, for: context).refused, "\(verb) on \(name)")
+                XCTAssertNotEqual(KubeProcessCheck.rule(verb, for: context).refused, KubeProcessCheck.readOnly(context.contextClass), "\(verb) on \(name)")
+                XCTAssertEqual(KubeProcessCheck.rule(verb, for: readOnly).refused, KubeProcessCheck.readOnly(readOnly.contextClass), "\(verb) on \(name), read-only")
             }
             XCTAssertEqual(KubeProcessCheck.rule(.shell, for: context).confirm, context.isProduction, name)
         }
-        XCTAssertNil(KubeProcessCheck.rule(.drain, for: Self.context("kind-fake")).refused, "local: writable")
+        XCTAssertTrue(KubeProcessCheck.rule(.drain, for: Self.context("fake-prod")).typedName, "production: writable, its name typed")
     }
 
     // MARK: The container

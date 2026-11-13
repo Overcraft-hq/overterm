@@ -13,7 +13,7 @@ import Foundation
 ///   kubectl processes of their own — and a GET there reaches a process in
 ///   the cluster. `--reject-paths` replaces kubectl's defaults, so the
 ///   list repeats them;
-/// - a **read-only** context's (remote and production, by default) also
+/// - a **read-only** context's (one set `writable: false`) also
 ///   refuses every method but `GET`, POST included: a path can't tell a
 ///   permission review from a create. kubectl matches the method as sent,
 ///   case and all, and an HTTP method is any token: kind's 1.37 handed

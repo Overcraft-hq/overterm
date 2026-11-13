@@ -30,11 +30,11 @@ import NIOHTTP1
 ///   longer has is read-only. A proxy whose context now reaches another
 ///   cluster, or stopped being writable, is closed when the list comes.
 /// - **Read-only follows the context**: a context that stops (or starts)
-///   being writable gets a new proxy with the other flags. A production
-///   context's writes for the session are the proxies' own to know
-///   (`allowSessionWrites`, kept with the context they were turned on for): whichever copy of the context a request comes
-///   with, its proxy has the same flags — and a write (`sendWrite`) is
-///   refused here, before any socket, unless the context is writable.
+///   being writable gets a new proxy with the other flags. Whichever copy
+///   of the context a request comes with, its proxy has the flags of the
+///   context as told — and a write (`sendWrite`) is refused here, before
+///   any socket, unless that context is writable (its `writable` setting:
+///   yes unless it says no, on every class).
 actor KubeProxies {
     struct Configuration: Equatable, Sendable {
         var maxProxies = 4
@@ -129,10 +129,6 @@ actor KubeProxies {
     private var waiting: [String: Int] = [:]
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private var sweeper: Task<Void, Never>?
-    /// The production contexts whose writes are on for this session, each
-    /// as it was read when they were turned on: a copy of the name that
-    /// reaches another cluster, user or class has none (`effective`).
-    private var sessionWrites: [String: KubeContext] = [:]
     /// Every context as the kubeconfig and the settings say now, by name
     /// (`update`); nil until the model has said (a test's proxies).
     private var current: [String: KubeContext]?
@@ -159,26 +155,6 @@ actor KubeProxies {
     /// The context the page shows: its proxy is never closed for another's.
     func setPage(_ context: String?) {
         page = context
-    }
-
-    // MARK: Writes for the session
-
-    /// A production context's writes on for this session: its proxy is
-    /// closed now, so the next request opens one without the method filter.
-    func allowSessionWrites(_ context: KubeContext) async {
-        guard context.isProduction else { return }
-        var kept = context
-        kept.sessionWrites = false
-        let was = sessionWrites[context.name]
-        sessionWrites[context.name] = kept
-        guard was.map({ !KubernetesModel.sameAccess($0, kept) }) ?? true else { return }
-        await closeProxy(context.name)
-    }
-
-    /// Off again: its proxy is closed, the next one has the filter back.
-    func endSessionWrites(_ name: String) async {
-        guard sessionWrites.removeValue(forKey: name) != nil else { return }
-        await closeProxy(name)
     }
 
     // MARK: The contexts as they are now
@@ -227,18 +203,11 @@ actor KubeProxies {
     /// The context a proxy for `copy`'s name is planned with: the context
     /// as the proxies were last told it — whatever the copy says, so a
     /// stale copy neither reopens a socket without the method filter nor
-    /// closes a current one — with production's session writes as the
-    /// proxies know them, only while it is the cluster, user and class they
-    /// were turned on for. A name the list no longer has is read-only; the
-    /// copy decides only before any list was told.
+    /// closes a current one. A name the list no longer has is read-only;
+    /// the copy decides only before any list was told.
     private func planned(_ copy: KubeContext) -> KubeContext {
-        var context = copy
-        if let current {
-            context = current[copy.name] ?? copy.withoutWrites
-        }
-        context.sessionWrites =
-            context.isProduction && sessionWrites[context.name].map { KubernetesModel.sameAccess($0, context) } == true
-        return context
+        guard let current else { return copy }
+        return current[copy.name] ?? copy.withoutWrites
     }
 
     /// Whether `context` may be written to now: the proxies' own context
@@ -252,9 +221,9 @@ actor KubeProxies {
     }
 
     /// A write through `context`'s proxy — refused before it reaches any
-    /// socket unless the context is writable for this session (its
-    /// writable flag; production's switch). A read-only context's socket
-    /// refuses it too: this is the second lock, not the only one.
+    /// socket unless the context is writable (its writable setting). A
+    /// read-only context's socket refuses it too: this is the second lock,
+    /// not the only one.
     nonisolated func sendWrite(
         _ context: KubeContext, role: Role = .page, _ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)] = []
     ) async throws -> HTTPResponse {

@@ -9,8 +9,8 @@ import SwiftUI
 /// (`KubernetesKey`; `?` lists them); `n` and `c` pick a namespace or a
 /// context over the page (`KubePicker`), `:` names a kind (`KubeCommandBar`).
 /// Its writes (stage 2a) are verbs like any other — only on a writable
-/// context, each through the page's guard path; production's are off until
-/// its card turns them on for the session.
+/// context, each through the page's guard path; production's each asked
+/// in red, a destructive one by its name.
 struct KubernetesPageView: View {
     @ObservedObject var page: KubernetesPageModel
     @ObservedObject var model: KubernetesModel
@@ -290,25 +290,6 @@ struct KubernetesPageView: View {
             .foregroundStyle(theme.accentText)
             .help("Its class, writes, usage's source, the node shell, the default namespace and what agents may do — saved to settings.json.")
             .accessibilityIdentifier("kubernetes.contextSettings.open")
-            // Production's writes, for this session only (rule 2).
-            if context.isProduction {
-                Button {
-                    if context.sessionWrites { page.endProductionWrites() } else { page.allowProductionWrites() }
-                } label: {
-                    Label(
-                        context.sessionWrites ? "Writes On Until Quit — Turn Off" : "Allow Writes Until Quit…",
-                        systemImage: context.sessionWrites ? "lock.open.fill" : "lock.fill"
-                    ).font(.system(size: ChromeMetrics.text(11)))
-                }
-                .buttonStyle(.link)
-                .foregroundStyle(Self.production)
-                .help(
-                    context.sessionWrites
-                        ? "Writes are on for \(context.name) until Overterm quits: each one is asked, a destructive one by its name."
-                        : "Production is read-only. Writes can be turned on for this session only — never by a setting."
-                )
-                .accessibilityIdentifier("kubernetes.productionWrites")
-            }
         }
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)

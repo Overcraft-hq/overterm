@@ -176,8 +176,8 @@ extension E2ERunner {
         let dev = model.contexts.context(named: "fake-dev")
         let prod = model.contexts.context(named: "fake-prod")
         check("both on 127.0.0.1", dev?.server == "http://127.0.0.1:\(port)" && prod?.server == dev?.server)
-        check("fake-dev is remote, so read-only, although its server is 127.0.0.1", dev?.contextClass == .remote && dev?.isWritable == false)
-        check("fake-prod is production by name, and read-only", prod?.contextClass == .production && prod?.isWritable == false)
+        check("fake-dev is remote, read-only by its entry, although its server is 127.0.0.1", dev?.contextClass == .remote && dev?.isWritable == false)
+        check("fake-prod is production by name, and writable: no entry says otherwise", prod?.contextClass == .production && prod?.isWritable == true)
         check("the page opens on kubectl's current context, in its namespace", model.selectedName == "fake-dev" && model.scope == .namespace("shop"))
 
         // The Pods list: the server's rows and columns, the namespace's only.
@@ -375,6 +375,7 @@ extension E2ERunner {
         check("every kubectl proxy ends", await eventually(5) { pids.allSatisfy { kill($0, 0) != 0 } }, "\(pids)")
         KubeSocketFolder.app.remove()
         Settings.shared.set("kubernetes.kubectlPath", nil)
+        Settings.shared.set("kubernetes.contexts", nil)
         model.connectOverride = nil
         model.prometheusOverride = nil
         model.statusOverride = nil
@@ -395,11 +396,14 @@ extension E2ERunner {
             return nil
         }
         Settings.shared.set("kubernetes.kubectlPath", .string(standIn.script.path))
+        // Every class is writable unless its entry says no: the remote
+        // fakes are set read-only, as a person opts a context out.
+        Settings.shared.set("kubernetes.contexts", Self.kubeContexts())
         if let kubectl {
             note("kubectl proxy: \(kubectl), through the stand-in, KUBECONFIG \(kubeconfig.path) only")
         } else {
             note("no kubectl installed: a stand-in connection to the fake's socket")
-            // Writable as the context is (kind-fake; fake-prod with its switch on), or GETs only.
+            // Writable as the context is (unless set `writable: false`), or GETs only.
             model.connectOverride = { context in KubeSocketConnection(socket: socket, context: context.name, writable: context.isWritable) }
             // A metrics proxy's stand-in: still only the Service's two query paths.
             model.prometheusOverride = { context, service in
@@ -432,6 +436,7 @@ extension E2ERunner {
         check("every kubectl proxy ends", await eventually(5) { pids.allSatisfy { kill($0, 0) != 0 } }, "\(pids)")
         KubeSocketFolder.app.remove()
         Settings.shared.set("kubernetes.kubectlPath", nil)
+        Settings.shared.set("kubernetes.contexts", nil)
         model.connectOverride = nil
         model.prometheusOverride = nil
         model.statusOverride = nil
@@ -1492,7 +1497,7 @@ extension E2ERunner {
         let production = await app.askAgentPrompt()
         check(
             "saying it is production, read-only",
-            production.contains("PRODUCTION context fake-prod (read-only: Overterm changes nothing there)")
+            production.contains("PRODUCTION context fake-prod (read only: change nothing there)")
                 && !production.contains(Self.askWhySecret), production)
         check("reads only: no write, no Secret", fake.writes.isEmpty && !fake.requests.contains { $0.path.contains("/secrets") }, "\(fake.writes)")
         check("Cancel", await cancelSheet())
@@ -1577,7 +1582,7 @@ extension E2ERunner {
         let why = await call("k8s_why", ["name": "worker-5c", "context": "fake-dev", "namespace": "shop"])
         check("k8s_why is Ask Why's brief", !why.isError && why.text.contains("CrashLoopBackOff"), why.text)
         let write = await call("k8s_delete_pod", ["name": "api-0", "context": "fake-prod", "namespace": "payments"])
-        check("a write on read-only production is refused", write.isError && write.text.contains("isn't offered on fake-prod"), write.text)
+        check("an agent's write on production agentWrites doesn't name is refused", write.isError && write.text.contains("isn't offered on fake-prod"), write.text)
         check("every request a GET", !fake.requests.isEmpty && fake.writes.isEmpty, "\(fake.writes)")
         check("none to a Secret's object", !fake.requests.contains { $0.path.contains("/secrets/") }, "\(fake.requests.filter { $0.path.contains("secrets") })")
         check("nor any subresource but a log", fake.subresourceRequests.allSatisfy(\.isLog), "\(fake.subresourceRequests)")
@@ -1647,7 +1652,8 @@ extension E2ERunner {
     /// Context Settings…: one context's entry, `agentWrites` and
     /// `applyOnProduction` in a sheet, saved to the run's own settings.json
     /// in place and read back by the model; a bad value refused, nothing
-    /// written; production's session switch only said. Put back after.
+    /// written; production writable by default, set read-only by its
+    /// entry and back. Put back after.
     func kubernetesContextSettings(_ model: KubernetesModel, _ page: KubernetesPageModel) async {
         let settings = Settings.shared
         let before = (settings.fileValue("kubernetes.contexts"), settings.fileValue("kubernetes.agentWrites"))
@@ -1661,7 +1667,9 @@ extension E2ERunner {
         page.openContextSettings(dev)
         check("Context Settings… opens its sheet", page.contextSettingsDraft?.context == "fake-dev")
         check("drawn over the page", await shownText { $0.contains("Context Settings") } != nil)
-        check("a remote context's default said", page.contextSettingsDraft?.writableSaid == "Read-only (a remote context's default).")
+        check(
+            "its read-only entry said", page.contextSettingsDraft?.writableSaid == "Read-only: Overterm changes nothing here, and its socket refuses every write.",
+            page.contextSettingsDraft?.writableSaid ?? "")
         check("the list's keys stand aside", !page.press("w") && !page.wide)
         page.contextSettingsDraft?.nodeShellImage = "node tools"
         page.saveContextSettings()
@@ -1679,13 +1687,29 @@ extension E2ERunner {
             "and the page reads it back",
             await eventually(10) { model.contexts.context(named: "fake-dev")?.settings.nodeShellImage == "acme/node-tools:1" })
         page.openContextSettings(prod)
-        check("production's switch said, not set", page.contextSettingsDraft?.writableSaid.contains("never by a setting") == true)
+        check(
+            "production writable by default, its changes asked",
+            page.contextSettingsDraft?.writableSaid.hasPrefix("Writable (the default). Production: each change is asked") == true,
+            page.contextSettingsDraft?.writableSaid ?? "")
         page.contextSettingsDraft?.applyOnProduction = true
         page.saveContextSettings()
         check(
-            "production's entry has no write switch",
+            "production's entry has no writable unless set",
             settings.kubernetesContexts["fake-prod"]?.applyOnProduction == true && settings.value("kubernetes.contexts")?.entries?["fake-prod"]?["writable"] == nil
-                && model.contexts.context(named: "fake-prod")?.isWritable == false)
+                && model.contexts.context(named: "fake-prod")?.isWritable == true)
+        // Production set read-only by its entry: as a person opts out.
+        page.openContextSettings(prod)
+        page.contextSettingsDraft?.writable = false
+        page.saveContextSettings()
+        check(
+            "production set read-only by its entry",
+            await eventually(10) {
+                settings.kubernetesContexts["fake-prod"]?.writable == false && model.contexts.context(named: "fake-prod")?.isWritable == false
+            })
+        page.openContextSettings(prod)
+        page.contextSettingsDraft?.writable = nil
+        page.saveContextSettings()
+        check("and writable again, the field taken out", await eventually(10) { model.contexts.context(named: "fake-prod")?.isWritable == true })
         // Production made local: asked in red, its name typed, before anything is written.
         let prodEntry = settings.fileValue("kubernetes.contexts")?.entries?["fake-prod"]
         page.openContextSettings(prod)
@@ -2645,6 +2669,21 @@ extension E2ERunner {
         let forward = try? await proxies.send(dev, .GET, "/api/v1/namespaces/shop/pods/web-7d9/portforward")
         check("and a port-forward", forward?.status == 403, "\(forward.map { "\($0.status)" } ?? "no answer")")
         check("the web pod is still there", fake.pod("web-7d9", namespace: "shop") != nil)
+    }
+
+    /// The scenarios' `kubernetes.contexts`: the remote fakes (fake-dev,
+    /// fake-stage) set `writable: false` — writable is every class's
+    /// default, production's too — with `extra`'s fields over them.
+    static func kubeContexts(_ extra: [String: [String: SettingValue]] = [:]) -> SettingValue {
+        var entries: [String: [String: SettingValue]] = [
+            "fake-dev": ["writable": .bool(false)], "fake-stage": ["writable": .bool(false)],
+        ]
+        for (name, fields) in extra {
+            var merged: [String: SettingValue] = entries[name] ?? [:]
+            for (key, value) in fields { merged[key] = value }
+            entries[name] = merged
+        }
+        return .entries(entries)
     }
 
     /// Two contexts on the fake: one remote by name, one production by

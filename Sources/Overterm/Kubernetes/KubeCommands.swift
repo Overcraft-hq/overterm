@@ -172,9 +172,7 @@ enum KubeProcessCheck {
     }
 
     static func readOnly(_ kind: KubeContextClass) -> String {
-        kind == .production
-            ? "Production is read-only: turn on writes for this session on its card first."
-            : "This context is read-only: Overterm changes nothing here (its writable setting)."
+        "This context is read-only: Overterm changes nothing here (its writable setting)."
     }
 }
 

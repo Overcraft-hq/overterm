@@ -482,7 +482,7 @@ These go through `KubeScope.namespaces`, so `KubeScopeMerge` names any namespace
 
 - **The 5-minute cache.** `KubeGitOpsMatchCache` is app-wide and in memory, keyed by (context, binding, the remotes' normalised set). Switching tabs back and forth doesn't list again. It is dropped on a binding change, on a credential failure, on Refresh and at quit, and never written to disk.
 - **Unbound:** zero requests. **Hidden:** `stop()` cancels P0–P6 and keeps only the cache.
-- **Production.** A production binding reads P0, P1, P2, P5 and P6 on its own: one namespace, plus GETs of objects that were named. The lists across the cluster (P3, P4) wait for **Find What Deploys This**, a button in the rail that says what it will read ("lists Applications in argocd and GitRepositories on fake-prod"). The binding's background socket is read-only only while the context isn't writable. After "Allow writes until quit" it isn't, so the guarantee rests on `KubePanelGitOps` holding a GET-only client and routing every verb through the page's guard (§4.5). A test asserts it (§8.2).
+- **Production.** A production binding reads P0, P1, P2, P5 and P6 on its own: one namespace, plus GETs of objects that were named. The lists across the cluster (P3, P4) wait for **Find What Deploys This**, a button in the rail that says what it will read ("lists Applications in argocd and GitRepositories on fake-prod"). The binding's background socket is read-only only while the context isn't writable. Production is writable by default (no session switch, the owner's decision), so it usually isn't, so the guarantee rests on `KubePanelGitOps` holding a GET-only client and routing every verb through the page's guard (§4.5). A test asserts it (§8.2).
 - **The count of follows.** The rail's follows go from 3–4 to at most 7, all on the background slot. The page takes that slot first when it needs one, and the rail then says "not watched". They are on-screen reads, like the rail's existing follows, not attention watches, and don't count against `kubernetes.backgroundWatches`. This is written in `KubernetesPanelModel`'s header and in architecture.md.
 
 ### 4.5 `KubernetesPanelView`: the "GitOps" part
@@ -520,7 +520,7 @@ Each verb goes through the one guard path (`KubernetesPageModel+Writes`):
 
 - its access review (`patch <kind>`, or `delete`);
 - `WriteConfirmation`, naming the context, the namespace, the object, the CLI line it equals, and G0b's and G0d's facts;
-- the production band, and the "Allow writes until quit" session switch;
+- the production band (no session switch since the owner's decision: writable unless `writable: false`);
 - refused on a read-only context, both by the check and by the socket.
 
 `argoSync` already passes `--app-namespace`, so apps in any namespace work.
@@ -697,7 +697,7 @@ Assertions read the fake's request log.
   - the cache: a second show within 5 minutes lists nothing;
   - P0 discovers once when nothing is known;
   - on `fake-prod`, nothing is listed across the cluster until Find What Deploys This is pressed;
-  - on `fake-prod` with session writes on, the log holds no non-GET after every rail action short of a confirmed verb;
+  - on `fake-prod`, writable by default (no switch), the log holds no non-GET after every rail action short of a confirmed verb;
   - no `git fetch` among the `Git.run` arguments (a temporary repository with `c1` and `fix/orders`);
   - a new HEAD recomputes the manifests line.
 - **MCP:**
@@ -920,7 +920,7 @@ Each stage is one commit.
 |---|---|---|
 | 1 | R1 across the cluster carries metadata; G5's `row()` change affects every list | Applied. Said in §3.1–3.2 with costs redone; owner extraction opt-in via `KubeListOptions.owners`; assertions fixed. A risk row and a later fix are noted. |
 | 2 | `kept` misses Argo's status copies and `operation.sync.manifests` | Applied. G0a fixes `kept`, and the sentinel covers these carriers and `kept` (§1.1, §8.1). The section's decode never parses them. |
-| 3 | The production socket isn't read-only once writes are allowed | Applied. Reworded; the guarantee is a GET-only client plus a `fake-prod` test with session writes on (§4.4, §8.2). |
+| 3 | The production socket isn't read-only once writes are allowed | Applied. Reworded; the guarantee is a GET-only client plus a `fake-prod` test with it writable (§4.4, §8.2). |
 | 4 | The rail lists every Application on production | Applied, with value 15. Owners by GET first; Applications listed in Argo's namespace; on production only when Find What Deploys This is pressed; tested (§4.2, §4.4). |
 | 5 | Cluster strings in git arguments | Applied. §5.4 `KubeGitOpsGitArgs` and its tests. |
 | 6 | The fallback reads ConfigMaps | Applied. No ConfigMap in the fallback (§3.3). |

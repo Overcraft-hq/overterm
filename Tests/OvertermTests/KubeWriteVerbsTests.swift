@@ -128,7 +128,7 @@ final class KubeWriteVerbsTests: XCTestCase {
                     verb.opposite!, on: [KubeWritesTests.deployments, KubeWritesTests.cronjobs, KubeWritesTests.nodes, KubeGitOpsTests.kustomizations].first { KubeWriteCheck.offered(verb, on: $0) }!),
                 "a toggle turned round keeps its review")
         }
-        let prod = KubeWritesTests.context("fake-prod", session: true)
+        let prod = KubeWritesTests.context("fake-prod")
         for (verb, kind) in [
             (KubeWriteVerb.pause, KubeWritesTests.deployments), (.resume, KubeWritesTests.deployments), (.trigger, KubeWritesTests.cronjobs),
             (.suspend, KubeWritesTests.cronjobs), (.unsuspend, KubeWritesTests.cronjobs), (.cordon, KubeWritesTests.nodes), (.uncordon, KubeWritesTests.nodes),
@@ -231,7 +231,7 @@ final class KubeWriteVerbsTests: XCTestCase {
         XCTAssertNil(trigger.typedName)
         XCTAssertTrue(trigger.detail.contains("Job nightly-manual-x2b4k is made from its jobTemplate"), trigger.detail)
         XCTAssertTrue(trigger.detail.contains("Equals: kubectl create job nightly-manual-x2b4k --from=cronjob/nightly --context kind-fake -n shop"), trigger.detail)
-        let prod = KubeWritesTests.context("fake-prod", session: true)
+        let prod = KubeWritesTests.context("fake-prod")
         let cordon = KubeWriteConfirmation.make(
             .cordon, KubeObjectRef(context: "fake-prod", kind: KubeWritesTests.nodes, namespace: nil, name: "fake-node-1"), context: prod,
             rule: KubeWriteCheck.rule(.cordon, for: prod, kind: KubeWritesTests.nodes))

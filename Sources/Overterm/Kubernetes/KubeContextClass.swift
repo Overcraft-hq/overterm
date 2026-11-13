@@ -2,10 +2,10 @@ import Foundation
 
 /// What kind of cluster a context reaches, and so what Overterm may do there.
 ///
-/// docs/design/kubernetes/analysis.md, Section 5. Production is read-only
-/// and red everywhere, its writes turned on for a session only; a remote
-/// context is read-only unless its `writable` flag says otherwise; a local
-/// one is writable unless it says otherwise.
+/// docs/design/kubernetes/analysis.md, Section 5. Production is red
+/// everywhere and its writes asked, the destructive ones with the name
+/// typed; every class is writable unless its `writable` flag says no (the
+/// owner's decision: no session switch to turn on first).
 enum KubeContextClass: String, CaseIterable, Sendable {
     case production, remote, local
 
@@ -56,17 +56,14 @@ enum KubeClassifier {
         return .remote
     }
 
-    /// Whether Overterm may change objects through a context of `kind`.
-    /// A production context ignores the `writable` flag: its writes are
-    /// turned on for this session from the context's card, never by a
-    /// setting (decision 4). Without a flag, local is writable and remote
-    /// isn't.
-    static func isWritable(_ kind: KubeContextClass, flag: Bool?, productionSession: Bool = false) -> Bool {
-        switch kind {
-        case .production: productionSession
-        case .remote: flag ?? false
-        case .local: flag ?? true
-        }
+    /// Whether Overterm may change objects through a context of `kind`:
+    /// every class is writable unless its `writable` flag says no — the
+    /// owner's decision, which replaced production's session switch.
+    /// Production is still marked, asked and typed (`KubeWriteCheck`); it
+    /// is a confirmation, not a lock. `kind` stays in the signature so a
+    /// class rule can come back in one place.
+    static func isWritable(_ kind: KubeContextClass, flag: Bool?) -> Bool {
+        flag ?? true
     }
 }
 
@@ -76,7 +73,8 @@ enum KubeClassifier {
 struct KubeContextSettings: Equatable, Sendable {
     /// Set by hand; nil: its name decides.
     var contextClass: KubeContextClass?
-    /// Whether a remote or local context may be written to; ignored on production.
+    /// Whether the context may be written to; nil: yes, on every class.
+    /// `false` makes it read-only — production too.
     var writable: Bool?
     var displayName: String?
     /// The namespace the page opens on, instead of the context's own.
@@ -100,10 +98,11 @@ struct KubeContextSettings: Equatable, Sendable {
     /// On: a node shell (`kubectl debug node/… --profile=sysadmin`) on
     /// a writable context, its name typed; unset or off, it is refused.
     var nodeShell: Bool?
-    /// On: Apply from the editor (and agents' `k8s_apply`) is offered on
-    /// this production context while its writes are on for the session,
-    /// the name typed and never forced (decision 30); unset or off, a
-    /// production context only diffs. Ignored on any other class.
+    /// On: agents' `k8s_apply` may change this production context (where
+    /// `KubeAgentWrites` lets agents write), the name typed and never
+    /// forced (decision 30); unset or off, an agent only diffs there. A
+    /// person's Apply from the editor needs no setting: writable is
+    /// enough, the name typed (the owner's decision). Ignored on any other class.
     var applyOnProduction: Bool?
     /// Where usage comes from: metrics-server when served (unset), or
     /// `none` — no usage columns, and metrics.k8s.io never asked;
@@ -122,7 +121,7 @@ struct KubeContextSettings: Equatable, Sendable {
         SettingField(
             name: "class", kind: .choice(KubeContextClass.allCases.map { SettingOption(value: $0.rawValue, label: $0.title) }),
             help: "production, remote or local; unset, the context's name decides."),
-        SettingField(name: "writable", kind: .toggle, help: "A remote or local context Overterm may change objects in. Never a production one."),
+        SettingField(name: "writable", kind: .toggle, help: "Whether Overterm may change objects here; unset, it may, on every class. Off: read-only, production included."),
         SettingField(name: "displayName", kind: .text(placeholder: "", monospaced: false)),
         SettingField(name: "defaultNamespace", kind: .text(placeholder: "", monospaced: true)),
         SettingField(name: "accessibleNamespaces", kind: .list(placeholder: "")),
@@ -145,7 +144,7 @@ struct KubeContextSettings: Equatable, Sendable {
         SettingField(
             name: "applyOnProduction", kind: .toggle,
             help:
-                "Production only: On lets Apply from the editor (and agents' k8s_apply) change this context while its writes are on for the session — the name typed, never forced. Off by default: production only diffs."
+                "Production only: On lets agents' k8s_apply change this context where they may write (kubernetes.agentWrites, writable true) — the name typed, never forced. Off by default: an agent only diffs. Your own Apply from the editor needs no setting."
         ),
         SettingField(
             name: "metrics", kind: .choice(KubeMetricsSource.allCases.map { SettingOption(value: $0.rawValue, label: $0.title) }),

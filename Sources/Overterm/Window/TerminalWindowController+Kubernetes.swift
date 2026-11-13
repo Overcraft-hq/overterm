@@ -295,7 +295,7 @@ extension TerminalWindowController {
         confirmDocker(
             "Open a terminal pinned to production?",
             "A plain kubectl, helm or k9s in the new tab goes to \(context.name)\(scope) — with your own credentials and rights. "
-                + "Overterm's read-only doesn't reach into a terminal. Your current context stays as it is.",
+                + "Nothing Overterm checks reaches into a terminal. Your current context stays as it is.",
             "Open Terminal in \(context.displayName)"
         ) { [weak self] in self?.startKubernetesTerminal(context, pin) }
     }

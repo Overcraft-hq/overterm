@@ -9,7 +9,7 @@ import XCTest
 /// request exactly, what each equals, argocd's and flux's lines in a tab.
 /// Then through the page's one guard path against the fake API server —
 /// `kind-fake` (local, writable), `fake-dev` (read-only), `fake-prod`
-/// (production, read-only until its switch), all fictional: the access
+/// (production, writable by default, each write asked), all fictional: the access
 /// review, the read, the confirmation naming the context and namespace,
 /// then the patch, which the fake applies; refused, nothing is sent.
 /// And what their objects say, read right (docs/design/kubernetes/
@@ -63,10 +63,12 @@ final class KubeGitOpsTests: XCTestCase {
 
     // MARK: The class check
 
-    func testTheyAreRefusedOnReadOnlyContextsAndProductionWithoutItsSwitch() {
+    /// Refused only where the `writable` setting says no — production set
+    /// so included; production writable by default, no switch.
+    func testTheyAreRefusedOnReadOnlyContextsProductionIncluded() {
         let dev = KubeWritesTests.context("fake-dev")
-        let prod = KubeWritesTests.context("fake-prod")
-        let on = KubeWritesTests.context("fake-prod", session: true)
+        let prod = KubeWritesTests.context("fake-prod", readOnly: true)
+        let on = KubeWritesTests.context("fake-prod")
         let local = KubeWritesTests.context("kind-fake")
         for verb in Self.gitOpsVerbs {
             let kind = verb == .refresh ? Self.applications : Self.kustomizations
@@ -211,7 +213,7 @@ final class KubeGitOpsTests: XCTestCase {
 
     func testTheConfirmationsNameTheContextAndNamespace() {
         let local = KubeWritesTests.context("kind-fake")
-        let prod = KubeWritesTests.context("fake-prod", session: true)
+        let prod = KubeWritesTests.context("fake-prod")
         let suspend = KubeWriteConfirmation.make(
             .fluxSuspend, Self.ref(Self.kustomizations), context: local, rule: KubeWriteCheck.rule(.fluxSuspend, for: local, kind: Self.kustomizations))
         XCTAssertEqual(suspend.title, "Suspend Flux's reconciliation of kustomization flux-system/shop?")
@@ -620,17 +622,13 @@ final class KubeGitOpsPageTests: XCTestCase {
         XCTAssertEqual(api.writes, [], "no write, no review")
     }
 
-    /// fake-prod: refused until its switch; then asked naming PRODUCTION, a sync's name typed.
-    func testProductionNeedsItsSwitch() async throws {
+    /// fake-prod: writable with no switch; each write asked naming
+    /// PRODUCTION, a sync's name typed.
+    func testProductionIsWritableEachWriteAsked() async throws {
         let (page, box) = try await page(current: "fake-prod")
         defer { page.model.hide() }
         try await show(page, "ks")
-        XCTAssertTrue(page.press("r"))
-        XCTAssertEqual(page.writeStatus, .failed("Production is read-only: turn on writes for this session on its card first."))
-        XCTAssertEqual(api.writes, [])
-        await page.model.setProductionWrites(true, for: "fake-prod")
-        try await until("on, listed again") { page.model.selected?.isWritable == true && page.model.rows.count == 1 }
-        page.selection = ["flux-system/shop"]
+        XCTAssertEqual(page.model.selected?.isWritable, true, "no switch to turn on")
         XCTAssertTrue(page.press("r"))
         try await until("asked") { box.confirmations.count == 1 }
         XCTAssertEqual(box.confirmations[0].0.scope, "PRODUCTION · fake-prod · namespace flux-system")
@@ -642,7 +640,6 @@ final class KubeGitOpsPageTests: XCTestCase {
         box.confirmations[1].1("sho")
         XCTAssertEqual(page.writeStatus, .failed("The name typed wasn't shop: nothing was run."))
         XCTAssertTrue(box.commands.isEmpty)
-        await page.model.setProductionWrites(false, for: "fake-prod")
     }
 
     /// G0d: Resume on production names what it applies — its source's
@@ -665,7 +662,6 @@ final class KubeGitOpsPageTests: XCTestCase {
             ])
         let (page, box) = try await page(current: "fake-prod")
         defer { page.model.hide() }
-        await page.model.setProductionWrites(true, for: "fake-prod")
         try await until("on") { page.model.selected?.isWritable == true }
         try await show(page, "ks")
         api.forgetRequests()
@@ -694,7 +690,6 @@ final class KubeGitOpsPageTests: XCTestCase {
         try await until("asked again") { box.confirmations.count == 2 }
         box.confirmations[1].1("shop")
         try await until("resumed") { !self.suspended() }
-        await page.model.setProductionWrites(false, for: "fake-prod")
     }
 
     func testResumeOffProductionReadsNoSource() async throws {

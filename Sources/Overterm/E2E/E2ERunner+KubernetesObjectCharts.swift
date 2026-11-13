@@ -368,9 +368,9 @@ extension E2ERunner {
         fake.setPrometheusMatrix("sum((clamp_min(", [FakePromFixture.Line { _ in 0 }])
         fake.setPrometheusMatrix("avg_over_time((", [FakePromFixture.Line(["overterm_s": "cpu"]) { _ in 0.09 }])
         Settings.shared.set(
-            "kubernetes.contexts", .entries(["fake-dev": ["metrics": .string("prometheus"), "prometheus": .string("monitoring/prometheus-k8s:9090")]]))
+            "kubernetes.contexts", Self.kubeContexts(["fake-dev": ["metrics": .string("prometheus"), "prometheus": .string("monitoring/prometheus-k8s:9090")]]))
         defer {
-            Settings.shared.set("kubernetes.contexts", nil)
+            Settings.shared.set("kubernetes.contexts", Self.kubeContexts())
             clearTabFixtures(fake)
             for fragment in ["topk(5,", "topk(8,", "sum((clamp_min(", "avg_over_time(("] { fake.clearPrometheusMatrix(fragment) }
             for metric in [
@@ -772,9 +772,9 @@ extension E2ERunner {
         fake.setPrometheusMatrix(
             "http_requests_total{", [FakePromFixture.Line(["route": "/checkout"]) { _ in 42 }, FakePromFixture.Line(["route": "/cart"]) { _ in 7 }])
         fake.setPrometheusMatrix("broken_total{", failure: FakePromFixture.Failure(status: 400, errorType: "bad_data", error: "1:5: parse error: unexpected"))
-        Settings.shared.set("kubernetes.contexts", .entries(["fake-dev": entry.merging(["charts": charts]) { $1 }]))
+        Settings.shared.set("kubernetes.contexts", Self.kubeContexts(["fake-dev": entry.merging(["charts": charts]) { $1 }]))
         defer {
-            Settings.shared.set("kubernetes.contexts", .entries(["fake-dev": entry]))
+            Settings.shared.set("kubernetes.contexts", Self.kubeContexts(["fake-dev": entry]))
             fake.clearPrometheusMatrix("http_requests_total{")
             fake.clearPrometheusMatrix("broken_total{")
             page.metricsGroupShown(KubeSavedCharts.groupTitle, false)

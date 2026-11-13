@@ -17,7 +17,7 @@ import Foundation
 /// its `kubernetes.contexts` entry, Copy In picks a file (the runner
 /// answers the open panel), asks where in the container (`/tmp/<name>`
 /// offered) and is recorded the same way. On `fake-prod` a copy in is
-/// refused (read-only), and a copy out is asked with PRODUCTION on its
+/// refused while its entry sets it read-only, and a copy out is asked with PRODUCTION on its
 /// scope. Nothing but GETs and access reviews reaches the fake.
 extension E2ERunner {
     func kubernetesPodFiles(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
@@ -46,7 +46,7 @@ extension E2ERunner {
             page.actions = actions
             app.kubernetesCommandRecorder = nil
             app.closeTabsWithoutAsking(app.store.tabs.filter { !opened.contains($0.id) })
-            Settings.shared.set("kubernetes.contexts", nil)
+            Settings.shared.set("kubernetes.contexts", Self.kubeContexts())
             page.writeStatus = nil
             try? FileManager.default.removeItem(at: folder)
             if !wasShowing, app.store.showingOverlay == .kubernetes { app.toggleKubernetesPage(nil) }
@@ -126,7 +126,7 @@ extension E2ERunner {
 
         // Made writable by its entry, Copy In: the file picked, where in the container, recorded.
         back()
-        Settings.shared.set("kubernetes.contexts", .entries(["fake-dev": ["writable": .bool(true)]]))
+        Settings.shared.set("kubernetes.contexts", Self.kubeContexts(["fake-dev": ["writable": .bool(true)]]))
         check("fake-dev writable by its entry", await eventually(10) { model.contexts.context(named: "fake-dev")?.isWritable == true })
         guard await showKubernetesKind(model, page, "po", row: pod) else { return }
         page.selection = ["shop/files-0"]
@@ -152,11 +152,14 @@ extension E2ERunner {
         check("pinned the same", recorded.last?.tab.kubePin?.context == "fake-dev" && recorded.last?.tab.kubePin?.namespace == "shop")
         // The page follows settings while it shows: back to it first.
         back()
-        Settings.shared.set("kubernetes.contexts", nil)
+        Settings.shared.set("kubernetes.contexts", Self.kubeContexts())
         check("read-only again", await eventually(10) { model.contexts.context(named: "fake-dev")?.isWritable == false })
 
-        // fake-prod: a copy in refused; a copy out asked with PRODUCTION on its scope.
+        // fake-prod set read-only by its entry: a copy in refused; a copy out asked with PRODUCTION on its scope.
         back()
+        Settings.shared.set("kubernetes.contexts", Self.kubeContexts(["fake-prod": ["writable": .bool(false)]]))
+        check("fake-prod read-only by its entry", await eventually(10) { model.contexts.context(named: "fake-prod")?.isWritable == false })
+        defer { Settings.shared.set("kubernetes.contexts", Self.kubeContexts()) }
         model.select("fake-prod")
         model.setScope(.namespace("payments"))
         fake.addPod("files-1", namespace: "payments")

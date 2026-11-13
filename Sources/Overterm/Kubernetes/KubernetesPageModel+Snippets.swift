@@ -84,7 +84,7 @@ extension KubernetesPageModel {
             self.actions?.confirm(
                 "Run “\(snippet.name)” on production?",
                 "PRODUCTION · \(context.name) · namespace \(tabNamespace)\n\(line)\nTyped into a tab pinned to \(context.displayName): "
-                    + "your own command, with your own credentials and rights. Overterm's read-only doesn't reach into a terminal.",
+                    + "your own command, with your own credentials and rights. Nothing Overterm checks reaches into a terminal.",
                 "Run in \(context.displayName)"
             ) { [weak self] in self?.actions?.runInTab(line, context, tabNamespace) }
         }

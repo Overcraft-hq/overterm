@@ -639,7 +639,7 @@ final class KubeAgentBriefingTests: XCTestCase {
         let ref = KubeObjectRef(context: "fake-prod", kind: .pods, namespace: "shop", name: "worker-6b8f-x1")
         let brief = try await KubeAgentBriefing.brief(ref, client: KubeClient(KubeSocketConnection(socket: socket, context: "fake-prod")), context: prod)
         XCTAssertTrue(brief.production)
-        XCTAssertTrue(brief.text.contains("PRODUCTION context fake-prod (read-only: Overterm changes nothing there)"), brief.text)
+        XCTAssertTrue(brief.text.contains("PRODUCTION context fake-prod (read only: change nothing there)"), brief.text)
         XCTAssertTrue(brief.text.contains("kubectl --context fake-prod -n shop describe pod"))
     }
 

@@ -5,7 +5,7 @@ import XCTest
 
 /// Stage 2a's other verbs through the page's one guard path, against the
 /// fake API server: `kind-fake` (local, writable), `fake-dev` (remote,
-/// read-only) and `fake-prod` (production, read-only until its switch),
+/// read-only) and `fake-prod` (production, writable with no switch),
 /// all fictional and on the same fake. Each verb's exact requests, the
 /// order — the access review, the reads, the confirmation, then the write —
 /// and the refusals, with nothing sent.
@@ -13,6 +13,7 @@ import XCTest
 final class KubeWriteVerbsPageTests: XCTestCase {
     private var api: FakeKubeAPI!
     private var socket: String!
+    private var contexts: KubeTestContexts!
 
     override func setUp() async throws {
         socket = "/tmp/otkwv-\(UInt32.random(in: 0...UInt32.max)).sock"
@@ -48,8 +49,9 @@ final class KubeWriteVerbsPageTests: XCTestCase {
 
     private func page(current: String) async throws -> (KubernetesPageModel, Box) {
         let model = KubernetesModel(proxies: KubeProxies())
-        let list = KubeContextList(contexts: ["fake-dev", "fake-prod", "kind-fake"].map { KubeWritesTests.context($0) }, current: current)
-        model.load = { _ in list }
+        let contexts = KubeTestContexts(["fake-dev", "fake-prod", "kind-fake"], current: current)
+        self.contexts = contexts
+        model.load = { _ in contexts.value }
         model.readConfiguration = { KubernetesModel.Configuration() }
         model.watchesSettings = false
         model.remembersSelection = false
@@ -389,20 +391,16 @@ final class KubeWriteVerbsPageTests: XCTestCase {
         XCTAssertEqual(page.verbs(for: ["shop/nightly"]).first { $0.title == "Trigger Now…" }?.unavailable, why)
     }
 
-    /// Production: refused until its switch; with it on, a cordon and a
-    /// trigger are asked naming PRODUCTION, with no name to type, and a
-    /// namespace's delete asks for its name.
-    func testProductionNeedsItsSwitch() async throws {
+    /// Production: writable with no switch — a cordon and a trigger are
+    /// asked naming PRODUCTION, with no name to type, and a namespace's
+    /// delete asks for its name; set read-only by its setting meanwhile,
+    /// each is refused again at the button.
+    func testProductionAsksNamingItAndItsSettingStillLocks() async throws {
         let (page, box) = try await page(current: "fake-prod")
         defer { page.model.hide() }
         _ = try await show(page, "no", rows: 1)
-        page.selection = ["fake-node-1"]
-        XCTAssertTrue(page.press("u"))
-        XCTAssertEqual(page.writeStatus, .failed("Production is read-only: turn on writes for this session on its card first."))
-        XCTAssertEqual(api.writes, [])
-        page.allowProductionWrites()
-        box.confirms[0].2()
-        try await until("on, listed again") { page.model.selected?.isWritable == true && page.model.rows.count == 1 }
+        XCTAssertEqual(page.model.selected?.isWritable, true)
+        XCTAssertTrue(box.confirms.isEmpty, "no switch asked for")
         page.selection = ["fake-node-1"]
         XCTAssertTrue(page.press("u"))
         try await until("asked") { box.confirmations.count == 1 }
@@ -426,13 +424,14 @@ final class KubeWriteVerbsPageTests: XCTestCase {
         XCTAssertEqual(box.confirmations[2].0.scope, "PRODUCTION · fake-prod · cluster-wide")
         XCTAssertEqual(box.confirmations[2].0.typedName, "shop")
         XCTAssertTrue(box.confirmations[2].0.detail.contains("Type shop to confirm."), box.confirmations[2].0.detail)
-        page.endProductionWrites()
-        try await until("off again") { page.model.selected?.isWritable == false }
+        contexts.setReadOnly("fake-prod", true)
+        page.model.reloadContexts()
+        try await until("read-only") { page.model.selected?.isWritable == false }
         for (index, typed) in [(0, ""), (1, ""), (2, "shop")] {
             page.writeStatus = nil
             box.confirmations[index].1(KubeWriteAnswer(typed: typed))
             XCTAssertEqual(
-                page.writeStatus, .failed("Production is read-only: turn on writes for this session on its card first."), "checked again at the button")
+                page.writeStatus, .failed("This context is read-only: Overterm changes nothing here (its writable setting)."), "checked again at the button")
         }
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertEqual(written(), [])

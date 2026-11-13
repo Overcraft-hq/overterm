@@ -2512,10 +2512,10 @@ the cluster's, `prod`, `prd`, `production` or `live` as a word split on
 kubeadm's `kubernetes-admin@prod` and `kind-prod-copy` are production; local by name (`docker-desktop`,
 `orbstack`, `minikube`, `rancher-desktop`, `colima`, `kind-…`, `k3d-…`);
 else remote. A loopback server never makes a context local: a tunnel to a
-remote cluster is on 127.0.0.1 too. `isWritable`: production never by a
-setting — only while its writes are on for the session
-(`KubeContext.sessionWrites`, Writes below) —, remote only by its
-`writable` flag, local unless the flag says no.
+remote cluster is on 127.0.0.1 too. `isWritable`: every class — production,
+remote, local — is writable unless its `writable` flag says no (the
+owner's decision, 1.6.0: there is no session switch; production's writes
+are asked, never locked — Writes below).
 
 **Settings** (Settings ▸ Kubernetes): `kubernetes.enabled` (on; nothing runs
 until the page or the panel opens, or an agent calls a `k8s_` tool — which
@@ -2543,7 +2543,7 @@ pure, + `KubeContextSettingsSheetView`, `KubernetesPageModel+ContextSettings`)
 with its class (unset: by name, said), writes (its class's default, said),
 `metrics` and `prometheus`, `nodeShell` and `nodeShellImage`,
 `defaultNamespace`, whether `kubernetes.agentWrites` names it and — on
-production — `applyOnProduction`. Save reads both settings again as the
+production — `applyOnProduction` (agents' `k8s_apply` there). Save reads both settings again as the
 file has them (`Settings.fileValue`, not fitted: a field this build
 doesn't know, or can't use, in any entry is written back as it was),
 changes only those fields of that entry (its other fields and every other
@@ -2553,15 +2553,17 @@ name) and then the fields it writes by `SettingsSchema` (`problem`,
 `fitted`), and writes through `Settings.set` — refused, the sheet says why
 and nothing is written. A production context — by its name or its
 entry's class — saved as remote or local is asked first, in red in the
-sheet (`lessStrict`, `lessStrictSaid`: writable by a setting every day if
-so, the band gone, agents if ticked), its name typed (`typedName`), as
-rule 4 asks for what can't be taken back by a session ending. Production's write switch for the session is only said: it
-is never a setting, and a production entry gets no `writable` from the sheet. `kubernetes.proxyIdleMinutes` (10) and
+sheet (`lessStrict`, `lessStrictSaid`: its changes no longer asked as
+production's, the band gone, agents if ticked), its name typed
+(`typedName`). `writable` is a field like any other on every class:
+Read-only writes `writable: false`, the default takes the field out. `kubernetes.proxyIdleMinutes` (10) and
 `kubernetes.kubectlPath` (empty: found) are the proxies'
 (`Settings.kubernetesProxyConfiguration`). `kubernetes.agentAccess` (on)
 gives agents the `k8s_` tools (Agents' tools, below);
 `kubernetes.agentWrites` (a list, empty: agents only read) names the
-contexts whose agents get the write tools while Overterm may write there;
+contexts whose agents get the write tools — a local one unless set
+`writable: false`, a remote or production one only where its entry sets
+`writable: true` (agents' rule as it was before production's switch went);
 `kubernetes.debugImage` (`busybox:1.36`) is what `E` runs unless the
 context names its own (Writes in a tab, below). `kubernetes.notifyOnFailure`
 (on) and `kubernetes.backgroundWatches` (4) are the attention marks';
@@ -2941,9 +2943,8 @@ switcher, or another page, never gets a list narrowed by a filter not on
 screen; the last `hide` drops it, and a page held again asks anew. The
 proxy's state (`KubeProxies.status`: open, signing in, waiting behind
 another context's browser sign-in, stopped with its reason) is asked
-once a second while a page shows. The model reads only; it holds
-production's switch for the session (`productionWrites`) and the writes'
-access reviews (`writeAccess`), and the page's guard path writes.
+once a second while a page shows. The model reads only; it holds the
+writes' access reviews (`writeAccess`), and the page's guard path writes.
 
 **Ages** (`KubeAge`, pure). The server renders Age when it answers, so a
 cell is stale once it arrives. A row across all namespaces carries its
@@ -3356,7 +3357,7 @@ detail's chevrons.
 docs/design/kubernetes/analysis.md 3.11): a terminal tab whose plain
 `kubectl` (`helm`, `k9s`) goes to a context, the user's current context —
 every other tab's — never changed. It is the user's own kubectl with the
-user's rights, so read-only doesn't reach into it; the pin and the
+user's rights, so nothing Overterm checks reaches into it; the pin and the
 production band are its guard.
 
 - **The pin** (`KubeTerminalPin`: the context, its cluster and user by
@@ -4011,7 +4012,7 @@ the bounds and the scrubbing. The `kubernetes` scenario calls them through
 the bridge's real HTTP endpoint at a pane's path, with that pane's token: the list
 without a write tool, `k8s_get` on fake-prod, the page's context when none
 is named, an unknown context refused, a Secret without its value,
-`k8s_why`, a write on read-only production refused, only GETs; `kubernetes.agentAccess` off
+`k8s_why`, an agent's write on production `agentWrites` doesn't name refused, only GETs; `kubernetes.agentAccess` off
 taking the group from the endpoint's list and refusing a call (or, with no
 other group on, the endpoint gone), and on again back in its `tools/list`.
 
@@ -4022,22 +4023,17 @@ other group on, the endpoint gone), and on again back in its `tools/list`.
 `KubeScaleSheetView`, `KubeNamespaceSheetView`; analysis Sections 2.2,
 2.3, 2.4, 2.9, 2.15, 4 and 5):
 
-- **Where** (rule 2): a writable context only — a remote or local
-  context's `writable` flag in `kubernetes.contexts` (local unless it
-  says no), and production only while its switch is on for the session
-  (`KubeContext.sessionWrites`; nothing else decides). The switch is the
-  context card's Allow Writes Until Quit…, asked first naming the
-  context, kept in memory by `KubernetesModel.productionWrites`
-  (`KubeProductionWrites`: off at launch, dropped when the kubeconfig
-  read again points the name at another cluster or user), and said in the
-  band ("writes on until quit"). `KubeProxies.allowSessionWrites` closes
-  the context's proxy so the next request opens it without the method
-  filter — only then — and `endSessionWrites` back with it; the proxies
-  plan from their own knowledge of the switch, kept with the context as
-  it was turned on for (`KubernetesModel.sameAccess`), so a stale copy of
-  the context never flips the flags, and a kubeconfig read again that
-  points the name at another cluster, user or class is planned with the
-  filter before the model has told them.
+- **Where** (rule 2): a writable context only — its `writable` flag in
+  `kubernetes.contexts`, yes unless it says no, on every class
+  (`KubeContext.isWritable`; nothing else decides). Production is
+  writable by default: the owner decided (1.6.0) that whoever wants to
+  fix something there may, with nothing to turn on first — the session
+  switch it once had is gone. What stays is confirmation, not a lock:
+  the red band ("each change asked, a destructive one by its name"), the
+  access review, the `WriteConfirmation` naming the context and its
+  kubectl, the name typed where rule 4 says. `writable: false` makes any
+  context read-only — production included — and its socket then refuses
+  every write too (`KubeProxyFlags`), so it stays doubly locked.
 - **The proxies decide for every class** (`KubeProxies.update`): the
   model tells them the contexts on every read of the kubeconfig and the
   settings (hidden too, once told, and for the agents' reads), and from
@@ -4125,18 +4121,19 @@ other group on, the endpoint gone), and on again back in its `tools/list`.
   by its watch.
 - **Checked**: `KubeWritesTests` (each verb against each class, the
   typed name, each request exactly, the review's attributes and answer,
-  the confirmation's words, the outcomes, the switch kept only for the
-  same cluster), `KubeWriteClientTests` (each write landing on
+  the confirmation's words, the outcomes; production writable by
+  default, read-only only by its entry), `KubeWriteClientTests` (each write landing on
   `FakeKubeAPI` — which applies deletes, finalizers, merge and JSON
   patches, scale and evictions to its objects and its watches, answers
   access reviews from `deniedAccess` and a metadata-only GET, and records
   each write's body and content type — a read-only connection sending
   nothing), `KubeWritesPageTests` (no write before the review and the
   confirmation, Cancel, a refused review, a read-only context sending not
-  even a review, production's switch and the typed name, writes turned
-  off while asked, every verb through the page), `KubeProxiesTests`
-  (the switch restarting the proxy without the method filter and back;
-  another cluster under the name read-only at once), `KubeWriteVerbsTests`
+  even a review, production writable with no switch and the typed name,
+  writes turned off while asked, every verb through the page),
+  `KubeProxiesTests` (a `writable` change restarting the proxy without
+  the method filter and back; production's proxy unfiltered unless set
+  `writable: false`), `KubeWriteVerbsTests`
   (the other verbs' requests exactly, the trigger's Job, the kubectl each
   equals, their reviews and no typed name, states from an object or a
   row, a namespace's name, what its delete warns of) and
@@ -4206,9 +4203,12 @@ at the button running nothing). ⌘K lists them beside the page's writes
 **Agents' writes** (`KubeMCP.write`, `KubeAgentWrites`; 3.5,
 rule 10): `k8s_restart`, `k8s_scale` and `k8s_delete_pod` work only on
 a context `kubernetes.agentWrites` names (empty by default: agents only
-read) and writable for Overterm — a local or remote one by its
-`writable`, a production one only with its switch on for the session
-(`KubeAgentWrites.refused`); `tools/list` offers them while the setting
+read) and writable for agents — a local one not set `writable: false`,
+a remote or production one only where its entry sets `writable: true`
+(`KubeAgentWrites.refused`: a person may write wherever the context
+isn't set read-only, the owner's decision; for agents the explicit flag
+stands where production's session switch stood, so their reach didn't
+grow); `tools/list` offers them while the setting
 names any context — by the setting, not the contexts' state at the
 list, which MCP isn't told of again (an agent started before a name was
 added needs a restart) — and `k8s_contexts` says where they work. A call goes the page's way: the class check
@@ -4233,8 +4233,8 @@ sheet, a rollback's revision picked, `E`'s debug container; through the
 bridge's endpoint no write tool and `k8s_scale` on kind-fake refused
 until `agentWrites` names it, then asked in the window (the runner
 answers) and landing on the fake, a declined delete sending nothing, and
-fake-prod's writes refused until its switch is on and `agentWrites`
-names it, then its name asked.
+fake-prod's writes refused to agents until `agentWrites` names it and
+its entry sets `writable: true`, then its name asked.
 
 ### Manifests in the editor
 
@@ -4332,9 +4332,8 @@ names it, then its name asked.
   ask Show uses. Another context picked while it works drops its answer
   (the picker is off meanwhile).
 - **Apply** (`runApply`, a step of its own): the class check
-  (`KubeApplyCheck.refused`: writable contexts only; production only with
-  its switch on **and** the context's `applyOnProduction`; never forced
-  there), the manifest read once — the diff confirmed and the objects sent
+  (`KubeApplyCheck.refused`: writable contexts only, production too —
+  nothing turned on first, the owner's decision —; never forced there), the manifest read once — the diff confirmed and the objects sent
   are that text's —, a Secret's masked values refused before anything is
   read (`maskedBeforeReading`; retyped — a key Overterm's own apply owns,
   `KubeFieldOwners.overterms`, is never offered for taking out, since
@@ -4351,7 +4350,8 @@ names it, then its name asked.
   off production —, one without them `.changed`: Replace… applies without
   the old version, asked again. The diff is read again after an apply.
 - **Agents** (`k8s_apply`): the same path where `kubernetes.agentWrites`
-  names a writable context — on production `applyOnProduction` too —,
+  names a context writable for agents — on production
+  `applyOnProduction` too (`KubeApplyCheck.refused(agent:)`) —,
   no Secret (rule 10: refused before anything is read, so its "no change"
   can't say whether a guessed value is right),
   the dry-run diff and owners in the window's confirmation, never forced
@@ -4370,8 +4370,8 @@ names it, then its name asked.
   Secret's values never shown, production's Secret asked once, a
   kustomization rendered, review then confirmation then apply, Cancel and
   a refused review sending nothing, a conflict then Force, Replace, masks
-  refused, no Apply on production without `applyOnProduction`, the typed
-  name, `k8s_apply` and its refused Secret, an edit during the review not
+  refused, a person's Apply on writable production with no setting, an
+  agent's there only with `applyOnProduction`, the typed name, `k8s_apply` and its refused Secret, an edit during the review not
   sent, a non-preferred version, `y`'s env mask applied untouched, a
   context picked mid-diff, a kustomization's unsaved file, a webhook
   without dry run and an admission's denial, the copy never saved;
@@ -4389,8 +4389,9 @@ names it, then its name asked.
   window's close, the dry run and its
   diff drawn, Helm named, the 409 shown, Force landing, a checkout's
   Secret diffed masked, a kustomization through the stand-in kubectl,
-  fake-dev client-side sending nothing, and no Apply on fake-prod with its
-  writes on.
+  fake-dev client-side sending nothing, and Apply offered on writable
+  fake-prod with nothing turned on, its name typed (an agent's only with
+  `applyOnProduction`).
 
 ### Helm
 
@@ -4478,7 +4479,7 @@ from being a flag to helm. Both
 conform to `KubeTabCommand` with `KubeTabWrite`, so they take the same
 path (`confirmTabCommand`): the process class check (`helmRollback`,
 `helmUninstall` are `KubeProcessVerb.writes`: refused on every read-only
-context, production only with its session switch); the access review
+context — any class set `writable: false`); the access review
 through `writeAccess` — the release's records (create and update
 secrets for a rollback, update and delete for an uninstall; configmaps
 for that storage) and, when the release was opened and its masked
@@ -4504,8 +4505,9 @@ release's kinds reviewed; ⌫'s uninstall and a wrong name; a read-only
 context sending not even a review; a refused review; production's typed
 name and writes turned off at the button); the `kubernetes` scenario's
 `kubernetesHelmWrites` (`E2ERunner+KubernetesHelmWrites`): refused on
-fake-dev, both recorded, not typed, on kind-fake, the name asked on
-fake-prod with writes on.
+fake-dev, both recorded, not typed, on kind-fake; on fake-prod refused
+while its entry sets `writable: false`, then, writable with no switch,
+the name asked.
 
 ### Usage and the Overview
 
@@ -4859,7 +4861,7 @@ source and tracking rule), `KubePanelGitOpsTests` (against the fake: the
 owner by one GET, the sources matched and listed only then, production
 unpressed lists nothing — GitRepositories' rows named —, the cache and the
 remotes and P0 read once, a binding change and Refresh reading again, an
-owner refused or unserved never "not in", production with its writes on
+owner refused or unserved never "not in", production writable by default
 and every rail verb's sheet cancelled sending no non-GET, then one confirmed
 write; no `git fetch`, the developer's config left out; unbound and hidden
 nothing asked, never a Secret),
@@ -6401,7 +6403,7 @@ context by the process class check. The verbs are `ResourceVerb`s like
 every write, so the list's menu, the detail's buttons and the GitOps
 trees' nodes (a Kustomization's source, its `dependsOn`) all have them.
 `KubeGitOpsTests` (pure, and the page against the fake: the order, the
-patches applied, read-only and production refusing, the tab lines) and
+patches applied, read-only contexts refusing — production set so too —, the tab lines) and
 `kubernetesGitOpsVerbs` (`E2ERunner+KubernetesGitOps`) check them.
 
 **Deleting a GitOps object says what goes with it** (`KubeGitOpsDelete.swift`,
@@ -6781,8 +6783,7 @@ Tab… (`KubeProcessVerb.copyOut`, `.copyIn`; its menu, its detail's More,
 through exec, so both are `KubeProcessVerb`s with `create pods/exec` asked
 of `kubectl auth can-i` first, and a context's `shells` off refuses both; a
 copy in writes the container's files, so it is a writing process — refused
-on a read-only context (remote by its `writable`, production without its
-session switch). The path: the class check, can-i, the pod read for its
+on a read-only context (any class set `writable: false`). The path: the class check, can-i, the pod read for its
 containers (one picked as a shell's, the default first), the paths — out,
 the container's path asked (from its `workingDir`, else empty), then a
 save panel (the path's last part suggested, a colon made `-`); in, an open panel (a file or a folder), then where in the container
@@ -6867,8 +6868,9 @@ its own set up the same way): testKubernetes
 names a temporary OVERTERM_KUBECONFIG; the scenario opens the page before
 the file exists (no kubeconfig), then starts `FakeKubeAPI` on a socket
 and 127.0.0.1 and writes there two contexts on it, `fake-dev` (remote,
-so read-only although its server is loopback) and `fake-prod`
-(production by name). `kubernetes.kubectlPath` names a stand-in script
+set read-only by the run's `kubernetes.contexts` — writable is every
+class's default — although its server is loopback) and `fake-prod`
+(production by name, writable, each change asked). `kubernetes.kubectlPath` names a stand-in script
 of the run's own (`writeStandInKubectl`): it answers `auth can-i` itself
 — no for `pods/attach` — recording its KUBECONFIG and arguments, and
 `exec`s the real kubectl for the rest. With kubectl installed the real
@@ -6965,11 +6967,10 @@ written while it asks, ended by the runner's own `endSheet` and landing
 as one DELETE, the list following by its watch and the outcome drawn; a
 deployment scaled from the `=` sheet (drawn) 1 → 3, the scale
 subresource patched and its row 3/3 by the watch; on `fake-prod` Delete…
-greyed until the switch (⌫ only saying so, drawn, nothing sent), the
-switch asked naming it, the band saying writes are on (drawn), then ⌫
-asking for the name — a wrong one sending nothing, the right one
-landing — and writes off again, fake-prod's proxy refusing a POST once
-more; on `fake-dev` every write greyed with why and nothing reaching the
+greyed while its entry sets `writable: false` (⌫ only saying so, drawn,
+nothing sent, its proxy refusing a POST), then, the entry gone, writable
+with no switch (the owner's decision): ⌫ asking for the name — a wrong
+one sending nothing, the right one landing; on `fake-dev` every write greyed with why and nothing reaching the
 fake, not even a review; and Kubernetes off stopping every
 forward, its kubectl ended;
 Flux's and Argo CD's verbs (`E2ERunner+KubernetesGitOps`, Flux and Argo
@@ -7003,7 +7004,7 @@ watched again once a slot is free; Diff Chart through a stand-in helm
 Secret masked before and after and the Deployment's replicas in the
 changes pane (drawn); Upgrade… refused on fake-dev, reviewed, asked and
 recorded on kind-fake in a pinned tab, the values asked for and a wrong
-name running nothing on fake-prod with writes on; its tabs closed, the
+name running nothing on writable fake-prod; its tabs closed, the
 watches end;
 the page with Kubernetes off; and that every kubectl it started ends —
 the scenario's `exit` isn't the app's quit.

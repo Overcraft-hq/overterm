@@ -801,7 +801,7 @@ enum SettingsSchema {
         SettingSpec(
             key: "kubernetes.contexts", section: .kubernetes, group: "Contexts", title: "Each context's own settings",
             help:
-                "By the context's name: its class (production, remote or local; unset, its name decides), whether a remote or local one may be written to — a production one never is, its writes are turned on for a session — its namespaces, and its saved queries (charts: your own Prometheus charts on a workload's Metrics tab).",
+                "By the context's name: its class (production, remote or local; unset, its name decides), writable (every class is unless it says false: writable false makes a context read-only, production included; production's changes are still asked, the destructive ones by name), its namespaces, and its saved queries (charts: your own Prometheus charts on a workload's Metrics tab).",
             kind: .entries(SettingEntries(noun: "context", fields: KubeContextSettings.fields)), defaultValue: .entries([:]),
             requires: "kubernetes.enabled", heldWhenEditedOutside: true),
         SettingSpec(
@@ -853,7 +853,7 @@ enum SettingsSchema {
         SettingSpec(
             key: "kubernetes.agentWrites", section: .kubernetes, group: "Agents", title: "Contexts agents may change",
             help:
-                "By name: the contexts where agents get k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply — empty, agents only read. Only while Overterm may write there too: a local or remote one by its writable setting, a production one while its writes are on for the session. Each call is still asked in the window, naming the context. An agent started before a name was added needs a restart to see the tools.",
+                "By name: the contexts where agents get k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply — empty, agents only read. Only while the context is writable for agents too: a local one not set writable false; a remote or production one only where its kubernetes.contexts entry sets writable true. Each call is still asked in the window, naming the context. An agent started before a name was added needs a restart to see the tools.",
             kind: .list(placeholder: "a context's name"), defaultValue: .list([]), requires: "kubernetes.agentAccess", heldWhenEditedOutside: true),
         SettingSpec(
             key: "kubernetes.debugImage", section: .kubernetes, group: "Tabs", title: "Debug container's image",

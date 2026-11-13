@@ -20,9 +20,10 @@ import Foundation
 /// names `kind-fake` they are listed, `k8s_scale` there is asked in the
 /// window (the runner answers) and lands on the fake; a declined
 /// `k8s_delete_pod` sends nothing. With only `fake-dev` and `fake-prod`, a
-/// write on fake-prod is refused, and once its writes are on for the
-/// session still refused until `kubernetes.agentWrites` names it; then a
-/// delete there asks for the pod's name, and a wrong one sends nothing.
+/// write on fake-prod — writable for a person with no switch — is refused
+/// to agents until `kubernetes.agentWrites` names it and its entry sets
+/// `writable: true` (agents' rule as it was); then a delete there asks for
+/// the pod's name, and a wrong one sends nothing.
 extension E2ERunner {
     func kubernetesTabWrites(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
         let wasShowing = app.store.showingOverlay == .kubernetes
@@ -251,7 +252,7 @@ extension E2ERunner {
         check(
             "k8s_contexts says where agents may write",
             contexts.text.contains("kind-fake — local, writable — agents may restart, scale and delete pods here")
-                && contexts.text.contains("fake-prod — PRODUCTION, read-only for Overterm"), contexts.text)
+                && contexts.text.contains("fake-prod — PRODUCTION, writable for Overterm (not for agents)"), contexts.text)
 
         // k8s_scale on kind-fake: asked in the window, the runner answers, it lands.
         let scaling = started("k8s_scale", ["name": "batch", "replicas": 2, "context": "kind-fake", "namespace": "shop"])
@@ -299,15 +300,20 @@ extension E2ERunner {
             "k8s_scale on fake-prod is refused, asking nothing",
             refused.isError && refused.text.contains("isn't offered on fake-prod") && window.attachedSheet == nil, refused.text)
 
-        // fake-prod's writes on for the session: still refused, until agentWrites names it.
+        // fake-prod writable for Overterm (no switch): still refused to agents, until agentWrites names it.
         model.select("fake-prod")
-        page.allowProductionWrites()
-        check("turning writes on is asked", await eventually(5) { self.window.attachedSheet != nil })
-        if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
-        check("fake-prod's writes are on", await eventually(5) { model.selected?.isWritable == true && page.productionWritesOn })
+        check("fake-prod is writable for Overterm", await eventually(5) { model.selected?.isWritable == true })
         let notNamed = await call("k8s_delete_pod", ["name": "web-7d9", "context": "fake-prod", "namespace": "payments"])
         check("a write there is refused: agentWrites doesn't name it", notNamed.isError && notNamed.text.contains("kubernetes.agentWrites"), notNamed.text)
         Settings.shared.set("kubernetes.agentWrites", .list(["fake-prod"]))
+        let unset = await call("k8s_delete_pod", ["name": "web-7d9", "context": "fake-prod", "namespace": "payments"])
+        check(
+            "named, but its entry doesn't set writable true: still refused to agents",
+            unset.isError && unset.text.contains("only where its kubernetes.contexts entry sets writable: true") && window.attachedSheet == nil, unset.text)
+        Settings.shared.set("kubernetes.contexts", Self.kubeContexts(["fake-prod": ["writable": .bool(true)]]))
+        check(
+            "its entry read",
+            await eventually(10) { model.contexts.context(named: "fake-prod")?.settings.writable == true })
         let prodContexts = await call("k8s_contexts", [:])
         check("k8s_contexts says agents may write on fake-prod", prodContexts.text.contains("fake-prod — PRODUCTION, writable — agents may"), prodContexts.text)
 
@@ -329,8 +335,14 @@ extension E2ERunner {
         check("the pod is still there", fake.pod("web-7d9", namespace: "payments") != nil)
         check("nothing but reviews reached the fake since", fake.writes.dropFirst(writes).allSatisfy(\.isAccessReview), "\(fake.writes.suffix(3))")
 
-        page.endProductionWrites()
-        check("writes off again", await eventually(5) { model.selected?.isWritable == false })
+        // Its entry set read-only: no agent writes either, whatever agentWrites says.
+        Settings.shared.set("kubernetes.contexts", Self.kubeContexts(["fake-prod": ["writable": .bool(false)]]))
+        check("set read-only by its entry", await eventually(10) { model.selected?.isWritable == false })
+        let readOnlyNow = await call("k8s_delete_pod", ["name": "web-7d9", "context": "fake-prod", "namespace": "payments"])
+        check(
+            "an agent's write on read-only fake-prod is refused, asking nothing",
+            readOnlyNow.isError && readOnlyNow.text.contains("read-only for Overterm") && window.attachedSheet == nil, readOnlyNow.text)
+        Settings.shared.set("kubernetes.contexts", Self.kubeContexts())
         Settings.shared.set("kubernetes.agentWrites", nil)
         check("and the write tools go", await listedEventually(KubeMCP.reads))
         model.select("fake-dev")

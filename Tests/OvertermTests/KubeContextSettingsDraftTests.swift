@@ -4,8 +4,8 @@ import XCTest
 
 /// A context's settings in one sheet: read from `kubernetes.contexts` and
 /// `kubernetes.agentWrites`, written back with the entry's other fields and
-/// the other entries kept, checked by SettingsSchema; production's session
-/// switch never a setting.
+/// the other entries kept, checked by SettingsSchema; writable by default
+/// on every class, production's `writable: false` a field like any other.
 @MainActor
 final class KubeContextSettingsDraftTests: XCTestCase {
     private let context = KubeWritesTests.context
@@ -38,7 +38,9 @@ final class KubeContextSettingsDraftTests: XCTestCase {
         XCTAssertNil(none.contextClass)
         XCTAssertNil(none.writable)
         XCTAssertFalse(none.agentWrites)
-        XCTAssertEqual(none.writableSaid, "Read-only (a remote context's default).")
+        XCTAssertEqual(
+            none.writableSaid, "Writable (the default). Agents write here only with Writable set, as well as Agents below.",
+            "every class's default; a remote one's agents need it set")
     }
 
     func testItWritesOnlyItsOwnFieldsKeepingTheRest() throws {
@@ -84,19 +86,32 @@ final class KubeContextSettingsDraftTests: XCTestCase {
         XCTAssertNil(draft.validation)
     }
 
-    func testProductionsSwitchIsShownNeverWritten() throws {
-        let prod = context("fake-prod", KubeContextSettings(), true)
+    /// Production is writable by default, its changes asked; its entry's
+    /// `writable: false` is written like any other class's — and taken out
+    /// again when set back to the default.
+    func testProductionsWritableIsAFieldLikeAnyOther() throws {
+        let prod = context("fake-prod", KubeContextSettings(), false)
         var draft = KubeContextSettingsDraft(context: prod, contexts: nil, agentWrites: [])
         XCTAssertTrue(draft.isProduction)
-        XCTAssertTrue(draft.sessionWrites)
-        XCTAssertTrue(draft.writableSaid.contains("never by a setting"), draft.writableSaid)
+        XCTAssertNil(draft.writable)
+        XCTAssertEqual(
+            draft.writableSaid,
+            "Writable (the default). Production: each change is asked, naming the context, and a destructive one asks for its name. "
+                + "Agents write here only with Writable set, as well as Agents below.")
         draft.writable = true
+        XCTAssertEqual(
+            draft.writableSaid, "Writable. Production: each change is asked, naming the context, and a destructive one asks for its name.")
+        draft.writable = false
         draft.applyOnProduction = true
+        XCTAssertTrue(draft.writableSaid.hasPrefix("Read-only"), draft.writableSaid)
         let written = try draft.applied(contexts: nil, agentWrites: []).get().contexts
-        XCTAssertEqual(written, .entries(["fake-prod": ["applyOnProduction": .bool(true)]]), "writable is no switch on production; the session's never a field")
-        let fields = written.entries?["fake-prod"] ?? [:]
-        XCTAssertNil(fields["writable"])
-        XCTAssertFalse(fields.keys.contains { $0.lowercased().contains("session") })
+        XCTAssertEqual(written, .entries(["fake-prod": ["applyOnProduction": .bool(true), "writable": .bool(false)]]))
+        XCTAssertEqual(KubeContextSettings(fields: written.entries?["fake-prod"] ?? [:]).writable, false)
+        var back = KubeContextSettingsDraft(context: prod, contexts: written, agentWrites: [])
+        XCTAssertEqual(back.writable, false)
+        back.writable = nil
+        XCTAssertEqual(try back.applied(contexts: written, agentWrites: []).get().contexts, .entries(["fake-prod": ["applyOnProduction": .bool(true)]]))
+        XCTAssertFalse((written.entries?["fake-prod"] ?? [:]).keys.contains { $0.lowercased().contains("session") }, "no session field")
     }
 
     func testSavedThroughSettingsInPlaceCommentsKept() async throws {
@@ -210,7 +225,7 @@ final class KubeContextSettingsDraftTests: XCTestCase {
         draft.contextClass = .local
         draft.agentWrites = true
         XCTAssertTrue(draft.lessStrict(entry: nil))
-        XCTAssertTrue(draft.lessStrictSaid.contains("writable — by this setting"), draft.lessStrictSaid)
+        XCTAssertTrue(draft.lessStrictSaid.contains("no longer asked as production's"), draft.lessStrictSaid)
         XCTAssertTrue(draft.lessStrictSaid.contains("agents may change it"), draft.lessStrictSaid)
         XCTAssertTrue(draft.lessStrictSaid.hasSuffix("Type acme-prod to confirm."), draft.lessStrictSaid)
         guard case .failure(let refused) = draft.applied(contexts: nil, agentWrites: []) else { return XCTFail("written without the name") }
@@ -227,7 +242,10 @@ final class KubeContextSettingsDraftTests: XCTestCase {
         byEntry.contextClass = nil
         XCTAssertEqual(byEntry.resolvedClass, .remote)
         XCTAssertTrue(byEntry.lessStrict(entry: nil))
+        XCTAssertTrue(byEntry.lessStrictSaid.contains("no longer asked as production's"), byEntry.lessStrictSaid)
+        byEntry.writable = false
         XCTAssertTrue(byEntry.lessStrictSaid.contains("stays read-only"), byEntry.lessStrictSaid)
+        byEntry.writable = nil
         guard case .failure = byEntry.applied(contexts: saved, agentWrites: []) else { return XCTFail("written without the name") }
         // Made production: nothing to ask.
         var stricter = KubeContextSettingsDraft(context: dev, contexts: nil, agentWrites: [])

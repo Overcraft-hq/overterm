@@ -7,8 +7,7 @@ import Foundation
 /// requests (`KubeTabWrite`). Each goes one way (`runTabWrite`), as the
 /// page's writes do:
 /// 1. the process class check (`KubeProcessCheck`): refused on a
-///    read-only context — remote by its `writable` setting, production
-///    without its switch for the session; a node shell also needs the
+///    read-only context — any class set `writable: false`; a node shell also needs the
 ///    context's `nodeShell`;
 /// 2. the access review of what the command does (SelfSubjectAccessReview
 ///    through the context's writable socket, `KubernetesModel.writeAccess`);

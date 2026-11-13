@@ -190,9 +190,9 @@ final class KubeResizeTests: XCTestCase {
         XCTAssertFalse(rule.typedName, "not in rule 4's list: it is changed back the same way")
         XCTAssertNotNil(rule.warning, "a controller's pod gets its template's values back")
         for name in ["fake-dev", "fake-prod", "globex-eu-west-1-prod"] {
-            XCTAssertNotNil(KubeWriteCheck.rule(.resize, for: KubeWritesTests.context(name), kind: .pods).refused, name)
+            XCTAssertNotNil(KubeWriteCheck.rule(.resize, for: KubeWritesTests.context(name, readOnly: true), kind: .pods).refused, name)
         }
-        XCTAssertNil(KubeWriteCheck.rule(.resize, for: KubeWritesTests.context("fake-prod", session: true), kind: .pods).refused, "production's switch")
+        XCTAssertNil(KubeWriteCheck.rule(.resize, for: KubeWritesTests.context("fake-prod"), kind: .pods).refused, "production: writable by default")
         XCTAssertEqual(
             KubeAccessReview.attributes(KubeAccess(verb: "patch", resource: "pods/resize"), namespace: "shop"),
             ["verb": "patch", "resource": "pods", "group": "", "subresource": "resize", "namespace": "shop"])
@@ -200,7 +200,7 @@ final class KubeResizeTests: XCTestCase {
 
     func testTheConfirmationListsEachChange() {
         let changes = [KubeResize.Change(container: "app", field: .cpuRequest, from: "100m", to: "250m")]
-        let context = KubeWritesTests.context("fake-prod", session: true)
+        let context = KubeWritesTests.context("fake-prod")
         let confirmation = KubeWriteConfirmation.make(
             .resize, ref("fake-prod"), context: context, rule: KubeWriteCheck.rule(.resize, for: context, kind: .pods), resize: changes)
         XCTAssertEqual(confirmation.title, "Resize pod shop/web-1 in place?")
@@ -240,9 +240,10 @@ final class KubeResizePageTests: XCTestCase {
         var confirmations: [(KubeWriteConfirmation, (KubeWriteAnswer) -> Void)] = []
     }
 
-    private func page(current: String) async throws -> (KubernetesPageModel, Box) {
+    private func page(current: String, readOnly: Set<String> = []) async throws -> (KubernetesPageModel, Box) {
         let model = KubernetesModel(proxies: KubeProxies())
-        let list = KubeContextList(contexts: ["fake-dev", "fake-prod", "kind-fake"].map { KubeWritesTests.context($0) }, current: current)
+        let list = KubeContextList(
+            contexts: ["fake-dev", "fake-prod", "kind-fake"].map { KubeWritesTests.context($0, readOnly: readOnly.contains($0)) }, current: current)
         model.load = { _ in list }
         model.readConfiguration = { KubernetesModel.Configuration() }
         model.watchesSettings = false
@@ -392,7 +393,7 @@ final class KubeResizePageTests: XCTestCase {
 
     func testAReadOnlyContextSendsNothing() async throws {
         for current in ["fake-dev", "fake-prod"] {
-            let (page, box) = try await page(current: current)
+            let (page, box) = try await page(current: current, readOnly: [current])
             defer { page.model.hide() }
             let ref = KubeObjectRef(context: current, kind: try pods(page), namespace: "shop", name: "web-1")
             page.openResizeSheet(ref)

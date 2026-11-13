@@ -1251,8 +1251,8 @@ final class KubernetesPageModel: ObservableObject {
     /// The red band over the whole page on a production context; nil elsewhere.
     var band: String? {
         guard let context = model.selected, context.isProduction else { return nil }
-        guard context.sessionWrites else { return "PRODUCTION · \(context.displayName) · read-only: Overterm changes nothing here" }
-        return "PRODUCTION · \(context.displayName) · writes on until quit: each one asked, a destructive one by its name"
+        guard context.isWritable else { return "PRODUCTION · \(context.displayName) · read-only: Overterm changes nothing here (its writable setting)" }
+        return "PRODUCTION · \(context.displayName) · each change asked, a destructive one by its name"
     }
 
     /// The selected context's class and whether Overterm may write there.
@@ -1747,7 +1747,7 @@ final class KubernetesPageModel: ObservableObject {
                 "Follow a production pod's log in a pinned tab?",
                 "PRODUCTION · \(context.name) · namespace \(namespace)\nThe tab follows pod \(namespace)/\(pod)'s log, and is pinned to "
                     + "\(context.displayName): once the follow ends, a plain kubectl, helm or k9s in it goes to \(context.name) — with your own "
-                    + "credentials and rights. Overterm's read-only doesn't reach into a terminal. Your current context stays as it is. "
+                    + "credentials and rights. Nothing Overterm checks reaches into a terminal. Your current context stays as it is. "
                     + "Asked once for this context this session.",
                 "Follow in \(context.displayName)"
             ) { [weak self] in

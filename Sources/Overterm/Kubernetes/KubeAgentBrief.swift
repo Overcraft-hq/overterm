@@ -158,9 +158,11 @@ struct KubeBriefContext: Equatable, Sendable {
     var production: Bool
     var writable: Bool
 
-    /// `context fake-dev (remote, read-only for Overterm)`.
+    /// `context fake-dev (read-only for Overterm)`; production says how
+    /// an agent treats it: read, change nothing — whatever Overterm's own
+    /// writes there are, which the person makes, each asked.
     var said: String {
-        if production { return "PRODUCTION context \(name) (read-only: Overterm changes nothing there)" }
+        if production { return "PRODUCTION context \(name) (read only: change nothing there)" }
         return "context \(name)" + (writable ? "" : " (read-only for Overterm)")
     }
 }

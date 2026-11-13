@@ -344,8 +344,9 @@ final class KubeconfigTests: XCTestCase {
 
     // MARK: Classes
 
-    /// This Mac's five names: the two -prod are production, the rest remote
-    /// — read-only too.
+    /// This Mac's five names: the two -prod are production, the rest
+    /// remote — every one writable by default (the owner's decision), read-only
+    /// only by its setting.
     func testThisMacsContextsClassify() throws {
         let list = KubeContextList.resolve([try XCTUnwrap(Kubeconfig.parse(Self.thisMac))], settings: [:])
         let classes = Dictionary(uniqueKeysWithValues: list.contexts.map { ($0.name, $0.contextClass) })
@@ -358,7 +359,11 @@ final class KubeconfigTests: XCTestCase {
                 "globex-eu-west-1-prod": .production,
                 "kubernetes-admin@k8s-cluster": .remote,
             ])
-        XCTAssertTrue(list.contexts.allSatisfy { !$0.isWritable }, "nothing on this Mac is writable by default")
+        XCTAssertTrue(list.contexts.allSatisfy(\.isWritable), "every one writable by default, production included")
+        let readOnly = KubeContextList.resolve(
+            [try XCTUnwrap(Kubeconfig.parse(Self.thisMac))],
+            settings: Dictionary(uniqueKeysWithValues: list.contexts.map { ($0.name, KubeContextSettings(writable: false)) }))
+        XCTAssertTrue(readOnly.contexts.allSatisfy { !$0.isWritable }, "each set read-only by its entry")
         XCTAssertTrue(list.context(named: list.current ?? "")?.isProduction == true, "the current context is production")
     }
 
@@ -409,6 +414,7 @@ final class KubeconfigTests: XCTestCase {
             "hand-local-prod": KubeContextSettings(contextClass: .local),
             "fake-dev": KubeContextSettings(writable: false),
             "kubernetes-admin@prod": KubeContextSettings(writable: true),
+            "innocent": KubeContextSettings(writable: false),
         ]
         let list = KubeContextList.resolve([config], settings: settings)
         func kind(_ name: String) -> KubeContextClass? { list.context(named: name)?.contextClass }
@@ -425,20 +431,22 @@ final class KubeconfigTests: XCTestCase {
         XCTAssertEqual(kind("hand-set"), .production, "by hand first")
         XCTAssertEqual(kind("hand-local-prod"), .local, "by hand, even less strict — only ever by an explicit setting")
 
-        XCTAssertFalse(list.context(named: "fake-prod")!.isWritable)
-        XCTAssertFalse(list.context(named: "fake-dev")!.isWritable)
+        XCTAssertTrue(list.context(named: "fake-prod")!.isWritable, "production writable by default")
+        XCTAssertFalse(list.context(named: "fake-dev")!.isWritable, "writable: false")
         XCTAssertTrue(list.context(named: "kind-fake")!.isWritable)
-        XCTAssertFalse(list.context(named: "kind-prod-copy")!.isWritable)
-        XCTAssertFalse(list.context(named: "kubernetes-admin@prod")!.isWritable, "writable: true never opens production")
+        XCTAssertTrue(list.context(named: "kind-prod-copy")!.isWritable)
+        XCTAssertTrue(list.context(named: "minikube-like")!.isWritable, "remote writable by default")
+        XCTAssertTrue(list.context(named: "kubernetes-admin@prod")!.isWritable)
+        XCTAssertFalse(list.context(named: "innocent")!.isWritable, "production read-only by its setting")
     }
 
-    /// A remote context is writable only by its flag; production never by
-    /// a flag, only for a session; a local one unless its flag says no.
+    /// Every class writable unless its flag says no — production too, by
+    /// the owner's decision: no session switch.
     func testWritable() {
-        XCTAssertFalse(KubeClassifier.isWritable(.production, flag: true), "a setting never makes production writable")
-        XCTAssertTrue(KubeClassifier.isWritable(.production, flag: nil, productionSession: true))
-        XCTAssertFalse(KubeClassifier.isWritable(.remote, flag: nil))
-        XCTAssertTrue(KubeClassifier.isWritable(.remote, flag: true))
+        XCTAssertTrue(KubeClassifier.isWritable(.production, flag: nil), "production writable by default")
+        XCTAssertFalse(KubeClassifier.isWritable(.production, flag: false), "read-only by its setting")
+        XCTAssertTrue(KubeClassifier.isWritable(.remote, flag: nil))
+        XCTAssertFalse(KubeClassifier.isWritable(.remote, flag: false))
         XCTAssertTrue(KubeClassifier.isWritable(.local, flag: nil))
         XCTAssertFalse(KubeClassifier.isWritable(.local, flag: false))
     }

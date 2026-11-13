@@ -10,9 +10,8 @@ import Foundation
 /// kept), saved through `Settings.set`: settings.json edited in place
 /// (`SettingsJSON`), checked by `SettingsSchema` first
 /// (`KubeContextSettingsDraft.applied`). A production context made less
-/// strict is asked in red first, its name typed.
-/// Production's write switch for the session is only shown: it is never a
-/// setting.
+/// strict is asked in red first, its name typed. `writable` is a field like
+/// any other, production's too: false makes the context read-only.
 extension KubernetesPageModel {
     /// The sheet for `context` (nil: the one selected), as the settings hold it now.
     func openContextSettings(_ context: KubeContext? = nil) {

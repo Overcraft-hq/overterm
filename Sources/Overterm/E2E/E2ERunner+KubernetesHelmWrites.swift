@@ -12,8 +12,9 @@ import Foundation
 /// the helm it runs, then **recorded, not typed** — in a tab pinned to the
 /// context; the uninstall asks for the release's name even here, a wrong
 /// one running nothing; a ConfigMap-stored release's says its driver. On
-/// `fake-prod`, refused until its writes are on for the session; then a
-/// rollback from its History row asks for the name. Only reviews reach the fake.
+/// `fake-prod`, refused only while its entry sets `writable: false`;
+/// otherwise writable with no switch, a rollback from its History row
+/// asks for the name. Only reviews reach the fake.
 extension E2ERunner {
     func kubernetesHelmWrites(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
         let wasShowing = app.store.showingOverlay == .kubernetes
@@ -167,15 +168,16 @@ extension E2ERunner {
             check("cancelled, nothing recorded", recorded.count == 2)
         }
 
-        // fake-prod: refused until writes are on for the session; then the name is asked.
+        // fake-prod: refused while its entry sets it read-only; writable
+        // (the default) with no switch, the name is asked.
         page.writeStatus = nil
+        Settings.shared.set("kubernetes.contexts", Self.kubeContexts(["fake-prod": ["writable": .bool(false)]]))
         guard let prodWeb = await releases(on: "fake-prod") else { return }
+        check("fake-prod set read-only by its entry", await eventually(10) { model.selected?.isWritable == false })
         let prodReadOnly = KubeProcessCheck.readOnly(.production)
         check("fake-prod's rollback is refused", verb(.helmRollback, prodWeb)?.unavailable == prodReadOnly, verb(.helmRollback, prodWeb)?.unavailable ?? "none")
-        page.allowProductionWrites()
-        check("turning writes on is asked", await eventually(5) { self.window.attachedSheet != nil })
-        answer(.alertFirstButtonReturn)
-        check("fake-prod's writes are on", await eventually(5) { model.selected?.isWritable == true && page.productionWritesOn })
+        Settings.shared.set("kubernetes.contexts", Self.kubeContexts())
+        check("its entry gone, fake-prod is writable, nothing asked", await eventually(10) { model.selected?.isWritable == true && self.window.attachedSheet == nil })
         check(
             "its rollback offered once reviewed", await eventually(15) { verb(.helmRollback, prodWeb).map { $0.unavailable == nil } == true },
             verb(.helmRollback, prodWeb)?.unavailable ?? "none")
@@ -197,8 +199,6 @@ extension E2ERunner {
         let prodLine = secretPrefix + " helm rollback web 1 --kube-context fake-prod -n shop"
         check("its name typed, recorded, not typed", await eventually(10) { recorded.count == 3 } && recorded.last?.command == prodLine, recorded.last?.command ?? "")
         back()
-        page.endProductionWrites()
-        check("writes off again", await eventually(5) { model.selected?.isWritable == false })
 
         check("only access reviews reached the fake", fake.writes.allSatisfy(\.isAccessReview), "\(fake.writes.filter { !$0.isAccessReview })")
         check("and every record is still there", fake.names("secrets").filter { $0.hasPrefix("sh.helm.release.v1.web.") }.count == 2)
