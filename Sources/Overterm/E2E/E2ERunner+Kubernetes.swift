@@ -1118,7 +1118,7 @@ extension E2ERunner {
             FakeKubeAPI.Pod(
                 image: "postgres:16", env: ["POSTGRES_USER": "shop", "POSTGRES_DB": "orders"],
                 secretEnv: ["POSTGRES_PASSWORD": FakeKubeAPI.SecretKeyRef(name: "web-db", key: "password")], ports: [FakeKubeAPI.ContainerPort(5432)]))
-        fake.addPod("cache-0", namespace: "shop", FakeKubeAPI.Pod(image: "redis:7.4"))
+        fake.addPod("cache-0", namespace: "shop", FakeKubeAPI.Pod(image: "mongo:7.0"))
         if app.store.showingOverlay != .kubernetes { app.showKubernetesPage() }
         model.setKind(.pods)
         page.showKind(.pods)
@@ -1172,10 +1172,10 @@ extension E2ERunner {
         if let forward { page.stopForward(forward.id) }
 
         page.selection = ["shop/cache-0"]
-        check("d on a Redis pod", page.press("d"))
+        check("d on a MongoDB pod", page.press("d"))
         check(
             "says the Database client doesn't speak it, and what does",
-            await eventually(10) { page.commandProblem?.contains("redis-cli") == true }, page.commandProblem ?? "")
+            await eventually(10) { page.commandProblem?.contains("mongosh") == true }, page.commandProblem ?? "")
         check("and starts nothing", !KubeForwards.shared.forwards.contains { $0.spec.target == .pod("cache-0") })
         fake.deletePod("db-0", namespace: "shop")
         fake.deletePod("cache-0", namespace: "shop")

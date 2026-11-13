@@ -3692,8 +3692,8 @@ never the proxy's socket, which refuses port-forward on every context.
   (`kubernetesOpenedExternally`) instead of opening anything.
 - **`d`** on a database pod (`databaseRef`, Open in Database Client on a
   pod whose detail read it): the image says which (`KubeDatabase.detect`, a
-  `KubeDatabaseTarget`, by `DockerClient`'s table — postgres, mysql and mariadb, clickhouse; an
-  exporter beside it is a tool; Redis and Mongo are said, with their
+  `KubeDatabaseTarget`, by `DockerClient`'s table — postgres, mysql and mariadb, clickhouse, redis and valkey; an
+  exporter beside it is a tool; Mongo and the rest are said, with their
   client in a shell), the container's port (the image's, or the one it
   declares — unless that is a port the image speaks another protocol on:
   ClickHouse's native 9000/9440/9009, MySQL's X Protocol 33060,

@@ -142,7 +142,7 @@ struct KubeDatabaseTarget: Equatable, Sendable {
 
 enum KubeDatabase {
     /// The kinds the Database client speaks, as the page says them.
-    static let spoken = "PostgreSQL, MySQL, MariaDB and ClickHouse"
+    static let spoken = "PostgreSQL, MySQL, MariaDB, ClickHouse, Redis and Valkey"
 
     /// The first container whose image is a database the Database client
     /// speaks; nil when none is.
@@ -194,6 +194,11 @@ enum KubeDatabase {
                 target.password = sources(["CLICKHOUSE_PASSWORD"])
                 target.defaultUser = "default"
                 target.defaultDatabase = "default"
+            case .redis:
+                // As Docker's: the official image has no password of its
+                // own, Bitnami's say theirs here; no user, database 0.
+                target.password = sources(["REDIS_PASSWORD", "VALKEY_PASSWORD"])
+                target.defaultDatabase = ""
             default:
                 continue
             }
@@ -216,7 +221,7 @@ enum KubeDatabase {
     }
 
     /// The database client of an image the Database client doesn't speak
-    /// (Redis, Mongo…), for saying why `d` can't: nil when none is.
+    /// (Mongo, Cassandra…), for saying why `d` can't: nil when none is.
     static func otherClient(_ pod: [String: Any]) -> DockerClient.Kind? {
         for container in containers(of: pod) {
             if let image = container["image"] as? String, let kind = DockerClient.kind(of: image), kind.database == nil { return kind }
@@ -265,7 +270,7 @@ enum KubeDatabase {
     private static let allNames = [
         "POSTGRES_USER", "POSTGRESQL_USERNAME", "POSTGRESQL_USER", "POSTGRES_DB", "POSTGRESQL_DATABASE", "POSTGRES_DATABASE", "POSTGRES_PASSWORD",
         "POSTGRESQL_PASSWORD", "MYSQL_USER", "MARIADB_USER", "MYSQL_PASSWORD", "MARIADB_PASSWORD", "MYSQL_ROOT_PASSWORD", "MARIADB_ROOT_PASSWORD",
-        "MYSQL_DATABASE", "MARIADB_DATABASE", "CLICKHOUSE_USER", "CLICKHOUSE_DB", "CLICKHOUSE_PASSWORD",
+        "MYSQL_DATABASE", "MARIADB_DATABASE", "CLICKHOUSE_USER", "CLICKHOUSE_DB", "CLICKHOUSE_PASSWORD", "REDIS_PASSWORD", "VALKEY_PASSWORD",
     ]
 
     /// The keys of a Secret read on the user's ask that `wanted` names, as
