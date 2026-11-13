@@ -215,7 +215,8 @@ struct TerraformPrompt: Equatable, Sendable {
             let quote = value.first.map { "'\"".contains($0) ? String($0) : "" } ?? ""
             let bare = value.trimmingCharacters(in: CharacterSet(charactersIn: "'\""))
             guard let equals = bare.firstIndex(of: "=") else { return quote + Secrets.credentialMask + quote }
-            return quote + bare[...equals] + Secrets.credentialMask + quote
+            let name = String(bare[...equals])
+            return quote + name + Secrets.credentialMask + quote
         }
         var afterVar = false
         for index in words.indices {

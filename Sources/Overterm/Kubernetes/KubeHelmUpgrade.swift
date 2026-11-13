@@ -411,13 +411,13 @@ enum KubeHelmTemplate {
         let found = await KubeBlocking.run { () -> (URL?, [String: String]) in
             let base = guarded ? ProcessInfo.processInfo.environment : ShellEnvironment.environment()
             let helm = KubeHelmLocator.candidates(configured: configured, guarded: guarded, loginPath: base["PATH"], home: home).first
-            return (helm, environment(base: base, guarded: guarded, scratch: scratch))
+            return (helm, Self.environment(base: base, guarded: guarded, scratch: scratch))
         }
         guard let helm = found.0 else {
             throw Problem(guarded ? "No helm: kubernetes.helmPath names none." : "helm isn't installed (or set kubernetes.helmPath in Settings ▸ Kubernetes).")
         }
         let environment = found.1
-        let arguments = arguments(release: release, chart: chart.path, namespace: namespace, capabilities: capabilities)
+        let arguments = Self.arguments(release: release, chart: chart.path, namespace: namespace, capabilities: capabilities)
         let result = await KubeBlocking.run {
             KubeProcessRun.run(helm, arguments, environment: environment, timeout: timeout, outputLimit: outputLimit, input: values)
         }

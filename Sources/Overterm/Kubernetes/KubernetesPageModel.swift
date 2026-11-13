@@ -1428,7 +1428,7 @@ final class KubernetesPageModel: ObservableObject {
         let qualified = picked.map { $0.id.description }.joined(separator: "\n")
         let commands = kubectl(for: Set(picked.map(\.id.description)))
         let list = listKubectl
-        return [
+        let copies: [ResourceVerb] = [
             ResourceVerb(title: picked.count == 1 ? "Copy Name" : "Copy Names", symbol: "doc.on.doc") { [weak self] in self?.actions?.copy(names) },
             ResourceVerb(title: "Copy Namespace/Name", symbol: "doc.on.doc") { [weak self] in self?.actions?.copy(qualified) },
             ResourceVerb(title: "Copy as kubectl", symbol: "terminal", key: KubernetesKey.copyKubectl.key, group: 1) { [weak self] in
@@ -1444,9 +1444,20 @@ final class KubernetesPageModel: ObservableObject {
                 self?.copyRows(.csv, ids: ids)
             },
             ResourceVerb(title: "Export List as CSV…", symbol: "square.and.arrow.up", group: 2) { [weak self] in self?.exportCSV() },
-        ] + [terminalVerb(for: picked)].compactMap { $0 } + askWhyVerbs(for: picked) + podVerbs(for: picked) + podFileVerbs(for: picked) + dockerVerbs(for: picked)
-            + forwardVerbs(for: picked)
-            + editVerbs(for: picked) + compareVerbs(for: picked) + writeVerbs(for: picked) + tabWriteVerbs(for: picked) + snippetVerbs(for: picked)
+        ]
+        var verbs: [ResourceVerb] = copies
+        if let terminal = terminalVerb(for: picked) { verbs.append(terminal) }
+        verbs += askWhyVerbs(for: picked)
+        verbs += podVerbs(for: picked)
+        verbs += podFileVerbs(for: picked)
+        verbs += dockerVerbs(for: picked)
+        verbs += forwardVerbs(for: picked)
+        verbs += editVerbs(for: picked)
+        verbs += compareVerbs(for: picked)
+        verbs += writeVerbs(for: picked)
+        verbs += tabWriteVerbs(for: picked)
+        verbs += snippetVerbs(for: picked)
+        return verbs
     }
 
     /// A pod's tab verbs, for the one pod picked in the pod list.

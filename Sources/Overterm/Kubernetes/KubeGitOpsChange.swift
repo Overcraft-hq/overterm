@@ -340,6 +340,10 @@ extension KubeClient {
     /// What resuming `object` applies: its source's revision read once,
     /// bounded; a source not served, not named or not readable is said as
     /// unread, never no sentence.
+    func fluxResume(_ read: KubeSpecRead, ref: KubeObjectRef, discovery: KubeDiscovery?) async -> KubeFluxResume? {
+        await fluxResume(read.object, ref: ref, discovery: discovery)
+    }
+
     func fluxResume(_ object: [String: Any], ref: KubeObjectRef, discovery: KubeDiscovery?) async -> KubeFluxResume? {
         guard let tool = KubeFluxResume.tool(ref.kind) else { return nil }
         var (facts, source) = KubeFluxResume.facts(object, tool: tool, resource: ref.kind.fullName)

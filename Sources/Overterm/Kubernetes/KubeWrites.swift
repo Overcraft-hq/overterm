@@ -560,6 +560,12 @@ enum KubeAccessReview {
 /// What a write's pre-read finds in an object's metadata alone
 /// (`PartialObjectMetadata`: never a Secret's values): its finalizers,
 /// its controller, whether it is being deleted.
+/// An object's JSON as `KubeClient.specRead` hands it over: made by the
+/// read and then only read, so it may cross to the caller's actor.
+struct KubeSpecRead: @unchecked Sendable {
+    let object: [String: Any]
+}
+
 struct KubeObjectMeta: Equatable, Sendable {
     var finalizers: [String] = []
     /// The owner with `controller: true`: `ReplicaSet web-7d9f`.
@@ -703,6 +709,12 @@ extension KubeClient {
         guard !(ref.kind.group.isEmpty && ref.kind.resource == "secrets") else { throw KubeWriteRefused(reason: "A Secret is never read for a write.") }
         let object = try await object(ref.kind, namespace: ref.namespace, name: ref.name)
         return (try? JSONSerialization.jsonObject(with: object.data) as? [String: Any]) ?? [:]
+    }
+
+    /// `spec`, read for the main actor: the JSON handed over whole, never
+    /// shared with the read that made it.
+    func specRead(_ ref: KubeObjectRef) async throws -> KubeSpecRead {
+        KubeSpecRead(object: try await spec(ref))
     }
 
     /// How many objects of `kind` a namespace holds: one Table page of

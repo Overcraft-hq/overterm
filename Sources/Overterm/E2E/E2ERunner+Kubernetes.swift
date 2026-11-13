@@ -2054,7 +2054,7 @@ extension E2ERunner {
 
     /// `body` with the user's pasteboard put back after: what it copied is
     /// read inside, then the pasteboard holds what it held before.
-    private func withPasteboardKept<T>(_ body: () async -> T) async -> T {
+    private func withPasteboardKept<T: Sendable>(_ body: () async -> T) async -> T {
         let board = NSPasteboard.general
         let kept = (board.pasteboardItems ?? []).map { item in
             item.types.compactMap { type in item.data(forType: type).map { (type, $0) } }
