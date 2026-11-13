@@ -2222,9 +2222,12 @@ final class E2ERunner {
         pressReturn()
         let ran = await eventually(10) { blocks.ledger.blocks.contains { !$0.isRunning && $0.command.contains("echo line") } }
         check("a command becomes a block", ran, blocks.ledger.blocks.map(\.command).joined(separator: " | "))
+        // Not asked of `isPrompt` itself: the pane's folder is deep in
+        // $TMPDIR, so Ghostty titles its prompt `…/` and the last three —
+        // which `isPrompt` once missed, and asking it agreed with itself.
         check(
             "and the directory the prompt shows does not",
-            !blocks.ledger.blocks.contains { CommandLedger.isPrompt($0.command, cwd: pane.workingDirectory) },
+            blocks.ledger.blocks.allSatisfy { $0.command.contains("echo line") },
             blocks.ledger.blocks.map(\.command).joined(separator: " | "))
         guard let ok = blocks.ledger.blocks.last(where: { $0.command.contains("echo line") }) else { return }
         check("that did not fail", !ok.failed, "exit \(ok.exit ?? -1)")
@@ -2254,6 +2257,10 @@ final class E2ERunner {
             return check("output that scrolls gets rows", false)
         }
         check("output that scrolls gets rows", scrolled, "\(big.rows) rows (\(big.startRow)…\(big.endRow))")
+        check(
+            "and the prompt after it takes none of them",
+            blocks.ledger.blocks.allSatisfy { $0.command.contains("echo line") || $0.command.contains("seq 1 120") },
+            blocks.ledger.blocks.map(\.command).joined(separator: " | "))
         check("the map can place it", blocks.ledger.position(of: big) != nil)
         app.copyOutput(of: pane)
         let fromRows = NSPasteboard.general.string(forType: .string) ?? ""

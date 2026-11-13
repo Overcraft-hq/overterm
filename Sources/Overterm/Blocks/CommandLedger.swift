@@ -119,10 +119,17 @@ struct CommandLedger: Equatable {
             let home = NSHomeDirectory()
             let short = cwd.hasPrefix(home) ? "~" + cwd.dropFirst(home.count) : cwd
             if title == cwd || title == short || title == (cwd as NSString).lastPathComponent { return true }
+            // Ghostty's own zsh integration titles a prompt `%(4~|…/%3~|%~)`:
+            // four folders deep or more, `…/` and the last three. Taken for a
+            // command, every prompt in a deep folder opened a block — and when
+            // the scroll of the command before it arrived after the prompt's
+            // title, that block took its rows (⇧⌘C copied the wrong output).
+            if title.hasPrefix("…/"), short.hasSuffix(title.dropFirst()) || cwd.hasSuffix(title.dropFirst()) { return true }
         }
         // A bare path with no arguments is not something anybody ran.
         if title.hasPrefix("~") && !title.contains(" ") { return true }
         if title.hasPrefix("/") && !title.contains(" ") { return true }
+        if title.hasPrefix("…/") && !title.contains(" ") { return true }
         // oh-my-zsh (and many prompts) title the window `user@host:path`
         // at every prompt — taken for a command, each prompt opened a block
         // that took the exit code and rows of the command before it.
