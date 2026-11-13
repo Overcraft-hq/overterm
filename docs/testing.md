@@ -233,6 +233,26 @@ kind's Kubernetes v1.37.0 answers them (2026-11-07, kubectl v1.36.1):
 - a Deployment's tree (ReplicaSet, pod, ConfigMap, PVC, Service) and the
   namespace's health findings on real objects.
 
+The Kubernetes scenarios each get a kubeconfig of their own from the
+test — a temporary file the scenario writes once `FakeKubeAPI` listens
+(`OVERTERM_KUBECONFIG`), never `~/.kube`:
+
+- `kubernetes` — the page end to end, its parts one after another
+  (`kubernetesPart`): lists, details, logs, Terminal in This Context,
+  Secrets, writes and their confirmations, Helm, GitOps, the bound
+  checkout, the agents' `k8s_` tools (about 260 s);
+- `kubernetesCharts` — the Metrics tabs: a pod's, a workload's, a node's,
+  a namespace's, sampled and over `FakePromQL`'s Prometheus;
+- `kubernetesOverview` — the Overview's cards, dark, light and narrow
+  (`OVERTERM_DUMP_PNG` captures each);
+- `kubernetesPerf` — 5,000 pods: the first draw, a burst of 500 events,
+  the scroll;
+- `kubernetesScale` — 5,000 pods across 50 namespaces with their
+  workloads: lists, the Overview's health checks, a 200-pod tree, the
+  footprint after;
+- `showcase` photographs the page on `fake-prod` with a pod's Metrics
+  tab (below, Looking at the UI).
+
 ### Terraform
 
 Terraform changes real infrastructure: no test runs it against anything
@@ -333,6 +353,22 @@ unlinked, exit 1 keeping nothing), rows, attributes, the cause chain, the
 risk list and the questions, init's fetch list, the queue — are
 `TerraformPlanTests.swift`, with a planted plan whose every sentinel path
 is checked against everything said from it.
+
+The `terraformApply` scenario (`E2ERunner+TerraformApply.swift`, stage
+2a) applies a local root's plan in the plan's environment — a hostile
+`TF_CLI_ARGS_apply` never reaching it —, asks for the root's name on a
+destroy and on production, asks before a pane, the window or a tab
+closes while the real terraform applies (Interrupt leaving the resource
+tainted and the lock free), and finds an apply whose record was lost by
+its pid. `terraformPerf` decodes a generated 2,000-resource plan and
+shows and filters its rows in the slot within Section 10's budgets; no
+terraform runs. The later stages' checks run inside these scenarios:
+`terraform` holds 2b's worktrees (`E2ERunner+TerraformA2b.swift`), 2c's
+state and outputs and 2d's drift and tests (`+TerraformB2c`,
+`+TerraformB2d`) and 2f's review section (`+TerraformC2f`);
+`terraformPlan` holds 2e's Force Unlock (`+TerraformA2e`). Every one but
+`terraformPerf` needs an installed terraform (`OVERTERM_TF_TEST_TERRAFORM`,
+else Homebrew's) and is skipped without one.
 
 ## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
@@ -476,6 +512,20 @@ closing without asking, the no-HEAD diff all have one).
 `OVERTERM_DUMP_LAYOUT` / `OVERTERM_DUMP_PNG` (docs/debugging.md) print the
 view tree and capture the real window — use them when a check isn't enough
 to see what's wrong.
+
+README's pictures come from the `showcase` scenario (`E2ERunner.swift`,
+`E2ERunner+Showcase.swift`) and a few others (api, review, notes,
+drawing, database, overgit, docker), photographed in a fixed 1400×880
+frame. The showcase's Kubernetes picture needs `OVERTERM_KUBECONFIG` —
+`testShowcase` passes a temporary path; without one it is left out, and
+a path to a file already there is refused (the run writes it and
+removes it) —
+and is taken against `FakeKubeAPI` and its Prometheus with no kubectl;
+its Terraform picture is the panel over a checkout it writes and a plan
+of `envs/prod` decoded from `show -json`'s shape, with no terraform, in
+a tab running a plain `bash` whose prompt names nobody's user or host.
+The captures are 2800 pixels wide; `docs/assets` keeps them at 1600
+(`sips -Z 1600`).
 
 ### The title bar and full screen
 
