@@ -4088,7 +4088,7 @@ other group on, the endpoint gone), and on again back in its `tools/list`.
   be done now, each by the same path.
 - **The guard path** (`KubernetesPageModel.write`), in this order: the
   class check (`KubeWriteCheck.rule`: refused with why on a read-only
-  context or production without its switch); the access review — a
+  context; production is asked, never refused); the access review — a
   SelfSubjectAccessReview through the writable socket
   (`KubeAccessReview`, `KubernetesModel.writeAccess`: a minute per
   context, namespace and verb, asked as a row is picked so the menu is

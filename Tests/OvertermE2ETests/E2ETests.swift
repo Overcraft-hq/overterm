@@ -202,10 +202,10 @@ final class E2ETests: XCTestCase {
 
     /// The apply (stage 2a): a local root's plan applied in the plan's
     /// environment, a hostile TF_CLI_ARGS_apply never reaching it; a destroy
-    /// and production asking for the root's name, production only after its
-    /// switch; closing a pane, the window or a tab where the real terraform
-    /// applies asks, Interrupt leaving the resource tainted and the lock
-    /// free; an apply whose record is lost found again by its pid.
+    /// and production asking for the root's name, with no switch; closing a
+    /// pane, the window or a tab where the real terraform applies asks,
+    /// Interrupt leaving the resource tainted and the lock free; an apply
+    /// whose record is lost found again by its pid.
     func testTerraformApply() throws {
         try run("terraformApply", env: ["OVERTERM_TERRAFORM": try Self.installedTerraform()])
     }
