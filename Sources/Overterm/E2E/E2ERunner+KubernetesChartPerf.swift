@@ -16,18 +16,20 @@ extension E2ERunner {
         let step: TimeInterval = 12
         let end = Date(timeIntervalSince1970: (Date().timeIntervalSince1970 / step).rounded(.down) * step)
         let start = end.addingTimeInterval(-300 * step)
-        var series = (0..<12).map { index in
-            KubeChartSeries(
-                id: "pod-\(index)", name: "api-7f9c6d-\(index)",
-                points: (0..<300).map { point in
-                    KubeSeriesPoint(
-                        time: start.addingTimeInterval(Double(point) * step),
-                        value: 0.05 + 0.02 * Double(index) + 0.03 * sin(Double(point) / 9 + Double(index)))
-                })
+        var series: [KubeChartSeries] = (0..<12).map { (index: Int) -> KubeChartSeries in
+            let row = Double(index)
+            let points: [KubeSeriesPoint] = (0..<300).map { (point: Int) -> KubeSeriesPoint in
+                let at = Double(point)
+                let wave: Double = 0.03 * sin(at / 9 + row)
+                let value: Double = 0.05 + 0.02 * row + wave
+                return KubeSeriesPoint(time: start.addingTimeInterval(at * step), value: value)
+            }
+            return KubeChartSeries(id: "pod-\(index)", name: "api-7f9c6d-\(index)", points: points)
         }
-        series.append(
-            KubeChartSeries(
-                id: "other", name: "other", points: (0..<300).map { KubeSeriesPoint(time: start.addingTimeInterval(Double($0) * step), value: 0.4) }))
+        let other: [KubeSeriesPoint] = (0..<300).map { (point: Int) -> KubeSeriesPoint in
+            KubeSeriesPoint(time: start.addingTimeInterval(Double(point) * step), value: 0.4)
+        }
+        series.append(KubeChartSeries(id: "other", name: "other", points: other))
         series.append(KubeChartSeries(id: "request", name: "request", role: .request, points: [KubeSeriesPoint(time: start, value: 0.5)]))
         series.append(KubeChartSeries(id: "limit", name: "limit", role: .limit, points: [KubeSeriesPoint(time: start, value: 1)]))
         let data = KubeChartData(
@@ -104,7 +106,7 @@ extension E2ERunner {
             "\(siblingBefore) → \(siblingAfter)")
         check("the view holding the cursor never runs again", hostAfter.container == hostBefore.container, "\(hostAfter.container - hostBefore.container) bodies")
         let tip = KubeChartRegistry.shared.tooltip(data.identifier, in: scope, at: start.addingTimeInterval(100 * step))
-        check("the tooltip there lists every series and both lines", tip?.rows.count == 15, "\(tip?.rows.map(\.name) ?? [])")
+        check("the tooltip there lists every series and both lines", tip?.rows.count == 15, "\(tip?.rows.map(\KubeChartTooltip.Row.name) ?? [])")
         cursor.leave(data.identifier)
         window.contentView = nil
         check("a chart gone from the screen leaves the registry", await eventually(5) { KubeChartRegistry.shared.chart(data.identifier, in: scope) == nil })

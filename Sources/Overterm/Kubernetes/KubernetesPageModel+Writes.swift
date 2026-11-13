@@ -426,8 +426,8 @@ extension KubernetesPageModel {
                     }
                 case .pause, .resume, .suspend, .unsuspend, .cordon, .uncordon, .fluxSuspend, .fluxResume:
                     guard let (toggle, on) = verb.toggle else { break }
-                    let read = try await client.spec(ref)
-                    if toggle.state(of: read) == on {
+                    let read = try await client.specRead(ref)
+                    if toggle.state(of: read.object) == on {
                         // Its access review is the opposite's too.
                         guard toggles, let opposite = verb.opposite else {
                             self?.writeStatus = .failed(toggle.already(on, object))
@@ -441,7 +441,8 @@ extension KubernetesPageModel {
                     }
                 case .trigger:
                     let job = KubeWrites.manualJobName(ref.name, suffix: suffix())
-                    guard let request = KubeWrites.trigger(ref, cronJob: try await client.spec(ref), job: job) else {
+                    let cronJob = try await client.specRead(ref)
+                    guard let request = KubeWrites.trigger(ref, cronJob: cronJob.object, job: job) else {
                         self?.writeStatus = .failed("\(object) has no jobTemplate to make a Job from.")
                         return
                     }
@@ -476,7 +477,8 @@ extension KubernetesPageModel {
                     facts.gitOps = await client.gitOpsDelete(ref)
                 case .reconcile:
                     // flux reconcile refuses a suspended one: its controller would ignore the ask.
-                    if KubeWriteToggle.suspended.state(of: try await client.spec(ref)) {
+                    let read = try await client.specRead(ref)
+                    if KubeWriteToggle.suspended.state(of: read.object) {
                         self?.writeStatus = .failed(KubeGitOps.suspended(object))
                         return
                     }
