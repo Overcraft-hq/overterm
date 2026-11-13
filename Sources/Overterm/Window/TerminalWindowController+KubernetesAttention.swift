@@ -149,6 +149,8 @@ extension TerminalWindowController: KubeHelmUpgradeHost {
         kubernetesManifest.showsHelm = true
         rightPane.manifestOpened = true
         rightPane.mode = .manifest
+        // A zoomed column hides the slot: what was asked for must show.
+        if zoomedColumn != nil { setZoomed(nil) }
         if diffItem?.isCollapsed == true { toggleDiff(nil) }
         updateRightPaneVisibility()
     }

@@ -117,6 +117,8 @@ extension TerminalWindowController {
             terraformPlanPane.showApply(apply)
             rightPane.terraformPlanOpened = true
             rightPane.mode = .terraformPlan
+            // A zoomed column hides the slot: what was asked for must show.
+            if zoomedColumn != nil { setZoomed(nil) }
             if diffItem?.isCollapsed == true { toggleDiff(nil) }
             updateRightPaneVisibility()
             return .started(apply)

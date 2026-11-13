@@ -79,6 +79,8 @@ extension TerminalWindowController {
     func showKubernetesSlot() {
         rightPane.kubernetesOpened = true
         rightPane.mode = .kubernetes
+        // A zoomed column hides the slot: what was asked for must show.
+        if zoomedColumn != nil { setZoomed(nil) }
         if diffItem?.isCollapsed == true { toggleDiff(nil) }
         updateRightPaneVisibility()
     }

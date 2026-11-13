@@ -99,6 +99,8 @@ extension TerminalWindowController {
         kubernetesManifest.show(chart)
         rightPane.manifestOpened = true
         rightPane.mode = .manifest
+        // A zoomed column hides the slot: what was asked for must show.
+        if zoomedColumn != nil { setZoomed(nil) }
         if diffItem?.isCollapsed == true { toggleDiff(nil) }
         updateRightPaneVisibility()
         // Beside the terminal, which has the keyboard again.
@@ -142,6 +144,8 @@ extension TerminalWindowController {
         rightPane.manifestOpened = true
         rightPane.mode = .manifest
         if store.showingOverlay != nil { hideOverlay(focus: false) }
+        // A zoomed column hides the slot: what was asked for must show.
+        if zoomedColumn != nil { setZoomed(nil) }
         if diffItem?.isCollapsed == true { toggleDiff(nil) }
         updateRightPaneVisibility()
     }
@@ -912,6 +916,8 @@ extension TerminalWindowController: KubeManifestHost {
         kubernetesManifest.showsHelm = false
         rightPane.manifestOpened = true
         rightPane.mode = .manifest
+        // A zoomed column hides the slot: what was asked for must show.
+        if zoomedColumn != nil { setZoomed(nil) }
         if diffItem?.isCollapsed == true { toggleDiff(nil) }
         updateRightPaneVisibility()
     }
@@ -922,6 +928,8 @@ extension TerminalWindowController: KubeManifestHost {
         kubernetesManifest.shown = .explain
         rightPane.manifestOpened = true
         rightPane.mode = .manifest
+        // A zoomed column hides the slot: what was asked for must show.
+        if zoomedColumn != nil { setZoomed(nil) }
         if diffItem?.isCollapsed == true { toggleDiff(nil) }
         updateRightPaneVisibility()
     }

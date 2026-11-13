@@ -344,7 +344,14 @@ extension E2ERunner {
             await eventually(20) { planB.staleReason(.shared)?.hasPrefix("applied from acme-plan at ") == true },
             "\(planB.staleReason(.shared) ?? "not stale"): writes \(TerraformRunRegistry.shared.stateWrites), the pane's last command "
                 + "\(app.blocks(of: shell).ledger.lastFinished?.command ?? "none"), the plan's identity \(planB.identity?.description ?? "none")")
+        // Shown even with the editor zoomed: the zoom given back, as every page on the right does.
+        app.setEditorZoomed(true)
+        let zoomed = app.zoomedColumn == .editor
         app.showTerraformPlan(planB)
+        check(
+            "the plan shows over a zoomed editor, the zoom given back",
+            zoomed && app.diffItem?.isCollapsed == false && app.rightPane.mode == .terraformPlan && app.zoomedColumn == nil,
+            "zoomed first \(zoomed), collapsed \(String(describing: app.diffItem?.isCollapsed)) mode \(app.rightPane.mode)")
         check("said over the plan", await eventually(5) { Self.accessibilityPress("terraform.plan.stale", in: root, press: false) })
 
         // 7. An agent's tf_plan: asked once, no flag, masked.
