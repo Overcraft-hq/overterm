@@ -10,7 +10,7 @@ import XCTest
 final class TerraformPlanPaneTests: XCTestCase {
     private var folder: URL!
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         folder = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-tf-pane-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: folder.appendingPathComponent("envs/dev"), withIntermediateDirectories: true)
         try "variable \"acme_name\" {\n  type = string\n}\n\nresource \"terraform_data\" \"acme\" {\n  triggers_replace = var.acme_name\n}\n".write(
@@ -18,7 +18,7 @@ final class TerraformPlanPaneTests: XCTestCase {
         try "# acme\nacme_name = \"acme-two\"\n".write(to: folder.appendingPathComponent("envs/dev/dev.tfvars"), atomically: true, encoding: .utf8)
     }
 
-    override func tearDownWithError() throws { try? FileManager.default.removeItem(at: folder) }
+    override func tearDown() async throws { try? FileManager.default.removeItem(at: folder) }
 
     /// "Open block" for a module's resources (2.2): through init's
     /// `modules.json`, a call's folder inside the checkout — never one outside it.

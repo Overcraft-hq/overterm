@@ -20,7 +20,7 @@ final class KubeMCPMetricsTests: XCTestCase {
     private let mi = 1_048_576.0
     private static let jwt = "eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmYWtlIn0.c2lnbmF0dXJlLWZha2U"
 
-    override func setUpWithError() throws {
+    override func setUp() async throws {
         socket = "/tmp/otkmm-\(UInt32.random(in: 0...UInt32.max)).sock"
         api = FakeKubeAPI(socket: socket)
         try api.start()
@@ -34,7 +34,7 @@ final class KubeMCPMetricsTests: XCTestCase {
                 resources: ["app": ["requests": ["cpu": "1", "memory": "256Mi"], "limits": ["memory": "512Mi"]]], lastReason: "OOMKilled", lastExitCode: 137,
                 lastFinished: Date().addingTimeInterval(-600)))
         api.setPodMetrics("api-1", namespace: "shop", [("app", "120m", "100Mi")])
-        MainActor.assumeIsolated { KubeMCP.forgetDiscoveries() }
+        KubeMCP.forgetDiscoveries()
     }
 
     override func tearDown() async throws {

@@ -233,6 +233,7 @@ final class KubePodChartsTests: XCTestCase {
         XCTAssertEqual(KubernetesKey.of("."), .laterRange)
     }
 
+    @MainActor
     func testLogsFromHeresNoteBlamesOurLimitNotRotation() {
         let from = Date(timeIntervalSince1970: 1_700_000_000)
         let cut = KubeLogsFromNote.text(from: from, first: from.addingTimeInterval(5), lines: LogFeed.keep, cut: true)

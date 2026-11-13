@@ -466,10 +466,10 @@ final class KubeObjectChartsTests: XCTestCase {
     private var api: FakeKubeAPI!
     private var socket: String!
 
-    override func tearDown() {
+    override func tearDown() async throws {
         api?.stop()
         api = nil
-        super.tearDown()
+        try await super.tearDown()
     }
 
     private func until(_ timeout: TimeInterval = 5, _ what: String = "", _ condition: () -> Bool) async throws {
