@@ -586,6 +586,7 @@ struct KubeChartView: View {
             ForEach(plot.yTicks, id: \.self) { tick in
                 Text(verbatim: plot.unit.format(tick))
                     .font(.system(size: ChromeMetrics.text(9), design: .monospaced)).foregroundStyle(theme.text3)
+                    .lineLimit(1).minimumScaleFactor(0.6)
                     .frame(width: KubePlot.gutter - 6, alignment: .trailing)
                     .position(x: (KubePlot.gutter - 6) / 2, y: min(max(plot.y(of: tick), 6), plot.size.height - 6))
             }
