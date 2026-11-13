@@ -469,7 +469,6 @@ final class KubeObjectChartsTests: XCTestCase {
     override func tearDown() async throws {
         api?.stop()
         api = nil
-        try await super.tearDown()
     }
 
     private func until(_ timeout: TimeInterval = 5, _ what: String = "", _ condition: () -> Bool) async throws {
