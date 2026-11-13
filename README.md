@@ -92,8 +92,12 @@ notification and on the Dock; Claude Code needs no setup for it.
       <h3>Database <kbd>⌥⌘B</kbd></h3>
       PostgreSQL, MySQL, SQLite, Redshift, ClickHouse and BigQuery: schemas in the
       sidebar, any <code>.sql</code> file a console with completion, results in a
-      grid you export. Passwords stay in your keychain; SSH tunnels through your own
-      <code>~/.ssh</code>. S3 and Google Cloud Storage in the same panel.
+      grid you export. Redis as Redis Insight has it — keys as folders, each type's
+      value edited, the server's INFO, slow log, Pub/Sub and profiler. Prometheus,
+      Loki and Tempo too: PromQL graphed, logs followed live, a log line's trace
+      opened as its waterfall. Queries saved under their connection. Passwords stay
+      in your keychain; TLS, and SSH tunnels through your own <code>~/.ssh</code>.
+      S3 and Google Cloud Storage in the same panel.
     </td>
   </tr>
   <tr>
