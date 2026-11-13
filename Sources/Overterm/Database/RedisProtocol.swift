@@ -330,23 +330,37 @@ enum RedisResult {
 /// `;`, or Redis commands a line. Everything that splits, checks or names
 /// a statement asks this, never SQLText directly.
 extension DatabaseKind {
-    func statements(in text: String) -> [NSRange] { isRedis ? RedisText.statements(in: text) : SQLText.statements(in: text) }
-    func statement(at caret: Int, in text: String) -> NSRange? {
-        isRedis ? RedisText.statement(at: caret, in: text) : SQLText.statement(at: caret, in: text)
+    func statements(in text: String) -> [NSRange] {
+        isRedis ? RedisText.statements(in: text) : isObservability ? ObservabilityText.statements(in: text) : SQLText.statements(in: text)
     }
-    func verb(of statement: String) -> String { isRedis ? RedisText.verb(of: statement) : SQLText.verb(of: statement) }
-    func onlyReads(_ statement: String) -> Bool { isRedis ? RedisText.onlyReads(statement) : SQLText.onlyReads(statement) }
+    func statement(at caret: Int, in text: String) -> NSRange? {
+        isRedis
+            ? RedisText.statement(at: caret, in: text)
+            : isObservability ? ObservabilityText.statement(at: caret, in: text) : SQLText.statement(at: caret, in: text)
+    }
+    func verb(of statement: String) -> String {
+        isRedis ? RedisText.verb(of: statement) : isObservability ? "Query" : SQLText.verb(of: statement)
+    }
+    /// Prometheus, Loki and Tempo only read.
+    func onlyReads(_ statement: String) -> Bool {
+        isRedis ? RedisText.onlyReads(statement) : isObservability ? true : SQLText.onlyReads(statement)
+    }
     /// What an agent may run without asking.
-    func agentReads(_ statement: String) -> Bool { isRedis ? RedisText.onlyReads(statement) : SQLText.agentReads(statement) }
-    func danger(of statement: String) -> String? { isRedis ? RedisText.danger(of: statement) : SQLText.danger(of: statement) }
+    func agentReads(_ statement: String) -> Bool {
+        isRedis ? RedisText.onlyReads(statement) : isObservability ? true : SQLText.agentReads(statement)
+    }
+    func danger(of statement: String) -> String? {
+        isRedis ? RedisText.danger(of: statement) : isObservability ? nil : SQLText.danger(of: statement)
+    }
     /// What a statement is about, for a tab's name and an export's: its
-    /// first table, or a Redis command's key.
+    /// first table, a Redis command's key, a metric, a stream, a trace.
     func subject(of statement: String) -> String? {
         if isRedis {
             let words = (try? RedisProtocol.words(statement)) ?? []
             let skip = RedisText.withSubcommand.contains(words.first?.uppercased() ?? "") ? 2 : 1
             return words.count > skip ? words[skip] : nil
         }
+        if isObservability { return ObservabilityText.subject(of: statement, kind: self) }
         return SQLText.tables(in: statement).first?.name
     }
 }

@@ -12,6 +12,12 @@ struct SQLConsoleView: View {
     let newConnection: () -> Void
     /// A query from the history, written into the console.
     var insert: (String) -> Void = { _ in }
+    /// A trace's id, from a log line — to a Tempo connection's console.
+    var openTrace: (String) -> Void = { _ in }
+    /// The statement at the caret, or the selection — what Save keeps.
+    var statement: () -> String? = { nil }
+    @State private var saving = false
+    @State private var savedName = ""
     @ObservedObject var model = DatabaseModel.shared
 
     var body: some View {
@@ -49,7 +55,9 @@ struct SQLConsoleView: View {
             .menuStyle(.borderlessButton)
             .fixedSize()
             .accessibilityIdentifier("consoleConnection")
-            if let session = console.session, !session.schemas.isEmpty {
+            if let session = console.session, session.connection.kind.isObservability {
+                RangeMenu(session: session, theme: theme)
+            } else if let session = console.session, !session.schemas.isEmpty {
                 Menu {
                     ForEach(session.schemas, id: \.self) { schema in
                         Button(schema) { session.schema = schema }
@@ -77,6 +85,19 @@ struct SQLConsoleView: View {
                 .fixedSize()
                 .help("What was run on this connection — chosen, it goes into the console")
             }
+            if let connection = console.connection {
+                Button {
+                    savedName = statement().flatMap { connection.kind.subject(of: $0) } ?? ""
+                    saving = true
+                } label: {
+                    Image(systemName: "bookmark").font(.system(size: ChromeMetrics.text(11)))
+                }
+                .buttonStyle(.plain)
+                .foregroundStyle(theme.text2)
+                .help("Save the query at the caret — under the connection in the panel")
+                .accessibilityIdentifier("consoleSave")
+                .popover(isPresented: $saving, arrowEdge: .bottom) { savePopover(connection) }
+            }
             if console.isRunning {
                 ProgressView().controlSize(.mini)
                 Button("Stop", action: console.stop).controlSize(.small)
@@ -95,6 +116,33 @@ struct SQLConsoleView: View {
         }
         .padding(.horizontal, 10)
         .frame(height: ChromeMetrics.row(32))
+    }
+
+    private func savePopover(_ connection: DatabaseConnection) -> some View {
+        let text = statement() ?? ""
+        return VStack(alignment: .leading, spacing: 8) {
+            Text("Save Query").font(.system(size: ChromeMetrics.text(12), weight: .semibold))
+            TextField("Name", text: $savedName).textFieldStyle(.roundedBorder).frame(width: 260)
+                .onSubmit { keep(text, connection) }
+            Text(verbatim: text.isEmpty ? "Put the caret in a query first." : text).font(.system(size: ChromeMetrics.text(11), design: .monospaced))
+                .foregroundStyle(theme.text3).lineLimit(4).frame(width: 260, alignment: .leading)
+            HStack {
+                Text(verbatim: "Under \(connection.name) in the panel").font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3)
+                Spacer()
+                Button("Save") { keep(text, connection) }.keyboardShortcut(.defaultAction)
+                    .disabled(text.isEmpty || savedName.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .padding(12)
+    }
+
+    private func keep(_ text: String, _ connection: DatabaseConnection) {
+        guard !text.isEmpty, !savedName.trimmingCharacters(in: .whitespaces).isEmpty else { return }
+        model.save(savedName, text: text, on: connection.id)
+        // The panel shows where it went.
+        model.expanded.insert(connection.id.uuidString)
+        model.expanded.insert("\(connection.id.uuidString)/saved")
+        saving = false
     }
 
     private func stateDot(_ state: DatabaseSession.State) -> some View {
@@ -146,6 +194,7 @@ struct SQLConsoleView: View {
 
     /// A tab's name: the statement's verb and its first table, else its start.
     static func title(_ run: SQLConsole.Run, index: Int, kind: DatabaseKind = .postgres) -> String {
+        if kind.isObservability { return kind.subject(of: run.sql) ?? "Query \(index + 1)" }
         let verb = kind.verb(of: run.sql).capitalized
         if let table = kind.subject(of: run.sql) { return "\(verb) \(table)" }
         return verb.isEmpty ? "Result \(index + 1)" : verb
@@ -158,7 +207,16 @@ struct SQLConsoleView: View {
                     .textSelection(.enabled).frame(maxWidth: .infinity, alignment: .leading).padding(12)
             }
         } else if let result = run.result {
-            if result.hasRows {
+            if let payload = result.payload {
+                ObservabilityResultView(
+                    run: run, payload: payload, result: result, console: console, theme: theme,
+                    openTrace: { id in
+                        // Tempo's own console opens it as a tab; Loki's asks a Tempo connection.
+                        if console.connection?.kind == .tempo { console.run([id]) } else { openTrace(id) }
+                    },
+                    grid: { AnyView(ResultGrid(result: result, theme: theme, table: "result")) })
+                status(result, sql: run.sql)
+            } else if result.hasRows {
                 ResultGrid(result: result, theme: theme, table: SQLText.tables(in: run.sql).first?.name ?? "table_name")
                 status(result, sql: run.sql)
             } else {
@@ -220,5 +278,29 @@ struct SQLConsoleView: View {
         panel.nameFieldStringValue = "\(table).\(format.fileExtension)"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         try? ResultExport.text(format, columns: result.columns, rows: result.rows, table: table).write(to: url, atomically: true, encoding: .utf8)
+    }
+}
+
+/// The window a Prometheus, Loki or Tempo console's queries look at.
+private struct RangeMenu: View {
+    @ObservedObject var session: DatabaseSession
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View {
+        Menu {
+            ForEach(TimeRange.allCases) { range in
+                Button(range.title) { session.range = range }
+            }
+        } label: {
+            HStack(spacing: 3) {
+                Image(systemName: "clock").font(.system(size: ChromeMetrics.text(10)))
+                Text(verbatim: session.range.title).font(.system(size: ChromeMetrics.text(11.5)))
+            }
+            .foregroundStyle(theme.text2)
+        }
+        .menuStyle(.borderlessButton)
+        .fixedSize()
+        .help("The window every query looks at, up to now")
+        .accessibilityIdentifier("consoleRange")
     }
 }

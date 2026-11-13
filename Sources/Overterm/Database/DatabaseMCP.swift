@@ -144,6 +144,11 @@ enum DatabaseMCP {
 
     static func describeSchema(_ schema: String, session: DatabaseSession) -> String {
         let tables = session.tables[schema] ?? []
+        if session.connection.kind.isObservability {
+            let what = session.connection.kind == .prometheus ? "Metrics" : session.connection.kind == .loki ? "Labels" : "Tags"
+            guard !tables.isEmpty else { return "No \(what.lowercased()) in the last 6 hours." }
+            return "\(what) (\(tables.count)):\n" + tables.prefix(2000).map { "- \($0.name)" }.joined(separator: "\n")
+        }
         if session.connection.kind.isRedis {
             guard !tables.isEmpty else { return "\(schema) has no keys. Databases with keys: \(session.schemas.joined(separator: ", "))" }
             return "Keys in \(schema) (first \(tables.count), by SCAN; `VIEW key` reads one):\n" + tables.map { "- \($0.name)" }.joined(separator: "\n")
@@ -193,7 +198,7 @@ enum DatabaseMCP {
             ]),
         tool(
             "db_query",
-            "Run one SQL statement — or, on a Redis connection, one Redis command as redis-cli takes it (`HGETALL user:1`, `SCAN 0 MATCH user:* COUNT 100`; `VIEW key` reads any key whatever its type) — on a saved connection and get its rows as a Markdown table. Reads only, unless the user allows agents to write in Settings — then they are asked each time.",
+            "Run one SQL statement — or, on a Redis connection, one Redis command as redis-cli takes it (`HGETALL user:1`, `SCAN 0 MATCH user:* COUNT 100`; `VIEW key` reads any key whatever its type), or PromQL / LogQL / TraceQL on Prometheus, Loki, Tempo (over the window the user picked in the console, an hour unless changed; a 32-hex trace id reads that trace; `.targets` and `.alerts` on Prometheus) — on a saved connection and get its rows as a Markdown table. Reads only, unless the user allows agents to write in Settings — then they are asked each time.",
             [
                 "connection": ["type": "string", "description": "Its name, from db_connections (optional when there is one)."],
                 "sql": ["type": "string", "description": "One statement, or one Redis command."],

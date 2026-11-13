@@ -36,7 +36,7 @@ struct DatabaseConnectionForm: View {
                 .onChange(of: connection.kind) { kind in
                     connection.port = kind.defaultPort
                     // Redis doesn't negotiate TLS: Prefer would be plain, said as Off.
-                    if kind == .redis, connection.sslMode == .prefer { connection.sslMode = .disable }
+                    if (kind == .redis || kind.isObservability), connection.sslMode == .prefer { connection.sslMode = .disable }
                     if kind == .s3 { connection.apply(connection.provider) }
                     if kind == .gcs { connection.bigQueryAuth = .gcloud }
                     tested = nil
@@ -47,6 +47,7 @@ struct DatabaseConnectionForm: View {
                 case .s3: s3Fields
                 case .gcs: gcsFields
                 case .redis: redisFields
+                case .prometheus, .loki, .tempo: observabilityFields
                 default: serverFields
                 }
                 Toggle("Read-only — refuse anything that writes", isOn: $connection.readOnly)
@@ -105,6 +106,52 @@ struct DatabaseConnectionForm: View {
         .onAppear { if connection.sslMode == .prefer { connection.sslMode = .disable } }
         Toggle("Through an SSH tunnel", isOn: $connection.sshEnabled)
         if connection.sshEnabled { sshFields }
+    }
+
+    /// Prometheus's, Loki's, Tempo's: an address pasted fills them all (its
+    /// path is where the API is behind a proxy); a user for Basic auth, or a
+    /// token alone for Bearer; a tenant for multi-tenant Loki, Tempo, Mimir.
+    @ViewBuilder private var observabilityFields: some View {
+        TextField(
+            "URL", text: Binding(get: { "" }, set: { fillAddress(from: $0) }),
+            prompt: Text(verbatim: "Paste https://\(connection.kind.rawValue).example.com or http://localhost:\(connection.kind.defaultPort ?? 80)"))
+        TextField("Host", text: $connection.host)
+        TextField(
+            "Port",
+            text: Binding(
+                get: { connection.port.map(String.init) ?? "" },
+                set: { connection.port = Int($0.filter(\.isNumber)) }))
+        TextField("Path", text: $connection.basePath, prompt: Text(verbatim: "/ — or where a proxy serves it, /\(connection.kind.rawValue)"))
+        TextField("User (optional — Basic auth)", text: $connection.user)
+        SecureField(
+            hasSavedPassword
+                ? "Password or token (saved — empty keeps it)" : connection.user.isEmpty ? "Token (optional — Bearer)" : "Password",
+            text: $password)
+        TextField("Tenant", text: $connection.database, prompt: Text(verbatim: "X-Scope-OrgID — optional, for multi-tenant servers"))
+        Picker("TLS", selection: $connection.sslMode) {
+            Text("Off — http").tag(DatabaseSSLMode.disable)
+            Text("On — don't check the certificate").tag(DatabaseSSLMode.require)
+            Text("On — verify the certificate").tag(DatabaseSSLMode.verifyFull)
+        }
+        .onAppear { if connection.sslMode == .prefer { connection.sslMode = .disable } }
+        Toggle("Through an SSH tunnel", isOn: $connection.sshEnabled)
+        if connection.sshEnabled { sshFields }
+    }
+
+    /// `https://user:token@host:port/path`, spread over the fields.
+    private func fillAddress(from text: String) {
+        let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard let components = URLComponents(string: text.contains("://") ? text : "http://" + text), let host = components.host, !host.isEmpty
+        else { return }
+        let tls = components.scheme?.lowercased() == "https"
+        connection.host = host
+        connection.port = components.port ?? (tls ? 443 : connection.kind.defaultPort)
+        connection.basePath = components.path == "/" ? "" : components.path
+        connection.sslMode = tls ? .verifyFull : .disable
+        if let user = components.user, !user.isEmpty { connection.user = user.removingPercentEncoding ?? user }
+        if let secret = components.password { password = secret.removingPercentEncoding ?? secret }
+        if connection.name.isEmpty || connection.name == connection.kind.title { connection.name = host }
+        tested = nil
     }
 
     /// A redis:// URL, spread over the fields; its password typed in, kept
@@ -291,7 +338,7 @@ struct DatabaseConnectionForm: View {
                     let schemas = (try? await driver.schemas())?.count ?? 0
                     await driver.close()
                     let through = tunnel == nil ? "" : " through \(connection.sshHost)"
-                    let noun = connection.kind.isRedis ? "database" : "schema"
+                    let noun = connection.kind.isRedis ? "database" : connection.kind.isObservability ? "folder" : "schema"
                     tested = .success(
                         "Connected\(through) in \(Int(Date().timeIntervalSince(started) * 1000)) ms — \(schemas) \(noun)\(schemas == 1 ? "" : "s")")
                 }

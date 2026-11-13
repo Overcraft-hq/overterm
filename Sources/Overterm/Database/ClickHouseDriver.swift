@@ -132,7 +132,8 @@ actor ClickHouseDriver: DatabaseDriver {
 
 /// SSL's modes over HTTPS: prefer and require take any certificate, as
 /// libpq's do; verify-full leaves it to the system.
-private final class ClickHouseTrust: NSObject, URLSessionDelegate, Sendable {
+/// TLS as a connection asks: checked against its name, or not at all.
+final class ClickHouseTrust: NSObject, URLSessionDelegate, Sendable {
     let verify: Bool
     /// Through a tunnel: the name the certificate is checked against.
     let serverName: String?

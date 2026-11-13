@@ -1163,8 +1163,8 @@ in it, and `.obsidian/` is read for where things go, never written.
 ## Database (⌥⌘B, sidebar)
 
 A database client beside the terminal, DataGrip's work in the sidebar and
-the editor: PostgreSQL, MySQL, SQLite, Redshift, ClickHouse, BigQuery and
-Redis (Settings ▸ Database turns it off; its rows fetched and asking before a
+the editor: PostgreSQL, MySQL, SQLite, Redshift, ClickHouse, BigQuery,
+Redis, and Prometheus, Loki and Tempo (Settings ▸ Database turns it off; its rows fetched and asking before a
 destroying statement are there too).
 
 - **Connections** (`DatabaseConnection`, `DatabaseStore`): a name, a kind,
@@ -1249,6 +1249,47 @@ destroying statement are there too).
 - **Tests** run against a redis-server of their own (`E2ERedisServer`: a
   free port, nothing on disk, TLS with a certificate made for it) —
   `RedisDriverTests` and the `redis` scenario; skipped without one (CI).
+
+### Prometheus, Loki, Tempo (metrics, logs, traces)
+
+- **One driver** (`ObservabilityDriver`): their HTTP APIs, sharing a base
+  URL (TLS or not, `basePath` behind a proxy, a tunnel's local end), Basic
+  auth with a user or a bearer token without one, and a tenant
+  (`X-Scope-OrgID`, the connection's Database field). Every query looks at
+  the session's window (`TimeRange`, the console's clock menu), passed by
+  `execute(_:limit:range:)` — the other drivers ignore it.
+- **Queries**: a console's block (lines to a blank one) is one query
+  (`ObservabilityText`). PromQL runs as a range query at ~300 points; a
+  range vector falls back to an instant query's samples. `.targets`,
+  `.alerts`, `.rules` are Prometheus's own pages. LogQL runs backwards from
+  now: lines, or series for a metric query. TraceQL is a search; a 16/32-hex
+  id is that trace (v2, then v1 on a 404).
+- **What came back** (`Observability.swift`, pure): `QueryResult.payload`
+  carries the series, lines, traces or a trace beside rows for the grid,
+  the export and agents (`ObservabilityRows`). Tempo's trace JSON is OTLP —
+  `batches` or `resourceSpans`, `scopeSpans` or the old
+  `instrumentationLibrarySpans`, ids base64 or hex.
+- **Views** (`ObservabilityResultView`): series as a Swift Charts graph
+  (40 drawn, a legend that hides, the value under the pointer) or a table;
+  log lines with their level (a label, `level=`, JSON, a bare ERROR),
+  filtered, followed **Live** (`SQLConsole.follow`: polled forward every
+  2 s — no websocket, so proxies don't matter); a trace id in a line opens
+  it in a Tempo connection's console; traces as a list; a trace as its
+  waterfall, a span's attributes beside it.
+- **The panel** (`ObservabilityPanelView`): metric names (a click graphs,
+  their labels group), Loki's labels and values, Tempo's tags and values —
+  a value a click away from its query (`DatabaseSession.selector`).
+- **Tested** against `E2EObservabilityServer`, a fake answering in each
+  API's documented shapes (`ObservabilityTests`, the `observability`
+  scenario) — no servers are run here.
+
+### Saved queries
+
+Any connection's (`DatabaseModel.saved`, `Database/saved.json` in
+Overterm's folder — text only, never a secret): the console's bookmark
+keeps the statement at the caret by name, the panel lists them under the
+connection (Saved), a click runs one in its console; a connection deleted
+takes its own.
 
 ### SSH tunnels (SSHTunnel)
 

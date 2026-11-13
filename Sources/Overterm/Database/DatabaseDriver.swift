@@ -16,6 +16,8 @@ struct QueryResult: Equatable, Sendable {
     /// What it said besides: "Done", BigQuery's bytes processed…
     var message: String?
     var duration: TimeInterval = 0
+    /// Prometheus's, Loki's, Tempo's: the series, lines or traces themselves.
+    var payload: ObservabilityPayload?
 
     var hasRows: Bool { !columns.isEmpty }
 }
@@ -59,6 +61,15 @@ protocol DatabaseDriver: Actor {
     func tables(in schema: String) async throws -> [CatalogTable]
     /// Every column of a schema's tables — for the tree and for completion at once.
     func columns(in schema: String) async throws -> [CatalogColumn]
+    /// A statement over a window of time — Prometheus's, Loki's, Tempo's;
+    /// the rest ignore it.
+    func execute(_ sql: String, limit: Int, range: TimeRange) async throws -> QueryResult
+}
+
+extension DatabaseDriver {
+    func execute(_ sql: String, limit: Int, range: TimeRange) async throws -> QueryResult {
+        try await execute(sql, limit: limit)
+    }
 }
 
 enum DatabaseDrivers {
@@ -71,6 +82,7 @@ enum DatabaseDrivers {
         case .clickhouse: ClickHouseDriver(connection, password: password)
         case .bigquery: BigQueryDriver(connection, serviceAccount: serviceAccount)
         case .redis: RedisDriver(connection, password: password)
+        case .prometheus, .loki, .tempo: ObservabilityDriver(connection, password: password)
         // Storage has its own client (StorageClient); nothing runs SQL on it.
         case .s3, .gcs: NoSQLDriver()
         }

@@ -28,12 +28,20 @@ extension TerminalWindowController {
                 self?.showRedisSlot()
             },
             redisServer: { [weak self] session in self?.openRedisServer(session) },
-            deleteRedisKey: { [weak self] session, db, key in self?.deleteRedisKey(session, db, key) }
+            deleteRedisKey: { [weak self] session, db, key in self?.deleteRedisKey(session, db, key) },
+            rename: { [weak self] title, current, done in
+                self?.askForName(title: title, detail: "", initial: current, action: "Rename") { name in
+                    guard !name.trimmingCharacters(in: .whitespaces).isEmpty else { return "A name, please." }
+                    done(name)
+                    return nil
+                }
+            }
         )
     }
 
     func wireDatabase() {
         EditorViewController.onNewDatabaseConnection = { [weak self] in self?.editDatabaseConnection(nil, kind: nil) }
+        EditorViewController.onOpenTrace = { [weak self] id in self?.openTrace(id) }
     }
 
     /// View ▸ Database (⌥⌘B): the sidebar, on the database panel.
@@ -257,6 +265,20 @@ extension TerminalWindowController {
     func reportDatabaseError(_ error: Error) {
         guard let window else { return }
         NSAlert(error: error).beginSheetModal(for: window)
+    }
+}
+
+// MARK: Traces
+
+extension TerminalWindowController {
+    /// A trace's id (a log line's): in a Tempo connection's console, as a
+    /// tab of its own — the first saved one; with none, one is asked for.
+    func openTrace(_ id: String) {
+        guard let tempo = DatabaseModel.shared.store.connections.first(where: { $0.kind == .tempo }) else {
+            reportDatabaseError(DatabaseError.failed("Trace \(id) — add a Tempo connection (Database ▸ + ▸ Tempo) to open it here."))
+            return
+        }
+        runInDatabaseConsole(tempo, id)
     }
 }
 

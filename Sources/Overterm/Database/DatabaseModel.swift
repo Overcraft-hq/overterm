@@ -23,9 +23,13 @@ final class DatabaseSession: ObservableObject, Identifiable {
     /// The schema completion and unqualified names are about.
     @Published var schema: String?
     @Published private(set) var isRunning = false
+    /// The window Prometheus's, Loki's and Tempo's queries look at — every
+    /// console of the connection's.
+    @Published var range = TimeRange.h1
     private var loadingColumns: Set<String> = []
     /// A Redis connection's key browsers, by database.
     private var browsers: [Int: RedisBrowser] = [:]
+    private var catalog: ObservabilityCatalog?
     private var opening: Task<Void, Never>?
     private var running: Task<Void, Never>?
 
@@ -39,6 +43,18 @@ final class DatabaseSession: ObservableObject, Identifiable {
     /// The driver as Redis: the browser, a key's page and the server's
     /// speak commands, not statements.
     var redis: RedisDriver? { driver as? RedisDriver }
+
+    /// The driver as Prometheus, Loki or Tempo: the tree's labels and tags,
+    /// a trace, the live tail.
+    var observability: ObservabilityDriver? { driver as? ObservabilityDriver }
+
+    /// A Prometheus, Loki or Tempo connection's names and values.
+    func observabilityCatalog() -> ObservabilityCatalog {
+        if let catalog { return catalog }
+        let made = ObservabilityCatalog(session: self)
+        catalog = made
+        return made
+    }
 
     func browser(_ db: Int) -> RedisBrowser {
         if let browser = browsers[db] { return browser }
@@ -119,6 +135,7 @@ final class DatabaseSession: ObservableObject, Identifiable {
         tunnel = nil
         state = .closed
         browsers = [:]
+        catalog = nil
         schemas = []
         tables = [:]
         columns = [:]
@@ -167,7 +184,7 @@ final class DatabaseSession: ObservableObject, Identifiable {
                 break
             }
             do {
-                let result = try await driver.execute(sql, limit: limit)
+                let result = try await driver.execute(sql, limit: limit, range: range)
                 onResult(index, .success(result))
             } catch {
                 onResult(index, .failure(error))
@@ -197,6 +214,16 @@ final class DatabaseModel: ObservableObject {
     @Published var expanded: Set<String> = []
     @Published var filter = ""
     @Published private(set) var history: [HistoryItem] = []
+    /// Queries kept by name, a connection's under it in the panel.
+    @Published private(set) var saved: [SavedQuery] = []
+
+    struct SavedQuery: Codable, Equatable, Identifiable {
+        var id = UUID()
+        var connection: UUID
+        var name: String
+        var text: String
+        var date = Date()
+    }
 
     struct HistoryItem: Codable, Equatable, Identifiable {
         var id = UUID()
@@ -210,6 +237,7 @@ final class DatabaseModel: ObservableObject {
     init(store: DatabaseStore? = nil) {
         self.store = store ?? DatabaseStore.shared
         history = Self.loadHistory()
+        saved = Self.loadSaved()
     }
 
     func session(_ connection: DatabaseConnection) -> DatabaseSession {
@@ -237,6 +265,11 @@ final class DatabaseModel: ObservableObject {
         disconnect(connection)
         sessions[connection.id] = nil
         try store.delete(connection)
+        // Its saved queries go with it: nothing else can run them.
+        if saved.contains(where: { $0.connection == connection.id }) {
+            saved.removeAll { $0.connection == connection.id }
+            writeSaved()
+        }
     }
 
     // MARK: History
@@ -256,6 +289,54 @@ final class DatabaseModel: ObservableObject {
         let items = history
         try? FileManager.default.createDirectory(at: Self.historyFile.deletingLastPathComponent(), withIntermediateDirectories: true)
         try? JSONEncoder().encode(items).write(to: Self.historyFile, options: .atomic)
+    }
+
+    // MARK: Saved queries
+
+    private static var savedFile: URL {
+        AppEnvironment.supportDirectory.appendingPathComponent("Database", isDirectory: true).appendingPathComponent("saved.json")
+    }
+
+    private static func loadSaved() -> [SavedQuery] {
+        guard let data = try? Data(contentsOf: savedFile) else { return [] }
+        return (try? JSONDecoder().decode([SavedQuery].self, from: data)) ?? []
+    }
+
+    private func writeSaved() {
+        try? FileManager.default.createDirectory(at: Self.savedFile.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? JSONEncoder().encode(saved).write(to: Self.savedFile, options: .atomic)
+    }
+
+    /// A connection's, by name.
+    func saved(for connection: UUID) -> [SavedQuery] {
+        saved.filter { $0.connection == connection }.sorted { $0.name.localizedStandardCompare($1.name) == .orderedAscending }
+    }
+
+    /// Kept under the name; one of the same name on the connection is replaced.
+    @discardableResult
+    func save(_ name: String, text: String, on connection: UUID) -> SavedQuery {
+        let name = name.trimmingCharacters(in: .whitespaces)
+        if let at = saved.firstIndex(where: { $0.connection == connection && $0.name == name }) {
+            saved[at].text = text
+            saved[at].date = Date()
+            writeSaved()
+            return saved[at]
+        }
+        let query = SavedQuery(connection: connection, name: name, text: text)
+        saved.append(query)
+        writeSaved()
+        return query
+    }
+
+    func rename(_ query: SavedQuery, to name: String) {
+        guard let at = saved.firstIndex(where: { $0.id == query.id }) else { return }
+        saved[at].name = name.trimmingCharacters(in: .whitespaces)
+        writeSaved()
+    }
+
+    func remove(_ query: SavedQuery) {
+        saved.removeAll { $0.id == query.id }
+        writeSaved()
     }
 
     // MARK: Consoles

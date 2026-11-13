@@ -8,6 +8,8 @@ import SwiftUI
 extension EditorViewController {
     /// The window's: a new connection asked for from a console's menu.
     static var onNewDatabaseConnection: (() -> Void)?
+    /// A trace's id from a log line: opened in a Tempo connection's console.
+    static var onOpenTrace: ((String) -> Void)?
 
     func attachConsole(_ buffer: EditorBuffer) {
         guard Settings.shared.databaseEnabled, let url = buffer.url, url.pathExtension.lowercased() == "sql",
@@ -38,13 +40,25 @@ extension EditorViewController {
                     runStatement: { [weak self] in _ = self?.runConsoleStatement() },
                     runAll: { [weak self] in self?.runConsoleAll() },
                     newConnection: { Self.onNewDatabaseConnection?() },
-                    insert: { [weak self] sql in self?.insertIntoConsole(sql) })
+                    insert: { [weak self] sql in self?.insertIntoConsole(sql) },
+                    openTrace: { id in Self.onOpenTrace?(id) },
+                    statement: { [weak self] in self?.consoleStatementText() })
             })
         // Results arriving make room for them; the toolbar alone is a strip.
         consoleObserver = console.$runs.map(\.isEmpty).removeDuplicates().sink { [weak self] empty in
             guard let self else { return }
             self.consoleHeight.constant = empty ? 33 : self.consoleResultsHeight
         }
+    }
+
+    /// The selection, else the statement at the caret — as ⌘↩ would run it.
+    func consoleStatementText() -> String? {
+        guard let console = active?.sqlConsole else { return nil }
+        let text = textView.string as NSString
+        let selection = textView.selectedRange()
+        if selection.length > 0 { return text.substring(with: selection).trimmingCharacters(in: .whitespacesAndNewlines) }
+        let kind = console.connection?.kind ?? .postgres
+        return kind.statement(at: selection.location, in: text as String).map { text.substring(with: $0).trimmingCharacters(in: .whitespacesAndNewlines) }
     }
 
     private func resizeConsole(to height: CGFloat) {
@@ -145,6 +159,9 @@ extension EditorViewController {
         let text = textView.string as NSString
         let caret = textView.selectedRange().location
         if session.connection.kind.isRedis { return updateRedisCompletion(session: session, buffer: buffer, caret: caret, window: window) }
+        if session.connection.kind.isObservability {
+            return updateObservabilityCompletion(session: session, buffer: buffer, caret: caret, window: window)
+        }
         let range = SQLText.statement(at: caret, in: text as String) ?? NSRange(location: 0, length: text.length)
         let start = min(range.location, caret)
         let before = text.substring(with: NSRange(location: start, length: caret - start))
@@ -186,6 +203,22 @@ extension EditorViewController {
         let browser = session.browser(db)
         if !browser.scanned { Task { await browser.scan() } }
         guard let answer = RedisCompletion.complete(before, keys: browser.keys.map(\.name)) else {
+            completionPopup.hide()
+            completion = nil
+            return false
+        }
+        return showConsoleCompletion(answer.candidates, typed: answer.typed, buffer: buffer, caret: caret, window: window)
+    }
+
+    /// PromQL's functions and the metrics, LogQL's words and the labels,
+    /// TraceQL's and the tags — the names as the panel's catalog read them.
+    private func updateObservabilityCompletion(session: DatabaseSession, buffer: EditorBuffer, caret: Int, window: NSWindow) -> Bool {
+        let text = textView.string as NSString
+        let lineStart = text.lineRange(for: NSRange(location: caret, length: 0)).location
+        let before = text.substring(with: NSRange(location: lineStart, length: caret - lineStart))
+        let catalog = session.observabilityCatalog()
+        if !catalog.loaded { Task { await catalog.load() } }
+        guard let answer = ObservabilityText.complete(before, kind: session.connection.kind, names: catalog.names) else {
             completionPopup.hide()
             completion = nil
             return false

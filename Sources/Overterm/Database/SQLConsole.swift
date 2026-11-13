@@ -98,9 +98,57 @@ final class SQLConsole: ObservableObject {
     }
 
     func close(_ run: Run) {
+        if live == run.id { stopFollowing() }
         runs.removeAll { $0.id == run.id }
         if selected == run.id { selected = runs.last?.id }
     }
 
     var current: Run? { runs.first { $0.id == selected } ?? runs.last }
+
+    // MARK: Live (Loki)
+
+    /// The run whose lines are followed: new ones polled every two seconds
+    /// and put on top, as `logcli --tail` shows them.
+    @Published private(set) var live: UUID?
+    private var liveTask: Task<Void, Never>?
+    /// Lines a live run keeps; the oldest go.
+    static let liveKeep = 5000
+
+    func follow(_ run: Run) {
+        stopFollowing()
+        guard let driver = session?.observability, case .logs(let lines)? = run.result?.payload else { return }
+        live = run.id
+        let id = run.id
+        let query = run.sql
+        var after = lines.map(\.nanos).max() ?? Int64(Date().timeIntervalSince1970 * 1e9)
+        liveTask = Task { [weak self] in
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(2))
+                guard !Task.isCancelled else { return }
+                do {
+                    let new = try await driver.tail(query, after: after, limit: 1000)
+                    guard let self, self.live == id, let at = self.runs.firstIndex(where: { $0.id == id }) else { return }
+                    guard !new.isEmpty else { continue }
+                    after = new.map(\.nanos).max() ?? after
+                    var all = ObservabilityParse.ordered(new)
+                    if case .logs(let old)? = self.runs[at].result?.payload { all += old }
+                    if all.count > Self.liveKeep { all.removeLast(all.count - Self.liveKeep) }
+                    var result = ObservabilityRows.result(.logs(all), limit: Self.liveKeep)
+                    result.duration = self.runs[at].result?.duration ?? 0
+                    self.runs[at].result = result
+                } catch {
+                    guard let self, let at = self.runs.firstIndex(where: { $0.id == id }) else { return }
+                    self.runs[at].error = error.localizedDescription
+                    self.stopFollowing()
+                    return
+                }
+            }
+        }
+    }
+
+    func stopFollowing() {
+        liveTask?.cancel()
+        liveTask = nil
+        live = nil
+    }
 }

@@ -28,6 +28,8 @@ struct DatabaseActions {
     var redisServer: (DatabaseSession) -> Void = { _ in }
     /// Asks, then deletes the key.
     var deleteRedisKey: (DatabaseSession, Int, String) -> Void = { _, _, _ in }
+    /// Asks for a new name (title, the current one), then gives it.
+    var rename: (_ title: String, _ current: String, _ done: @escaping (String) -> Void) -> Void = { _, _, _ in }
 }
 
 /// The sidebar's Database panel: the saved connections, and under each one
@@ -104,7 +106,7 @@ struct DatabasePanelView: View {
     private var empty: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("No connections yet").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
-            Text("PostgreSQL, MySQL, SQLite, Redshift, ClickHouse, BigQuery or Redis — and S3 or Google Cloud Storage buckets. Passwords and keys stay in your keychain.")
+            Text("PostgreSQL, MySQL, SQLite, Redshift, ClickHouse, BigQuery, Redis, or Prometheus, Loki and Tempo — and S3 or Google Cloud Storage buckets. Passwords and keys stay in your keychain.")
                 .font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
             ForEach(DatabaseKind.allCases) { kind in
                 Button {
@@ -134,7 +136,7 @@ private struct ConnectionTree: View {
 
     var body: some View {
         TreeRow(
-            depth: 0, open: model.expanded.contains(key), symbol: connection.kind.isRedis ? "bolt.horizontal" : "cylinder", title: connection.name, detail: connection.summary,
+            depth: 0, open: model.expanded.contains(key), symbol: connection.kind.symbol, title: connection.name, detail: connection.summary,
             dot: dot, theme: theme
         ) {
             toggle(key) { await session.open() }
@@ -163,13 +165,18 @@ private struct ConnectionTree: View {
         }
         .accessibilityIdentifier("connection-\(connection.name)")
         if model.expanded.contains(key) {
+            SavedQueriesTree(connection: connection, model: model, theme: theme, actions: actions)
             switch session.state {
             case .connecting:
                 note("Connecting…", depth: 1)
             case .failed(let message):
                 note(message, depth: 1, error: true)
             case .open:
-                if connection.kind.isRedis {
+                if connection.kind.isObservability {
+                    ObservabilityTree(
+                        connection: connection, session: session, catalog: session.observabilityCatalog(), model: model, theme: theme,
+                        actions: actions)
+                } else if connection.kind.isRedis {
                     ForEach(session.schemas, id: \.self) { schema in
                         RedisDatabaseTree(
                             treeKey: "\(key)/\(schema)", db: RedisDriver.database(schema), session: session,
@@ -594,6 +601,44 @@ private struct SessionTransfers: View {
                 }
             }
             .padding(.horizontal, 12)
+        }
+    }
+}
+
+/// A connection's saved queries: a click runs one in its console.
+private struct SavedQueriesTree: View {
+    let connection: DatabaseConnection
+    @ObservedObject var model: DatabaseModel
+    @ObservedObject var theme: ChromeTheme
+    let actions: DatabaseActions
+
+    var body: some View {
+        let queries = model.saved(for: connection.id)
+        if !queries.isEmpty {
+            let key = "\(connection.id.uuidString)/saved"
+            TreeRow(depth: 1, open: model.expanded.contains(key), symbol: "bookmark", title: "Saved", detail: "\(queries.count)", dot: nil, theme: theme) {
+                if model.expanded.contains(key) { model.expanded.remove(key) } else { model.expanded.insert(key) }
+            }
+            .accessibilityIdentifier("saved-\(connection.name)")
+            if model.expanded.contains(key) {
+                ForEach(queries) { query in
+                    TreeRow(depth: 2, open: nil, symbol: "doc.text", title: query.name, detail: nil, dot: nil, theme: theme) {
+                        actions.run(connection, query.text)
+                    }
+                    .help(query.text)
+                    .contextMenu {
+                        Button("Run") { actions.run(connection, query.text) }
+                        Button("Copy Query") {
+                            NSPasteboard.general.clearContents()
+                            NSPasteboard.general.setString(query.text, forType: .string)
+                        }
+                        Divider()
+                        Button("Rename…") { actions.rename("Rename Query", query.name) { model.rename(query, to: $0) } }
+                        Button("Delete") { model.remove(query) }
+                    }
+                    .accessibilityIdentifier("savedQuery-\(query.name)")
+                }
+            }
         }
     }
 }

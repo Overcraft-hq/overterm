@@ -4,6 +4,9 @@ import Security
 /// The databases the client speaks — and the object stores it browses.
 enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable {
     case postgres, mysql, sqlite, redshift, clickhouse, bigquery, redis
+    /// Metrics, logs and traces: queried over HTTP in their own languages
+    /// (PromQL, LogQL, TraceQL) over a window of time.
+    case prometheus, loki, tempo
     /// Buckets and their files: S3 and everything that speaks it (Spaces,
     /// MinIO, R2, B2, Wasabi, GCS's interoperability), and GCS's own API.
     case s3, gcs
@@ -22,6 +25,9 @@ enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .clickhouse: "ClickHouse"
         case .bigquery: "BigQuery"
         case .redis: "Redis"
+        case .prometheus: "Prometheus"
+        case .loki: "Loki"
+        case .tempo: "Tempo"
         case .s3: "S3-Compatible Storage"
         case .gcs: "Google Cloud Storage"
         }
@@ -36,12 +42,30 @@ enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable {
         // ClickHouse's HTTP interface; 8443 with TLS.
         case .clickhouse: 8123
         case .redis: 6379
+        case .prometheus: 9090
+        case .loki: 3100
+        case .tempo: 3200
         case .sqlite, .bigquery, .s3, .gcs: nil
         }
     }
 
     /// A host, a port, a user and a password — the SQL servers, and Redis.
-    var usesServer: Bool { [.postgres, .mysql, .redshift, .clickhouse, .redis].contains(self) }
+    var usesServer: Bool { [.postgres, .mysql, .redshift, .clickhouse, .redis, .prometheus, .loki, .tempo].contains(self) }
+
+    /// Prometheus, Loki, Tempo: queries over a window of time, answered with
+    /// series, log lines or traces; they only read.
+    var isObservability: Bool { self == .prometheus || self == .loki || self == .tempo }
+
+    /// Its glyph in the panel.
+    var symbol: String {
+        switch self {
+        case .redis: "bolt.horizontal"
+        case .prometheus: "chart.xyaxis.line"
+        case .loki: "text.alignleft"
+        case .tempo: "point.3.connected.trianglepath.dotted"
+        default: "cylinder"
+        }
+    }
 
     /// Commands a line, not SQL: its console reads and checks them so.
     var isRedis: Bool { self == .redis }
@@ -116,6 +140,9 @@ struct DatabaseConnection: Codable, Identifiable, Equatable, Hashable, Sendable 
     var sshPort: Int? = 22
     var sshUser = ""
     var sshKeyFile = ""
+    /// Prometheus, Loki, Tempo behind a proxy: the path their API is under
+    /// (`/prometheus`), empty at the root.
+    var basePath = ""
     /// Not saved: the name TLS checks when `host` is a tunnel's local end.
     var serverName: String?
 
@@ -143,7 +170,7 @@ struct DatabaseConnection: Codable, Identifiable, Equatable, Hashable, Sendable 
     // opens (a missing field takes its default) — every connection kept.
     private enum CodingKeys: String, CodingKey {
         case id, name, kind, host, port, user, database, sslMode, filePath, project, location, bigQueryAuth, readOnly, provider,
-            pathStyle, awsProfile, sshEnabled, sshHost, sshPort, sshUser, sshKeyFile
+            pathStyle, awsProfile, sshEnabled, sshHost, sshPort, sshUser, sshKeyFile, basePath
     }
 
     init(from decoder: Decoder) throws {
@@ -169,6 +196,7 @@ struct DatabaseConnection: Codable, Identifiable, Equatable, Hashable, Sendable 
         sshPort = try c.decodeIfPresent(Int.self, forKey: .sshPort) ?? 22
         sshUser = try c.decodeIfPresent(String.self, forKey: .sshUser) ?? ""
         sshKeyFile = try c.decodeIfPresent(String.self, forKey: .sshKeyFile) ?? ""
+        basePath = try c.decodeIfPresent(String.self, forKey: .basePath) ?? ""
     }
 
     /// Where it is, for its row and its tooltip.
