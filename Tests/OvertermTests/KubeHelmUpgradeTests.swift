@@ -13,8 +13,8 @@ import XCTest
 final class KubeHelmUpgradeTests: XCTestCase {
     private let password = "acme-unit-helm-pw-Q4z8"
 
-    private func context(_ name: String, settings: KubeContextSettings = KubeContextSettings(), session: Bool = false) -> KubeContext {
-        KubeWritesTests.context(name, settings: settings, session: session)
+    private func context(_ name: String, settings: KubeContextSettings = KubeContextSettings(), readOnly: Bool = false) -> KubeContext {
+        KubeWritesTests.context(name, settings: settings, readOnly: readOnly)
     }
 
     // MARK: The chart
@@ -282,10 +282,9 @@ final class KubeHelmUpgradeTests: XCTestCase {
 
     func testItIsRefusedOnEveryReadOnlyContext() {
         XCTAssertTrue(KubeProcessVerb.helmUpgrade.writes)
-        for name in ["fake-dev", "fake-prod"] {
-            XCTAssertThrowsError(try KubeCommands.command(upgrade, in: context(name)), name)
-        }
-        XCTAssertNoThrow(try KubeCommands.command(upgrade, in: context("fake-prod", session: true)), "production with its writes on")
+        XCTAssertThrowsError(try KubeCommands.command(upgrade, in: context("fake-dev")), "fake-dev, set read-only")
+        XCTAssertThrowsError(try KubeCommands.command(upgrade, in: context("fake-prod", readOnly: true)), "production set read-only")
+        XCTAssertNoThrow(try KubeCommands.command(upgrade, in: context("fake-prod")), "production: writable by default, no switch")
         XCTAssertNoThrow(try KubeCommands.command(upgrade, in: context("fake-dev", settings: KubeContextSettings(writable: true))))
     }
 
@@ -299,7 +298,7 @@ final class KubeHelmUpgradeTests: XCTestCase {
         XCTAssertTrue(asked.detail.contains("2 of 3 objects would change"), asked.detail)
         XCTAssertTrue(asked.detail.contains(upgrade.line(context: "kind-fake")))
         XCTAssertEqual(asked.button, "Upgrade in a Tab")
-        let prod = context("fake-prod", session: true)
+        let prod = context("fake-prod")
         let onProd = upgrade.confirmation(context: prod, rule: KubeProcessCheck.rule(.helmUpgrade, for: prod))
         XCTAssertEqual(onProd.scope, "PRODUCTION · fake-prod · namespace shop")
         XCTAssertEqual(onProd.typedName, "web")
@@ -438,9 +437,9 @@ final class KubeHelmUpgradeSessionTests: XCTestCase {
         func runHelmUpgrade(_ command: String, in context: KubeContext, namespace: String) { ran.append((command, context.name, namespace)) }
     }
 
-    private func session(_ context: String, session sessionWrites: Bool = false) -> (KubeHelmUpgradeSession, Host) {
+    private func session(_ context: String, readOnly: Bool = false) -> (KubeHelmUpgradeSession, Host) {
         let model = KubernetesModel(proxies: KubeProxies())
-        let kind = KubeWritesTests.context(context, session: sessionWrites)
+        let kind = KubeWritesTests.context(context, readOnly: readOnly)
         let list = KubeContextList(contexts: [kind], current: context)
         model.load = { _ in list }
         model.readConfiguration = { KubernetesModel.Configuration() }
@@ -567,11 +566,10 @@ final class KubeHelmUpgradeSessionTests: XCTestCase {
 
     func testOnProductionTheValuesAreAskedForAndTheNameTyped() async throws {
         let (session, host) = session("fake-prod")
-        // Its writes on for the session, as its card turns them on.
+        // Writable as read: no switch to turn on.
         session.model.reloadContexts()
         let end = Date().addingTimeInterval(5)
         while session.model.contexts.context(named: "fake-prod") == nil, Date() < end { try await Task.sleep(for: .milliseconds(10)) }
-        await session.model.setProductionWrites(true, for: "fake-prod")
         host.consent = false
         _ = await session.runDiff()
         XCTAssertEqual(host.consents, 1)

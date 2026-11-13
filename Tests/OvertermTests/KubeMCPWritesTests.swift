@@ -6,8 +6,8 @@ import XCTest
 /// Agents' write tools (stage 2a; docs/design/kubernetes/analysis.md, 3.5
 /// and rule 10) against `FakeKubeAPI` on a socket of the test's own, over
 /// three fictional contexts — never ~/.kube: where they exist (a context
-/// `agentWrites` names that is writable; production only with its switch
-/// too), that
+/// `agentWrites` names that is writable for agents — a remote or
+/// production one only with `writable: true` set, as agents had it), that
 /// every call is asked first with the context and namespace, that a
 /// declined or wrongly named one sends nothing, and that an allowed one
 /// lands as one request after its access review.
@@ -17,6 +17,8 @@ final class KubeMCPWritesTests: XCTestCase {
     nonisolated(unsafe) private var socket: String!
     private var agentWrites: [String] = []
     private var asked: [KubeWriteConfirmation] = []
+    /// fake-prod's entry sets `writable: true` (agents' opt-in); off: unset.
+    private var prodSetWritable = true
 
     override func setUpWithError() throws {
         socket = "/tmp/otkmw-\(UInt32.random(in: 0...UInt32.max)).sock"
@@ -37,7 +39,9 @@ final class KubeMCPWritesTests: XCTestCase {
 
     private func model() -> KubernetesModel {
         let model = KubernetesModel(proxies: KubeProxies())
-        let list = KubeContextList(contexts: ["fake-dev", "fake-prod", "kind-fake"].map { KubeWritesTests.context($0) }, current: "kind-fake")
+        // fake-prod's entry sets writable: true — agents' own step on production.
+        let prod = KubeWritesTests.context("fake-prod", settings: KubeContextSettings(writable: prodSetWritable ? true : nil))
+        let list = KubeContextList(contexts: [KubeWritesTests.context("fake-dev"), prod, KubeWritesTests.context("kind-fake")], current: "kind-fake")
         model.load = { _ in list }
         model.readConfiguration = { [unowned self] in
             var configuration = KubernetesModel.Configuration()
@@ -86,12 +90,11 @@ final class KubeMCPWritesTests: XCTestCase {
         return Settings(url: dir.appendingPathComponent("settings.json"), watch: false)
     }
 
-    /// fake-prod's writes on for the session, as its card turns them on.
+    /// fake-prod as read: writable for Overterm, with no switch.
     private func switchOn(_ model: KubernetesModel) async {
         model.reloadContexts()
         for _ in 0..<250 where model.contexts.context(named: "fake-prod") == nil { try? await Task.sleep(for: .milliseconds(10)) }
-        await model.setProductionWrites(true, for: "fake-prod")
-        XCTAssertTrue(model.productionWrites.isOn("fake-prod"))
+        XCTAssertEqual(model.contexts.context(named: "fake-prod")?.isWritable, true)
     }
 
     // MARK: Where they exist
@@ -107,13 +110,27 @@ final class KubeMCPWritesTests: XCTestCase {
         XCTAssertNotNil(KubeAgentWrites.refused(KubeWritesTests.context("fake-dev"), agentWrites: ["fake-dev"]), "remote, read-only: agentWrites can't open it")
         XCTAssertNotNil(KubeAgentWrites.refused(KubeWritesTests.context("fake-dev", settings: KubeContextSettings(writable: true)), agentWrites: none))
         XCTAssertNil(KubeAgentWrites.refused(KubeWritesTests.context("fake-dev", settings: KubeContextSettings(writable: true)), agentWrites: ["fake-dev"]))
-        let prod = KubeWritesTests.context("fake-prod")
-        XCTAssertNotNil(KubeAgentWrites.refused(prod, agentWrites: ["fake-prod"]), "production without its switch: none, named or not")
-        let on = KubeWritesTests.context("fake-prod", session: true)
+        let readOnly = KubeWritesTests.context("fake-prod", readOnly: true)
+        XCTAssertNotNil(KubeAgentWrites.refused(readOnly, agentWrites: ["fake-prod"]), "production set read-only: none, named or not")
+        let on = KubeWritesTests.context("fake-prod")
         XCTAssertEqual(
-            KubeAgentWrites.refused(on, agentWrites: none), "fake-prod is production: its writes are on for this session, but kubernetes.agentWrites doesn't name it.")
-        XCTAssertNil(KubeAgentWrites.refused(on, agentWrites: ["fake-prod"]), "the switch and agentWrites")
-        XCTAssertNotNil(KubeAgentWrites.refused(on, agentWrites: ["globex-eu-west-1-prod"]), "another context named")
+            KubeAgentWrites.refused(on, agentWrites: none), "fake-prod is production, and kubernetes.agentWrites doesn't name it: agents only read there.",
+            "writable for Overterm by default, never for agents unless named")
+        XCTAssertEqual(
+            KubeAgentWrites.refused(on, agentWrites: ["fake-prod"]),
+            "fake-prod is production: agents write there only where its kubernetes.contexts entry sets writable: true.",
+            "writable for a person by default; agents' rule unchanged — named alone opens nothing")
+        let opted = KubeWritesTests.context("fake-prod", settings: KubeContextSettings(writable: true))
+        XCTAssertNil(KubeAgentWrites.refused(opted, agentWrites: ["fake-prod"]), "set writable: true and named")
+        XCTAssertNotNil(KubeAgentWrites.refused(opted, agentWrites: ["globex-eu-west-1-prod"]), "another context named")
+        // A remote context with no entry: writable for a person, not for agents.
+        let remote = KubeContext(
+            name: "fake-dev", cluster: "fake-dev", server: "http://127.0.0.1:1", namespace: "shop", user: "anonymous", auth: KubeAuth.none, file: nil,
+            contextClass: .remote, settings: KubeContextSettings())
+        XCTAssertTrue(remote.isWritable, "remote, unset: writable for a person")
+        XCTAssertEqual(
+            KubeAgentWrites.refused(remote, agentWrites: ["fake-dev"]),
+            "fake-dev is remote: agents write there only where its kubernetes.contexts entry sets writable: true.")
     }
 
     func testTheToolListFollowsAgentWrites() async throws {
@@ -125,13 +142,13 @@ final class KubeMCPWritesTests: XCTestCase {
         // list (it isn't announced again): a call is refused per context.
         agentWrites = ["fake-prod"]
         let listed2 = await listed(model, settings)
-        XCTAssertEqual(listed2, KubeMCP.reads + KubeMCP.writes, "named: listed, before fake-prod's switch")
+        XCTAssertEqual(listed2, KubeMCP.reads + KubeMCP.writes, "named: listed by the setting")
         settings.set("kubernetes.agentAccess", .bool(false))
         let listed5 = await listed(model, settings)
         XCTAssertEqual(listed5, [], "the group off takes the writes too")
         XCTAssertTrue(api.requests.isEmpty, "listing asks no cluster: \(api.requests)")
         settings.set("kubernetes.agentAccess", nil)
-        let refused = await call(model, "k8s_delete_pod", ["name": "web-1", "context": "fake-prod", "namespace": "shop"])
+        let refused = await call(model, "k8s_delete_pod", ["name": "web-1", "context": "fake-dev", "namespace": "shop"])
         XCTAssertTrue(refused.error && refused.text.contains("read-only"), "listed, but refused where the context isn't writable: \(refused.text)")
         XCTAssertTrue(asked.isEmpty, "refused before it is asked")
         XCTAssertEqual(written(), [])
@@ -210,6 +227,24 @@ final class KubeMCPWritesTests: XCTestCase {
         let right = await call(model, "k8s_delete_pod", ["name": "web-1", "context": "fake-prod", "namespace": "shop"])
         XCTAssertFalse(right.error, right.text)
         XCTAssertEqual(written().map(\.description), ["DELETE /api/v1/namespaces/shop/pods/web-1"])
+    }
+
+    /// Production writable for a person by default (the owner's decision)
+    /// gives agents nothing: named in agentWrites but with no
+    /// `writable: true` in its entry, every write tool is refused, asked
+    /// nothing.
+    func testOnProductionNamedButNotSetWritableAgentsAreRefused() async throws {
+        prodSetWritable = false
+        let model = model()
+        await switchOn(model)
+        agentWrites = ["fake-prod"]
+        answer("web-1")
+        for name in KubeMCP.writes {
+            let said = await call(model, name, ["name": "web-1", "replicas": 1, "context": "fake-prod", "namespace": "shop"])
+            XCTAssertTrue(said.error && said.text.contains("sets writable: true"), said.text)
+        }
+        XCTAssertTrue(asked.isEmpty, "not asked")
+        XCTAssertEqual(written(), [])
     }
 
     func testAReadOnlyContextIsRefusedAskingNothing() async throws {

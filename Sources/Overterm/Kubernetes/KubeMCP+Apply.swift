@@ -3,7 +3,7 @@ import Foundation
 /// `k8s_apply` (stage 2b; 3.3, rule 10, decision 30): an agent's manifest
 /// applied server-side by the editor's own path (`KubeManifestRun`) —
 /// only on a context `kubernetes.agentWrites` names and writable for
-/// Overterm, on production only where the context's `applyOnProduction`
+/// agents (`KubeAgentWrites`), on production only where the context's `applyOnProduction`
 /// is on too. No Secret (rule 10: there is no tool for Secrets — its
 /// diff would read its values, and its answer say whether a guess is
 /// right). The class check, the access review, a
@@ -17,7 +17,7 @@ extension KubeMCP {
         if let refused = KubeAgentWrites.refused(context, agentWrites: kubernetes.agentWrites) {
             throw BrowserMCP.ToolError(message: "k8s_apply isn't offered on \(context.name): \(refused) Tell the user what to change instead.")
         }
-        if let refused = KubeApplyCheck.refused(context) { throw BrowserMCP.ToolError(message: refused) }
+        if let refused = KubeApplyCheck.refused(context, agent: true) { throw BrowserMCP.ToolError(message: refused) }
         guard let text = call.arguments["manifest"] as? String, !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
             throw BrowserMCP.ToolError(message: "k8s_apply needs “manifest”: the objects as YAML or JSON.")
         }
@@ -103,7 +103,7 @@ extension KubeMCP {
         // applyOnProduction changed, or the kubeconfig pointing it elsewhere
         // while it asked stop it here.
         guard let list = await kubernetes.contextsForAgents(), let now = list.context(named: context.name), KubernetesModel.sameAccess(context, now),
-            KubeAgentWrites.refused(now, agentWrites: kubernetes.agentWrites) == nil, KubeApplyCheck.refused(now) == nil
+            KubeAgentWrites.refused(now, agentWrites: kubernetes.agentWrites) == nil, KubeApplyCheck.refused(now, agent: true) == nil
         else {
             throw BrowserMCP.ToolError(message: "\(context.name) changed while it was asked (its writes, its settings or agents' access): nothing was changed.")
         }

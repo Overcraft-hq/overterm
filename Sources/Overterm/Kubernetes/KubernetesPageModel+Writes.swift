@@ -45,9 +45,8 @@ enum KubeScaleChange: Equatable {
 // MARK: Writes (stage 2a — docs/design/kubernetes/analysis.md, Sections 2.4, 2.9 and 5)
 
 /// Every write the page makes goes one way (`write`):
-/// 1. the class check (`KubeWriteCheck`): only on a writable context — a
-///    remote or local one's `writable` setting, production only with its
-///    switch on for the session;
+/// 1. the class check (`KubeWriteCheck`): only on a writable context — its
+///    `writable` setting, yes unless it says no, on every class;
 /// 2. the access review (SelfSubjectAccessReview through the context's
 ///    writable socket, `KubernetesModel.writeAccess`) — a no stops it;
 /// 3. a metadata-only read where the confirmation needs one (a pod's
@@ -81,8 +80,8 @@ extension KubernetesPageModel {
     }
 
     /// The object's writes — its detail's buttons and its right-click
-    /// menu — each greyed with why: a read-only context, production without
-    /// its switch, the access review's no (asked as the verbs are shown).
+    /// menu — each greyed with why: a read-only context (its `writable`
+    /// setting), the access review's no (asked as the verbs are shown).
     func writeVerbs(for ref: KubeObjectRef) -> [ResourceVerb] {
         guard let context = model.contexts.context(named: ref.context) else { return [] }
         return Self.writeVerbOrder.filter { KubeWriteCheck.offered($0, on: ref.kind) }.map { verb in
@@ -591,33 +590,5 @@ extension KubernetesPageModel {
                 self?.writeStatus = .failed(KubeWriteOutcome.failed(verb, ref, error))
             }
         }
-    }
-
-    // MARK: Production's switch (rule 2)
-
-    /// Whether the context shown is production with its writes on.
-    var productionWritesOn: Bool { model.selected?.sessionWrites == true }
-
-    /// The context card's Allow Writes Until Quit: asked first, naming the
-    /// context; its proxy then runs without the method filter.
-    func allowProductionWrites() {
-        guard let context = model.selected, context.isProduction, !context.sessionWrites else { return }
-        actions?.confirm(
-            "Allow writes to \(context.displayName) until you quit?",
-            "PRODUCTION · \(context.name)\nOverterm's page may then change objects in this cluster: each change is still asked first, naming the "
-                + "context and namespace, and a destructive one asks for the object's name. Its socket stops refusing writes until Overterm quits or "
-                + "you turn writes off. Agents get write tools here only if kubernetes.agentWrites names it.",
-            "Allow Writes Until Quit"
-        ) { [weak self] in
-            guard let self else { return }
-            Task { await self.model.setProductionWrites(true, for: context.name) }
-        }
-    }
-
-    /// Writes off again: the proxy back to refusing them.
-    func endProductionWrites() {
-        guard let context = model.selected, context.sessionWrites else { return }
-        writeStatus = nil
-        Task { await model.setProductionWrites(false, for: context.name) }
     }
 }

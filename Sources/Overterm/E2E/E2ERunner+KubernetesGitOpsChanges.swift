@@ -5,7 +5,7 @@ import Foundation
 /// API server, never a real cluster: a checkout's manifest that moves a
 /// Kustomization's path, applied on kind-fake (local), is asked naming the
 /// change and with its name typed — a wrong one applies nothing; resuming
-/// it on fake-prod with the session's writes on names what its source
+/// it on fake-prod — writable, no switch — names what its source
 /// holds against what is applied, and asks its name for its prune — a
 /// wrong one sends nothing. Every sheet is ended by the runner.
 extension E2ERunner {
@@ -75,14 +75,10 @@ extension E2ERunner {
         if let index = editor.buffers.firstIndex(where: { $0.url?.standardizedFileURL == file.standardizedFileURL }) { editor.removeBuffer(at: index) }
         if app.store.showingOverlay != .kubernetes { app.toggleKubernetesPage(nil) }
 
-        // fake-prod, writes on for the session: Resume says what it applies, its name typed for its prune.
+        // fake-prod, writable with no switch: Resume says what it applies, its name typed for its prune.
         model.select("fake-prod")
         model.setScope(.namespace("shop"))
-        page.allowProductionWrites()
-        check("fake-prod's writes are asked first", await eventually(5) { self.window.attachedSheet != nil })
-        confirmSheet()
-        check("fake-prod's writes are on", await eventually(10) { model.selected?.isWritable == true && page.productionWritesOn })
-        defer { page.endProductionWrites() }
+        check("fake-prod is writable, nothing asked to turn it on", await eventually(10) { model.selected?.isWritable == true && self.window.attachedSheet == nil })
         check(
             "fake-prod serves Flux's kinds", await eventually(15) { ["ks", "gitrepositories"].allSatisfy { model.discovery?.kind($0) != nil } },
             "\(String(describing: model.discoveryProblem))")
@@ -113,8 +109,6 @@ extension E2ERunner {
         check("still suspended", KubeWriteToggle.suspended.state(of: ["spec": live()]))
         check("said", await shownText(15) { $0.contains("The name typed wasn't acme-cron") } != nil)
         page.writeStatus = nil
-        page.endProductionWrites()
-        check("fake-prod's writes off again", await eventually(5) { model.selected?.isWritable == false })
         model.select("kind-fake")
     }
 }

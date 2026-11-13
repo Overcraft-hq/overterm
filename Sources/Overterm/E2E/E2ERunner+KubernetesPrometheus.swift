@@ -27,7 +27,7 @@ extension E2ERunner {
             model.metrics.interval = metricsInterval
             model.prometheus.interval = interval
             model.prometheus.range = .hour
-            Settings.shared.set("kubernetes.contexts", nil)
+            Settings.shared.set("kubernetes.contexts", Self.kubeContexts())
         }
         func prometheusAsked() -> [FakeKubeAPI.Request] { fake.requests.filter(\.isPrometheusQuery) }
         // The range picker itself (`KubeChartRangePicker`): its segmented control, by identifier or by its ranges.
@@ -88,7 +88,7 @@ extension E2ERunner {
         fake.add(
             "persistentvolumeclaims", "data-db-0", namespace: "shop",
             values: ["Status": "Bound", "Volume": "pvc-1234", "Capacity": "10Gi", "Access Modes": "RWO", "StorageClass": "standard"])
-        Settings.shared.set("kubernetes.contexts", nil)
+        Settings.shared.set("kubernetes.contexts", Self.kubeContexts())
         // Earlier scenarios' probes (kubernetesCharts' over Prometheus) aren't this one's.
         let probesBefore = model.prometheus.probes
         if model.selectedName != "fake-dev" { model.select("fake-dev") }
@@ -108,7 +108,7 @@ extension E2ERunner {
         check("and Prometheus is neither looked for nor asked", prometheusAsked().isEmpty && servicesAsked().isEmpty, "\(prometheusAsked()) \(servicesAsked())")
 
         // Opted in.
-        Settings.shared.set("kubernetes.contexts", .entries(["fake-dev": ["metrics": .string("prometheus")]]))
+        Settings.shared.set("kubernetes.contexts", Self.kubeContexts(["fake-dev": ["metrics": .string("prometheus")]]))
         check("fake-dev opts in", await eventually(10) { page.prometheusOn })
         check(
             "found by the Helm chart's labels", await eventually(15) { model.prometheus.state == .found(service, .helm) },
@@ -300,7 +300,7 @@ extension E2ERunner {
         // Opted in where none is found: looked for once, said, and still no picker.
         fake.delete("services", "prometheus-server", namespace: "monitoring")
         Settings.shared.set(
-            "kubernetes.contexts", .entries(["fake-dev": ["metrics": .string("prometheus")], "fake-prod": ["metrics": .string("prometheus")]]))
+            "kubernetes.contexts", Self.kubeContexts(["fake-dev": ["metrics": .string("prometheus")], "fake-prod": ["metrics": .string("prometheus")]]))
         check("fake-prod opts in", await eventually(10) { page.prometheusOn })
         check(
             "none found there, and said", await eventually(15) { model.prometheus.state == .unavailable(KubePrometheusState.notFound) },

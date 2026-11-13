@@ -418,8 +418,8 @@ enum KubeManifestRun {
 /// `kubectl kustomize`, files only). Diff with Cluster reads the live
 /// objects and asks for a dry run (`KubeManifestRun.diff`), shown in the
 /// changes pane; Apply is a step of its own, through the writes' guard
-/// path: the class check (writable contexts only; production only with
-/// `applyOnProduction`, never forced), the masks refused, the access
+/// path: the class check (writable contexts only, production too; never
+/// forced on production), the masks refused, the access
 /// review, a fresh dry-run diff in the confirmation with the fields'
 /// other owners, the name typed on production, the context checked again
 /// at the button, then the requests. A 409 says who owns what, and offers

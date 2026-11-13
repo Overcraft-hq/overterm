@@ -9,12 +9,21 @@ import XCTest
 /// request exactly, the access review, the confirmation's words and the
 /// outcome said plainly. Every context here is fictional.
 final class KubeWritesTests: XCTestCase {
-    static func context(_ name: String, settings: KubeContextSettings = KubeContextSettings(), session: Bool = false) -> KubeContext {
-        var context = KubeContext(
+    /// A fictional context on the fake. Writable is every class's default
+    /// (the owner's decision); the fixture's remote ones (`fake-dev`…) are
+    /// set `writable: false`, as a person opts a context out, unless
+    /// `settings` says otherwise. `readOnly`: production (or any) set so too.
+    static func context(_ name: String, settings: KubeContextSettings = KubeContextSettings(), readOnly: Bool = false) -> KubeContext {
+        var settings = settings
+        let kind = KubeClassifier.classify(context: name, cluster: name, set: settings.contextClass)
+        if readOnly {
+            settings.writable = false
+        } else if kind == .remote, settings.writable == nil {
+            settings.writable = false
+        }
+        return KubeContext(
             name: name, cluster: name, server: "http://127.0.0.1:1", namespace: "shop", user: "anonymous", auth: KubeAuth.none, file: nil,
-            contextClass: KubeClassifier.classify(context: name, cluster: name, set: settings.contextClass), settings: settings)
-        context.sessionWrites = session
-        return context
+            contextClass: kind, settings: settings)
     }
 
     static let deployments = KubeResourceKind(
@@ -63,36 +72,82 @@ final class KubeWritesTests: XCTestCase {
         XCTAssertEqual(KubeWriteCheck.access(.restart, on: Self.deployments), KubeAccess(verb: "patch", resource: "deployments.apps"))
     }
 
-    /// Rule 2: only a writable context — remote by its flag, local unless
-    /// it says no, production only with its switch on — and nothing else.
+    /// Rule 2, as the owner decided: every class writable unless its
+    /// `writable` setting says no — production too, with no switch to turn
+    /// on — and nothing else.
     func testEveryVerbAgainstEveryClass() {
         let dev = Self.context("fake-dev")
         let kind = Self.context("kind-fake")
         let prod = Self.context("fake-prod")
         let devWritable = Self.context("fake-dev", settings: KubeContextSettings(writable: true))
         let kindReadOnly = Self.context("kind-fake", settings: KubeContextSettings(writable: false))
-        let prodFlag = Self.context("fake-prod", settings: KubeContextSettings(writable: true))
-        let prodOn = Self.context("fake-prod", session: true)
+        let prodReadOnly = Self.context("fake-prod", settings: KubeContextSettings(writable: false))
+        let readOnly = "This context is read-only: Overterm changes nothing here (its writable setting)."
         for verb in KubeWriteVerb.allCases {
             let kindOfObject = [.pods, Self.deployments, Self.cronjobs, Self.nodes, .namespaces, KubeGitOpsTests.kustomizations, KubeGitOpsTests.applications].first {
                 KubeWriteCheck.offered(verb, on: $0)
             }!
-            XCTAssertEqual(
-                KubeWriteCheck.rule(verb, for: dev, kind: kindOfObject).refused, "This context is read-only: Overterm changes nothing here (its writable setting).",
-                "\(verb)")
-            XCTAssertNotNil(KubeWriteCheck.rule(verb, for: kindReadOnly, kind: kindOfObject).refused, "\(verb): writable: false")
-            XCTAssertEqual(
-                KubeWriteCheck.rule(verb, for: prod, kind: kindOfObject).refused, "Production is read-only: turn on writes for this session on its card first.",
-                "\(verb)")
-            XCTAssertNotNil(KubeWriteCheck.rule(verb, for: prodFlag, kind: kindOfObject).refused, "\(verb): a setting never opens production")
+            XCTAssertEqual(KubeWriteCheck.rule(verb, for: dev, kind: kindOfObject).refused, readOnly, "\(verb)")
+            XCTAssertEqual(KubeWriteCheck.rule(verb, for: kindReadOnly, kind: kindOfObject).refused, readOnly, "\(verb): writable: false")
+            XCTAssertEqual(KubeWriteCheck.rule(verb, for: prodReadOnly, kind: kindOfObject).refused, readOnly, "\(verb): production set read-only")
             XCTAssertNil(KubeWriteCheck.rule(verb, for: kind, kind: kindOfObject).refused, "\(verb)")
             XCTAssertNil(KubeWriteCheck.rule(verb, for: devWritable, kind: kindOfObject).refused, "\(verb)")
-            XCTAssertNil(KubeWriteCheck.rule(verb, for: prodOn, kind: kindOfObject).refused, "\(verb)")
+            XCTAssertNil(KubeWriteCheck.rule(verb, for: prod, kind: kindOfObject).refused, "\(verb): production writable by default")
             XCTAssertNotNil(KubeWriteCheck.rule(verb, for: kind, kind: kindOfObject).access, "\(verb): each write ships with its review")
+            XCTAssertNotNil(KubeWriteCheck.rule(verb, for: prod, kind: kindOfObject).access, "\(verb): production's reviewed too")
         }
         XCTAssertNotNil(KubeWriteCheck.rule(.restart, for: kind, kind: .pods).refused, "a pod has no rollout")
-        // A context never written to stays so: the session switch means nothing off production.
-        XCTAssertFalse(Self.context("fake-dev", session: true).isWritable)
+    }
+
+    /// Writable by default on every class: no flag, yes — production,
+    /// remote and local alike; `writable: false` makes any of them read-only.
+    func testEveryClassIsWritableUnlessItsSettingSaysNo() {
+        for kind in KubeContextClass.allCases {
+            XCTAssertTrue(KubeClassifier.isWritable(kind, flag: nil), "\(kind)")
+            XCTAssertTrue(KubeClassifier.isWritable(kind, flag: true), "\(kind)")
+            XCTAssertFalse(KubeClassifier.isWritable(kind, flag: false), "\(kind)")
+        }
+        func raw(_ name: String, _ settings: KubeContextSettings = KubeContextSettings()) -> KubeContext {
+            KubeContext(
+                name: name, cluster: name, server: "http://127.0.0.1:1", namespace: "shop", user: "anonymous", auth: KubeAuth.none, file: nil,
+                contextClass: KubeClassifier.classify(context: name, cluster: name, set: settings.contextClass), settings: settings)
+        }
+        XCTAssertTrue(raw("acme-prod").isProduction && raw("acme-prod").isWritable, "production writable by default")
+        XCTAssertTrue(raw("acme-stage").contextClass == .remote && raw("acme-stage").isWritable, "remote writable by default")
+        XCTAssertTrue(raw("kind-acme").contextClass == .local && raw("kind-acme").isWritable, "local writable by default")
+        XCTAssertFalse(raw("acme-prod", KubeContextSettings(writable: false)).isWritable, "production read-only by its setting")
+        XCTAssertFalse(raw("acme-stage", KubeContextSettings(writable: false)).isWritable)
+        // Its read-only refusal names the setting, not a switch.
+        XCTAssertEqual(
+            KubeWriteCheck.readOnly(raw("acme-prod", KubeContextSettings(writable: false))),
+            "This context is read-only: Overterm changes nothing here (its writable setting).")
+        XCTAssertEqual(KubeProcessCheck.readOnly(.production), KubeProcessCheck.readOnly(.remote))
+    }
+
+    /// The confirmations stay on production: its writes asked naming it,
+    /// the destructive ones with the name typed; agents keep their rule —
+    /// `kubernetes.agentWrites` naming it and, as before the switch went,
+    /// a step of a person's own: here its entry's explicit `writable: true`.
+    func testProductionKeepsItsConfirmationsAndAgentsTheirRule() {
+        let prod = Self.context("fake-prod")
+        let delete = KubeWriteCheck.rule(.delete, for: prod, kind: .pods)
+        XCTAssertNil(delete.refused)
+        XCTAssertTrue(delete.typedName)
+        XCTAssertTrue(KubeWriteCheck.rule(.scale, for: prod, kind: Self.deployments, replicas: 0).typedName)
+        XCTAssertTrue(KubeProcessCheck.rule(.drain, for: prod).typedName)
+        XCTAssertTrue(KubeProcessCheck.rule(.terminal, for: prod).confirm)
+        XCTAssertNotNil(KubeAgentWrites.refused(prod, agentWrites: []), "agents: not unless agentWrites names it")
+        XCTAssertTrue(KubeAgentWrites.refused(prod, agentWrites: [])?.contains("kubernetes.agentWrites") == true)
+        XCTAssertEqual(
+            KubeAgentWrites.refused(prod, agentWrites: ["fake-prod"]),
+            "fake-prod is production: agents write there only where its kubernetes.contexts entry sets writable: true.",
+            "writable by default for a person, not for agents: named alone isn't enough")
+        let opted = Self.context("fake-prod", settings: KubeContextSettings(writable: true))
+        XCTAssertNil(KubeAgentWrites.refused(opted, agentWrites: ["fake-prod"]), "named and set writable: true")
+        XCTAssertNotNil(KubeAgentWrites.refused(opted, agentWrites: []), "set writable, not named")
+        let readOnly = Self.context("fake-prod", readOnly: true)
+        XCTAssertEqual(
+            KubeAgentWrites.refused(readOnly, agentWrites: ["fake-prod"]), "fake-prod is read-only for Overterm (its writable setting), so for agents too.")
     }
 
     /// Rule 4: the typed name — on production a delete, a recreate, scaling
@@ -100,7 +155,7 @@ final class KubeWritesTests: XCTestCase {
     /// a namespace's delete everywhere.
     func testTheTypedNameWhereRuleFourSays() {
         let kind = Self.context("kind-fake")
-        let prod = Self.context("fake-prod", session: true)
+        let prod = Self.context("fake-prod")
         func typed(_ verb: KubeWriteVerb, _ context: KubeContext, _ of: KubeResourceKind, replicas: Int? = nil) -> Bool {
             KubeWriteCheck.rule(verb, for: context, kind: of, replicas: replicas).typedName
         }
@@ -210,7 +265,7 @@ final class KubeWritesTests: XCTestCase {
     }
 
     func testTheConfirmationNamesTheContextAndNamespace() {
-        let prod = Self.context("fake-prod", session: true)
+        let prod = Self.context("fake-prod")
         let ref = Self.pod("web-1", in: "fake-prod")
         let rule = KubeWriteCheck.rule(.delete, for: prod, kind: .pods)
         let confirmation = KubeWriteConfirmation.make(.delete, ref, context: prod, rule: rule)
@@ -268,29 +323,6 @@ final class KubeWritesTests: XCTestCase {
             "code": 429, "message": "Cannot evict pod.", "details": ["causes": [["reason": "DisruptionBudget", "message": "web-pdb needs 1 healthy pods"]]],
         ])
         XCTAssertEqual(status.message, "Cannot evict pod. web-pdb needs 1 healthy pods")
-    }
-
-    // MARK: Production's switch
-
-    func testProductionsSwitchHoldsOnlyForTheSameCluster() {
-        var writes = KubeProductionWrites()
-        let prod = Self.context("fake-prod")
-        writes.turnOn(prod)
-        writes.turnOn(Self.context("kind-fake"))
-        XCTAssertTrue(writes.isOn("fake-prod"))
-        XCTAssertFalse(writes.isOn("kind-fake"), "only production has a switch")
-        var list = KubeContextList(contexts: [prod, Self.context("fake-dev")])
-        XCTAssertEqual(writes.apply(to: &list), [])
-        XCTAssertTrue(list.context(named: "fake-prod")!.isWritable)
-        XCTAssertFalse(list.context(named: "fake-dev")!.isWritable)
-        // The kubeconfig read again points the name at another cluster: off.
-        let elsewhere = KubeContext(
-            name: "fake-prod", cluster: "fake-prod", server: "http://127.0.0.1:2", namespace: "shop", user: "anonymous", auth: KubeAuth.none, file: nil,
-            contextClass: .production, settings: KubeContextSettings())
-        var moved = KubeContextList(contexts: [elsewhere])
-        XCTAssertEqual(writes.apply(to: &moved), ["fake-prod"])
-        XCTAssertFalse(moved.context(named: "fake-prod")!.isWritable)
-        XCTAssertFalse(writes.isOn("fake-prod"))
     }
 }
 
@@ -842,7 +874,7 @@ extension KubeWritesTests {
         // Same ref, another revision: still the two said.
         same.next = "latest@sha256:fedcba9876543210fedc"
         XCTAssertTrue(same.said.hasSuffix("; sha256:0123456789ab is applied."), same.said)
-        let prod = Self.context("fake-prod", session: true)
+        let prod = Self.context("fake-prod")
         let rule = KubeWriteCheck.rule(.fluxResume, for: prod, kind: KubeGitOpsTests.kustomizations, resume: facts)
         XCTAssertTrue(rule.typedName)
         let confirmation = KubeWriteConfirmation.make(.fluxResume, KubeGitOpsTests.ref(KubeGitOpsTests.kustomizations, "acme-cron", in: "fake-prod"), context: prod, rule: rule)
@@ -881,5 +913,31 @@ extension KubeWritesTests {
             helm.said, "Resuming upgrades it to what helmchart flux-system/flux-system-acme-payments holds now: chart 1.5.0; 1.4.2 is deployed. 1.5.0 was last attempted.")
         XCTAssertFalse(helm.prune)
         XCTAssertEqual(KubeFluxResume.short("latest@sha256:0123456789abcdef0123"), "latest@sha256:0123456789ab")
+    }
+}
+
+/// The contexts a page test's model reads, changed by the test as a person
+/// edits a context's `writable` in settings.json: `reloadContexts()` reads
+/// them again.
+final class KubeTestContexts: @unchecked Sendable {
+    private let lock = NSLock()
+    private var list: KubeContextList
+
+    init(_ names: [String], current: String) {
+        list = KubeContextList(contexts: names.map { KubeWritesTests.context($0) }, current: current)
+    }
+
+    var value: KubeContextList {
+        lock.lock()
+        defer { lock.unlock() }
+        return list
+    }
+
+    /// `name` set `writable: false` (or its entry taken out).
+    func setReadOnly(_ name: String, _ readOnly: Bool) {
+        lock.lock()
+        defer { lock.unlock() }
+        guard let index = list.contexts.firstIndex(where: { $0.name == name }) else { return }
+        list.contexts[index] = KubeWritesTests.context(name, readOnly: readOnly)
     }
 }

@@ -17,8 +17,9 @@ import Foundation
 /// `k8s_restart`, `k8s_scale`, `k8s_delete_pod` (stage 2a), `k8s_apply` (2b; `KubeAgentWrites`)
 /// — are listed while `kubernetes.agentWrites` names a context (an agent
 /// started before needs a restart to see them: the list isn't announced
-/// again), work only on a context it names that is writable for Overterm
-/// (a production one only with its writes on for the session), and each call is asked in the window, the context and
+/// again), work only on a context it names that is writable for agents
+/// (a local one not set `writable: false`, a remote or production one set
+/// `writable: true`), and each call is asked in the window, the context and
 /// namespace in its title, through the page's checks: the class check, the
 /// access review, the confirmation (the name typed where rule 4 says), the
 /// class check again, then the request. A read-only context's socket
@@ -1285,8 +1286,11 @@ enum KubeMCPText {
 
 /// Where agents' write tools work (3.5, rule 10): a context
 /// `kubernetes.agentWrites` names (the default is none: agents read only)
-/// **and** writable for Overterm — a local or remote one by its `writable`
-/// setting, a production one only with its writes on for the session.
+/// **and** writable for agents — a local one unless set `writable: false`;
+/// a remote or production one only where its entry sets `writable: true`.
+/// A person may write on any context not set read-only (the owner's
+/// decision); agents keep the stricter rule they had, an explicit
+/// `writable: true` standing for production's former session switch.
 /// Nothing else turns them on. Pure.
 enum KubeAgentWrites {
     static let tools = ["k8s_restart", "k8s_scale", "k8s_delete_pod", "k8s_apply"]
@@ -1294,14 +1298,16 @@ enum KubeAgentWrites {
     /// Why agents may not write on `context`; nil when they may.
     static func refused(_ context: KubeContext, agentWrites: [String]) -> String? {
         guard context.isWritable else {
-            return context.isProduction
-                ? "\(context.name) is production, read-only: its writes aren't on for this session."
-                : "\(context.name) is read-only for Overterm (its writable setting), so for agents too."
+            return "\(context.name) is read-only for Overterm (its writable setting), so for agents too."
         }
         guard agentWrites.contains(context.name) else {
             return context.isProduction
-                ? "\(context.name) is production: its writes are on for this session, but kubernetes.agentWrites doesn't name it."
+                ? "\(context.name) is production, and kubernetes.agentWrites doesn't name it: agents only read there."
                 : "kubernetes.agentWrites doesn't name \(context.name): agents only read there."
+        }
+        if context.contextClass != .local, context.settings.writable != true {
+            let kind = context.isProduction ? "production" : "remote"
+            return "\(context.name) is \(kind): agents write there only where its kubernetes.contexts entry sets writable: true."
         }
         return nil
     }

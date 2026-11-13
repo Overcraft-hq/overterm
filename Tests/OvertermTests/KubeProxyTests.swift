@@ -86,17 +86,16 @@ final class KubeProxyTests: XCTestCase {
         let kubeconfig = try write("apiVersion: v1\nkind: Config\n", to: "kc.yaml")
         let planner = planner(kubeconfigs: [kubeconfig], kubectl: try standIn())
         let configuration = KubeProxies.Configuration(kubectlPath: try standIn().path)
-        for (name, readOnly) in [("fake-prod", true), ("fake-dev", true), ("kind-fake", false)] {
-            let spec = try awaitResult { try await planner.plan(Self.context(name), configuration: configuration, serverMinor: nil) }
-            XCTAssertEqual(spec.readOnly, readOnly, name)
-            XCTAssertEqual(spec.arguments.contains("--reject-methods=\(KubeProxyFlags.rejectedMethods)"), readOnly, name)
+        // Every class writable unless its setting says no; read-only by the
+        // setting on every class, production included.
+        for name in ["fake-prod", "fake-dev", "kind-fake"] {
+            for writable in [nil, true, false] as [Bool?] {
+                let readOnly = writable == false
+                let spec = try awaitResult { try await planner.plan(Self.context(name, writable: writable), configuration: configuration, serverMinor: nil) }
+                XCTAssertEqual(spec.readOnly, readOnly, "\(name) \(String(describing: writable))")
+                XCTAssertEqual(spec.arguments.contains("--reject-methods=\(KubeProxyFlags.rejectedMethods)"), readOnly, name)
+            }
         }
-        let writableDev = try awaitResult {
-            try await planner.plan(Self.context("fake-dev", writable: true), configuration: configuration, serverMinor: nil)
-        }
-        XCTAssertFalse(writableDev.readOnly, "a remote context made writable by its flag")
-        let prod = try awaitResult { try await planner.plan(Self.context("fake-prod", writable: true), configuration: configuration, serverMinor: nil) }
-        XCTAssertTrue(prod.readOnly, "production ignores the flag")
     }
 
     // MARK: The socket
@@ -332,7 +331,7 @@ final class KubeProxyTests: XCTestCase {
         var planner = planner(kubeconfigs: [kubeconfig], kubectl: kubectl)
         planner.folder = folder
         let spec = try await planner.plan(
-            Self.context("arn:aws:eks:eu-west-1:111122223333:cluster/fake-prod"), configuration: KubeProxies.Configuration(kubectlPath: kubectl.path),
+            Self.context("arn:aws:eks:eu-west-1:111122223333:cluster/fake-prod", writable: false), configuration: KubeProxies.Configuration(kubectlPath: kubectl.path),
             serverMinor: nil)
         XCTAssertEqual(spec.socket, try folder.socket(for: "arn:aws:eks:eu-west-1:111122223333:cluster/fake-prod"))
         XCTAssertEqual(spec.environment["KUBECONFIG"], kubeconfig.path)
@@ -345,7 +344,7 @@ final class KubeProxyTests: XCTestCase {
         let argv = try String(contentsOf: dir.appendingPathComponent("argv"), encoding: .utf8).split(separator: "\n").map(String.init)
         XCTAssertEqual(argv, spec.arguments)
         XCTAssertEqual(argv.first, "--context=arn:aws:eks:eu-west-1:111122223333:cluster/fake-prod")
-        XCTAssertTrue(argv.contains("--reject-methods=\(KubeProxyFlags.rejectedMethods)"), "production is read-only")
+        XCTAssertTrue(argv.contains("--reject-methods=\(KubeProxyFlags.rejectedMethods)"), "production set read-only by its setting")
         XCTAssertTrue(argv.contains("--disable-filter=false"), "the filters can't be switched off by a kuberc")
         let environment = try String(contentsOf: dir.appendingPathComponent("env"), encoding: .utf8)
         XCTAssertTrue(environment.contains("KUBECONFIG=\(kubeconfig.path)\n"))
@@ -413,9 +412,9 @@ final class KubeProxyTests: XCTestCase {
         let proxies = KubeProxies(
             configuration: KubeProxies.Configuration(kubectlPath: kubectl.path), plan: { try await real.plan($0, configuration: $1, serverMinor: $2) })
         defer { proxies.closeAll() }
-        let dev = Self.context("fake-dev", server: "http://127.0.0.1:\(port)")
+        let dev = Self.context("fake-dev", server: "http://127.0.0.1:\(port)", writable: false)
         let kind = Self.context("kind-fake", server: "http://127.0.0.1:\(port)")
-        XCTAssertFalse(dev.isWritable, "remote although its server is 127.0.0.1")
+        XCTAssertFalse(dev.isWritable, "set read-only by its setting")
         XCTAssertTrue(kind.isWritable)
 
         let listed = try await proxies.send(dev, .GET, "/api/v1/namespaces/default/pods")

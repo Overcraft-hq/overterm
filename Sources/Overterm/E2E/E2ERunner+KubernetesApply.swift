@@ -2,8 +2,8 @@ import AppKit
 import Foundation
 
 /// Stage 2b against the fake API server, never a real cluster (Section 9's
-/// check: a diff with masked Secret data; a 409 conflict shown; no Apply
-/// on `fake-prod` with writes on): the detail's YAML tab is the editor on
+/// check: a diff with masked Secret data; a 409 conflict shown; Apply on
+/// writable `fake-prod` with nothing turned on, the name typed): the detail's YAML tab is the editor on
 /// the resource's one buffer — followed quietly without edits, the banner
 /// with them —, `y` opens that buffer in the window's editor (stripped,
 /// in memory, never a file); Diff with Cluster sends a dry run and shows its diff in the
@@ -13,7 +13,8 @@ import Foundation
 /// with its values masked before and after, none of them in what is shown;
 /// a kustomization is rendered by the stand-in kubectl with KUBECONFIG
 /// `/dev/null`; `fake-dev` (read-only) diffs client-side, labelled, sending
-/// nothing; `fake-prod` with its writes on still offers no Apply.
+/// nothing; `fake-prod`, writable with no switch and no setting, offers
+/// Apply with its name typed (the owner's decision).
 extension E2ERunner {
     /// The Secret's values here: never in the app's output (testKubernetes).
     static let applySecretOld = "acme-e2e-apply-Hx4Wq"
@@ -225,16 +226,13 @@ extension E2ERunner {
         check("nothing reached the fake from fake-dev", fake.writes.count == before, "\(fake.writes.suffix(2))")
         check("no Apply there, with why", secret.applyRefusal?.hasPrefix("This context is read-only") == true, secret.applyRefusal ?? "none")
 
-        // fake-prod, writes on for the session, no applyOnProduction: no Apply.
+        // fake-prod, writable (no switch, no applyOnProduction): a person's Apply is offered, the name typed.
         let prodFile = checkout.appendingPathComponent("pay-api.yaml")
         try? "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: pay-api\n  namespace: payments\nspec:\n  replicas: 2\n".write(
             to: prodFile, atomically: true, encoding: .utf8)
         app.toggleKubernetesPage(nil)
         model.select("fake-prod")
-        page.allowProductionWrites()
-        check("fake-prod's writes are asked first", await eventually(5) { self.window.attachedSheet != nil })
-        if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
-        check("fake-prod's writes are on", await eventually(5) { model.selected?.isWritable == true && page.productionWritesOn })
+        check("fake-prod is writable, nothing turned on", await eventually(5) { model.selected?.isWritable == true && self.window.attachedSheet == nil })
         // The page steps aside for the editor.
         app.toggleKubernetesPage(nil)
         app.openInEditor(prodFile)
@@ -242,22 +240,18 @@ extension E2ERunner {
         if let prod = editor.active?.kubeManifest {
             prod.contextName = "fake-prod"
             await prod.refreshContexts()
-            check(
-                "no Apply on fake-prod with its writes on: applyOnProduction is off",
-                prod.applyRefusal
-                    == "Apply is off on production, even with its writes on: the context's applyOnProduction setting turns it on. Diff with Cluster still works.",
-                prod.applyRefusal ?? "offered")
-            let writes = fake.writes.count
-            await prod.runApply()
-            check("Apply refused at once, asking nothing", prod.state.isFailure && window.attachedSheet == nil && fake.writes.count == writes, "\(prod.state)")
-            check("production's refusal drawn", await shownText(15) { $0.contains("Apply is off on production") } != nil)
+            check("Apply offered on writable fake-prod, no setting turned on", prod.applyRefusal == nil, prod.applyRefusal ?? "offered")
+            if let context = model.contexts.context(named: "fake-prod") {
+                check("its name typed (rule 4)", KubeApplyCheck.rule(context).typedName)
+                check(
+                    "an agent's still needs applyOnProduction",
+                    KubeApplyCheck.refused(context, agent: true)?.hasPrefix("An agent's apply is off on production") == true)
+            }
             prod.diffWithCluster()
-            check("the diff still works there", await eventually(15) { prod.result?.context == "fake-prod" && prod.result?.production == true }, "\(prod.state)")
-            check("nothing applied on fake-prod", replicas(fake, "pay-api", namespace: "payments") == 1)
+            check("the diff works there", await eventually(15) { prod.result?.context == "fake-prod" && prod.result?.production == true }, "\(prod.state)")
+            check("nothing applied on fake-prod by a diff", replicas(fake, "pay-api", namespace: "payments") == 1)
         }
         if app.store.showingOverlay != .kubernetes { app.toggleKubernetesPage(nil) }
-        page.endProductionWrites()
-        check("fake-prod's writes off again", await eventually(5) { model.selected?.isWritable == false })
 
         // The copy goes with its tab; the checkout's files stay.
         check("applied: no edits left", !resource.isEdited)

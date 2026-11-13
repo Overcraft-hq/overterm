@@ -88,7 +88,7 @@ extension E2ERunner {
         model.setScope(.namespace("shop"))
 
         // Without Prometheus: dashes and their sentence, nothing read for them.
-        Settings.shared.set("kubernetes.contexts", nil)
+        Settings.shared.set("kubernetes.contexts", Self.kubeContexts())
         check("Prometheus off for fake-dev", await eventually(10) { !page.prometheusOn })
         fake.forgetRequests()
         check("the shares are dashes", await eventually(10) { cell(.cpuRequest) == .dash(KubeChartEmpty.sharesNeedPrometheus.sentence) })

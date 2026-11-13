@@ -634,14 +634,18 @@ enum KubeApplyConflict: Equatable, Sendable {
 /// 11 and 30), and what is still masked in it. Pure.
 enum KubeApplyCheck {
     /// Why Apply isn't offered; nil when it is. `force`: asked again after
-    /// a conflict — never on production.
-    static func refused(_ context: KubeContext, force: Bool = false) -> String? {
+    /// a conflict — never on production. A person's Apply goes wherever
+    /// the context is writable, production too, the name typed (the
+    /// owner's decision: nothing to turn on first); `agent`: an agent's
+    /// `k8s_apply`, which on production also needs the context's
+    /// `applyOnProduction` — agents' rules as they were.
+    static func refused(_ context: KubeContext, force: Bool = false, agent: Bool = false) -> String? {
         guard context.isWritable else {
             return KubeWriteCheck.readOnly(context) + " Diff with Cluster still shows what would change."
         }
         if context.isProduction {
-            guard context.settings.applyOnProduction == true else {
-                return "Apply is off on production, even with its writes on: the context's applyOnProduction setting turns it on. Diff with Cluster still works."
+            if agent, context.settings.applyOnProduction != true {
+                return "An agent's apply is off on production: the context's applyOnProduction setting turns it on. Diff with Cluster still works."
             }
             if force { return "An apply is never forced on production: change the field's owner, or the manifest." }
         }
@@ -649,7 +653,7 @@ enum KubeApplyCheck {
     }
 
     /// The rule as the page's writes have it: the name typed on production
-    /// (rule 4: apply where applyOnProduction allows it), the owners warned of.
+    /// (rule 4), the owners warned of.
     static func rule(_ context: KubeContext, force: Bool = false, warning: String? = nil) -> KubeWriteRule {
         if let refused = refused(context, force: force) { return KubeWriteRule(refused: refused) }
         return KubeWriteRule(access: nil, typedName: context.isProduction, warning: warning)

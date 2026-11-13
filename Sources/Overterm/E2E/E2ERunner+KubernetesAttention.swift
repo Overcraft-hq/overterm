@@ -21,7 +21,7 @@ import Foundation
 ///   values file anywhere), the Secret and the Deployment diffed masked in
 ///   the changes pane; Upgrade… refused on fake-dev (read-only), reviewed,
 ///   asked and **recorded, not typed** on kind-fake, the name asked on
-///   fake-prod with writes on. Only reviews reach the fake.
+///   fake-prod, writable with no switch. Only reviews reach the fake.
 extension E2ERunner {
     func kubernetesAttention(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, realProxy: Bool) async {
         let attention = KubeAttentionWatches.shared
@@ -341,8 +341,7 @@ extension E2ERunner {
         check(
             "in a tab pinned to kind-fake", recorded().first?.tab.kubePin?.context == "kind-fake" && recorded().first?.tab.kubePin?.namespace == "shop")
 
-        // fake-prod with writes on: the values asked for, the name typed.
-        await model.setProductionWrites(true, for: "fake-prod")
+        // fake-prod, writable with no switch: the values asked for, the name typed.
         _ = KubeBindingStore.shared.set(KubeBinding(checkout: kindKey, context: "fake-prod", namespace: "shop", release: "web"))
         check("bound to fake-prod", await eventually(10) { panel.binding?.context == "fake-prod" })
         app.store.select(tab)
@@ -358,6 +357,5 @@ extension E2ERunner {
         check(
             "a wrong name runs nothing",
             await eventually(10) { panel.helmUpgrade?.state == .failed("The name typed wasn't web: nothing was run.") } && recorded().count == 1)
-        await model.setProductionWrites(false, for: "fake-prod")
     }
 }

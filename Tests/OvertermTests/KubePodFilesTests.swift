@@ -10,8 +10,8 @@ import XCTest
 /// shells are off), the paths kubectl can't be given, and the
 /// confirmation's words. Pure: nothing runs kubectl.
 final class KubePodFilesTests: XCTestCase {
-    private func context(_ name: String, settings: KubeContextSettings = KubeContextSettings(), session: Bool = false) -> KubeContext {
-        KubeWritesTests.context(name, settings: settings, session: session)
+    private func context(_ name: String, settings: KubeContextSettings = KubeContextSettings(), readOnly: Bool = false) -> KubeContext {
+        KubeWritesTests.context(name, settings: settings, readOnly: readOnly)
     }
 
     private func copy(
@@ -123,24 +123,25 @@ final class KubePodFilesTests: XCTestCase {
         }
     }
 
-    func testTheContextsOfThisMacTakeNoCopyIn() throws {
+    /// Set read-only, no context takes a copy in; a copy out still goes.
+    func testTheContextsOfThisMacSetReadOnlyTakeNoCopyIn() throws {
         for name in [
             "arn:aws:eks:eu-west-1:123456789012:cluster/acme-dev", "arn:aws:eks:eu-west-1:123456789012:cluster/acme-prod", "globex-eu-west-1-dev",
             "globex-eu-west-1-prod", "kubernetes-admin@k8s-cluster", "fake-dev", "fake-prod",
         ] {
-            let read = context(name)
+            let read = context(name, readOnly: true)
             XCTAssertThrowsError(try KubeCommands.command(copy(.into), in: read), name)
             XCTAssertEqual(try KubeCommands.command(copy(.out), in: read), copy(.out).line(context: name), "\(name): out, after can-i and asked")
         }
         XCTAssertNoThrow(try KubeCommands.command(copy(.into), in: context("kind-fake")), "local: writable")
-        XCTAssertNoThrow(try KubeCommands.command(copy(.into), in: context("fake-prod", session: true)), "production with its switch on")
+        XCTAssertNoThrow(try KubeCommands.command(copy(.into), in: context("fake-prod")), "production: writable by default")
         XCTAssertNoThrow(try KubeCommands.command(copy(.into), in: context("fake-dev", settings: KubeContextSettings(writable: true))))
     }
 
     // MARK: The confirmation
 
     func testTheConfirmationNamesEverything() {
-        let prod = context("fake-prod", session: true)
+        let prod = context("fake-prod")
         let rule = KubeProcessCheck.rule(.copyOut, for: prod)
         let out = copy(.out).confirmation(context: prod, rule: rule)
         XCTAssertEqual(out.title, "Copy /var/log/app.log out of pod shop/web-7d9?")

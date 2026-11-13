@@ -102,7 +102,7 @@ final class KubePanelGitOpsTests: XCTestCase {
             store: KubeBindingStore(file: folder.appendingPathComponent("support/bindings.json")), kubernetes: model, gitOpsCache: cache,
             gitOpsCheckouts: checkouts)
         let socket = self.socket!
-        // `writable`: production with its writes on — the socket no longer refuses them.
+        // `writable`: production, writable by default — the socket doesn't refuse writes.
         panel.clientFor = { context in KubeClient(KubeSocketConnection(socket: socket, context: context.name, writable: writable)) }
         return panel
     }
@@ -524,7 +524,7 @@ final class KubePanelGitOpsTests: XCTestCase {
         panel.panelVisible = false
     }
 
-    // MARK: Production with its writes on (gitops.md 4.4, 8.2)
+    // MARK: Production, writable by default (gitops.md 4.4, 8.2)
 
     /// The window's part, as `TerminalWindowController` plays it: every
     /// verb to the page's guard path; Open on Page and Ask Why recorded and
@@ -553,10 +553,10 @@ final class KubePanelGitOpsTests: XCTestCase {
         var count: Int { confirmations.count + confirms.count }
     }
 
-    /// On fake-prod with "Allow writes until quit" on — its socket no longer
-    /// refuses a write — every rail action short of a confirmed verb sends
+    /// On fake-prod, writable by default — its socket doesn't refuse a
+    /// write — every rail action short of a confirmed verb sends
     /// nothing but GETs; a write lands only once its sheet is confirmed.
-    func testOnProductionWithWritesOnNothingIsWrittenUnconfirmed() async throws {
+    func testOnWritableProductionNothingIsWrittenUnconfirmed() async throws {
         pageRan = true
         let model = KubernetesModel(proxies: KubeProxies())
         let list = KubeMCPTests.list(current: "fake-prod")
@@ -579,9 +579,7 @@ final class KubePanelGitOpsTests: XCTestCase {
         model.show()
         defer { model.hide() }
         try await until(10, "the page's contexts") { model.contextsRead && model.selectedName == "fake-prod" }
-        await model.setProductionWrites(true, for: "fake-prod")
-        XCTAssertEqual(model.contexts.context(named: "fake-prod")?.sessionWrites, true, "writes on until quit")
-        XCTAssertEqual(model.contexts.context(named: "fake-prod")?.isWritable, true)
+        XCTAssertEqual(model.contexts.context(named: "fake-prod")?.isWritable, true, "writable by default, no switch")
 
         let panel = bound("fake-prod", model: model, writable: true)
         let host = PageHost(page)

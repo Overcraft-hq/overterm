@@ -4,14 +4,16 @@ import XCTest
 @testable import Overterm
 
 /// The page's guard path against the fake API server, over three fictional
-/// contexts on it: `kind-fake` (local, so writable), `fake-dev` (remote, so
-/// read-only) and `fake-prod` (production: read-only until its switch).
+/// contexts on it: `kind-fake` (local, writable), `fake-dev` (remote, set
+/// read-only) and `fake-prod` (production: writable, no switch — each write
+/// asked, the destructive ones by name; read-only only by its setting).
 /// Nothing is written before the access review and the confirmation; a
 /// typed name is checked by the page; a read-only context sends nothing.
 @MainActor
 final class KubeWritesPageTests: XCTestCase {
     private var api: FakeKubeAPI!
     private var socket: String!
+    private var contexts: KubeTestContexts!
 
     override func setUp() async throws {
         socket = "/tmp/otkwp-\(UInt32.random(in: 0...UInt32.max)).sock"
@@ -41,16 +43,16 @@ final class KubeWritesPageTests: XCTestCase {
 
     private func page(current: String) async throws -> (KubernetesPageModel, Box) {
         let model = KubernetesModel(proxies: KubeProxies())
-        let list = KubeContextList(
-            contexts: ["fake-dev", "fake-prod", "kind-fake"].map { KubeWritesTests.context($0) }, current: current)
-        model.load = { _ in list }
+        let contexts = KubeTestContexts(["fake-dev", "fake-prod", "kind-fake"], current: current)
+        self.contexts = contexts
+        model.load = { _ in contexts.value }
         model.readConfiguration = { KubernetesModel.Configuration() }
         model.watchesSettings = false
         model.remembersSelection = false
         model.flushInterval = .milliseconds(20)
         model.statusInterval = .milliseconds(50)
         let socket = self.socket!
-        // Writable as the model's context says it — production's switch included.
+        // Writable as the model's context says it.
         model.connectOverride = { context in KubeSocketConnection(socket: socket, context: context.name, writable: context.isWritable) }
         model.statusOverride = { _ in .open }
         model.access.run = { _, _, _ in .yes }
@@ -149,38 +151,26 @@ final class KubeWritesPageTests: XCTestCase {
         XCTAssertEqual(api.writes, [], "nothing but GETs: no write, no review")
     }
 
-    /// Production: greyed until its switch — asked, naming it — then each
-    /// destructive write asks for the name, which the page checks.
-    func testProductionNeedsItsSwitchThenTheTypedName() async throws {
+    /// Production: writable with no switch (the owner's decision) — each
+    /// destructive write asks for the name, which the page checks; set
+    /// read-only by its setting, greyed, and the client refuses.
+    func testProductionIsWritableWithTheTypedNameUntilItsSettingSaysNo() async throws {
         let (page, box) = try await page(current: "fake-prod")
         defer { page.model.hide() }
+        try await until("listed") { page.model.rows.count == 2 }
         page.selection = ["shop/api-1"]
-        XCTAssertEqual(
-            page.verbs(for: ["shop/api-1"]).first { $0.title == "Delete…" }?.unavailable,
-            "Production is read-only: turn on writes for this session on its card first.")
-        XCTAssertEqual(page.band, "PRODUCTION · fake-prod · read-only: Overterm changes nothing here")
-        XCTAssertTrue(page.press("\u{7F}"))
-        XCTAssertEqual(page.writeStatus, .failed("Production is read-only: turn on writes for this session on its card first."))
-        XCTAssertEqual(api.writes, [])
+        XCTAssertEqual(page.model.selected?.isWritable, true)
+        XCTAssertEqual(page.band, "PRODUCTION · fake-prod · each change asked, a destructive one by its name")
+        XCTAssertTrue(box.confirms.isEmpty, "no switch asked for")
 
-        // The switch, asked first, naming the context.
-        page.allowProductionWrites()
-        XCTAssertEqual(box.confirms.count, 1)
-        XCTAssertTrue(box.confirms[0].0.hasPrefix("PRODUCTION · fake-prod"), box.confirms[0].0)
-        XCTAssertEqual(box.confirms[0].1, "Allow Writes Until Quit")
-        XCTAssertFalse(page.model.productionWrites.isOn("fake-prod"), "not before the button")
-        box.confirms[0].2()
-        try await until("on, listed again") { page.model.selected?.isWritable == true && page.model.rows.count == 2 }
-        XCTAssertTrue(page.productionWritesOn)
-        XCTAssertEqual(page.band, "PRODUCTION · fake-prod · writes on until quit: each one asked, a destructive one by its name")
-
-        // A delete now asks for the name.
+        // A delete asks for the name.
         XCTAssertTrue(page.press("\u{7F}"))
         try await until("asked") { box.confirmations.count == 1 }
         let (confirmation, then) = box.confirmations[0]
         XCTAssertTrue(confirmation.production)
         XCTAssertEqual(confirmation.typedName, "api-1")
         XCTAssertEqual(confirmation.scope, "PRODUCTION · fake-prod · namespace shop")
+        XCTAssertFalse(reviews().isEmpty, "reviewed before it is asked")
         then("api-2")
         XCTAssertEqual(page.writeStatus, .failed("The name typed wasn't api-1: nothing was changed."))
         try await Task.sleep(for: .milliseconds(100))
@@ -191,28 +181,33 @@ final class KubeWritesPageTests: XCTestCase {
         try await until("deleted") { self.api.pod("api-1", namespace: "shop") == nil }
         XCTAssertEqual(written().map(\.description), ["DELETE /api/v1/namespaces/shop/pods/api-1"])
 
-        // Off again: greyed, and the client refuses.
-        page.endProductionWrites()
-        try await until("off, listed again") { page.model.selected?.isWritable == false && page.model.rows.count == 1 }
+        // Set read-only by its setting: greyed, the band says so, and the client refuses.
+        contexts.setReadOnly("fake-prod", true)
+        page.model.reloadContexts()
+        try await until("read-only, listed again") { page.model.selected?.isWritable == false && page.model.rows.count == 1 }
+        XCTAssertEqual(page.band, "PRODUCTION · fake-prod · read-only: Overterm changes nothing here (its writable setting)")
         page.selection = ["shop/web-1"]
+        let readOnly = "This context is read-only: Overterm changes nothing here (its writable setting)."
+        XCTAssertEqual(page.verbs(for: ["shop/web-1"]).first { $0.title == "Delete…" }?.unavailable, readOnly)
         XCTAssertTrue(page.press("r"))
-        XCTAssertEqual(page.writeStatus, .failed("Production is read-only: turn on writes for this session on its card first."))
+        XCTAssertEqual(page.writeStatus, .failed(readOnly))
         XCTAssertEqual(written().count, 1)
     }
 
-    /// Writes turned off while the confirmation shows: the button sends nothing.
+    /// Set read-only while the confirmation shows: the button sends nothing.
     func testWritesTurnedOffMeanwhileStopAtTheButton() async throws {
         let (page, box) = try await page(current: "fake-prod")
         defer { page.model.hide() }
-        await page.model.setProductionWrites(true, for: "fake-prod")
-        try await until("listed again") { page.model.rows.count == 2 }
+        try await until("listed") { page.model.rows.count == 2 }
         page.selection = ["shop/web-1"]
         page.write(.evict, on: try XCTUnwrap(page.ref(for: "shop/web-1")))
         try await until("asked") { box.confirmations.count == 1 }
         XCTAssertNil(box.confirmations[0].0.typedName, "an eviction respects PDBs: not typed")
-        await page.model.setProductionWrites(false, for: "fake-prod")
+        contexts.setReadOnly("fake-prod", true)
+        page.model.reloadContexts()
+        try await until("read-only") { page.model.selected?.isWritable == false }
         box.confirmations[0].1("")
-        XCTAssertEqual(page.writeStatus, .failed("Production is read-only: turn on writes for this session on its card first."))
+        XCTAssertEqual(page.writeStatus, .failed("This context is read-only: Overterm changes nothing here (its writable setting)."))
         try await Task.sleep(for: .milliseconds(100))
         XCTAssertEqual(written(), [])
     }

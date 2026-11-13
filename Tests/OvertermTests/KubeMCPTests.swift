@@ -72,9 +72,17 @@ final class KubeMCPTests: XCTestCase {
                 name: name, cluster: clusterName, server: "http://127.0.0.1:1", namespace: name == "fake-dev" ? "shop" : "payments",
                 user: "fake-user-\(name)", auth: KubeAuth.none, file: nil,
                 contextClass: KubeClassifier.classify(context: name, cluster: clusterName, set: nil),
-                settings: name == "fake-dev" ? devSettings : KubeContextSettings())
+                settings: name == "fake-dev" ? readOnlyUnlessSaid(devSettings) : KubeContextSettings())
         }
         return KubeContextList(contexts: contexts, current: current)
+    }
+
+    /// fake-dev as the fixture keeps it: set read-only (writable is every
+    /// class's default) unless `settings` says.
+    nonisolated private static func readOnlyUnlessSaid(_ settings: KubeContextSettings) -> KubeContextSettings {
+        var settings = settings
+        if settings.writable == nil { settings.writable = false }
+        return settings
     }
 
     /// The page has selected a context (kubectl's current, the page's
@@ -204,7 +212,7 @@ final class KubeMCPTests: XCTestCase {
     func testContextsSayClassAndNamespaceButNoServerOrUser() async throws {
         let said = try await text("k8s_contexts")
         XCTAssertTrue(said.contains("* fake-dev — remote, read-only for Overterm; namespace shop; kubectl's current context"), said)
-        XCTAssertTrue(said.contains("  fake-prod — PRODUCTION, read-only for Overterm; namespace payments"), said)
+        XCTAssertTrue(said.contains("  fake-prod — PRODUCTION, writable for Overterm (not for agents); namespace payments"), said)
         XCTAssertFalse(said.contains("127.0.0.1") || said.contains("fake-user"), "no server, no user: \(said)")
         XCTAssertTrue(api.requests.isEmpty, "listing contexts asks no cluster: \(api.requests)")
     }
@@ -287,7 +295,7 @@ final class KubeMCPTests: XCTestCase {
 
     func testAReadOnProductionWorks() async throws {
         let said = try await text("k8s_get", ["kind": "pods", "context": "fake-prod"])
-        XCTAssertTrue(said.hasPrefix("PRODUCTION context fake-prod (read-only: Overterm changes nothing there), namespace payments."), said)
+        XCTAssertTrue(said.hasPrefix("PRODUCTION context fake-prod (read only: change nothing there), namespace payments."), said)
         XCTAssertTrue(said.contains("api-0"), said)
         let described = try await text("k8s_describe", ["kind": "pod", "name": "api-0", "context": "fake-prod"])
         XCTAssertTrue(described.hasPrefix("PRODUCTION context fake-prod") && described.contains("Pod payments/api-0"), described)
@@ -625,7 +633,7 @@ final class KubeMCPTests: XCTestCase {
         let contexts = try await text("k8s_contexts")
         XCTAssertTrue(contexts.contains("None is selected on the Kubernetes page"), contexts)
         XCTAssertFalse(contexts.contains("* "), "no default: \(contexts)")
-        XCTAssertTrue(contexts.contains("  fake-prod — PRODUCTION, read-only for Overterm; namespace payments; kubectl's current context"), contexts)
+        XCTAssertTrue(contexts.contains("  fake-prod — PRODUCTION, writable for Overterm (not for agents); namespace payments; kubectl's current context"), contexts)
         XCTAssertEqual(api.requests, [], "nothing asked of production, nor any cluster")
         let named = try await text("k8s_get", ["kind": "pods", "context": "fake-prod"])
         XCTAssertTrue(named.hasPrefix("PRODUCTION context fake-prod"), "named, it reads: \(named)")

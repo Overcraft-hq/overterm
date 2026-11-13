@@ -17,8 +17,8 @@ protocol KubeConnection: Sendable {
     func stream(_ path: String, headers: [(String, String)]) -> AsyncThrowingStream<Data, Error>
     /// How the context signs in: what a proxy's 500 means.
     var signIn: KubeSignIn { get }
-    /// Whether the context may be written to now (its writable flag, or
-    /// production's switch for the session). False, `write` sends nothing.
+    /// Whether the context may be written to now (its writable flag: yes
+    /// unless it says no, production too). False, `write` sends nothing.
     var writable: Bool { get }
     /// One write: DELETE, PATCH, a POST to a subresource or an access review.
     func write(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) async throws -> HTTPResponse

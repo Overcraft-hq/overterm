@@ -6,8 +6,7 @@ import Foundation
 /// (`KubeHelmWrite`), by the path drain and `rollout undo` take
 /// (`confirmTabWrite`):
 /// 1. the process class check (`KubeProcessCheck`): refused on a
-///    read-only context — remote by its `writable` setting, production
-///    without its switch for the session —; a Helm 2 release refused
+///    read-only context — any class set `writable: false` —; a Helm 2 release refused
 ///    everywhere;
 /// 2. the access review (SelfSubjectAccessReview through the context's
 ///    writable socket): the release's records, and — when its manifest was

@@ -49,9 +49,6 @@ final class KubernetesModel: ObservableObject {
     /// through a writable context's socket), a minute each per context,
     /// namespace and verb.
     let writeAccess = KubeAccessChecks(run: { _, _, _ in .failed("Not asked.") })
-    /// The production contexts whose writes are on for this session (rule
-    /// 2): off at launch, turned on from the context's card, never a setting.
-    @Published private(set) var productionWrites = KubeProductionWrites()
     /// Usage from metrics.k8s.io, polled only while a page shows it (stage 2d).
     let metrics = KubeMetricsMonitor()
     private var metricsChanges: AnyCancellable?
@@ -70,7 +67,7 @@ final class KubernetesModel: ObservableObject {
         var contexts: [String: KubeContextSettings] = [:]
         var pinned: [String] = []
         var proxies = KubeProxies.Configuration()
-        /// The production contexts whose agents get write tools while their writes are on.
+        /// The contexts where agents get write tools, while they are writable for agents (`KubeAgentWrites`).
         var agentWrites: [String] = []
         /// What `E` runs, unless the context names its own.
         var debugImage = KubeCommands.defaultDebugImage
@@ -410,15 +407,7 @@ final class KubernetesModel: ObservableObject {
     }
 
     private func loaded(_ read: KubeContextList) {
-        var list = read
-        // Production's writes stay on only for the cluster they were turned
-        // on for; the proxies are told of any that go. They don't wait to
-        // be told: they keep the context as it was turned on and plan any
-        // other copy of the name with the method filter.
-        for name in productionWrites.apply(to: &list) {
-            let proxies = self.proxies
-            Task { await proxies.endSessionWrites(name) }
-        }
+        let list = read
         let before = selected
         // What was read for a context is kept only while it is the same
         // cluster: a name now pointing at another server, cluster or user
@@ -592,24 +581,6 @@ final class KubernetesModel: ObservableObject {
         restartReading(side: false)
     }
 
-    // MARK: Production's writes, for the session
-
-    /// A production context's writes on (or off) until quit: its proxy is
-    /// started again — without the method filter only while they are on —
-    /// and the context, as the page and its checks see it, says so. Only a
-    /// production context has the switch; any other's writability is its
-    /// `writable` setting alone.
-    func setProductionWrites(_ on: Bool, for name: String) async {
-        guard let context = contexts.context(named: name), context.isProduction, on != productionWrites.isOn(name) else { return }
-        if on { await proxies.allowSessionWrites(context) } else { await proxies.endSessionWrites(name) }
-        if on { productionWrites.turnOn(context) } else { productionWrites.turnOff(name) }
-        var list = contexts
-        _ = productionWrites.apply(to: &list)
-        contexts = list
-        writeAccess.forget(context: name)
-        if name == selectedName { restartReading() }
-    }
-
     /// After a sign-in, or a failure put right: the context's requests may go again.
     func retry() {
         guard let name = selectedName else { return }
@@ -671,12 +642,10 @@ final class KubernetesModel: ObservableObject {
         await proxies.configure(configuration.proxies)
         guard configuration.enabled else { return nil }
         let load = self.load
-        var list = await KubeBlocking.run { load(configuration) }
+        let list = await KubeBlocking.run { load(configuration) }
         await tellProxies(list)
         // Its settings followed from now on: the proxies keep this list.
         watchSettings()
-        var writes = productionWrites
-        _ = writes.apply(to: &list)
         return list
     }
 

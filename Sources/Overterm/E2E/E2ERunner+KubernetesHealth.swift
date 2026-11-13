@@ -74,7 +74,7 @@ extension E2ERunner {
         model.reloadContexts()
         check(
             "fake-stage is read", await eventually(10) { model.contexts.context(named: "fake-stage") != nil }, "\(model.contexts.contexts.map(\.name))")
-        check("remote, so read-only", model.contexts.context(named: "fake-stage")?.isWritable == false)
+        check("remote, read-only by its entry", model.contexts.context(named: "fake-stage")?.isWritable == false)
         await kubernetesPinnedHealth(model, page, stage)
         await kubernetesCompare(model, page, fake, stage, devPassword: devPassword, stagePassword: stagePassword)
 

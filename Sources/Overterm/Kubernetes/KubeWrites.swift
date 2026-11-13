@@ -2,7 +2,7 @@ import Foundation
 import NIOHTTP1
 
 /// A write refused before it left Overterm: the context is read-only (its
-/// writable flag; production without its switch for the session), or the
+/// `writable` setting is false, whatever its class), or the
 /// connection reads only.
 struct KubeWriteRefused: Error, Equatable, LocalizedError, CustomStringConvertible {
     var reason: String
@@ -332,9 +332,7 @@ enum KubeWriteCheck {
 
     /// Why a context takes no write.
     static func readOnly(_ context: KubeContext) -> String {
-        context.isProduction
-            ? "Production is read-only: turn on writes for this session on its card first."
-            : "This context is read-only: Overterm changes nothing here (its writable setting)."
+        "This context is read-only: Overterm changes nothing here (its writable setting)."
     }
 }
 
@@ -649,8 +647,8 @@ struct KubeNamespaceContents: Equatable, Sendable {
 extension KubeClient {
     static let metadataAccept = "application/json;as=PartialObjectMetadata;g=meta.k8s.io;v=v1"
 
-    /// One write, refused here unless the connection's context is writable
-    /// for this session. Never retried: a 429 from an eviction is a
+    /// One write, refused here unless the connection's context is
+    /// writable. Never retried: a 429 from an eviction is a
     /// PodDisruptionBudget saying no. The answer's body isn't kept — a
     /// deleted Secret's would carry its values.
     @discardableResult
@@ -999,44 +997,6 @@ enum KubeWriteStatus: Equatable {
 
     var isFailure: Bool { if case .failed = self { true } else { false } }
     var isWorking: Bool { if case .working = self { true } else { false } }
-}
-
-/// The production contexts whose writes are on for this session (rule 2,
-/// decision 4): in memory only, so a relaunch is read-only again, and kept
-/// only while the context's name reaches the same cluster as the same
-/// user (a kubeconfig read again may point it elsewhere). Pure.
-struct KubeProductionWrites: Equatable, Sendable {
-    /// Each one as it was read when its writes were turned on.
-    private(set) var on: [String: KubeContext] = [:]
-
-    func isOn(_ name: String) -> Bool { on[name] != nil }
-
-    mutating func turnOn(_ context: KubeContext) {
-        guard context.isProduction else { return }
-        var kept = context
-        kept.sessionWrites = false
-        on[context.name] = kept
-    }
-
-    mutating func turnOff(_ name: String) { on[name] = nil }
-
-    /// `list` with each production context's switch as it stands; those a
-    /// kubeconfig read again no longer has, or points elsewhere, turned
-    /// off — their names returned, for the proxies.
-    mutating func apply(to list: inout KubeContextList) -> [String] {
-        var dropped: [String] = []
-        for (name, old) in on {
-            guard let now = list.context(named: name), now.isProduction, KubernetesModel.sameAccess(old, now) else {
-                on[name] = nil
-                dropped.append(name)
-                continue
-            }
-        }
-        for index in list.contexts.indices {
-            list.contexts[index].sessionWrites = list.contexts[index].isProduction && on[list.contexts[index].name] != nil
-        }
-        return dropped.sorted()
-    }
 }
 
 /// A new namespace's name, checked as the API server checks it: an RFC

@@ -28,7 +28,7 @@ extension E2ERunner {
         defer {
             app.kubernetesCommandRecorder = nil
             app.closeTabsWithoutAsking(app.store.tabs.filter { !opened.contains($0.id) })
-            Settings.shared.set("kubernetes.contexts", nil)
+            Settings.shared.set("kubernetes.contexts", Self.kubeContexts())
             fake.servesResize = true
             page.writeStatus = nil
         }
@@ -55,7 +55,7 @@ extension E2ERunner {
             "nothing asked, recorded or reviewed for it",
             window.attachedSheet == nil && recorded.isEmpty && !fake.requests.contains { $0.isAccessReview && ($0.json.map { "\($0)" } ?? "").contains("attach") })
 
-        Settings.shared.set("kubernetes.contexts", .entries(["kind-fake": ["nodeShell": .bool(true)]]))
+        Settings.shared.set("kubernetes.contexts", Self.kubeContexts(["kind-fake": ["nodeShell": .bool(true)]]))
         check("turned on in kind-fake's entry", await eventually(10) { model.contexts.context(named: "kind-fake")?.settings.nodeShell == true })
         guard await showKubernetesKind(model, page, "no", row: node) else { return }
         page.selection = ["fake-node-1"]

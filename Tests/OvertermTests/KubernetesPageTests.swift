@@ -260,7 +260,10 @@ final class KubernetesPageTests: XCTestCase {
     // MARK: The page
 
     func testThePageReadsTheServersRows() async throws {
-        let model = model([Self.context("fake-dev", namespace: "shop"), Self.context("fake-prod", namespace: "shop")])
+        let model = model([
+            Self.context("fake-dev", namespace: "shop", settings: KubeContextSettings(writable: false)),
+            Self.context("fake-prod", namespace: "shop", settings: KubeContextSettings(writable: false)),
+        ])
         let page = KubernetesPageModel(model: model)
         model.show()
         defer { model.hide() }
@@ -364,9 +367,9 @@ final class KubernetesPageTests: XCTestCase {
         XCTAssertTrue(page.press("2"))
         XCTAssertEqual(page.section, .workloads)
 
-        // Production: the band.
+        // Production set read-only by its entry: the band says so.
         model.select("fake-prod")
-        XCTAssertEqual(page.band, "PRODUCTION · fake-prod · read-only: Overterm changes nothing here")
+        XCTAssertEqual(page.band, "PRODUCTION · fake-prod · read-only: Overterm changes nothing here (its writable setting)")
         XCTAssertEqual(page.classLabel, "Production · read-only")
     }
 
@@ -438,7 +441,7 @@ final class KubernetesPageTests: XCTestCase {
         XCTAssertTrue(page.press("c"))
         XCTAssertEqual(page.picker?.results.map(\.title), ["fake-dev", "fake-prod"])
         XCTAssertEqual(page.picker?.selected?.title, "fake-dev")
-        XCTAssertEqual(page.picker?.results.last?.detail, "Production · read-only")
+        XCTAssertEqual(page.picker?.results.last?.detail, "Production · writable", "writable by default")
         XCTAssertTrue(page.picker?.results.last?.production == true)
         page.picker?.move(1)
         XCTAssertEqual(page.picker?.selected?.title, "fake-prod")
@@ -669,7 +672,7 @@ final class KubernetesPageTests: XCTestCase {
                     Self.context("kind-fake"), Self.context("arn:aws:eks:eu-west-1:1:cluster/acme-prod", settings: KubeContextSettings(displayName: "acme")),
                 ], current: "kind-fake"), selected: nil)
         XCTAssertEqual(contexts.items.map(\.title), ["kind-fake", "acme"])
-        XCTAssertEqual(contexts.items.map(\.detail), ["Local · writable · current", "Production · read-only · arn:aws:eks:eu-west-1:1:cluster/acme-prod"])
+        XCTAssertEqual(contexts.items.map(\.detail), ["Local · writable · current", "Production · writable · arn:aws:eks:eu-west-1:1:cluster/acme-prod"])
         XCTAssertEqual(contexts.index, 0)
         XCTAssertEqual(contexts.items.map(\.production), [false, true])
     }

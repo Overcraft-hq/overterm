@@ -6,12 +6,12 @@ import Foundation
 /// writable — on 127.0.0.1 like the others, which is not why). A delete and
 /// a scale there are reviewed, confirmed in the window's sheet (ended by
 /// the runner, never by a click), land on the fake and come back by the
-/// watch; on `fake-prod` the verbs are greyed until its switch for the
-/// session, which is asked first, and a delete then asks for the typed
-/// name — a wrong one sends nothing; on `fake-dev` (read-only) they are
-/// greyed with why and nothing reaches the fake. With kubectl installed the
-/// real proxies are in between: fake-prod's refuses a POST again once its
-/// writes are off.
+/// watch; on `fake-prod` set `writable: false` by its entry the verbs are
+/// greyed with why (with kubectl installed, its real proxy refuses a POST
+/// too); its entry gone, it is writable with no switch, and a delete asks
+/// for the typed name — a wrong one sends nothing; on `fake-dev`
+/// (read-only by its entry) they are greyed with why and nothing reaches
+/// the fake.
 extension E2ERunner {
     func kubernetesWrites(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, kubeconfig: URL, port: Int, kubectl: String?) async {
         // kind-fake joins the scenario's kubeconfig.
@@ -28,8 +28,10 @@ extension E2ERunner {
             "kind-fake is read", await eventually(10) { model.contexts.contexts.map(\.name) == ["fake-dev", "fake-prod", "kind-fake"] },
             "\(model.contexts.contexts.map(\.name))")
         let local = model.contexts.context(named: "kind-fake")
-        check("kind-fake is local by name, so writable", local?.contextClass == .local && local?.isWritable == true)
-        check("fake-prod and fake-dev are not", model.contexts.contexts.filter(\.isWritable).map(\.name) == ["kind-fake"])
+        check("kind-fake is local by name, writable", local?.contextClass == .local && local?.isWritable == true)
+        check(
+            "fake-prod writable too, fake-dev not (its entry)", model.contexts.contexts.filter(\.isWritable).map(\.name) == ["fake-prod", "kind-fake"],
+            "\(model.contexts.contexts.filter(\.isWritable).map(\.name))")
         fake.addPod("doomed-0", namespace: "shop")
         fake.add(
             "deployments.apps", "batch", namespace: "shop", values: ["Ready": "1/1", "Up-to-date": 1, "Available": 1],
@@ -117,27 +119,36 @@ extension E2ERunner {
             "and its row says 3/3 by the watch",
             await eventually(10) { model.rows[KubeRowID(namespace: "shop", name: "batch")]?.cells.contains { $0.text == "3/3" } == true })
 
-        // fake-prod: greyed until the switch, then the typed name.
+        // fake-prod: read-only only when its entry says so; else
+        // writable, with no switch to turn on — each write asked, a
+        // destructive one by the name typed.
         page.showKind(model.discovery?.kind("po") ?? .pods)
+        Settings.shared.set("kubernetes.contexts", Self.kubeContexts(["fake-prod": ["writable": .bool(false)]]))
+        check("fake-prod set read-only by its entry", await eventually(10) { model.contexts.context(named: "fake-prod")?.isWritable == false })
         model.select("fake-prod")
         model.setScope(.namespace("payments"))
         check(
             "fake-prod's pods", await eventually(15) { model.selectedName == "fake-prod" && model.rows[KubeRowID(namespace: "payments", name: "api-0")] != nil },
             "\(model.rows.sorted.map(\.id.description))")
         page.selection = ["payments/api-0"]
-        let refusal = "Production is read-only: turn on writes for this session on its card first."
+        let refusal = "This context is read-only: Overterm changes nothing here (its writable setting)."
         check("its Delete… is greyed with why", page.verbs(for: ["payments/api-0"]).first { $0.title == "Delete…" }?.unavailable == refusal)
         let prodWrites = fake.writes.count
         check("⌫ does nothing but say so", page.press("\u{7F}") && page.writeStatus == .failed(refusal) && window.attachedSheet == nil)
-        check("the refusal drawn", await shownText(15) { $0.contains("turn on writes for this session") } != nil)
+        check("the refusal drawn", await shownText(15) { $0.contains("This context is read-only") } != nil)
+        check("the band says read-only", page.band?.contains("read-only") == true, page.band ?? "")
         check("nothing reached the fake", fake.writes.count == prodWrites)
-        page.allowProductionWrites()
-        check("turning writes on is asked first", await eventually(5) { self.window.attachedSheet != nil })
-        check("naming the context", sheetTexts().contains { $0.contains("PRODUCTION · fake-prod") }, "\(sheetTexts())")
-        if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
-        check("then writes are on for the session", await eventually(5) { model.selected?.isWritable == true && page.productionWritesOn })
-        check("the band says so", page.band?.contains("writes on until quit") == true, page.band ?? "")
-        check("the band drawn so", await shownText(15) { $0.contains("writes on until quit") } != nil)
+        if kubectl != nil, let prod = model.selected {
+            let review = KubeWrites.review(KubeAccess(verb: "delete", resource: "pods"), namespace: "payments")
+            let refused = try? await model.proxies.send(
+                prod, .POST, review.path, body: review.body, headers: [("Content-Type", review.contentType)])
+            check("and read-only fake-prod's proxy refuses a POST", refused?.status == 403, "\(refused.map { "\($0.status)" } ?? "no answer")")
+        }
+        Settings.shared.set("kubernetes.contexts", Self.kubeContexts())
+        check("its entry gone, fake-prod is writable", await eventually(10) { model.selected?.isWritable == true })
+        check("no switch asked for", window.attachedSheet == nil)
+        check("the band says each change is asked", page.band?.contains("each change asked") == true, page.band ?? "")
+        check("the band drawn so", await shownText(15) { $0.contains("each change asked") } != nil)
         check(
             "the pods listed again", await eventually(15) { model.rows[KubeRowID(namespace: "payments", name: "api-0")] != nil && model.listState == .live })
         page.selection = ["payments/api-0"]
@@ -163,15 +174,8 @@ extension E2ERunner {
         if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: .alertFirstButtonReturn) }
         check("the name typed, it lands", await eventually(10) { fake.pod("api-0", namespace: "payments") == nil }, "\(String(describing: page.writeStatus))")
         check("by the watch", await eventually(10) { model.rows[KubeRowID(namespace: "payments", name: "api-0")] == nil })
-        page.endProductionWrites()
-        check("writes off again: read-only", await eventually(5) { model.selected?.isWritable == false && page.band?.contains("read-only") == true })
-        if kubectl != nil, let prod = model.selected {
-            let review = KubeWrites.review(KubeAccess(verb: "delete", resource: "pods"), namespace: "payments")
-            let refused = try? await model.proxies.send(
-                prod, .POST, review.path, body: review.body, headers: [("Content-Type", review.contentType)])
-            check("and fake-prod's proxy refuses a POST again", refused?.status == 403, "\(refused.map { "\($0.status)" } ?? "no answer")")
-        } else {
-            note("no kubectl: the socket's own refusal of fake-prod's writes is not checked here, only Overterm's")
+        if kubectl == nil {
+            note("no kubectl: the socket's own refusal of read-only fake-prod's writes is not checked here, only Overterm's")
         }
 
         // fake-dev: read-only, greyed with why; nothing reaches the fake.

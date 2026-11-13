@@ -69,7 +69,7 @@ final class KubeProxiesTests: XCTestCase {
 
     func testAContextsProxyIsOpenedOnceAndKept() async throws {
         let proxies = proxies()
-        let dev = Self.context("fake-dev")
+        let dev = Self.context("fake-dev", writable: false)
         async let one = proxies.send(dev, .GET, "/api/v1/pods")
         async let two = proxies.send(dev, .GET, "/api/v1/pods")
         let answers = try await [one, two]
@@ -83,63 +83,56 @@ final class KubeProxiesTests: XCTestCase {
         XCTAssertEqual(other, .closed)
     }
 
-    /// Production's switch for the session (rule 2): off, its proxy has the
-    /// method filter and a write is refused before any socket; on, the
-    /// proxy is started again without the filter — whichever copy of the
-    /// context a request carries — and off again, with it.
-    func testProductionsSessionWritesRestartItsProxyWithoutTheMethodFilter() async throws {
+    /// Production is writable unless its setting says no (the owner's
+    /// decision): no switch — its proxy opens without the method filter.
+    /// Set `writable: false`, the proxies close it at once, the next one
+    /// has the filter, and a write is refused before any socket, whichever
+    /// copy of the context it carries — the second lock, not the only one.
+    func testProductionIsWritableUntilItsSettingSaysNo() async throws {
         let proxies = proxies()
         let prod = Self.context("fake-prod")
         _ = try await proxies.send(prod, .GET, "/api/v1/pods")
-        XCTAssertEqual(opened.values.map(\.readOnly), [true])
+        XCTAssertEqual(opened.values.map(\.readOnly), [false], "no method filter: writable by default")
+        _ = try await proxies.sendWrite(prod, .DELETE, "/api/v1/namespaces/shop/pods/web", body: nil)
+        XCTAssertEqual(answers.count("fake-prod"), 2, "the write reached its socket")
+
+        let readOnly = Self.context("fake-prod", writable: false)
+        await proxies.update(contexts: KubeContextList(contexts: [readOnly]))
+        XCTAssertEqual(closed.values, ["fake-prod"], "closed at once: the next request opens it with the filter")
         do {
             _ = try await proxies.sendWrite(prod, .DELETE, "/api/v1/namespaces/shop/pods/web", body: nil)
-            XCTFail("production without its switch takes no write")
+            XCTFail("the copy says writable; the proxies know better")
         } catch {
             XCTAssertEqual(error as? KubeWriteRefused, KubeWriteRefused(reason: KubeWriteCheck.readOnly(prod)))
         }
-        XCTAssertEqual(answers.count("fake-prod"), 1, "the write never reached the socket")
-
-        await proxies.allowSessionWrites(prod)
-        XCTAssertEqual(closed.values, ["fake-prod"], "closed at once: the next request opens it with the other flags")
-        // The copy the request carries still says read-only: the proxies know better.
-        _ = try await proxies.sendWrite(prod, .DELETE, "/api/v1/namespaces/shop/pods/web", body: nil)
+        XCTAssertEqual(answers.count("fake-prod"), 2, "the write never reached the socket")
         _ = try await proxies.send(prod, .GET, "/api/v1/pods")
-        XCTAssertEqual(opened.values.map(\.readOnly), [true, false], "one proxy without the method filter, kept")
+        XCTAssertEqual(opened.values.map(\.readOnly), [false, true], "the method filter on")
+        let refused = await proxies.isWritable(prod)
+        XCTAssertFalse(refused)
+
+        // Its entry taken out: writable again, the filter off.
+        await proxies.update(contexts: KubeContextList(contexts: [prod]))
+        _ = try await proxies.sendWrite(prod, .PATCH, "/apis/apps/v1/namespaces/shop/deployments/web/scale", body: Data("{}".utf8))
+        XCTAssertEqual(opened.values.map(\.readOnly), [false, true, false])
         let writable = await proxies.isWritable(prod)
         XCTAssertTrue(writable)
         // The kubeconfig read again points the name at another server: that
-        // copy is read-only here at once, before anyone tells the proxies.
+        // copy is refused at once, before anyone tells the proxies.
         let moved = KubeContext(
             name: prod.name, cluster: prod.cluster, server: "http://127.0.0.1:2", namespace: nil, user: prod.user, auth: prod.auth, file: nil,
             contextClass: prod.contextClass, settings: prod.settings)
         let movedWritable = await proxies.isWritable(moved)
-        XCTAssertFalse(movedWritable, "the switch was for the cluster it was turned on for")
-        do {
-            _ = try await proxies.sendWrite(moved, .DELETE, "/api/v1/namespaces/shop/pods/web", body: nil)
-            XCTFail("another cluster under the same name takes no write")
-        } catch {
-            XCTAssertTrue(error is KubeWriteRefused)
-        }
+        XCTAssertFalse(movedWritable, "a write reviewed on another reading is refused")
 
-        await proxies.endSessionWrites("fake-prod")
-        _ = try await proxies.send(prod, .GET, "/api/v1/pods")
-        XCTAssertEqual(opened.values.map(\.readOnly), [true, false, true], "the filter back")
-        do {
-            _ = try await proxies.sendWrite(prod, .PATCH, "/apis/apps/v1/namespaces/shop/deployments/web/scale", body: Data("{}".utf8))
-            XCTFail("off again")
-        } catch {
-            XCTAssertTrue(error is KubeWriteRefused)
-        }
-
-        // Another class has no switch: a remote context stays as its setting says.
+        // Remote and local alike: writable by default, read-only by the setting.
         let dev = Self.context("fake-dev")
-        await proxies.allowSessionWrites(dev)
-        _ = try await proxies.send(dev, .GET, "/api/v1/pods")
-        XCTAssertEqual(opened.values.last?.readOnly, true, "only production has a session switch")
-        let kind = Self.context("kind-fake")
-        _ = try await proxies.sendWrite(kind, .DELETE, "/api/v1/namespaces/shop/pods/web", body: nil)
-        XCTAssertEqual(opened.values.last?.readOnly, false, "a local context is writable by its class")
+        let kind = Self.context("kind-fake", writable: false)
+        await proxies.update(contexts: KubeContextList(contexts: [prod, dev, kind]))
+        _ = try await proxies.sendWrite(dev, .DELETE, "/api/v1/namespaces/shop/pods/web", body: nil)
+        XCTAssertEqual(opened.values.last?.readOnly, false, "a remote context is writable unless it says no")
+        _ = try await proxies.send(kind, .GET, "/api/v1/pods")
+        XCTAssertEqual(opened.values.last?.readOnly, true, "a local one set read-only has the filter")
     }
 
     func testTheLeastRecentlyUsedIdleOneClosesPastMaxProxies() async throws {
@@ -468,9 +461,9 @@ final class KubeProxiesTests: XCTestCase {
     /// filter, and one that stops being writable gets it back.
     func testReadOnlyFollowsTheContext() async throws {
         let proxies = proxies()
+        _ = try await proxies.send(Self.context("fake-dev", writable: false), .GET, "/")
         _ = try await proxies.send(Self.context("fake-dev"), .GET, "/")
-        _ = try await proxies.send(Self.context("fake-dev", writable: true), .GET, "/")
-        _ = try await proxies.send(Self.context("fake-dev"), .GET, "/")
+        _ = try await proxies.send(Self.context("fake-dev", writable: false), .GET, "/")
         XCTAssertEqual(opened.values.map(\.readOnly), [true, false, true])
         XCTAssertEqual(closed.values, ["fake-dev", "fake-dev"])
         let connected = await proxies.connected
@@ -488,8 +481,8 @@ final class KubeProxiesTests: XCTestCase {
         _ = try await proxies.send(writable, role: .watch, .GET, "/api/v1/pods?watch=1")
         XCTAssertEqual(opened.values.map(\.readOnly), [false])
 
-        // `writable` removed: the writable proxy is closed as the list comes.
-        let readOnly = Self.context("acme-dev")
+        // Set `writable: false`: the writable proxy is closed as the list comes.
+        let readOnly = Self.context("acme-dev", writable: false)
         await proxies.update(contexts: KubeContextList(contexts: [readOnly]))
         XCTAssertEqual(closed.values, ["acme-dev"], "a writable socket isn't kept for a read-only context")
         _ = try await proxies.send(readOnly, .GET, "/api/v1/pods")
@@ -506,10 +499,10 @@ final class KubeProxiesTests: XCTestCase {
             XCTAssertTrue(error is KubeWriteRefused)
         }
 
-        // Marked production by hand: the same.
+        // Marked production by hand and set read-only: the same.
         let prod = KubeContext(
             name: "acme-dev", cluster: readOnly.cluster, server: readOnly.server, namespace: nil, user: readOnly.user, auth: readOnly.auth,
-            file: nil, contextClass: .production, settings: KubeContextSettings(contextClass: .production, writable: true))
+            file: nil, contextClass: .production, settings: KubeContextSettings(contextClass: .production, writable: false))
         await proxies.update(contexts: KubeContextList(contexts: [prod]))
         _ = try await proxies.send(writable, role: .watch, .GET, "/api/v1/pods?watch=1")
         XCTAssertEqual(opened.values.last?.readOnly, true)
@@ -564,7 +557,7 @@ final class KubeProxiesTests: XCTestCase {
         planning.hold("acme-dev")
         let request = Task { try await proxies.send(writable, role: .background, .GET, "/api/v1/pods") }
         try await until { planning.isHeld("acme-dev") }
-        await proxies.update(contexts: KubeContextList(contexts: [Self.context("acme-dev")]))
+        await proxies.update(contexts: KubeContextList(contexts: [Self.context("acme-dev", writable: false)]))
         planning.release("acme-dev")
         do {
             _ = try await request.value

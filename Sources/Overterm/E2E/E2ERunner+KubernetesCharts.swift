@@ -237,9 +237,9 @@ extension E2ERunner {
         fake.setPrometheusSeries(KubePromProfile.containerCPURate5m, labels: rule, value: 0.11)
         fake.setPrometheusSeries(KubePromProfile.containerMemoryRule, labels: rule, value: 98 * 1_048_576)
         Settings.shared.set(
-            "kubernetes.contexts", .entries(["fake-dev": ["metrics": .string("prometheus"), "prometheus": .string("monitoring/prometheus-k8s:9090")]]))
+            "kubernetes.contexts", Self.kubeContexts(["fake-dev": ["metrics": .string("prometheus"), "prometheus": .string("monitoring/prometheus-k8s:9090")]]))
         defer {
-            Settings.shared.set("kubernetes.contexts", nil)
+            Settings.shared.set("kubernetes.contexts", Self.kubeContexts())
             clearTabFixtures(fake)
             for metric in ["container_cpu_usage_seconds_total", "container_memory_working_set_bytes", KubePromProfile.containerCPURate5m, KubePromProfile.containerMemoryRule] {
                 fake.clearPrometheusSeries(metric, matching: ["pod": name])

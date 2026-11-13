@@ -90,19 +90,13 @@ struct KubeContext: Identifiable, Equatable, Sendable {
     let file: URL?
     let contextClass: KubeContextClass
     let settings: KubeContextSettings
-    /// A production context's writes, turned on for this session from its
-    /// card (`KubernetesModel.setProductionWrites`) — never a setting, and
-    /// ignored on any other class. Off for every context as it is read.
-    var sessionWrites = false
 
     var id: String { name }
     var displayName: String { settings.displayName ?? name }
     var isProduction: Bool { contextClass == .production }
-    /// Whether Overterm may change objects here: a remote or local
-    /// context's `writable` flag (local unless it says no), production
-    /// only while its writes are on for the session (rule 2). Nothing else
-    /// decides it.
-    var isWritable: Bool { KubeClassifier.isWritable(contextClass, flag: settings.writable, productionSession: sessionWrites) }
+    /// Whether Overterm may change objects here: its `writable` flag, yes
+    /// unless it says no, whatever the class. Nothing else decides it.
+    var isWritable: Bool { KubeClassifier.isWritable(contextClass, flag: settings.writable) }
 }
 
 /// Every context of the kubeconfig files, merged in kubectl's order.

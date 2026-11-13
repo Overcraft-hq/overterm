@@ -291,20 +291,23 @@ final class KubeApplyTests: XCTestCase {
             KubeApplyCheck.refused(KubeWritesTests.context("fake-dev")),
             "This context is read-only: Overterm changes nothing here (its writable setting). Diff with Cluster still shows what would change.")
         XCTAssertEqual(
-            KubeApplyCheck.refused(KubeWritesTests.context("fake-prod")),
-            "Production is read-only: turn on writes for this session on its card first. Diff with Cluster still shows what would change.")
-        let on = KubeWritesTests.context("fake-prod", session: true)
+            KubeApplyCheck.refused(KubeWritesTests.context("fake-prod", readOnly: true)),
+            "This context is read-only: Overterm changes nothing here (its writable setting). Diff with Cluster still shows what would change.",
+            "production set read-only by its entry")
+        let on = KubeWritesTests.context("fake-prod")
+        XCTAssertNil(KubeApplyCheck.refused(on), "a person's Apply on writable production: no setting to turn on first")
+        XCTAssertTrue(KubeApplyCheck.rule(on).typedName, "the name typed (rule 4)")
+        XCTAssertEqual(KubeApplyCheck.refused(on, force: true), "An apply is never forced on production: change the field's owner, or the manifest.")
         XCTAssertEqual(
-            KubeApplyCheck.refused(on),
-            "Apply is off on production, even with its writes on: the context's applyOnProduction setting turns it on. Diff with Cluster still works.",
-            "writes on is not enough (decision 30)")
-        let opted = KubeWritesTests.context("fake-prod", settings: KubeContextSettings(applyOnProduction: true), session: true)
-        XCTAssertNil(KubeApplyCheck.refused(opted))
-        XCTAssertTrue(KubeApplyCheck.rule(opted).typedName, "the name typed (rule 4)")
-        XCTAssertEqual(KubeApplyCheck.refused(opted, force: true), "An apply is never forced on production: change the field's owner, or the manifest.")
+            KubeApplyCheck.refused(on, agent: true),
+            "An agent's apply is off on production: the context's applyOnProduction setting turns it on. Diff with Cluster still works.",
+            "an agent's still needs applyOnProduction (decision 30)")
+        let opted = KubeWritesTests.context("fake-prod", settings: KubeContextSettings(applyOnProduction: true))
+        XCTAssertNil(KubeApplyCheck.refused(opted, agent: true))
+        XCTAssertNil(KubeApplyCheck.refused(KubeWritesTests.context("kind-fake"), agent: true), "applyOnProduction is production's alone")
         XCTAssertNotNil(
-            KubeApplyCheck.refused(KubeWritesTests.context("fake-prod", settings: KubeContextSettings(applyOnProduction: true))),
-            "applyOnProduction without the session switch: read-only still")
+            KubeApplyCheck.refused(KubeWritesTests.context("fake-prod", settings: KubeContextSettings(writable: false, applyOnProduction: true))),
+            "applyOnProduction on a production context set read-only: read-only still")
         XCTAssertNotNil(
             KubeApplyCheck.refused(KubeWritesTests.context("kind-fake", settings: KubeContextSettings(writable: false, applyOnProduction: true))),
             "applyOnProduction opens nothing but production")
@@ -438,7 +441,7 @@ final class KubeApplyTests: XCTestCase {
             ref: ref, before: "", after: "", diff: "--- a\n+++ b\n@@ -1,1 +1,1 @@\n-  replicas: 1\n+  replicas: 3\n", added: 1, removed: 1, isNew: false,
             owners: [KubeFieldOwners.Owner(manager: "argocd-controller", operation: "Apply", fields: [".spec.replicas"])], managedBy: [], masked: [])
         let result = KubeManifestDiffResult(context: "fake-prod", production: true, method: .serverSide, items: [item], text: "")
-        let context = KubeWritesTests.context("fake-prod", settings: KubeContextSettings(applyOnProduction: true), session: true)
+        let context = KubeWritesTests.context("fake-prod", settings: KubeContextSettings(applyOnProduction: true))
         let confirmation = KubeApplyConfirmation.make(result, context: context, kubectl: "kubectl apply --server-side -f x.yaml --context fake-prod -n shop")
         XCTAssertEqual(confirmation.title, "Apply deployment shop/web to fake-prod?")
         XCTAssertEqual(confirmation.scope, "PRODUCTION · fake-prod · namespace shop")
