@@ -21,7 +21,14 @@ extension TerminalWindowController {
             deleteObjects: { [weak self] session, bucket, keys, prefix in self?.deleteStorageObjects(session, bucket, keys, refreshing: prefix) },
             upload: { [weak self] session, bucket, prefix in self?.uploadToStorage(session, bucket, prefix) },
             download: { [weak self] session, bucket, object in self?.downloadStorageObject(session, bucket, object) },
-            copyLink: { [weak self] session, bucket, key in self?.copyStorageLink(session, bucket, key) }
+            copyLink: { [weak self] session, bucket, key in self?.copyStorageLink(session, bucket, key) },
+            openRedisKey: { [weak self] session, db, key in self?.openRedisKey(session, db, key) },
+            newRedisKey: { [weak self] session, db in
+                self?.redisSlot.newKey(in: session, db: db)
+                self?.showRedisSlot()
+            },
+            redisServer: { [weak self] session in self?.openRedisServer(session) },
+            deleteRedisKey: { [weak self] session, db, key in self?.deleteRedisKey(session, db, key) }
         )
     }
 
@@ -111,7 +118,9 @@ extension TerminalWindowController {
             editor.textView.setSelectedRange(NSRange(location: start, length: 0))
             editor.textView.scrollRangeToVisible(NSRange(location: start, length: 0))
             editor.save(buffer, overwriting: false)
-            console.run([sql])
+            // A Redis one may be two lines (SELECT, then VIEW): each its own command.
+            let commands = connection.kind.statements(in: sql).map { (sql as NSString).substring(with: $0) }
+            console.run(commands.isEmpty ? [sql] : commands)
         }
     }
 }
@@ -144,6 +153,7 @@ extension TerminalWindowController {
     /// A stored file in the right-hand pane, which it joins as every pane there does.
     func openStorageObject(_ session: StorageSession, _ bucket: String, _ object: StorageObject) {
         storageObject.show(object, in: bucket, session: session)
+        if zoomedColumn != nil { setZoomed(nil) }
         rightPane.objectOpened = true
         rightPane.mode = .object
         if diffItem?.isCollapsed == true { toggleDiff(nil) }
@@ -247,5 +257,75 @@ extension TerminalWindowController {
     func reportDatabaseError(_ error: Error) {
         guard let window else { return }
         NSAlert(error: error).beginSheetModal(for: window)
+    }
+}
+
+// MARK: Redis
+
+extension TerminalWindowController {
+    var redisSlotActions: RedisSlotActions {
+        RedisSlotActions(
+            confirm: { [weak self] title, detail, button, then in self?.confirmRedis(title, detail, button, then: then) },
+            openKey: { [weak self] session, db, key in self?.openRedisKey(session, db, key) },
+            close: { [weak self] in
+                self?.redisSlot.show(.none)
+                self?.toggleDiff(nil)
+            }
+        )
+    }
+
+    /// The Redis page in the right-hand pane, which it joins as every pane there does.
+    func showRedisSlot() {
+        // A zoomed column hides the pane: what was asked for must show.
+        if zoomedColumn != nil { setZoomed(nil) }
+        rightPane.redisOpened = true
+        rightPane.mode = .redis
+        if diffItem?.isCollapsed == true { toggleDiff(nil) }
+        updateRightPaneVisibility()
+    }
+
+    func openRedisKey(_ session: DatabaseSession, _ db: Int, _ key: String) {
+        redisSlot.key.show(key, db: db, session: session)
+        redisSlot.show(.key)
+        showRedisSlot()
+    }
+
+    func openRedisServer(_ session: DatabaseSession) {
+        Task {
+            if !session.isOpen { await session.open() }
+            redisSlot.server.show(session)
+            redisSlot.show(.server)
+            showRedisSlot()
+        }
+    }
+
+    func deleteRedisKey(_ session: DatabaseSession, _ db: Int, _ key: String) {
+        confirmRedis("Delete “\(key)”?", "From db\(db) of \(session.connection.name). This can't be undone.", "Delete") { [weak self] in
+            Task {
+                guard let driver = session.redis else { return }
+                do {
+                    let reply = try await driver.command(["UNLINK", key], db: db)
+                    if case .error(let message) = reply { throw DatabaseError.failed(message) }
+                    session.browser(db).removed(key)
+                    if self?.redisSlot.page == .key, self?.redisSlot.key.name == key { self?.redisSlot.show(.none) }
+                } catch {
+                    self?.reportDatabaseError(error)
+                }
+            }
+        }
+    }
+
+    func confirmRedis(_ title: String, _ detail: String, _ button: String, then: @escaping () -> Void) {
+        guard let window else { return }
+        let alert = NSAlert()
+        alert.messageText = title
+        alert.informativeText = detail
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: button)
+        alert.addButton(withTitle: "Cancel")
+        alert.beginSheetModal(for: window) { response in
+            guard response == .alertFirstButtonReturn else { return }
+            MainActor.assumeIsolated { then() }
+        }
     }
 }

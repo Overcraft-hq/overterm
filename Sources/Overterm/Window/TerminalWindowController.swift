@@ -176,6 +176,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     let compare = CompareModel()
     /// A stored file opened from the Database panel.
     let storageObject = StorageObjectModel()
+    let redisSlot = RedisSlotModel()
     /// Everything waiting on you (⌘I), as its own column on the right.
     let inbox = InboxModel()
     private(set) var inboxItem: NSSplitViewItem?
@@ -576,6 +577,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     onReview: { [weak self] base, head in self?.reviewRange(base: base, head: head) }),
                 object: StorageObjectView(model: storageObject, theme: theme, actions: storageObjectActions),
                 container: DockerSlotView(panel: dockerPanel, docker: .shared, theme: theme, actions: dockerActions),
+                redis: RedisSlotView(model: redisSlot, theme: theme, actions: redisSlotActions),
                 graph: NotesGraphView(model: NotesModel.shared, theme: theme, open: { [weak self] in self?.openNote($0) })))
         diffPanel.sizingOptions = []
         let diffItem = NSSplitViewItem(
@@ -3741,6 +3743,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         compare.visible = shown && rightPane.mode == .compare
         storageObject.visible = shown && rightPane.mode == .object
         dockerPanel.slotVisible = shown && rightPane.mode == .container
+        redisSlot.visible = shown && rightPane.mode == .redis
     }
 
     @objc func toggleFileTree(_ sender: Any?) {

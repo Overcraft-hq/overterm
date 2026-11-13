@@ -53,7 +53,9 @@ final class SQLConsole: ObservableObject {
         guard let session, !statements.isEmpty, !isRunning else { return }
         task = Task { @MainActor in
             for sql in statements {
-                if Settings.shared.databaseConfirmDestructive, let why = SQLText.danger(of: sql), !(await confirm(sql, why)) { return }
+                if Settings.shared.databaseConfirmDestructive, let why = session.connection.kind.danger(of: sql), !(await confirm(sql, why)) {
+                    return
+                }
             }
             isRunning = true
             defer { isRunning = false }

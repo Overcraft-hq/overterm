@@ -30,6 +30,7 @@ final class E2ERunner {
         "dockerPerf": { await $0.dockerPerfScenario() },
         "database": { await $0.databaseScenario() },
         "storage": { await $0.storageScenario() },
+        "redis": { await $0.redisScenario() },
         "suspend": { await $0.suspendScenario() },
         "databaseAgent": { await $0.databaseAgentScenario() },
         "databaseTunnel": { await $0.databaseTunnelScenario() },

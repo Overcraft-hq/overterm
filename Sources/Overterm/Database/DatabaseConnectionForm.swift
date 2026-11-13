@@ -35,6 +35,8 @@ struct DatabaseConnectionForm: View {
                 }
                 .onChange(of: connection.kind) { kind in
                     connection.port = kind.defaultPort
+                    // Redis doesn't negotiate TLS: Prefer would be plain, said as Off.
+                    if kind == .redis, connection.sslMode == .prefer { connection.sslMode = .disable }
                     if kind == .s3 { connection.apply(connection.provider) }
                     if kind == .gcs { connection.bigQueryAuth = .gcloud }
                     tested = nil
@@ -44,6 +46,7 @@ struct DatabaseConnectionForm: View {
                 case .bigquery: bigQueryFields
                 case .s3: s3Fields
                 case .gcs: gcsFields
+                case .redis: redisFields
                 default: serverFields
                 }
                 Toggle("Read-only — refuse anything that writes", isOn: $connection.readOnly)
@@ -77,6 +80,46 @@ struct DatabaseConnectionForm: View {
         }
         Toggle("Through an SSH tunnel", isOn: $connection.sshEnabled)
         if connection.sshEnabled { sshFields }
+    }
+
+    /// Redis's: a URL pasted fills them all; the database is a number; TLS is
+    /// on from the first byte or off — rediss:// is on.
+    @ViewBuilder private var redisFields: some View {
+        TextField(
+            "URL", text: Binding(get: { "" }, set: { fill(from: $0) }),
+            prompt: Text(verbatim: "Paste redis://user:password@host:6379/0 or rediss://…"))
+        TextField("Host", text: $connection.host)
+        TextField(
+            "Port",
+            text: Binding(
+                get: { connection.port.map(String.init) ?? "" },
+                set: { connection.port = Int($0.filter(\.isNumber)) }))
+        TextField("Username (ACL — optional)", text: $connection.user)
+        SecureField(hasSavedPassword ? "Password (saved — empty keeps it)" : "Password (optional)", text: $password)
+        TextField("Database", text: $connection.database, prompt: Text(verbatim: "0"))
+        Picker("TLS", selection: $connection.sslMode) {
+            Text("Off").tag(DatabaseSSLMode.disable)
+            Text("On — don't check the certificate").tag(DatabaseSSLMode.require)
+            Text("On — verify the certificate").tag(DatabaseSSLMode.verifyFull)
+        }
+        .onAppear { if connection.sslMode == .prefer { connection.sslMode = .disable } }
+        Toggle("Through an SSH tunnel", isOn: $connection.sshEnabled)
+        if connection.sshEnabled { sshFields }
+    }
+
+    /// A redis:// URL, spread over the fields; its password typed in, kept
+    /// only if the connection is saved — then in the keychain.
+    private func fill(from text: String) {
+        guard let url = RedisURL(text) else { return }
+        connection.host = url.host
+        connection.port = url.port ?? 6379
+        connection.user = url.user
+        connection.database = url.database
+        // rediss:// is TLS; a managed server's certificate is checked.
+        connection.sslMode = url.tls ? .verifyFull : .disable
+        if let secret = url.password { password = secret }
+        if connection.name.isEmpty || connection.name == "Redis" { connection.name = url.host }
+        tested = nil
     }
 
     /// The bastion: Host and Port above are the database as the bastion sees it.
@@ -248,8 +291,9 @@ struct DatabaseConnectionForm: View {
                     let schemas = (try? await driver.schemas())?.count ?? 0
                     await driver.close()
                     let through = tunnel == nil ? "" : " through \(connection.sshHost)"
+                    let noun = connection.kind.isRedis ? "database" : "schema"
                     tested = .success(
-                        "Connected\(through) in \(Int(Date().timeIntervalSince(started) * 1000)) ms — \(schemas) schema\(schemas == 1 ? "" : "s")")
+                        "Connected\(through) in \(Int(Date().timeIntervalSince(started) * 1000)) ms — \(schemas) \(noun)\(schemas == 1 ? "" : "s")")
                 }
             } catch {
                 tested = .failure(

@@ -1163,8 +1163,8 @@ in it, and `.obsidian/` is read for where things go, never written.
 ## Database (⌥⌘B, sidebar)
 
 A database client beside the terminal, DataGrip's work in the sidebar and
-the editor: PostgreSQL, MySQL, SQLite, Redshift, ClickHouse and BigQuery
-(Settings ▸ Database turns it off; its rows fetched and asking before a
+the editor: PostgreSQL, MySQL, SQLite, Redshift, ClickHouse, BigQuery and
+Redis (Settings ▸ Database turns it off; its rows fetched and asking before a
 destroying statement are there too).
 
 - **Connections** (`DatabaseConnection`, `DatabaseStore`): a name, a kind,
@@ -1208,6 +1208,47 @@ destroying statement are there too).
   Docker (`Scripts/database-test-servers.sh`, then `OVERTERM_DB_TESTS=1`);
   SQLite always; BigQuery's signing and answers offline. The `database`
   scenario runs the panel and a console on SQLite.
+
+### Redis (Redis Insight's work, in the panel and the right-hand pane)
+
+- **The driver** (`RedisDriver`, `RedisProtocol`): RESP on SwiftNIO, no
+  client library — a command is an array of bulk strings, a reply one
+  `RedisValue`. TLS is on from the first byte or off (Redis doesn't
+  negotiate, so Prefer is plain): Require encrypts without checking,
+  Verify Full checks the certificate against the host — `rediss://` pasted
+  in the form is that. AUTH (ACL user, or the password alone), PING, then
+  SELECT. **One operation at a time** (`exclusive`): the browser SELECTs
+  another database and the console's next command SELECTs back, and an
+  actor gives way at every await — two operations interleaved would run a
+  command on the wrong database. `pipeline` writes many commands at once (a
+  page of keys' TYPEs is one round trip). Pub/Sub and MONITOR take a
+  connection over, so each is a `listener()` of its own, its pushes handed
+  to `RedisReplyHandler.onPush`.
+- **The console**: a line a command, as redis-cli splits it (`RedisText`;
+  quotes, `\xHH`), no semicolons; `DatabaseKind`'s `statements`, `verb`,
+  `onlyReads`, `danger` and `subject` say SQL or Redis, and every console,
+  history and agent path asks it, never `SQLText` directly. `VIEW key` is
+  Overterm's: a key's value whatever its type. SUBSCRIBE and MONITOR are
+  refused there — they never return; the server's page has them.
+  Completion (`RedisCompletion`): a command at a line's start, a key after
+  one that takes it, from the browser's keys.
+- **The browser** (`RedisBrowser`, `RedisKeyTree`, `RedisPanelView`): a
+  database's keys by SCAN — never KEYS — a page of 500 at a time, MATCH and
+  TYPE on the server, each key's type in the same round trip, folders on
+  `:` (a folder of one key is just the key).
+- **A key's page** (`RedisKeyModel`, `RedisSlotView`, the right-hand slot):
+  TTL, MEMORY USAGE, encoding, length; a string or a JSON document as text
+  (SET … KEEPTTL); a hash, list, set, sorted set or stream a page at a time
+  (HSCAN/SSCAN/ZSCAN with a filter, LRANGE, ZRANGE, XREVRANGE), each row
+  edited, added, deleted — a list's element removed by marking it (LSET)
+  then LREM; a rename is RENAMENX. A new key is refused over an old one.
+- **The server's page** (`RedisServerModel`): INFO read again every 5 s
+  while it shows, the slow log, the clients (CLIENT KILL asked first),
+  Pub/Sub (PSUBSCRIBE, PUBLISH) and the Profiler (MONITOR, stopped after
+  2000 commands).
+- **Tests** run against a redis-server of their own (`E2ERedisServer`: a
+  free port, nothing on disk, TLS with a certificate made for it) —
+  `RedisDriverTests` and the `redis` scenario; skipped without one (CI).
 
 ### SSH tunnels (SSHTunnel)
 

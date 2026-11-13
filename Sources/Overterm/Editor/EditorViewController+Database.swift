@@ -59,12 +59,14 @@ extension EditorViewController {
         guard let buffer = active else { return }
         let text = textView.string as NSString
         let caret = textView.selectedRange().location
-        let end = SQLText.statement(at: caret, in: text as String).map(NSMaxRange) ?? text.length
+        let kind = buffer.sqlConsole?.connection?.kind ?? .postgres
+        let end = kind.statement(at: caret, in: text as String).map(NSMaxRange) ?? text.length
         let line = text.lineRange(for: NSRange(location: min(end, text.length), length: 0))
         let at = min(NSMaxRange(line), text.length)
         let lead = at > 0 && text.character(at: at - 1) != 0x0A ? "\n\n" : "\n"
         let statement = sql.trimmingCharacters(in: .whitespacesAndNewlines)
-        let piece = lead + statement + (statement.hasSuffix(";") ? "" : ";") + "\n"
+        // A Redis command is its line; SQL ends with a semicolon.
+        let piece = lead + statement + (statement.hasSuffix(";") || kind.isRedis ? "" : ";") + "\n"
         replaceText(of: buffer, with: text.replacingCharacters(in: NSRange(location: at, length: 0), with: piece))
         textView.setSelectedRange(NSRange(location: at + (lead as NSString).length, length: 0))
         textView.scrollRangeToVisible(textView.selectedRange())
@@ -77,10 +79,11 @@ extension EditorViewController {
         guard let buffer = active, let console = buffer.sqlConsole else { return false }
         let text = textView.string as NSString
         let selection = textView.selectedRange()
+        let kind = console.connection?.kind ?? .postgres
         if selection.length > 0 {
             let picked = text.substring(with: selection)
-            console.run(SQLText.statements(in: picked).map { (picked as NSString).substring(with: $0) })
-        } else if let range = SQLText.statement(at: selection.location, in: text as String) {
+            console.run(kind.statements(in: picked).map { (picked as NSString).substring(with: $0) })
+        } else if let range = kind.statement(at: selection.location, in: text as String) {
             console.run([text.substring(with: range)])
             // The statement run, marked a moment, as DataGrip does.
             textView.showFindIndicator(for: range)
@@ -91,7 +94,7 @@ extension EditorViewController {
     func runConsoleAll() {
         guard let console = active?.sqlConsole else { return }
         let text = textView.string as NSString
-        console.run(SQLText.statements(in: text as String).map(text.substring))
+        console.run((console.connection?.kind ?? .postgres).statements(in: text as String).map(text.substring))
     }
 
     /// DROP, TRUNCATE, an UPDATE or DELETE with no WHERE: asked first.
@@ -141,6 +144,7 @@ extension EditorViewController {
         else { return false }
         let text = textView.string as NSString
         let caret = textView.selectedRange().location
+        if session.connection.kind.isRedis { return updateRedisCompletion(session: session, buffer: buffer, caret: caret, window: window) }
         let range = SQLText.statement(at: caret, in: text as String) ?? NSRange(location: 0, length: text.length)
         let start = min(range.location, caret)
         let before = text.substring(with: NSRange(location: start, length: caret - start))
@@ -169,6 +173,29 @@ extension EditorViewController {
             completion = nil
             return missing.isEmpty ? false : true
         }
+        return showConsoleCompletion(Array(found), typed: prefix, buffer: buffer, caret: caret, window: window)
+    }
+
+    /// A Redis console's: commands at a line's start, keys after them —
+    /// the keys the panel's browser has scanned in the console's database.
+    private func updateRedisCompletion(session: DatabaseSession, buffer: EditorBuffer, caret: Int, window: NSWindow) -> Bool {
+        let text = textView.string as NSString
+        let lineStart = text.lineRange(for: NSRange(location: caret, length: 0)).location
+        let before = text.substring(with: NSRange(location: lineStart, length: caret - lineStart))
+        let db = RedisDriver.database(session.schema ?? session.connection.database)
+        let browser = session.browser(db)
+        if !browser.scanned { Task { await browser.scan() } }
+        guard let answer = RedisCompletion.complete(before, keys: browser.keys.map(\.name)) else {
+            completionPopup.hide()
+            completion = nil
+            return false
+        }
+        return showConsoleCompletion(answer.candidates, typed: answer.typed, buffer: buffer, caret: caret, window: window)
+    }
+
+    private func showConsoleCompletion(
+        _ found: [SQLCompletion.Candidate], typed prefix: String, buffer: EditorBuffer, caret: Int, window: NSWindow
+    ) -> Bool {
         let candidates = found.map { candidate in
             let (badge, color): (String, NSColor) =
                 switch candidate.kind {

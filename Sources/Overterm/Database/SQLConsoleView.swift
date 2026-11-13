@@ -121,7 +121,7 @@ struct SQLConsoleView: View {
                         } else if run.error != nil {
                             Image(systemName: "exclamationmark.triangle.fill").font(.system(size: ChromeMetrics.text(9))).foregroundStyle(DiffColors.removed)
                         }
-                        Text(verbatim: Self.title(run, index: index)).font(.system(size: ChromeMetrics.text(11))).lineLimit(1)
+                        Text(verbatim: Self.title(run, index: index, kind: console.connection?.kind ?? .postgres)).font(.system(size: ChromeMetrics.text(11))).lineLimit(1)
                         Button {
                             console.close(run)
                         } label: {
@@ -145,9 +145,9 @@ struct SQLConsoleView: View {
     }
 
     /// A tab's name: the statement's verb and its first table, else its start.
-    static func title(_ run: SQLConsole.Run, index: Int) -> String {
-        let verb = SQLText.verb(of: run.sql).capitalized
-        if let table = SQLText.tables(in: run.sql).first?.name { return "\(verb) \(table)" }
+    static func title(_ run: SQLConsole.Run, index: Int, kind: DatabaseKind = .postgres) -> String {
+        let verb = kind.verb(of: run.sql).capitalized
+        if let table = kind.subject(of: run.sql) { return "\(verb) \(table)" }
         return verb.isEmpty ? "Result \(index + 1)" : verb
     }
 
@@ -216,7 +216,7 @@ struct SQLConsoleView: View {
 
     private func save(_ result: QueryResult, sql: String, format: ResultExport.Format) {
         let panel = NSSavePanel()
-        let table = SQLText.tables(in: sql).first?.name ?? "result"
+        let table = (console.connection?.kind ?? .postgres).subject(of: sql) ?? "result"
         panel.nameFieldStringValue = "\(table).\(format.fileExtension)"
         guard panel.runModal() == .OK, let url = panel.url else { return }
         try? ResultExport.text(format, columns: result.columns, rows: result.rows, table: table).write(to: url, atomically: true, encoding: .utf8)

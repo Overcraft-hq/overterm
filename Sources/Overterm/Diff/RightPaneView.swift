@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor
 final class RightPane: ObservableObject {
     enum Mode: String {
-        case changes, pullRequest, usage, commit, runner, graph, compare, object, container
+        case changes, pullRequest, usage, commit, runner, graph, compare, object, container, redis
     }
 
     @Published var mode: Mode = .changes
@@ -16,6 +16,8 @@ final class RightPane: ObservableObject {
     @Published var objectOpened = false
     /// A container was picked in the Docker panel: its tab stays from then on.
     @Published var containerOpened = false
+    /// A Redis key or server was opened (Database panel): its tab stays from then on.
+    @Published var redisOpened = false
 }
 
 /// The pane on the right: the checkout's changes (uncommitted, or the
@@ -40,6 +42,7 @@ struct RightPaneView: View {
     let compare: CompareView
     let object: StorageObjectView
     let container: DockerSlotView
+    let redis: RedisSlotView
     let graph: NotesGraphView
 
     private var pr: PullRequestSummary? { diff.branch.flatMap { worktrees.pullRequests[$0] } }
@@ -99,6 +102,11 @@ struct RightPaneView: View {
                         Image(systemName: "doc").font(.system(size: ChromeMetrics.text(11)))
                     }
                 }
+                if pane.redisOpened {
+                    tab(.redis, help: "The Redis key or server opened in the Database panel") {
+                        Image(systemName: "bolt.horizontal").font(.system(size: ChromeMetrics.text(11)))
+                    }
+                }
                 if pane.containerOpened {
                     tab(.container, help: "The container picked in the Docker panel") {
                         Image(systemName: "shippingbox").font(.system(size: ChromeMetrics.text(11)))
@@ -128,6 +136,7 @@ struct RightPaneView: View {
             case .compare: compare
             case .object: object
             case .container: container
+            case .redis: redis
             }
         }
         .background(theme.panelGround)

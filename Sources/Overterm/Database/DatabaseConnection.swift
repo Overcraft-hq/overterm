@@ -3,7 +3,7 @@ import Security
 
 /// The databases the client speaks — and the object stores it browses.
 enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable {
-    case postgres, mysql, sqlite, redshift, clickhouse, bigquery
+    case postgres, mysql, sqlite, redshift, clickhouse, bigquery, redis
     /// Buckets and their files: S3 and everything that speaks it (Spaces,
     /// MinIO, R2, B2, Wasabi, GCS's interoperability), and GCS's own API.
     case s3, gcs
@@ -21,6 +21,7 @@ enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .redshift: "Amazon Redshift"
         case .clickhouse: "ClickHouse"
         case .bigquery: "BigQuery"
+        case .redis: "Redis"
         case .s3: "S3-Compatible Storage"
         case .gcs: "Google Cloud Storage"
         }
@@ -34,12 +35,16 @@ enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .redshift: 5439
         // ClickHouse's HTTP interface; 8443 with TLS.
         case .clickhouse: 8123
+        case .redis: 6379
         case .sqlite, .bigquery, .s3, .gcs: nil
         }
     }
 
-    /// A host, a port, a user and a password — the SQL servers.
-    var usesServer: Bool { [.postgres, .mysql, .redshift, .clickhouse].contains(self) }
+    /// A host, a port, a user and a password — the SQL servers, and Redis.
+    var usesServer: Bool { [.postgres, .mysql, .redshift, .clickhouse, .redis].contains(self) }
+
+    /// Commands a line, not SQL: its console reads and checks them so.
+    var isRedis: Bool { self == .redis }
 
     /// The schema a new connection starts on.
     var defaultSchema: String? {
@@ -189,6 +194,7 @@ struct DatabaseConnection: Codable, Identifiable, Equatable, Hashable, Sendable 
             return nil
         default:
             if host.trimmingCharacters(in: .whitespaces).isEmpty { return "The host, please." }
+            if kind == .redis, !database.isEmpty, Int(database).map({ $0 >= 0 }) != true { return "The database is a number: 0, 1, 2…" }
             if let port, !(1...65535).contains(port) { return "The port is 1 to 65535." }
             if sshEnabled, sshHost.trimmingCharacters(in: .whitespaces).isEmpty { return "The SSH host, please." }
             if sshEnabled, port == nil, kind.defaultPort == nil { return "The database's port, for the tunnel." }

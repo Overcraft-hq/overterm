@@ -940,6 +940,18 @@ final class DockerDatabaseGuessTests: XCTestCase {
                 container("clickhouse/clickhouse-server:24", ports: [DockerPort(IP: "0.0.0.0", PrivatePort: 8123, PublicPort: 58123, Type: "tcp")]), env: []))
         XCTAssertEqual(clickhouse.connection.kind, .clickhouse)
         XCTAssertEqual(clickhouse.connection.user, "default")
+        let redis = try XCTUnwrap(
+            DockerDatabaseGuess.guess(
+                container("bitnami/redis:7", ports: [DockerPort(IP: "0.0.0.0", PrivatePort: 6379, PublicPort: 56379, Type: "tcp")]),
+                env: [("REDIS_PASSWORD", "cache")]))
+        XCTAssertEqual(redis.connection.kind, .redis)
+        XCTAssertEqual(redis.connection.port, 56379)
+        XCTAssertEqual(redis.password, "cache")
+        XCTAssertEqual(redis.connection.sslMode, .disable, "a local container speaks no TLS")
+        XCTAssertEqual(
+            DockerDatabaseGuess.guess(
+                container("valkey/valkey:8", ports: [DockerPort(IP: "0.0.0.0", PrivatePort: 6379, PublicPort: 56380, Type: "tcp")]), env: [])?
+                .connection.kind, .redis)
     }
 
     func testNoGuessForWhatCantBeReached() {

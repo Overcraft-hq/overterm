@@ -33,6 +33,7 @@ enum DockerClient {
             case .postgres: (.postgres, 5432)
             case .mysql, .mariadb: (.mysql, 3306)
             case .clickhouse: (.clickhouse, 8123)
+            case .redis, .valkey: (.redis, 6379)
             default: nil
             }
         }

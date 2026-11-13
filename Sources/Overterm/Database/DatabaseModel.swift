@@ -24,6 +24,8 @@ final class DatabaseSession: ObservableObject, Identifiable {
     @Published var schema: String?
     @Published private(set) var isRunning = false
     private var loadingColumns: Set<String> = []
+    /// A Redis connection's key browsers, by database.
+    private var browsers: [Int: RedisBrowser] = [:]
     private var opening: Task<Void, Never>?
     private var running: Task<Void, Never>?
 
@@ -33,6 +35,17 @@ final class DatabaseSession: ObservableObject, Identifiable {
     }
 
     var isOpen: Bool { state == .open }
+
+    /// The driver as Redis: the browser, a key's page and the server's
+    /// speak commands, not statements.
+    var redis: RedisDriver? { driver as? RedisDriver }
+
+    func browser(_ db: Int) -> RedisBrowser {
+        if let browser = browsers[db] { return browser }
+        let browser = RedisBrowser(db: db, session: self)
+        browsers[db] = browser
+        return browser
+    }
 
     /// Opens it — or, while it is opening, waits for that: a statement run
     /// the moment a console picked the connection was dropped silently.
@@ -91,6 +104,7 @@ final class DatabaseSession: ObservableObject, Identifiable {
 
     /// The schema a connection starts on: public, its database, else the first.
     static func startingSchema(_ connection: DatabaseConnection, schemas: [String]) -> String? {
+        if connection.kind.isRedis { return "db\(RedisDriver.database(connection.database))" }
         if let preferred = connection.kind.defaultSchema, schemas.contains(preferred) { return preferred }
         if !connection.database.isEmpty, schemas.contains(connection.database) { return connection.database }
         if connection.kind == .sqlite { return "main" }
@@ -104,6 +118,7 @@ final class DatabaseSession: ObservableObject, Identifiable {
         tunnel?.close()
         tunnel = nil
         state = .closed
+        browsers = [:]
         schemas = []
         tables = [:]
         columns = [:]
@@ -147,8 +162,8 @@ final class DatabaseSession: ObservableObject, Identifiable {
         defer { isRunning = false }
         for (index, sql) in statements.enumerated() {
             if Task.isCancelled { break }
-            if connection.readOnly, !SQLText.onlyReads(sql) {
-                onResult(index, .failure(DatabaseError.readOnly(SQLText.verb(of: sql))))
+            if connection.readOnly, !connection.kind.onlyReads(sql) {
+                onResult(index, .failure(DatabaseError.readOnly(connection.kind.verb(of: sql))))
                 break
             }
             do {
@@ -160,7 +175,7 @@ final class DatabaseSession: ObservableObject, Identifiable {
             }
         }
         // A statement may have made or dropped a table: the catalog is read again.
-        if statements.contains(where: { !SQLText.onlyReads($0) }) {
+        if statements.contains(where: { !connection.kind.onlyReads($0) }) {
             tables = [:]
             columns = [:]
         }

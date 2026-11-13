@@ -6,6 +6,11 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
+## 1.5.5 — 2026-11-13
+
+- database: Redis, as Redis Insight has it — keys as folders (SCAN by pattern and type), each type's value read and edited in the right-hand pane with its TTL, new keys; the server's page (INFO, slow log, clients, Pub/Sub, Profiler); a console with command and key completion; TLS (rediss://), a redis:// URL pasted fills the form, a Redis or Valkey container opens as a connection, agents query it too
+- database: a key's or a file's page opens beside a zoomed editor instead of behind it
+
 ## 1.5.4 — 2026-11-09
 
 - database: a connection whose password can't be had says why — none saved, or the keychain refused — and saving one no longer fails silently

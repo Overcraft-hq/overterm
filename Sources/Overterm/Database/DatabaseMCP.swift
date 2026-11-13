@@ -45,15 +45,15 @@ enum DatabaseMCP {
         case "db_query":
             let target = try connection(storage: false)
             guard let sql = string("sql") else { throw BrowserMCP.ToolError(message: "db_query needs “sql”.") }
-            let statements = SQLText.statements(in: sql).map { (sql as NSString).substring(with: $0) }
+            let statements = target.kind.statements(in: sql).map { (sql as NSString).substring(with: $0) }
                 .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }.filter { !$0.isEmpty }
             guard statements.count == 1, let statement = statements.first else {
                 throw BrowserMCP.ToolError(message: "One statement at a time — this has \(statements.count).")
             }
-            if !SQLText.agentReads(statement) {
+            if !target.kind.agentReads(statement) {
                 guard Settings.shared.databaseAgentWrites else {
                     throw BrowserMCP.ToolError(
-                        message: "Agents only read here: \(SQLText.verb(of: statement)) writes. The user can allow writes in Settings ▸ Database.")
+                        message: "Agents only read here: \(target.kind.verb(of: statement)) writes. The user can allow writes in Settings ▸ Database.")
                 }
                 guard !target.readOnly else { throw BrowserMCP.ToolError(message: "“\(target.name)” is read-only.") }
                 guard await allow(statement, on: target) else { throw BrowserMCP.ToolError(message: "The user declined to run it.") }
@@ -114,7 +114,7 @@ enum DatabaseMCP {
         if let answer = askOverride { return answer(statement) }
         let alert = NSAlert()
         alert.messageText = "An agent wants to run this on “\(connection.name)”"
-        alert.informativeText = String(statement.prefix(2000)) + (SQLText.danger(of: statement).map { "\n\n\($0)" } ?? "")
+        alert.informativeText = String(statement.prefix(2000)) + (connection.kind.danger(of: statement).map { "\n\n\($0)" } ?? "")
         alert.addButton(withTitle: "Run It")
         alert.addButton(withTitle: "Don't Run")
         alert.alertStyle = .warning
@@ -144,6 +144,10 @@ enum DatabaseMCP {
 
     static func describeSchema(_ schema: String, session: DatabaseSession) -> String {
         let tables = session.tables[schema] ?? []
+        if session.connection.kind.isRedis {
+            guard !tables.isEmpty else { return "\(schema) has no keys. Databases with keys: \(session.schemas.joined(separator: ", "))" }
+            return "Keys in \(schema) (first \(tables.count), by SCAN; `VIEW key` reads one):\n" + tables.map { "- \($0.name)" }.joined(separator: "\n")
+        }
         guard !tables.isEmpty else { return "\(schema) has no tables. Schemas: \(session.schemas.joined(separator: ", "))" }
         var out = "Schema \(schema) (others: \(session.schemas.filter { $0 != schema }.joined(separator: ", ")))\n"
         for table in tables.prefix(300) {
@@ -184,15 +188,15 @@ enum DatabaseMCP {
             "A database's schema: its tables with their columns — or, with “table”, one table's columns. Without “schema”, the connection's default.",
             [
                 "connection": ["type": "string", "description": "Its name, from db_connections (optional when there is one)."],
-                "schema": ["type": "string", "description": "The schema (dataset in BigQuery, database in MySQL/ClickHouse)."],
+                "schema": ["type": "string", "description": "The schema (dataset in BigQuery, database in MySQL/ClickHouse, db0… in Redis — its keys, up to 1000)."],
                 "table": ["type": "string", "description": "One table's columns."],
             ]),
         tool(
             "db_query",
-            "Run one SQL statement on a saved connection and get its rows as a Markdown table. Reads only, unless the user allows agents to write in Settings — then they are asked each time.",
+            "Run one SQL statement — or, on a Redis connection, one Redis command as redis-cli takes it (`HGETALL user:1`, `SCAN 0 MATCH user:* COUNT 100`; `VIEW key` reads any key whatever its type) — on a saved connection and get its rows as a Markdown table. Reads only, unless the user allows agents to write in Settings — then they are asked each time.",
             [
                 "connection": ["type": "string", "description": "Its name, from db_connections (optional when there is one)."],
-                "sql": ["type": "string", "description": "One statement."],
+                "sql": ["type": "string", "description": "One statement, or one Redis command."],
                 "limit": ["type": "integer", "description": "Rows to return (default 100, at most 1000)."],
             ], required: ["sql"]),
         tool("storage_connections", "The user's saved S3 / GCS connections: name, kind, bucket.", [:]),

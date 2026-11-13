@@ -70,6 +70,7 @@ enum DatabaseDrivers {
         case .mysql: MySQLDriver(connection, password: password)
         case .clickhouse: ClickHouseDriver(connection, password: password)
         case .bigquery: BigQueryDriver(connection, serviceAccount: serviceAccount)
+        case .redis: RedisDriver(connection, password: password)
         // Storage has its own client (StorageClient); nothing runs SQL on it.
         case .s3, .gcs: NoSQLDriver()
         }

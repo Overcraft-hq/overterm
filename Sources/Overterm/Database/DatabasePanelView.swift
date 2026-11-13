@@ -20,6 +20,14 @@ struct DatabaseActions {
     var upload: (StorageSession, String, String) -> Void = { _, _, _ in }
     var download: (StorageSession, String, StorageObject) -> Void = { _, _, _ in }
     var copyLink: (StorageSession, String, String) -> Void = { _, _, _ in }
+    /// A Redis key's page in the right-hand pane.
+    var openRedisKey: (DatabaseSession, Int, String) -> Void = { _, _, _ in }
+    /// The new-key page, for a database.
+    var newRedisKey: (DatabaseSession, Int) -> Void = { _, _ in }
+    /// The server's page.
+    var redisServer: (DatabaseSession) -> Void = { _ in }
+    /// Asks, then deletes the key.
+    var deleteRedisKey: (DatabaseSession, Int, String) -> Void = { _, _, _ in }
 }
 
 /// The sidebar's Database panel: the saved connections, and under each one
@@ -96,7 +104,7 @@ struct DatabasePanelView: View {
     private var empty: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("No connections yet").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
-            Text("PostgreSQL, MySQL, SQLite, Redshift, ClickHouse or BigQuery — and S3 or Google Cloud Storage buckets. Passwords and keys stay in your keychain.")
+            Text("PostgreSQL, MySQL, SQLite, Redshift, ClickHouse, BigQuery or Redis — and S3 or Google Cloud Storage buckets. Passwords and keys stay in your keychain.")
                 .font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
             ForEach(DatabaseKind.allCases) { kind in
                 Button {
@@ -126,13 +134,16 @@ private struct ConnectionTree: View {
 
     var body: some View {
         TreeRow(
-            depth: 0, open: model.expanded.contains(key), symbol: "cylinder", title: connection.name, detail: connection.summary,
+            depth: 0, open: model.expanded.contains(key), symbol: connection.kind.isRedis ? "bolt.horizontal" : "cylinder", title: connection.name, detail: connection.summary,
             dot: dot, theme: theme
         ) {
             toggle(key) { await session.open() }
         }
         .contextMenu {
             Button("New Console") { actions.console(connection) }
+            if connection.kind.isRedis {
+                Button("Server Info") { actions.redisServer(session) }
+            }
             if session.isOpen {
                 Button("Disconnect") { model.disconnect(connection) }
             } else {
@@ -158,7 +169,15 @@ private struct ConnectionTree: View {
             case .failed(let message):
                 note(message, depth: 1, error: true)
             case .open:
-                ForEach(session.schemas, id: \.self) { schema in schemaTree(schema) }
+                if connection.kind.isRedis {
+                    ForEach(session.schemas, id: \.self) { schema in
+                        RedisDatabaseTree(
+                            treeKey: "\(key)/\(schema)", db: RedisDriver.database(schema), session: session,
+                            browser: session.browser(RedisDriver.database(schema)), model: model, theme: theme, actions: actions)
+                    }
+                } else {
+                    ForEach(session.schemas, id: \.self) { schema in schemaTree(schema) }
+                }
             case .closed:
                 EmptyView()
             }
@@ -270,7 +289,7 @@ private struct ConnectionTree: View {
 }
 
 /// One row of the tree: its chevron (nil: a leaf), glyph, name, a detail.
-private struct TreeRow: View {
+struct TreeRow: View {
     let depth: Int
     let open: Bool?
     let symbol: String

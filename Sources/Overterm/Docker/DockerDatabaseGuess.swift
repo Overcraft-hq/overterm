@@ -81,6 +81,11 @@ enum DockerDatabaseGuess {
             connection.user = first("CLICKHOUSE_USER") ?? "default"
             connection.database = first("CLICKHOUSE_DB") ?? "default"
             password = first("CLICKHOUSE_PASSWORD")
+        case .redis:
+            // The official image has no password of its own; Bitnami's say
+            // theirs here. One given as `--requirepass` is asked for.
+            password = first("REDIS_PASSWORD", "VALKEY_PASSWORD")
+            connection.sslMode = .disable
         default:
             return nil
         }
