@@ -89,6 +89,13 @@ final class KubeWriteVerbsPageTests: XCTestCase {
         }
     }
 
+    /// Whether the cluster's spec still has `paused`, read off the main actor:
+    /// the spec's dictionary isn't Sendable, so only the answer comes back.
+    nonisolated private static func hasPaused(_ ref: KubeObjectRef?, socket: String) async throws -> Bool {
+        let spec = try await KubeClient(KubeSocketConnection(socket: socket, context: "kind-fake")).spec(try XCTUnwrap(ref))
+        return (spec["spec"] as? [String: Any])?["paused"] != nil
+    }
+
     private func written() -> [FakeKubeAPI.Request] { api.writes.filter { !$0.isAccessReview } }
     private func reviewed() -> [[String: String]] {
         api.requests.filter(\.isAccessReview).compactMap {
@@ -227,8 +234,8 @@ final class KubeWriteVerbsPageTests: XCTestCase {
         box.confirmations[1].1("")
         try await until("resumed") { self.written().count == 2 }
         XCTAssertEqual(String(decoding: written()[1].body, as: UTF8.self), #"{"spec":{"paused":null}}"#)
-        let spec = try await KubeClient(KubeSocketConnection(socket: socket, context: "kind-fake")).spec(try XCTUnwrap(page.ref(for: "shop/web")))
-        XCTAssertNil((spec["spec"] as? [String: Any])?["paused"])
+        let paused = try await Self.hasPaused(page.ref(for: "shop/web"), socket: socket)
+        XCTAssertFalse(paused)
         // The menu's Resume, not a toggle: refused once read so.
         page.write(.resume, on: try XCTUnwrap(page.ref(for: "shop/web")))
         try await until("refused") { page.writeStatus == .failed("deployment shop/web's rollout isn't paused.") }

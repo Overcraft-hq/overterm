@@ -346,7 +346,7 @@ final class KubeClusterChartsTests: XCTestCase {
         XCTAssertEqual(KubeVolumeFormat.bytes(efs), "8.0Ei")
         var reading = KubeChartReading(range: .hour)
         reading.read = now
-        reading.series[.volumeUsed] = points([2 * 1_073_741_824], from: now, step: 30)
+        reading.series[.volumeUsed] = points([2 * 1_073_741_824.0], from: now, step: 30)
         reading.series[.volumeCapacity] = points([efs], from: now, step: 30)
         reading.totals = [.volumeAvailable: efs, .volumeFill: 1000]
         let data = KubeChartData.of(reading, chart: .volume(namespace: "shop", claim: "efs"), measure: .volumeUsed)

@@ -48,7 +48,7 @@ final class KubeMetricsSpanTests: XCTestCase {
         XCTAssertEqual(KubeMetricsSpan.of(window(600), scrape: 15).step, 15)
         XCTAssertEqual(KubeMetricsSpan.of(window(86400), scrape: 30).step, 600)
         XCTAssertEqual(KubeMetricsSpan.of(window(30 * 86400), scrape: 30).step, 10800, "30 days at 3h")
-        for span: TimeInterval in [60, 900, 7200, 86400, 7 * 86400, 30 * 86400] {
+        for span: TimeInterval in [60, 900, 7200, 86400, 7 * 86400.0, 30 * 86400.0] {
             let asked = KubeMetricsSpan.of(window(span), scrape: 30)
             XCTAssertLessThanOrEqual(asked.points, 300, "\(span)")
             XCTAssertNil(asked.refresh, "a window isn't refreshed")

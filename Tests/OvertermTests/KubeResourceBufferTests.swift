@@ -34,7 +34,7 @@ final class KubeResourceBufferTests: XCTestCase {
         Self.seed(api)
     }
 
-    private static func seed(_ api: FakeKubeAPI) {
+    nonisolated private static func seed(_ api: FakeKubeAPI) {
         api.addNamespace("shop")
         api.add(
             "deployments.apps", "web", namespace: "shop", values: ["Ready": "1/1", "Up-to-date": 1, "Available": 1],

@@ -86,7 +86,7 @@ final class ManagedProcessTests: XCTestCase {
         let path = folder.appendingPathComponent("ready.sock").path
         // Something left at the path is removed before it starts.
         FileManager.default.createFile(atPath: path, contents: Data("stale".utf8))
-        let listener = Task.detached { () -> Int32 in
+        let listener = Task.detached { @Sendable () async throws -> Int32 in
             try await Task.sleep(for: .milliseconds(300))
             return Self.listen(on: path)
         }

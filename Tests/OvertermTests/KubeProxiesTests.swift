@@ -161,8 +161,9 @@ final class KubeProxiesTests: XCTestCase {
         _ = try await proxies.send(Self.context("page"), .GET, "/")
         // A watch in the background, held open.
         answers.hold("watch")
+        let watching = Self.context("watch")
         let watch = Task {
-            for try await _ in proxies.stream(Self.context("watch"), role: .background, .GET, "/api/v1/pods?watch=1") {}
+            for try await _ in proxies.stream(watching, role: .background, .GET, "/api/v1/pods?watch=1") {}
         }
         try await until { self.answers.isHeld("watch") }
         do {
@@ -181,7 +182,8 @@ final class KubeProxiesTests: XCTestCase {
         XCTAssertEqual(connected, ["next", "watch"])
         // Both busy now: the page takes the least recently used one's slot.
         answers.hold("next")
-        let busy = Task { try await proxies.send(Self.context("next"), .GET, "/") }
+        let next = Self.context("next")
+        let busy = Task { try await proxies.send(next, .GET, "/") }
         try await until { self.answers.isHeld("next") }
         clock.advance(1)
         _ = try await proxies.send(Self.context("last"), .GET, "/")
@@ -200,11 +202,13 @@ final class KubeProxiesTests: XCTestCase {
     func testThePageTakesABackgroundSlotFirst() async throws {
         let proxies = proxies(max: 2)
         answers.hold("a")
-        let page = Task { try await proxies.send(Self.context("a"), .GET, "/") }
+        let a = Self.context("a")
+        let page = Task { try await proxies.send(a, .GET, "/") }
         try await until { self.answers.isHeld("a") }
         answers.hold("watch")
+        let watching = Self.context("watch")
         let watch = Task {
-            for try await _ in proxies.stream(Self.context("watch"), role: .background, .GET, "/api/v1/pods?watch=1") {}
+            for try await _ in proxies.stream(watching, role: .background, .GET, "/api/v1/pods?watch=1") {}
         }
         try await until { self.answers.isHeld("watch") }
         clock.advance(1)
@@ -244,8 +248,9 @@ final class KubeProxiesTests: XCTestCase {
         for name in ["w1", "w2", "w3"] {
             clock.advance(1)
             answers.hold(name)
+            let context = Self.context(name)
             watches.append(
-                Task { for try await _ in proxies.stream(Self.context(name), role: .watch, .GET, "/api/v1/pods?watch=1") {} })
+                Task { for try await _ in proxies.stream(context, role: .watch, .GET, "/api/v1/pods?watch=1") {} })
             try await until { self.answers.isHeld(name) }
         }
         do {
@@ -318,7 +323,8 @@ final class KubeProxiesTests: XCTestCase {
         let proxies = proxies(idle: 600)
         _ = try await proxies.send(Self.context("a"), .GET, "/")
         answers.hold("b")
-        let held = Task { try await proxies.send(Self.context("b"), .GET, "/") }
+        let b = Self.context("b")
+        let held = Task { try await proxies.send(b, .GET, "/") }
         try await until { self.answers.isHeld("b") }
         clock.advance(599)
         var idle = await proxies.closeIdle()
@@ -625,9 +631,10 @@ final class KubeProxiesTests: XCTestCase {
         clock.advance(1)
         closings.block("a")
         answers.hold("c")
-        let one = Task { try await proxies.send(Self.context("c"), .GET, "/one") }
+        let c = Self.context("c")
+        let one = Task { try await proxies.send(c, .GET, "/one") }
         try await until { self.closings.isWaiting("a") }
-        let two = Task { try await proxies.send(Self.context("c"), .GET, "/two") }
+        let two = Task { try await proxies.send(c, .GET, "/two") }
         try await until { await proxies.connected.contains("c") }
         closings.open("a")
         try await until { self.answers.waitingCount("c") == 2 }
@@ -654,7 +661,8 @@ final class KubeProxiesTests: XCTestCase {
     func testAProxyClosedWhileItOpenedEndsTheRequest() async throws {
         let proxies = proxies()
         openings.hold("x")
-        let request = Task { try await proxies.send(Self.context("x"), role: .background, .GET, "/") }
+        let x = Self.context("x")
+        let request = Task { try await proxies.send(x, role: .background, .GET, "/") }
         try await until { self.openings.isHeld("x") }
         await proxies.close("x")
         openings.release("x")
