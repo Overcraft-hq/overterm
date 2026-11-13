@@ -65,6 +65,9 @@ final class KubeSecretSession: ObservableObject {
     @Published private(set) var dropped: Drop?
     /// How long the values stay after Show, a reveal or a copy.
     var timeout: Duration = KubeSecretSession.defaultTimeout
+    /// How the time is waited out: a test's own clock stands in, so a
+    /// reveal restarting it is checked without racing the scheduler.
+    var sleep: @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }
 
     /// The object as read, without its values: the detail's Overview and YAML.
     var onRead: ((Data) -> Void)?
@@ -217,8 +220,9 @@ final class KubeSecretSession: ObservableObject {
     private func restartExpiry() {
         expiry?.cancel()
         let timeout = self.timeout
+        let sleep = self.sleep
         expiry = Task { [weak self] in
-            try? await Task.sleep(for: timeout)
+            try? await sleep(timeout)
             guard !Task.isCancelled else { return }
             self?.drop(.timeout)
         }

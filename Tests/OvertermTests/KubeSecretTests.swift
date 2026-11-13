@@ -436,17 +436,27 @@ final class KubeSecretTests: XCTestCase {
         defer { model.hide() }
         let detail = try await openSecret("web-db", model, page)
         let secret = try XCTUnwrap(detail.secret)
-        secret.timeout = .milliseconds(300)
+        // The time is the test's: each wait ends when it says, never when a
+        // busy runner happens to wake.
+        let clock = SecretTestClock()
+        defer { clock.endAll() }
+        secret.timeout = .seconds(90)
+        secret.sleep = { try await clock.sleep($0) }
         secret.show()
         try await until(5, "shown") { secret.state == .shown }
-        // A reveal starts the time again.
-        try await Task.sleep(for: .milliseconds(200))
-        secret.reveal("password")
-        try await Task.sleep(for: .milliseconds(200))
+        try await until(5, "Show's wait") { clock.waits == 1 }
+        // A reveal starts the time again: Show's wait ending then drops nothing.
+        XCTAssertTrue(secret.reveal("password"))
+        try await until(5, "the reveal's wait") { clock.waits == 2 }
+        XCTAssertEqual(clock.asked, [.seconds(90), .seconds(90)])
+        clock.end(0)
+        try await Task.sleep(for: .milliseconds(100))
         XCTAssertEqual(secret.state, .shown, "a look keeps it")
+        XCTAssertTrue(secret.holdsValues)
+        clock.end(1)
         try await until(5, "dropped") { secret.state == .hidden }
         XCTAssertEqual(secret.dropped, .timeout)
-        XCTAssertEqual(secret.droppedNote, "Hidden again after 0 seconds without a look.")
+        XCTAssertEqual(secret.droppedNote, "Hidden again after 90 seconds without a look.")
         XCTAssertFalse(secret.holdsValues)
         XCTAssertEqual(detail.state, .withheld)
         XCTAssertEqual(KubeSecretSession.said(KubeSecretSession.defaultTimeout), "2 minutes")
@@ -481,5 +491,45 @@ final class KubeSecretTests: XCTestCase {
         XCTAssertEqual(next.state, .loading)
         try await until(5, "shown") { next.state == .shown }
         XCTAssertFalse(model.secretConsent.needsAsking("fake-prod", production: true))
+    }
+}
+
+/// The secret's expiry clock in a test: every wait is kept until the test
+/// ends it, in the order asked.
+private final class SecretTestClock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var ended: [Int] = []
+    private var pending: [Int: CheckedContinuation<Void, Never>] = [:]
+    private var durations: [Duration] = []
+
+    var waits: Int { lock.withLock { durations.count } }
+    var asked: [Duration] { lock.withLock { durations } }
+
+    func sleep(_ duration: Duration) async throws {
+        await withCheckedContinuation { continuation in
+            lock.withLock {
+                let index = durations.count
+                durations.append(duration)
+                if ended.contains(index) { continuation.resume() } else { pending[index] = continuation }
+            }
+        }
+    }
+
+    /// The `index`th wait ends.
+    func end(_ index: Int) {
+        let continuation = lock.withLock { () -> CheckedContinuation<Void, Never>? in
+            ended.append(index)
+            return pending.removeValue(forKey: index)
+        }
+        continuation?.resume()
+    }
+
+    /// Every wait still held ends, the test over.
+    func endAll() {
+        let held = lock.withLock { () -> [CheckedContinuation<Void, Never>] in
+            defer { pending = [:] }
+            return Array(pending.values)
+        }
+        for continuation in held { continuation.resume() }
     }
 }
