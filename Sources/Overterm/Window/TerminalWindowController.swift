@@ -525,6 +525,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 model: spotlight, theme: theme,
                 onChoose: { [weak self] in self?.chooseSpotlight($0) },
                 onDismiss: { [weak self] in self?.hideSpotlight(keepTerminalSearch: false) }))
+        // Hidden, its 640 pt card still held the terminal's column at that
+        // width (the column's own minimum is 240): it asks for no size.
+        spotlightView.sizingOptions = []
         spotlightView.translatesAutoresizingMaskIntoConstraints = false
         spotlightView.isHidden = true
         container.addSubview(spotlightView)
