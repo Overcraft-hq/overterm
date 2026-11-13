@@ -112,9 +112,10 @@ struct KubeProxyPlanner: Sendable {
 
     func plan(_ context: KubeContext, configuration: KubeProxies.Configuration, serverMinor: Int?) async throws -> KubeProxySpec {
         let tool = try await tool(context, configuration: configuration, serverMinor: serverMinor)
-        let socket = try folder.socket(for: context.name)
+        let readOnly = !context.isWritable
+        let socket = try folder.proxySocket(for: context.name, readOnly: readOnly)
         return KubeProxySpec(
-            context: context.name, readOnly: !context.isWritable, kubectl: tool.kubectl, socket: socket, environment: tool.environment,
+            context: context.name, readOnly: readOnly, kubectl: tool.kubectl, socket: socket, environment: tool.environment,
             cacheDirectory: tool.cacheDirectory, signIn: KubeSignIn(context.auth))
     }
 

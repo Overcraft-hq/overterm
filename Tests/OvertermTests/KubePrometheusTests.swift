@@ -938,7 +938,8 @@ final class KubePrometheusTests: XCTestCase {
         let range = try await proxies.sendPrometheus(dev, service, KubePromQL.rangePath(service, KubePromQL.clusterMemory, .hour, now: Date()))
         XCTAssertEqual(range.status, 200)
 
-        let socket = try KubePrometheusFlags.socket(beside: try planner.folder.socket(for: "fake-dev"))
+        let planned = await proxies.socket("fake-dev", prometheus: service)
+        let socket = try XCTUnwrap(planned)
         let raw = UnixHTTPTransport(address: .unix(socket), host: "localhost", readinessPath: "/version", service: "test")
         let refused = [
             "/api/v1/namespaces/monitoring/services/grafana:80/proxy/api/v1/query",

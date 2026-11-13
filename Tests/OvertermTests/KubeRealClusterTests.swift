@@ -156,13 +156,13 @@ final class KubeRealClusterTests: XCTestCase {
             "/api/v1/namespaces/\(ns)/pods/\(pod)/exec.json",
             "/api/v1/namespaces/\(ns)/pods/\(pod)/exec?x=/../log",
         ]
-        let socket = try planner.folder.socket(for: "kind-fake")
-        let devSocket = try planner.folder.socket(for: "fake-dev")
         for name in ["kind-fake", "fake-dev"] {
             let context = try fixture.context(name)
             for path in variants {
                 let response = try await proxies.send(context, .GET, path)
-                try await assertNeverReached(response, path: path, context: name, socket: name == "kind-fake" ? socket : devSocket)
+                let planned = await proxies.socket(name)
+                let socket = try XCTUnwrap(planned)
+                try await assertNeverReached(response, path: path, context: name, socket: socket)
             }
             // A WebSocket exec is a GET: the paths stop it, not the methods.
             let upgrade = try await proxies.send(
@@ -429,7 +429,8 @@ final class KubeRealClusterTests: XCTestCase {
         let range = try await proxies.sendPrometheus(dev, service, service.rangePath + "?query=up&start=1&end=2&step=1")
         XCTAssertEqual(range.status, 200)
 
-        let socket = try KubePrometheusFlags.socket(beside: try planner.folder.socket(for: "fake-dev"))
+        let planned = await proxies.socket("fake-dev", prometheus: service)
+        let socket = try XCTUnwrap(planned)
         let metrics = UnixHTTPTransport.kubernetes(socket: socket, context: "fake-dev")
         let ns = fixture.namespace
         let refused = [
