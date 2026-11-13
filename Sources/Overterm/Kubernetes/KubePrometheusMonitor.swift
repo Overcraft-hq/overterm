@@ -584,6 +584,15 @@ final class KubePrometheusMonitor: ObservableObject {
         return queue(context, ProfileKey(service: service, use: shown?.use ?? .off, cluster: shown?.cluster ?? ""))
     }
 
+    /// Queries still on their way, every context's (the tests'): one sent
+    /// just before its want went is cancelled, but its request is already
+    /// out — it still reaches the server, after the want.
+    func queriesInFlight() async -> Int {
+        var total = 0
+        for queue in queues.values.map(\.queue) { total += await queue.inFlight }
+        return total
+    }
+
     private func queue(_ context: String, _ key: ProfileKey) -> KubePromQueue {
         let service = key.service
         if let kept = queues[context], kept.key == key { return kept.queue }

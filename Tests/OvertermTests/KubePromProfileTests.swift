@@ -556,7 +556,8 @@ final class KubePromProfileTests: XCTestCase {
         monitor.want([.chart(.cluster)], for: owner)
         try await until("said") { monitor.charts[.cluster]?.problem == "Prometheus is busy (HTTP 429); asked again in 2 s." }
         api.refusePrometheusProxy(nil)
-        try await Task.sleep(for: .milliseconds(1200))
+        // Well inside the 2 s pause, slow runner or not; still several 80 ms polls.
+        try await Task.sleep(for: .milliseconds(500))
         XCTAssertEqual(asked.count, 1, "paused: the polls every 80 ms send nothing")
         try await until("read once the pause ended") { monitor.charts[.cluster]?.read != nil }
         monitor.want([], for: owner)

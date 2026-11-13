@@ -76,6 +76,33 @@ final class KubePrometheusTests: XCTestCase {
         }
     }
 
+    /// The requests forgotten once nothing is on its way: a query sent just
+    /// before its want went is cancelled, but it still reaches the fake —
+    /// after the want, among what must not be asked.
+    ///
+    /// `counted`: the requests a quiet spell is read on — the queries a
+    /// check after it looks at, while the rest may still be polled.
+    private func forgetRequestsOnceSettled(_ monitor: KubePrometheusMonitor, counted: (() -> Int)? = nil) async throws {
+        let counted = counted ?? { self.api.requests.count }
+        let deadline = Date().addingTimeInterval(5)
+        while await monitor.queriesInFlight() > 0 {
+            if Date() > deadline { return XCTFail("queries still on their way") }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        // A cancelled fetch's task can end before the fake has read the
+        // bytes it already sent: wait until nothing more is recorded.
+        var count = counted()
+        var quiet = 0
+        while quiet < 8 {
+            if Date() > deadline { return XCTFail("requests still arriving") }
+            try await Task.sleep(for: .milliseconds(25))
+            let now = counted()
+            quiet = now == count ? quiet + 1 : 0
+            count = now
+        }
+        api.forgetRequests()
+    }
+
     private var client: KubeClient { KubeClient(KubeSocketConnection(socket: socket, context: "fake-dev")) }
     private var prometheusRequests: [FakeKubeAPI.Request] { api.requests.filter(\.isPrometheusQuery) }
 
@@ -660,7 +687,7 @@ final class KubePrometheusTests: XCTestCase {
         XCTAssertFalse(monitor.isPolling)
         XCTAssertTrue(monitor.charts.isEmpty && monitor.volumes == nil)
         try await until(5, "closed once the readings stopped") { closed.value == ["fake-dev"] }
-        api.forgetRequests()
+        try await forgetRequestsOnceSettled(monitor)
         try await Task.sleep(for: .milliseconds(300))
         XCTAssertEqual(api.requests, [], "nothing read while hidden")
 
@@ -739,6 +766,10 @@ final class KubePrometheusTests: XCTestCase {
             api.setPrometheusSeries("kube_pod_container_resource_limits", labels: pod.merging(["resource": "memory"]) { $1 }, value: 128 * 1_048_576)
         }
         let monitor = configuredMonitor(scope: KubeScope.of(["shop", "billing"]))
+        // Read once, not every 80 ms: a refresh already sent when the want
+        // goes can't be called back, and it would land among the requests
+        // the across-the-cluster monitor below must not make.
+        monitor.interval = nil
         let owner = NSObject()
         monitor.want([.shares], for: owner)
         try await until(5, "shares") { monitor.shares?.read != nil }

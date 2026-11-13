@@ -32,6 +32,33 @@ final class KubeMetricsTabPrometheusTests: XCTestCase {
         }
     }
 
+    /// The requests forgotten once nothing is on its way: a query sent just
+    /// before its want went is cancelled, but it still reaches the fake —
+    /// after the want, among what must not be asked.
+    ///
+    /// `counted`: the requests a quiet spell is read on — the queries a
+    /// check after it looks at, while the rest may still be polled.
+    private func forgetRequestsOnceSettled(_ monitor: KubePrometheusMonitor, counted: (() -> Int)? = nil) async throws {
+        let counted = counted ?? { self.asked.count }
+        let deadline = Date().addingTimeInterval(5)
+        while await monitor.queriesInFlight() > 0 {
+            if Date() > deadline { return XCTFail("queries still on their way") }
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        // A cancelled fetch's task can end before the fake has read the
+        // bytes it already sent: wait until nothing more is recorded.
+        var count = counted()
+        var quiet = 0
+        while quiet < 8 {
+            if Date() > deadline { return XCTFail("requests still arriving") }
+            try await Task.sleep(for: .milliseconds(25))
+            let now = counted()
+            quiet = now == count ? quiet + 1 : 0
+            count = now
+        }
+        api.forgetRequests()
+    }
+
     private var asked: [FakeKubeAPI.Request] { api.requests.filter(\.isPrometheusQuery) }
 
     private func pageOverFake(metricsServer: Bool = true, charts: [KubeSavedChart] = []) throws -> (KubernetesModel, KubernetesPageModel) {
@@ -115,7 +142,7 @@ final class KubeMetricsTabPrometheusTests: XCTestCase {
         // Hidden: nothing read.
         page.visible = false
         try await until(5, "stopped") { !model.prometheus.isPolling && model.prometheus.tabs.isEmpty }
-        api.forgetRequests()
+        try await forgetRequestsOnceSettled(model.prometheus)
         try await Task.sleep(for: .milliseconds(400))
         XCTAssertTrue(asked.isEmpty, "\(asked.map(\.query))")
     }
@@ -155,8 +182,7 @@ final class KubeMetricsTabPrometheusTests: XCTestCase {
         XCTAssertEqual(page.metricsWindow?.kind, .zoom)
         try await until(5, "asked over the window") { self.asked.contains { $0.query["start"] == KubePromQL.stamp(from) && $0.query["step"] == "1m" } }
         try await until(5, "read") { model.prometheus.tabs.values.contains { if case .window = $0.request.span { $0.read != nil } else { false } } }
-        try await Task.sleep(for: .milliseconds(200))
-        api.forgetRequests()
+        try await forgetRequestsOnceSettled(model.prometheus)
         try await Task.sleep(for: .milliseconds(500))
         XCTAssertTrue(asked.isEmpty, "a zoomed window isn't refreshed: \(asked.map(\.query))")
         page.zoomMetrics(from: from, to: from.addingTimeInterval(600), of: shown)
@@ -231,7 +257,7 @@ final class KubeMetricsTabPrometheusTests: XCTestCase {
         page.expandedChartClosed()
         XCTAssertFalse(model.readsMetrics)
         try await until(5, "stopped") { !model.prometheus.isPolling && model.prometheus.tabs.isEmpty }
-        api.forgetRequests()
+        try await forgetRequestsOnceSettled(model.prometheus)
         try await Task.sleep(for: .milliseconds(400))
         XCTAssertTrue(asked.isEmpty, "\(asked.map(\.query))")
     }
@@ -314,7 +340,7 @@ final class KubeMetricsTabPrometheusTests: XCTestCase {
         XCTAssertFalse(page.holdsChartsForExpansion)
         XCTAssertFalse(model.readsMetrics, "no holder left for a window that is gone")
         try await until(5, "stopped closed") { !model.prometheus.isPolling && model.prometheus.tabs.isEmpty }
-        api.forgetRequests()
+        try await forgetRequestsOnceSettled(model.prometheus)
         try await Task.sleep(for: .milliseconds(400))
         XCTAssertTrue(asked.isEmpty, "\(asked.map(\.query))")
     }
@@ -360,18 +386,22 @@ final class KubeMetricsTabPrometheusTests: XCTestCase {
     func testLiveShownAgainAfterItsIdleTimeIsntPaused() async throws {
         let (model, page) = try pageOverFake()
         defer { model.hide() }
-        page.metricsIdleLimit = 0.6
+        // Long enough that Live has read before it pauses, however slow the runner.
+        page.metricsIdleLimit = 1.5
         try await openPod(model, page)
         try await until(5, "Live reads") { !page.metricsDetailsOnScreen.isEmpty }
         XCTAssertTrue(page.metricsLiveRuns)
         page.visible = false
         XCTAssertFalse(page.metricsLiveRuns)
-        try await Task.sleep(for: .milliseconds(900))
+        // Hidden for an hour since the last input: the time itself, not a sleep.
+        page.metricsLastInput = Date(timeIntervalSinceNow: -3600)
+        let shown = Date()
         page.visible = true
         XCTAssertTrue(page.metricsLiveRuns)
         XCTAssertFalse(page.metricsLivePaused, "shown again: running, not paused")
-        try await Task.sleep(for: .milliseconds(300))
-        XCTAssertFalse(page.metricsLivePaused, "its idle time from the show, not from before it hid")
+        XCTAssertGreaterThanOrEqual(page.metricsLastInput, shown, "its idle time from the show, not from before it hid")
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertFalse(page.metricsLivePaused, "not paused for the hour before")
         try await until(5, "paused once idle that long") { page.metricsLivePaused }
     }
 
@@ -420,7 +450,7 @@ final class KubeMetricsTabPrometheusTests: XCTestCase {
         try await until(5, "read") { page.tabReading(of: session)?.results["topCPU"] != nil }
         page.metricsGroupShown(KubePromTabCharts.topPodsTitle, false)
         XCTAssertNotNil(page.tabReading(of: session)?.read, "scrolled off: what was read stands")
-        api.forgetRequests()
+        try await forgetRequestsOnceSettled(model.prometheus) { top().count }
         try await Task.sleep(for: .milliseconds(400))
         XCTAssertTrue(top().isEmpty, "scrolled off: not asked again \(top().map(\.query))")
     }
@@ -481,7 +511,7 @@ final class KubeMetricsTabPrometheusTests: XCTestCase {
         try await until(5, "an hour's reading") { page.tabReading(of: session)?.results["disks"] != nil }
         page.metricsGroupShown(KubePromTabCharts.nodeExporterTitle, false)
         XCTAssertEqual(page.tabRequest(of: session)?.families.contains(.disks), false)
-        api.forgetRequests()
+        try await forgetRequestsOnceSettled(model.prometheus) { exporter().count }
         try await Task.sleep(for: .milliseconds(400))
         XCTAssertTrue(exporter().isEmpty, "scrolled off: not asked again \(exporter().map(\.query))")
         XCTAssertFalse(api.requests.contains { $0.path.contains("nodes/proxy") || $0.path.contains("/proxy/metrics") }, "never the kubelet")
@@ -490,7 +520,8 @@ final class KubeMetricsTabPrometheusTests: XCTestCase {
     func testLivePausesWithoutInputAndResumes() async throws {
         let (model, page) = try pageOverFake()
         defer { model.hide() }
-        page.metricsIdleLimit = 0.4
+        // Long enough that Live has read before it pauses, however slow the runner.
+        page.metricsIdleLimit = 1.5
         try await openPod(model, page)
         try await until(5, "Prometheus found") { model.prometheus.service == service }
         try await until(5, "Live reads") { !model.prometheus.tabs.isEmpty && !page.metricsDetailsOnScreen.isEmpty }
@@ -606,7 +637,7 @@ final class KubeMetricsTabPrometheusTests: XCTestCase {
 
         page.metricsGroupShown(KubeSavedCharts.groupTitle, false)
         XCTAssertEqual(page.tabRequest(of: session)?.families.contains(.saved), false)
-        api.forgetRequests()
+        try await forgetRequestsOnceSettled(model.prometheus) { saved().count }
         try await Task.sleep(for: .milliseconds(400))
         XCTAssertTrue(saved().isEmpty, "scrolled off: not asked again")
     }
