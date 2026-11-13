@@ -655,6 +655,133 @@ final class KubeProxiesTests: XCTestCase {
         XCTAssertTrue(idle.contains("c"), "both done: idle")
     }
 
+    /// A person flips a context's Writes while its read-only proxy is
+    /// still starting: the list closes that entry, the next request opens
+    /// a writable one, then the read-only kubectl finishes and is ended.
+    /// kubectl takes over whatever is at its path when it binds, and a
+    /// closed proxy's socket is removed: on one path the writable proxy
+    /// was left running with no socket, and every request to the context
+    /// failed ("isn't answering") until it was closed as idle — the
+    /// `kubernetes` scenario's Apply on fake-prod, after its Writes were
+    /// set off and on again.
+    func testWritesFlippedWhileAReadOnlyProxyStartsLeaveTheNewOneItsSocket() async throws {
+        let folder = KubeSocketFolder(base: URL(fileURLWithPath: "/tmp/otkps-\(getpid())", isDirectory: true))
+        let sockets = Sockets()
+        let readOnlyOpening = Answers()
+        readOnlyOpening.hold("ro")
+        let proxies = KubeProxies(
+            sweepEvery: .seconds(3600),
+            plan: { context, _, _ in
+                KubeProxySpec(
+                    context: context.name, readOnly: !context.isWritable, kubectl: URL(fileURLWithPath: "/stand-in/kubectl"),
+                    socket: try folder.socket(for: context.name, readOnly: !context.isWritable), environment: [:], cacheDirectory: nil,
+                    signIn: KubeSignIn(context.auth))
+            },
+            open: { spec in
+                if spec.readOnly { _ = await readOnlyOpening.answer("ro") }
+                // As kubectl binds: whatever was at the path is replaced.
+                let id = sockets.bind(spec.socket)
+                let open = Flag(true)
+                return KubeProxy(
+                    context: spec.context, readOnly: spec.readOnly, signIn: spec.signIn, transport: SocketTransport(path: spec.socket, id: id, sockets: sockets),
+                    isRunning: { open.value },
+                    close: {
+                        open.value = false
+                        // As `ManagedProcess.close`: what is at its path is removed.
+                        sockets.unlink(spec.socket)
+                    })
+            })
+        let readOnly = Self.context("acme-prod", writable: false)
+        let writable = Self.context("acme-prod")
+        await proxies.update(contexts: KubeContextList(contexts: [readOnly]))
+        let starting = Task { try await proxies.send(readOnly, .GET, "/api/v1/pods") }
+        try await until { readOnlyOpening.isHeld("ro") }
+
+        // Writes on again: the read-only entry is closed while it opens.
+        await proxies.update(contexts: KubeContextList(contexts: [writable]))
+        let first = try await proxies.send(writable, .GET, "/api/v1/pods")
+        XCTAssertEqual(first.status, 200)
+        readOnlyOpening.release("ro")
+        do {
+            _ = try await starting.value
+            XCTFail("closed while it opened")
+        } catch {
+            XCTAssertEqual(error as? KubeProxyProblem, .closedWhileOpening)
+        }
+
+        let after = try await proxies.send(writable, .GET, "/api/v1/pods")
+        XCTAssertEqual(after.status, 200, "the writable proxy still has its socket")
+        XCTAssertNotEqual(
+            try folder.socket(for: "acme-prod", readOnly: true), try folder.socket(for: "acme-prod"), "a read-only proxy's socket is never a writable one's")
+    }
+
+    /// The same race with the flags unchanged: a context's metrics proxy
+    /// for one Prometheus Service still starting when a chart asks another
+    /// Service's. Both are read-only; the second must not share the first's
+    /// path, or the late one takes its socket and removes it when ended —
+    /// each planned proxy has a number of its own (`proxySocket`), as the
+    /// app's planner gives it.
+    func testAnotherPrometheusWhileTheMetricsProxyStartsLeavesTheNewOneItsSocket() async throws {
+        let folder = KubeSocketFolder(base: URL(fileURLWithPath: "/tmp/otkps-\(getpid())", isDirectory: true))
+        let sockets = Sockets()
+        let opening = Answers()
+        opening.hold("old")
+        let proxies = KubeProxies(
+            sweepEvery: .seconds(3600),
+            plan: { context, _, _ in
+                KubeProxySpec(
+                    context: context.name, readOnly: !context.isWritable, kubectl: URL(fileURLWithPath: "/stand-in/kubectl"),
+                    socket: try folder.proxySocket(for: context.name, readOnly: !context.isWritable), environment: [:], cacheDirectory: nil,
+                    signIn: KubeSignIn(context.auth))
+            },
+            open: { spec in
+                if spec.prometheus?.name == "old" { _ = await opening.answer("old") }
+                let id = sockets.bind(spec.socket)
+                let open = Flag(true)
+                return KubeProxy(
+                    context: spec.context, readOnly: spec.readOnly, signIn: spec.signIn, transport: SocketTransport(path: spec.socket, id: id, sockets: sockets),
+                    isRunning: { open.value },
+                    close: {
+                        open.value = false
+                        sockets.unlink(spec.socket)
+                    })
+            })
+        let context = Self.context("acme-dev")
+        let old = try XCTUnwrap(KubePrometheusService(namespace: "monitoring", name: "old", port: "9090"))
+        let new = try XCTUnwrap(KubePrometheusService(namespace: "monitoring", name: "new", port: "9090"))
+        let starting = Task { try await proxies.sendPrometheus(context, old, old.queryPath) }
+        try await until { opening.isHeld("old") }
+
+        let first = try await proxies.sendPrometheus(context, new, new.queryPath)
+        XCTAssertEqual(first.status, 200)
+        opening.release("old")
+        do {
+            _ = try await starting.value
+            XCTFail("closed while it opened")
+        } catch {
+            XCTAssertEqual(error as? KubeProxyProblem, .closedWhileOpening)
+        }
+        let after = try await proxies.sendPrometheus(context, new, new.queryPath)
+        XCTAssertEqual(after.status, 200, "the new metrics proxy still has its socket")
+    }
+
+    /// Every proxy's path is its own: the number goes before `.sock`, and
+    /// the metrics socket stays beside it.
+    func testEachProxyHasAPathOfItsOwn() throws {
+        let folder = KubeSocketFolder(base: URL(fileURLWithPath: "/tmp", isDirectory: true), uid: 501, pid: 7)
+        let base = try folder.socket(for: "fake-dev", readOnly: true)
+        let one = try KubeSocketFolder.socket(base, proxy: 1)
+        let two = try KubeSocketFolder.socket(base, proxy: 2)
+        XCTAssertNotEqual(one, two)
+        XCTAssertEqual(one, String(base.dropLast(".sock".count)) + "-1.sock")
+        XCTAssertEqual(try KubePrometheusFlags.socket(beside: one), String(base.dropLast(".sock".count)) + "-1-metrics.sock")
+        let deep = String(repeating: "d", count: KubeSocketFolder.maxPathBytes - 6) + ".sock"
+        XCTAssertThrowsError(try KubeSocketFolder.socket(deep, proxy: 123))
+        XCTAssertNotEqual(
+            try folder.proxySocket(for: "fake-dev", readOnly: false), try folder.proxySocket(for: "fake-dev", readOnly: false),
+            "each planned proxy gets a number of its own")
+    }
+
     /// A proxy closed while its first request waited for it to open ends
     /// that request with a reason to try again, leaves no entry behind that
     /// nothing could close, and ends the kubectl that finished opening.
@@ -824,6 +951,61 @@ private final class CloseGates: @unchecked Sendable {
         else { return }
         _ = gate.wait(timeout: .now() + 5)
         lock.withLock { _ = waiting.remove(context) }
+    }
+}
+
+/// Unix sockets' paths as kubectl and `ManagedProcess` treat them: a
+/// bind replaces what was at the path, a close removes what is there.
+private final class Sockets: @unchecked Sendable {
+    private let lock = NSLock()
+    private var bound: [String: Int] = [:]
+    private var last = 0
+
+    func bind(_ path: String) -> Int {
+        lock.withLock {
+            last += 1
+            bound[path] = last
+            return last
+        }
+    }
+
+    func unlink(_ path: String) { lock.withLock { _ = bound.removeValue(forKey: path) } }
+    func isBound(_ path: String, by id: Int) -> Bool { lock.withLock { bound[path] == id } }
+}
+
+/// A proxy's transport that reaches it only while its socket is at its path.
+private struct SocketTransport: HTTPTransport {
+    let path: String
+    let id: Int
+    let sockets: Sockets
+
+    private func answer() throws -> HTTPResponse {
+        guard sockets.isBound(path, by: id) else { throw HTTPError.unreachable("kubectl proxy isn't answering (No such file or directory).") }
+        return HTTPResponse(status: 200, headers: [("Content-Type", "application/json")], body: Data("{}".utf8))
+    }
+
+    func send(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) async throws -> HTTPResponse { try answer() }
+
+    func send(
+        _ method: HTTPMethod, _ path: String, length: Int, body: @escaping @Sendable () async throws -> Data?, headers: [(String, String)],
+        sent: @escaping @Sendable (Int) -> Void
+    ) async throws -> HTTPResponse { try answer() }
+
+    func receive(_ method: HTTPMethod, _ path: String, headers: [(String, String)], consume: (Data) async throws -> Void) async throws {
+        try await consume(try answer().body)
+    }
+
+    func ready() async throws -> HTTPResponse { try answer() }
+
+    func stream(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) -> AsyncThrowingStream<Data, Error> {
+        let answered = Result { try answer() }
+        return AsyncThrowingStream { continuation in
+            switch answered {
+            case .success(let response): continuation.yield(response.body)
+            case .failure(let error): continuation.finish(throwing: error)
+            }
+            continuation.finish()
+        }
     }
 }
 

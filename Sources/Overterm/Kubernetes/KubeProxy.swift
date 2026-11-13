@@ -66,7 +66,9 @@ enum KubeProxyFlags {
 }
 
 /// Where the proxies' sockets are: a private folder under `/tmp`, one for
-/// this process, each socket named by a short hash of its context.
+/// this process, each socket named by a short hash of its context — a
+/// read-only proxy's apart from a writable one's (`socket(for:readOnly:)`)
+/// — and the proxy's own number (`socket(_:proxy:)`).
 ///
 /// Not the support folder: there the path was 132 bytes and kubectl's bind
 /// failed (the spike) — a unix socket's path is 104 bytes with its NUL, and
@@ -101,12 +103,61 @@ struct KubeSocketFolder: Sendable {
 
     /// The socket's path for `context` — throws when it would be too long
     /// for a unix socket (a base folder deep in a temporary directory).
-    func socket(for context: String) throws -> String {
-        let socket = (path as NSString).appendingPathComponent(Self.name(for: context))
+    ///
+    /// A read-only proxy's is `<hash>-ro.sock`, never the writable one's:
+    /// a context whose writability changes gets a new proxy with the other
+    /// flags, and the old one may still be starting — a proxy closed while
+    /// it opened. kubectl replaces whatever is at its path when it binds,
+    /// so on one path the later of the two took the socket, the other was
+    /// closed with it, and the proxy kept had none: every request to it
+    /// failed (No such file or directory) until it was closed as idle.
+    func socket(for context: String, readOnly: Bool = false) throws -> String {
+        var name = Self.name(for: context)
+        if readOnly { name = String(name.dropLast(".sock".count)) + "-ro.sock" }
+        let socket = (path as NSString).appendingPathComponent(name)
         guard socket.utf8.count <= Self.maxPathBytes else {
             throw KubeProxyProblem.socket("The socket's path would be \(socket.utf8.count) bytes; a unix socket's is \(Self.maxPathBytes) at most.")
         }
         return socket
+    }
+
+    /// A new proxy's path for `context`: `socket(for:readOnly:)` with the
+    /// next number of the run (`socket(_:proxy:)`) — what every planned
+    /// proxy listens at.
+    func proxySocket(for context: String, readOnly: Bool) throws -> String {
+        try Self.socket(socket(for: context, readOnly: readOnly), proxy: Self.numbers.next())
+    }
+
+    /// The run's proxy numbers, one a planned proxy.
+    private static let numbers = ProxyNumbers()
+
+    private final class ProxyNumbers: @unchecked Sendable {
+        private let lock = NSLock()
+        private var last: UInt64 = 0
+
+        func next() -> UInt64 {
+            lock.lock()
+            defer { lock.unlock() }
+            last += 1
+            return last
+        }
+    }
+
+    /// One proxy's own path: `socket` with the proxy's number before
+    /// `.sock` — `<hash>[-ro]-<n>.sock`, its metrics socket beside it
+    /// `<hash>[-ro]-<n>-metrics.sock`. No two proxies of a run share a path,
+    /// whatever made the second: other flags, another Prometheus Service,
+    /// the name moved to another cluster. A proxy closed while it opened
+    /// binds late, and kubectl replaces whatever is at its path when it
+    /// binds — on a shared one it took the new proxy's socket and removed
+    /// it when it was ended.
+    static func socket(_ socket: String, proxy number: UInt64) throws -> String {
+        let stem = socket.hasSuffix(".sock") ? String(socket.dropLast(".sock".count)) : socket
+        let path = "\(stem)-\(number).sock"
+        guard path.utf8.count <= maxPathBytes else {
+            throw KubeProxyProblem.socket("The socket's path would be \(path.utf8.count) bytes; a unix socket's is \(maxPathBytes) at most.")
+        }
+        return path
     }
 
     /// Makes the folder (0700), or checks the one there: a directory, not a

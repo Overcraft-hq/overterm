@@ -333,7 +333,9 @@ final class KubeProxyTests: XCTestCase {
         let spec = try await planner.plan(
             Self.context("arn:aws:eks:eu-west-1:111122223333:cluster/fake-prod", writable: false), configuration: KubeProxies.Configuration(kubectlPath: kubectl.path),
             serverMinor: nil)
-        XCTAssertEqual(spec.socket, try folder.socket(for: "arn:aws:eks:eu-west-1:111122223333:cluster/fake-prod"))
+        let stem = try folder.socket(for: "arn:aws:eks:eu-west-1:111122223333:cluster/fake-prod", readOnly: true)
+        XCTAssertTrue(spec.socket.hasPrefix(String(stem.dropLast(".sock".count)) + "-"), spec.socket)
+        XCTAssertTrue(spec.socket.hasSuffix(".sock"), spec.socket)
         XCTAssertEqual(spec.environment["KUBECONFIG"], kubeconfig.path)
         XCTAssertNotNil(spec.cacheDirectory, "a guarded run's own cache")
 
@@ -446,7 +448,8 @@ final class KubeProxyTests: XCTestCase {
             XCTAssertFalse((200..<300).contains(variant.status), "\(path): \(variant.status)")
         }
         // Any Host but localhost is refused.
-        let socket = try planner.folder.socket(for: "fake-dev")
+        let planned = await proxies.socket("fake-dev")
+        let socket = try XCTUnwrap(planned)
         for host in ["example.com", "127.0.0.1", "localhost.evil"] {
             let other = UnixHTTPTransport(address: .unix(socket), host: host, readinessPath: "/version", service: "test")
             let refused = try await other.send(.GET, "/api/v1/namespaces/default/pods", body: nil, headers: [])

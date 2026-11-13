@@ -457,6 +457,12 @@ actor KubeProxies {
         }
     }
 
+    /// The socket `name`'s proxy (with `prometheus`, its metrics proxy)
+    /// listens at, once planned: what a test reaches it by directly.
+    func socket(_ name: String, prometheus: KubePrometheusService? = nil) -> String? {
+        entries[Self.key(name, prometheus)]?.spec?.socket
+    }
+
     /// One request done: its problem kept when it stops the context, the
     /// sign-in released, the server's minor noted.
     private func finish(
