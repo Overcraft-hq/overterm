@@ -107,13 +107,20 @@ struct KubeListOptions: Hashable, Sendable {
     /// binding's one namespace, with `metadata` (gitops.md 4.2). Every
     /// other list's rows are read as before.
     var owners = false
+    /// The rows keep Argo CD's marks (`KubeRow.marks`, `KubeMarkWire`'s
+    /// allow-list), and carry their metadata for them: the GitOps section's
+    /// reads from marks (gitops.md 14.4.1). No list asks it yet.
+    var marks = false
 
-    init(labelSelector: String? = nil, fieldSelector: String? = nil, metadata: Bool = false, objects: Bool = false, owners: Bool = false) {
+    init(
+        labelSelector: String? = nil, fieldSelector: String? = nil, metadata: Bool = false, objects: Bool = false, owners: Bool = false, marks: Bool = false
+    ) {
         self.labelSelector = labelSelector
         self.fieldSelector = fieldSelector
         self.metadata = metadata
         self.objects = objects
         self.owners = owners
+        self.marks = marks
     }
 }
 
@@ -461,12 +468,12 @@ struct KubeClient: Sendable {
                     kind.path(namespace: namespace),
                     [
                         ("limit", String(pageSize)), ("continue", token), ("labelSelector", options.labelSelector), ("fieldSelector", options.fieldSelector),
-                        ("includeObject", Self.includeObject(kind, scope, metadata: options.metadata, objects: options.objects)),
+                        ("includeObject", Self.includeObject(kind, scope, metadata: options.metadata || options.marks, objects: options.objects)),
                     ])
                 let page: KubeTable
                 do {
                     page = try KubeTableReader.read(
-                        try await get(path, accept: Self.tableAccept).body, namespace: namespace, columns: whole?.columns, kind: kind, owners: options.owners)
+                        try await get(path, accept: Self.tableAccept).body, namespace: namespace, columns: whole?.columns, kind: kind, owners: options.owners, marks: options.marks)
                 } catch let error as KubeAPIError where error.isGone && token != nil && restarts < 3 {
                     // The `continue` token expired (about 5 minutes): from the start.
                     restarts += 1
@@ -582,7 +589,7 @@ struct KubeClient: Sendable {
     private func watchPath(_ kind: KubeResourceKind, _ scope: KubeScope, _ options: KubeListOptions, from version: String?) -> String {
         var items: [(String, String?)] = [
             ("watch", "1"), ("allowWatchBookmarks", "true"), ("labelSelector", options.labelSelector), ("fieldSelector", options.fieldSelector),
-            ("includeObject", Self.includeObject(kind, scope, metadata: options.metadata, objects: options.objects)), ("timeoutSeconds", String(watchTimeout())),
+            ("includeObject", Self.includeObject(kind, scope, metadata: options.metadata || options.marks, objects: options.objects)), ("timeoutSeconds", String(watchTimeout())),
         ]
         if let version {
             items.insert(("resourceVersion", version), at: 1)
@@ -604,7 +611,7 @@ struct KubeClient: Sendable {
         let namespace = scope.namespace(for: kind)
         return AsyncThrowingStream { continuation in
             let task = Task {
-                var decoder = KubeWatchDecoder(columns: columns, namespace: namespace, kind: kind, owners: options.owners)
+                var decoder = KubeWatchDecoder(columns: columns, namespace: namespace, kind: kind, owners: options.owners, marks: options.marks)
                 do {
                     for try await piece in source {
                         for event in try decoder.feed(piece) { continuation.yield(event) }
@@ -883,7 +890,7 @@ struct KubeClient: Sendable {
         listEnded: OSAllocatedUnfairLock<Bool>? = nil, _ handle: (KubeWatchEvent, [KubeColumn]) throws -> Void
     ) async throws -> Ending {
         let source = connection.stream(watchPath(kind, scope, options, from: version), headers: [("Accept", Self.tableAccept)])
-        var decoder = KubeWatchDecoder(columns: columns, namespace: scope.namespace(for: kind), kind: kind, owners: options.owners)
+        var decoder = KubeWatchDecoder(columns: columns, namespace: scope.namespace(for: kind), kind: kind, owners: options.owners, marks: options.marks)
         do {
             if let listEnded {
                 for try await piece in Self.bounded(source, silent: streamingListDeadline, quiet: streamingListQuiet, unless: listEnded) {

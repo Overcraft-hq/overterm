@@ -131,6 +131,14 @@ struct KubeTrackingID: Equatable, Hashable, Sendable {
 
     static let installationAnnotation = "argocd.argoproj.io/installation-id"
 
+    /// An app's instance name as a label carries it
+    /// (`argocd.argoproj.io/instance`, `app.kubernetes.io/instance`),
+    /// checked as the tracking id's app part is, and at most 63 characters
+    /// — a label value's bound; nil for anything else.
+    static func instanceLabel(_ value: String) -> String? {
+        value.utf8.count <= maxLabel && isInstance(value) ? value : nil
+    }
+
     /// An installation id, checked as the app part is: at most 63
     /// characters of `[a-z0-9._-]`.
     static func installation(_ value: String) -> String? {
