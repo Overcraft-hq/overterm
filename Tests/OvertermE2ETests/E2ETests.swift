@@ -52,6 +52,10 @@ final class E2ETests: XCTestCase {
         // No credential of the shell's reaches a scenario's panes; the app
         // refuses to run with one (TerraformGuards.refusedCredentials).
         for name in env.keys where Self.carriesCredential(name) { env.removeValue(forKey: name) }
+        // Nor any of git's: run from a git hook or `git bisect run`, a
+        // scenario's shells and its own git worked in this checkout's .git
+        // (GIT_DIR) — once setting core.bare there.
+        for name in env.keys where name.hasPrefix("GIT_") { env.removeValue(forKey: name) }
         extra.forEach { env[$0.key] = $0.value }
         process.environment = env
         let out = Pipe()

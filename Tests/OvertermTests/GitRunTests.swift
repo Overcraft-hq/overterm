@@ -103,3 +103,23 @@ final class GitRunTests: XCTestCase {
         XCTAssertLessThan(Date().timeIntervalSince(start), 5)
     }
 }
+
+extension GitRunTests {
+    /// Started from a git hook or `git bisect run`, the app inherits the
+    /// parent's repository: every call names its folder, so none of it
+    /// reaches git — a scenario's `git init` once set core.bare in
+    /// Overterm's own .git that way.
+    func testGitNeverInheritsARepositoryFromTheEnvironment() async throws {
+        let inherited = ["GIT_DIR": "/elsewhere/.git", "GIT_WORK_TREE": "/elsewhere", "GIT_INDEX_FILE": "/elsewhere/.git/index", "PATH": "/usr/bin", "GIT_CONFIG_GLOBAL": "/dev/null"]
+        let environment = Git.environment(from: inherited)
+        XCTAssertNil(environment["GIT_DIR"])
+        XCTAssertNil(environment["GIT_WORK_TREE"])
+        XCTAssertNil(environment["GIT_INDEX_FILE"])
+        XCTAssertEqual(environment["PATH"], "/usr/bin")
+        XCTAssertEqual(environment["GIT_CONFIG_GLOBAL"], "/dev/null", "not a repository's: kept")
+        XCTAssertEqual(environment["GIT_TERMINAL_PROMPT"], "0")
+        // git's own list of what is local to a repository, all of it.
+        let local = try await Git.run(["rev-parse", "--local-env-vars"], in: tmp)
+        XCTAssertEqual(Set(local.split(separator: "\n").map(String.init)), Git.repositoryVariables)
+    }
+}

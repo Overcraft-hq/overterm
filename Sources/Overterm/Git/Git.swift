@@ -99,6 +99,28 @@ enum Git {
     /// stays under it (FileTreeModel.checkIgnored).
     static let maxArguments = 4000
 
+    /// What says which repository git works in, rather than the folder it
+    /// runs in (`git rev-parse --local-env-vars`). Every call names its
+    /// folder, so none of these is ever ours: an app started from a git
+    /// hook or `git bisect run` inherits the parent's `GIT_DIR`, and a
+    /// scenario's `git init`/`commit` for its own scratch repository then
+    /// ran against that one — it set `core.bare = true` in Overterm's own
+    /// `.git/config`.
+    static let repositoryVariables: Set<String> = [
+        "GIT_ALTERNATE_OBJECT_DIRECTORIES", "GIT_CONFIG", "GIT_CONFIG_PARAMETERS", "GIT_CONFIG_COUNT", "GIT_OBJECT_DIRECTORY",
+        "GIT_DIR", "GIT_WORK_TREE", "GIT_IMPLICIT_WORK_TREE", "GIT_GRAFT_FILE", "GIT_INDEX_FILE", "GIT_NO_REPLACE_OBJECTS",
+        "GIT_REPLACE_REF_BASE", "GIT_PREFIX", "GIT_SHALLOW_FILE", "GIT_COMMON_DIR",
+    ]
+
+    /// A git child's environment: the app's, without `repositoryVariables`,
+    /// and never blocking on a credential or editor prompt nobody can see.
+    static func environment(from inherited: [String: String]) -> [String: String] {
+        var environment = inherited.filter { !repositoryVariables.contains($0.key) }
+        environment["GIT_TERMINAL_PROMPT"] = "0"
+        environment["GIT_OPTIONAL_LOCKS"] = "0"
+        return environment
+    }
+
     static func runBlocking(
         _ tool: URL, _ arguments: [String], in directory: URL, success: Set<Int32>, timeout: TimeInterval?,
         outputLimit: Int? = nil, stderr: (@Sendable (Data) -> Void)? = nil, running: RunningProcess = RunningProcess()
@@ -110,11 +132,7 @@ enum Git {
         process.executableURL = tool
         process.arguments = arguments
         process.currentDirectoryURL = directory
-        var environment = ProcessInfo.processInfo.environment
-        // Never block on a credential or editor prompt nobody can see.
-        environment["GIT_TERMINAL_PROMPT"] = "0"
-        environment["GIT_OPTIONAL_LOCKS"] = "0"
-        process.environment = environment
+        process.environment = environment(from: ProcessInfo.processInfo.environment)
         let out = Pipe()
         let err = Pipe()
         process.standardOutput = out
