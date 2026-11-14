@@ -47,8 +47,8 @@ extension KubeGitOpsMatch {
         /// B without a namespace (in the binding's only), C, D: each app's words.
         var probably: [AppKey: [String]] = [:]
         var manifests = KubeCheckoutManifests.Read()
-        /// What listing couldn't read: refused, cut — said.
-        var notes: [String] = []
+        /// What listing couldn't read: refused, cut — said, its counts kept as numbers.
+        var notes: [KubeCountedText] = []
         /// Every workload kind's rows read whole across the cluster: an
         /// app's members elsewhere are all counted, not a floor.
         var whole = true
@@ -64,7 +64,7 @@ extension KubeGitOpsMatch {
     /// namespace is compared in.
     static func markedListing(
         _ apps: [KubeMarkedApp], manifests: KubeCheckoutManifests.Read, checkout: Checkout, namespace: String, reason: KubeMarkedAppsMode.Reason,
-        notes: [String] = [], whole: Bool = true, rollouts: RolloutsRead = .notServed, fromSection: Date? = nil
+        notes: [KubeCountedText] = [], whole: Bool = true, rollouts: RolloutsRead = .notServed, fromSection: Date? = nil
     ) -> MarkedListing {
         var listing = MarkedListing(reason: reason, manifests: manifests, notes: notes, whole: whole, rollouts: rollouts, fromSection: fromSection)
         // Each member by the object its own tracking id names.
@@ -205,7 +205,8 @@ extension KubeGitOpsMatch {
 
     /// A — `bound`, each app the bound workloads' own marks name, with
     /// those workloads — beside what the listing found (nil: B not run).
-    static func marked(bound: [(app: KubeMarkedApp, workloads: [KubeWorkloadRef])], listing: MarkedListing?) -> MarkedAnswer {
+    /// `plain`: what was compared said with an agent's plain counts.
+    static func marked(bound: [(app: KubeMarkedApp, workloads: [KubeWorkloadRef])], listing: MarkedListing?, plain: Bool = false) -> MarkedAnswer {
         var answer = MarkedAnswer()
         var order: [AppKey] = []
         var found: [AppKey: MarkedFound] = [:]
@@ -241,9 +242,9 @@ extension KubeGitOpsMatch {
             }
         }
         if answer.found.isEmpty, answer.probably.isEmpty, answer.tooMany == nil {
-            answer.nothing = nothingFound(listing)
+            answer.nothing = nothingFound(listing, plain: plain)
         } else {
-            answer.caveats = caveats(listing)
+            answer.caveats = caveats(listing, plain: plain)
         }
         return answer
     }
@@ -252,8 +253,9 @@ extension KubeGitOpsMatch {
     static let maxProbable = 3
 
     /// "No marked app matched: 412 manifests compared, 37 Helm templates
-    /// not rendered, …" — never that nothing deploys it.
-    static func nothingFound(_ listing: MarkedListing) -> String {
+    /// not rendered, …" — never that nothing deploys it (`plain`: an
+    /// agent's counts, never the locale's `1.412`).
+    static func nothingFound(_ listing: MarkedListing, plain: Bool = false) -> String {
         let manifests = listing.manifests
         var parts: [String] = []
         if let failed = manifests.failed {
@@ -261,18 +263,18 @@ extension KubeGitOpsMatch {
         } else if manifests.files == 0 {
             parts.append("no committed manifest in this checkout")
         } else {
-            parts.append("\(manifests.documents.formatted()) \(manifests.documents == 1 ? "manifest" : "manifests") compared")
+            parts.append("\(KubeCountedText.number(manifests.documents, plain: plain)) \(manifests.documents == 1 ? "manifest" : "manifests") compared")
         }
-        return "No marked app matched: " + (parts + caveats(listing)).joined(separator: ", ")
+        return "No marked app matched: " + (parts + caveats(listing, plain: plain)).joined(separator: ", ")
     }
 
     /// What B's compare couldn't do: templates not rendered, a
     /// kustomization's prefix, folders skipped, links not followed, the
     /// bound, what listing couldn't read.
-    static func caveats(_ listing: MarkedListing) -> [String] {
+    static func caveats(_ listing: MarkedListing, plain: Bool = false) -> [String] {
         let manifests = listing.manifests
         var said: [String] = []
-        func count(_ number: Int, _ one: String, _ many: String) -> String { "\(number.formatted()) \(number == 1 ? one : many)" }
+        func count(_ number: Int, _ one: String, _ many: String) -> String { "\(KubeCountedText.number(number, plain: plain)) \(number == 1 ? one : many)" }
         if manifests.templates > 0 { said.append(count(manifests.templates, "Helm template", "Helm templates") + " not rendered") }
         if manifests.prefixed > 0 {
             said.append(count(manifests.prefixed, "kustomization's", "kustomizations'") + " namePrefix or nameSuffix not applied")
@@ -280,8 +282,8 @@ extension KubeGitOpsMatch {
         if manifests.skipped > 0 { said.append(count(manifests.skipped, "file", "files") + " under test or example folders skipped") }
         if manifests.links > 0 { said.append(count(manifests.links, "link", "links") + " not followed") }
         if manifests.unreadable > 0 { said.append(count(manifests.unreadable, "file", "files") + " not read as YAML") }
-        if let cut = manifests.cut { said.append(cut) }
-        return said + listing.notes
+        if let cut = manifests.cut { said.append(cut.said(plain: plain)) }
+        return said + listing.notes.map { $0.said(plain: plain) }
     }
 
     // MARK: Where it stands, whose health
@@ -309,6 +311,18 @@ extension KubeGitOpsMatch {
             case .reason(.forbidden), .refused: "its Application can't be read in \(context) (forbidden)"
             case .notFound: "its Application wasn't found in argocd; Argo CD's namespace here is unknown"
             case .unread: "its Application couldn't be read in \(context)"
+            }
+        }
+
+        /// Where what only the Application knows is, in the place's words
+        /// (`KubeMarkedAppDetail.whereTheApplicationIs`): "Argo CD's cluster"
+        /// only where Applications aren't served and argoproj.io answered.
+        func whereApplication(probable: Bool = false) -> String {
+            switch self {
+            case .reason(let reason): KubeMarkedAppDetail.whereTheApplicationIs(.only(reason), probable: probable)
+            case .absent: KubeMarkedAppDetail.whereTheApplicationIs(.only(.noApplications), probable: probable)
+            case .refused: KubeMarkedAppDetail.whereTheApplicationIs(.only(.forbidden), probable: probable)
+            case .notFound, .unread: KubeMarkedAppDetail.whereTheApplicationIs(.off, probable: probable)
             }
         }
     }

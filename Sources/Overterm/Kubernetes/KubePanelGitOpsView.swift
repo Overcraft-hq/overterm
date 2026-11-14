@@ -125,6 +125,11 @@ struct KubePanelGitOpsView: View {
                 Button("Open") { gitOps.openMarked(match) }
                     .help("Its detail on the page: its objects as Argo CD would draw them, each with its health")
                     .accessibilityIdentifier("kubernetes.panel.gitops.marked.open")
+                if match.asksWhy {
+                    Button("Ask Why") { gitOps.askWhy(match) }
+                        .help("Ask an agent why: its objects' states, conditions and pods, scrubbed — shown whole before it is sent")
+                        .accessibilityIdentifier("kubernetes.panel.gitops.marked.askWhy")
+                }
             }
             .buttonStyle(.link)
             .font(.system(size: ChromeMetrics.text(11)))

@@ -344,6 +344,9 @@ final class KubernetesPageModel: ObservableObject {
     /// undo them.
     var markedOrigin: KubeMarkedOrigin?
     private var markedAppsWatch: AnyCancellable?
+    /// What the marks' reads could say, and the section's mode, kept with
+    /// its apps for the rail and `k8s_gitops` as they change.
+    private var markedKeepWatch: AnyCancellable?
     private var gitOpsWatch: AnyCancellable?
     /// The section a detail opened from a section's row goes back to (`[`).
     var detailOpenedFrom: KubeSection = .overview
@@ -387,6 +390,8 @@ final class KubernetesPageModel: ObservableObject {
 
     /// The object Ask Why is reading a brief for, while it does.
     @Published var askingWhy: KubeObjectRef?
+    /// The app read from marks Ask Why is reading a brief for, while it does.
+    @Published var askingWhyApp: KubeTrackingID.AppKey?
 
     /// The detail beside the list: one object, read once as it opens.
     /// How the last write stands: asked, sent, done or why not.
@@ -559,6 +564,10 @@ final class KubernetesPageModel: ObservableObject {
                     self?.keepMarkedApps()
                 }
             }
+        // A refusal or a cut with no app changed, the mode again: kept as they are (after the change).
+        markedKeepWatch = gitOps.marked.$reading.dropFirst().map { _ in () }
+            .merge(with: gitOps.$marksMode.removeDuplicates().dropFirst().map { _ in () })
+            .sink { [weak self] in DispatchQueue.main.async { self?.keepMarkedApps() } }
         // What the detail reads, the section keeps: it settles nothing twice (gitops.md 14.4.2).
         markedRead.settled = { [weak self] id, wire, at in self?.gitOps.marked.settled(byDetail: id, wire, at: at) }
         // The context's marks mode, for an apply's warning there.

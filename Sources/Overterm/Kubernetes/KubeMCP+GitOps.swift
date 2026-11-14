@@ -23,6 +23,14 @@ import Foundation
 /// match with the deployed sentence (`KubeGitOpsReach`, the checkout's
 /// git, nothing fetched) and Flux's attempted line.
 ///
+/// Where no Argo CD Application here deploys them — not served,
+/// argoproj.io not answering, refused everywhere, served with none listed —
+/// the answer starts with Argo CD's apps read from the marks on their
+/// objects, in the mode's words (`KubeMCP+Marks`, gitops.md 14.2.6, D6);
+/// `kind: "marks"` lists only those, beside Applications too; `kind:
+/// "application"` never one. `checkout: true` says the checkout's apps
+/// read from marks with their health, as the rail does.
+///
 /// Every message has been through 5.3 already (the summaries'); the whole
 /// answer goes through `Secrets` once more. No write tool exists for
 /// GitOps; `k8s_apply` on these kinds has the person type the name (G0d).
@@ -38,9 +46,11 @@ extension KubeMCP {
     static var gitOpsCache: KubeGitOpsMatchCache = .shared
     static var gitOpsCheckouts: KubeGitOpsCheckouts = .shared
 
-    /// `kind`: which objects.
+    /// `kind`: which objects. `marks`: Argo CD's apps read from the marks
+    /// on their objects (14.2.6) — never `application`'s, which are Argo
+    /// CD's own Applications.
     enum GitOpsFilter: String, CaseIterable, Sendable {
-        case application, applicationset, kustomization, helmrelease, source, all
+        case application, applicationset, kustomization, helmrelease, source, marks, all
 
         init?(typed: String) {
             switch typed.lowercased() {
@@ -49,6 +59,7 @@ extension KubeMCP {
             case "kustomization", "kustomizations", "ks", "kustomizations.kustomize.toolkit.fluxcd.io": self = .kustomization
             case "helmrelease", "helmreleases", "hr", "helmreleases.helm.toolkit.fluxcd.io": self = .helmrelease
             case "source", "sources": self = .source
+            case "marks", "mark", "marked": self = .marks
             case "all", "*": self = .all
             default: return nil
             }
@@ -57,19 +68,21 @@ extension KubeMCP {
         func includes(_ role: KubeGitOpsObject.Role) -> Bool {
             switch (self, role) {
             case (.all, _), (.application, .application), (.applicationset, .applicationSet), (.kustomization, .kustomization),
-                (.helmrelease, .helmRelease), (.source, .source):
+                (.helmrelease, .helmRelease), (.source, .source), (.marks, .markedApp):
                 true
             default: false
             }
         }
 
         /// The kinds read: those shown, and what their state rests on (a
-        /// Flux object's sources and charts, an ApplicationSet's Applications).
+        /// Flux object's sources and charts, an ApplicationSet's
+        /// Applications); `marks`, Argo CD's Applications — which marked
+        /// apps have none here.
         var reads: Set<KubeGitOpsSummary.Kind> {
             let sources = Set(KubeGitOpsSummary.summarised.filter { $0.group == "source.toolkit.fluxcd.io" })
             func kind(_ group: String, _ resource: String) -> KubeGitOpsSummary.Kind { .init(group: group, resource: resource) }
             switch self {
-            case .application: return [kind("argoproj.io", "applications")]
+            case .application, .marks: return [kind("argoproj.io", "applications")]
             case .applicationset: return [kind("argoproj.io", "applications"), kind("argoproj.io", "applicationsets")]
             case .kustomization: return sources.union([kind("kustomize.toolkit.fluxcd.io", "kustomizations")])
             case .helmrelease: return sources.union([kind("helm.toolkit.fluxcd.io", "helmreleases")])
@@ -88,7 +101,7 @@ extension KubeMCP {
             case .applicationset: "ApplicationSet"
             case .kustomization: "Kustomization"
             case .helmrelease: "HelmRelease"
-            case .source, .all: nil
+            case .source, .marks, .all: nil
             }
         return name.flatMap { KubePanelGitOps.kind(of: $0, in: discovery) }
     }
@@ -98,43 +111,93 @@ extension KubeMCP {
     static func gitops(_ call: Call, _ target: Target, kubernetes: KubernetesModel, pane: String?, list: KubeContextList, now: Date) async throws -> String {
         let typed = call.string("kind") ?? "all"
         guard let filter = GitOpsFilter(typed: typed) else {
-            throw BrowserMCP.ToolError(message: "“kind” is application, applicationset, kustomization, helmrelease, source or all.")
+            throw BrowserMCP.ToolError(message: "“kind” is application, applicationset, kustomization, helmrelease, source, marks or all.")
         }
         let limit = call.int("limit", default: defaultRows, in: 1...maxRows)
         let failing = call.bool("failing_only")
+        let every = try marksState(call)
         if call.bool("checkout") {
             return try await gitOpsCheckout(call, kubernetes: kubernetes, pane: pane, list: list, filter: filter, failing: failing, limit: limit, now: now)
         }
         let discovery = try await discovery(for: target, kubernetes: kubernetes)
         var lines = [target.header()]
-        guard KubeGitOpsSummary.served(discovery) else {
+        let served = KubeGitOpsSummary.served(discovery)
+        let marksAsked = filter == .all || filter == .marks
+        guard served || marksAsked else {
             lines.append(unservedNote(discovery, context: target.context.name, marks: false))
+            if filter == .application || filter == .applicationset { lines.append(marksHint) }
             return KubeMCPText.finished(lines.joined(separator: "\n"))
         }
-        let wanted = filter.reads
+        // The section's apps from marks when its store answers for this scope: nothing is read for them.
+        let kept = marksAsked ? keptMarks(target, kubernetes: kubernetes, now: now) : nil
+        // The kinds the filter reads; kind marks, Argo CD's Applications alone — which marked apps have none here — unless the store said.
+        let wanted = filter == .marks && kept != nil ? [] : filter.reads
         let kinds = KubeGitOpsSummary.kinds(discovery).filter { wanted.contains(.init(group: $0.group, resource: $0.resource)) }
         var objects: [KubeGitOpsObject] = []
         var notes: [String] = []
+        var applications = KubeMarkedAppsMode.ApplicationsRead.notYetListed
+        var unlisted: String?
         for kind in kinds {
             let read = await gitOpsRead(kind, target, now: now)
             objects += read.objects
             notes += read.notes
+            if kind.fullName == KubeGitOpsSession.applications {
+                applications = read.presence
+                unlisted = read.unlisted
+            }
+        }
+        // Argo CD's apps from marks, where no Application here deploys them (14.12's first consequence); kind marks beside them too.
+        var marks: (lines: [String], hint: String?) = ([], nil)
+        if marksAsked {
+            marks = await gitOpsMarks(
+                filter: filter, target, discovery: discovery, applications: applications, unlisted: unlisted, kept: kept, kubernetes: kubernetes, failing: failing,
+                every: every, limit: limit, now: now)
+        }
+        lines += marks.lines
+        if !served, let flux = fluxUnserved(discovery, context: target.context.name) { lines.append(flux) }
+        guard filter != .marks, served else {
+            // Kind marks: what its read of the Applications said — refused, where it read instead — after the apps; a
+            // read that couldn't say which have none here is said by its cause in the marks' own sentence.
+            if filter == .marks, applications != .notYetListed { lines += notes }
+            return KubeMCPText.finished(lines.joined(separator: "\n"))
         }
         let ranked = KubeGitOpsSummary.ranked(objects, now: now)
         var peers: KubeGitOpsLadder.Peers = [:]
         for object in ranked { peers[object.key] = object }
         var shown = KubeGitOpsSummary.kept(ranked, scope: target.scope).filter { filter.includes($0.role) }
         if failing { shown = shown.filter(\.state.isProblem) }
-        lines.append(KubeMCPGitOpsText.counts(shown, filter: filter, failing: failing, scope: target.scope))
+        // Beside the marks' apps, Flux's own: its count only when it has any.
+        if !shown.isEmpty || marks.lines.isEmpty { lines.append(KubeMCPGitOpsText.counts(shown, filter: filter, failing: failing, scope: target.scope)) }
         lines += shown.prefix(limit).map { KubeMCPGitOpsText.line($0, peers: peers, now: now) }
         if shown.count > limit { lines.append("… \(shown.count - limit) more not listed: narrow it with kind, failing_only or a namespace, or raise limit.") }
         lines += notes
+        if filter == .application || filter == .applicationset {
+            // Argo CD's own Applications only: the apps from marks are kind marks'.
+            if case .only = KubeMarkedAppsMode.of(discovery: discovery, applications: applications, marked: []) { lines.append(marksHint) }
+        }
+        if let hint = marks.hint { lines.append(hint) }
         return KubeMCPText.finished(lines.joined(separator: "\n"))
     }
 
+    /// One kind's read: its objects, what was cut or refused (said), and
+    /// what it says of the kind's presence — Applications': which marked
+    /// apps have none here (14.3) — read whole across the cluster, in some
+    /// namespaces only, refused everywhere; `.notYetListed` when it can't
+    /// say (cut, failed), and which (`unlisted`): "were cut at …", or
+    /// "couldn't be read — <why>" — never one said for the other.
+    struct GitOpsKindRead {
+        var objects: [KubeGitOpsObject] = []
+        var notes: [String] = []
+        var presence = KubeMarkedAppsMode.ApplicationsRead.notYetListed
+        var unlisted: String?
+    }
+
+    /// The agent's bound, as a cut's cause says it.
+    private static var gitOpsBound: String { "an agent's bound (\(gitOpsObjects) objects or \(gitOpsBytes >> 20) MB a kind)" }
+
     /// One kind's objects at the agent's bounds: across the cluster, else
     /// — refused — where it lives. What was cut or refused, said.
-    private static func gitOpsRead(_ kind: KubeResourceKind, _ target: Target, now: Date) async -> (objects: [KubeGitOpsObject], notes: [String]) {
+    private static func gitOpsRead(_ kind: KubeResourceKind, _ target: Target, now: Date) async -> GitOpsKindRead {
         let client = target.client
         let title = KubeKindCatalog.title(of: kind)
         func cut(_ paged: KubeGitOpsPaged, in place: String? = nil) -> String? {
@@ -142,15 +205,20 @@ extension KubeMCP {
                 "\(title)\(place.map { " in \($0)" } ?? ""): \($0.replacingOccurrences(of: "; the rest show their state only", with: "")); the rest not read — narrow it with a namespace or kind."
             }
         }
+        func ids(_ objects: [KubeGitOpsObject]) -> [KubeRowID] { objects.map(\.ref) }
         do {
             let paged = try await within {
                 try await client.pagedObjects(kind, in: nil, stopAfter: gitOpsObjects, totalBytes: gitOpsBytes, readAt: now)
             }
-            return (paged.objects, [cut(paged)].compactMap { $0 })
+            let whole = paged.cut == nil
+            return GitOpsKindRead(
+                objects: paged.objects, notes: [cut(paged)].compactMap { $0 }, presence: whole ? .acrossCluster(ids(paged.objects)) : .notYetListed,
+                unlisted: whole ? nil : "were cut at \(gitOpsBound)")
         } catch let error as KubeAPIError where error.isForbidden {
             // Refused across the cluster: where it lives.
         } catch {
-            return ([], ["\(title): couldn't be read — \(said(error))"])
+            let why = said(error)
+            return GitOpsKindRead(notes: ["\(title): couldn't be read — \(why)"], unlisted: "couldn't be read — \(why)")
         }
         var places = target.scope.names?.sorted() ?? []
         places.append(kind.group == "argoproj.io" ? KubeGitOps.argoDefaultNamespace : KubeGitOpsControllers.fluxNamespace)
@@ -160,7 +228,9 @@ extension KubeMCP {
         var objects: [KubeGitOpsObject] = []
         var notes: [String] = []
         var readIn: [String] = []
+        var whole: Set<String> = []
         var refused: [String] = []
+        var failed: String?
         // The kind's bound, objects and bytes, held across every place it is read in.
         var budget = KubeGitOpsBudget(objects: gitOpsObjects, bytes: gitOpsBytes)
         for place in places {
@@ -173,16 +243,33 @@ extension KubeMCP {
                 budget.spend(paged)
                 objects += paged.objects
                 readIn.append(place)
-                if let said = cut(paged, in: place) { notes.append(said) }
+                if let said = cut(paged, in: place) { notes.append(said) } else { whole.insert(place) }
             } catch let error as KubeAPIError where error.isForbidden || error.isNotFound {
                 refused.append(place)
             } catch {
-                notes.append("\(title) in \(place): couldn't be read — \(said(error))")
+                let why = said(error)
+                failed = failed ?? why
+                notes.append("\(title) in \(place): couldn't be read — \(why)")
             }
         }
         var said = "\(title): forbidden across the cluster; read in \(readIn.isEmpty ? "none" : readIn.joined(separator: ", "))"
         if !refused.isEmpty { said += "; refused in \(refused.joined(separator: ", "))" }
-        return (objects, [said + "."] + notes + [budget.said(title).map { $0 + " — narrow it with a namespace or kind." }].compactMap { $0 })
+        let presence: KubeMarkedAppsMode.ApplicationsRead
+        var unlisted: String?
+        if readIn.isEmpty {
+            presence = failed != nil || budget.said(title) != nil ? .notYetListed : .refused
+            if let failed {
+                unlisted = "are refused across the cluster and couldn't be read where they may be — \(failed)"
+            } else if presence == .notYetListed {
+                unlisted = "are refused across the cluster and weren't read where they may be: \(gitOpsBound) was spent"
+            }
+        } else {
+            presence = whole.isEmpty ? .notYetListed : .namespaces(whole, ids(objects))
+            if whole.isEmpty { unlisted = "are refused across the cluster and were cut at \(gitOpsBound) where they were read (\(readIn.joined(separator: ", ")))" }
+        }
+        return GitOpsKindRead(
+            objects: objects, notes: [said + "."] + notes + [budget.said(title).map { $0 + " — narrow it with a namespace or kind." }].compactMap { $0 },
+            presence: presence, unlisted: unlisted)
     }
 
     // MARK: checkout: true
@@ -214,16 +301,17 @@ extension KubeMCP {
             context: context.name, checkout: binding.checkout, namespace: binding.namespace, remotes: facts.remotesKey, mode: KubePanelGitOps.mode(of: discovery))
         if !served { notes.append(Self.unservedNote(discovery, context: context.name, marks: true)) }
 
-        // P1: the bound workloads, their owner marks and images, in the binding's namespace.
-        var workloads: [(ref: KubeWorkloadRef, owners: [KubeGitOpsOwner], images: [String])] = []
-        let options = KubeListOptions(labelSelector: binding.selector, metadata: true, owners: true)
+        // P1: the bound workloads, their owner marks, their Argo CD marks and images, in the binding's namespace.
+        var workloads: [KubePanelGitOps.Bound] = []
+        let options = KubeListOptions(labelSelector: binding.selector, metadata: true, owners: true, marks: true)
         for workload in KubeWorkloadKind.allCases {
             let kind = workload.kind
             do {
                 let table = try await within { try await client.list(kind, in: .namespace(binding.namespace), options: options) }
                 for row in table.rows where binding.includes(workload, row.id.name) {
                     let images = KubeDeployedCommit.images(inCell: row.cell("Images", in: table.columns)?.text)
-                    workloads.append((KubeWorkloadRef(kind: workload, name: row.id.name), row.owners, images))
+                    let member = KubeMarkedMember.row(row, kind: KubeMarkedKind(kind), columns: table.columns, now: now)
+                    workloads.append(KubePanelGitOps.Bound(ref: KubeWorkloadRef(kind: workload, name: row.id.name), owners: row.owners, images: images, member: member))
                 }
             } catch {
                 notes.append("Couldn't list \(kind.kind)s in \(binding.namespace): \(said(error))")
@@ -268,18 +356,39 @@ extension KubeMCP {
         for object in listing.objects.values where object.role == .application { if let namespace = object.ref.namespace { seen.insert(namespace) } }
         let held = listing.objects.values.contains { $0.role == .application } || read.objects.values.contains { $0.role == .application }
         let owners = KubePanelGitOps.resolved(read, seen: seen, noApplications: kubernetes.marksReason(of: context) == .noApplications && !held)
-        notes.insert(contentsOf: owners.problems, at: ownersSaid)
+
+        // A, B, C, D: Argo CD's apps read from marks (14.2.5) — where its Applications aren't read here, or a bound workload's own
+        // isn't —, said for kind all and kind marks alone: kind application is Argo CD's own Applications, and reads nothing for them.
+        let marksShown = filter == .all || filter == .marks
+        let marked =
+            marksShown
+            ? await gitOpsCheckoutMarks(
+                workloads, owners: owners, held: held, binding: binding, context: context, client: client, discovery: discovery, facts: facts, key: key,
+                kubernetes: kubernetes, now: now) : CheckoutMarks()
+        // An owner an app read from marks says now: its problem said by where its app's Application stands.
+        let problems = owners.unread.filter { entry in
+            guard marksShown, marked.derivedOwners.contains(entry.owner) else { return true }
+            return !(owners.refused.contains(entry.owner) || owners.undiscovered.contains(entry.owner) || owners.unplaced.contains(entry.owner))
+        }.map(\.said)
+        notes.insert(contentsOf: problems, at: ownersSaid)
 
         var objects = listing.objects
         objects.merge(owners.objects) { _, owner in owner }
         let owned = named.compactMap { owner, refs in owners.reads[owner].map { (owner: owner, workloads: refs, read: $0) } }
-        let found = KubeGitOpsMatch.found(
+        var found = KubeGitOpsMatch.found(
             owned: owned, objects: objects, workloads: workloads.map { ($0.ref, $0.images) }, checkout: facts, context: context.name)
+        // Their owners' "not in" lines are their apps' now — where those apps are said: kind all and kind marks.
+        // Kind application keeps the owner's own line, never "nothing found" for an owner it read.
+        if marksShown {
+            found.removeAll { marked.replaced.contains($0.key) && $0.whys.allSatisfy { if case .notInCluster = $0 { true } else { false } } }
+        }
         var matches: [(found: KubeGitOpsMatch.Found, object: KubeGitOpsObject?)] = found.map { found in
             (found, objects[found.key].map { KubeGitOpsSummary.evaluated($0, now: now, peers: objects) })
         }
         matches = matches.filter { match in match.object.map { filter.includes($0.role) } ?? (filter == .all || filter.rawValue == match.found.key.kind.lowercased()) }
         if failing { matches = matches.filter { $0.object?.state.isProblem ?? false } }
+        // The apps read from marks: kind all and kind marks, never kind application's.
+        let marksLines = marksShown ? KubeMCPMarksText.checkout(marked, failing: failing, limit: limit, context: context.name, now: now) : []
         matches.sort { a, b in
             switch (a.object, b.object) {
             case let (x?, y?): return KubeGitOpsSummary.ordered(x, y)
@@ -288,7 +397,7 @@ extension KubeMCP {
             default: return a.found.key.description < b.found.key.description
             }
         }
-        if matches.isEmpty {
+        if matches.isEmpty, marksLines.isEmpty {
             let searched = listing.searched.isEmpty ? "" : " (the search was cut: see below)"
             lines.append(
                 workloads.isEmpty
@@ -314,7 +423,8 @@ extension KubeMCP {
             if let fetched = answer.fetched { lines.append("  \(fetched)") }
         }
         if matches.count > limit { lines.append("… \(matches.count - limit) more not listed.") }
-        lines += notes
+        lines += marksLines
+        lines += notes + marked.notes
         return KubeMCPText.finished(lines.joined(separator: "\n"))
     }
 
@@ -388,6 +498,7 @@ enum KubeMCPGitOpsText {
             case .kustomization: "Kustomizations"
             case .helmrelease: "HelmReleases"
             case .source: "Flux sources"
+            case .marks: "apps read from marks"
             }
         let place = scope == .all ? "in any namespace" : "in or deploying into \(scope.said)"
         let failingSaid = failing ? " failing" : ""

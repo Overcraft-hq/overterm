@@ -45,6 +45,7 @@ final class KubeGitOpsMarksPageTests: XCTestCase {
         var confirms: [String] = []
         var commands: [String] = []
         var copied: [String] = []
+        var briefs: [KubeAgentBrief] = []
     }
 
     private func page(current: String) async throws -> (KubernetesPageModel, Box) {
@@ -68,6 +69,7 @@ final class KubeGitOpsMarksPageTests: XCTestCase {
         actions.confirmWrite = { confirmation, then in box.confirmations.append((confirmation, then)) }
         actions.confirm = { _, detail, _, _ in box.confirms.append(detail) }
         actions.runInTab = { command, _, _ in box.commands.append(command) }
+        actions.askWhy = { box.briefs.append($0) }
         page.actions = actions
         page.visible = true
         model.show()
@@ -148,7 +150,7 @@ final class KubeGitOpsMarksPageTests: XCTestCase {
     // MARK: A derived row's keys
 
     /// On a writable context and on production: `r`, `p`, ⌫, `s` and ⇧K
-    /// do nothing and send nothing; `a` waits for D6.
+    /// do nothing and send nothing (`a` asks an agent why: below).
     func testOnADerivedRowNoKeyWritesOrAsks() async throws {
         for context in ["kind-fake", "fake-prod"] {
             let (page, box) = try await page(current: context)
@@ -158,7 +160,7 @@ final class KubeGitOpsMarksPageTests: XCTestCase {
             XCTAssertNil(page.gitOpsSelectedRef, "no object of its own: nothing to write to")
             XCTAssertNil(page.writeTarget)
             api.forgetRequests()
-            for key in ["r", "p", "\u{7F}", "s", "K", "+", "-", "a"] {
+            for key in ["r", "p", "\u{7F}", "s", "K", "+", "-"] {
                 page.writeStatus = nil
                 XCTAssertFalse(page.press(key), "\(key) does nothing on \(context)")
                 XCTAssertNil(page.writeStatus, key)
@@ -183,12 +185,75 @@ final class KubeGitOpsMarksPageTests: XCTestCase {
         XCTAssertFalse(box.copied.last?.contains("--core") ?? true)
         XCTAssertFalse(box.copied.last?.contains("--kube-context") ?? true)
         let verbs = page.gitOpsVerbs(for: [row.id])
-        XCTAssertEqual(verbs.map(\.title), ["Open", "Copy as argocd (against your Argo CD server)", "Copy Name"])
+        XCTAssertEqual(verbs.map(\.title), ["Open", "Ask an Agent Why…", "Copy as argocd (against your Argo CD server)", "Copy Name"])
         let writes = Set(KubernetesPageModel.writeVerbOrder.map(\.title))
         XCTAssertTrue(verbs.allSatisfy { !writes.contains($0.title) && $0.place != .remove }, "no write in its menu")
-        verbs[1].perform()
+        verbs[2].perform()
         XCTAssertEqual(box.copied.last, "argocd app get \(instance)")
         XCTAssertEqual(api.writes, [])
+    }
+
+    // MARK: Ask Why (D6)
+
+    /// `a` on an app read from marks asks an agent why — on every one that
+    /// isn't Ready, Progressing included (a `0/3` StatefulSet is never
+    /// Failed under Argo CD's rules): its brief read by GETs, handed to the
+    /// window, the sentinel in nothing of it; one failing Deployment its
+    /// own brief with the app named; a Ready one says why not and asks
+    /// nothing. Its menu's Ask an Agent Why… is greyed with why on a Ready
+    /// one, and the detail's button asks the same. Nothing written.
+    func testAAsksAnAgentWhyOnADerivedAppProgressingToo() async throws {
+        let (page, box) = try await page(current: "fake-prod")
+        defer { page.model.hide() }
+        try await section(page)
+        try await until("settled by their objects", 30) { page.gitOps.marked.refetchIdle && page.gitOps.marked.isMerged }
+        let ledger = try derivedRow(page, spoke.statefulSet)
+        XCTAssertEqual(ledger.state, .progressing)
+        page.gitOpsView.selection = [ledger.id]
+        api.forgetRequests()
+        XCTAssertTrue(page.press("a"))
+        try await until("its brief") { !box.briefs.isEmpty }
+        let brief = try XCTUnwrap(box.briefs.last)
+        XCTAssertEqual(brief.message, "Why is Argo CD app \(spoke.statefulSet) still Progressing — 0/3 ready, StatefulSet acme-ledger-db?")
+        XCTAssertTrue(brief.text.contains("Argo CD runs in another cluster — not in your kubeconfig."), brief.text)
+        XCTAssertTrue(brief.text.contains("PRODUCTION context fake-prod"), brief.text)
+        XCTAssertTrue(brief.parts.first { $0.title == "pods" }?.text.contains("acme-ledger-db-0: Pending") == true, "\(brief.parts.map(\.title))")
+        XCTAssertNil(page.askingWhyApp)
+        XCTAssertNil(page.commandProblem)
+        let whole = ([brief.message, brief.text] + brief.parts.map(\.text)).joined(separator: "\n")
+        XCTAssertFalse(whole.contains(FakeKubeAPI.gitOpsSentinel), whole)
+        XCTAssertTrue(api.requests.allSatisfy { $0.method == "GET" }, "\(api.requests.map(\.description))")
+
+        // The stalled rollout: one failing Deployment, its own brief, the app named.
+        let stalled = try derivedRow(page, spoke.stalled)
+        page.gitOpsView.selection = [stalled.id]
+        XCTAssertNil(page.gitOpsVerbs(for: [stalled.id]).first { $0.title == "Ask an Agent Why…" }?.unavailable)
+        XCTAssertTrue(page.press("a"))
+        try await until("its Deployment's brief") { box.briefs.count == 2 }
+        XCTAssertEqual(box.briefs.last?.subject, "deploy/acme-cart ProgressDeadlineExceeded")
+        XCTAssertEqual(box.briefs.last?.parts.first?.title, "Argo CD app")
+        XCTAssertTrue(box.briefs.last?.text.contains("It is one of Argo CD app \(spoke.stalled)'s objects") == true, box.briefs.last?.text ?? "")
+
+        // A Ready one: why not, over the list; nothing asked.
+        let ready = try XCTUnwrap(page.gitOps.rows.shown.first { $0.isMarked && $0.state == .ready })
+        page.gitOpsView.selection = [ready.id]
+        let verb = try XCTUnwrap(page.gitOpsVerbs(for: [ready.id]).first { $0.title == "Ask an Agent Why…" })
+        XCTAssertEqual(verb.unavailable?.hasSuffix("Ask Why is for one that isn't."), true, verb.unavailable ?? "")
+        XCTAssertTrue(page.press("a"))
+        XCTAssertEqual(page.commandProblem?.hasSuffix("Ask Why is for one that isn't."), true, page.commandProblem ?? "")
+        XCTAssertNil(page.askingWhyApp, "no brief read for a Ready app: refused before any read")
+        XCTAssertEqual(box.briefs.count, 2, "nothing asked of a Ready app")
+
+        // The detail's button: the same brief, from the detail's reads.
+        page.gitOpsView.selection = [ledger.id]
+        XCTAssertTrue(page.press("\r"))
+        try await until("its detail read", 30) { page.markedRead.state == .loaded }
+        page.gitOpsView.selection = []
+        XCTAssertTrue(page.press("a"), "the detail's app, none picked")
+        try await until("the detail's brief") { box.briefs.count == 3 }
+        XCTAssertEqual(box.briefs.last?.message, brief.message)
+        XCTAssertEqual(api.writes, [], "nothing written")
+        XCTAssertTrue(box.confirmations.isEmpty && box.confirms.isEmpty && box.commands.isEmpty, "nothing asked, nothing run")
     }
 
     func testReturnOpensItsDetailAndEscClosesIt() async throws {

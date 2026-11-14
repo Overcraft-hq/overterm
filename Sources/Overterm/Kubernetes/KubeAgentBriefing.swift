@@ -472,7 +472,8 @@ enum KubeAgentBriefing {
         { Secrets.scrubCredentials(GitRemoteURL.stripUserinfo(inText: Secrets.scrub($0, env: env, keeping: names))) }
     }
 
-    private static func said(_ error: Error) -> String {
+    /// A read's failure, as a brief says it.
+    static func said(_ error: Error) -> String {
         error is KubeBriefTimeout ? "no answer in \(readTimeout)" : KubernetesModel.said(error)
     }
 

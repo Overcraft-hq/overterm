@@ -481,6 +481,26 @@ extension E2ERunner {
         check("off production, the marks listed across the cluster", await eventually(15) { !listedAcross().isEmpty })
         checkReads("bound to team-3", bound: team)
         check("no GitOps verb on it", gitOps.ref(paused ?? KubePanelGitOps.Match(key: .init(kind: "Marks", namespace: nil, name: ""), whys: [])) == nil)
+        // Ask Why on it (D6, gitops.md 14.2.6): Paused isn't Ready — the brief with the rail's own words.
+        if let paused {
+            func sheet() -> AskAgentView? { (window.attachedSheet?.contentViewController as? NSHostingController<AskAgentView>)?.rootView }
+            check("Ask Why offered on it", paused.asksWhy)
+            check("its button drawn", await railShows { $0.contains("Ask Why") })
+            spoke.forgetRequests()
+            gitOps.askWhy(paused)
+            check("Ask Why from the rail opens the sheet", await eventually(15) { self.window.attachedSheet != nil && sheet() != nil }, page.commandProblem ?? "")
+            let ask = app.askAgent
+            check(
+                "its question, in Argo CD's word", ask.message == "Why is Argo CD app \(made.paused) Suspended — rollout paused, Deployment acme-batch?", ask.message)
+            let prompt = await app.askAgentPrompt()
+            check("whose health the rail says", prompt.contains("health of the 1 object bound here"), prompt)
+            check("where its Application stands, the rail's words", prompt.contains("Argo CD runs in another cluster — not in your kubeconfig."), prompt)
+            check("scrubbed", !prompt.contains(FakeKubeAPI.gitOpsSentinel))
+            check("read with GETs alone", spoke.requests.allSatisfy { $0.method == "GET" } && spoke.writes.isEmpty)
+            let cancelled = sheet().map { $0.cancel() } != nil
+            check("Cancel sends nothing", await eventually(3) { self.window.attachedSheet == nil } && cancelled && !ask.isOpen)
+            if !window.isKeyWindow { window.makeKeyAndOrderFront(nil) }
+        }
 
         // Bound to a Deployment its Argo Rollout scales to 0 (14.12's second
         // consequence): its app's health is its Rollout's phase, never a scaled-down app.

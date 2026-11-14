@@ -73,10 +73,19 @@ extension KubernetesPageModel {
         return [askWhyVerb(for: ref)].compactMap { $0 }
     }
 
-    /// `a` (and ⌘L over the page): Ask Why on `askWhyRef`. One that isn't
-    /// failing says why over the list; false with nothing to ask about.
+    /// `a` (and ⌘L over the page): Ask Why on `askWhyRef` — in the GitOps
+    /// section, on the app read from marks picked (or whose detail shows
+    /// with none picked), which has no object of its own (14.2.6). One that
+    /// isn't failing says why over the list; false with nothing to ask about.
     @discardableResult
     func askWhy() -> Bool {
+        if detail == nil, section == .gitops {
+            if let row = gitOpsPicked, row.isMarked { return askWhyMarked(row) }
+            if gitOpsPicked == nil, let ranked = markedDetailApp, let context = gitOps.context {
+                askWhyMarked(markedDetailRanked ?? ranked, context: context)
+                return true
+            }
+        }
         guard let ref = askWhyRef else { return false }
         if let why = askWhyUnavailable(ref) {
             commandProblem = why
@@ -150,6 +159,130 @@ extension KubernetesPageModel {
                 self.askingWhy = nil
                 self.commandProblem =
                     (error as? KubeBriefProblem)?.description ?? "Couldn't read \(ref.kind.singular) \(ref.namespace.map { "\($0)/" } ?? "")\(ref.name): \(KubernetesModel.said(error))"
+            }
+        }
+    }
+}
+
+// MARK: Ask Why on an app read from marks (gitops.md 14.2.6, D6)
+
+extension KubernetesPageModel {
+    /// A row of the GitOps section that is an app read from marks: Ask Why
+    /// on the app as the section ranks it.
+    @discardableResult
+    func askWhyMarked(_ row: KubeGitOpsRow) -> Bool {
+        guard let key = row.marked?.key, let context = gitOps.context, let ranked = gitOps.marked.apps.first(where: { $0.app.key == key }) else { return false }
+        askWhyMarked(markedDetailApp?.app.key == key ? markedDetailRanked ?? ranked : ranked, context: context)
+        return true
+    }
+
+    /// The app whose detail shows, its members settled by what the detail
+    /// read (the newer of the detail's and the section's reads).
+    var markedDetailRanked: KubeMarkedRanked? {
+        guard let ranked = markedDetailApp, let ref = markedDetail, markedRead.ref == ref, !markedRead.read.objects.isEmpty else { return nil }
+        var read = markedRead.read
+        if let store = gitOps.marked.store?.settled {
+            for (id, kept) in read.objects {
+                if let newer = store[id], newer.at > kept.at { read.objects[id] = newer }
+            }
+        }
+        let app = KubeMarkedAppDetail.settled(ranked.app, read)
+        return KubeMarkedRanked(app: app, health: KubeMarkedHealth.app(app))
+    }
+
+    /// Why Ask Why can't be asked about an app read from marks now; nil
+    /// when it can: offered on every one that isn't Ready, Progressing
+    /// included — under Argo CD's rules a crash-looping Deployment after a
+    /// finished rollout, or a `0/3` StatefulSet, is Progressing, never Failed.
+    func askWhyMarkedUnavailable(_ ranked: KubeMarkedRanked) -> String? {
+        if askingWhyApp == ranked.app.key { return "Reading what to tell the agent…" }
+        return KubeAgentBriefing.markedNotAsked(ranked)
+    }
+
+    /// The menu's Ask an Agent Why… on an app read from marks, greyed with why while it is Ready.
+    func askWhyMarkedVerb(_ row: KubeGitOpsRow) -> ResourceVerb? {
+        guard let key = row.marked?.key, let ranked = gitOps.marked.apps.first(where: { $0.app.key == key }) else { return nil }
+        return ResourceVerb(
+            title: "Ask an Agent Why…", label: "Ask Why", symbol: "sparkles", place: .button, key: KubernetesKey.askWhy.key,
+            unavailable: askWhyMarkedUnavailable(ranked), group: 3
+        ) { [weak self] in self?.askWhyMarked(row) }
+    }
+
+    /// Why an app is read from marks, in the section's mode's words (14.3):
+    /// derived apps Argo CD's whole side, the mode's own line; beside
+    /// Applications read, where this one stands.
+    func markedLead(_ key: KubeTrackingID.AppKey, mode: KubeMarkedAppsMode, context: String) -> String? {
+        switch mode {
+        case .only(let reason):
+            return reason.line(context: context)
+        case .beside(let coexistence):
+            if let same = coexistence.maybe[key] { return KubeMarkedSection.Beside.maybe(same).said }
+            if coexistence.otherInstallation.contains(key) { return KubeMarkedSection.Beside.otherInstallation(key.installation).said }
+            guard coexistence.missing.contains(key) else { return nil }
+            var whole = false
+            if case .acrossCluster = gitOps.applicationsRead { whole = true }
+            return KubeMarkedSection.Beside.missing(whole: whole).said
+        case .off:
+            return nil
+        }
+    }
+
+    /// The brief on an app read from marks that isn't Ready (Ready says why
+    /// not, over the list): read — GETs through the context's proxy, the
+    /// section's and the detail's fresh reads standing, every word scrubbed
+    /// (`KubeAgentBriefing.markedApp`; one failing Deployment its own brief,
+    /// the app named) —, the bound checkout's deployed commit where one is
+    /// bound to its namespace, and handed to the Ask Agent sheet, shown
+    /// whole before anything is sent. `lead`, `whereApplication`, `scope`:
+    /// the rail's words when it asks (its place, whose health); else the
+    /// section's mode's. `extra`: scrubbed again here.
+    func askWhyMarked(
+        _ ranked: KubeMarkedRanked, context: String, lead: String? = nil, whereApplication: String? = nil, scope: String? = nil, extra: [AskAgentModel.Part] = []
+    ) {
+        commandProblem = nil
+        if let why = KubeAgentBriefing.markedNotAsked(ranked) {
+            commandProblem = why
+            return
+        }
+        guard askingWhy == nil, askingWhyApp == nil else { return }
+        guard let client = model.client(for: context) else {
+            commandProblem = "Kubernetes is off, or \(context) is no longer in the kubeconfig."
+            return
+        }
+        let known = model.contexts.context(named: context)
+        let briefContext = KubeBriefContext(name: context, production: known?.isProduction ?? true, writable: known?.isWritable ?? false)
+        // The page's discovery of the context, else the rail's (a checkout bound to one the page
+        // hasn't shown); else the brief reads it — never "not served" for want of one.
+        let discovery = model.knownDiscovery(of: context) ?? KubeGitOpsMatchCache.shared.discovery(context)
+        let probable = ranked.app.mark == .appInstance
+        let mode = gitOps.context == context ? gitOps.marksMode : .off
+        let said = lead ?? (probable ? nil : markedLead(ranked.app.key, mode: mode, context: context))
+        let place = whereApplication ?? KubeMarkedAppDetail.whereTheApplicationIs(mode, probable: probable)
+        // What the section and the detail read: one this fresh stands.
+        var store = gitOps.context == context ? gitOps.marked.store?.settled ?? [:] : [:]
+        if markedRead.ref?.context == context, markedRead.ref?.key == ranked.app.key {
+            for (id, kept) in markedRead.read.objects where store[id].map({ $0.at < kept.at }) ?? true { store[id] = kept }
+        }
+        askingWhyApp = ranked.app.key
+        Task { [weak self] in
+            do {
+                var brief = try await KubeAgentBriefing.markedApp(
+                    ranked, lead: said, whereApplication: place, scope: scope, known: store, client: client, context: briefContext, discovery: discovery)
+                brief.parts += extra.map { AskAgentModel.Part(title: $0.title, text: KubeMCPText.scrubbed($0.text)) }
+                // A checkout bound there — the selected tab's, else another's —: its deployed commit, and its agent first (3.2, 3.4).
+                if let namespace = brief.namespace,
+                    let bound = KubeBindingStore.shared.binding(on: context, namespace: namespace, preferring: self?.actions?.selectedBinding())
+                {
+                    brief = await KubeAgentBriefing.withDeployedCommit(brief, checkout: URL(fileURLWithPath: bound.checkout))
+                }
+                guard let self else { return }
+                self.askingWhyApp = nil
+                self.actions?.askWhy(brief)
+            } catch {
+                guard let self else { return }
+                self.askingWhyApp = nil
+                self.commandProblem =
+                    (error as? KubeBriefProblem)?.description ?? "Couldn't read Argo CD app \(ranked.app.said): \(KubernetesModel.said(error))"
             }
         }
     }

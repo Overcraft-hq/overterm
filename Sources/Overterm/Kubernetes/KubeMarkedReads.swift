@@ -270,11 +270,81 @@ struct KubeMarkedBook: Sendable {
     }
 }
 
+/// A sentence the marks' reads keep with its counts as numbers (gitops.md
+/// 14.2.6): said with the person's grouping on the page (`2,000`), plainly
+/// to an agent (`2000`) — the owner's Turkish writes two thousand `2.000`,
+/// which an agent reading English takes for two. Written as a string, a
+/// count interpolated as `\(count: n)`; two are the same when they read
+/// the same plainly, however they were written. Pure.
+struct KubeCountedText: Equatable, Hashable, Sendable, ExpressibleByStringInterpolation {
+    fileprivate enum Piece: Equatable, Hashable, Sendable {
+        case text(String)
+        case count(Int)
+    }
+
+    /// Text and counts in turn, two texts never side by side.
+    fileprivate var pieces: [Piece]
+
+    static func == (a: KubeCountedText, b: KubeCountedText) -> Bool { a.said(plain: true) == b.said(plain: true) }
+    func hash(into hasher: inout Hasher) { hasher.combine(said(plain: true)) }
+
+    init(_ text: String) { pieces = text.isEmpty ? [] : [.text(text)] }
+    init(stringLiteral text: String) { self.init(text) }
+    init(stringInterpolation: StringInterpolation) { pieces = stringInterpolation.pieces }
+
+    struct StringInterpolation: StringInterpolationProtocol {
+        fileprivate var pieces: [Piece] = []
+        init(literalCapacity: Int, interpolationCount: Int) {}
+        mutating func appendLiteral(_ literal: String) { KubeCountedText.append(literal, to: &pieces) }
+        /// A count: grouped as the person's locale writes it on the page, plain to an agent.
+        mutating func appendInterpolation(count: Int) { pieces.append(.count(count)) }
+        mutating func appendInterpolation(_ text: some CustomStringConvertible) { KubeCountedText.append(text.description, to: &pieces) }
+    }
+
+    fileprivate static func append(_ text: String, to pieces: inout [Piece]) {
+        guard !text.isEmpty else { return }
+        if case .text(let before)? = pieces.last {
+            pieces[pieces.count - 1] = .text(before + text)
+        } else {
+            pieces.append(.text(text))
+        }
+    }
+
+    /// As the page says it, or (`plain`) as an agent reads it.
+    func said(plain: Bool = false) -> String {
+        pieces.map { piece in
+            switch piece {
+            case .text(let text): text
+            case .count(let count): KubeCountedText.number(count, plain: plain)
+            }
+        }.joined()
+    }
+
+    /// A count as the page writes it (`2,000`), or plainly (`2000`).
+    static func number(_ count: Int, plain: Bool) -> String { plain ? String(count) : count.formatted() }
+
+    /// The parts one after the other, `separator` between them.
+    static func joined(_ parts: [KubeCountedText], separator: String) -> KubeCountedText {
+        var joined = KubeCountedText("")
+        for (index, part) in parts.enumerated() {
+            if index > 0 { append(separator, to: &joined.pieces) }
+            for piece in part.pieces {
+                switch piece {
+                case .text(let text): append(text, to: &joined.pieces)
+                case .count: joined.pieces.append(piece)
+                }
+            }
+        }
+        return joined
+    }
+}
+
 /// What the marks' reads could say of what they read (gitops.md 14.2.1,
 /// 14.3): which kinds' rows came, which were refused where or cut, and so
 /// whether the read was whole — "no workload carries marks" is said only
 /// then; a refused, cut or unfinished read says what couldn't be read.
-/// Pure.
+/// Its counts are kept as numbers: the page groups them as the person's
+/// locale does, an agent reads them plain (`plain`). Pure.
 struct KubeMarkedReading: Equatable, Sendable {
     /// The workloads' kinds read for marks (M1), by title: "Deployments".
     var kinds: [String] = []
@@ -286,16 +356,19 @@ struct KubeMarkedReading: Equatable, Sendable {
     /// Refused across the cluster, read in these namespaces with no watch.
     var fallback: [String: [String]] = [:]
     /// The rows of a kind cut short: its marks a floor.
-    var rowCuts: [String: String] = [:]
+    var rowCuts: [String: KubeCountedText] = [:]
     /// Not read, and why.
     var failed: [String: String] = [:]
     /// Everything else said: M3's cuts and refusals.
-    var notes: [String: String] = [:]
+    var notes: [String: KubeCountedText] = [:]
     /// M1b's progress: objects checked by Argo CD's rule, of how many.
     var checked: Int?
     var checking: Int?
     /// Argo Rollouts are served here, and read for their apps' health.
     var rolloutsServed = false
+    /// A kind refused across the cluster is read again where it may be
+    /// every 5 min (the section's); an agent's read is once.
+    var rereads = true
 
     static let acrossTheCluster = "across the cluster"
 
@@ -308,11 +381,14 @@ struct KubeMarkedReading: Equatable, Sendable {
     /// What couldn't be read, said: "Deployments refused in 3 namespaces
     /// (a, b, c)"; a kind refused across the cluster and read where it may
     /// be, where — what a count "at least" and an empty sentence name.
-    var unread: [String] {
+    var unread: [String] { unread(plain: false) }
+
+    /// The same, its counts plain (`plain`: an agent's) or grouped as the page writes them.
+    func unread(plain: Bool) -> [String] {
         var said: [String] = []
         for kind in kinds {
             if let places = fallback[kind], !places.isEmpty {
-                said.append("\(kind) refused across the cluster; read in \(places.joined(separator: ", ")) every 5 min")
+                said.append("\(kind) refused across the cluster; read in \(places.joined(separator: ", "))\(rereads ? " every 5 min" : "")")
             }
             if let places = refused[kind] {
                 let named = places.filter { $0 != Self.acrossTheCluster }.sorted()
@@ -323,18 +399,21 @@ struct KubeMarkedReading: Equatable, Sendable {
                 }
             }
             if let reason = failed[kind] { said.append("\(kind) not read: \(reason)") }
-            if let cut = rowCuts[kind] { said.append(cut) }
+            if let cut = rowCuts[kind] { said.append(cut.said(plain: plain)) }
         }
         return said
     }
 
     /// Every line for the header's notes: refusals and where it read
     /// instead, cuts, M1b's progress.
-    var said: [String] {
-        var lines = unread
-        lines += notes.sorted { $0.key < $1.key }.map(\.value)
+    var said: [String] { said(plain: false) }
+
+    /// The same, its counts plain (`plain`: an agent's) or grouped as the page writes them.
+    func said(plain: Bool) -> [String] {
+        var lines = unread(plain: plain)
+        lines += notes.sorted { $0.key < $1.key }.map { $0.value.said(plain: plain) }
         if let checking, let checked, checked < checking {
-            lines.append("checking rollouts \(checked.formatted()) of \(checking.formatted())")
+            lines.append("checking rollouts \(KubeCountedText.number(checked, plain: plain)) of \(KubeCountedText.number(checking, plain: plain))")
         }
         return lines
     }
@@ -349,11 +428,11 @@ struct KubeMarkedReading: Equatable, Sendable {
     }
 
     /// The section's sentence when no app was found: "carries no marks"
-    /// only from a whole read.
-    func empty(context: String, scope: KubeScope, served: Bool) -> String {
+    /// only from a whole read (`plain`: an agent's counts).
+    func empty(context: String, scope: KubeScope, served: Bool, plain: Bool = false) -> String {
         let workloads = kinds.isEmpty ? "Deployments, StatefulSets and DaemonSets" : Self.joined(kinds)
         if isReading { return "Reading the marks on \(workloads)…" }
-        guard isWhole else { return "No Argo CD marks found in what could be read: \(unread.joined(separator: "; "))" }
+        guard isWhole else { return "No Argo CD marks found in what could be read: \(unread(plain: plain).joined(separator: "; "))" }
         let carriers = carriers(scope: scope)
         return served ? "No Argo CD Application deploys here, and \(carriers)" : "No Argo CD Application is served by \(context), and \(carriers)"
     }

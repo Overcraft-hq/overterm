@@ -177,6 +177,11 @@ extension TerminalWindowController: KubeGitOpsPanelHost {
         kubernetesPage.askWhy(ref, extra: extra)
     }
 
+    func gitOpsAskWhyMarked(_ app: KubeMarkedRanked, context: String, lead: String, whereApplication: String, scope: String) async {
+        await kubernetesContextsLoaded()
+        kubernetesPage.askWhyMarked(app, context: context, lead: lead, whereApplication: whereApplication, scope: scope)
+    }
+
     var gitOpsWriteStatus: AnyPublisher<KubeWriteStatus?, Never> { kubernetesPage.$writeStatus.eraseToAnyPublisher() }
 }
 

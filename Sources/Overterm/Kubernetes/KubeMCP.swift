@@ -44,9 +44,10 @@ import Foundation
 /// `k8s_top` (stage 2d) reads metrics.k8s.io: pods' and nodes' usage.
 /// `k8s_metrics` (metrics.md 7, M11) an object's usage over a range, as
 /// text, from the charts' own queries (`KubeMCP+Metrics`). `k8s_gitops`
-/// (gitops.md 6.1) Argo CD's and Flux's objects, a line each, or what
-/// deploys the calling pane's checkout (`KubeMCP+GitOps`); `k8s_why` takes
-/// their four main kinds too.
+/// (gitops.md 6.1) Argo CD's and Flux's objects, a line each — where no
+/// Application here deploys them, Argo CD's apps read from their marks
+/// (`KubeMCP+Marks`, 14.2.6) —, or what deploys the calling pane's
+/// checkout (`KubeMCP+GitOps`); `k8s_why` takes their four main kinds too.
 @MainActor
 enum KubeMCP {
     static let prefix = "k8s_"
@@ -618,7 +619,7 @@ enum KubeMCP {
             let refusal =
                 "k8s_why is a pod's, a Deployment's, or an Argo CD or Flux object's: “kind” is pod, deployment, application, applicationset, kustomization or helmrelease."
             let filter = GitOpsFilter(typed: wanted)
-            guard filter.map({ $0 != .source && $0 != .all }) ?? true else { throw BrowserMCP.ToolError(message: refusal) }
+            guard filter.map({ $0 != .source && $0 != .marks && $0 != .all }) ?? true else { throw BrowserMCP.ToolError(message: refusal) }
             let discovery = try await discovery(for: target, kubernetes: kubernetes)
             // One of the four by its GitOps name first: `application` is Argo CD's even where
             // another `applications` kind (app.k8s.io's) is served before it. Discovery's own
@@ -963,10 +964,15 @@ enum KubeMCP {
                 ]),
             tool(
                 "k8s_gitops",
-                "Argo CD's and Flux's objects (Applications, ApplicationSets, Kustomizations, HelmReleases, their sources), one line each, problems first: the state (Failed, Blocked, Stuck, Drift, Progressing, Paused, Ready), why, the revision applied (and Flux's failed attempt), the source, where it deploys, the last error. Those in the namespace or deploying into it. Read once, bounded (200 objects a kind); no values, patches or credentials. checkout: what deploys the calling pane's checkout, on its bound context only, with whether this branch's commit has reached the cluster.",
+                "Argo CD's and Flux's objects (Applications, ApplicationSets, Kustomizations, HelmReleases, their sources), one line each, problems first: the state (Failed, Blocked, Stuck, Drift, Progressing, Paused, Ready), why, the revision applied (and Flux's failed attempt), the source, where it deploys, the last error. Those in the namespace or deploying into it. Where no Argo CD Application here deploys them (Argo CD runs in another cluster, none is listed, or they can't be read), Argo CD's apps read from the marks it leaves on their objects (kind marks): their health by Argo CD's built-in rules, the worst object and why — no sync status, repository or revision, which are the Application's. Read once, bounded (200 objects a kind); no values, patches or credentials. checkout: what deploys the calling pane's checkout, on its bound context only, with whether this branch's commit has reached the cluster.",
                 [
                     "kind": [
-                        "type": "string", "enum": GitOpsFilter.allCases.map(\.rawValue), "description": "Default all.",
+                        "type": "string", "enum": GitOpsFilter.allCases.map(\.rawValue),
+                        "description": "Default all. marks: only Argo CD's apps read from marks; application: only Argo CD's own Applications.",
+                    ],
+                    "state": [
+                        "type": "string", "enum": ["problems", "all"],
+                        "description": "Apps read from marks: problems (default; Ready ones only counted), or all — with kind marks.",
                     ],
                     "failing_only": ["type": "boolean", "description": "Only those Failed, Blocked or Stuck."],
                     "limit": ["type": "integer", "description": "Objects (default 100, at most 500)."],
@@ -981,7 +987,7 @@ enum KubeMCP {
     }
 
     static let instructions =
-        "Kubernetes as the user's kubeconfig reaches it (Overterm's Kubernetes page): k8s_contexts lists the contexts — production ones are said so —, k8s_get lists a kind, k8s_describe and k8s_events say what an object is doing, k8s_logs reads a pod's last lines (previous: the crashed instance), k8s_why gathers why a pod fails or a rollout is stuck, k8s_rollout gives a rollout's status and history, k8s_top what pods and nodes use now (metrics-server's), k8s_metrics an object's usage over a range against its requests and limits, k8s_gitops Argo CD's and Flux's objects and why they fail (checkout: what deploys this checkout, and whether this branch has reached the cluster); k8s_why takes those objects too. They use the context and namespace selected on the Kubernetes page unless you name others; with none selected, name a context (k8s_contexts). Where k8s_contexts says agents may write, k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply change it — each call is asked of the user in Overterm's window first, and a declined one changes nothing; elsewhere tell the user what to run. No tool reads a Secret's values."
+        "Kubernetes as the user's kubeconfig reaches it (Overterm's Kubernetes page): k8s_contexts lists the contexts — production ones are said so —, k8s_get lists a kind, k8s_describe and k8s_events say what an object is doing, k8s_logs reads a pod's last lines (previous: the crashed instance), k8s_why gathers why a pod fails or a rollout is stuck, k8s_rollout gives a rollout's status and history, k8s_top what pods and nodes use now (metrics-server's), k8s_metrics an object's usage over a range against its requests and limits, k8s_gitops Argo CD's and Flux's objects and why they fail — where Argo CD runs in another cluster, its apps read from the marks on their objects (checkout: what deploys this checkout, and whether this branch has reached the cluster); k8s_why takes those objects too. They use the context and namespace selected on the Kubernetes page unless you name others; with none selected, name a context (k8s_contexts). Where k8s_contexts says agents may write, k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply change it — each call is asked of the user in Overterm's window first, and a declined one changes nothing; elsewhere tell the user what to run. No tool reads a Secret's values."
 
     private static func tool(_ name: String, _ description: String, _ properties: [String: Any], required: [String] = []) -> [String: Any] {
         [

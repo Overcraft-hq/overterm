@@ -3949,7 +3949,10 @@ where a context is writable for agents (Agents' writes, below):
   the rail's P2), the rail's listing when `KubeGitOpsMatchCache` holds
   one, else off production `KubePanelGitOps.listing` at the agent's
   bounds, a kind's across all its namespaces (not kept), never on production; each match with the deployed
-  sentence and Flux's attempted line (`KubeGitOpsReach`). `k8s_why` takes
+  sentence and Flux's attempted line (`KubeGitOpsReach`). Where no Argo
+  CD Application here deploys them, Argo CD's apps read from their marks
+  (`KubeMCP+Marks`, `kind: marks`, `state`; GitOps from marks, For agents,
+  below). `k8s_why` takes
   an Application, ApplicationSet, Kustomization or HelmRelease too (G3's
   brief; `application` is Argo CD's even where another `applications`
   kind, app.k8s.io's, is served first). No GitOps write tool. `k8s_apply`
@@ -6887,7 +6890,7 @@ its Application stands, why it matched, and Open — the page on the
 binding's context (one the page's list hasn't read is read once more, else
 said, the page's scope left alone), its GitOps section, the app's detail,
 its namespaces added to the scope (`KubeGitOpsPanelHost.gitOpsOpenMarked`);
-no GitOps verb, and Ask Why comes with D6. `KubeGitOpsMatchTests` (B, C,
+no GitOps verb; Ask Why with the rail's own words (below). `KubeGitOpsMatchTests` (B, C,
 D, too many, nothing found, a scaled-to-0 Deployment beside a Degraded
 sibling and beside its Rollout, the manifests reader's links, templates —
 `{{` in a quoted alert beside a Deployment —, prefix and bounds),
@@ -6903,6 +6906,66 @@ kept out) and the `kubernetesGitOpsMarks` scenario's part 5 (the checkout
 scenario's part 7 on the spoke: the paused app, team-1's Rollout-run app,
 the config repository, nothing the rail keeps or draws holding the
 sentinel) check it.
+
+**For agents and Ask Why** (gitops.md 14.2.6, D6). `k8s_gitops`
+(`KubeMCP+Marks.swift`) lists Argo CD's apps read from marks where no
+Application here deploys them — `KubeMarkedAppsMode.of` over discovery and
+the call's own read of Applications (`GitOpsKindRead.presence`; a cut one
+derives nothing) —: for `kind: all` only where they are Argo CD's whole side
+(not served, argoproj.io not answering, refused, served with none listed),
+with `kind: marks` beside Applications too (coexistence's listed apps,
+tagged as the section tags them; apps grouped by `app.kubernetes.io/instance`
+alone only probably Argo CD's, never compared with the Applications, so
+never said to have one or to lack one; a read of Applications that can't
+tell said by its cause, `GitOpsKindRead.unlisted` — couldn't be read, or cut
+at the agent's bound); `kind: application` never lists one. The page's
+section's apps first (`keptMarks`: `MarkedAppsKept` holds the mode, the
+reading, the tally — kept as they change, `markedKeepWatch` — and is used,
+under five minutes, same cluster and user, its scope covering the call's,
+with nothing read); else once (`readMarks`): the workloads' rows with their
+marks (Rollouts where served; 2,000 objects or 16 MB a kind, `marksRows`;
+refused across the cluster, read where the context says it may be), made
+into apps, picked and ranked off the main thread (`marksMade`,
+`marksRanked`, nonisolated, through `KubeBlocking`), then a GET of at most
+20 that may be problems, the most recently changed first, 4 in flight, 16 MB
+in all (`KubeMarkedFetch`: each GET in flight counts the most it may read,
+so the bound holds whatever comes), the rest said unsettled; Argo Rollouts
+served but not read whole (`marksRollouts`) leave a Deployment scaled to 0
+with no Rollout of its app read Unknown (`KubeGitOpsMatch.health`), never
+Ready; Services, HPAs, CronJobs and the rest not read for an agent, said.
+The answer (`KubeMCPMarksText`, pure): the mode's line ("another cluster"
+only for `notServed`), what health is, where they were read, the count (a
+floor unless whole), a line an app (`marks  Failed  <app>  ns=…  2 Deploy
+1 Svc  <sentence>: <object>  image=…`), at most 100, Ready only counted
+unless `kind: marks, state: all`, never "no marked apps" from a read that
+wasn't whole; plain numbers, whatever the person's locale writes — what the
+section's and the rail's reads keep holds its counts as numbers
+(`KubeCountedText`: `\(count: n)`, grouped on the page, plain to an agent,
+`plain:`). `checkout: true` adds the rail's A–D (`gitOpsCheckoutMarks`: B
+first — the rail's cache, its reason with it (on production only that, a
+person's press's), else off production at the agent's bound, one row of
+Applications asked first where they are served and none is held, as the
+rail asks it —, then each bound workload's GET within the 8), each
+with its health, whose and where its Application stands, in place of the
+owner's "not in"; `kind: application` reads nothing from marks and keeps
+the owners' own lines. Ask Why (`KubeAgentBrief+Marks.swift`) is offered on
+every app read from marks that isn't Ready — `a` and ⌘L in the section, the
+row's menu, the detail's button, the rail's (`gitOpsAskWhyMarked`, its own
+words) —: `KubeAgentBriefing.markedApp` hands one failing Deployment to its
+own brief with the app named (`withMarkedApp`), else reads its causes and
+other unhealthy objects by GET (6 at most, a fresh section's or detail's
+read standing), the not-ready workloads' pods by selector as Table rows — an
+Argo Rollout's by the selector of the Deployment its `workloadRef` runs,
+read within the 6 — and the causes' events; what the context serves is the
+page's, else the rail's, else read for the brief, else the built-in
+workloads' kinds — never "not served" for want of one;
+`KubeAgentBrief.markedApp` (pure) says the question in Argo CD's word, where
+Argo CD runs, what only the Application knows and where, its health and
+whose, each object, kubectl's and argocd's lines, the conditions, pods and
+events as chips — every word scrubbed. No new tool, no write. `KubeMCPGitOpsMarksTests`, `KubeMarkedBriefTests`,
+`KubeGitOpsMarksPageTests`, `KubePanelGitOpsTests` and the
+`kubernetesGitOpsMarks` scenario's part 5 (and its rail part's Ask Why)
+check it.
 
 **The GitOps section** (`g`; gitops.md 2–3, G2): Argo CD's and Flux's
 objects that live in or deploy into the scope on one screen, between Helm

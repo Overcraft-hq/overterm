@@ -506,9 +506,12 @@ enum KubeMarkedSection {
     /// The section's sentence when no app was read from marks and Argo CD's
     /// side is only theirs (14.2.1): while reading, what is read; a read
     /// that wasn't whole, what couldn't be read — never "carries no marks";
-    /// a whole one, that none does, in the mode's words.
-    static func empty(_ reason: KubeMarkedAppsMode.Reason, context: String, scope: KubeScope, reading: KubeMarkedReading) -> String {
-        guard !reading.isReading, reading.isWhole else { return reading.empty(context: context, scope: scope, served: reason == .noApplications) }
+    /// a whole one, that none does, in the mode's words (`plain`: an
+    /// agent's counts).
+    static func empty(_ reason: KubeMarkedAppsMode.Reason, context: String, scope: KubeScope, reading: KubeMarkedReading, plain: Bool = false) -> String {
+        guard !reading.isReading, reading.isWhole else {
+            return reading.empty(context: context, scope: scope, served: reason == .noApplications, plain: plain)
+        }
         switch reason {
         case .notServed: return reading.empty(context: context, scope: scope, served: false)
         case .noApplications: return reading.empty(context: context, scope: scope, served: true)

@@ -172,7 +172,9 @@ final class KubernetesModel: ObservableObject {
     /// A context's apps as a GitOps section last ranked them from marks
     /// (gitops.md 14.2.5, 14.4.2): what the checkout's rail takes instead
     /// of reading again — an app's health with its age, option B's members
-    /// when they were read whole across the cluster.
+    /// when they were read whole across the cluster —, and what
+    /// `k8s_gitops` answers from with no request (14.2.6): the mode they
+    /// were derived in, what the reads could say, the marks counted.
     struct MarkedAppsKept: Sendable {
         /// The context as read then: its answer only while the name reaches the same cluster (`sameCluster`).
         var context: KubeContext
@@ -181,6 +183,15 @@ final class KubernetesModel: ObservableObject {
         var scope: KubeScope
         /// Every workload kind's rows read whole.
         var whole: Bool
+        /// The section's mode then: which of `apps` are derived (all of
+        /// them `.only`; beside Applications, those listed).
+        var mode: KubeMarkedAppsMode = .off
+        /// What the reads could say of what they read.
+        var reading = KubeMarkedReading()
+        /// Copies, garbled marks, Helm's instance labels: counted.
+        var tally = KubeMarkedApps.Tally()
+        /// Grouped by `app.kubernetes.io/instance` alone (D-5).
+        var probable = false
     }
 
     /// Kept while the page that ranked them shows, five minutes at most; in memory only.

@@ -14,7 +14,8 @@ import SwiftUI
 /// opens its object in its own list (`openMarkedNode`) — its name pressed,
 /// or ↩ on it from the keyboard (Tab into the tree, ↑ ↓ along it: the page's
 /// `markedNode`, drawn picked and scrolled to) —, its right-click menu Open
-/// and Copy — never a write. Esc or × closes it.
+/// and Copy — never a write. Ask Why hands an agent the app's brief as the
+/// detail read it (D6: greyed while it is Ready). Esc or × closes it.
 struct KubeMarkedAppDetailView: View {
     /// Not observed: its every publish would draw the tree again.
     let page: KubernetesPageModel
@@ -95,6 +96,14 @@ struct KubeMarkedAppDetailView: View {
                     .accessibilityIdentifier("kubernetes.gitops.marked.lead")
             }
             HStack(spacing: 8) {
+                // Ask Why on the app as the detail read it (14.2.6): offered unless it is Ready.
+                if let ranked = page.markedDetailRanked ?? page.markedDetailApp {
+                    let why = page.askWhyMarkedUnavailable(ranked)
+                    Button("Ask Why") { page.askWhyMarked(ranked, context: ref.context) }.controlSize(.small)
+                        .disabled(why != nil)
+                        .help(why ?? "Ask an Agent Why… (\(KubernetesKey.askWhy.key)) — the brief shown, scrubbed, before it is sent")
+                        .accessibilityIdentifier("kubernetes.gitops.marked.askWhy")
+                }
                 if let line = KubeMarkedSection.cliLine(key: ref.key) {
                     Button("Copy as argocd") { page.actions?.copy(line) }.controlSize(.small)
                         .help("\(line) — against your Argo CD server; copied, never run (k)")

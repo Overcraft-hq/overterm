@@ -23,6 +23,11 @@ protocol KubeGitOpsPanelHost: AnyObject {
     /// what the rail knows of the checkout (`extra`, scrubbed): the
     /// commits between applied and attempted, the files this branch changes.
     func gitOpsAskWhy(_ ref: KubeObjectRef, extra: [AskAgentModel.Part]) async
+    /// Ask Why on an Argo CD app read from marks (gitops.md 14.2.6): the
+    /// page's brief on the app as the rail read it — `lead`, where its
+    /// Application stands; `whereApplication`, where what only it knows is;
+    /// `scope`, whose health the rail says.
+    func gitOpsAskWhyMarked(_ app: KubeMarkedRanked, context: String, lead: String, whereApplication: String, scope: String) async
     /// The page's write status as it changes.
     var gitOpsWriteStatus: AnyPublisher<KubeWriteStatus?, Never> { get }
 }
@@ -329,6 +334,11 @@ final class KubePanelGitOps: ObservableObject {
         var why: String { whys.map(\.said).joined(separator: " · ") }
 
         var isProblem: Bool { object.map { [.failed, .blocked, .stuck].contains($0.state) } ?? false }
+
+        /// Whether Ask Why is offered: on an object Failed, Blocked or
+        /// Stuck; on an app read from marks, whenever it isn't Ready
+        /// (Progressing included, 14.2.6).
+        var asksWhy: Bool { marked.map { $0.health.state != .ready } ?? isProblem }
 
         /// Its state: the object's by the ladder, or an app's from marks by Argo CD's rules.
         var state: KubeGitOpsState? { object?.state ?? marked?.health.state }
@@ -1483,7 +1493,8 @@ final class KubePanelGitOps: ObservableObject {
             reason = asked
         }
         var apps: [KubeMarkedApp] = []
-        var notes: [String] = []
+        // Their counts kept as numbers: the rail groups them as the person's locale does, an agent reads them plain.
+        var notes: [KubeCountedText] = []
         let workloads = KubeMarkedAppsSession.kinds(discovery).workloads
         let kinds = workloads.filter { $0.fullName == KubeMarkedAppsSession.rollouts } + workloads.filter { $0.fullName != KubeMarkedAppsSession.rollouts }
         var rollouts: KubeGitOpsMatch.RolloutsRead = kinds.contains { $0.fullName == KubeMarkedAppsSession.rollouts } ? .read : .notServed
@@ -1502,7 +1513,7 @@ final class KubePanelGitOps: ObservableObject {
                 let isRollouts = kind.fullName == KubeMarkedAppsSession.rollouts
                 guard left.objects > 0, left.bytes > 0 else {
                     let rows = rowsBound.rowsObjects
-                    notes.append("\(title) not read: \(rows.formatted()) \(rows == 1 ? "row" : "rows") or \(rowsBound.rowsBytes >> 20) MB read already")
+                    notes.append("\(title) not read: \(count: rows) \(rows == 1 ? "row" : "rows") or \(rowsBound.rowsBytes >> 20) MB read already")
                     if isRollouts { rollouts = .unread("the cluster's Rollouts not read") }
                     continue
                 }
@@ -1521,7 +1532,7 @@ final class KubePanelGitOps: ObservableObject {
                     left.objects -= rows.count
                     left.bytes -= bytes
                     if !refused.isEmpty { notes.append("\(title) refused in \(refused.count) \(refused.count == 1 ? "namespace" : "namespaces") (\(refused.joined(separator: ", ")))") }
-                    if cut { notes.append("\(title): the list stopped at \(rows.count.formatted())") }
+                    if cut { notes.append("\(title): the list stopped at \(count: rows.count)") }
                     if isRollouts, !refused.isEmpty || cut { rollouts = .unread("the cluster's Rollouts read in part") }
                     let now = Date()
                     for row in rows.sorted {
@@ -1869,8 +1880,19 @@ final class KubePanelGitOps: ObservableObject {
 
     /// Ask Why, with the checkout's side when the match has one: the
     /// commits between applied and attempted (`git log --oneline`, at most
-    /// 20, both verified), the files this branch changes (6.2).
+    /// 20, both verified), the files this branch changes (6.2). An app read
+    /// from marks: its own brief, as the rail read it (14.2.6).
     func askWhy(_ match: Match) {
+        if let marked = match.marked {
+            guard let context, let host else { return }
+            let app = KubeMarkedRanked(app: marked.app, health: marked.health)
+            let lead = marked.place.said(context: context.name)
+            let place = marked.place.whereApplication(probable: marked.app.mark == .appInstance)
+            let scope = marked.scope.said(now: clock())
+            let name = context.name
+            Task { await host.gitOpsAskWhyMarked(app, context: name, lead: lead, whereApplication: place, scope: scope) }
+            return
+        }
         guard let ref = ref(match), let host else { return }
         let reach = match.reach
         let root = self.root

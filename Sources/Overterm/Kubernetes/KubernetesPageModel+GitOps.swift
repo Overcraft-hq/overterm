@@ -55,9 +55,10 @@ struct KubeMarkedOrigin: Equatable {
 /// CD's apps are read from the marks on their objects (14): such a row has
 /// no object of its own — ↩ opens its detail beside the section (its
 /// objects as Argo CD would draw them, each opening in its own list: Tab
-/// into its tree, ↑ ↓ along it, ↩ on a node), `k` copies argocd's `get`
-/// against the person's own server, and every write key and ⇧K do nothing
-/// (no ref, so `writeTarget` is nil).
+/// into its tree, ↑ ↓ along it, ↩ on a node), `a` asks an agent why
+/// (its own brief, offered on every app that isn't Ready), `k` copies
+/// argocd's `get` against the person's own server, and every write key and
+/// ⇧K do nothing (no ref, so `writeTarget` is nil).
 extension KubernetesPageModel {
     /// Whether the section is on screen.
     var gitOpsShows: Bool { section == .gitops && visible && windowVisible }
@@ -104,10 +105,12 @@ extension KubernetesPageModel {
     }
 
     /// The apps the section ranked from marks, kept for the checkout's rail
-    /// while this page shows (`KubernetesModel.keepMarkedApps`, gitops.md
-    /// 14.2.5): only while they are read — a section left keeps its last
-    /// ranking five minutes; dropped with the page, another context or a
-    /// credential failure.
+    /// and `k8s_gitops` while this page shows (`KubernetesModel.
+    /// keepMarkedApps`, gitops.md 14.2.5, 14.2.6) — with the mode they were
+    /// derived in, what the reads could say and the marks counted: only
+    /// while they are read — a section left keeps its last ranking five
+    /// minutes; dropped with the page, another context or a credential
+    /// failure.
     func keepMarkedApps() {
         let marked = gitOps.marked
         guard marked.state != .idle, let name = marked.context, name == gitOps.context, let context = model.contexts.context(named: name) else {
@@ -116,7 +119,9 @@ extension KubernetesPageModel {
             return
         }
         model.keepMarkedApps(
-            KubernetesModel.MarkedAppsKept(context: context, apps: marked.apps, at: Date(), scope: marked.scope, whole: marked.reading.isWhole),
+            KubernetesModel.MarkedAppsKept(
+                context: context, apps: marked.apps, at: Date(), scope: marked.scope, whole: marked.reading.isWhole, mode: gitOps.marksMode,
+                reading: marked.reading, tally: marked.tally, probable: marked.probable),
             context: name, by: self)
     }
 
@@ -454,8 +459,9 @@ extension KubernetesPageModel {
     /// A key while the section shows: ↩ opens (a group's row folds), `x`
     /// its tree, `k` and ⇧K copy, `G` groups the rows another way, `s`
     /// syncs (Argo CD) or reconciles with its source (Flux) in a tab; `r`, `p` and ⌫ go on to the page's writes on the row picked
-    /// (`writeTarget`), `a` to Ask Why on it (`askWhyRef`); the page's own
-    /// keys as ever. A pod's verbs would
+    /// (`writeTarget`), `a` to Ask Why on it (`askWhyRef`; on an app read
+    /// from marks, its own brief — `askWhyMarked`); the page's own keys as
+    /// ever. A pod's verbs would
     /// act on the kind under the section: refused. With an app's detail
     /// read from marks beside it, Tab, ↑ ↓ and ↩ walk its tree first
     /// (`markedTreePress`). Nil: the page's to decide, the arrows the
@@ -520,9 +526,10 @@ extension KubernetesPageModel {
     /// A row's right-click menu, made as it opens: Open, the detail's own
     /// verbs (the writes, each with its guard; Delete with G0b's), then
     /// Copy as kubectl and flux's or argocd's line. Several rows: Open and
-    /// Copy only — no write on several. An app read from marks: Open, Copy
-    /// as argocd (against the person's own Argo CD server) and Copy Name —
-    /// never a write, nor a verb that needs the Application (14.2.3).
+    /// Copy only — no write on several. An app read from marks: Open, Ask
+    /// an Agent Why… (greyed while it is Ready; 14.2.6), Copy as argocd
+    /// (against the person's own Argo CD server) and Copy Name — never a
+    /// write, nor a verb that needs the Application (14.2.3).
     func gitOpsVerbs(for ids: Set<String>) -> [ResourceVerb] {
         let picked = gitOpsAllRows.filter { ids.contains($0.id) }
         guard let first = picked.first else {
@@ -541,11 +548,16 @@ extension KubernetesPageModel {
         let names = ResourceVerb(title: picked.count == 1 ? "Copy Name" : "Copy Names", symbol: "doc.on.doc", group: 9) { [weak self] in
             self?.actions?.copy(picked.map(\.ref.description).joined(separator: "\n"))
         }
-        if picked.count == 1, first.isMarked, let line = KubeMarkedSection.cliLine(first) {
-            let argocd = ResourceVerb(title: "Copy as argocd (against your Argo CD server)", symbol: "terminal", key: KubernetesKey.copyKubectl.key, group: 9) {
-                [weak self] in self?.actions?.copy(line)
+        if picked.count == 1, first.isMarked {
+            // Ask Why on the app (14.2.6), and argocd's own get against the person's server.
+            var verbs = [open] + [askWhyMarkedVerb(first)].compactMap { $0 }
+            if let line = KubeMarkedSection.cliLine(first) {
+                verbs.append(
+                    ResourceVerb(title: "Copy as argocd (against your Argo CD server)", symbol: "terminal", key: KubernetesKey.copyKubectl.key, group: 9) {
+                        [weak self] in self?.actions?.copy(line)
+                    })
             }
-            return [open, argocd, names]
+            return verbs + [names]
         }
         guard picked.count == 1, let ref = gitOpsRef(first) else { return [open, names] }
         var verbs = [open] + detailVerbs(for: ref)

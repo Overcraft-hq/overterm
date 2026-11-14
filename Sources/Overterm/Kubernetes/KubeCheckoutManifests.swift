@@ -82,8 +82,8 @@ enum KubeCheckoutManifests {
         var links = 0
         /// Not a plain file, over 256 KB, or not YAML the grammar reads whole.
         var unreadable = 0
-        /// The bound that stopped the read, said.
-        var cut: String?
+        /// The bound that stopped the read, said (its counts kept as numbers).
+        var cut: KubeCountedText?
         /// `git ls-files` couldn't say.
         var failed: String?
     }
@@ -129,7 +129,7 @@ enum KubeCheckoutManifests {
                 continue
             }
             guard taken < bounds.files else {
-                read.cut = "\(bounds.files.formatted()) of \(paths.count.formatted()) manifest files read"
+                read.cut = "\(count: bounds.files) of \(count: paths.count) manifest files read"
                 break
             }
             guard total < bounds.totalBytes else {

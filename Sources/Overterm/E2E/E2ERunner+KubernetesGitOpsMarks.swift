@@ -36,10 +36,17 @@ import SwiftUI
 ///    with the keyboard on that node; ↩ on a pod's node opens the pod,
 ///    whose writes say nothing of Argo CD.
 ///
-/// 5. The checkout's rail on the spoke (D5, the checkout scenario's part
+/// 5. Agents (D6, `kubernetesGitOpsMarksAgents`): `a` on a Progressing
+///    app's row opens the Ask Agent sheet with its brief (where Argo CD
+///    runs, its pods, scrubbed), a Ready one says why not, the detail's Ask
+///    Why on one failing Deployment hands off to its own brief with the app
+///    named, and an agent's `k8s_gitops` answers from the section's apps
+///    with nothing read.
+/// 6. The checkout's rail on the spoke (D5, the checkout scenario's part
 ///    7, `kubernetesCheckoutGitOpsMarks`): its app read from the bound
-///    workload's marks, by its object's GET, "another cluster"; option B on
-///    production only once Find What Deploys This was pressed.
+///    workload's marks, by its object's GET, "another cluster", its Ask Why
+///    with the rail's words (D6); option B on production only once Find
+///    What Deploys This was pressed.
 ///
 /// Reads only: every request a GET; never a Secret or a ConfigMap; on the
 /// spoke no Application and nothing of Flux's; every part's requests —
@@ -118,6 +125,7 @@ extension E2ERunner {
         await kubernetesGitOpsMarksSection(model, page, spoke, made: made)
         await kubernetesGitOpsMarksFilters(model, page, spoke, made: made)
         await kubernetesGitOpsMarksDetail(model, page, spoke, made: made)
+        await kubernetesGitOpsMarksAgents(model, page, spoke, made: made)
         await kubernetesGitOpsMarksBeside(model, page, hub: hub, refused: refused, hubApps: hubApps)
         // The checkout's rail on the spoke (gitops.md 14.9.3: the checkout scenario's part 7).
         if model.selectedName != "fake-dev" { model.select("fake-dev") }
@@ -475,7 +483,7 @@ extension E2ERunner {
 
     /// The element `identifier` names under the page, found (SwiftUI builds
     /// its accessibility tree a moment later), then pressed once.
-    private func pressOnce(_ identifier: String) async -> Bool {
+    func pressOnce(_ identifier: String) async -> Bool {
         Self.accessibilityTree(true)
         guard await eventually(10, { self.app.kubernetesView.map { Self.accessibilityPress(identifier, in: $0, press: false) } ?? false }),
             let root = app.kubernetesView

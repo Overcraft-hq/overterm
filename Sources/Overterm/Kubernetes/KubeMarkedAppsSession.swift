@@ -87,8 +87,8 @@ final class KubeMarkedAppsSession: ObservableObject {
         var rows: [String: KubeRows] = [:]
         /// What finished: `rows:<kind>`.
         var done: Set<String> = []
-        /// Each read's cut or refusal, said.
-        var notes: [String: String] = [:]
+        /// Each read's cut or refusal, said (its counts kept as numbers).
+        var notes: [String: KubeCountedText] = [:]
     }
 
     @Published private(set) var state: State = .idle
@@ -575,7 +575,7 @@ final class KubeMarkedAppsSession: ObservableObject {
         switch read {
         case .read(let kept, let refused, let cut, _):
             took(kept, kind: kind)
-            let cutSaid = cut ? "\(title): the list stopped at \(kept.count.formatted()); the rest not read" : nil
+            let cutSaid: KubeCountedText? = cut ? "\(title): the list stopped at \(count: kept.count); the rest not read" : nil
             if workload {
                 reading.rowCuts[title] = cutSaid
                 if !refused.isEmpty { reading.refused[title] = refused } else { reading.refused[title] = nil }
@@ -583,7 +583,10 @@ final class KubeMarkedAppsSession: ObservableObject {
                 store?.rows[name] = kept
                 store?.done.insert("rows:\(name)")
                 var said = cutSaid
-                if !refused.isEmpty { said = [said, "\(title) refused in \(refused.joined(separator: ", "))"].compactMap { $0 }.joined(separator: "; ") }
+                if !refused.isEmpty {
+                    let refusal: KubeCountedText = "\(title) refused in \(refused.joined(separator: ", "))"
+                    said = KubeCountedText.joined([said, refusal].compactMap { $0 }, separator: "; ")
+                }
                 store?.notes["rows:\(name)"] = said
             }
         case .refusedAcross:

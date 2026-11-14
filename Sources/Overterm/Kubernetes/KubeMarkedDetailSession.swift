@@ -200,9 +200,7 @@ final class KubeMarkedDetailSession: ObservableObject {
                 notes.append("\(list.what.plural) of \(list.of.said(namespaced: namespaced)): not listed here")
                 continue
             }
-            let path = KubePath.query(
-                kind.path(namespace: list.namespace), [("labelSelector", list.selector), ("limit", String(list.limit)), ("includeObject", "Metadata")])
-            wanted.append((list, kind, path))
+            wanted.append((list, kind, Self.path(list, kind: kind)))
         }
         guard !wanted.isEmpty else { return ([], notes) }
         let maxBytes = listBytes
@@ -250,7 +248,15 @@ final class KubeMarkedDetailSession: ObservableObject {
         return (KubeMarkedAppDetail.unique(children), notes)
     }
 
-    private nonisolated static func list(
+    /// A list's request: its namespace's kind by the workload's own
+    /// selector (a CronJob's Jobs by none: kept by their owner), rows with
+    /// their metadata, at most its limit.
+    nonisolated static func path(_ list: KubeMarkedAppDetail.List, kind: KubeResourceKind) -> String {
+        KubePath.query(kind.path(namespace: list.namespace), [("labelSelector", list.selector), ("limit", String(list.limit)), ("includeObject", "Metadata")])
+    }
+
+    /// One list's Table rows as children, decoded off the main thread (Ask Why's too).
+    nonisolated static func list(
         _ path: String, list: KubeMarkedAppDetail.List, kind: KubeResourceKind, client: KubeClient, maxBytes: Int, now: Date
     ) async -> Result<(children: [KubeMarkedAppDetail.Child], more: Int?), Error> {
         do {
@@ -271,4 +277,66 @@ final class KubeMarkedDetailSession: ObservableObject {
     /// The paths the last read asked for, objects' and lists', in order:
     /// what a scenario tells apart from the section's reads beside it.
     private(set) var asked: [String] = []
+}
+
+/// A GET of each of several marked objects (gitops.md 14.2.6): at most 4 at
+/// once, each within `timeout` and `maxBytes`, decoded off the main thread
+/// by `KubeMarkedWorkloadWire`'s allow-list — what Ask Why's brief on an
+/// app read from marks and an agent's read of them take, with no session's
+/// bookkeeping. `totalBytes` holds whatever comes: each GET in flight
+/// counts the most it may read against it, so one starts only while the
+/// answers so far and those still out can't pass it; once none is out and
+/// the next can't start, those left are `skipped`. In the order answered.
+enum KubeMarkedFetch {
+    struct Answer: Sendable {
+        var id: KubeMarkedMember.ID
+        var result: Result<KubeMarkedWorkloadWire, Error>
+        var bytes: Int
+    }
+
+    static func objects(
+        _ wanted: [(id: KubeMarkedMember.ID, path: String)], client: KubeClient, maxBytes: Int, totalBytes: Int = .max, timeout: Duration
+    ) async -> (answers: [Answer], skipped: [KubeMarkedMember.ID]) {
+        guard !wanted.isEmpty else { return ([], []) }
+        var answers: [Answer] = []
+        var skipped: [KubeMarkedMember.ID] = []
+        // The most one GET may read: never more than the whole bound.
+        let each = min(maxBytes, totalBytes)
+        var spent = 0
+        await withTaskGroup(of: Answer.self) { group in
+            var next = 0
+            var inFlight = 0
+            while next < wanted.count || inFlight > 0 {
+                while next < wanted.count, inFlight < KubeMarkedDetailSession.inFlight, !Task.isCancelled {
+                    // Room for one more whole GET beside the answers and those still out.
+                    guard totalBytes - spent - inFlight * each >= each else {
+                        if inFlight == 0 {
+                            skipped += wanted[next...].map(\.id)
+                            next = wanted.count
+                        }
+                        break
+                    }
+                    let (id, path) = wanted[next]
+                    next += 1
+                    inFlight += 1
+                    group.addTask { await one(id, path: path, client: client, maxBytes: each, timeout: timeout) }
+                }
+                guard inFlight > 0, let answer = await group.next() else { break }
+                inFlight -= 1
+                spent += answer.bytes
+                answers.append(answer)
+            }
+        }
+        return (answers, skipped)
+    }
+
+    private static func one(_ id: KubeMarkedMember.ID, path: String, client: KubeClient, maxBytes: Int, timeout: Duration) async -> Answer {
+        do {
+            let data = try await KubeBriefRace.run(limit: timeout) { try await client.get(path, maxBytes: maxBytes) }
+            let result = await KubeBlocking.run { Result { try KubeMarkedWorkloadWire.decode(data) } }
+            return Answer(id: id, result: result, bytes: data.count)
+        } catch {
+            return Answer(id: id, result: .failure(error), bytes: 0)
+        }
+    }
 }

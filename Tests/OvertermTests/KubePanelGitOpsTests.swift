@@ -386,6 +386,94 @@ final class KubePanelGitOpsTests: XCTestCase {
         panel.panelVisible = false
     }
 
+    /// Ask Why on an app read from marks (14.2.6): offered whenever it
+    /// isn't Ready — the stuck single replica's Progressing included —,
+    /// asked of the window with the rail's own words: where its Application
+    /// stands, where what only it knows is, whose health it is. A Ready one
+    /// offers none.
+    func testUnservedAskWhyOnAMarkedAppAsksTheWindowWithTheRailsWords() async throws {
+        let app = "prod-shop-acme-pay-service"
+        addMarked(
+            "acme-pay", app: app, ready: 1, desired: 1, status: ["replicas": 2, "updatedReplicas": 1, "readyReplicas": 1, "availableReplicas": 1, "unavailableReplicas": 1])
+        let calm = "prod-shop-acme-calm-service"
+        addMarked("acme-calm", app: calm)
+        let panel = bound("fake-dev")
+        let host = RecordingHost()
+        panel.gitOpsHost = host
+        try await until(15, "settled by its object, its others listed") {
+            guard self.marked(panel, app)?.marked?.health.state == .progressing else { return false }
+            if case .bound(_, _, _?, _)? = self.marked(panel, app)?.marked?.scope { return true }
+            return false
+        }
+        let pay = try XCTUnwrap(marked(panel, app))
+        XCTAssertTrue(pay.asksWhy, "Progressing: asked")
+        XCTAssertFalse(pay.isProblem, "not a GitOps object's Failed, Blocked or Stuck")
+        try await until(15, "the calm app") { self.marked(panel, calm)?.marked?.health.state == .ready }
+        XCTAssertEqual(marked(panel, calm)?.asksWhy, false, "Ready: none")
+        panel.gitOps.askWhy(pay)
+        try await until(5, "asked of the window") { !host.markedAsks.isEmpty }
+        let asked = try XCTUnwrap(host.markedAsks.first)
+        XCTAssertEqual(asked.app.app.key.instance, app)
+        XCTAssertEqual(asked.app.health.state, .progressing)
+        XCTAssertEqual(asked.lead, "Argo CD runs in another cluster — not in your kubeconfig")
+        XCTAssertEqual(asked.place, "in the Application, in Argo CD's cluster")
+        XCTAssertEqual(asked.scope, "health of the 1 object bound here")
+        XCTAssertTrue(host.extras.isEmpty, "no GitOps object's Ask Why")
+        panel.panelVisible = false
+    }
+
+    /// The rail's Ask Why on an app read from marks, through the page as
+    /// the window plays it, on a context the page never showed (it shows
+    /// fake-prod; the checkout is bound to fake-dev): what fake-dev serves
+    /// is read for the brief, its object read by a GET and its pods listed
+    /// by its selector — never "not served" said for want of a discovery.
+    func testUnservedAskWhyFromTheRailOnAContextThePageNeverShowedReadsWhatItServes() async throws {
+        let app = "dev-shop-acme-pay-service"
+        addMarked(
+            "acme-pay", app: app, ready: 1, desired: 1, status: ["replicas": 2, "updatedReplicas": 1, "readyReplicas": 1, "availableReplicas": 1, "unavailableReplicas": 1])
+        api.addOwnedPod(
+            "acme-pay-6c9f5b-k2l3m", of: "acme-pay-6c9f5b", app: "acme-pay", namespace: "shop", FakeKubeAPI.Pod(status: "ImagePullBackOff", phase: "Pending", ready: 0),
+            created: Date())
+        let model = KubernetesModel(proxies: KubeProxies())
+        let list = KubeMCPTests.list(current: "fake-prod")
+        model.load = { _ in list }
+        model.readConfiguration = { KubernetesModel.Configuration() }
+        model.watchesSettings = false
+        model.remembersSelection = false
+        let socket = self.socket!
+        model.connectOverride = { context in KubeSocketConnection(socket: socket, context: context.name) }
+        model.statusOverride = { _ in .open }
+        let page = KubernetesPageModel(model: model)
+        var briefs: [KubeAgentBrief] = []
+        var actions = KubernetesActions(run: { _ in }, settings: {}, copy: { _ in }, copySecret: { _ in })
+        actions.askWhy = { briefs.append($0) }
+        page.actions = actions
+        model.show()
+        defer { model.hide() }
+        try await until(10, "the page on fake-prod") { model.contextsRead && model.selectedName == "fake-prod" }
+        KubeGitOpsMatchCache.shared.dropDiscovery("fake-dev")
+        XCTAssertNil(model.knownDiscovery(of: "fake-dev"), "the page never read fake-dev")
+
+        let panel = bound("fake-dev", model: model)
+        // The window holds its host; the rail only refers to it.
+        let host = PageHost(page)
+        panel.gitOpsHost = host
+        try await until(15, "settled by its object") { self.marked(panel, app)?.marked?.health.state == .progressing }
+        let pay = try XCTUnwrap(marked(panel, app))
+        XCTAssertTrue(pay.asksWhy)
+        panel.gitOps.askWhy(pay)
+        try await until(15, "the brief handed over") { !briefs.isEmpty || page.commandProblem != nil }
+        let brief = try XCTUnwrap(briefs.first, page.commandProblem ?? "no brief")
+        XCTAssertFalse(brief.text.contains("aren't served"), brief.text)
+        XCTAssertTrue(brief.text.contains("health of the 1 object bound here"), "the rail's words: \(brief.text)")
+        let pods = try XCTUnwrap(brief.parts.first { $0.title == "pods" }?.text, "\(brief.parts.map(\.title))")
+        XCTAssertTrue(pods.contains("acme-pay-6c9f5b-k2l3m: ImagePullBackOff"), pods)
+        XCTAssertGreaterThanOrEqual(api.requests.filter { $0.path == "/apis/apps/v1/namespaces/shop/deployments/acme-pay" }.count, 2, "the rail's GET, then the brief's")
+        XCTAssertTrue(api.requests.contains { $0.path == "/api/v1/namespaces/shop/pods" && $0.query["labelSelector"] == "app=acme-pay" }, "its pods by its selector")
+        panel.panelVisible = false
+        withExtendedLifetime(host) {}
+    }
+
     /// Nothing the rail keeps or says of apps read from marks holds the
     /// sentinel the fixture's objects carry (env, args, last-applied).
     private func assertNoSentinel(_ panel: KubernetesPanelModel, file: StaticString = #filePath, line: UInt = #line) {
@@ -882,6 +970,10 @@ final class KubePanelGitOpsTests: XCTestCase {
         func gitOpsOpenMarked(_ ref: KubeMarkedDetailRef, namespaces: [String]) async { opened.append((ref, namespaces)) }
         var opened: [(KubeMarkedDetailRef, [String])] = []
         func gitOpsAskWhy(_ ref: KubeObjectRef, extra: [AskAgentModel.Part]) async { extras[ref.name] = extra }
+        var markedAsks: [(app: KubeMarkedRanked, lead: String, place: String, scope: String)] = []
+        func gitOpsAskWhyMarked(_ app: KubeMarkedRanked, context: String, lead: String, whereApplication: String, scope: String) async {
+            markedAsks.append((app, lead, whereApplication, scope))
+        }
         var gitOpsWriteStatus: AnyPublisher<KubeWriteStatus?, Never> { Empty().eraseToAnyPublisher() }
     }
 
@@ -1039,6 +1131,9 @@ final class KubePanelGitOpsTests: XCTestCase {
             asked.append(ref)
             extras[ref.name] = extra
             page.askWhy(ref, extra: extra)
+        }
+        func gitOpsAskWhyMarked(_ app: KubeMarkedRanked, context: String, lead: String, whereApplication: String, scope: String) async {
+            page.askWhyMarked(app, context: context, lead: lead, whereApplication: whereApplication, scope: scope)
         }
         var gitOpsWriteStatus: AnyPublisher<KubeWriteStatus?, Never> { page.$writeStatus.eraseToAnyPublisher() }
     }
