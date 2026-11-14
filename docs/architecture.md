@@ -4805,8 +4805,9 @@ the bound checkout, after the deployed commit, only when there is a match,
 an owner, a problem or Find What Deploys This. Two shapes of repository,
 owners first: **the app repo** — the bound workloads' rows carry their
 metadata in the binding's one namespace (`KubeListOptions.owners`;
-`KubeRow.owners` from Flux's labels, Argo CD's tracking id and instance
-label, no other annotation kept; every other list's rows unchanged), and
+`KubeRow.owners` from Flux's labels, Argo CD's tracking id — only one
+naming the row's own object — and instance label, no other annotation
+kept; every other list's rows unchanged), and
 each owner is read by one GET (at most 8 objects with a Flux owner's
 source and chart, 4 MB each); Helm's own `app.kubernetes.io/instance` counts
 only once that Application's `status.resources` names the workload
@@ -5156,7 +5157,17 @@ Overview has its tree (`x` on its row opens the Overview scrolled to it):
   (`status.resourceHealthSource: appTree`), is said once and its objects
   drawn by sync alone, never as unknown. Who deploys an object, from its
   marks alone, is `KubeGitOpsOwner` (pure): the tracking-id annotation
-  (`<appNamespace>_<app>` for apps in any namespace),
+  (`<appNamespace>_<app>` for apps in any namespace), read by
+  `KubeTrackingID` (pure: Argo CD's `<app>:<group>/<Kind>:<ns>/<name>`,
+  exactly three parts, capped at 1,024 bytes, every part's characters
+  checked — anything else is no tracking id) and counted only on the
+  object it names (`isSelf`, Argo CD's `isSelfReferencedObj`; gitops.md
+  14.1, D0): the copy the Deployment controller puts on every ReplicaSet,
+  or an operator's on what it makes, names nobody, nor does a label beside
+  it. The object is the caller's — a row's by the kind listed and the
+  row's name and namespace, never the embedded `PartialObjectMetadata`
+  (`KubeTableReader` requires `kind` with `owners`), an object's by its own
+  `apiVersion` and `kind`, a GitOps object's by its summary;
   `argocd.argoproj.io/instance`, Argo CD 2.x's default
   `app.kubernetes.io/instance` as "probably" (Helm sets it too; not with
   Helm's release annotation or Flux's labels), and Flux's name and

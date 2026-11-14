@@ -321,7 +321,7 @@ final class KubeGitOpsTests: XCTestCase {
 
     func testTheOwnerAnObjectsMarksName() {
         XCTAssertEqual(
-            KubeGitOpsOwner.parse(labels: [:], annotations: ["argocd.argoproj.io/tracking-id": "acme-shop:apps/Deployment:shop/shop-api"]),
+            KubeGitOpsOwner.parse(labels: [:], annotations: ["argocd.argoproj.io/tracking-id": "acme-shop:apps/Deployment:shop/shop-api"], self: nil),
             [KubeGitOpsOwner(tool: .argoCD, name: "acme-shop", namespace: nil, mark: .trackingID)])
         XCTAssertEqual(
             KubeGitOpsOwner.tracking("team-a_acme-api:apps/Deployment:shop/api"), KubeGitOpsOwner(tool: .argoCD, name: "acme-api", namespace: "team-a", mark: .trackingID),
@@ -329,28 +329,100 @@ final class KubeGitOpsTests: XCTestCase {
         XCTAssertEqual(KubeGitOpsOwner.tracking(":apps/Deployment:shop/api"), nil)
         XCTAssertEqual(KubeGitOpsOwner.tracking("no-colon"), nil)
         XCTAssertEqual(
-            KubeGitOpsOwner.parse(labels: ["argocd.argoproj.io/instance": "acme-shop"], annotations: [:]).map(\.mark), [.argoInstance])
-        let probable = KubeGitOpsOwner.parse(labels: ["app.kubernetes.io/instance": "acme-shop"], annotations: [:])
+            KubeGitOpsOwner.parse(labels: ["argocd.argoproj.io/instance": "acme-shop"], annotations: [:], self: nil).map(\.mark), [.argoInstance])
+        let probable = KubeGitOpsOwner.parse(labels: ["app.kubernetes.io/instance": "acme-shop"], annotations: [:], self: nil)
         XCTAssertEqual(probable, [KubeGitOpsOwner(tool: .argoCD, name: "acme-shop", namespace: nil, mark: .appInstance)])
         XCTAssertEqual(probable.first?.isCertain, false)
         XCTAssertEqual(probable.first?.said, "probably Argo CD Application acme-shop")
         XCTAssertEqual(
-            KubeGitOpsOwner.parse(labels: ["app.kubernetes.io/instance": "web"], annotations: ["meta.helm.sh/release-name": "web"]), [],
+            KubeGitOpsOwner.parse(labels: ["app.kubernetes.io/instance": "web"], annotations: ["meta.helm.sh/release-name": "web"], self: nil), [],
             "Helm's own install: its instance label names nobody")
         XCTAssertEqual(
             KubeGitOpsOwner.parse(
                 labels: ["app.kubernetes.io/instance": "acme-api", "argocd.argoproj.io/instance": "acme-api"],
-                annotations: ["argocd.argoproj.io/tracking-id": "acme-shop:apps/Deployment:shop/api"]
+                annotations: ["argocd.argoproj.io/tracking-id": "acme-shop:apps/Deployment:shop/api"], self: nil
             ).map(\.mark), [.trackingID], "the surest mark only")
         let flux = KubeGitOpsOwner.parse(
             labels: [
                 "kustomize.toolkit.fluxcd.io/name": "acme-apps", "kustomize.toolkit.fluxcd.io/namespace": "flux-system",
                 "helm.toolkit.fluxcd.io/name": "acme-payments", "helm.toolkit.fluxcd.io/namespace": "flux-system", "app.kubernetes.io/instance": "payments",
-            ], annotations: [:])
+            ], annotations: [:], self: nil)
         XCTAssertEqual(flux.map(\.said), ["Kustomization flux-system/acme-apps", "HelmRelease flux-system/acme-payments"], "Helm's instance label under Flux names nobody")
         XCTAssertEqual(
-            KubeGitOpsOwner.parse(metadata: ["labels": ["kustomize.toolkit.fluxcd.io/name": "acme-apps"], "annotations": ["other": 1]]).map(\.tool),
+            KubeGitOpsOwner.parse(metadata: ["labels": ["kustomize.toolkit.fluxcd.io/name": "acme-apps"], "annotations": ["other": 1]], self: nil).map(\.tool),
             [.fluxKustomize])
+    }
+
+    /// A mark copied onto another object names nobody (14.1): the
+    /// Deployment controller copies a Deployment's annotations onto every
+    /// ReplicaSet, an operator its resource's onto what it makes. Only the
+    /// object the tracking id names is the app's.
+    func testACopiedMarkNamesNobody() throws {
+        let mark = ["argocd.argoproj.io/tracking-id": "prod-shop-api-service:apps/Deployment:shop/api"]
+        let deployment = KubeTrackingID.Identity(group: "apps", kind: "Deployment", namespace: "shop", name: "api")
+        let replicaSet = KubeTrackingID.Identity(group: "apps", kind: "ReplicaSet", namespace: "shop", name: "api-7d9f8c6b5")
+        XCTAssertEqual(KubeGitOpsOwner.parse(labels: [:], annotations: mark, self: deployment).map(\.said), ["Application prod-shop-api-service"])
+        XCTAssertEqual(KubeGitOpsOwner.parse(labels: [:], annotations: mark, self: replicaSet), [], "a ReplicaSet with its Deployment's mark")
+        // Nor does a label beside the copy say it instead: Argo CD tracks it by none of them.
+        XCTAssertEqual(
+            KubeGitOpsOwner.parse(
+                labels: ["argocd.argoproj.io/instance": "prod-shop-api-service", "app.kubernetes.io/instance": "prod-shop-api-service"], annotations: mark,
+                self: replicaSet), [])
+        // Flux's own labels still say theirs.
+        XCTAssertEqual(
+            KubeGitOpsOwner.parse(labels: ["kustomize.toolkit.fluxcd.io/name": "acme-apps"], annotations: mark, self: replicaSet).map(\.tool), [.fluxKustomize])
+        // An operator's child: its custom resource's mark.
+        let operatorMark = ["argocd.argoproj.io/tracking-id": "prod-data-orders-db:acme.example.com/Database:data/orders"]
+        XCTAssertEqual(
+            KubeGitOpsOwner.parse(
+                labels: [:], annotations: operatorMark, self: KubeTrackingID.Identity(group: "apps", kind: "StatefulSet", namespace: "data", name: "orders-db")),
+            [])
+        // A cluster-scoped object's mark carries the destination namespace: still its own.
+        XCTAssertEqual(
+            KubeGitOpsOwner.parse(
+                labels: [:], annotations: ["argocd.argoproj.io/tracking-id": "acme-rbac:rbac.authorization.k8s.io/ClusterRole:payments/acme-reader"],
+                self: KubeTrackingID.Identity(group: "rbac.authorization.k8s.io", kind: "ClusterRole", namespace: nil, name: "acme-reader")
+            ).map(\.name), ["acme-rbac"])
+        // The same through the rows: a ReplicaSets list's copy names nobody, its Deployments list's own mark does.
+        func table(_ name: String) -> [String: Any] {
+            [
+                "kind": "Table", "columnDefinitions": [["name": "Name", "type": "string", "format": "name"]],
+                "rows": [["cells": [name], "object": ["kind": "PartialObjectMetadata", "metadata": ["name": name, "namespace": "shop", "annotations": mark]]]],
+            ]
+        }
+        XCTAssertEqual(try KubeTableReader.read(table("api-7d9f8c6b5"), namespace: "shop", kind: .replicaSets, owners: true).rows.first?.owners, [])
+        XCTAssertEqual(
+            try KubeTableReader.read(table("api"), namespace: "shop", kind: .deployments, owners: true).rows.first?.owners.map(\.name), ["prod-shop-api-service"])
+    }
+
+    /// A two-part value Argo CD never writes was read before as the app
+    /// before the colon; it is no tracking id now, so the instance label says.
+    func testATrackingIDArgoCDWouldntWriteIsRefused() {
+        XCTAssertNil(KubeGitOpsOwner.tracking("acme-shop:anything"))
+        XCTAssertNil(KubeGitOpsOwner.tracking("acme-shop:apps/Deployment:shop"))
+        XCTAssertEqual(
+            KubeGitOpsOwner.parse(
+                labels: ["argocd.argoproj.io/instance": "acme-shop"], annotations: ["argocd.argoproj.io/tracking-id": "acme-shop:anything"],
+                self: KubeTrackingID.Identity(group: "apps", kind: "Deployment", namespace: "shop", name: "api")),
+            [KubeGitOpsOwner(tool: .argoCD, name: "acme-shop", namespace: nil, mark: .argoInstance)])
+    }
+
+    /// An app-of-apps: the child Application's tracking id names itself,
+    /// so its parent is kept; a mark naming another Application is a copy.
+    func testAnAppOfAppsChildKeepsItsParent() throws {
+        func object(_ mark: String) throws -> KubeGitOpsObject {
+            let wire = try JSONDecoder().decode(
+                KubeGitOpsWire.Object.self,
+                from: Self.data([
+                    "apiVersion": "argoproj.io/v1alpha1", "kind": "Application",
+                    "metadata": ["name": "prod-shop-api-service", "namespace": "argocd", "annotations": ["argocd.argoproj.io/tracking-id": mark]],
+                ]))
+            return try XCTUnwrap(KubeGitOpsObject(wire, readAt: Date()))
+        }
+        XCTAssertEqual(
+            try object("acme-root:argoproj.io/Application:argocd/prod-shop-api-service").parentOwner,
+            KubeGitOpsOwner(tool: .argoCD, name: "acme-root", namespace: nil, mark: .trackingID))
+        XCTAssertNil(try object("acme-root:argoproj.io/Application:argocd/prod-shop-web-service").parentOwner, "another Application's mark: a copy")
     }
 
     func testTheApplysWarningsTakeTheOwnersMarks() {
@@ -372,7 +444,7 @@ final class KubeGitOpsTests: XCTestCase {
 
         // A tracking id that doesn't parse is still Argo CD's, surely; its instance label then names the app.
         XCTAssertEqual(
-            KubeGitOpsOwner.parse(labels: ["argocd.argoproj.io/instance": "acme-shop"], annotations: ["argocd.argoproj.io/tracking-id": "no-colon"]),
+            KubeGitOpsOwner.parse(labels: ["argocd.argoproj.io/instance": "acme-shop"], annotations: ["argocd.argoproj.io/tracking-id": "no-colon"], self: nil),
             [KubeGitOpsOwner(tool: .argoCD, name: "acme-shop", namespace: nil, mark: .argoInstance)])
         XCTAssertEqual(
             KubeFieldOwners.managedBy([

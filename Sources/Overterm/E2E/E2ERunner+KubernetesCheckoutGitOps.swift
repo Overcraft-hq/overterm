@@ -17,6 +17,9 @@ import SwiftUI
 ///    branch, said; an Application with the path is found in argocd, Open
 ///    on Page opens its detail on the page, and its history's entry opens
 ///    a review of `git diff c1..c3 -- deploy/fake-dev` in the checkout.
+///    A Deployment beside it carrying a copied mark — an operator's
+///    resource's tracking id, not its own (D0, gitops.md 14.1) — names no
+///    owner, read by the same list.
 /// 2. Reconcile from the rail asks the page's own sheet in the window —
 ///    the context, the namespace, the flux command — then one merge patch;
 ///    its outcome said in the rail.
@@ -86,6 +89,11 @@ extension E2ERunner {
             "app.kubernetes.io/part-of": "ot-shop", "kustomize.toolkit.fluxcd.io/name": "acme-apps", "kustomize.toolkit.fluxcd.io/namespace": "flux-system",
         ]
         fake.add("deployments.apps", "shop-api", namespace: "shop", values: ["Ready": "1/1", "Up-to-date": 1, "Available": 1], labels: labels)
+        // An operator's Deployment, its custom resource's mark copied onto it: nobody's.
+        fake.add(
+            "deployments.apps", "shop-orders-proxy", namespace: "shop", values: ["Ready": "1/1", "Up-to-date": 1, "Available": 1],
+            labels: ["app.kubernetes.io/part-of": "ot-shop"],
+            annotations: ["argocd.argoproj.io/tracking-id": "prod-shop-orders-service:acme.example.com/Database:shop/orders"])
         let now = Date()
         fake.addApplication(
             "acme-shop-dev",
@@ -103,6 +111,7 @@ extension E2ERunner {
         defer {
             fake.delete("applications.argoproj.io", "acme-shop-dev", namespace: "argocd")
             fake.delete("deployments.apps", "shop-api", namespace: "shop")
+            fake.delete("deployments.apps", "shop-orders-proxy", namespace: "shop")
         }
 
         let previous = app.store.selected
@@ -128,6 +137,10 @@ extension E2ERunner {
             await eventually(20) { match("Kustomization", "acme-apps")?.whys.count == 2 }, "\(gitOps.state) \(gitOps.matches.map { "\($0.id): \($0.why)" })")
         check(
             "said so", match("Kustomization", "acme-apps")?.why == "owns Deployment/shop-api · deploy/fake-dev", match("Kustomization", "acme-apps")?.why ?? "none")
+        // The same Deployments list carried shop-orders-proxy: its copied mark is no Application's.
+        check(
+            "a copied mark names nobody", !gitOps.matches.contains { $0.key.name == "prod-shop-orders-service" || $0.why.contains("prod-shop-orders-service") },
+            "\(gitOps.matches.map { "\($0.id): \($0.why)" })")
         check(
             "the owner found by one GET",
             fake.requests.filter { $0.path == "/apis/kustomize.toolkit.fluxcd.io/v1/namespaces/flux-system/kustomizations/acme-apps" }.count >= 1)

@@ -179,7 +179,8 @@ enum KubeTableReader {
     /// `namespace`: the request's, for a row without a Namespace column.
     /// `columns`: the headers kept from the list, for a watch's later
     /// events, which come without theirs. `kind`: what was listed, for
-    /// the kinds whose cells are read with care (`row`).
+    /// the kinds whose cells are read with care (`row`), and required with
+    /// `owners`: a mark is checked against it.
     static func read(_ data: Data, namespace: String?, columns: [KubeColumn]? = nil, kind: KubeResourceKind? = nil, owners: Bool = false) throws -> KubeTable {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw Malformed(detail: String(decoding: data.prefix(120), as: UTF8.self))
@@ -190,6 +191,7 @@ enum KubeTableReader {
     static func read(
         _ object: [String: Any], namespace: String?, columns kept: [KubeColumn]? = nil, kind: KubeResourceKind? = nil, owners: Bool = false
     ) throws -> KubeTable {
+        precondition(!owners || kind != nil, "a row's owners are read only against the kind listed")
         let metadata = object["metadata"] as? [String: Any] ?? [:]
         let resourceVersion = metadata["resourceVersion"] as? String
         let said = object["kind"] as? String ?? ""
@@ -237,7 +239,13 @@ enum KubeTableReader {
     /// (GitRepository, OCIRepository, HelmRepository…) cells lose a URL's
     /// credentials: its URL column is the `spec.url` that can carry
     /// `user:token@`, and its Status, the Ready message, may quote it.
-    /// `owners`: its owners read from its marks too (`KubeRow.owners`).
+    /// `owners`: its owners read from its marks too (`KubeRow.owners`),
+    /// each tracking id checked against the object it sits on — the
+    /// group and Kind from `kind`, the request's, the name and namespace
+    /// from the row; never the embedded object's, which is a
+    /// `PartialObjectMetadata` of `meta.k8s.io`. So `kind` is required
+    /// with `owners`: a row whose marks can't be checked names nobody
+    /// surely.
     static func row(
         _ cells: [KubeCell], columns: [KubeColumn], namespace: String?, object: [String: Any]? = nil, kind: KubeResourceKind? = nil, owners: Bool = false
     ) -> KubeRow? {
@@ -258,7 +266,11 @@ enum KubeTableReader {
         let labels = (metadata?["labels"] as? [String: Any] ?? [:]).compactMapValues { $0 as? String }.filter { $0.key.hasPrefix(KubeApplications.prefix) }
         let conditions = KubeRowCondition.read((object?["status"] as? [String: Any])?["conditions"])
         var row = KubeRow(id: KubeRowID(namespace: rowNamespace, name: name), cells: cells, created: created, labels: labels, conditions: conditions)
-        if owners { row.owners = KubeGitOpsOwner.parse(metadata: metadata) }
+        if owners {
+            guard let kind else { preconditionFailure("a row's owners are read only against the kind listed") }
+            let identity = KubeTrackingID.Identity(group: kind.group, kind: kind.kind, namespace: kind.namespaced ? rowNamespace : nil, name: name)
+            row.owners = KubeGitOpsOwner.parse(metadata: metadata, self: identity)
+        }
         return row
     }
 

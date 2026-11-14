@@ -549,7 +549,9 @@ enum KubeFieldOwners {
         // Argo CD's own marks, even where they name no Application this
         // reads (an odd tracking id, an empty instance label): it is Argo's.
         if annotations[KubeGitOpsOwner.trackingAnnotation] != nil || labels[KubeGitOpsOwner.argoInstanceLabel] != nil { tools.append(.argoCD) }
-        for owner in KubeGitOpsOwner.parse(metadata: metadata) {
+        // A copied mark (one naming another object) names no owner; the
+        // presence above still warns, which errs toward caution.
+        for owner in KubeGitOpsOwner.parse(metadata: metadata, self: KubeTrackingID.Identity.of(live)) {
             let tool: Tool =
                 switch owner.tool {
                 case .argoCD: owner.isCertain ? .argoCD : .argoCDProbably

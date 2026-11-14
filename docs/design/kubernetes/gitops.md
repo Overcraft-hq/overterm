@@ -955,3 +955,610 @@ Each stage is one commit.
 | 16 | "This branch changes nothing" can be wrong | Applied. Said as "no change under <paths>"; `manifest-generate-paths` and one level of `kustomization.yaml` added; never "nothing". |
 | 17 | "Newer" can't be known; drift timing | Applied. "Differs"; timed by `lastUpdateTime` plus interval and retryInterval; compared with attempted; `merge-base --is-ancestor` in the rail. |
 | 18 | Needs pruning, `summary.images`, "will be recreated", short SHAs | All applied: §2.3 Drift; §2.4 and §4.2's image fallback; G0b's warning; §2.6 and §5.4's prefix check with "ambiguous". |
+
+## 14. Addendum: Argo CD in another cluster — apps read from their marks
+
+This addendum covers a spoke cluster: Argo CD runs in a hub cluster that isn't in the person's kubeconfig. The spoke has no Application objects, and usually no Argo CRDs at all. Its objects still carry Argo CD's marks. On the cluster this was written for, about 980 Deployments carry `argocd.argoproj.io/tracking-id`, which works out to about 894 distinct apps in production. Today the GitOps section shows nothing there, and the rail only says "managed by Argo CD Application X (not in <ctx>)".
+
+The person chose one thing only: **show from marks.** The section and the rail list the apps that the marks name. Each app's health is computed from its marked objects alone, and the page says plainly that Argo CD runs in another cluster.
+
+The following are out of scope: Argo Rollouts, the Argo CD API or server, reaching the hub, and any verb that needs the Application (sync, refresh, rollback, diff).
+
+It builds on the code after G0–G8; line references are to that code. Argo CD's rules (resource tracking, `isSelfReferencedObj`, gitops-engine's health checks) are Argo CD 3.x's own, read from its source and docs.
+
+**The survey has run** (§14.12): a read-only look at the spoke's production and development clusters. Its numbers replace every estimate marked **[survey]** below, and **its six consequences override anything earlier in this section** where they disagree: derive apps whenever no Application here deploys them (not only when the kind isn't served), Argo Rollouts read for health only, Argo CD's hook Jobs left out of health, the rail's name match stripping `<env>-<ns>-` and `-service`, rows-only reads, and an expired sign-in said quickly.
+
+An adversarial review checked this section against the code and Argo CD's source before any stage was built. Its corrections are in the sections they concern: the write paths that read a member's marks (§14.2.3), where `cliLine` lives and what a derived row's keys and verbs need (§14.7), the reader's required `kind` (§14.1), presence read from R1's uncut rows rather than R2's cut summaries (§14.2.1, §14.3), `argoproj.io` alone among `failedGroups` deciding "couldn't tell" (§14.2.1), unknown never said as absent (§14.2.1, §14.2.6, §14.3), health as Argo CD's built-in rules say it — StatefulSets and DaemonSets never Degraded, HPAs read whole, a CronJob that never succeeded Healthy, an app with no workload read Unknown, Unknown's rank (§14.5, D-7) —, one GET per bound workload in the rail (§14.2.5), option B as `.describes`, never `owns` (D-8), M2's GETs only on a generation move and at most 60 a minute (§14.4.1), "no discovery, no request" as the sign-in rule (§14.4.8), the tests each of those needs (§14.8, §14.9), and D7 gating the release (D-10).
+
+### In short
+
+- **A derived app** (`KubeMarkedApp`) is the set of top-level objects whose tracking id passes Argo CD's own self-reference check, grouped by installation id and the app's instance name.
+  - Its health is the worst of its objects' health, under gitops-engine's built-in rules, as far as what is here can say.
+  - It is never Drift, Blocked or Stuck: those need the Application.
+- **The section turns on from marks.** When `applications.argoproj.io` isn't served, or can't be read anywhere, `g` no longer refuses. The section follows Deployments, StatefulSets and DaemonSets across the scope as rows with their metadata, and lists them with the line "Argo CD runs in another cluster — not in your kubeconfig."
+- **Rows first, then one bounded sweep.** A workload's first state comes from its Table cells (Ready, Up-to-date, Available) and is said as "from its row". Cells can't show a stuck rollout whose old pods still serve, a paused Deployment, or a stale generation. So one byte-bounded paged list of the whole objects (M1b, the main design's R2 pattern, decision 4, never a watch) runs on show and settles each workload by Argo CD's rule. After that, a row whose generation moves, whose cells turn not ready, or that isn't healthy gets one bounded GET (at most 60 a minute), decoded by an allow-list (decision D-4).
+- **Two more tiers fill in the apps:**
+  - Services, Ingresses and PVCs: a paged metadata list, no watch. CronJobs and HPAs: a paged object list by allow-list, no watch (their health needs status no cell shows).
+  - One app's detail: a GET of each of its objects (at most 50), and its pods by selector.
+- **No new write, and no verb that needs the Application.**
+  - The detail says why Sync, Refresh, Rollback and Diff are absent.
+  - Each object still opens in its own list, with the verbs it has today. The verbs say that Argo CD may undo the change.
+- **The rail** keeps matching by the binding's own workloads (case b), and now adds the derived app's health.
+  - For a config repository, it compares the checkout's committed manifests' object identities with the tracking ids, on a press on production, and says "describes N of its objects", never that the app deploys this checkout.
+  - Name and image heuristics are "probably" only. Chart names are not used.
+- **Agents:** `k8s_gitops` lists derived apps when Argo CD isn't here, under `kind: "marks"` too, through `Secrets`. Ask Why on a derived app briefs its failing objects.
+- **Budget:** 3 page watches on All Namespaces or one namespace. Several namespaces take 3 a namespace only while that fits in the watches the GitOps kinds and controllers leave free; past that, 3 filtered across the cluster (§14.4.1). M2's GETs are capped at 60 a minute on top of the per-flush cap (§14.4.1). Rows across the cluster are kept under 30 MB, and grouping and ranking run off the main thread once per flush. Nothing goes to disk. No Secret or ConfigMap is listed, not even its metadata.
+- **Unknown is never said as absent.** "Argo CD runs in another cluster", "not in this cluster", "no workload carries marks" and "doesn't deploy this checkout" are each said only when the read behind them was whole. A refused, cut or undiscovered read says what couldn't be read (§14.3, §14.2.1).
+- **Stages:** D0–D7, each one commit. The floor is D0–D3 and D5.
+
+### 14.1 What a mark says, and what it doesn't
+
+**A tracking id** has the form `<app>:<group>/<Kind>:<namespace>/<name>`. It is split on `:` into exactly three parts, and the second and third on `/` into exactly two.
+
+- The app part is `Application.InstanceName`:
+  - `<name>` when the Application lives in Argo CD's own namespace, which is unknown from a spoke and is said as "Argo CD's namespace";
+  - `<appNamespace>_<name>` otherwise.
+- Core-group objects have an empty group, as in `shop:/Service:shop/api`.
+- For a cluster-scoped object, the namespace part is the Application's destination namespace. It is empty only when the destination namespace is.
+
+**Self-reference** (`isSelfReferencedObj`, `controller/state.go`). A mark counts only when its group, Kind and name equal the object's own, and its namespace equals the object's namespace (or the object is cluster-scoped).
+
+- The Deployment controller copies every Deployment annotation to its ReplicaSets, old ones included, and operators copy marks onto what they create. Those objects fail the check and are not members. They show only under their owner, through ownerRefs, in the detail's tree.
+- Before D0, `KubeGitOpsOwner.tracking` read only up to the first `:` and did no check. D0 (§14.8) reads it through `KubeTrackingID` and checks the object everywhere it is known: a row by the kind listed, the apply's live object by its own `apiVersion` and `kind`, a GitOps object's delete and its parent by its summary. A copied mark names no Argo CD owner, nor does an instance label beside it; Flux's labels still say theirs.
+- **Where the object's identity comes from.** A row read with `includeObject=Metadata` embeds a `PartialObjectMetadata`: its `kind` and `apiVersion` are `meta.k8s.io`'s, not the Deployment's. The self check takes the group and Kind from the request's `KubeResourceKind` (the `kind:` that `KubeTableReader.row` already receives, `KubeTable.swift:241`), and the name and namespace from the row. It never takes them from the embedded object. Every list path that asks `owners` or `marks` already passes `kind` (`KubeClient.swift:469, 607, 886`), so D0 makes `kind` required whenever `owners` or `marks` is asked (a precondition, not a fallback). An "unchecked, probably" tracking id would be worse than useless: `isCertain` would be false, and `KubeGitOpsMatch.found` drops an absent uncertain owner, so the rail would silently lose it. The one caller today without `kind`, `KubeGitOpsMatchTests.swift:224` (`KubeTableReader.read(table, namespace:owners:)`), is updated to pass it.
+
+**installation-id** (`argocd.argoproj.io/installation-id`). It is set when the hub sets `installationID`. Two Argo CDs that deploy into one cluster are told apart by it, so an app's key is `(installationID ?? "", instanceName)`.
+
+**The older label.** `argocd.argoproj.io/instance` and Argo 2.x's `app.kubernetes.io/instance` (a cluster upgraded from `label` tracking):
+
+- an object carrying only `argocd.argoproj.io/instance` is a member, marked `labelOnly`, with no self-reference check possible;
+- `app.kubernetes.io/instance` alone stays "probably". It forms a derived app only when it is the only mark in the whole scope, so on a spoke with tracking ids it is never used. It is never mixed into a tracked app of the same name.
+
+**What a spoke can say:**
+
+- the objects, their namespaces, and the destination namespace when a cluster-scoped mark is seen;
+- images and tags (cells);
+- rollout revision and time (the detail);
+- generation against observedGeneration;
+- when Argo CD last applied a change: the newest `managedFields[].time` whose manager is Argo CD's.
+  - With server-side apply the manager is `argocd-controller`. The client-side manager name is **[verify]** on the real cluster.
+  - It is shown only when the manager is one of those known names. There is no fallback to "the newest Update that isn't the controller's": that would credit Argo CD with a person's `kubectl edit`, `kubectl scale` or an HPA's write. With no known manager, the Age column shows the row's own age, and its hover says "Argo CD's last change isn't readable here".
+  - This is said as "last change applied by Argo CD", never "last sync": a sync that changes nothing writes nothing.
+
+**What it can't say:** sync status, repository, path, target revision, sync policy (auto, prune, selfHeal), last sync, project, ApplicationSet, the hub's custom or Lua health checks, missing resources, or whether the Application still exists in the hub. An app deleted from the hub without a cascading delete leaves its marks behind and looks the same. So does a cluster whose own Argo CD was uninstalled, or objects restored from another cluster's backup. "Argo CD runs in another cluster" is therefore an inference from "marks here, no Application kind here", and the hover says what else leaves the same marks. The page says this (§14.2.1) rather than guessing.
+
+### 14.2 What the person sees
+
+#### 14.2.1 When marks mode is on
+
+| Discovery and reads | Section | Header line |
+|---|---|---|
+| `applications.argoproj.io` not served, and `argoproj.io` isn't among discovery's `failedGroups` (`KubeDiscovery.swift:53`; another group failing, such as a down `metrics.k8s.io`, has no bearing); marks seen | Derived apps only | "Argo CD runs in another cluster — not in your kubeconfig. These N apps are read from the marks Argo CD leaves on their objects." |
+| `argoproj.io` (or the aggregated discovery's group list) failed to answer discovery; marks seen | Derived apps only | "Couldn't tell whether Argo CD runs in <ctx>: argoproj.io didn't answer discovery. These N apps are read from the marks on their objects." Never "another cluster", as `readOwners` already treats a failed group as unreadable (`KubernetesPanelModel+GitOps.swift:537-541`). |
+| Served, but Applications refused in the cluster and in every fallback namespace (§3.3) | Derived apps only | "Argo CD's Applications can't be read in <ctx> (forbidden). These N apps are read from the marks on their objects." |
+| Served, and R1's Applications **row follow** has listed **across the cluster** (not namespace by namespace); some marks name an app that isn't among its rows | Applications as today, plus derived rows for the rest | A chip, "M marked apps with no Application here", pressed to show them. Each row says "its Application isn't in this cluster" only under §14.3's rule. Otherwise it says "its Application wasn't found where Applications were read". Presence is decided from R1's rows (names only, paged, never cut: `KubeGitOpsSession.follow`), **not** from R2's summaries, which are cut at 500 by design: a hub that is also a destination with 1,000 Applications (the `kubernetesGitOpsPerf` fixture) would otherwise never get derived rows. |
+| Served, but Applications were read only in fallback namespaces (403 across the cluster) | As today, plus derived rows only for marks whose `<appNamespace>_` prefix names a namespace whose R1 rows were listed | The rest are counted, not listed: "N marked apps whose Application namespace couldn't be read". A fallback namespace past `spareWatches` ("not watched; Refresh reads them") counts as unread until R2's read there answered whole. |
+| Served, but R1's first list hasn't come yet | As today | Nothing is derived yet, and no chip: "not here" can't be said before the names are in. |
+| Served; only R2's summaries were cut (500 objects or 64 MB) | As today, plus derived rows as in the row above | R2's cut has no bearing on presence (R1 has every name); it only leaves some Applications summarised "from its row", as today. |
+| Not served or refused, marks seen, but M1 was cut, refused in some namespaces, or is still reading | Derived apps from what was read | The count is a floor and says so: "At least N apps, from what could be read: Deployments refused in 3 namespaces (a, b, c)". While M1's first list is still coming, no count: "Reading the marks on Deployments, StatefulSets and DaemonSets…". |
+| Flux served, Argo CD not; marks seen | Flux's rows, plus derived rows | Both lines |
+| Neither served, M1 read whole across the scope, and no marks in it | Empty | "No Argo CD Application is served by <ctx>, and no Deployment, StatefulSet or DaemonSet in <scope> carries Argo CD's marks." with Show All Namespaces when the scope is narrower |
+| Neither served, no marks found, but M1 was cut, refused in some namespaces, or still reading | Empty | "No Argo CD marks found in what could be read: Deployments refused in 3 namespaces (a, b, c)", or "…: the list stopped at 5,000". Never "no Deployment carries". |
+
+The fourth row (served, read across the cluster) covers a hub that is also a destination, and argocd-agent's managed mode, which puts Applications on the workload cluster: the existing section already covers it, and the derived rows only add the apps that are missing.
+
+**The section row** shows when `KubeGitOpsSummary.served(discovery)` is true, or when `KubeMarksSeen` says this context's rows have shown a mark. `KubeMarksSeen` lives in memory per context and costs no request of its own, but it isn't free:
+
+- Today no list but the rail's keeps a mark. The Overview's workload part asks `KubeListOptions(metadata: true)` with no `owners` (`KubeClusterOverviewSession.swift:130-133`), and `KubeTableReader.row` keeps only `app.kubernetes.io/*` labels (`KubeTable.swift:257`).
+- So D2 adds a `marksSeen` flag to the reader: when the row has metadata, it looks only for the presence of the tracking annotation or `argocd.argoproj.io/instance`, and keeps nothing.
+- The flag is set on the Overview's workload follows and on Deployments, StatefulSets and DaemonSets lists read with metadata. It is a key lookup per row and costs no allocation; the D7 perf leg times it against the pods leg.
+- Until such a list has run, the row stays hidden, but `g` works (below). A person who opens the page on Pods and presses `g` sees the section.
+
+**`g`, `:gitops` and `:argo`** no longer refuse when Argo CD isn't served (`showSection`, `KubernetesPageModel.swift:619-622`; the command bar's `.gitops` case, `:1093-1095`). They open the section, which looks for marks and says the right empty sentence above if none are found. `:flux` (`.gitops(.flux)`, `KubeCommand.swift:70`) still refuses when Flux isn't served. `gitOpsRefusal` keeps only the Flux case, and takes the tool.
+
+**The second header line,** muted and always shown in marks mode, reads: "No sync status, repository or revision: those are in the Application, in Argo CD's cluster. Health is Argo CD's built-in rules applied to what is here." Its hover adds:
+
+- "An app deleted in Argo CD without deleting its resources leaves the same marks. So does an Argo CD uninstalled from this cluster, or objects restored from another cluster."
+- "Custom health checks configured in Argo CD aren't known here."
+- "Read here: Deployments, StatefulSets, DaemonSets, CronJobs, Services, Ingresses, PersistentVolumeClaims and HorizontalPodAutoscalers. Jobs, Argo Rollouts and custom resources aren't read, so their health isn't in an app's. ConfigMaps and Secrets are never listed, so an app made only of them isn't seen."
+- When discovery serves `rollouts.argoproj.io`: "Argo Rollouts are served here and aren't read: an app whose workload is a Rollout shows without it."
+
+**Several installations** are said in the header: "2 Argo CD installations mark objects here: `hub-eu` (812 apps), unnamed (82 apps)". `G` groups by installation (§14.2.4).
+
+#### 14.2.2 A derived app's row
+
+```
+GitOps · acme-spoke-prod · All Namespaces                               Argo CD: from marks · 894 apps · read 40 s ago
+Argo CD runs in another cluster — not in your kubeconfig. These 894 apps are read from the marks Argo CD leaves on their objects.
+No sync status, repository or revision: those are in the Application, in Argo CD's cluster. Health is Argo CD's built-in rules applied to what is here.
+[3 failing] [11 progressing] [2 paused] [878 ready]                                                    / filter
+● Failed       Marks  payments/checkout-api   payments        rollout stalled (ProgressDeadlineExceeded) · Deployment checkout-api   2 Deploy · 1 Svc   …/checkout-api:4.12.0     6m
+● Failed       Marks  search-indexer          search +1       last run of CronJob reindex failed · and 1 more                     1 STS · 1 CronJob  …/indexer:2.3.1 +1       21m
+◐ Progressing  Marks  ledger                  ledger          0/3 ready for 2 h · StatefulSet ledger-db                           1 STS · 1 Svc      …/postgres:16.4           2h
+◐ Progressing  Marks  courier/eta             courier         2/4 updated · Deployment eta                                        1 Deploy · 1 HPA   …/eta:7f3c2e1             1m
+‖ Paused       Marks  ops/backfill            ops             rollout paused · Deployment backfill                                1 Deploy           …/backfill:1.0.4         3d
+```
+
+Columns, reusing `KubeGitOpsRow`:
+
+| Column | For a derived app |
+|---|---|
+| State | `KubeMarkedHealth` mapped onto `KubeGitOpsState`: Degraded → Failed, Suspended → Paused, Progressing → Progressing, Healthy → Ready. The hover always gives Argo CD's own word ("Argo CD's rule: Degraded"), so a person comparing with Argo CD's UI can. Argo CD's Unknown (a PVC in an odd phase, an HPA's conditions saying neither) → Unknown. **`KubeGitOpsState.unknown` sorts last today** (`KubeGitOpsState.swift:7`, raw value 7) and the shared enum isn't reordered, because Applications' Unknown means "not read yet" there. Argo CD's aggregation makes Unknown the worst, so an app with one Degraded and one Unknown member is Unknown in Argo CD: here its word is Unknown too, but its **rank** is the worst *known* member's (it sorts with Failed), its why names the Degraded member first, and Hide Ready never hides it. Never Drift, Blocked or Stuck. A state settled only from cells (before M1b reached the object, or past M1b's cut) carries "from its row" in the hover. The Ready chip counts those apart: "878 ready (31 from rows only)". **StatefulSets and DaemonSets are never Degraded under Argo CD's built-in rules** (no progress deadline): a `0/3` StatefulSet is Progressing indefinitely, in Argo CD as here. Its why carries the duration ("0/3 ready for 2 h"), from when the row first read not-ready, so a long Progressing is visible as such. |
+| Kind | "Marks" (`Role.markedApp`) |
+| Name | `appNamespace/name` for `ns_name`. A plain `name` is shown bare, and its hover says "in Argo CD's own namespace". An installation is shown as a tag when there is more than one. |
+| Into | The namespaces of its members: `payments`, or `search +1`; the destination namespace from a cluster-scoped mark when one was seen. |
+| Why | The worst member's sentence and its object, then "and N more" (Argo CD names up to 3 causes; the hover lists them). Ready apps say what they are: "3 objects ready". |
+| Revision | Empty. The hover says "Argo CD's revision is in the Application, in another cluster". The images are under Source. |
+| Source | The main image, host trimmed: the first container of the first workload, by name, then "+N". It is not a git source, and the header's hover says so. |
+| Tags | Counts by kind: `2 Deploy · 1 Svc · 1 HPA`. "label only" for `argocd.argoproj.io/instance` members. `selfHeal?` never: it is unknown. |
+| Age | When its state began: for a problem, the condition's `lastTransitionTime` once M1b or a GET read it, else the row's last change seen; for Ready, "last change applied by Argo CD" when a known Argo CD manager is in `managedFields` (§14.1), else the newest member's age. The hover names which. |
+
+- Display order, chips, Hide Ready above 50 and the 30 s re-rank are the same as for every row.
+- On 894 apps, Hide Ready is on, so the list opens on its 10–20 problems **[survey]**.
+- Row height and `ResourceTable` are unchanged. Counts are `Text(verbatim:)`.
+
+#### 14.2.3 A derived app's detail (↩)
+
+↩ on a derived row opens `KubeMarkedAppDetailView` in the page's detail slot. There is no kind list to open it in. The panel shows, from top to bottom:
+
+1. **The header:** the name, the installation, the namespaces, the state and its sentence, and "Argo CD runs in another cluster" with the same hover.
+2. **"What Argo CD knows and this cluster doesn't".** One line each: Sync status, Repository and path, Target and live revision, Sync policy, Last sync, Project. Each reads "in the Application, in Argo CD's cluster". The rows are fixed: none is ever filled from a guess.
+3. **The tree.** The app, then its top-level members by kind, then (by ownerRefs) the newest ReplicaSet and the pods, or a StatefulSet's or DaemonSet's pods, or a CronJob's last Jobs. Each node has Argo CD's built-in health:
+   - Pods are shown with their own health, but, as in Argo CD, they don't count toward the app's.
+   - Copied marks (§14.1) appear here as children, never as members.
+   - A hook (`argocd.argoproj.io/hook`, `helm.sh/hook`) or an `ignore-healthcheck: "true"` member is drawn grey with "not counted, as in Argo CD".
+4. **Hints** read from members' annotations:
+   - `sync-wave`;
+   - `sync-options`, e.g. "`Prune=false` on Deployment x" or "`ServerSideApply=true`";
+   - `compare-options`;
+   - `link.argocd.argoproj.io/*` as text (decision D-3).
+5. **The verbs:**
+   - Open each object in its own list (↩ on a node), Copy Names, Ask Why (`a`), and Copy Argo CD Command (decision D-2).
+   - The absent ones are listed by name: "Sync, Refresh, Rollback and Diff act on the Application, which is in Argo CD's cluster — not in your kubeconfig. Use Argo CD there."
+6. **The images line and the deployed commit.** `KubeDeployedCommit` already answers from an image (revision label, tag, appVersion), so "has this commit reached the cluster" works from the image. The manifests line (`gitopsRevision`) is absent, with the same sentence.
+
+**Writes on members are unchanged and say more.** An object opened in its own list keeps every verb it has today: restart, scale, edit, delete. Today only one write path names a GitOps owner from a member's live marks: `KubeApply`'s warnings (`KubeFieldOwners.managedBy`, `KubeApply.swift:544-565`, used by `KubeManifestSession.swift:355`). `KubeGitOpsDelete` (`KubeGitOpsDelete.swift:115`) reads marks only when the object deleted is itself an Application, ApplicationSet, Kustomization or HelmRelease (its `Tool`), so it never sees a member Deployment. The delete, restart and scale sheets of a plain workload (`KubernetesPageModel+Writes`) name no owner, because a list row carries no marks.
+
+In marks mode:
+
+- `KubeApply`'s warning, when the live object carries a tracking id, adds: "Argo CD may undo this: whether selfHeal is on is in the Application, in another cluster";
+- delete, restart and scale add the same sentence only when started from a derived app's detail (D4), which knows the object is a member. From a plain list they stay as today, because adding marks to every list's rows to say it is out of scope.
+
+No new guard is added. The class and typed-name rules are `KubeWriteCheck`'s as today.
+
+**Reads for the detail, only while it shows:**
+
+- a GET of each member, capped at 4 MB each, 4 in flight and 50 members. Above 50, the rest show from their rows and that is said.
+- the pods of each workload, as one list per workload by its selector, in its namespace, with rows only and up to 200.
+- the events already read for a selected object, as today.
+
+#### 14.2.4 Grouping and filters
+
+- **`G`** groups as today: by tool, source, owner or destination. A derived app's tool is "Argo CD (from marks)". Its source groups by image repository, its destination by namespace, and owner is always "none". A new group, **installation**, is offered only when more than one installation is seen.
+- **`is:marks`** keeps derived apps; `-is:marks` drops them.
+- **`tool:argo`** includes derived apps.
+- **`kind:app`** doesn't, so a person can tell real Applications from derived ones. `kind:marks` works too.
+- `repo:` matches nothing for a derived app, and its hover says so. `image:<text>` is new and matches any member's image; it is useful on a spoke.
+
+#### 14.2.5 The checkout rail
+
+The rail's GitOps part (§4) keeps its structure. In marks mode its `why` cases gain health and a source of truth.
+
+**The match options,** ranked by precision:
+
+| # | Option | How | Precision | Cost | Taken |
+|---|---|---|---|---|---|
+| A | The binding's own workloads (case b, today) | The bound namespace's workloads, with owners, name derived apps | As exact as the binding: the person chose the namespace and selector | No extra read: the panel already follows them | **Yes**, always |
+| B | Manifest identity | `git ls-files` for `*.yaml`/`*.yml` through `KubeGitOpsCheckouts`' isolated git, at most 2,000 files, each at most 256 KB and **32 MB in all**. Each file is opened `O_NOFOLLOW` and must resolve inside the checkout, so a committed symlink can't make it read elsewhere. It is read off the main thread (`KubeBlocking.run`), through `YAMLReader.documents` (`Sources/Overterm/API/YAMLReader.swift:19`; it resolves anchors and aliases, so only the four keys below are looked up and no value is walked further), keeping only `apiVersion`, `kind`, `metadata.name` and `metadata.namespace` of each document. Paths under `test/`, `tests/`, `testdata/`, `examples/`, `fixtures/` and `vendor/`, and documents with `{{`, are skipped and counted. The resulting `(group, Kind, ns, name)` tuples are compared with the tail of members' tracking ids. | **Exact only when the document names its namespace** and all four parts match. A document with no `metadata.namespace` gets its namespace from kustomize or Argo CD's destination, which can't be read here. Such a document matches only inside the binding's namespace, else it counts as "probably" with C and D. Without that rule, `Deployment/api` with no namespace would match every app's `api` across 894 apps. It misses templated Helm names and kustomize `namePrefix`/`nameSuffix`, which are said ("this checkout's Helm templates aren't rendered"). | A list across the cluster of three kinds' metadata rows, or the section's M1 rows when its store is fresh (no read at all). Off production it runs on show; on production only on Find What Deploys This (decision 11). Cached 5 min in `KubeGitOpsMatchCache`. | **Yes**, as "describes N of its objects" (`.describes`), **never `owns`**. An identity match isn't provenance: a fork, an old copy, a rendered dump under `docs/`, or the app repo's own `k8s/` beside a separate config repo all describe the same `(group, Kind, ns, name)` without being what Argo CD reads. Today's `.owns` comes from an Application's `repoURL` matching a remote, which is provenance; nothing on a spoke gives that. The line says the fraction: "describes 4 of `payments/checkout-api`'s 6 objects". |
+| C | App name ↔ checkout name | The instance name equals the remote's repository name, or a directory segment under `apps/`, `deploy/`, `k8s/`, `charts/`, `manifests/` | Medium: with ~894 apps, short names (`api`, `worker`) collide **[survey: names shorter than 5 characters, names shared across namespaces]** | No extra read beyond B's rows | **Probably** only, when A and B found nothing, with the matched words said, never `owns` |
+| D | Image repository ↔ remote | A member's image path `…/<org>/<repo>` or last segment equals the remote's `org/repo` or `repo` | Medium–low: monorepos and shared base images break it | No extra read (cells) | **Probably** only, as C, with the image said |
+| E | Helm chart name or `helm.sh/chart` | The checkout's `Chart.yaml` name against members' `helm.sh/chart` label | Low: a company-wide base chart would match hundreds of apps | — | **No** |
+
+- Only A can answer `owns`: the person bound the namespace and selector, and the workloads' own marks name the app. B answers `.describes`, said above C and D but not as `owns`. A and B are "found"; C and D are not.
+- C and D are a separate, muted part: "May deploy this checkout (by name): `courier/eta` — app name equals the repository's".
+- When C or D match more than 3 apps, the part says "N apps by name: too many to tell" and lists none.
+- **Nothing found is never "doesn't deploy this".** When A to D find nothing, the rail says what was compared: "No marked app matched: 412 manifests compared, 37 Helm templates not rendered, 3 namespaces not readable". It doesn't say "not deployed". When B's list was cut or refused, it says that, as the rail already does for a cut list (gitops.md §13, review item 15: "searched 500 of 1,240").
+- **A plain app name in coexistence.** `KubeGitOpsMatch.key(of:)` (`KubeGitOpsMatch.swift:142-145`) reads a plain-name owner in `argocd`. A 404 there is `.absent` today (`KubernetesPanelModel+GitOps.swift:571`), so it says "not in <ctx>" even when the controller's namespace is another one. D5 makes such a 404 `.absent` only when `argocd` is where this context's Applications were seen (`KubeGitOpsMatchCache`'s namespaces, or the section's store). Otherwise it is `.unreadable`, said as "its Application wasn't found in argocd; Argo CD's namespace here is unknown". On a spoke (not served) the kind isn't served, so `.absent` stays right.
+
+**Shown per match:**
+
+- the derived app's state and sentence;
+- "Argo CD runs in another cluster";
+- the image line, with its deployed-commit answer, as today;
+- **Open** (the derived detail) and **Ask Why**.
+
+There are no GitOps verbs. The `.notInCluster` sentence becomes this richer line. The `.unserved` state gets its own text: "Argo CD isn't in <ctx>; read from the marks on <ns>'s workloads". That text is said only when `applications.argoproj.io` is absent and `argoproj.io` isn't among discovery's failed groups. When it failed discovery, `readOwners` already makes the owner `.unreadable` (`KubernetesPanelModel+GitOps.swift:537-541`), and the part says "Couldn't tell whether Argo CD runs in <ctx>: argoproj.io didn't answer discovery", with the app's marks and health still shown.
+
+**Health in the rail** is computed from the rail's own rows. Those are the bound namespace's Deployments, StatefulSets and DaemonSets **matching the binding's label selector** (`KubernetesPanelModel.swift:338`), so they may be only part of the app.
+
+- The line says so: "health of the 2 objects bound here", never the app's health, unless the section's store for this context is fresh. In that case the store's verdict for the app is shown, with its age.
+- Members in other namespaces are counted only when the section's store or B's rows saw them ("and 2 objects in `search-jobs`, not read here"). Otherwise the line says "other namespaces not read". The rail never lists across the cluster unpressed on production.
+- The rail's Deployment rows are cells only, so a single-replica rollout stuck behind its old pod reads `1/1` there too. So **every bound workload gets one GET when the part first shows** (decoded by `KubeMarkedWorkloadWire`, settled by Argo CD's rule), then again only when its row's `metadata.generation` changes or it isn't Healthy, at most every `refetchEvery` (15 s). This shares the rail's budget of 8 GETs a read (`ownerReads`), which a spoke doesn't spend on owners: no GET is made for an owner whose kind isn't served. A binding with more than 8 workloads settles the first 8 by Argo CD's rule and says the rest "from its row".
+
+#### 14.2.6 Ask Why and `k8s_gitops`
+
+**Ask Why** on a derived app (`a` in the section, the detail's button, the rail's) is offered on every derived app that isn't Ready, Progressing included. `KubeGitOpsState.isProblem` (failed, blocked, stuck) isn't the test here: under Argo CD's rules a crash-looping Deployment after a finished rollout, or a `0/3` StatefulSet, is Progressing, never Failed. In the section, `a` on a derived row is handled in `gitOpsPress` before it falls through to the page, whose `askWhyRef` goes by `gitOpsSelectedRef` and is nil for a derived row. It builds `KubeAgentBrief.markedApp`:
+
+- the app's name;
+- that Argo CD runs elsewhere, and what can't be known;
+- each member's state and Argo CD rule;
+- the not-ready workloads' conditions (type, status, reason, message cut to 300 characters);
+- their pods' waiting reasons;
+- the events already read;
+- the images.
+
+Every word goes through `Secrets`, as `KubeAgentBriefing` does today. A single failing Deployment hands off to the existing Deployment Ask Why, with the app named in the brief.
+
+**`k8s_gitops`** (`KubeMCP+GitOps.swift`):
+
+- **Without `checkout`, when Argo CD isn't served or can't be read,** the answer starts with the line for `KubeMarkedAppsMode`'s reason, the same as the section's header: for `.notServed`, "Argo CD runs in another cluster (not in the kubeconfig); apps read from the marks on their objects; no sync status, repository or revision." For `.undiscovered`, "Couldn't tell whether Argo CD runs in <ctx> (argoproj.io didn't answer discovery); …". For `.forbidden`, "Argo CD's Applications can't be read in <ctx> (forbidden); …". Only `.notServed` says "another cluster". Then one line per derived app, problems first:
+  `marks  Failed  payments/checkout-api  ns=payments  2 Deploy 1 Svc  rollout stalled (ProgressDeadlineExceeded): Deployment checkout-api  image=…/checkout-api:4.12.0`
+  - At most 100 lines; the rest are counted by state.
+  - **The section's store first.** When this context's derived apps are in the page's store and under 5 minutes old, they are used as they are, with their age, and nothing is read.
+  - Otherwise, the agent's bounds: rows of three kinds, at most 2,000 objects or 16 MB a kind, cut and said. At 15 KB rows, 980 Deployments is ~15 MB, close to the cut, which the D7 leg records. Then at most 20 GETs of not-ready rows, within `KubeGitOpsBudget`. Every other state is said "from its row" (no M1b for an agent).
+  - A cut or refused read never makes the answer "no marked apps". It says what was read.
+  - Ready apps are only counted unless `kind: "marks"` with `state: "all"` is asked.
+- **`kind: "marks"`** is a new filter value; `kind: "application"` doesn't include derived apps.
+- **With `checkout: true`,** the matches gain the state and sentence. B is said as "describes N of its objects", never "deploys this checkout"; C and D as "probably (by name)". B's list across a production cluster comes only from the cache of a person's press, as P3/P4 do today.
+
+No new tool, and no write. `KubeAgentWrites` is unchanged.
+
+### 14.3 When marks mode turns on, precisely
+
+`KubeMarkedAppsMode` (pure) takes discovery (its kinds and `failedGroups`), what R1's Applications row follow said (listed across the cluster, listed only in fallback namespaces and which, refused everywhere, not yet listed, not served), and whether marks were seen. R2's summaries and their cut are not an input. It returns one of:
+
+- `.off`: R1 listed Applications across the cluster, and no mark names an app outside them. This is today's section. Also `.off` while R1's first list hasn't come.
+- `.missingFromApplications(Set<AppKey>)`: R1 listed Applications across the cluster, and some marks name apps outside them. The chip from §14.2.1.
+- `.only(reason)`: `reason` is `.notServed`, `.undiscovered` (argoproj.io failed discovery) or `.forbidden`. Derived apps are the whole Argo CD side of the section. Only `.notServed` says "Argo CD runs in another cluster".
+
+Rules:
+
+- Presence comes from R1's rows, which are never cut (rows only, paged at 500). R2's 500-object cut leaves some Applications unsummarised, not unseen, so it doesn't turn marks off. Unserved Flux has no bearing on it.
+- **"Not in this cluster" needs a whole read.** A derived app is said "its Application isn't in this cluster" only when R1 listed Applications across the cluster and its name can't be any Application listed (below). When Applications were read namespace by namespace after a 403 (`fallbackNamespaces`, `KubeGitOpsSession.swift:353-366`), only an `<appNamespace>_<name>` mark whose namespace was read whole can be said missing. A plain name can't, because Argo CD's own namespace is unknown. The rest are counted as unknown (§14.2.1).
+- **Matching an Application to marks** uses the instance name only. An Application object carries no installation id, and the local Argo CD's `installationID` is in `argocd-cm`, which is never read (gitops.md §5.2). So a mark's installation id can't be matched to a local Application: a derived app with an installation id is never said missing in coexistence. It is listed with "installation `<id>`: can't tell whether it is this cluster's Argo CD".
+  - An Application's instance name is `name` when it lives in the namespace the controller's Applications mostly live in, read as the most common namespace among Applications (normally `argocd`), and `namespace_name` otherwise.
+  - If that guess is wrong for an app, the app could show twice: once real and once derived. So a derived app whose name equals an Application's `name` in any namespace is not said as missing, only listed with "may be <ns>/<name>". This is false negatives over false alarms.
+- **Installation id between marks:** Argo CD ignores a tracking id whose installation id doesn't match its own, so marks with different ids belong to different installations and are never merged.
+
+### 14.4 Reads and budget
+
+#### 14.4.1 What is read
+
+All reads happen only while the section, a derived detail, or the rail's part is on screen. They go through the page's client and proxy slot, never a new proxy.
+
+| Tier | What | How | Bounds |
+|---|---|---|---|
+| M1 | Deployments, StatefulSets, DaemonSets | Rows with metadata (`KubeListOptions(metadata: true, marks: true)`), followed. All Namespaces or one namespace: one follow a kind. Several namespaces: one follow a kind per namespace only while `3 × namespaces ≤` the watches left free. Past that, across the cluster filtered to the scope (`KubeScope.reads(for:cap:)` called with `cap: free / 3`, not the default `watchCap`). A 403 across the cluster: the context's `accessibleNamespaces`, else the scope's names, each read as a **paged list with no watch** (on show, on Refresh and every 5 min), because 3 kinds × N namespaces of watches doesn't fit. That is said: "Deployments refused across the cluster; read in a, b, c every 5 min". With no namespace to read, it says it can't list. | 3 watches on All Namespaces, one namespace, or several filtered across the cluster; 3 a namespace only while they fit in what is free (10 on a pure spoke, since Argo's 5 kinds and 3 controllers aren't followed when not served). With Flux served, 4 kinds + 1 controller + 2 spare + 3 = 10, at the cap: the marks follows take their 3 first and Flux's refused-kind fallback gets what is left, said as today. First list streamed, else paged at 500. Rows under 30 MB together. |
+| M1b | The same three kinds, whole | **One byte-bounded paged list of objects a kind** (a sibling of `KubeClient.pagedObjects`, `KubeGitOpsSession.swift:58`, generic over its decoder), decoded page by page off the main thread by `KubeMarkedWorkloadWire`, **never a watch**. On show when the store is stale, and on Refresh. Pages of 50, 16 MB a page (halved on `KubeBodyTooLarge`, as R2), cut at 2,000 objects or 64 MB a kind and said. In the scope's namespaces when narrower. | ~1,120 objects at 15–20 KB is ~20 MB in ~23 pages, read once per 5-min store and only while shown. Only the wire's allow-list is kept. The header shows "checking rollouts 400 of 1,120" until done. Rows past the cut stay "from its row". |
+| M2 | Workloads whose `metadata.generation` changed since they were last settled (a spec change: a rollout, a pause, a scale), whose cells now read not ready, or that were last settled not Healthy | A GET each, decoded by `KubeMarkedWorkloadWire` (§14.4.3) | At most 20 a flush, 4 in flight, 4 MB each, **and at most 60 a minute for the section**; past that, rows wait their turn and say "from its row". Each object at most once every 15 s; Progressing ones re-read every 60 s at most. This is narrower than `KubeGitOpsRefetch.reason`'s "cells moved": at 980 Deployments, readiness churn alone (a pod restarting, a node drained) moves cells all day, and with `inFlight` 4 the existing rule alone allows tens of GETs a second against a production API server. A move with the generation unchanged and the cells still all equal needs no GET: a stuck or paused rollout starts with a spec change, which moves the generation. A Ready row that didn't move is never fetched: M1b already settled it. |
+| M3 | Services, Ingresses, PVCs (and `ingresses.networking.k8s.io` only when served) | One paged rows-with-metadata list a kind, **no watch**. On show and on Refresh; again after 5 min while shown. | 500 a page, cut at 5,000 objects or 16 MB a kind, said. Cells only: LoadBalancer Service External-IP, Ingress Address, PVC Status. |
+| M3b | CronJobs and HorizontalPodAutoscalers | One paged **object** list a kind (M1b's reader, `KubeMarkedWorkloadWire`), no watch, with M3's timing | ~200 CronJobs and ~150 HPAs at a few KB. Cut at 2,000 or 16 MB a kind. A CronJob's health needs `status.lastSuccessfulTime`, and an HPA's its conditions; no cell shows either. HPAs are read whole here, not left to the detail: Argo CD's HPA check (`FailedGetResourceMetric` and the like) turns Degraded often, and a list that leaves it out would say Ready where Argo CD says Degraded. |
+| M4 | One app's detail | GETs of its members (≤ 50), its pods by selector (rows, ≤ 200 a workload) | Only while that detail shows |
+
+- **Never listed,** not even as metadata: Secrets and ConfigMaps (the section's rule since G0, `KubeGitOpsSession`'s doc: "Never a Secret, never a ConfigMap"). Also never: ReplicaSets across the cluster (they carry copied marks, which is noise), Pods across the cluster, and any custom resource.
+  - A marked CR is seen only if a person's own CR list carries metadata. A derived app made only of CRs or ConfigMaps is not seen, and the header's hover says so.
+- **Health of M3 kinds** comes from cells where Argo CD's rule reads a field that the cells show:
+  - A LoadBalancer Service whose External-IP cell is `<pending>` (kubectl's word for no `status.loadBalancer.ingress`) or empty is Progressing. Every other Service is Healthy, as in Argo CD.
+  - An Ingress with an empty Address is Progressing, else Healthy. Many ingress controllers never fill it, and Argo CD then shows Progressing forever too. The hover says "as Argo CD shows it".
+  - A PVC that is Pending is Progressing; one that is Lost is Degraded; Bound is Healthy; anything else is Unknown.
+  - CronJobs are read whole by M3b: suspended is Healthy (Argo CD's Lua), `lastSuccessfulTime < lastScheduleTime` with no active job is Degraded, scheduled but never succeeded (`lastSuccessfulTime` absent) is Healthy, as Argo CD's Lua says.
+  - HPAs are read whole by M3b and settled by Argo CD's rule from their conditions (§14.5). Past M3b's cut, an HPA has no health and the app's hover says "an HPA's state wasn't read".
+
+**What cells can't show,** and M1b settles:
+
+- a paused Deployment (Suspended in Argo CD);
+- `generation > observedGeneration`;
+- **a stuck rollout whose old pods still serve.** With `replicas: 1`, the default 25% surge and 0 unavailable, a new pod that crash-loops leaves Ready `1/1`, Up-to-date `1`, Available `1` (the old pod). Argo CD says Progressing (`status.replicas > updatedReplicas`), then Degraded at `ProgressDeadlineExceeded`. Cells alone would say Ready. Single-replica Deployments with a bad image are common, so this can't be left to the hover.
+
+Until M1b reaches an object, and past its cut, the state is "from its row" (§14.2.2). A row that moves after M1b gets M2's GET, so a rollout that starts while the section shows is followed by Argo CD's rule. Decision D-4 is about whether M1b ships in the floor.
+
+#### 14.4.2 The 5-minute store and hiding
+
+- `KubeGitOpsSession.Store` (`KubeGitOpsSession.swift:147-159`; there is no type named `KubeGitOpsStore`) gains the derived apps and M1b's settled states. It keeps them per context for 5 min while the page shows, as it keeps summaries. ↩ into a detail and back reads no M1b or M3 again: M1's follows end when the section is left and start again with a list. Rows-only, they are cheap.
+- `drop` clears it when the page hides, the context changes, or a credential fails.
+
+#### 14.4.3 What a row keeps (allow-list)
+
+**`KubeMarkWire`** is read from a row's embedded metadata in `KubeTableReader.row` when `marks` is asked. It keeps only:
+
+- `argocd.argoproj.io/tracking-id`, `argocd.argoproj.io/installation-id`, `argocd.argoproj.io/instance`, and `app.kubernetes.io/instance`;
+- `argocd.argoproj.io/hook`, `helm.sh/hook`, `argocd.argoproj.io/ignore-healthcheck`, `argocd.argoproj.io/sync-wave`, `argocd.argoproj.io/sync-options` and `argocd.argoproj.io/compare-options`;
+- `link.argocd.argoproj.io/*`: at most 5, detail only;
+- `metadata.generation` and `deletionTimestamp`;
+- from `managedFields`, only the newest `time` of Argo CD's manager.
+
+`kubectl.kubernetes.io/last-applied-configuration`, every other annotation and label (beyond today's `app.kubernetes.io/…`), and `managedFields`' field sets are dropped while decoding and never kept.
+
+**`KubeMarkedWorkloadWire`** is M2's and M4's `Decodable`. It keeps:
+
+- `spec.paused`, `spec.replicas`, `spec.updateStrategy`/`strategy.type` and `rollingUpdate.partition`;
+- `metadata.generation`;
+- `status.observedGeneration`, `replicas`, `updatedReplicas`, `readyReplicas` and `availableReplicas`; a DaemonSet's `desiredNumberScheduled`, `updatedNumberScheduled` and `numberAvailable`; `currentRevision` and `updateRevision`;
+- `status.conditions[]` (type, status, reason, `lastTransitionTime`, and message cut to 300 characters and scrubbed);
+- a CronJob's `spec.suspend`, `status.lastScheduleTime`, `lastSuccessfulTime` and the count of `status.active`;
+- an HPA's `status.conditions[]` only, read at `autoscaling/v2` (so the v1 conditions annotation is never needed);
+- each container's `name` and `image`.
+
+It never keeps env, args, command, volumes, or `spec.template` beyond the images.
+
+#### 14.4.4 Expected cost at the spoke's size
+
+| | Estimate | Note |
+|---|---|---|
+| M1 rows | ~980 Deployments + ~100 StatefulSets + ~40 DaemonSets **[survey]** at ~5 KB a row with metadata (gitops.md §3.2), **~5.6 MB** | Client-side apply puts `last-applied-configuration` (the whole manifest) in the metadata, which could make a row 10–20 KB, so **up to ~20 MB**. It stays under 30 MB, and the perf leg uses 15 KB rows (§14.9.3). Per-namespace follows are no fix: on ~70 namespaces they would take 3 watches each, far past the page's 10, and the bytes are the same. If the real check finds more than 30 MB, decision D-6 applies. |
+| M1 events | A rollout touches 1 Deployment (one event per status change). A shared base change can roll 500 at once. | The burst budget (500 events ranked in 3 s) already covers it |
+| M1b | ~1,120 objects at 15–20 KB **[survey]**, **~20 MB** in ~23 pages, once per 5-min store, only while shown | Decoded and dropped page by page. A 64 MB cut a kind. On a real cluster expect 5–30 s; the list shows from rows meanwhile. |
+| M2 GETs | Generation moved, not ready, or unhealthy: ~10–30 apps **[survey]** × ≤ 4 MB, usually ~10–20 KB | At most 20 a flush and 60 a minute: worst case ~1.2 MB a minute at 20 KB, while shown |
+| M3 | ~1,000 Services, ~300 Ingresses, ~100 PVCs **[survey]** at ~3–15 KB, **~5–20 MB** once per 5 min while shown | No watch. Cut and said at 16 MB a kind; 1,000 Services at 15 KB would reach it, so the D7 leg records it. A cut Services list loses only LoadBalancer health (every other Service is Healthy), and says so. |
+| M3b | ~200 CronJobs and ~150 HPAs **[survey]** at ~3–20 KB, **~1–5 MB** | No watch |
+| Memory kept | ~1 KB a member after the allow-list, so **~2 MB** for 2,000 members | No raw JSON kept |
+| Watches | 3 of the page's 10 | Coexistence: §14.4.5 |
+
+#### 14.4.5 Coexistence (Applications served and read)
+
+Then the section already holds 8 watches. Derived rows are only extras for apps whose Application isn't read here, and M1 doesn't watch: it is one paged rows-with-metadata list per kind on show, on Refresh, and **every 5 min** while shown. Every 60 s would re-read ~15–20 MB a minute at the spoke's size, for rows that are the minority there. M1b runs only for the derived apps' members, by GET (M2's bounds), not as a list. The rows are ranked like M3's. The header says "marked apps read 2 min ago".
+
+#### 14.4.6 Off the main thread
+
+The follows already decode off the main thread. Grouping (`KubeMarkedApps.group`, pure) and health (`KubeMarkedHealth`, pure) run in one detached task per 250 ms flush, over a snapshot of the changed rows, and are merged into the kept apps by key (only the apps whose members changed are re-grouped).
+
+Ranking is batched per flush, as the section does today. The main thread only swaps the ranked array. `MainThreadStall` checks it (§14.9.3).
+
+#### 14.4.7 Production
+
+- The section's reads are the person's: the page is open and the section shows. That matches today's rule for the section on production, where R2 already reads whole Applications on show. M1b is the same kind of read, within its bounds.
+- The rail lists across the cluster (option B) only on Find What Deploys This (decision 11).
+- `k8s_gitops` without `checkout` reads a production cluster's rows only within the agent's bounds, as today. With `checkout`, it never lists across a production cluster unpressed.
+
+#### 14.4.8 Sign-in
+
+The spoke's contexts use an `oidc-login` exec plugin that waits minutes for a browser when the token has expired.
+
+- This addendum doesn't change sign-in.
+- §14.10 names it as a risk: marks mode starts more reads on show, so it must not turn a sign-in wait into "cluster slow".
+- The check: `KubeProxies`' oidc one-at-a-time and start timeout already apply. The section is started from `updateGitOpsReading` (`KubernetesPageModel+GitOps.swift:41-54`) with `model.discovery`, and marks mode is decided from discovery (§14.3). Discovery needs the sign-in, so with no discovery the session makes no M1, M1b or M3 request at all and the section shows the proxy's own words ("Waiting for the browser sign-in", or "Waiting for <ctx>'s sign-in in the browser to finish", `KubeProxies.swift:79-80`). There is no separate proxy-ready seam: the testable rule is "no discovery, no request", which the session test checks by calling `show` with `discovery: nil`. A sign-in that expires later stops the proxy (`KubeProxyProblem`), which `drop()`s the store as today (`KubeGitOpsSession.swift:546`), and the reads start once, not once per kind's retry, when discovery comes back.
+- A section still waiting for sign-in never shows an empty sentence: no read has answered, so nothing is said about marks.
+
+### 14.5 Health (`KubeMarkedHealth`, pure)
+
+gitops-engine's built-in checks, ported for the kinds read:
+
+| Kind | From rows (M1/M3), said "from its row" | From the object (M1b/M2/M3b/M4), Argo CD's rule |
+|---|---|---|
+| Deployment | Ready `a/b`, Up-to-date `u`, Available `v`: all equal to `b` gives "ready by its row" (not Argo CD's Healthy: see §14.4.1's stuck single-replica case); otherwise Progressing; `deletionTimestamp` gives Progressing, "pending deletion" | `paused` gives Suspended. `generation > observedGeneration` gives Progressing. `Progressing` with reason `ProgressDeadlineExceeded` gives Degraded. `updated < spec.replicas`, `status.replicas > updated` or `available < updated` give Progressing. Otherwise Healthy. |
+| StatefulSet | Ready `a/b`: equal gives "ready by its row", else Progressing | Argo CD's rule: observedGeneration, `readyReplicas < replicas`, partition, OnDelete gives Healthy, `updateRevision ≠ currentRevision` |
+| DaemonSet | Ready, Up-to-date and Available against Desired | Argo CD's rule, OnDelete gives Healthy |
+| Service | LoadBalancer with External-IP `<pending>` or empty gives Progressing; every other Service is Healthy | — |
+| Ingress | An empty Address gives Progressing, else Healthy | — |
+| PVC | Bound gives Healthy, Pending Progressing, Lost Degraded, else Unknown | — |
+| CronJob | — (read whole, M3b) | Suspended gives Healthy. Active jobs give Healthy. Scheduled but never succeeded (`lastSuccessfulTime` absent) gives Healthy, as Argo CD's Lua does. The last run not succeeded (`lastSuccessfulTime < lastScheduleTime`, none active) gives Degraded. No status gives Progressing. Else Healthy. |
+| HPA | — (read whole, M3b) | Argo CD's v2 rule, from conditions: `AbleToScale` FailedGetScale/FailedUpdateScale, or `ScalingActive` FailedGet…Metric/FailedComputeMetricsReplicas/InvalidSelector, gives Degraded; else `AbleToScale` or `ScalingLimited` True gives Healthy; else Progressing |
+| Pod (detail only) | — | `Err*`, `*Error`, `*BackOff` waiting reasons give Degraded. Shown, not counted. |
+
+- **The app** is the worst member by Argo CD's order: Healthy < Suspended < Progressing < Missing < Degraded < Unknown. "Missing" never occurs here. A "ready by its row" member counts as Healthy for the order but makes the app's Ready "from rows". Its rank in the list is the worst *known* member's (§14.2.2): Unknown is the word, but a Degraded member still sorts it with Failed.
+- **StatefulSets and DaemonSets have no Degraded** under Argo CD's built-in rules. A StatefulSet that never becomes ready is Progressing for as long as it lasts, here as in Argo CD; the sentence carries the duration.
+- **An app with no workload member read** (its members are only Services, Ingresses, PVCs or HPAs, so its workload is a Job, a Rollout or a custom resource, which aren't read, or its workload rows were cut) isn't shown Ready from its Service alone. It is Unknown, with the why "no Deployment, StatefulSet, DaemonSet or CronJob of it was read: its workload may be a kind not read here (a Job, an Argo Rollout, a custom resource)". This departs from Argo CD on purpose, because Argo CD does see that workload. Otherwise a Rollout-based app would read "Ready: 1 Svc".
+- Hooks and `ignore-healthcheck` members are skipped. Kinds with no rule (nil health in Argo CD) are counted and left out: they neither help nor hurt.
+- **An app none of whose members has a health rule** is Healthy in Argo CD, because `setApplicationHealth` starts from Healthy. The pure type returns Ready, with the hover "no member here has a health check; Argo CD shows such an app Healthy". The section can't produce such an app (every kind it lists has a rule), and the "no workload member read" rule above comes first.
+- **Sentences** are fixed English built from the facts: "2/4 updated", "rollout stalled (ProgressDeadlineExceeded)", "rollout paused", "load balancer not assigned", "volume claim Pending", "last run of CronJob x failed", "pending deletion".
+  - A condition's message is used only in the hover and the brief, cut and scrubbed.
+- **Pods aren't counted, as in Argo CD.** A Deployment whose pods crash-loop after a finished rollout is Progressing (`available < updated`), not Failed. The list reads no pods, so it can't know they fail: the hover says "not every updated replica is available: its pods may be failing, which the detail shows". Pods are read only in the detail (M4).
+
+### 14.6 Security
+
+**Marks are cluster-supplied strings.** `KubeTrackingID.parse`:
+
+- caps the value at 1,024 UTF-8 bytes, else nil;
+- rejects control characters and newlines;
+- requires exactly 3 `:` parts and 2 `/` parts each;
+- requires the app part and the name to be at most 253 characters each, with only `[a-z0-9._-]` and at most one `_` in the app part;
+- requires the group to be a DNS name or empty, and the Kind to be `[A-Za-z0-9]` and at most 63 characters;
+- requires the namespace part to be empty or a DNS label of at most 63 characters, and the name to be a DNS subdomain.
+
+Anything else gives nil, and the object counts as "unparsed mark", tallied in the header's hover and never shown raw. Installation ids are capped at 63 characters with the same character rules.
+
+**Further rules on what a mark may do:**
+
+- **Never a path, URL, argument or selector.** A mark's text is never handed to git, a shell, `kubectl`, the browser or a label selector.
+  - The rail's B compares tuples as strings in memory.
+  - Copy Argo CD Command quotes the app name for zsh through `KubeCommands`' quoting, and copies it only.
+  - A `link.argocd.argoproj.io/*` value is text (decision D-3).
+- **Shown escaped.** Names go through `Text(verbatim:)`. Hovers are capped at 4 KB.
+- **Agents:** `k8s_gitops`' lines and `KubeAgentBrief.markedApp` go through `Secrets`. Condition messages are cut at 300 characters and scrubbed. `last-applied-configuration` is never decoded, so it can't leak.
+- **No writes are added.** Members' existing write paths keep `KubeWriteCheck`. The new sentence about selfHeal is said, not guarded.
+- **Nothing reaches the hub.** No request goes anywhere but the context's own proxy. Copy Argo CD Command only copies. A `link.argocd.argoproj.io/*` value is never opened. The image's revision label still goes through `docker buildx imagetools` to the image's registry only when the person asks for it (`KubeDeployedCommit.swift:247-251`), as today. That is a registry, not Argo CD.
+- **Nothing is persisted.** Derived apps, `KubeMarksSeen` and the match cache are memory only, and isolated runs touch no `AppEnvironment` state.
+
+### 14.7 New and changed types
+
+| Type | File | What |
+|---|---|---|
+| `KubeTrackingID` | `KubeTrackingID.swift` (pure) | Parse with caps; `isSelf(group:kind:namespace:name:clusterScoped:)`; `appKey` (installation, instance); `said` |
+| `KubeGitOpsOwner.tracking` | `KubeGitOpsOwner.swift` | Calls `KubeTrackingID`. `parse(labels:annotations:self:)` takes the object's identity when the caller knows it, and drops a copied mark. Callers: the row reader (identity from its `kind:` argument and the row, never the embedded `PartialObjectMetadata`), `KubeApply`, the delete warning, `KubeGitOpsWire`'s parent owner (an app-of-apps child Application names itself, so it passes). `KubeFieldOwners.managedBy`'s presence check (`KubeApply.swift:551`) stays as it is: a copied mark still warns "Argo CD", which errs toward caution. |
+| `KubeMarkWire`, `KubeMarkedWorkloadWire` | `KubeMarkWire.swift` (pure) | The allow-lists (§14.4.3) |
+| `KubeListOptions.marks`, `KubeRow.marks` | `KubeClient.swift`, `KubeTable.swift` | Only when asked: the section's M1/M3 and the rail |
+| `KubeMarkedApp`, `KubeMarkedApps` | `KubeMarkedApps.swift` (pure) | Key, members, namespaces, counts by kind, images, last change; `group(_:)`; `merge(changed:into:)` |
+| `KubeMarkedHealth` | `KubeMarkedHealth.swift` (pure) | §14.5 from rows and from wires; the app's verdict and up to 3 causes; sentences |
+| `KubeMarkedAppsMode` | `KubeMarkedApps.swift` (pure) | §14.3 |
+| `KubeMarksSeen` | `KubernetesModel` | Per context, in memory, set from the reader's `marksSeen` flag on the Overview's workload follows and on workload lists with metadata (§14.2.1) |
+| `KubeClient.pagedObjects` sibling | `KubeGitOpsSession.swift` or `KubeClient` | M1b's and M3b's paged object list, generic over its decoder; the same halving, cut and said text |
+| `KubeMarkedAppsSession` | `KubeMarkedAppsSession.swift` | M1–M3b, the flush, the store; owned by `KubeGitOpsSession` and started by it in marks mode |
+| `KubeGitOpsObject.Role.markedApp`, `KubeGitOpsRow.marked` | existing files | A row with no `resource`, so `gitOpsRef` is nil and only Open and Copy Names remain |
+| `KubeGitOpsSection` | existing | Header lines, the chip, the empty sentences, `is:marks`, `kind:marks`, `image:`, `G` installation |
+| `KubeMarkedAppDetail` (pure) + `KubeMarkedAppDetailView` | new | §14.2.3; M4 |
+| `openGitOps`, `gitOpsPress`, `gitOpsVerbs` | `KubernetesPageModel+GitOps.swift` (:173, :191-235, :243-276) | A derived row opens the detail (today `openGitOps` refuses a row whose `resource` isn't in the catalog). In `gitOpsPress`, a derived row's `a` (Ask Why) and `x` (its tree: the detail's) are handled before the fall-through to the page; `r`, `p`, ⌫, `s` and ⇧K stay refused because `gitOpsSelectedRef` is nil (a derived row's `resource` is empty, so `gitOpsRef` can't resolve it to a kind). `gitOpsVerbs` today returns only Open and Copy Names when the ref is nil (`:262`), so Copy Argo CD Command and Ask Why are added there for a derived row. |
+| `cliLine` | `KubeGitOpsSection.swift:371-379` | For a derived row, `argocd app get <name> [--app-namespace <ns>]` without `--core` or `--kube-context` (D-2); `--app-namespace` only for an `ns_name` mark. |
+| `KubeGitOpsMatch` | existing (pure) | `.markedApp(key, state)`, option A as `owns`, option B as the new `.describes(n, of:)` (never `owns`), C and D as "probably", "too many to tell" |
+| `KubePanelGitOps` | existing | Marks-mode health from the rail's rows, each bound workload settled by one GET on show (said as "the N objects bound here"), or the section's store when fresh; B on Find on production; the `.unserved` text only when `argoproj.io` didn't fail discovery; a plain name's 404 in `argocd` made `.unreadable` unless Applications were seen there (§14.2.5) |
+| `KubeAgentBrief.markedApp`, `KubeMCP+GitOps` | existing | §14.2.6 |
+| `FakeKubeAPI+Marks` | `FakeKubeAPI+Marks.swift` | §14.9.1 |
+
+### 14.8 Stages
+
+**Each stage** is one commit with the main design's routine: `swift format`, `make test` and `make e2e`, and docs in the same commit (architecture.md's GitOps paragraph, analysis.md §2.23 and §10, CLAUDE.md's Kubernetes row, and this section once merged into gitops.md as §14). A stage a person sees adds a line to the unreleased version's CHANGELOG entry. Which version that is, is the owner's call.
+
+| Stage | Commit subject | What | Tests | Done when |
+|---|---|---|---|---|
+| **D0** | `kubernetes: a copied Argo CD mark names nobody` | `KubeTrackingID` (parse, caps, `isSelf`); `KubeGitOpsOwner.tracking` through it; the self check where the object is known (row reader by its `kind:` argument, apply, delete warning, `KubeGitOpsWire`) | `KubeTrackingIDTests`: forms, core group, cluster-scoped, `ns_name`, malformed and over-long, control characters, installation id. `KubeGitOpsTests`: a ReplicaSet with its Deployment's mark has no owner; the existing tracking-id cases (`KubeGitOpsTests.swift:324-383`) updated where a two-part value such as `shop:anything` parsed before and is now refused. `KubeTableTests`: a Metadata row (embedded `kind: PartialObjectMetadata`) is checked against the request's kind, not the embedded one. `KubePanelGitOpsTests`: a copied mark isn't matched; an app-of-apps child Application keeps its parent. `KubeWritesTests.swift:613` and `KubeGitOpsWireTests` keep passing (their marks name the object itself). `KubeGitOpsMatchTests.swift:224` passes `kind:` to `KubeTableReader.read`, which now requires it with `owners`. | A ReplicaSet's or operator child's copied mark is never an owner anywhere. A CHANGELOG line (a person sees the rail stop naming an owner for a copied mark). |
+| **D1** | `kubernetes: apps and their health from Argo CD's marks (pure)` | `KubeMarkWire`, `KubeMarkedWorkloadWire`, `KubeMarkedApps`, `KubeMarkedHealth`, `KubeMarkedAppsMode`; `KubeListOptions.marks` and the reader keeping the allow-list, unused by any list yet | Unit tests (§14.9.2), including the sentinel: a row whose last-applied, env and other annotations carry `SENTINEL` keeps none of it | Pure types done; no UI and no behaviour change. It touches `Sources/`, so the pre-commit hook needs the unreleased version's entry to exist; no line of its own. |
+| **D2** | `kubernetes: GitOps reads apps from marks where Argo CD isn't` | `KubeMarkedAppsSession` (M1, M1b, M2, M3, M3b, the flush off the main thread, store, hide, the fallback, wait for sign-in); the `pagedObjects` sibling; `KubeMarksSeen` and the reader's `marksSeen` on the Overview's workload part; `FakeKubeAPI+Marks` | `KubeMarkedAppsSessionTests` against the fake: no Argo or Flux request; 3 watches, and with 6 namespaces still ≤ 3 (filtered across the cluster); M1b paged and cut at its bound, never a watch; a single-replica stuck rollout whose cells read `1/1` is Progressing after M1b; M2 only for a moved generation, not-ready cells or a last unhealthy state, never for a readiness-only move with the generation unchanged, and never more than 60 a minute under a churn of 2,000 row events; M3 and M3b have no watch; 403 falls back to paged lists in `accessibleNamespaces` and is said, with no "carries no marks" sentence; `argoproj.io` failing discovery gives `.undiscovered`, not "another cluster"; hide drops; no write; no Secret or ConfigMap request; `show` with `discovery: nil` makes no request at all; a failing `metrics.k8s.io` in `failedGroups` still gives `.notServed`; HPAs and CronJobs read whole by M3b, no watch | The session yields ranked derived apps from the fake spoke. No UI yet: `g` still refuses, so a person sees nothing new. |
+| **D3** | `kubernetes: the GitOps section shows Argo CD apps from their marks` | The section row and `g`/`:gitops`/`:argo` in marks mode; header lines and hover; rows; chips; Hide Ready; empty sentences; coexistence's chip; `is:marks`, `kind:marks`, `image:`, `G` installation; ↩ on a derived row opening a placeholder detail with the absent-verbs sentence | `KubeGitOpsSectionTests` (every row of §14.2.1's table, the unknown ones above all: `.undiscovered`'s header, Applications read only in fallback namespaces, a cut or refused M1's empty sentence, "from rows only" counted on the Ready chip; R2 cut at 500 with R1 complete still deriving the missing apps; M1 partial giving "At least N apps"; an app with only a Service read giving Unknown, not Ready; a Degraded-plus-Unknown app sorting with Failed). `KubernetesPageModel` tests: on a derived row `r`, `p`, ⌫, `s` and ⇧K do nothing and send nothing (`fake.writes` empty), `k` copies the `argocd` line without `--core`, and the verbs menu has no write. E2E `kubernetesGitOpsMarks` parts 1–3 (§14.9.3). `a` on a derived row arrives with D6. | A spoke shows its apps, problems first, with the sentence. CHANGELOG line. |
+| **D4** | `kubernetes: a marked app's detail — its objects, their health, what Argo CD alone knows` | `KubeMarkedAppDetail(View)`, M4, the tree with copied marks as children, hints, the absent verbs, Copy Argo CD Command, the selfHeal sentence on members' writes | `KubeMarkedAppDetailTests`; E2E part 4 | ↩ shows the tree and per-object health; no Sync or Refresh anywhere |
+| **D5** | `kubernetes: the rail says which marked app deploys the checkout, and its health` | `KubeGitOpsMatch` A+B+C+D, `KubePanelGitOps`' marks mode, Find on production, the cache key gains the mode, the plain-name 404 rule. Open goes to D3's detail (D4's once it lands); it needs D2 and D3, not D4. | `KubeGitOpsMatchTests` (B said as `.describes`, never `owns`; B exact only with a namespace; a namespace-less `Deployment/api` matching 40 apps' `api` gives "probably" in the binding's namespace only; kustomize prefix missed and said; a symlinked YAML outside the checkout not read; the 32 MB bound; C and D probably; too many to tell; nothing found says what was compared, never "not deployed"); `KubePanelGitOpsTests` (production lists only pressed; health said as "the N objects bound here" when the selector covers part of the app; a plain-name 404 in `argocd` with Applications seen only in `gitops` is unreadable, not "not in"; a bound single-replica Deployment whose cells read `1/1` but whose object is stuck is Progressing after the show's GET; `argoproj.io` in `failedGroups` gives the "couldn't tell" text, not "isn't in"); E2E `kubernetesCheckoutGitOps` part 7 | The bound checkout says its app and health on a spoke |
+| **D6** | `kubernetes: agents read marked apps (k8s_gitops, Ask Why)` | `k8s_gitops` marks mode, `kind: "marks"`, `KubeAgentBrief.markedApp`, `a` | `KubeMCPGitOpsTests` (lines, bounds, scrubbing sentinel, no write; the page's fresh store used with no request; a cut read never answers "no marked apps"; `kind: "application"` excludes derived apps; no request to `argoproj.io` when not served; the opening line follows the mode's reason, "another cluster" only for `.notServed`), `KubeAgentBriefTests`; `a` on a derived row in the section, Progressing included | An agent on a spoke gets apps, not "serves neither" |
+| **D7** | `kubernetes: GitOps from marks at a spoke's size` | `kubernetesGitOpsMarksPerf` beside `kubernetesGitOpsPerf`, plus whatever it finds | The perf leg (§14.9.3) | The budgets hold at 1,000 Deployments and ~900 apps. PATCH; no line if tests only. |
+
+**The floor is D0–D3 and D5:** the person's two asks, the section and the rail. D4 and D6 add depth. D7 proves the bounds. D0 stands alone and fixes a bug that exists today.
+
+**D7 gates the release.** D3 turns marks mode on for every context with marks, the person's 980-Deployment production spoke among them, so a version holding D3 isn't released (tagged) before D7's leg passes, whatever stages ship in it. D7 can land right after D2, since it drives the session, with the parts that need D3's view added then.
+
+### 14.9 Tests
+
+#### 14.9.1 The fake spoke (`FakeKubeAPI+Marks.swift`)
+
+`addSpoke(apps:deploymentsPerApp:…)` builds the spoke and never calls `serveArgoCD()` or `serveFlux()`. Its defaults are 894 apps and 980 Deployments, across `team-0…team-9` namespaces and ~60 more. Each row's metadata is padded to 5 KB by default, or 15 KB for the perf leg, through a `last-applied-configuration`-like annotation that must not survive.
+
+It adds:
+
+- **Workloads:** 100 StatefulSets, 40 DaemonSets, 900 Services (10 LoadBalancer, 2 without External-IP), 300 Ingresses (1 without Address), 200 CronJobs (1 last run failed), 150 HPAs, 100 PVCs (1 Pending).
+- **Apps in any namespace:** 20% of names in `ns_name` form.
+- **Two installation ids:** 82 apps with `hub-b`.
+- **Copied marks:** ReplicaSets carrying their Deployment's mark, plus 5 operator-made objects with their CR's mark.
+- **Malformed marks:** missing parts, 2 KB long, a newline, a `../` in the name.
+- **An app spanning two namespaces,** and a cluster-scoped `ClusterRole` mark carrying a destination namespace.
+- **Other marks:** 5 objects with only `argocd.argoproj.io/instance`, 3 hooks, 2 `ignore-healthcheck`, and 30 Helm-installed workloads with only `app.kubernetes.io/instance` plus `meta.helm.sh/release-name`, which must not be apps.
+- **States:** 3 Deployments with `ProgressDeadlineExceeded`, 2 paused (one of them with cells `2/2`, so only M1b finds it), 11 rolling; 2 single-replica Deployments stuck with the old pod serving (cells `1/1`, `1`, `1`; object `status.replicas: 2`, `updatedReplicas: 1`, one with `ProgressDeadlineExceeded`); 1 StatefulSet `0/3` (expected Progressing, never Failed); 1 HPA with `ScalingActive=False/FailedGetResourceMetric` (Degraded); 1 app made of a Service and an Ingress only (expected Unknown, "no workload read"); 1 LoadBalancer Service whose External-IP cell is `<pending>`.
+- **Objects as well as rows:** every workload and CronJob is served whole by its object list and GET with a `status` consistent with its cells, except where a state above says otherwise.
+- **`forbidden` variants:** Deployments refused across the cluster; Applications CRD served but refused (`addCRD` for Applications only, `forbidden "applications.argoproj.io@cluster"` and in `argocd`); Applications refused across the cluster but readable in `argocd` only.
+- **Discovery failing** for `argoproj.io` (the group answers 503), and separately for `metrics.k8s.io` alone (must stay `.notServed`).
+- **Rollouts served:** a variant serving `rollouts.argoproj.io` (no Applications), so the header's Rollouts sentence shows and no Rollout is requested.
+- **Churn:** a generator of 2,000 Deployment row events where only readiness moves (generation unchanged), for M2's rate bound.
+- **Coexistence:** `serveArgoCD()` with 100 Applications, and marks naming 112 apps: 6 `team-x_name` marks, 4 plain names, 2 with an installation id. A second variant over `addGitOpsPerfApplications(1000)`, so R2 is cut at 500 while R1 lists all 1,000.
+
+#### 14.9.2 Unit tests (pure)
+
+- `KubeTrackingIDTests`: §14.6's rules, each rejection, and `isSelf` with the core group and cluster scope.
+- `KubeMarkedAppsTests`:
+  - grouping by (installation, instance);
+  - an `ns_name` app versus a same-named plain app;
+  - copied marks excluded;
+  - instance-label members tagged;
+  - a Helm `app.kubernetes.io/instance` excluded;
+  - multi-namespace;
+  - destination namespace from the cluster-scoped mark;
+  - the merge only re-grouping changed keys;
+  - a bound against accidental quadratic work that holds in a debug build on CI: 10,000 rows take at most 3× the time of 5,000, and 5,000 take under 500 ms. A 50 ms bound would be flaky in debug.
+- `KubeMarkedHealthTests`: each row in §14.5 from cells and from wires; the stuck single-replica rollout (cells ready, object Progressing then Degraded); a `<pending>` LoadBalancer; a ClusterIP Service Healthy; worst-first, with Unknown worst for the word and the worst known member for the rank; StatefulSet and DaemonSet never Degraded; an app with no workload member Unknown; HPA conditions; a CronJob never succeeded Healthy; hooks and ignore skipped; an app with no member rule Ready, not Unknown; "from its row" carried to the app; the three-causes cut; sentences; pods not counted.
+- `KubeMarkedAppsModeTests`: §14.3's table, including R2's cut having no bearing and R1's first list not yet come giving `.off`; `metrics.k8s.io` alone in `failedGroups` still `.notServed`; `.undiscovered` never saying "another cluster"; a fallback-only Applications read saying missing only for `ns_name` marks in a read namespace; an installation-id mark never said missing in coexistence.
+- The "last change applied" rule: a `kubectl-edit` or HPA `managedFields` entry newer than Argo CD's is never shown as Argo CD's; an unknown manager shows no time.
+- The sentinel: `KubeMarkWire` and `KubeMarkedWorkloadWire` drop `SENTINEL` from last-applied, env, args, other annotations, and a condition message past 300 characters.
+- `KubeGitOpsMatchTests`: B's tuples giving `.describes`, never `owns`, from YAML with several documents, a kustomization without names and a Helm template skipped; C's and D's "probably" and "too many".
+
+#### 14.9.3 E2E
+
+**`kubernetesGitOpsMarks`,** a new part in `E2ERunner+KubernetesGitOps`, on the fake spoke at 50 apps:
+
+1. Discovery has no Argo or Flux. The GitOps row shows once the Overview has seen a mark, and `g` opens it.
+2. The header's two lines verbatim. The chips' counts. Failed rows first with their sentences, and Hide Ready on.
+3. `is:marks`, `image:` and `G` installation. Coexistence, with the "not in this cluster" chip. Forbidden Applications, with that header.
+4. ↩ on a failing app: the tree, per-object health, a copied ReplicaSet as a child, "What Argo CD knows" rows, no Sync, Refresh, Rollback or Diff in any menu, and ↩ on a node opening the Deployment's detail.
+
+**`kubernetesCheckoutGitOps` part 7:** a checkout bound to `team-3` shows its app's state and the "another cluster" sentence. A config-repo checkout with matching YAML is matched by B after Find on a production-classed context, and not before.
+
+**`kubernetesGitOpsMarksPerf`,** in `kubernetesPerf`, at 980 Deployments, 894 apps and 15 KB rows. It keeps the existing budgets:
+
+- first draw in under 5 s;
+- the main thread never held 500 ms on open or during a burst of 500 Deployment updates, which is ranked within 3 s;
+- scrolling under 35 ms a step at p95 with Hide Ready off;
+- M1's first list under 30 MB, recorded;
+- M1b paged, never a watch, at most 64 MB a kind, its pages decoded off the main thread (no 500 ms hold while it runs), its bytes and duration recorded;
+- M2 GETs ≤ 20 a flush and ≤ 60 a minute under 2,000 readiness-only row events, which cause none;
+- no watch of M3's or M3b's kinds; M3's Services' bytes recorded against the 16 MB cut; no 500 ms hold while M3 and M3b decode;
+- the Overview's `marksSeen` costing no more than 5% over the pods leg's Overview time;
+- no request to `argoproj.io` or `fluxcd.io`, no Secret or ConfigMap request, and no write.
+
+**Every request is checked** against the fake's log: for each part, the set of paths the part read, so a new list can't sneak in.
+
+#### 14.9.4 The read-only real-cluster check (after D3, and again after D7)
+
+Run by the person after signing in. The survey script uses only get, api-resources, auth can-i and version, with `--context` and a 20 s timeout each, sequentially, and never touches Secrets or ConfigMaps. It confirms:
+
+- the counts **[survey]** above;
+- the tracking-id form, and how many names are `ns_name`;
+- installation ids;
+- the share of rows with `last-applied-configuration`, and the Deployment list's bytes and time;
+- the Argo CD client-side apply manager's name in `managedFields`;
+- how many app names are shorter than 5 characters or shared, which decides C's worth.
+
+Then, in Overterm on the real spoke, read-only:
+
+- the section opens and shows the problems first, with the sentence;
+- the numbers match the survey's;
+- a known failing app's detail agrees with Argo CD's UI in the hub (asked of the person, since the hub isn't reachable from here);
+- Activity Monitor shows no growth after 10 minutes on the section.
+
+No write is attempted.
+
+### 14.10 Risks
+
+| Risk | Mitigation |
+|---|---|
+| Rows much larger than 5 KB (client-side apply's last-applied) | The perf leg runs at 15 KB. The real check measures it. Above 30 MB, decision D-6 (per-namespace follows don't fit the watch cap and save no bytes). |
+| A marked app is mistaken for a live one (deleted in the hub, marks left) | The hover says it plainly. Nothing writes on a derived app. |
+| Optimism: cells show Ready for a paused Deployment, a stale generation, or a stuck single-replica rollout whose old pod serves | M1b settles every workload by Argo CD's rule on show; until then, and past its cut, "from its row" is said on the state and counted on the Ready chip. M2 follows rows that move. Decision D-4. |
+| A sign-in wait or a refusal shown as an answer ("no marks", "another cluster", "not in") | §14.3's rule: only a whole read says absent; `.undiscovered`, fallback-only and cut reads say what wasn't read |
+| A namespace-less manifest matching many apps in the rail | B is exact only with the namespace; otherwise "probably", and only in the binding's namespace |
+| The hub's custom health checks disagree with built-in rules | The second header line says "Argo CD's built-in rules applied to what is here" |
+| Coexistence's instance-name guess shows an app twice | False negatives over false alarms (§14.3). A name match is never said as missing. |
+| Several installations merged by mistake | Keyed by installation id, never merged |
+| Name and image heuristics claim a checkout wrongly | Shown apart as "probably", with the matched words. "Too many to tell" above 3. Never `owns`, never a verb. |
+| Marks mode starting reads behind an expired OIDC sign-in | No discovery, no request: the mode is decided from discovery, which needs the sign-in; the proxy's "waiting for sign-in" is shown (§14.4.8) |
+| M2's GETs following readiness churn across ~1,000 Deployments on a production API server | GETs only on a generation move, not-ready cells or an unhealthy last state; 60 a minute for the section; the D2 test and the D7 leg drive 2,000 readiness-only events |
+| An app whose workload is a Rollout, a Job or a custom resource read as Ready from its Service | Such an app is Unknown, "no workload read" (§14.5); the header's hover lists the kinds read, and says so when Rollouts are served |
+| A checkout whose YAML names the same objects as the deployed app but isn't what Argo CD reads (a fork, an old copy, an app repo beside its config repo) | B says "describes N of its objects", never `owns`; only A (the binding's own workloads) owns |
+| A 1,000-Application hub-and-destination losing derived rows to R2's cut | Presence is read from R1's uncut rows, not R2's summaries (§14.3) |
+| A copied mark inflating apps (ReplicaSets, operators) | D0's self check; ReplicaSets never listed across the cluster |
+| A malicious or garbled mark | §14.6's parser; nothing reaches git, a shell or a URL |
+
+### 14.11 Decisions (taken as recommended)
+
+| # | Question | Taken | Why |
+|---|---|---|---|
+| D-1 | In coexistence, follow M1 (11 watches) or read it periodically | **Periodic: on show, Refresh, and every 5 min**, no watch | Keeps the page's 10-watch cap. Derived rows are the minority there, and every 60 s would re-list ~15–20 MB a minute at the spoke's size. |
+| D-2 | Offer Copy Argo CD Command on a derived app | **Yes**: `argocd app get <name> [--app-namespace <ns>]`, without `--core`, labelled "against your Argo CD server", copied, never run | It's the next step a person takes, and it needs the hub, which is theirs to reach. `--core` would read this kubeconfig and fail. |
+| D-3 | `link.argocd.argoproj.io/*` annotations | **Text in the detail, copyable; not opened**, in this addendum | A cluster-supplied URL opened by a press is a new trust edge. Opening (https only, userinfo stripped, the browser column) can come later. |
+| D-4 | Settle ready-looking rows by Argo CD's rule (paused, stale generation, a stuck rollout whose old pod serves) | **Yes, by M1b**: one byte-bounded paged object list a kind on show (~20 MB, ~23 pages, once per 5-min store), never a watch, in the floor (D2) | Cells alone show a common failure, a single-replica Deployment with a bad image, as Ready, and a hover can't fix a wrong state. A GET per ready row (~980 on show) is too many, and a whole-object watch was refused (decision 4). But decision 4's own pattern, rows followed plus one bounded paged object list, is exactly R2's, so M1b adds no new kind of read. The alternative, cells only with "from its row" on every Ready, is cheaper but leaves the wrong state on screen. Taken: M1b in D2. |
+| D-5 | Use `app.kubernetes.io/instance` alone to form apps | **Only when no tracking id or `argocd.argoproj.io/instance` is in the scope**, said "probably", Helm's annotated ones excluded | On a spoke with tracking ids, it would add hundreds of Helm and kustomize apps that Argo CD doesn't own |
+| D-6 | The real spoke's M1 rows are past 30 MB (client-side apply's `last-applied-configuration` on large Deployments) | **Keep the 30 MB bound**; the D7 leg records the real size | The survey (§14.12) measured the whole Deployment list as JSON at ~16 MB; rows-only is smaller. Per-namespace follows don't fit the 10-watch cap at ~70 namespaces and read the same bytes. |
+| D-7 | How an Unknown app with a Degraded member ranks | **Word Unknown (Argo CD's), rank with Failed, why names the Degraded member** | `KubeGitOpsState.unknown` sorts last and is shared with Applications, where it means "not read yet"; reordering it would move every Application. Showing Failed instead would differ from Argo CD's UI. |
+| D-8 | Whether manifest identity (option B) may say `owns` | **No: `.describes N of its objects`**, above C and D | Identity isn't provenance (forks, copies, app repo beside a config repo). Only the binding (A) owns. |
+| D-9 | The Overview's GitOps line on a spoke | **Unchanged in this addendum**: it stays K601–K603, so a spoke's Overview says nothing about derived apps | The Overview already reads workloads with metadata (`KubeClusterOverviewSession.swift:130-133`) and could count failing derived apps, but that is a new Overview read path and a new finding. It is a later stage if the owner wants it. |
+| D-10 | When D7's perf leg must pass | **Before the version holding D3 is released**, landing right after D2 if possible | D3 turns marks mode on for the person's 980-Deployment production spoke. |
+
+### 14.12 Survey facts (2026-11-14)
+
+A read-only look at the spoke's production and development clusters (prod and dev below). These replace every [survey] estimate above, and the consequences at the end override anything earlier in §14.
+
+Read with get, api-resources and auth can-i only, an explicit `--context`, no Secret or ConfigMap.
+
+| | prod | dev |
+|---|---|---|
+| Kubernetes | 1.33 (EKS) | 1.36 (EKS) |
+| applications.argoproj.io served | **no** | **yes, but 0 Applications** (Argo Workflows/Rollouts CRDs present; Argo CD's apps live elsewhere) |
+| Rollouts CRD | served; 117 Rollouts, 115 marked, **all 115 with spec.workloadRef**; phases Healthy 112, Degraded 2, Paused 1 | served; 31, 29 marked, all workloadRef; Healthy 27, Degraded 1, Progressing 1 |
+| Deployments | 1161, 980 marked, **207 scaled to 0** (the Rollouts' referenced Deployments), 23 unavailable, 21 progress-stalled | 1208, 997 marked, 111 scaled to 0, 28 unavailable, 17 stalled |
+| distinct apps (from Deployments) | 894 | 905 |
+| tracking-id format | always `app:group/kind:ns/name`; no `_` (no apps-in-any-namespace); every app in one namespace | same |
+| self-reference | 99.9% self; copied marks only on a few HPAs, PDBs, Roles/RoleBindings | same |
+| other marked kinds | Services 1004, HPAs 893 (of 1137), SAs 336, Ingresses 95 (one shared app holds 94), CronJobs 44, Jobs 8 (hooks), PVCs 8, StatefulSets 3, DaemonSets 8 | similar; Jobs 45 (41 Argo hooks) |
+| app name vs objects | app name **never** equals the Deployment's name or its `app` label: `<env>-<ns>-<name>-service` (504), `<env>-<ns>-<name>` (258), `<env>-<name>` (40)… | |
+| full Deployment list, JSON | 16.3 MB in 2.5 s | 16.9 MB in 2.6 s |
+| sign-in | kubectl oidc-login exec plugin; an expired session blocks for minutes waiting for a browser | same |
+
+Consequences for the design (taken as decisions, within the scope the person chose):
+1. **Derived mode's trigger is "no Application deploys these", not "CRD not served".** dev serves the CRD with zero Applications and 0 of its 905 marked app names exist as Applications. Rule: derive when Applications are not served, or are served but none is listed (R1's row follow, complete, says 0), or the marked app names are absent from a complete Application list. Wording: prod → "Argo CD runs in another cluster — not in your kubeconfig."; dev → "Argo CD's Applications for these aren't in this cluster." (never "Argo CD isn't installed").
+2. **Rollouts are read for health only — no Rollout feature.** A marked Rollout with `workloadRef` is the app's workload: its row (metadata + status.phase, via the Table/rows path, same budget as Deployments) gives the app's health (Healthy/Degraded/Paused/Progressing map onto ours as Argo CD's own Rollout health check does). The Deployment it references, scaled to 0 by the Rollouts controller, is shown as "scaled by its Rollout", never as a problem or "scaled to zero". Without this, 115 prod apps would read as scaled down. No Rollout verbs, no Rollout page — said in the detail ("promote/abort are Argo Rollouts' — not here").
+3. **Argo hook Jobs** (annotation `argocd.argoproj.io/hook`) are not members for health (Argo CD leaves hooks out of app health); shown under the app as hooks.
+4. **Rail matching**: since names never match workloads directly, option C (app name) must strip `<env>-<ns>-` and an optional `-service` before comparing with the checkout's name or its manifests' names — still "probably". Option B (the checkout's committed YAML identities vs the tracking-id tail `ns/name`) stays the exact one.
+5. **Budget**: ~2,000 marked workloads + Rollouts per cluster; rows-only reads, never full JSON (16 MB). Problems-first is non-empty in practice (≈45 Deployments + 3 Rollouts).
+6. **Expired OIDC session**: a context whose exec plugin waits for a browser must say "Sign-in needed — run `kubectl --context X get ns` once in a terminal" after a short wait, not "unreachable" after minutes. Check KubeProxies' oidc handling; add a test with a stand-in exec plugin that sleeps.

@@ -23,6 +23,15 @@ struct KubeGitOpsDelete: Equatable, Sendable {
     enum Tool: Equatable, Sendable {
         case application, applicationSet, kustomization, helmRelease
 
+        /// Its API group.
+        var group: String {
+            switch self {
+            case .application, .applicationSet: "argoproj.io"
+            case .kustomization: "kustomize.toolkit.fluxcd.io"
+            case .helmRelease: "helm.toolkit.fluxcd.io"
+            }
+        }
+
         /// `Application`, as its CRD names it.
         var kind: String {
             switch self {
@@ -112,7 +121,8 @@ struct KubeGitOpsDelete: Equatable, Sendable {
         }
         // What manages it: a parent's marks (app-of-apps, Flux's labels), an ApplicationSet that owns it.
         var parents: [String] = []
-        for owner in KubeGitOpsOwner.parse(labels: metadata?.labels?.marks ?? [:], annotations: metadata?.annotations?.marks ?? [:]) {
+        let identity = KubeTrackingID.Identity(group: tool.group, kind: tool.kind, namespace: namespace, name: name)
+        for owner in KubeGitOpsOwner.parse(labels: metadata?.labels?.marks ?? [:], annotations: metadata?.annotations?.marks ?? [:], self: identity) {
             // A bootstrap Kustomization applies itself: nothing would make it again.
             if owner.tool.kind == tool.kind, owner.name == name, owner.namespace == nil || owner.namespace == namespace { continue }
             let place = owner.namespace.map { "\($0)/\(owner.name)" } ?? owner.name
