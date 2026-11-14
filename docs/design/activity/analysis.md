@@ -2123,3 +2123,37 @@ Each decision has its options, a recommended option, and the stage that needs th
 - Activity Monitor's user guide (energy, update frequency), on Apple's support site
 
 **Issues** on the agents' public trackers: Claude Code #43944, #27959, #18405, #24649, #18752, #19393, #11339; Codex #17832, #25388.
+
+## 15. What was built
+
+Each stage adds here what it built, where it departs from the design above, and what it settled that the design left open.
+
+### Stage 0
+
+**The census's readers and their pure parts** (`Sources/Overterm/Activity/`), called by nothing yet, every call a plain synchronous one for the sampler's queue:
+- `ActivityProcess.swift`: `ActivityProcessID` (pid and start µs, `"pid:start"`), `ActivityProcess` (kinfo's fields), `ActivityUsage` and `ActivityRates`, `ActivityState`, `ActivityCodeSigning`;
+- `ProcessTable.swift`: `KERN_PROC_ALL` sized with headroom and read again larger when full; parents by start time;
+- `ProcessUsage.swift`: rates by the measured interval, over 250 ms at least; `UsageBaselines`, kept for every live identity and pruned only of ended ones;
+- `ProcessArguments.swift`: `KERN_PROCARGS2` in one region, argv masked at the read, the environment scanned in place for `ProcessMarkers`' four names, the region cleared;
+- `SocketScan.swift`: `SocketRecord.classify`, `ActivityAddress`, the bounded per-process walk;
+- `ActivityText.swift`: masking for display, for titles (as commands) and for agents, interpreters' labels;
+- `ActivityKernel.swift`: the kernel as a protocol, `LiveActivityKernel` and `FakeActivityKernel`.
+
+`Secrets` masks the passwords 9.3 named, and `SSHPASS`, `//user:password@server` whatever the program, the registry clients' `--creds`, oras's `-p` in any subcommand and openssl's `-passin pass:` and `enc -k` besides. Where only a password goes, a value that starts with `/` is masked too, and a registry login is one only as the command's subcommand: `docker run --name login -p 8080:80` keeps its port. The tests and the opt-in probe suite (`OVERTERM_ACTIVITY_PROBES=1`) are in `docs/testing.md`, Activity.
+
+**Where the build departs:**
+- **Sockets are read again** on a changed descriptor count, as 7.2 says, and also 5 ticks after the last whole read: a listener closed and another opened between two ticks leaves the count as it was. A bounded process keeps its listeners, read again on that beat, and of the rest only what the current tick read.
+- **The `KERN_PROCARGS2` region** is the size the kernel gives for that process and 4 KB more, at most `kern.argmax`, not `kern.argmax` itself: 1 MB allocated and cleared for every read. The room is what tells a whole read. The kernel fills a region too small for the area, and says nothing: with the area's tail, or with zeros (a 468-byte region of a 508-byte area, here). That happens when the area grew between the size query and the read (an `exec` keeps the identity: `sh -c 'exec …'`, a shim), or is past `kern.argmax`. A full region is never parsed: it is read once more at `kern.argmax`, and refused if that comes back full too.
+- **A title written over argv in place** (libuv's `process.title`, setproctitle) fills the words' area: the title, then one NUL when it filled the area, else NULs to its end. argc still counts the old words, so what follows argv[0] is the padding and the environment's first entries; `ps` shows them as arguments. An argv[0] that doesn't name the executable (its path, its file's name, a login shell's `-name`), followed only by empty and `NAME=value` words, is read alone, `isTitle`, decided on the bytes before any word becomes a `String`. The environment is scanned from the first entry past the padding.
+- **argv[0] is found at the 8-byte boundary** past the executable's path, where the kernel puts it. Skipping every NUL there, as `parseProcArgs` and psutil do, eats an empty argv[0] and reads the environment's first entry as argv.
+- **The 64 KB cut drops whole words**: a word cut in the middle can leave half a password that no mask recognises.
+- **`csops` is looked up** with `dlsym` rather than declared: nothing fails to link if a system drops it, and Security.framework answers instead.
+- **The address type is `ActivityAddress`**: NIO's `SocketAddress` is in the module.
+
+**Measured** with the probe suite, a release build, on this Mac (1,295 processes, 863 of them the user's):
+- **`csops`' public replacement (3.11).** Security.framework's dynamic status (`SecCodeCopyGuestWithAttributes` with the pid, then `SecCodeCopySigningInformation(kSecCSDynamicInformation)`'s `kSecCodeInfoStatus`) answers for every user's processes: 860 of 863 of the user's (3 ended between the calls), 275 of 275 root's, 156 of 156 other users'. It agreed with `csops` on `CS_RESTRICT` and `CS_PLATFORM_BINARY` for every one of the 1,291. It costs 1.15–1.39 ms a pid against `csops`' 1.5 µs, about 900 times as much: never a tick's route. `codeSigning(of:fallbacks:)` asks it only where `csops` can't answer, within a budget the caller sets, and an unread process's flags stay unknown, which never means "macOS".
+- **`CS_RESTRICT`**: 762 of the user's 863 processes, 264 of root's 275, all 156 of other users'.
+- **`KERN_PROC_ALL`**: 0.19 ms the sysctls, 0.29 ms with the parse and the parent links (median of 20).
+- **Usage**: 2.8 µs a process, 2.4 ms for the user's 863.
+- **The socket walk**: 3.2 ms for 863 processes (9,459 descriptors, 679 sockets, 43 listeners); 1.4 ms a tick when no descriptor count changed.
+- **argv**: 140 µs a process on average, the read, `csops` and the masking together, against 7.3's estimate of 25–50 µs. The masking is most of it: about 10 µs for a short command line, 0.7 ms for a long one shaped like an Electron helper's (an invented line, timed alone), where `Secrets`' script and credential patterns run over every word with a space and the whole line. 200 new identities could take about 28 ms of one tick, so the sampler's churn budget (7.3) is to be set by the time it spends rather than by a count.

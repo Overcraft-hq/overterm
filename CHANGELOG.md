@@ -6,6 +6,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
+## 1.7.0 — 2026-11-14
+
+- Activity (⌥⌘A): every process and every open port on this Mac, by checkout, tab and agent
+
 ## 1.6.0 — 2026-11-13
 
 - kubernetes: Kubernetes beside the terminal (⌥⌘J) — your kubeconfig's contexts, production marked in red everywhere and writable like any other context, each change asked — a context's `writable: false` makes it read-only; every kind and custom resource as a live list in the server's own columns, several namespaces at once, k9s's keys and `:` bar, ⌃⌘J for a context, namespace or pod, and an Overview of the cluster as cards

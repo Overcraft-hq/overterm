@@ -370,6 +370,57 @@ state and outputs and 2d's drift and tests (`+TerraformB2c`,
 `terraformPerf` needs an installed terraform (`OVERTERM_TF_TEST_TERRAFORM`,
 else Homebrew's) and is skipped without one.
 
+### Activity
+
+The census (`Sources/Overterm/Activity/`, docs/design/activity/analysis.md
+Section 10) reads the real process table, and a test may only ever touch
+processes it started. The kernel is a protocol, `ActivityKernel`:
+`FakeActivityKernel` is a whole Mac a test makes — other users'
+processes, 20,000 sockets, a clock it moves — for the classification,
+the bounds and the rates. Real processes are the test's own children
+only (`TestChild`, `Tests/OvertermTests/ActivityTestChildren.swift`):
+spawned into a group of their own, never the runner's, their identity
+(pid and start time) read at spawn and read again before the one SIGKILL
+their cleanup sends, then reaped. Never a name, a pattern, `kill(-1)` or
+a group the test didn't make. A child that wouldn't end on its own ends
+itself (a busy loop's `ulimit -t 20`): a runner stopped by ⌃C, whose
+SIGINT never reaches a child's own group, or a crash leaves nothing
+burning a core. What the tests plant is invented (`acme-*`,
+`SENTINEL-*`); no assertion message carries an argv, an environment
+value, a path or an address of a process that isn't the test's.
+
+- `ProcessTableTests`: the headroom retry, every field, parents by
+  start time; a child's start and parent, a zombie child, a `nohup`'d one.
+- `ProcessUsageTests`: rates by the interval measured, 250 ms at least,
+  the first sample "—", baselines that survive readers asking for others
+  (Tab Info's split-tab 0%); a busy child's rate.
+- `ProcessArgumentsTests`: argv masked at the read and cut at 64 KB, the
+  environment scanned in place for four names only — a sentinel planted
+  in a python child's environment never in any string the read makes —,
+  the region cleared, a `CS_RESTRICT` child's environment hidden; a full
+  region never parsed (an area an `exec` grew read again, one past
+  `kern.argmax` refused); a title written over argv read alone, a
+  python child's that writes one too.
+- `SocketScanTests`: the classification from fixtures; a child handed
+  listeners on 127.0.0.1 and ::1 and a bound UDP socket; a child holding
+  3,000 sockets read 2,000 a tick, rotating.
+- `ActivityTextTests`: masking for display, for titles (as commands) and
+  for agents, `Secrets`' per-program passwords (9.3), interpreters'
+  labels, masked before they are cut.
+
+`ActivityProbeTests` is opt-in, run on each new macOS and on the oldest
+supported one: the structures' sizes, who answers each call and what it
+costs — `csops` against Security.framework's fallback among them. It reads
+the whole table, read only, and prints counts, errnos and timings, never
+a name or an argv:
+
+```
+OVERTERM_ACTIVITY_PROBES=1 swift test --filter ActivityProbeTests
+```
+
+Without `OVERTERM_ACTIVITY_PROBES=1` it is skipped, so `make test` and CI
+print nothing of this Mac's.
+
 ## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one
