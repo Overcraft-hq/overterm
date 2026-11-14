@@ -29,9 +29,21 @@ protocol AgentBrowser: AnyObject {
 enum BrowserMCP {
     static let protocolVersion = "2025-06-18"
 
-    /// The answer to one JSON-RPC message; nil for a notification.
+    /// The answer to one JSON-RPC message; nil for a notification. A
+    /// pane's call runs with `MCPAsker.pane` set: every confirmation it
+    /// asks names that pane's tab and agent.
     static func handle(
-        _ message: [String: Any], browser: () -> AgentBrowser?, api: () -> AgentAPI? = { nil }
+        _ message: [String: Any], browser: () -> AgentBrowser?, api: () -> AgentAPI? = { nil }, pane: String? = nil, settings: Settings = .shared,
+        kubernetes: KubernetesModel = .shared
+    ) async -> [String: Any]? {
+        guard let pane else { return await answer(message, browser: browser, api: api, pane: nil, settings: settings, kubernetes: kubernetes) }
+        return await MCPAsker.$pane.withValue(pane) {
+            await answer(message, browser: browser, api: api, pane: pane, settings: settings, kubernetes: kubernetes)
+        }
+    }
+
+    private static func answer(
+        _ message: [String: Any], browser: () -> AgentBrowser?, api: () -> AgentAPI?, pane: String?, settings: Settings, kubernetes: KubernetesModel
     ) async -> [String: Any]? {
         let id = message["id"]
         let method = message["method"] as? String ?? ""
@@ -48,17 +60,23 @@ enum BrowserMCP {
                 "protocolVersion": asked ?? protocolVersion,
                 "capabilities": ["tools": ["listChanged": false]],
                 "serverInfo": ["name": "overterm-browser", "version": Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev"],
-                "instructions": instructions,
+                "instructions": instructions(in: settings),
             ])
         case "ping":
             return reply([String: Any]())
         case "tools/list":
-            return reply(["tools": offered])
+            var tools = offered(in: settings)
+            // Kubernetes' writes while kubernetes.agentWrites names a context —
+            // a setting, not the contexts' state now, which changes after the
+            // list was read (it isn't announced again): each call is refused
+            // where the context isn't writable for agents.
+            if settings.kubernetesAgentAccess, !kubernetes.agentWrites.isEmpty { tools += KubeMCP.writeTools }
+            return reply(["tools": tools])
         case "tools/call":
             guard let name = params["name"] as? String else { return failure(-32602, "No tool name.") }
             let arguments = params["arguments"] as? [String: Any] ?? [:]
             if name.hasPrefix("notes_") {
-                guard Settings.shared.notesAgentAccess else {
+                guard settings.notesAgentAccess else {
                     return reply(errorResult("The notes aren't available to agents — Settings ▸ Notes."))
                 }
                 do {
@@ -70,7 +88,7 @@ enum BrowserMCP {
                 }
             }
             if name.hasPrefix("db_") || name.hasPrefix("storage_") {
-                guard Settings.shared.databaseAgentAccess else {
+                guard settings.databaseAgentAccess else {
                     return reply(errorResult("The databases aren't available to agents — Settings ▸ Database."))
                 }
                 do {
@@ -82,7 +100,7 @@ enum BrowserMCP {
                 }
             }
             if name.hasPrefix("docker_") {
-                guard Settings.shared.dockerAgentAccess else {
+                guard settings.dockerAgentAccess else {
                     return reply(errorResult("Docker isn't available to agents — Settings ▸ Docker."))
                 }
                 do {
@@ -93,8 +111,32 @@ enum BrowserMCP {
                     return reply(errorResult(error.localizedDescription))
                 }
             }
+            if name.hasPrefix(KubeMCP.prefix) {
+                guard settings.kubernetesAgentAccess else {
+                    return reply(errorResult("Kubernetes isn't available to agents — Settings ▸ Kubernetes."))
+                }
+                do {
+                    return reply(try await KubeMCP.call(name, arguments, kubernetes: kubernetes, pane: pane))
+                } catch let error as ToolError {
+                    return failure(-32602, error.message)
+                } catch {
+                    return reply(errorResult(KubeMCPText.scrubbed(KubernetesModel.said(error))))
+                }
+            }
+            if name.hasPrefix(TerraformMCP.prefix) {
+                guard settings.terraformAgentAccess else {
+                    return reply(errorResult("Terraform isn't available to agents — Settings ▸ Terraform."))
+                }
+                do {
+                    return reply(try await TerraformMCP.call(name, arguments, pane: pane))
+                } catch let error as ToolError {
+                    return failure(-32602, error.message)
+                } catch {
+                    return reply(errorResult(TerraformMCP.scrubbed(error.localizedDescription)))
+                }
+            }
             if name.hasPrefix("api_") {
-                guard Settings.shared.apiAgentControl, let api = api() else {
+                guard settings.apiAgentControl, let api = api() else {
                     return reply(errorResult("The API client isn't available to agents — Settings ▸ API Client."))
                 }
                 do {
@@ -105,7 +147,7 @@ enum BrowserMCP {
                     return reply(errorResult(error.localizedDescription))
                 }
             }
-            guard Settings.shared.browserAgentControl, let browser = browser() else {
+            guard settings.browserAgentControl, let browser = browser() else {
                 return reply(errorResult(BrowserError.noBrowser.localizedDescription))
             }
             do {
@@ -185,43 +227,51 @@ enum BrowserMCP {
         }
     }
 
-    /// The tools of what Settings gives agents: the browser's, the API client's, the notes'.
-    static var offered: [[String: Any]] {
+    /// The tools of what Settings gives agents: the browser's, the API client's, the notes', the databases', Docker's, Kubernetes', Terraform's.
+    static var offered: [[String: Any]] { offered(in: .shared) }
+
+    static func offered(in settings: Settings) -> [[String: Any]] {
         var offered: [[String: Any]] = []
-        if Settings.shared.browserAgentControl { offered += tools }
-        if Settings.shared.apiAgentControl { offered += APIMCP.tools }
-        if Settings.shared.notesAgentAccess { offered += NotesMCP.tools }
-        if Settings.shared.databaseAgentAccess { offered += DatabaseMCP.tools }
-        if Settings.shared.dockerAgentAccess { offered += DockerMCP.tools }
+        if settings.browserAgentControl { offered += tools }
+        if settings.apiAgentControl { offered += APIMCP.tools }
+        if settings.notesAgentAccess { offered += NotesMCP.tools }
+        if settings.databaseAgentAccess { offered += DatabaseMCP.tools }
+        if settings.dockerAgentAccess { offered += DockerMCP.tools }
+        if settings.kubernetesAgentAccess { offered += KubeMCP.tools }
+        if settings.terraformAgentAccess { offered += TerraformMCP.tools }
         return offered
     }
 
-    static var instructions: String {
+    static var instructions: String { instructions(in: .shared) }
+
+    static func instructions(in settings: Settings) -> String {
         var parts: [String] = []
-        if Settings.shared.browserAgentControl {
+        if settings.browserAgentControl {
             parts.append(
                 "The browser beside your terminal in Overterm (the user sees it). Open a page with browser_navigate, read it with browser_snapshot, act with the refs it lists; browser_console shows the page's errors."
             )
         }
-        if Settings.shared.apiAgentControl {
+        if settings.apiAgentControl {
             parts.append(
                 "The API client of your checkout's Bruno collection: api_collections lists its requests, api_send runs one with its tests, api_request sends a one-off, api_run runs the collection — use it to check an endpoint you changed."
             )
         }
-        if Settings.shared.notesAgentAccess {
+        if settings.notesAgentAccess {
             parts.append(
                 "The user's notes (an Obsidian vault): notes_search finds notes by name, #tag or what they say, notes_read reads one with its links — for context the user keeps there. Read-only."
-                    + (Settings.shared.notesAgentDrawings
+                    + (settings.notesAgentDrawings
                         ? " notes_draw makes a new Excalidraw drawing from boxes, arrows and text — a diagram the user asked for, opened beside the terminal."
                         : "")
             )
         }
-        if Settings.shared.databaseAgentAccess {
+        if settings.databaseAgentAccess {
             parts.append(
                 "The user's databases and buckets (Overterm's Database panel): db_connections and db_schema show what is there, db_query runs one statement and returns rows — reads; storage_list and storage_read browse S3/GCS. Check real data instead of guessing a schema."
             )
         }
-        if Settings.shared.dockerAgentAccess { parts.append(DockerMCP.instructions) }
+        if settings.dockerAgentAccess { parts.append(DockerMCP.instructions) }
+        if settings.kubernetesAgentAccess { parts.append(KubeMCP.instructions) }
+        if settings.terraformAgentAccess { parts.append(TerraformMCP.instructions) }
         return parts.joined(separator: " ")
     }
 

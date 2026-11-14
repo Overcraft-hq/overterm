@@ -26,12 +26,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private(set) var paletteView: NSView?
     private(set) var tabBarView: NSView?
     private var rightClickMonitor: Any?
-    /// The Docker list's single-letter keys (DockerKey).
-    var dockerKeys: Any?
+    /// The pages' lists' single-letter keys (each page's `ResourceKey`
+    /// table — DockerKey, for Docker's).
+    var pageKeys: Any?
     /// What the engine's events say went wrong (DockerAttention).
     var dockerAttention = DockerAttention()
-    /// The last connection a container was opened in the Database panel with.
-    var dockerDatabaseDraft: DockerDatabaseGuess.Guess?
+    /// The last connection a database container or pod was opened in the
+    /// Database panel's form with — its password only in an isolated run,
+    /// and only while the form shows (the scenarios' check).
+    var databaseDraft: DockerDatabaseGuess.Guess?
     /// Containers' files open in the editor, by their local copy's path.
     var dockerFileCopies: [String: DockerFileCopy] = [:]
     var dockerSaveHooked = false
@@ -42,6 +45,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// The find bar, over the terminal's top-right corner; shows the
     /// selected terminal's search while it is active.
     private(set) var searchBar: NSHostingView<AnyView>?
+    /// settings.json's security settings changed outside the page, waiting
+    /// for Keep or Revert (`Settings.held`); hidden while none is.
+    private(set) var settingsHeldBanner: NSHostingView<SettingsHeldBanner>?
     private var searchSubscription: AnyCancellable?
     /// The ⌘F overlay over the terminal (terminal + files + contents).
     let spotlight = SpotlightModel()
@@ -90,13 +96,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private var overviewPoll: Timer?
     /// The Settings tab's page (Warp's): over the window's body while it shows.
     let settingsPage = SettingsPageModel()
-    /// The pages that cover the body (WorkspaceOverlay), each its own view.
-    private var overlayViews: [WorkspaceOverlay: NSView] = [:]
-    var settingsView: NSView? { overlayViews[.settings] }
-    var dockerView: NSView? { overlayViews[.docker] }
-    /// Where a page made later goes: the window's content, under the strip.
-    private weak var overlayContent: NSView?
-    private var overlayTop: NSLayoutYAxisAnchor?
+    /// The pages that cover the body (WorkspaceOverlay): what each is
+    /// declared to do, and its view.
+    let pages = WorkspacePages()
+    var settingsView: NSView? { pages.view(.settings) }
+    var dockerView: NSView? { pages.view(.docker) }
     /// The Docker page's own state; its view is made the first time it opens.
     let dockerPage = DockerPageModel()
     /// The rail's Docker panel and the container it put on the right.
@@ -105,6 +109,21 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     var dockerPanelShown = false
     /// Whether this window holds `DockerModel.show()` for its page.
     var dockerPageHeld = false
+    /// The Kubernetes page's own state; its view is made the first time it opens.
+    let kubernetesPage = KubernetesPageModel()
+    /// The rail's Kubernetes panel (the selected tab's checkout's binding)
+    /// and the pod it put on the right.
+    let kubernetesPanel = KubernetesPanelModel()
+    /// The rail's Terraform panel (analysis 6.1): the selected tab's checkout's roots.
+    let terraformPanel = TerraformPanelModel()
+    /// The right slot's Terraform tab: the plan shown (analysis 6.3).
+    let terraformPlanPane = TerraformPlanPaneModel()
+    /// Whether this window holds `KubernetesModel.show()` for its page.
+    var kubernetesPageHeld = false
+    /// What an isolated run would have opened in the default browser (an Ingress).
+    var kubernetesOpenedExternally: [URL] = []
+    /// …and for the ⌃⌘J switcher, while the palette shows it.
+    var kubernetesSwitcherHeld = false
     /// The review tabs' page: the one showing, over the body as the pages are.
     var reviewView: ReviewHostingView?
     /// ⌃⌘F: while focusing on one island, the other groups' notices wait.
@@ -157,6 +176,36 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private(set) var diffItem: NSSplitViewItem?
     /// Not private: the Overgit extension subscribes too.
     var cancellables: Set<AnyCancellable> = []
+    /// Terminal in this context: the pins' folder watched while a pane of
+    /// this window is pinned, and the contexts' list, so each pane's label
+    /// and band follow what its plain kubectl reaches (`followKubernetesPins`).
+    var kubePinWatcher: DirectoryWatcher?
+    var kubePinContexts: AnyCancellable?
+    /// A scenario's: a pod's command (a shell, a log followed) isn't typed
+    /// — its tab opens pinned, and the line that would be typed (the pin's
+    /// `export KUBECONFIG=…; ` first) is handed here with it.
+    var kubernetesCommandRecorder: ((String, Tab) -> Void)?
+    /// A scenario's: a Docker link (a port pill's) handed here instead of
+    /// the browser.
+    var dockerLinkRecorder: ((URL) -> Void)?
+    /// Ask Why on a tab's mark, in a scenario: the brief handed here
+    /// instead of the sheet.
+    var kubernetesBriefRecorder: ((KubeAgentBrief, Tab) -> Void)?
+    /// A scenario's: Terraform's Ask Why briefs land here instead of the sheet.
+    var terraformBriefRecorder: ((TerraformAgentBrief) -> Void)?
+    /// A scenario's: the questions before a plan or an init (5.3, 5.5) answered here instead of the sheet.
+    var terraformPlanQuestionRecorder: ((TerraformPlanGate.Question) -> Bool)?
+    /// A scenario's: the plugin cache's offer (4.13) answered here.
+    var terraformCacheOfferRecorder: (() -> Bool)?
+    /// A scenario's: an apply's sheets (5.4) answered here — what was
+    /// typed, or nil for Cancel — instead of on the window.
+    var terraformApplyQuestionRecorder: ((TerraformApplySheet) -> String?)?
+    /// The terraform writes a close's Interrupt signalled, until they stop (4.8).
+    var terraformInterrupted: [TerraformCloseGuard.Running] = []
+    /// What Ask Why on a mark couldn't do, said (the scenario reads it).
+    var kubernetesAttentionProblem: String?
+    /// Cluster failures told under another mark (an agent waiting): the scenario's count.
+    var clusterNotices = 0
     /// Follows the selected tab's cwd into the file tree.
     private var cwdSubscription: AnyCancellable?
 
@@ -177,6 +226,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// A stored file opened from the Database panel.
     let storageObject = StorageObjectModel()
     let redisSlot = RedisSlotModel()
+    /// A Kubernetes manifest's diff with its cluster (the editor's Diff with Cluster).
+    let kubernetesManifest = KubeManifestPane()
     /// Everything waiting on you (⌘I), as its own column on the right.
     let inbox = InboxModel()
     private(set) var inboxItem: NSSplitViewItem?
@@ -196,6 +247,19 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     private static let sidebarVisibleKey = "sidebarVisible"
     private static let diffVisibleKey = "diffVisible"
+
+    /// An isolated run's first window: the same frame every time, 1400×880
+    /// (or the screen's visible area, if smaller) in its middle — the frame
+    /// the scenarios were written at. A later window opens as a second
+    /// window always did, its default size, centred: the autosave name is
+    /// the first window's.
+    private static var isolatedWindowPlaced = false
+    private static func placeIsolatedWindow(_ window: NSWindow) {
+        guard !isolatedWindowPlaced, let area = (window.screen ?? NSScreen.main)?.visibleFrame else { return }
+        isolatedWindowPlaced = true
+        let size = CGSize(width: min(1_400, area.width), height: min(880, area.height))
+        window.setFrame(NSRect(x: area.midX - size.width / 2, y: area.midY - size.height / 2, width: size.width, height: size.height), display: false)
+    }
 
     init() {
         // The sizes everything below is built at.
@@ -223,8 +287,17 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         window.appearance = NSAppearance(named: GhosttyRuntime.shared.backgroundColor.brightnessComponent < 0.5 ? .darkAqua : .aqua)
         window.tabbingMode = .disallowed
         window.center()
-        // The old name, kept: it is where macOS has the window's size.
-        window.setFrameAutosaveName("OvertermMainWindow")
+        if AppEnvironment.isIsolated {
+            // Never the autosaved frame: macOS keeps it in the standard
+            // defaults — the user's — so a run read the user's window and
+            // wrote its own back, and each scenario opened at whatever the
+            // one before had left (full screen's 1000×640, and the page's
+            // text read off the window no longer fit).
+            Self.placeIsolatedWindow(window)
+        } else {
+            // The old name, kept: it is where macOS has the window's size.
+            window.setFrameAutosaveName("OvertermMainWindow")
+        }
         super.init(window: window)
         window.delegate = self
         buildLayout(in: window)
@@ -335,6 +408,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 notes: NotesModel.shared,
                 database: DatabaseModel.shared,
                 dockerPanel: dockerPanel,
+                kubernetesPanel: kubernetesPanel,
+                terraformPanel: terraformPanel,
                 store: store,
                 opener: opener,
                 theme: theme,
@@ -400,6 +475,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 notesActions: notesActions,
                 databaseActions: databaseActions,
                 dockerActions: dockerActions,
+                terraformActions: terraformPanelActions,
+                openKubernetesPage: { [weak self] in self?.toggleKubernetesPage(nil) },
                 onSettings: { [weak self] in self?.openSettings() },
                 onClose: { [weak self] in self?.toggleFileTree(nil) }
             ))
@@ -448,6 +525,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 model: spotlight, theme: theme,
                 onChoose: { [weak self] in self?.chooseSpotlight($0) },
                 onDismiss: { [weak self] in self?.hideSpotlight(keepTerminalSearch: false) }))
+        // Hidden, its 640 pt card still held the terminal's column at that
+        // width (the column's own minimum is 240): it asks for no size.
+        spotlightView.sizingOptions = []
         spotlightView.translatesAutoresizingMaskIntoConstraints = false
         spotlightView.isHidden = true
         container.addSubview(spotlightView)
@@ -528,6 +608,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             self.setEditorZoomed(!self.isEditorZoomed)
         }
         editor.workspaceRoot = { [weak self] in self?.diff.root ?? self?.tree.root }
+        editor.kubernetesHost = self
+        editor.terraformHost = self
         self.editor = editor
         self.editorItem = editorItem
 
@@ -578,7 +660,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 object: StorageObjectView(model: storageObject, theme: theme, actions: storageObjectActions),
                 container: DockerSlotView(panel: dockerPanel, docker: .shared, theme: theme, actions: dockerActions),
                 redis: RedisSlotView(model: redisSlot, theme: theme, actions: redisSlotActions),
-                graph: NotesGraphView(model: NotesModel.shared, theme: theme, open: { [weak self] in self?.openNote($0) })))
+                graph: NotesGraphView(model: NotesModel.shared, theme: theme, open: { [weak self] in self?.openNote($0) }),
+                manifest: KubeManifestDiffView(
+                    pane: kubernetesManifest, page: kubernetesPage, theme: theme, onClose: { [weak self] in self?.toggleDiff(nil) },
+                    onOpen: { [weak self] in self?.openInEditor($0) }, onShowPage: { [weak self] in self?.showKubernetesExpandedSource($0) }),
+                kubernetes: KubeSlotView(panel: kubernetesPanel, theme: theme, runInTerminal: { [weak self] in self?.runDockerCommand($0, in: nil) }),
+                terraformPlan: TerraformPlanPaneView(pane: terraformPlanPane, theme: theme, actions: terraformPlanActions, stateActions: terraformStateActions)))
         diffPanel.sizingOptions = []
         let diffItem = NSSplitViewItem(
             viewController: CardColumnController(diffPanel, fill: .panel, theme: theme))
@@ -609,6 +696,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 actions: InboxActions(
                     answer: { [weak self] id, choice in self?.answer(choice, in: id) },
                     open: { [weak self] id in self?.reveal(tabID: id) },
+                    askWhy: { [weak self] id in
+                        guard let self, let tab = self.store.tabs.first(where: { $0.id == id }) else { return }
+                        self.askWhy(onMarkOf: tab)
+                    },
                     close: { [weak self] in self?.toggleInbox(nil) })))
         inboxView.onKey = { [weak self] key in self?.inboxKey(key) ?? false }
         let inboxPanel = NSViewController()
@@ -648,12 +739,20 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         wireAPI()
         wireNotes()
         wireDatabase()
-        watchDockerPage().store(in: &cancellables)
+        declarePage(settingsWorkspacePage())
+        wireDockerPage()
+        wireKubernetesPage()
         wireDockerPanel()
+        wireKubernetesPanel()
+        wireTerraformPanel()
         wireDockerPorts()
         wireDockerAttention()
+        wireKubernetesAttention()
+        wireTerraformAgents()
+        wireTerraformPlan()
         watchDockerPalette().store(in: &cancellables)
-        installDockerKeys()
+        watchKubernetesPalette().store(in: &cancellables)
+        installPageKeys()
         split.addSplitViewItem(inboxItem)
         split.addSplitViewItem(diffItem)
         // A diagnostic run shares the real app's defaults: it must not save
@@ -710,7 +809,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
         // The pages (Settings's tab) cover the body, under the title bar
         // where the tab strip is.
-        addOverlay(
+        pages.add(
             .settings,
             NSHostingView(rootView: SettingsPageView(model: settingsPage, settings: .shared, keybindings: .shared, theme: theme)),
             in: content, below: titleBottom)
@@ -728,6 +827,25 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             reviewView.bottomAnchor.constraint(equalTo: content.bottomAnchor),
         ])
         self.reviewView = reviewView
+
+        // Security settings changed in settings.json outside the page: over
+        // the body and the pages alike, under the title bar, until answered.
+        let heldBanner = NSHostingView(rootView: SettingsHeldBanner(settings: .shared, theme: theme))
+        heldBanner.translatesAutoresizingMaskIntoConstraints = false
+        heldBanner.isHidden = Settings.shared.held.isEmpty
+        content.addSubview(heldBanner)
+        NSLayoutConstraint.activate([
+            heldBanner.topAnchor.constraint(equalTo: titleBottom, constant: 14),
+            heldBanner.centerXAnchor.constraint(equalTo: content.centerXAnchor),
+            heldBanner.widthAnchor.constraint(lessThanOrEqualTo: content.widthAnchor, constant: -40),
+        ])
+        // `@Published` emits before the value lands: the emitted one decides.
+        Settings.shared.$held
+            .map(\.isEmpty)
+            .removeDuplicates()
+            .sink { [weak heldBanner] empty in heldBanner?.isHidden = empty }
+            .store(in: &cancellables)
+        settingsHeldBanner = heldBanner
 
         // The palette floats over everything, hidden until ⌘P.
         let paletteView = NSHostingView(
@@ -860,6 +978,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     actions: PaneHeaderActions(
                         copyOutput: { [weak self] in self?.copyOutput(of: $0) },
                         killPort: { [weak self] port in
+                            // A Kubernetes forward's: stopped, its kubectl closed by its pid.
+                            if let forward = port.forward {
+                                KubeForwards.shared.stop(forward.id)
+                                return
+                            }
                             // A container's: stopped through the engine.
                             if let container = port.container {
                                 self?.dockerPage.act(.stop, on: DockerModel.shared.container(container).map { [$0] } ?? [])
@@ -881,7 +1004,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                         openPort: { [weak self, weak tab] port in
                             guard let url = port.url else { return }
                             self?.openLink(url, for: tab)
-                        })))
+                        },
+                        showForwards: { [weak self] in self?.showKubernetesForwards() })))
         }
         host.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(host)
@@ -921,7 +1045,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         pane.onTitleChange = { [weak self, weak tab, weak pane] title in
             // Every pane's ledger, not only the focused one's: a build left
             // running in a split still wants its blocks recorded.
-            self?.blocks(of: pane).titleChanged(title, cwd: pane?.workingDirectory)
+            self?.blocks(of: pane).titleChanged(title, cwd: pane?.workingDirectory, kubeconfig: pane?.environment["KUBECONFIG"])
             guard let tab, tab.terminal === pane else { return }
             tab.shellTitle = title
         }
@@ -1026,7 +1150,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         guard let tab = tab(containing: source) ?? store.selected else { return }
         let from = source.flatMap { tab.splits.contains($0) ? $0 : nil } ?? tab.terminal
         let inherited = from.inheritedSettings()
-        let pane = TerminalView(workingDirectory: from.workingDirectory ?? inherited.workingDirectory, fontSize: inherited.fontSize)
+        // A pane of a Terminal in this context is pinned as its sibling is.
+        let pane = TerminalView(
+            workingDirectory: from.workingDirectory ?? inherited.workingDirectory, fontSize: inherited.fontSize, environment: from.environment,
+            kubePin: from.kubePin, kubePinLost: from.kubePinLost)
         wire(pane, in: tab)
         tab.zoomed = nil
         tab.setSplits(tab.splits.inserting(pane, at: from, direction))
@@ -1074,6 +1201,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// something runs in it (closing the whole tab always asks).
     func closePane(_ pane: TerminalView, in tab: Tab) {
         guard tab.isSplit else { return closeTab(tab) }
+        // A terraform write in it asks whatever else is said (4.8).
+        let guarded = terraformCloseGuard(tabs: [tab], panes: [pane], path: .pane) { [weak self, weak tab, weak pane] in
+            guard let self, let tab, let pane else { return }
+            self.removePane(pane, from: tab)
+        }
+        if guarded { return }
         guard pane.needsConfirmClose, let window else { return removePane(pane, from: tab) }
         let alert = NSAlert()
         alert.messageText = "Close this pane?"
@@ -1141,9 +1274,46 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// `command`: what starts the agent, when not its plain command (a resume).
     func newTab(in directory: URL, agent: Agent? = nil, startAgent: Bool = true, command: String? = nil) {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
-        let input = startAgent ? agent.map { (command ?? $0.command(arguments: Settings.shared.arguments(for: $0))) + "\n" } : nil
+        let start = agent.map { agentCommand($0, base: command, in: directory) }
+        let input = startAgent ? start.map { $0.command + "\n" } : nil
         let terminal = TerminalView(workingDirectory: directory.path, initialInput: input, fontSize: fontSize)
+        terminal.terraformAgentGuard = start?.launch ?? .none
         addTab(terminal, .folder, agent: agent, after: store.selected, in: directory.path)
+    }
+
+    /// What starts `agent` in `directory`: its command (`base`, else its
+    /// plain one) with Settings ▸ Agents' arguments, and — in a checkout
+    /// with a production root — Terraform's writes denied for this launch
+    /// (`TerraformAgentGuard`, analysis 3.4).
+    func agentCommand(_ agent: Agent, base: String? = nil, in directory: URL) -> (command: String, launch: TerraformAgentGuard.Launch) {
+        let launch = TerraformAgentGuards.shared.launch(for: agent, in: directory)
+        return (TerraformAgentGuard.command(base ?? agent.command(arguments: Settings.shared.arguments(for: agent)), launch: launch), launch)
+    }
+
+    /// An agent's tab (or a shell's), pinned as Terminal in this context
+    /// pins one: New Task's, its agent's kubectl going to `kubePin`'s context.
+    func newTab(in directory: URL, agent: Agent?, environment: [String: String], kubePin: KubeTerminalPin) {
+        let fontSize = store.selected?.terminal.inheritedSettings().fontSize
+        let start = agent.map { agentCommand($0, in: directory) }
+        let terminal = TerminalView(
+            workingDirectory: directory.path, initialInput: start.map { $0.command + "\n" }, fontSize: fontSize, environment: environment, kubePin: kubePin)
+        terminal.terraformAgentGuard = start?.launch ?? .none
+        addTab(terminal, .folder, agent: agent, after: store.selected, in: directory.path)
+        followKubernetesPins()
+    }
+
+    /// A shell tab after the selected one, in `directory`, its shell
+    /// started with `environment` over the app's own — a Terminal in this
+    /// context's `KUBECONFIG` — and pinned to `kubePin`'s context.
+    /// `command`, when given, is typed as soon as its shell starts.
+    @discardableResult
+    func newTab(in directory: URL, environment: [String: String], kubePin: KubeTerminalPin?, running command: String? = nil) -> Tab? {
+        let fontSize = store.selected?.terminal.inheritedSettings().fontSize
+        let terminal = TerminalView(
+            workingDirectory: directory.path, initialInput: command.map { $0 + "\n" }, fontSize: fontSize, environment: environment, kubePin: kubePin)
+        addTab(terminal, .folder, agent: nil, after: store.selected, in: directory.path)
+        if kubePin != nil { followKubernetesPins() }
+        return tab(containing: terminal)
     }
 
     /// A shell tab after the selected one, in `directory`, that runs
@@ -1175,6 +1345,43 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         if tab.activity.containerFailed(note, visible: isVisible(tab)) { notifyUnlessHeld(tab) }
         updateAttentionBadge()
     }
+
+    /// What `tab`'s checkout deploys failed in its bound namespace
+    /// (KubeAttention): marked as a failed command is, told while you are
+    /// elsewhere — Ask Why on the mark (its menu, the Inbox).
+    /// A tab whose mark is something else's (an agent waiting, a failed
+    /// command) keeps it, but the failure is still told — the bound
+    /// checkout's agent waiting after a deploy is where it matters most.
+    func markClusterFailure(_ note: String, on tab: Tab) {
+        let visible = isVisible(tab)
+        if tab.activity.clusterFailed(note, visible: visible) {
+            notifyUnlessHeld(tab)
+        } else if tab.activity.clusterNewsUnderOtherMark(visible: visible) {
+            clusterNotices += 1
+            notifyUnlessHeld(tab, note: note, mark: .failed)
+        }
+        updateAttentionBadge()
+    }
+
+    /// A pane of `tab` asks for a Terraform write (3.3), or no longer does
+    /// (`ask` nil): the tab marked waiting with what it asks — looked at or
+    /// not — and, for an agent's ask, told while you are elsewhere; the
+    /// mark goes when the ask does. Nothing answers it.
+    func markTerraformAsk(_ ask: TerraformAsk?, on tab: Tab) {
+        guard tab.terraformAsk != ask else { return }
+        let before = tab.terraformAsk
+        tab.terraformAsk = ask
+        if let ask {
+            let raised = tab.activity.terraformAsked(ask.summary, visible: isVisible(tab))
+            if raised, tab.agent != nil || ask.prompt.isAgents { notifyUnlessHeld(tab) }
+        } else if before != nil, tab.activity.terraformAnswered() {
+            AttentionNotifier.withdraw(tab: tab)
+        }
+        updateAttentionBadge()
+    }
+
+    /// A cluster mark came or went: the Dock badge, the menu bar, the Inbox.
+    func kubernetesAttentionChanged() { updateAttentionBadge() }
 
     private func updateAttentionBadge() {
         AttentionNotifier.updateBadge(count: store.tabs.filter { $0.activity.needsAttention }.count)
@@ -1311,6 +1518,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     func windowDidBecomeKey(_ notification: Notification) {
         markSelectedSeen()
+        // The Kubernetes list is the app's: the window looked at asks with its filter.
+        if kubernetesPage.visible { kubernetesPage.applySelector() }
         editor?.reloadIfChangedOnDisk()
         // Catches what the watchers can't see: they cover the checkout and its
         // git state, not all of .git (packed-refs, say).
@@ -1340,7 +1549,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     group: tab.groupID.flatMap { indexOf[$0] },
                     browserURL: browserPages(of: tab).map { $0.urls[$0.active].absoluteString },
                     browserPages: browserPages(of: tab)?.urls.map(\.absoluteString),
-                    browserPage: browserPages(of: tab)?.active)
+                    browserPage: browserPages(of: tab)?.active,
+                    kubeContext: tab.isSplit ? nil : Self.savedKubePin(tab.terminal),
+                    paneKubeContexts: tab.isSplit && tab.terminals.contains { Self.savedKubePin($0) != nil }
+                        ? tab.terminals.map(Self.savedKubePin) : nil)
             },
             selectedIndex: store.selectedIndex,
             groups: ordered.isEmpty
@@ -1353,6 +1565,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 })
     }
 
+    /// The panes whose text the last save keeps: Settings ▸ General's
+    /// reopening tabs and their text, shell tabs only — and never a pane
+    /// that printed what Terraform keeps secret (5.6 rule 6).
+    func scrollbackPanes() -> [TerminalView] {
+        guard Settings.shared.restoreTabs, Settings.shared.restoreScrollback else { return [] }
+        return store.tabs.filter { $0.agent == nil }.flatMap { tab in tab.terminals.filter { !terraformSensitive($0) } }
+    }
+
     /// The last save, at quit or when the window closes (whichever comes
     /// first — after it the terminals are gone): with each shell pane's
     /// text. Agent tabs' aren't kept: their conversation resumes instead.
@@ -1360,11 +1580,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         guard !finalSaveDone else { return }
         finalSaveDone = true
         var saved: [ObjectIdentifier: String] = [:]
-        // Settings ▸ General: reopening tabs, and each shell pane's text with them.
-        for tab in store.tabs where tab.agent == nil && Settings.shared.restoreTabs && Settings.shared.restoreScrollback {
-            for pane in tab.terminals {
-                if let text = pane.scrollbackText, let name = Scrollback.save(text, keeping: Settings.shared.scrollbackLines) { saved[ObjectIdentifier(pane)] = name }
-            }
+        for pane in scrollbackPanes() {
+            if let text = pane.scrollbackText, let name = Scrollback.save(text, keeping: Settings.shared.scrollbackLines) { saved[ObjectIdentifier(pane)] = name }
         }
         Scrollback.removeAll(except: Set(saved.values))
         do {
@@ -1378,6 +1595,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// is gone), agents resuming their last conversation there.
     func restore(_ state: SessionState) {
         func existing(_ path: String?) -> String? { path.flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil } }
+        // A resumed agent is started as a new one is: Terraform's writes denied where they apply (3.4).
+        func resuming(_ agent: Agent?, in path: String?) -> (input: String?, launch: TerraformAgentGuard.Launch) {
+            guard let agent else { return (nil, .none) }
+            let folder = URL(fileURLWithPath: path ?? FileManager.default.homeDirectoryForCurrentUser.path, isDirectory: true)
+            let made = agentCommand(agent, base: agent.resumeCommand(arguments: Settings.shared.arguments(for: agent)), in: folder)
+            return (made.command + "\n", made.launch)
+        }
         // The islands first, so each tab can point at one as it is made.
         let groups: [TabGroup] = (state.groups ?? []).map {
             let group = TabGroup(
@@ -1390,6 +1614,22 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         store.groups = groups
         store.restoring = true
         defer { store.restoring = false }
+        // Terminal in this context: Overterm's kubeconfigs as they are now,
+        // read once, only when a saved pane was pinned.
+        let kube = state.tabs.contains { $0.hasKubeContext } ? Self.kubernetesRestoreList() : nil
+        var lost: [KubeTerminalLost] = []
+        // A pinned pane comes back pinned, looked up again with a new file —
+        // else marked lost with a KUBECONFIG that reaches nothing, never a
+        // plain shell to the current context.
+        func pinned(_ saved: KubeTerminalPin?) -> KubeTerminalRestore.Outcome? {
+            guard let saved, let kube else { return nil }
+            let outcome = KubeTerminalRestore.pane(saved, list: kube.list, kubeconfigs: kube.files)
+            if let gone = outcome.lost {
+                lost.append(gone)
+                GhosttyRuntime.logger.error("a pinned terminal couldn't be pinned again: \(gone.reason, privacy: .public)")
+            }
+            return outcome
+        }
         for saved in state.tabs {
             // Settings ▸ the group's own switch: an island marked not to
             // come back brings none of its tabs with it.
@@ -1397,17 +1637,24 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             // A split tab's panes, the first resuming the agent; else one terminal.
             var made: [TerminalView] = []
             let layout = saved.panes?.tree { directory, scrollback -> TerminalView in
+                let kube = pinned(saved.kubeContext(ofPane: made.count))
+                let start = made.isEmpty ? resuming(saved.agent, in: existing(directory)) : (nil, .none)
                 let pane = TerminalView(
-                    workingDirectory: existing(directory), initialInput: made.isEmpty ? saved.agent.map { $0.resumeCommand(arguments: Settings.shared.arguments(for: $0)) + "\n" } : nil,
-                    restoring: Scrollback.file(named: scrollback))
+                    workingDirectory: existing(directory), initialInput: start.input,
+                    restoring: Scrollback.file(named: scrollback), environment: kube?.environment ?? [:], kubePin: kube?.pin, kubePinLost: kube?.lost)
+                pane.terraformAgentGuard = start.launch
                 made.append(pane)
                 return pane
             }
+            let single = made.isEmpty ? pinned(saved.kubeContext) : nil
+            let start = made.isEmpty ? resuming(saved.agent, in: existing(saved.workingDirectory)) : (nil, .none)
             let terminal =
                 made.first
                 ?? TerminalView(
-                    workingDirectory: existing(saved.workingDirectory), initialInput: saved.agent.map { $0.resumeCommand(arguments: Settings.shared.arguments(for: $0)) + "\n" },
-                    restoring: Scrollback.file(named: saved.scrollback))
+                    workingDirectory: existing(saved.workingDirectory), initialInput: start.input,
+                    restoring: Scrollback.file(named: saved.scrollback), environment: single?.environment ?? [:], kubePin: single?.pin,
+                    kubePinLost: single?.lost)
+            if made.isEmpty { terminal.terraformAgentGuard = start.launch }
             // The island is the one the session saved — never a decision
             // taken again at launch (NewTabGroup would ask).
             let island = saved.group.flatMap { groups.indices.contains($0) ? groups[$0].id : nil }
@@ -1439,6 +1686,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         }
         store.restoring = false
         store.normalize()
+        if kube != nil { followKubernetesPins() }
+        if let first = lost.first { kubernetesPage.terminalProblem = first.help }
         if let i = state.selectedIndex, store.tabs.indices.contains(i) { store.select(index: i) }
         // A tab inside a stashed or collapsed island must not stay selected.
         if let selected = store.selected, let group = store.group(of: selected), group.isStashed || group.isCollapsed,
@@ -1872,10 +2121,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 defaultAgent: Settings.shared.defaultTaskAgent,
                 location: Settings.shared.worktreeLocation,
                 composeFile: Settings.shared.dockerEnabled ? ComposeProjects.composeFile(in: repo)?.lastPathComponent : nil,
-                onCreate: { [weak self] branch, base, agent, startStack in
+                kubernetes: Settings.shared.kubernetesEnabled ? { await Self.kubernetesTaskOffer(for: repo) } : nil,
+                onCreate: { [weak self] branch, base, agent, startStack, pin in
                     guard let self else { return nil }
                     do {
-                        try await self.createTask(repo: repo, branch: branch, base: base, agent: agent, startStack: startStack)
+                        try await self.createTask(repo: repo, branch: branch, base: base, agent: agent, startStack: startStack, kubeContext: pin)
                         close()
                         return nil
                     } catch {
@@ -2060,11 +2310,30 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     for sub in v.subviews { walk(sub, depth + 1) }
                 }
                 walk(content, 0)
+                // What AppKit lays around the strip in the title bar — a glass
+                // platter behind the toolbar's item drew a band once.
+                var bar: NSView? = self.tabBarView
+                while let up = bar?.superview, !String(describing: Swift.type(of: up)).hasPrefix("NSTitlebarView") { bar = up }
+                if let toolbarView = bar?.superview {
+                    @MainActor func walkBar(_ v: NSView, _ depth: Int) {
+                        guard depth < 8 else { return }
+                        let name = String(describing: Swift.type(of: v)).prefix(60)
+                        out += "titlebar " + String(repeating: "  ", count: depth) + "\(name) \(v.convert(v.bounds, to: nil).integral)\(v.isHidden ? " HIDDEN" : "")\n"
+                        for sub in v.subviews { walkBar(sub, depth + 1) }
+                    }
+                    walkBar(toolbarView, 0)
+                }
                 if let clip = (self.editor?.view.subviews.compactMap { $0 as? NSScrollView }.first)?.contentView {
                     out += "editor clip bounds \(clip.bounds.integral)\n"
                 }
                 for (i, item) in self.split.splitViewItems.enumerated() {
                     out += "outer item \(i) collapsed=\(item.isCollapsed) frame=\(item.viewController.view.frame.integral)\n"
+                }
+                // This window's Kubernetes charts on screen: series, points, the axis's top, references, source, tier;
+                // and its Nodes list's heat strips: cells sampled, by level.
+                if let theme = self.theme {
+                    for line in KubeChartRegistry.shared.lines(in: ObjectIdentifier(theme)) { out += line + "\n" }
+                    for line in KubeHeatStripRegistry.shared.lines(in: ObjectIdentifier(theme)) { out += line + "\n" }
                 }
                 // The composited window as it is on screen (terminal included).
                 // An app may capture its own windows without Screen Recording
@@ -2123,8 +2392,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     out += "drag \(divider) at x=\(Int(start.x)) hit=\(hit.map { String(describing: Swift.type(of: $0)) } ?? "nil") widths \(before) -> \(after)\n"
                 }
                 FileHandle.standardError.write(Data(out.utf8))
-                // OVERTERM_DUMP_PNG=<file>: also a picture of the AppKit/SwiftUI
-                // layers (the terminal's Metal layer does not show).
+                // Exits rather than quits: what quitting ends, ended, and
+                // the run's own support folder removed.
+                (NSApp.delegate as? AppDelegate)?.endRun()
+                if AppEnvironment.ownsSupportDirectory { try? FileManager.default.removeItem(at: AppEnvironment.supportDirectory) }
                 exit(0)
             }
         }
@@ -2217,6 +2488,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// tab's or the chip's own view's (`stripPress`).
     private func installTabDragging() {
         dragMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak self] event in
+            self?.noteKubernetesWindowInput(event)
             guard let self, let point = self.stripPoint(event) else { return event }
             switch StripClick.kind(type: event.type, modifiers: event.modifierFlags) {
             case .context:
@@ -2374,6 +2646,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             menu.addItem(ClosureMenuItem("Reset Name") { tab.customTitle = nil })
         }
         menu.addItem(ClosureMenuItem("Show Info…") { [weak self] in self?.showInfo(for: tab) })
+        if let askWhy = kubernetesAttentionMenuItem(for: tab) { menu.addItem(askWhy) }
         menu.addItem(
             tab.isSuspended
                 ? ClosureMenuItem("Resume Tab") { [weak self] in self?.resumeTab(tab) }
@@ -2689,10 +2962,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// ⌘L. Without a selection there is nothing to ask about. Over the
     /// Docker page it means the selected container that failed, never the
     /// terminal hidden under the page (lines picked in a log view answer
-    /// it themselves: `DockerLogTextView`).
+    /// it themselves: `LogLinesTextView`).
     @objc func askAboutSelection(_ sender: Any?) {
-        if store.showingOverlay == .docker {
-            if !dockerPage.askWhySelected() { NSSound.beep() }
+        if let overlay = store.showingOverlay, let ask = pages[overlay]?.askAboutSelection {
+            if !ask() { NSSound.beep() }
             return
         }
         guard let tab = store.selected, let pane = tab.terminal.selectionText == nil ? nil : tab.terminal,
@@ -2700,9 +2973,20 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         else { return }
         hideSelectionBar()
         let folder = pane.workingDirectory ?? tab.workingDirectory
-        presentAskAgent(
-            text: text, command: blocks(of: pane).ledger.lastFinished, folder: folder,
-            targets: store.tabs.filter { $0.agent != nil && $0.id != tab.id })
+        let asked = askSelection(text, of: pane, in: tab)
+        presentAskAgent(text: asked.text, command: asked.command, folder: folder, targets: store.tabs.filter { $0.agent != nil && $0.id != tab.id })
+    }
+
+    /// What ⌘L hands on of `text` selected in `pane`: a pod's or a pinned
+    /// tab's output is the cluster's, and a pane that printed Terraform's
+    /// secrets is as risky — scrubbed as the page's Logs tab is.
+    func askSelection(_ text: String, of pane: TerminalView, in tab: Tab) -> (text: String, command: CommandBlock?) {
+        let pinned = pane.kubePin != nil || pane.kubePinLost != nil || terraformSensitive(pane)
+        let env = pane.kubePodEnv
+        return (
+            AskSelection.text(text, kind: tab.kind, pinned: pinned, env: env),
+            AskSelection.command(blocks(of: pane).ledger.lastFinished, kind: tab.kind, pinned: pinned, env: env)
+        )
     }
 
     /// The Ask Agent sheet over `text`: to one of `targets` (agent tabs, in
@@ -2712,7 +2996,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// git diff chip is offered (the window's checkout, by default).
     func presentAskAgent(
         text: String, command: CommandBlock?, folder: String?, targets agents: [Tab], message: String = "", subject: String? = nil,
-        parts: [AskAgentModel.Part] = [], diff: Bool? = nil
+        parts: [AskAgentModel.Part] = [], diff: Bool? = nil, showsBrief: Bool = false
     ) {
         var targets = agents.map { other in
             AskAgentModel.Target(
@@ -2724,7 +3008,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             AskAgentModel.Target(id: nil, title: "New agent tab in this folder", detail: "", color: nil, agent: .claude))
         askAgent.begin(
             selection: text, command: command, folder: folder, targets: targets, diff: diff ?? self.diff.isRepository, message: message,
-            subject: subject, parts: parts)
+            subject: subject, parts: parts, showsBrief: showsBrief)
         guard let theme else { return }
         presentSheet { [weak self] close in
             AskAgentView(
@@ -2740,11 +3024,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         }
     }
 
-    /// The keyboard back where it was before a sheet: the Docker page's
-    /// list while the page shows (the terminal is hidden under it), else
+    /// The keyboard back where it was before a sheet: the page's list
+    /// while a page with one shows (the terminal is hidden under it), else
     /// the selected terminal.
     func focusAfterSheet() {
-        if store.showingOverlay == .docker { focusDockerList() } else { focusSelectedTerminal() }
+        if let overlay = store.showingOverlay, pages[overlay]?.hasList == true {
+            focusPageList(overlay)
+        } else {
+            focusSelectedTerminal()
+        }
     }
 
     /// Types the prompt into the chosen agent, or into a new agent tab.
@@ -2803,10 +3091,22 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             target = store.selected
         }
         guard let target else { return }
+        type(prompt, intoAgent: target)
+    }
+
+    /// Types `prompt` into `target`'s agent, not sent: what it should do
+    /// with it is yours to finish. Never into a tab at a Terraform ask
+    /// (3.3): the text would land in the agent's permission prompt.
+    @discardableResult
+    func type(_ prompt: String, intoAgent target: Tab) -> Bool {
+        guard !terraformAsking(target) else {
+            NSSound.beep()
+            return false
+        }
         store.select(target)
-        // Typed, not sent: what it should do with this is yours to finish.
         target.terminal.insertText(prompt)
         window?.makeFirstResponder(target.terminal)
+        return true
     }
 
     // MARK: Inbox
@@ -2860,6 +3160,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// inside it would arrive as a literal.
     func answer(_ choice: AgentPrompt.Choice, in id: Tab.ID) {
         guard let tab = store.tabs.first(where: { $0.id == id }) else { return }
+        // A Terraform write is never answered by Overterm (3.3): not by a
+        // button, a key or anything automated — read again here, in case
+        // the screen changed since the card was made.
+        guard !terraformAsking(tab) else { return NSSound.beep() }
         tab.terminal.insertText(choice.key)
         tab.terminal.pressReturn()
         refreshInbox()
@@ -2930,6 +3234,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     func hidePalette() {
         paletteView?.isHidden = true
         focusSelectedTerminal()
+        releaseKubernetesSwitcher()
     }
 
     /// Actions first, then tabs, worktrees and snippets — the order shown
@@ -3089,7 +3394,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 }
             }
         }
-        items += dockerPaletteItems()
+        for page in pages.all { items += page.paletteItems?() ?? [] }
+        items += terraformPaletteItems()
+        items += terraformPlanPaletteItems()
         // History last in the unranked order — before you type, what you
         // want is an action; once you type, ranking decides.
         items += historyItems(matching: query)
@@ -3118,11 +3425,33 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// What New Task does once the sheet is filled in: the worktree, then a
     /// tab in it named after the branch, with the agent started.
-    func createTask(repo: URL, branch: String, base: String, agent: Agent?, startStack: Bool = false) async throws {
+    /// `kubeContext`: the tab pinned to it, as Terminal in this context
+    /// pins one (3.11) — read and checked before the worktree is made, so a
+    /// pin refused leaves nothing behind; its file written after it, so a
+    /// worktree that fails leaves none either.
+    func createTask(repo: URL, branch: String, base: String, agent: Agent?, startStack: Bool = false, kubeContext: String? = nil) async throws {
+        var checked: (pin: KubeTerminalPin, kubeconfigs: [URL])?
+        if let kubeContext { checked = try await kubernetesTaskPin(kubeContext, repo: repo) }
         let path = try await TaskCreator.create(repo: repo, branch: branch, base: base, location: Settings.shared.worktreeLocation)
-        newTab(in: path, agent: agent)
+        // Its roots read before its agent starts: a production one denies it Terraform's writes (3.4).
+        if agent != nil, Settings.shared.terraformAgentWriteGuard { await TerraformAgentGuards.shared.decide(path) }
+        var pinned: (environment: [String: String], pin: KubeTerminalPin)?
+        if let checked {
+            do {
+                pinned = try KubeTerminalLaunch.prepare(checked.pin, kubeconfigs: checked.kubeconfigs)
+            } catch {
+                throw KubeTerminalLaunch.Problem.file(
+                    "The worktree is at \(path.path), but its tab couldn't be pinned to \(checked.pin.context): \(error.localizedDescription)")
+            }
+        }
+        if let pinned {
+            newTab(in: path, agent: agent, environment: pinned.environment, kubePin: pinned.pin)
+        } else {
+            newTab(in: path, agent: agent)
+        }
         store.selected?.customTitle = branch
         await worktrees.refresh()
+        await prepareTerraformWorktree(path)
         // Its own stack, in a tab beside it — the page's Up, which looks at
         // its ports and its name first, and which a scenario records.
         if startStack, ComposeProjects.composeFile(in: path) != nil { await dockerPage.up(.checkout(path)) }
@@ -3170,7 +3499,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// Shows a SwiftUI view as a sheet; the builder gets the closure that
     /// dismisses it.
-    func presentSheet<Content: View>(_ build: (@escaping () -> Void) -> Content) {
+    /// `ended` runs once the sheet is gone, however it was put away.
+    func presentSheet<Content: View>(ended: (@MainActor () -> Void)? = nil, _ build: (@escaping () -> Void) -> Content) {
         guard let window else { return }
         let sheet = NSWindow(contentRect: .zero, styleMask: [.titled], backing: .buffered, defer: false)
         let close = { [weak window, weak sheet] in
@@ -3180,7 +3510,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         sheet.contentViewController = NSHostingController(rootView: build(close))
         // Over the Docker page, its list: the terminal is hidden under it,
         // and keys sent there would type into a shell nobody sees.
-        window.beginSheet(sheet) { [weak self] _ in self?.focusAfterSheet() }
+        window.beginSheet(sheet) { [weak self] _ in
+            ended?()
+            self?.focusAfterSheet()
+        }
     }
 
     private func showAlert(_ title: String, _ message: String) {
@@ -3219,6 +3552,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     nonisolated static func shellQuoted(_ path: String) -> String {
         let safe = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "/._-+,:@%"))
         if path.unicodeScalars.allSatisfy(safe.contains) { return path }
+        if ShellWord.hasControl(path) { return ShellWord.ansiC(path) }
         return "'" + path.replacingOccurrences(of: "'", with: "'\\''") + "'"
     }
 
@@ -3236,6 +3570,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// Closes several tabs behind one confirmation.
     func closeTabs(_ tabs: [Tab]) {
         guard !tabs.isEmpty, let window else { return }
+        // A terraform write in one of their panes asks first, whatever the setting (4.8).
+        if terraformCloseGuard(tabs: tabs, path: .tabs, proceed: { [weak self] in tabs.forEach { self?.removeTab($0) } }) { return }
         // Settings ▸ General ▸ Ask before closing: only when something runs.
         if !Self.needsCloseConfirmation(tabs) { return tabs.forEach { removeTab($0) } }
         if tabs.count == 1 { store.select(tabs[0]) }
@@ -3252,9 +3588,23 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     /// Whether closing these tabs asks first: always, unless Settings says
-    /// only when something runs in them.
-    static func needsCloseConfirmation(_ tabs: [Tab]) -> Bool {
-        Settings.shared.confirmClose == .always || tabs.contains { $0.terminals.contains { $0.needsConfirmClose } }
+    /// only when something runs in them — a pane's process, or a
+    /// port-forward the tab asked for that hasn't stopped (its pill).
+    /// `quitting`: every forward that runs counts, whatever tab asked for
+    /// it, since quitting stops them all.
+    static func needsCloseConfirmation(
+        _ tabs: [Tab], forwards: [KubeForward] = KubeForwards.shared.forwards, quitting: Bool = false,
+        confirmClose: Settings.CloseConfirmation = Settings.shared.confirmClose
+    ) -> Bool {
+        confirmClose == .always || tabs.contains { $0.terminals.contains { $0.needsConfirmClose } }
+            || !runningForwards(of: tabs, in: forwards, quitting: quitting).isEmpty
+    }
+
+    /// The forwards closing these tabs (or quitting) is about: those not
+    /// stopped that one of them asked for — every one, quitting.
+    static func runningForwards(of tabs: [Tab], in forwards: [KubeForward], quitting: Bool) -> [KubeForward] {
+        let ids = Set(tabs.map(\.id))
+        return forwards.filter { forward in !forward.state.isStopped && (quitting || forward.spec.tab.map { ids.contains($0) } == true) }
     }
 
     /// The dim over panes without the keyboard (Settings ▸ Appearance).
@@ -3355,10 +3705,19 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 if keys.contains(where: { $0.hasPrefix("notes.") }) { self.notesSettingsChanged() }
                 if keys.contains(where: { $0.hasPrefix("database.") }) { self.databaseSettingsChanged() }
                 if keys.contains(where: { $0.hasPrefix("docker.") }) { self.dockerSettingsChanged(keys) }
+                // Agents' Kubernetes tools come and go with the settings.
+                if keys.contains(where: { $0.hasPrefix("kubernetes.") }) {
+                    BrowserBridge.shared.update()
+                    self.kubernetesPanelSettingsChanged()
+                }
+                if keys.contains(where: { $0.hasPrefix("terraform.") }) { self.terraformPanelSettingsChanged() }
                 if !keys.isDisjoint(with: Self.sidebarPanelKeys) { self.sidebarPanelsChanged() }
                 if keys.contains("general.sidebarRail") { self.sizeSidebarColumn() }
                 let editorKeys = keys.filter { $0.hasPrefix("editor.") }
-                if !editorKeys.isEmpty { self.editor?.applySettings(editorKeys) }
+                if !editorKeys.isEmpty {
+                    self.editor?.applySettings(editorKeys)
+                    self.kubernetesPage.madeYAMLEditor?.applySettings(editorKeys)
+                }
             }
             .store(in: &cancellables)
     }
@@ -3415,6 +3774,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         // The editor is painted from the terminal's colours too, and has
         // its own vocabulary for them (EditorTheme).
         editor?.applyTerminalColors()
+        kubernetesPage.madeYAMLEditor?.applyTerminalColors()
     }
 
     /// The overrides file from both files; Ghostty reloads only when it changed.
@@ -3424,39 +3784,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     // MARK: Pages over the body (Settings)
 
-    /// A page's view, hidden, covering everything under the tab strip.
-    private func addOverlay(_ overlay: WorkspaceOverlay, _ view: NSView, in content: NSView, below top: NSLayoutYAxisAnchor) {
-        view.translatesAutoresizingMaskIntoConstraints = false
-        view.isHidden = true
-        // Beside the pages already there, under what floats over them (the
-        // palette, the switcher) — a page made later must not cover those.
-        if let sibling = overlayViews.values.first {
-            content.addSubview(view, positioned: .above, relativeTo: sibling)
-        } else {
-            content.addSubview(view)
-        }
-        overlayContent = content
-        overlayTop = top
-        NSLayoutConstraint.activate([
-            view.topAnchor.constraint(equalTo: top),
-            view.leadingAnchor.constraint(equalTo: content.leadingAnchor),
-            view.trailingAnchor.constraint(equalTo: content.trailingAnchor),
-            view.bottomAnchor.constraint(equalTo: content.bottomAnchor),
-        ])
-        overlayViews[overlay] = view
-    }
-
     /// A page, opened if it isn't, over the body — in place of whichever
     /// page showed: they take turns.
     func showOverlay(_ overlay: WorkspaceOverlay) {
-        if overlayViews[overlay] == nil, let content = overlayContent, let top = overlayTop, let made = makeOverlay(overlay) {
-            addOverlay(overlay, made, in: content, below: top)
-        }
-        guard let view = overlayViews[overlay] else { return }
+        guard let view = pages.made(overlay) else { return }
         hideAgentOverview()
         if peek.isOpen { peek.close() }
         hideSpotlight(keepTerminalSearch: false)
-        if let showing = store.showingOverlay, showing != overlay { overlayViews[showing]?.isHidden = true }
+        if let showing = store.showingOverlay, showing != overlay { pages.view(showing)?.isHidden = true }
         // A review's page and these take turns too.
         hideReviewPage(focus: false)
         store.showOverlay(overlay)
@@ -3468,7 +3803,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     func hideOverlay(focus: Bool = true) {
         guard let showing = store.showingOverlay else { return }
         store.hideOverlay()
-        overlayViews[showing]?.isHidden = true
+        pages.view(showing)?.isHidden = true
         if focus { focusSelectedTerminal() }
     }
 
@@ -3476,10 +3811,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     func closeOverlay(_ overlay: WorkspaceOverlay) {
         if store.showingOverlay == overlay { hideOverlay() }
         store.closeOverlay(overlay)
-        switch overlay {
-        case .settings: settingsPage.draft = nil
-        case .docker: dockerPage.selection = []
-        }
+        pages[overlay]?.closed?()
     }
 
     /// ⌘, (and the update chip): the Settings tab, opened if it isn't, shown.
@@ -3490,14 +3822,31 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// What closing these tabs would end — running processes by name, agents
     /// first, since an agent's conversation is what you'd lose.
-    static func closeWarning(for tabs: [Tab]) -> String {
+    /// What closing them stops, said: the busy panes, then the forwards —
+    /// which a tab's close leaves running, on the page's Forwards only (a
+    /// forward is the app's, not the tab's), and quitting stops.
+    static func closeWarning(for tabs: [Tab], forwards: [KubeForward] = KubeForwards.shared.forwards, quitting: Bool = false) -> String {
         let busy = tabs.filter { $0.terminals.contains { $0.needsConfirmClose } }
-        guard !busy.isEmpty else {
-            return tabs.count == 1 ? "Its shell is idle." : "Their shells are idle."
+        let running = runningForwards(of: tabs, in: forwards, quitting: quitting)
+        var said: String
+        if busy.isEmpty {
+            said = tabs.count == 1 ? "Its shell is idle." : "Their shells are idle."
+        } else {
+            let names = busy.prefix(3).map { tab in tab.agent.map { "\($0.name) in “\(tab.title)”" } ?? "“\(tab.title)”" }
+            let more = busy.count > 3 ? " and \(busy.count - 3) more" : ""
+            said = "Still running: \(names.joined(separator: ", "))\(more). Closing kills \(busy.count == 1 ? "it" : "them")."
         }
-        let names = busy.prefix(3).map { tab in tab.agent.map { "\($0.name) in “\(tab.title)”" } ?? "“\(tab.title)”" }
-        let more = busy.count > 3 ? " and \(busy.count - 3) more" : ""
-        return "Still running: \(names.joined(separator: ", "))\(more). Closing kills \(busy.count == 1 ? "it" : "them")."
+        guard !running.isEmpty else { return said }
+        let named = running.prefix(2).map { "\($0.spec.hostPort) → \($0.spec.target)" }.joined(separator: ", ")
+        let more = running.count > 2 ? " and \(running.count - 2) more" : ""
+        let one = running.count == 1
+        if quitting {
+            said += " Quitting stops \(one ? "the port-forward" : "\(running.count) port-forwards") (\(named)\(more))."
+        } else {
+            said +=
+                " \(one ? "Its port-forward" : "Their port-forwards") (\(named)\(more)) \(one ? "keeps" : "keep") running: Kubernetes ▸ Forwards shows and stops \(one ? "it" : "them")."
+        }
+        return said
     }
 
     private func removeTab(_ tab: Tab) {
@@ -3530,7 +3879,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     func closeTabsWithoutAsking(_ tabs: [Tab]) { tabs.forEach { removeTab($0) } }
 
     /// The editor's file, when it has unsaved changes.
-    var unsavedEditorFile: String? { editor?.unsavedNames.first }
+    var unsavedEditorFile: String? { unsavedNames(everyWindow: isLastWindow).first }
 
     func closeTabs(of view: TerminalView, mode: ghostty_action_close_tab_mode_e) {
         guard let tab = tab(containing: view), let i = store.index(of: tab) else { return }
@@ -3744,6 +4093,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         storageObject.visible = shown && rightPane.mode == .object
         dockerPanel.slotVisible = shown && rightPane.mode == .container
         redisSlot.visible = shown && rightPane.mode == .redis
+        kubernetesPanel.slotVisible = shown && rightPane.mode == .kubernetes
+        // An expanded chart reads (its tab's reads) only while the slot shows it.
+        kubernetesPage.expandedChartOnScreen =
+            shown && rightPane.mode == .manifest && kubernetesManifest.shown == .chart && kubernetesManifest.chart != nil
+            && kubernetesManifest.chart === kubernetesPage.expandedChart
     }
 
     @objc func toggleFileTree(_ sender: Any?) {
@@ -3756,6 +4110,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         updateAPIVisibility()
         updateNotesVisibility()
         updateDockerVisibility()
+        updateKubernetesPanelVisibility()
+        updateTerraformPanelVisibility()
         // Collapsing can strand keyboard focus in the hidden panel — it goes
         // to the editor while that fills the window, not to the terminal
         // (which would end the zoom).
@@ -3860,33 +4216,50 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         }
         item.view = strip
         item.label = ""
+        // Unbordered: linked against macOS 26's SDK, the bar sets an
+        // item's view on a Liquid Glass platter (`NSToolbarPlatterView`
+        // around an `NSGlassEffectView`), 8 pt lower than the bar and as
+        // wide as the strip — its rounded bottom showed as a grey band
+        // under the tabs. The strip draws its own; nothing goes behind it.
+        item.isBordered = false
         item.visibilityPriority = .high
         return item
     }
 
     /// Closing the window closes every tab: always confirmed.
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        if let editor, let name = editor.unsavedNames.first {
+        let unsaved = unsavedNames(everyWindow: isLastWindow)
+        if let name = unsaved.first {
             let alert = NSAlert()
-            let others = editor.unsavedNames.count - 1
+            let others = unsaved.count - 1
             alert.messageText = others > 0 ? "“\(name)” and \(others) more have unsaved changes." : "“\(name)” has unsaved changes."
-            alert.informativeText = "Save it (⌘S) first, or close the window and lose them."
+            alert.informativeText = "Save it (⌘S) — or apply a cluster object's YAML — first, or close the window and lose them."
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Close Anyway")
-            alert.beginSheetModal(for: sender) { response in
+            alert.beginSheetModal(for: sender) { [weak self] response in
                 guard response == .alertSecondButtonReturn else { return }
+                // Asked: the quit that follows the last window asks nothing again.
+                self?.closeConfirmed = true
                 sender.close()
             }
             return false
         }
         guard !store.tabs.isEmpty else { return true }
-        if !Self.needsCloseConfirmation(store.tabs) {
+        // A terraform write in a pane asks first, whatever the setting (4.8).
+        let guarded = terraformCloseGuard(tabs: store.tabs, path: .window) { [weak self] in
+            self?.closeConfirmed = true
+            sender.close()
+        }
+        if guarded { return false }
+        // The last window's close quits, which stops every forward.
+        let last = !NSApp.windows.contains { $0 !== sender && $0.isVisible && $0.windowController is TerminalWindowController }
+        if !Self.needsCloseConfirmation(store.tabs, quitting: last) {
             closeConfirmed = true
             return true
         }
         let alert = NSAlert()
         alert.messageText = store.tabs.count == 1 ? "Close the window?" : "Close the window and its \(store.tabs.count) tabs?"
-        alert.informativeText = Self.closeWarning(for: store.tabs)
+        alert.informativeText = Self.closeWarning(for: store.tabs, quitting: last)
         alert.addButton(withTitle: "Close Window")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
@@ -3905,14 +4278,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     }
 
     func windowDidChangeOcclusionState(_ notification: Notification) {
-        updateDockerWindowVisible()
-        updateDockerVisibility()
-        updateDockerPageHold()
+        for page in pages.all { page.occlusionChanged?() }
+        updateEditorOnScreen()
     }
 
     func windowWillClose(_ notification: Notification) {
         if let rightClickMonitor { NSEvent.removeMonitor(rightClickMonitor) }
-        if let dockerKeys { NSEvent.removeMonitor(dockerKeys) }
+        if let pageKeys { NSEvent.removeMonitor(pageKeys) }
         if let dragMonitor { NSEvent.removeMonitor(dragMonitor) }
         if let peekKeys { NSEvent.removeMonitor(peekKeys) }
         peek.close()
@@ -3923,19 +4295,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         overviewPoll?.invalidate()
         inboxPoll?.invalidate()
         NotesModel.shared.setVisible(false, for: self)
-        // What this window holds of Docker's polling goes with it: kept,
-        // the app reloaded the list every 15 s for good, and Docker Desktop
-        // never rested (Resource Saver) — a closed window still "looking".
-        if dockerPanelShown {
-            dockerPanelShown = false
-            DockerModel.shared.hide()
-        }
-        if dockerPageHeld {
-            dockerPageHeld = false
-            DockerModel.shared.hide()
-        }
-        dockerPage.close()
-        removeDockerReadCopies()
+        forgetKubernetesCheckouts()
+        for page in pages.all { page.windowClosing?() }
         updateMenuBarItem(count: 0)
         for tab in store.tabs { tab.terminals.forEach { $0.close() } }
     }
@@ -3976,6 +4337,9 @@ extension TerminalWindowController: NSMenuItemValidation {
             || menuItem.action == #selector(showNotesGraph(_:))
         {
             return Settings.shared.notesEnabled
+        }
+        if menuItem.action == #selector(exportKubernetesList(_:)) {
+            return store.showingOverlay == .kubernetes && kubernetesPage.canExport
         }
         if menuItem.action == #selector(toggleTabPeek(_:)) {
             menuItem.state = peek.isOpen ? .on : .off

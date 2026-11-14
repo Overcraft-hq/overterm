@@ -6,6 +6,7 @@ struct ReviewActions {
     /// The file as it is in the checkout, in the editor.
     var openFile: (ReviewModel, ChangedFile) -> Void = { _, _ in }
     var openOnGitHub: (URL) -> Void = { _ in }
+    var terraform = TerraformReviewActions()
 }
 
 /// A review's page — a tab of its own, the whole window under the strip:
@@ -34,6 +35,7 @@ struct ReviewView: View {
         VStack(spacing: 0) {
             ReviewHeader(model: model, theme: theme, actions: actions)
             Rectangle().fill(theme.border).frame(height: 1)
+            TerraformReviewSectionView(review: model, model: model.terraform, theme: theme, actions: actions.terraform)
             switch model.phase {
             case .loading:
                 note("Loading…")

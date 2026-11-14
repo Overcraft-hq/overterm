@@ -103,9 +103,12 @@ struct PullRequestDetail: Equatable {
     let checks: [Check]
     /// Comments and review summaries, oldest first.
     let conversation: [ConversationItem]
+    /// From a fork (unknown counts as one): its branch's name says nothing
+    /// of this repository's branches.
+    var crossRepository = true
 
     static let viewFields =
-        "number,title,headRefName,baseRefName,state,isDraft,url,statusCheckRollup,body,author,additions,deletions,changedFiles,comments,reviews"
+        "number,title,headRefName,headRefOid,isCrossRepository,baseRefName,state,isDraft,url,statusCheckRollup,body,author,additions,deletions,changedFiles,comments,reviews"
 
     static func parse(_ data: Data) throws -> PullRequestDetail {
         let pr = try JSONDecoder().decode(GH.PullRequest.self, from: data)
@@ -125,7 +128,8 @@ struct PullRequestDetail: Equatable {
             summary: pr.summary, body: pr.body ?? "", author: pr.author?.login ?? "ghost", base: pr.baseRefName ?? "",
             additions: pr.additions ?? 0, deletions: pr.deletions ?? 0, changedFiles: pr.changedFiles ?? 0,
             checks: (pr.statusCheckRollup ?? []).map(\.check),
-            conversation: (comments + reviews).sorted { ($0.date ?? .distantPast) < ($1.date ?? .distantPast) })
+            conversation: (comments + reviews).sorted { ($0.date ?? .distantPast) < ($1.date ?? .distantPast) },
+            crossRepository: pr.isCrossRepository ?? true)
     }
 }
 
@@ -244,6 +248,7 @@ enum GH {
         let title: String
         let headRefName: String
         let headRefOid: String?
+        let isCrossRepository: Bool?
         let state: String
         let isDraft: Bool?
         let url: String?

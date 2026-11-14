@@ -22,6 +22,19 @@ final class LanguageServers {
         var rootMarkers: [String] = []
         /// Tried in order; the first found is used.
         var launch: [ServerDiscovery.Candidate]
+        /// Sent as `initialize`'s `initializationOptions` (terraform-ls takes
+        /// its settings there). A JSON value, Hashable: Spec is a key.
+        var initializationOptions: JSONValue? = nil
+        /// Set in its environment, and so in what it runs (terraform-ls:
+        /// `CHECKPOINT_DISABLE=1`, `HOME` a scratch folder, so the providers
+        /// `terraform validate` starts find no credential files). Over the
+        /// app's and the command's; a removed name still wins.
+        var environmentAdded: [String: String] = [:]
+        /// Names never in its environment, nor in what it runs: a server
+        /// that starts tools (terraform-ls runs `terraform validate`) gets
+        /// no credentials. `AWS_*` takes every name it begins, `*_TOKEN`
+        /// every name it ends, `*_SECRET*` every name it is in.
+        var environmentRemoved: [String] = []
     }
 
     nonisolated static let specs: [Spec] = [
@@ -81,6 +94,24 @@ final class LanguageServers {
                 .executable("bash-language-server", ["start"]),
                 .zedNode("bash-language-server/node_modules/bash-language-server/out/cli.js", ["start"]),
             ]),
+        // Terraform (analysis 4.14): rooted at the git top (no markers), a
+        // linked worktree's own — one server a worktree. Its validate on
+        // save off: Overterm's runs it, stripped (`TerraformFolder.validate`).
+        // No credential in its environment nor in the terraform it runs, a
+        // scratch HOME and CLI config (made before it starts,
+        // `prepareLaunch`), no call home; `terraform.path` is added at
+        // launch (`launchOptions`). `ignoreDirectoryNames`, not
+        // `ignorePaths`: these are names, wherever they are; `ignorePaths`
+        // takes whole paths.
+        Spec(
+            id: "terraform", extensions: ["tf": "terraform", "tfvars": "terraform-vars", "tofu": "opentofu"],
+            launch: [.executable("terraform-ls", ["serve"]), .zedTerraformLS],
+            initializationOptions: .object([
+                "indexing": .object(["ignoreDirectoryNames": .array([.string(".terragrunt-cache"), .string("node_modules")])]),
+                "experimentalFeatures": .object(["validateOnSave": .bool(false)]),
+            ]),
+            environmentAdded: TerraformEnvironment.languageServerAdded(scratch: TerraformGuards.Scratch(folder: AppEnvironment.terraformScratchDirectory)),
+            environmentRemoved: TerraformEnvironment.languageServerRemoved),
     ]
 
     /// The spec whose files these are.
@@ -168,6 +199,7 @@ final class LanguageServers {
                     return nil
                 }
                 do {
+                    Self.prepareLaunch(spec)
                     try server.restart()
                     return server
                 } catch {
@@ -178,7 +210,10 @@ final class LanguageServers {
             }
         }
         guard let command = command(for: spec) else { return nil }
-        let server = LanguageServer(name: spec.id, command: command, root: root)
+        Self.prepareLaunch(spec)
+        let server = LanguageServer(
+            name: spec.id, command: command, root: root, initializationOptions: Self.launchOptions(spec, terraformPath: Self.terraformPath(spec)),
+            environmentAdded: spec.environmentAdded, environmentRemoved: spec.environmentRemoved)
         server.onDiagnostics = { [weak self] url, diagnostics in self?.onDiagnostics?(url, diagnostics) }
         do {
             try server.start()
@@ -188,6 +223,36 @@ final class LanguageServers {
         }
         servers[key] = server
         return server
+    }
+
+    /// What a spec's server needs on disk before it starts: terraform-ls's
+    /// scratch HOME and CLI config (`TerraformEnvironment.languageServerAdded`
+    /// names them), made here, before the spawn — made later, the server
+    /// and the terraform it runs would start with a HOME and a
+    /// `TF_CLI_CONFIG_FILE` that don't exist. A folder and a small file,
+    /// once a launch.
+    static func prepareLaunch(_ spec: Spec) {
+        guard spec.id == "terraform" else { return }
+        _ = try? TerraformGuards.prepareScratch(at: AppEnvironment.terraformScratchDirectory)
+    }
+
+    /// The terraform terraform-ls runs (analysis 4.14, 4.2): the one
+    /// Overterm's own runs use, as far as it is known without waiting —
+    /// `TerraformCLI.knownBinary`, warmed when a Terraform file opens.
+    static func terraformPath(_ spec: Spec) -> String? {
+        guard spec.id == "terraform" else { return nil }
+        return TerraformCLI.knownBinary()?.path
+    }
+
+    /// The spec's `initializationOptions`, with `terraform.path` for
+    /// terraform-ls when there is one: without it, the server finds
+    /// terraform on its own PATH, which needn't be the one Overterm chose.
+    nonisolated static func launchOptions(_ spec: Spec, terraformPath: String?) -> JSONValue? {
+        guard spec.id == "terraform", let terraformPath, case .object(var options)? = spec.initializationOptions else {
+            return spec.initializationOptions
+        }
+        options["terraform"] = .object(["path": .string(terraformPath)])
+        return .object(options)
     }
 
     /// The server already running for this file, if any — never starts one.
@@ -237,6 +302,10 @@ struct ServerDiscovery: Sendable {
         case xcrun(String, [String] = [])
         /// Zed's gopls: `languages/gopls/gopls_<version>_go_<version>`.
         case zedGopls
+        /// Zed's terraform-ls, which its Terraform extension downloads:
+        /// `extensions/work/terraform/terraform-ls-<version>/terraform-ls`,
+        /// run as `terraform-ls serve`.
+        case zedTerraformLS
         /// A script under Zed's `languages/`, run with node.
         case zedNode(String, [String])
     }
@@ -298,6 +367,9 @@ struct ServerDiscovery: Sendable {
         case .zedGopls:
             guard let executable = zedGopls() else { return nil }
             return LanguageServer.Command(executable: executable, environment: environment)
+        case .zedTerraformLS:
+            guard let executable = zedTerraformLS() else { return nil }
+            return LanguageServer.Command(executable: executable, arguments: ["serve"], environment: environment)
         case .zedNode(let script, let arguments):
             let script = zedDirectory.appendingPathComponent("languages").appendingPathComponent(script)
             guard FileManager.default.fileExists(atPath: script.path), let node = node() else { return nil }
@@ -356,6 +428,24 @@ struct ServerDiscovery: Sendable {
         }
         let gobin = directory.appendingPathComponent("gobin/gopls")
         return FileManager.default.isExecutableFile(atPath: gobin.path) ? gobin : nil
+    }
+
+    /// The newest terraform-ls Zed's Terraform extension keeps
+    /// (`terraform-ls-0.36.4`, or the release tag's `terraform-ls-v0.36.4`).
+    func zedTerraformLS() -> URL? {
+        let directory = zedDirectory.appendingPathComponent("extensions/work/terraform")
+        let names = (try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? []
+        func version(_ name: String) -> String {
+            let rest = name.dropFirst("terraform-ls-".count)
+            return String(rest.hasPrefix("v") ? rest.dropFirst() : rest)
+        }
+        let versions = names.filter { $0.hasPrefix("terraform-ls-") }
+            .sorted { version($0).compare(version($1), options: .numeric) == .orderedDescending }
+        for name in versions {
+            let binary = directory.appendingPathComponent("\(name)/terraform-ls")
+            if FileManager.default.isExecutableFile(atPath: binary.path) { return binary }
+        }
+        return nil
     }
 
     /// node from the search directories, else the one Zed downloaded

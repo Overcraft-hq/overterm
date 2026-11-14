@@ -61,24 +61,30 @@ final class AskAgentModel: ObservableObject {
     /// The chip is offered only then, and is off until it is asked for:
     /// the other extras are a line each, this one can be thousands.
     @Published private(set) var canDiff = false
+    /// The whole prompt is shown in the sheet before it is sent: a brief
+    /// assembled for the user (Kubernetes' Ask Why), not text they picked.
+    @Published private(set) var showsBrief = false
 
     var lines: Int { selection.isEmpty ? 0 : selection.components(separatedBy: "\n").count }
 
     /// `message`: the question already typed (a container's "Why did …?").
     func begin(
         selection: String, command: CommandBlock?, folder: String?, targets: [Target], diff: Bool, message: String = "", subject: String? = nil,
-        parts: [Part] = []
+        parts: [Part] = [], showsBrief: Bool = false
     ) {
         self.selection = selection
         self.command = command
         self.folder = folder
         self.targets = targets
         chosen = targets.first { $0.id != nil }?.id
-        canDiff = diff
+        // A brief's sheet shows the whole of what is sent; a git diff it
+        // never showed isn't offered with it.
+        canDiff = diff && !showsBrief
         extras = Extras(command: command != nil, exit: command?.exit != nil, diff: false)
         self.message = message
         self.subject = subject
         self.parts = parts
+        self.showsBrief = showsBrief
         isOpen = !selection.isEmpty
     }
 
@@ -87,6 +93,7 @@ final class AskAgentModel: ObservableObject {
         selection = ""
         parts = []
         subject = nil
+        showsBrief = false
     }
 
     /// What will actually be typed. Built here rather than in the view so
@@ -107,5 +114,31 @@ final class AskAgentModel: ObservableObject {
         sections += parts.filter(\.on).map(\.text)
         if extras.diff, let diff, !diff.isEmpty { sections.append("git diff:\n\(diff)") }
         return sections.joined(separator: "\n\n")
+    }
+}
+
+/// A terminal selection as ⌘L hands it to an agent. A pod's tab (`kubectl
+/// exec`, `attach`, `logs -f`) or one pinned to a Kubernetes context
+/// prints what the cluster holds: scrubbed as the page's own Logs tab
+/// scrubs the same lines (every URL's password, then what looks like a
+/// credential — rule 9), never handed on in the clear. Pure.
+enum AskSelection {
+    /// `env`: a pod's tab's pod's plain env values, taken out as the
+    /// Logs tab takes them (`KubeLogScrub`) — a `DB_PASSWORD` printed bare.
+    static func text(_ selection: String, kind: TabKind, pinned: Bool, env: [(key: String, value: String)] = []) -> String {
+        guard pinned || kind == .pod || kind == .kubernetes else { return selection }
+        return KubeLogScrub.scrub(selection, env: env)
+    }
+
+    /// The command the selection came from, scrubbed the same way: a
+    /// `kubectl --token=… get po` typed in a pinned tab.
+    static func command(_ block: CommandBlock?, kind: TabKind, pinned: Bool, env: [(key: String, value: String)] = []) -> CommandBlock? {
+        guard let block else { return nil }
+        guard pinned || kind == .pod || kind == .kubernetes else { return block }
+        // `--token abc`, not only `--token=abc`: the command's own flags, then as the output.
+        let words = block.command.split(separator: " ", omittingEmptySubsequences: false).map(String.init)
+        let command = text(Secrets.maskArguments(words).joined(separator: " "), kind: kind, pinned: pinned, env: env)
+        guard command != block.command else { return block }
+        return CommandBlock(id: block.id, command: command, startRow: block.startRow, endRow: block.endRow, exit: block.exit, seconds: block.seconds)
     }
 }

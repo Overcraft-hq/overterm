@@ -27,7 +27,7 @@ struct DockerBuildsView: View {
                         DockerBuildRow(build: build, theme: theme)
                             .tag(build.id)
                             .listRowSeparator(.hidden)
-                            .contextMenu { DockerVerbMenu(verbs: page.verbs(for: build)) }
+                            .contextMenu { ResourceVerbMenu(verbs: page.verbs(for: build)) }
                     }
                     if page.builds.isEmpty { Text("No builds yet.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3) }
                 }
@@ -102,7 +102,7 @@ struct DockerBuildDetailView: View {
                         .lineLimit(1).truncationMode(.middle)
                     Spacer(minLength: 0)
                 }
-                DockerActionBar(verbs: page.verbs(for: build), theme: theme)
+                ResourceActionBar(verbs: page.verbs(for: build), theme: theme)
                 summary
                 if let detail = session.detail { builtFrom(detail) }
                 failure
@@ -449,16 +449,16 @@ private struct DockerBuildStepPane: View {
         let dim = text.withAlphaComponent(0.45)
         let secrets = session.detail?.secrets ?? []
         let revision = session.generation &* 100_000 &+ step.number
-        return DockerTextView(
+        return LogTextView(
             count: lines.count, revision: revision,
             render: { range in
                 lines[range].map { line in
                     let body = DockerSecrets.redact(line.text, values: secrets)
-                    let color = DockerLogStyle.color(DockerLogLine.inlineLevel(body)) ?? (line.stderr ? text.withAlphaComponent(0.85) : text)
-                    let out = NSMutableAttributedString(string: line.offsetText + "  ", attributes: [.font: DockerLogStyle.font, .foregroundColor: dim])
-                    out.append(NSAttributedString(string: body, attributes: [.font: DockerLogStyle.font, .foregroundColor: color]))
+                    let color = LogStyle.color(LogLine.inlineLevel(body)) ?? (line.stderr ? text.withAlphaComponent(0.85) : text)
+                    let out = NSMutableAttributedString(string: line.offsetText + "  ", attributes: [.font: LogStyle.font, .foregroundColor: dim])
+                    out.append(NSAttributedString(string: body, attributes: [.font: LogStyle.font, .foregroundColor: color]))
                     return out
                 }
-            }, wrap: true, follow: true)
+            }, wrap: true, follow: true, identifier: "docker.text")
     }
 }

@@ -4,6 +4,15 @@ import XCTest
 
 @MainActor
 final class SettingsTests: XCTestCase {
+    /// A unit test's `Settings.shared` is in a support folder of its own: a
+    /// test that set `docker.enabled` once turned Docker off in the running app.
+    func testTheSharedSettingsInAUnitTestAreNotTheUsers() {
+        let support = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
+        let real = support.appendingPathComponent("Overterm/settings.json").standardizedFileURL.path
+        XCTAssertNotEqual(Settings.sharedURL.standardizedFileURL.path, real)
+        XCTAssertTrue(Settings.sharedURL.path.hasPrefix(FileManager.default.temporaryDirectory.path))
+    }
+
     private let dir = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-settings-\(UUID().uuidString)")
     private var url: URL { dir.appendingPathComponent("settings.json") }
 
@@ -174,6 +183,125 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(SettingValue.list(["a\"b", "c"]).json, #"["a\"b", "c"]"#)
     }
 
+    /// Kubernetes' settings: on by default, nothing else set; a free list
+    /// (kubeconfigs, pinned contexts) read and written like the rail's.
+    func testKubernetesDefaultsAndLists() throws {
+        let settings = Settings(url: url, watch: false)
+        XCTAssertTrue(settings.kubernetesEnabled)
+        XCTAssertEqual(settings.kubernetesKubeconfigs, [])
+        XCTAssertEqual(settings.kubernetesPinnedContexts, [])
+        XCTAssertEqual(settings.kubernetesContexts, [:])
+        XCTAssertEqual(settings.kubernetesMaxProxies, 4)
+        XCTAssertEqual(settings.kubernetesProxyIdleMinutes, 10)
+        XCTAssertEqual(settings.kubernetesKubectlPath, "", "found, not set")
+        XCTAssertEqual(
+            settings.kubernetesProxyConfiguration, KubeProxies.Configuration(maxProxies: 4, idleTime: 600, kubectlPath: "", extraKubeconfigs: []))
+        settings.set("kubernetes.kubectlPath", .string(" /opt/homebrew/bin/kubectl "))
+        settings.set("kubernetes.proxyIdleMinutes", .int(30))
+        XCTAssertEqual(Settings(url: url, watch: false).kubernetesProxyConfiguration.kubectlPath, "/opt/homebrew/bin/kubectl")
+        XCTAssertEqual(Settings(url: url, watch: false).kubernetesProxyConfiguration.idleTime, 1800)
+        settings.set("kubernetes.kubeconfigs", .list(["~/.kube/acme-extra.kubeconfig"]))
+        settings.set("kubernetes.pinnedContexts", .list(["globex-eu-west-1-dev"]))
+        XCTAssertEqual(Settings(url: url, watch: false).kubernetesKubeconfigs, ["~/.kube/acme-extra.kubeconfig"])
+        XCTAssertEqual(Settings(url: url, watch: false).kubernetesPinnedContexts, ["globex-eu-west-1-dev"])
+        settings.set("kubernetes.kubeconfigs", .list([]))
+        XCTAssertFalse(text().contains("kubeconfigs"), "an empty list is the default")
+        try write("{\n  \"kubernetes.pinnedContexts\": \"one\",\n  \"kubernetes.maxProxies\": 0\n}\n")
+        let bad = Settings(url: url, watch: false)
+        XCTAssertEqual(bad.problems.count, 2, bad.problems.joined(separator: "\n"))
+        XCTAssertEqual(bad.kubernetesMaxProxies, 4)
+    }
+
+    /// `kubernetes.contexts`: an object of contexts, each with fields of
+    /// its own. A field that doesn't fit is reported and left out — the
+    /// rest of the entry still applies, so a typo never drops a hand-set
+    /// production class.
+    func testContextsAreEntriesCheckedFieldByField() throws {
+        try write(
+            """
+            {
+              // mine
+              "kubernetes.contexts": {
+                "acme-dev": { "class": "production", "writable": "yes", "colur": "red" },
+                "kind-x": { "writable": false, "favouriteNamespaces": ["a", "b"], "class": "prod" }
+              },
+              "general.restoreTabs": false
+            }
+            """)
+        let settings = Settings(url: url, watch: false)
+        let contexts = settings.kubernetesContexts
+        XCTAssertEqual(contexts["acme-dev"]?.contextClass, .production)
+        XCTAssertNil(contexts["acme-dev"]?.writable)
+        XCTAssertEqual(contexts["kind-x"], KubeContextSettings(writable: false, favouriteNamespaces: ["a", "b"]))
+        XCTAssertEqual(settings.problems.count, 3, settings.problems.joined(separator: "\n"))
+        XCTAssertTrue(settings.problems.contains { $0.contains("\"acme-dev\": \"colur\" isn't a field") })
+        XCTAssertTrue(settings.problems.contains { $0.contains("\"kind-x\": \"class\" must be one of") })
+        XCTAssertFalse(settings.restoreTabs)
+
+        // Not an object of objects: the whole setting is a problem. A first
+        // launch's read (no values confirmed yet): this is the file's shape,
+        // not an outside edit held against the ones above.
+        try? FileManager.default.removeItem(at: settings.confirmedURL)
+        try write("{\n  \"kubernetes.contexts\": { \"a\": true }\n}\n")
+        let wrong = Settings(url: url, watch: false)
+        XCTAssertEqual(wrong.kubernetesContexts, [:])
+        XCTAssertEqual(wrong.problems.count, 1, wrong.problems.joined(separator: "\n"))
+    }
+
+    /// Entries are written on one line, sorted, and changed in place there.
+    func testEntriesAreWrittenAndEditedInPlace() throws {
+        try write("{\n  // mine\n  \"general.restoreTabs\": false\n}\n")
+        let settings = Settings(url: url, watch: false)
+        let value = SettingValue.entries(["b": ["writable": .bool(true)], "a\"q": ["class": .string("local"), "favouriteNamespaces": .list(["x"])]])
+        XCTAssertEqual(value.json, #"{"a\"q": {"class": "local", "favouriteNamespaces": ["x"]}, "b": {"writable": true}}"#)
+        settings.set("kubernetes.contexts", value)
+        XCTAssertTrue(text().contains("// mine"), text())
+        XCTAssertEqual(Settings(url: url, watch: false).value("kubernetes.contexts"), value)
+        settings.set("kubernetes.contexts", .entries(["b": ["class": .string("production")]]))
+        XCTAssertTrue(text().contains(#"  "kubernetes.contexts": {"b": {"class": "production"}}"#), text())
+        XCTAssertTrue(text().contains("// mine"), "edited on its line: \(text())")
+        XCTAssertEqual(Settings(url: url, watch: false).kubernetesContexts["b"]?.contextClass, .production)
+        settings.set("kubernetes.contexts", nil)
+        XCTAssertFalse(text().contains("kubernetes.contexts"))
+    }
+
+    /// An object written over several lines by hand is replaced where it
+    /// stands, over several lines again: the file's other lines and the
+    /// comments of the entries still there stay; an entry gone takes its own.
+    func testAnObjectOverSeveralLinesIsEditedWhereItStands() throws {
+        try write(
+            "{\n  // mine\n  \"kubernetes.contexts\": { // all\n    // prod's\n    \"acme-prod\": { \"class\": \"production\" }, /* } */\n"
+                + "    \"b\": {\n      // never make this writable\n      \"writable\": true\n    }\n    // the end\n  }, // after\n  \"general.restoreTabs\": false\n}\n"
+        )
+        let settings = Settings(url: url, watch: false)
+        XCTAssertEqual(settings.kubernetesContexts["acme-prod"]?.contextClass, .production)
+        settings.set("kubernetes.contexts", .entries(["acme-prod": ["class": .string("production")], "b": ["writable": .bool(false)], "c": [:]]))
+        XCTAssertEqual(
+            text(),
+            "{\n  // mine\n  \"kubernetes.contexts\": { // all\n    // prod's\n    \"acme-prod\": {\"class\": \"production\"}, /* } */\n"
+                + "    // never make this writable\n    \"b\": {\"writable\": false},\n    \"c\": {}\n    // the end\n  }, // after\n"
+                + "  \"general.restoreTabs\": false\n}\n")
+        XCTAssertEqual(Settings(url: url, watch: false).kubernetesContexts["b"]?.writable, false)
+        settings.set("kubernetes.contexts", .entries(["b": ["writable": .bool(true)]]))
+        XCTAssertEqual(
+            text(),
+            "{\n  // mine\n  \"kubernetes.contexts\": { // all\n    // never make this writable\n    \"b\": {\"writable\": true}\n    // the end\n  }, // after\n"
+                + "  \"general.restoreTabs\": false\n}\n", "acme-prod's comments went with it")
+        XCTAssertEqual(Settings(url: url, watch: false).value("general.restoreTabs"), .bool(false))
+        settings.set("kubernetes.contexts", nil)
+        XCTAssertEqual(text(), "{\n  // mine\n  \"general.restoreTabs\": false\n}\n")
+        XCTAssertNil(SettingsJSON.setting("{\n  \"a\": {\n", key: "a", json: "1"), "never closed: rewritten whole by the caller")
+    }
+
+    /// A list over several lines: an item a line, its comments with it.
+    func testAListOverSeveralLinesKeepsItsItemsComments() throws {
+        let text = "{\n  \"kubernetes.agentWrites\": [\n    \"kind-fake\", // mine\n    // dev's\n    \"fake-dev\"\n  ]\n}\n"
+        let members = SettingValue.list(["fake-dev", "kind-fake", "acme-dev"]).members
+        XCTAssertEqual(
+            SettingsJSON.setting(text, key: "kubernetes.agentWrites", json: "[]", members: members),
+            "{\n  \"kubernetes.agentWrites\": [\n    // dev's\n    \"fake-dev\",\n    \"kind-fake\", // mine\n    \"acme-dev\"\n  ]\n}\n")
+    }
+
     func testChangesNameTheKeys() throws {
         let settings = Settings(url: url, watch: false)
         var seen: [Set<String>] = []
@@ -303,5 +431,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertFalse(SettingsSection.agents.matches("cursor"))
         XCTAssertTrue(SettingsSection.themes.matches("theme"), "the gallery's own page")
         XCTAssertFalse(SettingsSection.appearance.matches("theme"), "which Appearance no longer holds")
+        XCTAssertTrue(SettingsSection.kubernetes.matches("kubeconfig"))
+        XCTAssertTrue(SettingsSection.kubernetes.matches("kubernetes.pinnedContexts"))
     }
 }

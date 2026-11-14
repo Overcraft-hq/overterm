@@ -6,6 +6,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     private var windowController: TerminalWindowController?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // A scenario whose environment carries a credential variable stops
+        // before any pane could inherit it (analysis 4.5): its names, never
+        // their values, as the run's one failed check.
+        let refused = AppEnvironment.terraformRefusedCredentials
+        if !refused.isEmpty {
+            print("E2E FAIL no credential variables — refusing to run with \(refused.joined(separator: ", ")) set; unset them first")
+            print("E2E DONE 1")
+            fflush(stdout)
+            exit(1)
+        }
         AppEnvironment.carryOverFormerDefaults()
         NSApp.mainMenu = MainMenu.build()
         NSApp.servicesProvider = self
@@ -66,23 +76,69 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         // Unsaved editor changes ask first, whatever Settings says about tabs
         // (closing the window asks about them itself).
-        if let controller = windowController, !controller.closeConfirmed, let file = controller.unsavedEditorFile {
+        // A cluster object's YAML with edits not applied counts too: it is never saved.
+        if let controller = windowController, !controller.closeConfirmed, let file = controller.unsavedNames(everyWindow: true).first {
             let alert = NSAlert()
             alert.messageText = "“\(file)” has unsaved changes."
-            alert.informativeText = "Quitting loses them. Save it (⌘S) first, or quit anyway."
+            alert.informativeText = "Quitting loses them. Save it (⌘S) — or apply a cluster object's YAML — first, or quit anyway."
             alert.addButton(withTitle: "Cancel")
             alert.addButton(withTitle: "Quit Anyway")
             alert.alertStyle = .warning
             guard alert.runModal() == .alertSecondButtonReturn else { return .terminateCancel }
         }
+        // A terraform write typed in a pane dies with it (4.8): asked
+        // whatever the close setting says; Interrupt cancels the quit.
+        let controllers = NSApp.windows.compactMap { $0.windowController as? TerminalWindowController }
+        let writes = controllers.flatMap { $0.terraformWrites(tabs: $0.store.tabs, path: .quit) }
+        if let question = TerraformCloseGuard.question(writes, path: .quit) {
+            switch TerminalWindowController.terraformCloseAlert(question).runModal() {
+            case .alertFirstButtonReturn:
+                // Close Now, once they have stopped, quits again (asked as any quit is).
+                controllers.first?.interruptTerraform(writes, path: .quit) { NSApp.terminate(nil) }
+                return .terminateCancel
+            case .alertSecondButtonReturn:
+                break
+            default:
+                return .terminateCancel
+            }
+        }
+        // A terraform test with real providers runs in the app's group: quitting cuts its cleanup off.
+        let tests = TerraformTestResults.shared.goingReal
+        if let question = TerraformCloseGuard.testQuestion(tests.map { (name: $0.card.name, since: $0.started) }) {
+            let alert = NSAlert()
+            alert.messageText = question.title
+            alert.informativeText = question.detail
+            alert.alertStyle = .critical
+            for title in TerraformCloseGuard.testButtons { alert.addButton(withTitle: title) }
+            switch alert.runModal() {
+            case .alertFirstButtonReturn:
+                tests.forEach { $0.stop() }
+                return .terminateCancel
+            case .alertSecondButtonReturn:
+                break
+            default:
+                return .terminateCancel
+            }
+        }
+        // Overterm's own applies go on, detached (4.7): said, never waited for.
+        let applies = TerraformRunRegistry.shared.goingApplies.map { (name: $0.marker.name, since: $0.started) }
+        if let question = TerraformCloseGuard.quitQuestion(applies) {
+            let alert = NSAlert()
+            alert.messageText = question.title
+            alert.informativeText = question.detail
+            alert.addButton(withTitle: "Quit and Let It Finish")
+            alert.addButton(withTitle: "Cancel")
+            alert.alertStyle = .warning
+            guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
+        }
         guard let controller = windowController, !controller.closeConfirmed, !controller.store.tabs.isEmpty,
-            TerminalWindowController.needsCloseConfirmation(controller.store.tabs)
+            TerminalWindowController.needsCloseConfirmation(controller.store.tabs, quitting: true)
         else { return .terminateNow }
         let tabs = controller.store.tabs
         let alert = NSAlert()
         alert.messageText = tabs.count == 1 ? "Quit Overterm?" : "Quit Overterm and close \(tabs.count) tabs?"
         alert.informativeText =
-            TerminalWindowController.closeWarning(for: tabs) + " Tabs come back on the next launch; agents resume their conversation."
+            TerminalWindowController.closeWarning(for: tabs, quitting: true) + " Tabs come back on the next launch; agents resume their conversation."
         alert.addButton(withTitle: "Quit")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
@@ -90,6 +146,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     func applicationWillTerminate(_ notification: Notification) {
+        endRun()
+    }
+
+    /// What quitting ends, so nothing Overterm started outlives it: at
+    /// quit, and at the end of an end-to-end scenario, which exits without
+    /// quitting (`E2ERunner.start`).
+    func endRun() {
         // Save first: the autosave is debounced and would miss a quick quit.
         // With each pane's text — unless closing the window already did.
         windowController?.saveFinalSession()
@@ -102,7 +165,22 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         SSHTunnel.closeAll()
         // A volume's helpers, while a remote engine's forward is still open.
         DockerHelpers.removeAll(waiting: 2)
-        DockerSSHForwards.closeAll()
+        // Every Kubernetes port-forward, before its kubectl is closed below:
+        // none is started again.
+        KubeForwards.shared.stopAll()
+        // Every long-lived child Overterm started (a remote engine's ssh
+        // forward, each context's kubectl proxy and port-forwards), by its own pid.
+        ManagedProcess.closeAll()
+        // A kubectl auth can-i still asking, with its exec plugin: its group.
+        KubeProcessRun.stopAll()
+        // A scenario's detached applies (never the user's: those go on, 4.7).
+        if AppEnvironment.guardsTerraform { TerraformRunRegistry.shared.goingApplies.forEach { $0.stop() } }
+        // A validate or fmt still running, with the providers it started: its group.
+        TerraformRun.stopAll()
+        // The proxies' sockets' folder, once kubectl is gone.
+        KubeSocketFolder.app.remove()
+        // The Kubernetes objects' copies the editor had open (`y`).
+        KubeManifestEdits.removeAll()
         // A scan's Scout, or it outlives the app.
         DockerScoutScans.shared.cancelAll()
         BrowserBridge.shared.stop()

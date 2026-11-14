@@ -121,6 +121,255 @@ events queued for its own window (`click(at:)`) — queued, not sent: a
 mouse-down that tracks the mouse would wait forever for a mouse-up sent
 after it.
 
+Vision's accurate reading can come back empty — no results, no error —
+for a large, mostly dark capture (a sparse Kubernetes page at 4112×2466),
+so `recognized` reads an empty window again in overlapping 1400-pixel
+tiles. A line is what Vision calls one: a table's cells, a sidebar's rows
+and a field are each their own, so a check for two texts asks for both
+anywhere (`drawn([…])`), never on one line. A check that something is
+*not* drawn passes only on a read that found the text it was anchored
+to (`notDrawn(_:besides:)`) — an empty read proves nothing. Look for a
+part of a value Vision reads as written: it read `acme` as Cyrillic.
+
+`shownText`'s tiles overlap by half across, so a line up to 350 points
+wide is whole in one of them (a detail's caption that straddled two
+tiles was read in halves); a tile's edge can still cut a longer line, so
+a check that picks the first match names everything it needs in the
+match itself. Text below the fold isn't drawn, and a `LazyVStack`
+builds nothing there: scroll to it first (`revealChart`,
+`revealElement`), never wait longer. A failing read says where the read was asked
+(file:line — a scenario has several checks called "drawn"; a helper
+that reads passes its caller's `#fileID`/`#line` on), how many lines
+were read and the window's size (`sawInstead`). With
+`OVERTERM_E2E_READ_DIR` set, the check that fails after it also saves a
+picture of the window there (its path in the failure, 20 a run) — only a
+failing check, never a read expected to find nothing, and nothing outside
+a folder the person named. The text itself only with
+`OVERTERM_E2E_READ=1`: a scenario reveals a Secret's value. While a part
+may draw one (`withholdPictures` — the Secret's detail, Apply's diff of a
+Secret, the database form a pod's Secret fills) neither the text nor a
+picture is ever kept. Vision reads `l` as
+`1` and puts a space after a comma (`Ready, SchedulingDisabled`): match
+what it may read, not only what is drawn. It also reads Latin letters as
+their Cyrillic look-alikes (`сpu 250m`, `64Mі`); every read is given back
+with those put back to Latin (`latin`), so match the Latin text.
+
+A value that needs time to be true is waited for as long as it takes: a
+sampled chart's caption needs two samples, 15 s apart — a 15 s read of
+it raced the second sample in a full run.
+
+Each scenario's parts start from a settled window: a part that closes its
+tabs leaves the new selection's keyboard queued for a turn later
+(`kubernetesPart` pauses after each), and a part that opened the editor in
+that same turn saw the terminal take the keyboard back.
+
+### Kubernetes
+
+`FakeKubeAPI`'s Metadata rows carry an object's owners only when a test
+says so (`setRowOwners`), as a server's `PartialObjectMetadata` always
+does: without them a namespace's chart grouped its pods by their names
+until the rows came and by pod after — the check passed or not by timing.
+
+The unit tests and the `kubernetes` scenarios talk to `FakeKubeAPI`
+(`Sources/Overterm/Kubernetes/`), with the real kubectl as its proxy where
+one is installed, through kubeconfigs of their own. This Mac's
+`~/.kube/config` has real clusters and its current context is production:
+no test reads it, and an isolated run sees no kubeconfig but
+`OVERTERM_KUBECONFIG`'s.
+
+`KubeRealClusterTests` runs Overterm's own proxies, client, `can-i`, tree
+and health checks against a real cluster — a kind cluster made only for
+it:
+
+```
+Scripts/kube-test-cluster.sh create       # kind cluster "fake", context kind-fake (~1 min; pulls kindest/node once)
+OVERTERM_KUBE_TESTS=1 OVERTERM_KUBE_TEST_KUBECONFIG="$(Scripts/kube-test-cluster.sh kubeconfig)" \
+  swift test --filter KubeRealClusterTests
+Scripts/kube-test-cluster.sh delete       # the cluster, its node container, the file
+```
+
+Without `OVERTERM_KUBE_TESTS=1` it is skipped, so `make test` and CI need
+no cluster. The script's kubeconfig is a file of its own (a folder given
+as its second argument, else `$TMPDIR/overterm-kind`; never under
+`~/.kube`, never one `KUBECONFIG` names): kind writes into `~/.kube/config`
+unless told otherwise, so every kind command gets `--kubeconfig`. The node
+container is kind's node image with one label added (`overterm.test`).
+The suite refuses a kubeconfig under `~/.kube` or one whose one context
+isn't `kind-fake` on 127.0.0.1; every kubectl it starts gets that file as
+`KUBECONFIG`, `--context` and a HOME of its own; a second file of its own
+adds `fake-dev` (remote: read-only) and credential plugins over the same
+cluster, whose tokens (two ServiceAccounts', ten minutes) are in the
+plugin's environment, never on disk. It works in a namespace of its own
+(`overterm-test-…`, labelled `overterm.test`), deleted when it ends. It
+needs `registry.k8s.io/e2e-test-images/agnhost`, pulled by the node.
+
+What it checks — analysis.md Section 12's questions about the proxy, as
+kind's Kubernetes v1.37.0 answers them (2026-11-07, kubectl v1.36.1):
+
+- a read-only socket answers every method but GET — a lowercase or unknown
+  one too — with kubectl's own `403 text/plain` "Forbidden", and nothing is
+  made;
+- no path variant reaches exec, attach, port-forward or a pod's, Service's
+  or node's proxy on either socket: encoded slashes and letters, `//`,
+  `/./` and `..` (a 307 to a path refused in turn), a changed case (the
+  server's 404), trailing segments, a query, a WebSocket upgrade;
+- every subresource the server lists with `get` that isn't a read is
+  refused — exactly the six the list names on kind, and no API is
+  aggregated (a new one fails, named);
+- a failing credential plugin runs again for every request kubectl gets,
+  and a refused token (401) is asked for again: Overterm stops the context
+  at the first of either and runs the plugin again only on Retry; a token
+  the server takes is run for once;
+- a real `kubectl port-forward` whose pod is deleted goes on listening
+  until a connection, which fails, then exits 1 ("lost connection to pod");
+- a streaming list with Tables ends at its `k8s.io/initial-events-end`
+  bookmark (on the Table's row), well before the 5 s that would give it up,
+  an empty one with its columns, and the context goes on streaming;
+- the metrics proxy reaches the Service's query and query_range paths and
+  nothing else;
+- a write on a writable socket, none on a read-only one;
+- `kubectl auth can-i`: yes for kind's admin, no for a ServiceAccount with
+  no role;
+- a Deployment's tree (ReplicaSet, pod, ConfigMap, PVC, Service) and the
+  namespace's health findings on real objects.
+
+The Kubernetes scenarios each get a kubeconfig of their own from the
+test — a temporary file the scenario writes once `FakeKubeAPI` listens
+(`OVERTERM_KUBECONFIG`), never `~/.kube`:
+
+- `kubernetes` — the page end to end, its parts one after another
+  (`kubernetesPart`): lists, details, logs, Terminal in This Context,
+  Secrets, writes and their confirmations, Helm, GitOps, the bound
+  checkout, the agents' `k8s_` tools (about 260 s);
+- `kubernetesCharts` — the Metrics tabs: a pod's, a workload's, a node's,
+  a namespace's, sampled and over `FakePromQL`'s Prometheus;
+- `kubernetesOverview` — the Overview's cards, dark, light and narrow
+  (`OVERTERM_DUMP_PNG` captures each);
+- `kubernetesPerf` — 5,000 pods: the first draw, a burst of 500 events,
+  the scroll;
+- `kubernetesScale` — 5,000 pods across 50 namespaces with their
+  workloads: lists, the Overview's health checks, a 200-pod tree, the
+  footprint after;
+- `showcase` photographs the page on `fake-prod` with a pod's Metrics
+  tab (below, Looking at the UI).
+
+### Terraform
+
+Terraform changes real infrastructure: no test runs it against anything
+of the user's. Unit tests are guarded (`AppEnvironment.guardsTerraform`):
+no terraform but `OVERTERM_TERRAFORM`'s, nothing of the shell in a run's
+environment, a HOME and CLI config of the run's own, proxies at a dead
+port. A unit test that needs a terraform process uses a stand-in
+(`TerraformRecorder.writeStandIn`) behind the recording wrapper
+(`TerraformRecorder`), which records each call's argv, folder and
+environment names — never a value but the few Overterm sets.
+
+`TerraformRealBackendTests` runs the real terraform, offline, against
+`FakeTerraformBackend` (an `http` state backend on 127.0.0.1):
+
+```
+OVERTERM_TF_TESTS=1 swift test --filter TerraformRealBackendTests
+```
+
+The binary is `OVERTERM_TF_TEST_TERRAFORM`, else Homebrew's. Every run is
+in a temporary folder the test makes, through the wrapper, with the
+guarded environment — its CLI config fetches no provider
+(`direct { exclude = ["*/*/*"] }`) — and only `terraform_data`, which is
+built in. It refuses to start when its own environment sets any
+credential variable (`AWS_*`, `GOOGLE_*`, `ARM_*`, `TF_TOKEN_*`,
+`TF_VAR_*`, `KUBECONFIG`…) rather than unsetting it. Without
+`OVERTERM_TF_TESTS=1` it is skipped, so `make test` and CI need no
+terraform.
+
+The `terraform` scenario (`E2ERunner+Terraform.swift`) runs the installed
+terraform — `OVERTERM_TF_TEST_TERRAFORM`, else Homebrew's, passed to the
+app as `OVERTERM_TERRAFORM` — behind the recording wrapper, in the guarded
+environment, over checkouts it writes (`terraform_data` only, no init):
+colours, validate's diagnostic on its line, Format undone, format on save
+only in a checkout that passes `fmt -check`, F12 and ⇧⌘O, and the checkout
+byte for byte the same after validate. Without a terraform the test is
+skipped, saying so.
+
+The `terraformRoots` scenario (`E2ERunner+TerraformRoots.swift`, stage 1b)
+writes a checkout of two `terraform_data` roots, a module and an `http`
+backend nobody reaches: the rail panel reads nothing while hidden (no read,
+and the wrapper records no call), lists the roots and the module with its
+caller, `envs/prod` production; `version -json` is the one terraform it
+runs. A pane types the real `terraform -chdir=envs/prod console` through the
+wrapper in `env -i` (a scratch HOME and CLI config, proxies at a dead port)
+and gets the header; the console is ended by its pid. Provider-sized
+writes under `.terraform/providers` don't refresh the changes pane; a
+second worktree says "no state here" and "shares its state". The process
+walk is unit-tested with a stand-in script (`TerraformPaneWarningTests`).
+
+The `terraformAgents` scenario (`E2ERunner+TerraformAgents.swift`, stage 1c)
+checks agents' guards without starting an agent: Claude Code's launch
+command in a checkout with a production root carries the deny rules
+(`agentCommand`, recorded — the tab is made with `startAgent: false`),
+Codex's is "not guarded", a checkout with no Terraform gets nothing. A
+script in the agent tab prints a Claude Code permission prompt for
+`cd envs/prod && terraform apply -auto-approve`: the tab is marked with
+envs/prod, production; the Inbox's card has no answer and `answer` types
+nothing; the mark goes when the screen is cleared. The scenario runs the
+real terraform itself (init and `plan -out`, `terraform_data` only, in the
+guarded scratch environment) and reads the plan through `tf_plan_summary`:
+the sensitive variable's sentinel absent, `show -json /dev/fd/3` the only
+call through the wrapper, with no credential; `tf_validate` runs where the
+lock file is committed and refuses where there is none; Ask Why on a failed
+validate lands in `terraformBriefRecorder`. The decoder's sentinel test
+(`TerraformPlanTests`) reads `Fixtures/terraform-plan-sentinels.json`,
+Terraform 1.17.1's `show -json` of a sandbox plan with a moved, imported
+and forgotten resource, drift, an action and an unknown key planted, a
+sentinel in each path the decoder drops or masks.
+
+The `terraformPlan` scenario (`E2ERunner+TerraformPlan.swift`, stage 1d)
+plans through the app as a person does, the questions answered by
+`terraformPlanQuestionRecorder` and the plugin cache's offer by
+`terraformCacheOfferRecorder` (no sheet). Its checkout has a local root
+whose state the scenario makes with the CLI (guarded scratch environment)
+before changing a tfvars line, a root on `FakeTerraformBackend` (in the
+app's process, 127.0.0.1), one whose `.terraform/environment` names a
+workspace that doesn't exist, a production root and a sandbox root:
+the first plan fails on a variable with no value and offers the var file;
+with it, the replace is first, its cause chain ends at the changed line,
+the plan file was 0600 in a 0700 folder left empty, the wrapper saw
+`plan … -lock=true -lock-timeout=10s … -var-file=dev.tfvars` and `show
+-json /dev/fd/3`, and three sentinels (a sensitive variable's value — also
+copied, unmarked, into `terraform_data`'s `output` —, an unmarked password,
+a token) are in neither the model, the log, Copy Summary nor the
+accessibility text; the missing workspace is refused with no terraform run
+there; Init asks with its fetch list; a lock `holdLock` holds is named
+with Wait for It and Ask Why; a second worktree's plan of the shared state
+turns stale once the first worktree's pane runs `terraform apply` typed
+(a cleared environment, the fake backend, a `sleep 5` provisioner so the
+header sees it); an agent's `tf_plan` is asked once, runs with
+`-lock-timeout=0s` and no var file, and what `tf_run_status`,
+`tf_plan_resource` and `tf_plan_summary` say has no sentinel; production
+is refused. The stage's pure parts — the plan line and what it can never
+be, the run's environment, 5.3's verbs by class, the workspace check,
+locks in Terraform's words, the UI stream, the plan zip, the run folder,
+the stream run against stand-ins (the umask launcher, the file held and
+unlinked, exit 1 keeping nothing), rows, attributes, the cause chain, the
+risk list and the questions, init's fetch list, the queue — are
+`TerraformPlanTests.swift`, with a planted plan whose every sentinel path
+is checked against everything said from it.
+
+The `terraformApply` scenario (`E2ERunner+TerraformApply.swift`, stage
+2a) applies a local root's plan in the plan's environment — a hostile
+`TF_CLI_ARGS_apply` never reaching it —, asks for the root's name on a
+destroy and on production, asks before a pane, the window or a tab
+closes while the real terraform applies (Interrupt leaving the resource
+tainted and the lock free), and finds an apply whose record was lost by
+its pid. `terraformPerf` decodes a generated 2,000-resource plan and
+shows and filters its rows in the slot within Section 10's budgets; no
+terraform runs. The later stages' checks run inside these scenarios:
+`terraform` holds 2b's worktrees (`E2ERunner+TerraformA2b.swift`), 2c's
+state and outputs and 2d's drift and tests (`+TerraformB2c`,
+`+TerraformB2d`) and 2f's review section (`+TerraformC2f`);
+`terraformPlan` holds 2e's Force Unlock (`+TerraformA2e`). Every one but
+`terraformPerf` needs an installed terraform (`OVERTERM_TF_TEST_TERRAFORM`,
+else Homebrew's) and is skipped without one.
+
 ## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one
@@ -137,7 +386,12 @@ What makes it end-to-end without being dangerous:
   own queue. Never CGEvent/osascript — those reach whatever has focus.
 - **Isolated state** (`AppEnvironment`): its own defaults suite (wiped at
   launch), a temp support dir (or `OVERTERM_SUPPORT_DIR` for a prepared
-  session), notifications counted not posted, no split autosave, never
+  session), notifications counted not posted, no split autosave, no window
+  frame autosave — its window opens at 1400×880 (or the screen's visible
+  area) every time: macOS keeps the autosaved frame in the standard
+  defaults, the user's, and a scenario that resized the window
+  (`fullScreen`'s 1000×640) opened every scenario after it that small, until
+  text read off the window no longer fit — never
   activated (it stays behind your windows), and Claude Code's transcripts an
   empty projects directory of its own until a scenario points
   `ClaudeUsageReader.projectsDirectory` at the ones it wrote — never the
@@ -259,7 +513,52 @@ closing without asking, the no-HEAD diff all have one).
 view tree and capture the real window — use them when a check isn't enough
 to see what's wrong.
 
+README's pictures come from the `showcase` scenario (`E2ERunner.swift`,
+`E2ERunner+Showcase.swift`) and a few others (api, review, notes,
+drawing, database, overgit, docker), photographed in a fixed 1400×880
+frame. The showcase's Kubernetes picture needs `OVERTERM_KUBECONFIG` —
+`testShowcase` passes a temporary path; without one it is left out, and
+a path to a file already there is refused (the run writes it and
+removes it) —
+and is taken against `FakeKubeAPI` and its Prometheus with no kubectl;
+its Terraform picture is the panel over a checkout it writes and a plan
+of `envs/prod` decoded from `show -json`'s shape, with no terraform, in
+a tab running a plain `bash` whose prompt names nobody's user or host.
+The captures are 2800 pixels wide; `docs/assets` keeps them at 1600
+(`sips -Z 1600`).
+
 ### The title bar and full screen
+
+A scenario must not depend on the window being key: a person using the
+Mac during `make e2e` keeps another app there, and under macOS 14's
+cooperative activation the run's window is then never key — a hover gated
+on the key window showed nothing. Ask such a thing directly
+(`showHover(…, inKeyWindowOnly: false)`). What is the window's own is
+still checked in every run: its first responder (the editor's keyboard)
+belongs to it whether or not the app is in front. A click goes through the
+window (`window.sendEvent`), so its hit-testing is checked; only
+`OVERTERM_E2E_BACKGROUND=1` — a scenario stepped back behind the
+frontmost app, to try this — gives `link`'s ⌘-click to the terminal
+itself, after checking the window would hand it there.
+
+The display is kept awake while `E2ETests` runs (`beginActivity` with
+`idleDisplaySleepDisabled`, released at the end): a full run takes about
+14 minutes, and a display that slept at 10 would leave every later
+scenario reading a black window.
+
+Known to fail on a Mac whose idle app alone passes the 3% CPU budget (the
+same machine-dependent cause as `performance`'s idle CPU): `kubernetesCharts`'
+"steady, within the idle budget" — the Live tab's absolute budget, held
+over 9 s; the same window with the page hidden is said beside it as a
+guide, never in its place.
+
+A scenario ends as quitting would (`E2ERunner.endRun`, the same
+`AppDelegate.endRun` as `applicationWillTerminate`): every kubectl proxy,
+port-forward and ssh forward it started is closed and checked gone by pid,
+and its temporary support folder removed — it exits rather than quits, and
+85 proxies of earlier runs were found alive, reparented to launchd. A
+scenario that times out is terminated, and what it started is killed by
+the pids found under it first, never by a pattern.
 
 `OVERTERM_E2E_ACTIVATE=1` brings an isolated run to the front for the
 `fullScreen` scenario — full screen's title bar window only shows for the

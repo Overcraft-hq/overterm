@@ -10,10 +10,13 @@ struct NewTaskView: View {
     /// The repository's compose file, when Docker is on and it has one:
     /// the new worktree's stack can be started with it.
     var composeFile: String?
-    /// Called with (branch, base, agent, start the stack) — agent nil means
-    /// a plain shell. Returns an error message to show, or nil when the
-    /// task was created.
-    let onCreate: (String, String, Agent?, Bool) async -> String?
+    /// The contexts the task's tab may be pinned to (Terminal in this
+    /// context, 3.11), read as the sheet opens; nil with Kubernetes off.
+    var kubernetes: (() async -> KubeTaskPin.Offer)?
+    /// Called with (branch, base, agent, start the stack, the context to
+    /// pin the tab to) — agent nil means a plain shell. Returns an error
+    /// message to show, or nil when the task was created.
+    let onCreate: (String, String, Agent?, Bool, String?) async -> String?
     let onCancel: () -> Void
 
     @State private var branch = ""
@@ -22,6 +25,8 @@ struct NewTaskView: View {
     @State private var error: String?
     @State private var working = false
     @State private var startStack = false
+    @State private var offer: KubeTaskPin.Offer?
+    @State private var pin: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -40,6 +45,16 @@ struct NewTaskView: View {
                 if let composeFile {
                     Toggle("Start its compose stack (\(composeFile))", isOn: $startStack)
                         .help("docker compose up -d in the new worktree, in a tab, beside the other worktrees' stacks. A port another one holds is offered elsewhere first.")
+                }
+                if let offer, !offer.choices.isEmpty || offer.note != nil {
+                    Picker("Kubernetes", selection: $pin) {
+                        Text("Your current context").tag(String?.none)
+                        ForEach(offer.choices) { Text(verbatim: "⎈ " + $0.title).tag(String?.some($0.context)) }
+                    }
+                    .help("The tab's plain kubectl, helm and k9s go to this context — the agent's too. Your current context stays as it is.")
+                    if let note = offer.note {
+                        Text(verbatim: note).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
 
@@ -68,6 +83,12 @@ struct NewTaskView: View {
             base = defaultBase
             agent = defaultAgent
         }
+        .task {
+            guard let kubernetes else { return }
+            let read = await kubernetes()
+            offer = read
+            pin = read.suggested
+        }
     }
 
     private func create() {
@@ -76,7 +97,7 @@ struct NewTaskView: View {
         let branch = branch.trimmingCharacters(in: .whitespaces)
         let base = base.trimmingCharacters(in: .whitespaces)
         Task { @MainActor in
-            error = await onCreate(branch, base.isEmpty ? "HEAD" : base, agent, startStack)
+            error = await onCreate(branch, base.isEmpty ? "HEAD" : base, agent, startStack, pin)
             working = false
         }
     }

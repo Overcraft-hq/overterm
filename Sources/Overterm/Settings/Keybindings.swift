@@ -305,6 +305,24 @@ enum KeyCommands {
         .init("docker.composeDown", "Compose Down… (the checkout's stack)", group: "Panels"),
         .init("docker.composeRestart", "Compose Restart (the checkout's stack)", group: "Panels"),
         .init("docker.composeWatch", "Compose Watch (the checkout's stack)", group: "Panels"),
+        .init("kubernetes.page", "Kubernetes", group: "Panels", key: "alt+cmd+j"),
+        // Not ⇧⌥⌘J, as Docker's ⇧⌥⌘P would have it: Ghostty v1.3.1 binds
+        // that (write_screen_file:open), and ⌘J, ⇧⌘J and ⌃⇧⌘J. Its ⌃⌘
+        // defaults are only [ and ].
+        .init("kubernetes.switch", "Kubernetes Switcher", group: "Panels", key: "ctrl+cmd+j"),
+        // No key by default (the design's Section 7): the user can bind it.
+        .init("kubernetes.terminal", "Terminal in Kubernetes Context…", group: "Panels"),
+        // No key by default: ⇧⌘E is Tab Peek's.
+        .init("kubernetes.exportCSV", "Export Kubernetes List as CSV…", group: "Panels"),
+        // ⌥⌘E and ⌃⌘E: bound by neither KeyCommands nor Ghostty v1.4.0's
+        // defaults (src/config/Config.zig: ⌘E is search_selection, ⇧⌘E Tab Peek's here).
+        .init("terraform.show", "Terraform", group: "Panels", key: "alt+cmd+e"),
+        .init("terraform.switch", "Terraform Switcher", group: "Panels", key: "ctrl+cmd+e"),
+        // No key by default (the design's Section 7): the user can bind it.
+        .init("terraform.terminal", "Terminal in Terraform Root…", group: "Panels"),
+        // No keys by default either (Section 7): bindable.
+        .init("terraform.plan", "Plan Terraform Root", group: "Panels"),
+        .init("terraform.copySummary", "Copy Terraform Plan Summary", group: "Panels"),
         .init("notes.daily", "Today’s Note", group: "Panels", key: "alt+cmd+t"),
         .init("notes.graph", "Graph View", group: "Panels", key: "alt+cmd+k"),
         .init("changes.toggle", "Changes", group: "Panels", key: "alt+cmd+d"),
@@ -361,6 +379,8 @@ enum KeyCommands {
         .init("editor.toggleSoftWrap", "Toggle Soft Wrap", group: "Editor", key: "alt+z", editor: true),
         .init("editor.toggleZoom", "Zoom Editor", group: "Editor", key: "shift+escape", editor: true),
         .init("editor.markdownPreview", "Toggle Markdown Preview", group: "Editor", key: "shift+cmd+v", editor: true),
+        // No default key (analysis 7: bindable); ⌥⌘E and ⌃⌘E are the panel's and the switcher's.
+        .init("terraform.validate", "Validate Terraform", group: "Editor", editor: true),
         .init("editor.closeFile", "Close File", group: "Editor", key: "cmd+w", editor: true),
         .init("editor.nextFile", "Next File", group: "Editor", key: "alt+cmd+right", editor: true),
         .init("editor.previousFile", "Previous File", group: "Editor", key: "alt+cmd+left", editor: true),

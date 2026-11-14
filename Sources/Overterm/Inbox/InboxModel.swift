@@ -25,15 +25,22 @@ final class InboxModel: ObservableObject {
         let prompt: AgentPrompt?
         /// How long it has been waiting.
         let since: Date?
+        /// A cluster's failure marked it (KubeAttention): Ask Why is offered.
+        var asksWhy = false
+        /// A pane of it asks for a Terraform write (TerraformPrompt, 3.3):
+        /// the card says what and where, and offers no answer — the
+        /// person answers in the tab.
+        var terraform: TerraformAsk? = nil
 
         /// What the card is called: the tab, and what it is asking for.
         var headline: String {
+            if let terraform { return "\(title) \(terraform.summary)" }
             guard let prompt else { return [title, note].compactMap { $0 }.joined(separator: " — ") }
             return "\(title) \(prompt.summary)"
         }
 
         static func == (a: Entry, b: Entry) -> Bool {
-            a.id == b.id && a.mark == b.mark && a.note == b.note && a.prompt == b.prompt
+            a.id == b.id && a.mark == b.mark && a.note == b.note && a.prompt == b.prompt && a.asksWhy == b.asksWhy && a.terraform == b.terraform
         }
     }
 
@@ -56,17 +63,20 @@ final class InboxModel: ObservableObject {
         return parts.isEmpty ? "Nothing waiting" : parts.joined(separator: " · ")
     }
 
-    /// Rebuilt from the tabs that want something. `screen` reads a pane's
+    /// Rebuilt from the tabs that want something — and those a Terraform
+    /// ask marked, whatever their mark says now. `screen` reads a pane's
     /// visible text — passed in so the model stays testable.
     func refresh(tabs: [Tab], group: (Tab) -> TabGroup?, screen: (Tab) -> String?, now: Date = Date()) {
-        let wanting = tabs.filter(\.activity.needsAttention)
+        let wanting = tabs.filter { $0.activity.needsAttention || $0.terraformAsk != nil }
         let built = Self.ordered(wanting).map { tab in
             Entry(
                 id: tab.id, title: tab.title, group: group(tab), mark: tab.activity.mark, note: tab.activity.note,
                 // Only a blocked agent is being asked anything; a finished
-                // one has a prompt on screen that is nobody's question.
-                prompt: tab.activity.mark == .waiting ? screen(tab).flatMap(AgentPrompt.parse) : nil,
-                since: tab.activity.mark == .waiting ? now : nil)
+                // one has a prompt on screen that is nobody's question. A
+                // Terraform write's is never offered as choices (3.3).
+                prompt: tab.activity.mark == .waiting && tab.terraformAsk == nil
+                    ? screen(tab).flatMap { TerraformPrompt.parse($0) == nil ? AgentPrompt.parse($0) : nil } : nil,
+                since: tab.activity.mark == .waiting ? now : nil, asksWhy: !tab.kubeAlerts.isEmpty, terraform: tab.terraformAsk)
         }
         if built != entries { entries = built }
         if highlighted == nil || !built.contains(where: { $0.id == highlighted }) { highlighted = built.first?.id }

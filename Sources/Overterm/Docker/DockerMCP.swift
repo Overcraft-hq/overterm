@@ -60,11 +60,11 @@ enum DockerMCP {
             let target = try container()
             let detail = try await engine.container(target.Id)
             let tail = min(max(arguments["tail"] as? Int ?? 200, 1), 2000)
-            var lines: [DockerLogLine] = []
+            var lines: [LogLine] = []
             for try await chunks in engine.logs(target.Id, tty: detail.Config.Tty ?? false, tail: tail, follow: false) {
-                lines += chunks.flatMap { DockerLogLine.lines(of: $0, timestamps: true) }
+                lines += chunks.flatMap { LogLine.lines(of: $0, timestamps: true) }
             }
-            var filter = DockerLogFilter()
+            var filter = LogFilter()
             if let level = string("level") { filter.level = level.hasPrefix("err") ? .errors : level.hasPrefix("warn") ? .warnings : .all }
             // It lands in the agent's transcript: the env's secrets and every
             // URL's password out, as the Ask Agent brief has it — before
@@ -245,32 +245,15 @@ enum DockerMCP {
 
     static func allow(_ title: String, _ detail: String) async -> Bool {
         let shown = displayed(detail)
-        if let answer = askOverride { return answer(title + "\n" + shown) }
-        let alert = NSAlert()
-        alert.messageText = title
-        // All of it, never cut: the first 2,000 characters were shown and
-        // all of it ran — `ls` and two thousand spaces hid what came after.
-        if shown.count <= 600 {
-            alert.informativeText = shown
-        } else {
-            let scroll = NSTextView.scrollableTextView()
-            scroll.frame = NSRect(x: 0, y: 0, width: 460, height: 220)
-            if let text = scroll.documentView as? NSTextView {
-                text.string = shown
-                text.isEditable = false
-                text.font = .monospacedSystemFont(ofSize: 11, weight: .regular)
-            }
-            alert.informativeText = "\(shown.count) characters — all of it below."
-            alert.accessoryView = scroll
-        }
-        alert.addButton(withTitle: "Allow")
-        alert.addButton(withTitle: "Don't")
-        alert.alertStyle = .warning
-        guard let window = NSApp.mainWindow ?? NSApp.windows.first(where: \.isVisible) else { return alert.runModal() == .alertFirstButtonReturn }
-        NSApp.activate(ignoringOtherApps: true)
-        return await withCheckedContinuation { continuation in
-            alert.beginSheetModal(for: window) { continuation.resume(returning: $0 == .alertFirstButtonReturn) }
-        }
+        // Who asks: the calling pane's tab and agent (MCPAsker).
+        let asker = await MCPAsker.current()
+        if let answer = askOverride { return answer(([title, asker].compactMap(\.self) + [shown]).joined(separator: "\n")) }
+        // The one confirmation every write is asked with; all of it shown,
+        // never cut — in the calling pane's window.
+        let confirmation = WriteConfirmation(title: title, detail: shown, button: "Allow", cancel: "Don't", asker: asker)
+        let window = MCPAsker.window(forPane: MCPAsker.pane) ?? NSApp.windows.first(where: \.isVisible)
+        if window != nil { NSApp.activate(ignoringOtherApps: true) }
+        return await confirmation.ask(on: window) != nil
     }
 
     /// What a write's confirmation shows: every character visible — a

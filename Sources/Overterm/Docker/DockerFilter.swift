@@ -15,58 +15,35 @@ import Foundation
 ///                            (`tc:`)
 ///     -status:exited         not exited
 ///
-/// Pure.
-struct DockerFilter: Equatable, Sendable {
-    struct Term: Equatable, Sendable {
-        enum Key: String, Sendable { case text, status, project, service, image, port, session }
-        var key: Key
-        var value: String
-        var negated: Bool
-    }
+/// Pure: `ResourceFilter`'s words, with Docker's keys and their meaning.
+typealias DockerFilter = ResourceFilter<DockerFilterKey>
 
-    var terms: [Term]
+/// The Docker lists' filter keys, and every name they go by.
+enum DockerFilterKey: String, ResourceFilterKey {
+    case text, status, project, service, image, port, session
 
-    var isEmpty: Bool { terms.isEmpty }
+    static let names: [String: DockerFilterKey] = [
+        "status": .status, "state": .status, "is": .status,
+        "project": .project, "p": .project, "stack": .project,
+        "service": .service, "s": .service,
+        "image": .image, "i": .image,
+        "port": .port,
+        "session": .session, "tc": .session,
+    ]
+}
 
-    init(_ text: String) {
-        terms = text.split(whereSeparator: \.isWhitespace).compactMap { word in
-            var word = Substring(word)
-            let negated = word.hasPrefix("-") && word.count > 1
-            if negated { word = word.dropFirst() }
-            if let colon = word.firstIndex(of: ":"), colon != word.startIndex {
-                let name = word[..<colon].lowercased()
-                let value = String(word[word.index(after: colon)...]).lowercased()
-                if let key = Self.key(name) {
-                    return value.isEmpty ? nil : Term(key: key, value: value, negated: negated)
-                }
-            }
-            return Term(key: .text, value: word.lowercased(), negated: negated)
-        }
-    }
-
-    private static func key(_ name: String) -> Term.Key? {
-        switch name {
-        case "status", "state", "is": .status
-        case "project", "p", "stack": .project
-        case "service", "s": .service
-        case "image", "i": .image
-        case "port": .port
-        case "session", "tc": .session
-        default: nil
-        }
-    }
-
+extension ResourceFilter where Key == DockerFilterKey {
     func matches(_ container: ContainerSummary) -> Bool {
-        terms.allSatisfy { $0.matches(container) != $0.negated }
+        matches(by: { $0.matches(container) })
     }
 
     /// A service of a project before it runs: by its compose file's words.
     func matches(_ service: ComposeService) -> Bool {
-        terms.allSatisfy { $0.matches(service) != $0.negated }
+        matches(by: { $0.matches(service) })
     }
 }
 
-extension DockerFilter.Term {
+extension ResourceFilter.Term where Key == DockerFilterKey {
     func matches(_ container: ContainerSummary) -> Bool {
         switch key {
         case .text:

@@ -1,4 +1,5 @@
 import XCTest
+import Combine
 
 @testable import Overterm
 
@@ -178,5 +179,53 @@ extension FileTreeTests {
         XCTAssertEqual(flags["src"], false)
         XCTAssertEqual(flags["README.md"], false)
         XCTAssertEqual(flags[".gitignore"], false)
+    }
+}
+
+extension FileTreeTests {
+    /// FSEvents rescans the root (MustScanSubDirs) when it drops events —
+    /// a hundred times in 8 s on a napped app. A rescan that finds the
+    /// folder as it was neither asks git again nor redraws; a changed
+    /// folder, or its .gitignore edited, still does.
+    @MainActor
+    func testARescanThatFindsNothingChangedAsksGitNothing() async throws {
+        _ = try await Git.run(["init", "-q"], in: dir)
+        try "*.log\n".write(to: dir.appendingPathComponent(".gitignore"), atomically: true, encoding: .utf8)
+        touch("debug.log")
+        touch("README.md")
+        let tree = FileTreeModel()
+        tree.setRoot(dir)
+        let deadline = Date().addingTimeInterval(5)
+        while !tree.rows.contains(where: \.isIgnored), Date() < deadline {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertTrue(tree.rows.contains { $0.entry.name == "debug.log" && $0.isIgnored })
+        let checks = tree.ignoreChecks
+        var published = 0
+        let sink = tree.$rows.dropFirst().sink { _ in published += 1 }
+        defer { sink.cancel() }
+
+        let root = FileTreeModel.realPath(dir) + "/"
+        for _ in 0..<100 { tree.invalidate(paths: [root]) }
+        XCTAssertEqual(tree.ignoreChecks, checks, "the same listing, git not asked again")
+        XCTAssertEqual(published, 0, "the same rows, nothing redrawn")
+        XCTAssertTrue(tree.rows.contains { $0.entry.name == "debug.log" && $0.isIgnored }, "what git said still stands")
+
+        touch("trace.log")
+        tree.invalidate(paths: [root])
+        XCTAssertEqual(tree.ignoreChecks, checks + 1, "a new entry is asked about")
+        XCTAssertTrue(tree.rows.contains { $0.entry.name == "trace.log" })
+
+        // The .gitignore edited, nothing else: its date says so.
+        let gitignore = dir.appendingPathComponent(".gitignore")
+        try "*.log\n*.md\n".write(to: gitignore, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.modificationDate: Date().addingTimeInterval(60)], ofItemAtPath: gitignore.path)
+        tree.invalidate(paths: [root])
+        XCTAssertEqual(tree.ignoreChecks, checks + 2, "a changed .gitignore is asked about")
+        let until = Date().addingTimeInterval(5)
+        while !tree.rows.contains(where: { $0.entry.name == "README.md" && $0.isIgnored }), Date() < until {
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertTrue(tree.rows.contains { $0.entry.name == "README.md" && $0.isIgnored })
     }
 }

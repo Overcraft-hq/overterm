@@ -1,3 +1,4 @@
+import Combine
 import Foundation
 
 /// The changes of one checkout, in one of two scopes, and — while the panel
@@ -100,6 +101,12 @@ final class DiffModel: ObservableObject {
     /// The one picked in the pane (`choose`); remembered.
     @Published private(set) var scope: Scope
     @Published private(set) var branch: String?
+    /// HEAD's commit; set only when it moves.
+    @Published private(set) var head: String?
+    /// Bumped when git wrote a remote-tracking ref (a fetch, a push): the
+    /// rail's GitOps answers compared with `origin/<branch>` look again.
+    /// Read from the watchers' paths — no git.
+    @Published private(set) var remoteRefsMoved = 0
     @Published private(set) var diffs: [String: FileDiff] = [:]
     /// Folded or not, by path: how each card started when first shown in
     /// the pane, or how the user left it. Kept while the pane stays on this
@@ -250,6 +257,7 @@ final class DiffModel: ObservableObject {
         folded = [:]
         allFolded = nil
         branch = nil
+        head = nil
         error = nil
         watcher?.stop()
         watcher = nil
@@ -268,11 +276,45 @@ final class DiffModel: ObservableObject {
     /// every change in ~/Library ran a git status that could only fail.
     private func watch(_ url: URL) async {
         guard (try? await Git.run(["rev-parse", "--is-inside-work-tree"], in: url)) != nil, url == root else { return }
-        watcher = DirectoryWatcher(root: url, latency: 0.2) { [weak self] _ in self?.scheduleRefresh() }
+        watcher = DirectoryWatcher(root: url, latency: 0.2) { [weak self] paths in self?.changed(paths) }
         let directories = await Self.gitDirectories(outside: url)
         // The tab may have moved on while git answered.
         guard url == root, !directories.isEmpty else { return }
-        gitWatcher = DirectoryWatcher(roots: directories, latency: 0.2) { [weak self] _ in self?.scheduleRefresh() }
+        gitWatcher = DirectoryWatcher(roots: directories, latency: 0.2) { [weak self] paths in self?.changed(paths) }
+    }
+
+    private func changed(_ paths: [String]) {
+        if paths.contains(where: Self.isRemoteRef) { remoteRefsMoved &+= 1 }
+        let counted = paths.filter { !Self.isNoise($0) }
+        guard !counted.isEmpty else { return }
+        changes.send(counted)
+        scheduleRefresh()
+    }
+
+    /// What the watchers saw change, noise aside: the Terraform panel's
+    /// "files changed", rather than a second watcher on the checkout.
+    let changes = PassthroughSubject<[String], Never>()
+    /// Refreshes run: a scenario checks `init`'s writes cost none.
+    private(set) var refreshCount = 0
+
+    /// A folder FSEvents reports whose changes say nothing about the
+    /// checkout: what `terraform init` writes under `.terraform/` (~50 MB of
+    /// providers) and Terragrunt's cache. Under `.terraform/`, only the
+    /// folder itself (its `environment`, `terraform.tfstate`) and `modules/`
+    /// count (analysis 4.12 step 6).
+    nonisolated static func isNoise(_ reported: String) -> Bool {
+        // FSEvents ends a folder's path with "/".
+        let path = reported.hasSuffix("/") ? String(reported.dropLast()) : reported
+        if path.contains("/.terragrunt-cache/") || path.hasSuffix("/.terragrunt-cache") { return true }
+        guard let range = path.range(of: "/.terraform/") else { return false }
+        let below = path[range.upperBound...]
+        return !(below == "modules" || below.hasPrefix("modules/"))
+    }
+
+    /// A directory FSEvents reports (a directory, not a file) that holds
+    /// remote-tracking refs: a fetch writes `refs/remotes/<remote>/<branch>` loose.
+    nonisolated static func isRemoteRef(_ path: String) -> Bool {
+        path.contains("/refs/remotes/") || path.hasSuffix("/refs/remotes")
     }
 
     /// Where git keeps this checkout's state, when that is not inside it: the
@@ -344,11 +386,13 @@ final class DiffModel: ObservableObject {
 
     private func refreshOnce() async {
         guard let root else { return }
+        refreshCount += 1
         generation += 1
         let ticket = generation
         do {
             let status = try await Git.run(["status", "--porcelain=v1", "-z", "--untracked-files=all"], in: root)
-            let hasHead = (try? await Git.run(["rev-parse", "--verify", "--quiet", "HEAD"], in: root)) != nil
+            let headCommit = (try? await Git.run(["rev-parse", "--verify", "--quiet", "HEAD"], in: root))?.trimmingCharacters(in: .whitespacesAndNewlines)
+            let hasHead = headCommit != nil
             // HEAD, or the empty tree when there is no commit yet.
             let head = hasHead ? "HEAD" : Self.emptyTree
             let numstat = (try? await Git.run(["diff", "--numstat", "-z", head], in: root)) ?? ""
@@ -371,6 +415,7 @@ final class DiffModel: ObservableObject {
             moreCommits = log.count > Self.maxCommits
             self.comparison = comparison
             branch = branchName
+            if self.head != headCommit { self.head = headCommit }
             error = nil
             if panelVisible {
                 settleFolds()

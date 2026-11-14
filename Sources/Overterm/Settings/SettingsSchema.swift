@@ -6,12 +6,33 @@ enum SettingValue: Equatable, Sendable {
     case int(Int)
     case double(Double)
     case string(String)
-    /// A list of names, in order (`SettingKind.order`).
+    /// A list of names, in order (`SettingKind.order`, `SettingKind.list`).
     case list([String])
+    /// Named entries, each a few fields of its own (`SettingKind.entries`):
+    /// `{ "a context": { "class": "production" } }`.
+    case entries([String: [String: SettingValue]])
+    /// A list of small objects, each a few text fields (`SettingKind.records`),
+    /// inside an entry: a context's saved charts, `[{ "title": …, "query": … }]`.
+    case records([[String: String]])
 
     /// From what JSONSerialization made of the file; nil for anything else
-    /// (objects, null, a list holding something other than strings).
+    /// (null, a list holding something other than strings, an object that
+    /// isn't one of objects). A field that isn't a plain value is passed over.
     init?(json: Any) {
+        if let object = json as? [String: Any] {
+            var entries: [String: [String: SettingValue]] = [:]
+            for (name, raw) in object {
+                guard let fields = raw as? [String: Any] else { return nil }
+                var values: [String: SettingValue] = [:]
+                for (field, rawValue) in fields {
+                    guard let value = SettingValue(json: rawValue), value.entries == nil else { continue }
+                    values[field] = value
+                }
+                entries[name] = values
+            }
+            self = .entries(entries)
+            return
+        }
         if let number = json as? NSNumber {
             if CFGetTypeID(number) == CFBooleanGetTypeID() {
                 self = .bool(number.boolValue)
@@ -24,6 +45,24 @@ enum SettingValue: Equatable, Sendable {
             self = .string(string)
         } else if let array = json as? [Any], let strings = array as? [String] {
             self = .list(strings)
+        } else if let array = json as? [Any], let objects = array as? [[String: Any]] {
+            // Each object's fields as text: a number or a flag said as JSON says it,
+            // so a typo in one is reported by the schema, never dropped silently.
+            var records: [[String: String]] = []
+            for object in objects {
+                var record: [String: String] = [:]
+                for (field, raw) in object {
+                    if let text = raw as? String {
+                        record[field] = text
+                    } else if raw is NSNumber, let value = SettingValue(json: raw) {
+                        record[field] = value.json
+                    } else {
+                        return nil
+                    }
+                }
+                records.append(record)
+            }
+            self = .records(records)
         } else {
             return nil
         }
@@ -42,12 +81,46 @@ enum SettingValue: Equatable, Sendable {
         case .list(let values):
             // On one line, so the file can still be edited in place.
             "[" + values.map { SettingValue.string($0).json }.joined(separator: ", ") + "]"
+        case .entries:
+            // On one line too, sorted, so the same entries write the same text.
+            "{" + (members ?? []).map(\.json).joined(separator: ", ") + "}"
+        case .records(let records):
+            "["
+                + records.map { record in
+                    "{" + record.keys.sorted().map { SettingValue.string($0).json + ": " + SettingValue.string(record[$0]!).json }.joined(separator: ", ") + "}"
+                }.joined(separator: ", ") + "]"
+        }
+    }
+
+    /// A list's items or an object's entries, each as its JSON text and
+    /// what tells it from the others (the item, the entry's name) — for a
+    /// value a person wrote over several lines, written back one a line
+    /// with the comments of those still there (`SettingsJSON.setting`).
+    /// Nil for a plain value.
+    var members: [(name: String, json: String)]? {
+        switch self {
+        case .list(let values): return values.map { ($0, SettingValue.string($0).json) }
+        case .entries(let entries):
+            return entries.keys.sorted().map { name in
+                let fields = entries[name]!.keys.sorted().map { SettingValue.string($0).json + ": " + entries[name]![$0]!.json }
+                return (name, SettingValue.string(name).json + ": {" + fields.joined(separator: ", ") + "}")
+            }
+        default: return nil
         }
     }
 
     var bool: Bool? { if case .bool(let value) = self { value } else { nil } }
     var string: String? { if case .string(let value) = self { value } else { nil } }
     var list: [String]? { if case .list(let value) = self { value } else { nil } }
+    var entries: [String: [String: SettingValue]]? { if case .entries(let value) = self { value } else { nil } }
+    /// A list of objects; `[]` too (which reads as an empty list).
+    var records: [[String: String]]? {
+        switch self {
+        case .records(let value): value
+        case .list(let value) where value.isEmpty: []
+        default: nil
+        }
+    }
     var number: Double? {
         switch self {
         case .int(let value): Double(value)
@@ -84,6 +157,32 @@ enum SettingKind: Sendable {
     /// Names it doesn't know are passed over, and options it leaves out
     /// come last — so a file from another version still reads.
     case order([SettingOption])
+    /// A list of the user's own: paths, names. Empty is none.
+    case list(placeholder: String)
+    /// Named entries — a context's own settings, say — each holding some
+    /// of `fields`. A field that doesn't fit is reported and left out; the
+    /// rest of the entry, and the other entries, still apply.
+    case entries(SettingEntries)
+    /// A list of small objects, each holding some of `fields` (`text` or
+    /// `choice`), those marked `required` always — inside an entry only.
+    case records([SettingField])
+}
+
+/// What a `SettingKind.entries` setting's entries are and may hold.
+struct SettingEntries: Sendable {
+    /// What an entry is named by, for the page: "context".
+    let noun: String
+    let fields: [SettingField]
+}
+
+/// One field of an entry: its name in the file and what it may hold
+/// (`toggle`, `choice`, `text` or `list`).
+struct SettingField: Sendable {
+    let name: String
+    let kind: SettingKind
+    var help: String? = nil
+    /// A record's field it must hold (`SettingKind.records`).
+    var required = false
 }
 
 enum SettingSource: Sendable {
@@ -106,6 +205,18 @@ struct SettingSpec: Identifiable, Sendable {
     var ghostty: String? = nil
     /// Greyed out unless this toggle is on.
     var requires: String? = nil
+    /// A security setting — what makes something production, writable, or
+    /// an agent's to change. Any agent can write settings.json, so a change
+    /// made there outside the Settings page is held until a window's banner
+    /// confirms it (`Settings.held`, D-7): `terraform.roots`,
+    /// `terraform.productionPattern`, `terraform.productionAccounts`, the
+    /// terraform it runs (`terraform.path`), `terraform.enabled` (off, the
+    /// pane header over a production apply goes) and `terraform.agent*`
+    /// when they come; Kubernetes' — its contexts,
+    /// agents' access and writes, and the kubectl and helm it runs (a path
+    /// in an agent's checkout would run outside any sandbox, with the
+    /// user's kubeconfig).
+    var heldWhenEditedOutside = false
 
     var id: String { key }
 
@@ -128,6 +239,30 @@ struct SettingSpec: Identifiable, Sendable {
             return value.list == nil ? "must be a list of names, like [\"files\", \"git\"]" : nil
         case .lines:
             return value.list == nil ? "must be a list of strings, like [\"~/Projects/prod-* = Red Alert\"]" : nil
+        case .list:
+            return value.list == nil ? "must be a list of strings, like [\"a\", \"b\"]" : nil
+        case .entries(let entries):
+            return value.entries == nil ? "must be an object of \(entries.noun)s, like { \"name\": { … } }" : nil
+        case .records(let fields):
+            guard let records = value.records else {
+                return "must be a list of objects, like [{ " + fields.map { "\"\($0.name)\": …" }.joined(separator: ", ") + " }]"
+            }
+            for (index, record) in records.enumerated() {
+                let item = "item \(index + 1)"
+                for name in record.keys.sorted() where !fields.contains(where: { $0.name == name }) {
+                    return "\(item) has \"\(name)\", which isn't a field Overterm knows (" + fields.map(\.name).joined(separator: ", ") + ")"
+                }
+                for field in fields {
+                    guard let text = record[field.name] else {
+                        if field.required { return "\(item) has no \"\(field.name)\"" }
+                        continue
+                    }
+                    if field.required, text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty { return "\(item)'s \"\(field.name)\" is empty" }
+                    let probe = SettingSpec(key: key, section: section, group: group, title: title, kind: field.kind, defaultValue: nil)
+                    if let problem = probe.problem(with: .string(text)) { return "\(item)'s \"\(field.name)\" \(problem)" }
+                }
+            }
+            return nil
         case .integer(let range, _, _):
             guard case .int(let number) = value, range.contains(number) else {
                 return "must be a whole number from \(range.lowerBound) to \(range.upperBound)"
@@ -141,6 +276,33 @@ struct SettingSpec: Identifiable, Sendable {
         }
     }
 
+    /// `value` with each entry's fields that don't fit left out, and why —
+    /// for `entries`; anything else comes back as it is. A typo in one
+    /// field must not drop a context's hand-set class with it.
+    func fitted(_ value: SettingValue) -> (value: SettingValue, problems: [String]) {
+        guard case .entries(let kind) = self.kind, let entries = value.entries else { return (value, []) }
+        var kept: [String: [String: SettingValue]] = [:]
+        var problems: [String] = []
+        for name in entries.keys.sorted() {
+            var fields: [String: SettingValue] = [:]
+            for (field, fieldValue) in entries[name]!.sorted(by: { $0.key < $1.key }) {
+                let place = "\"\(key)\" › \"\(name)\": \"\(field)\""
+                guard let spec = kind.fields.first(where: { $0.name == field }) else {
+                    problems.append("\(place) isn't a field Overterm knows; it is left as it is.")
+                    continue
+                }
+                let probe = SettingSpec(key: key, section: section, group: group, title: title, kind: spec.kind, defaultValue: nil)
+                if let problem = probe.problem(with: fieldValue) {
+                    problems.append("\(place) \(problem); it is left out.")
+                    continue
+                }
+                fields[field] = fieldValue
+            }
+            kept[name] = fields
+        }
+        return (.entries(kept), problems)
+    }
+
     /// Searchable text: Settings' search matches the title, the help and the key.
     func matches(_ query: String) -> Bool {
         let query = query.trimmingCharacters(in: .whitespaces).lowercased()
@@ -152,9 +314,13 @@ struct SettingSpec: Identifiable, Sendable {
 /// Every setting, in the order Settings shows them.
 enum SettingsSchema {
     static let all: [SettingSpec] =
-        general + appearance + terminal + agents + editor + browser + api + notes + database + docker + notifications + updates
+        general + appearance + terminal + agents + editor + browser + api + notes + database + docker + kubernetes + terraform + notifications
+        + updates
 
     static let byKey: [String: SettingSpec] = Dictionary(uniqueKeysWithValues: all.map { ($0.key, $0) })
+
+    /// The security settings: changed outside the page, held (`Settings.held`).
+    static let heldKeys: [String] = all.filter(\.heldWhenEditedOutside).map(\.key)
 
     static func specs(in section: SettingsSection) -> [SettingSpec] { all.filter { $0.section == section } }
 
@@ -459,8 +625,12 @@ enum SettingsSchema {
             help: "⌃Space shows them either way.", kind: .toggle, defaultValue: .bool(true)),
         SettingSpec(
             key: "editor.formatOnSave", section: .editor, group: "Code intelligence", title: "Format on save",
-            help: "With the language server's formatter.", kind: .toggle, defaultValue: .bool(false),
+            help: "With the language server's formatter. Terraform files have their own setting.", kind: .toggle, defaultValue: .bool(false),
             requires: "editor.languageServers"),
+        SettingSpec(
+            key: "terraform.formatOnSave", section: .terraform, group: "Editor", title: "Format Terraform files on save",
+            help: "With terraform fmt, and only in a checkout whose files already pass terraform fmt -check: a team that doesn't format isn't reformatted.",
+            kind: .toggle, defaultValue: .bool(true)),
         SettingSpec(
             key: "editor.vimMode", section: .editor, group: "Vim", title: "Vim mode", help: "As Zed's: yanks go to the clipboard.",
             kind: .toggle, defaultValue: .bool(false)),
@@ -615,6 +785,126 @@ enum SettingsSchema {
             help:
                 "Under the selected tab's checkout's stack, the containers of other projects and of none that are running — Testcontainers' test runs in one row.",
             kind: .toggle, defaultValue: .bool(true), requires: "docker.enabled"),
+    ]
+
+    private static let kubernetes: [SettingSpec] = [
+        SettingSpec(
+            key: "kubernetes.enabled", section: .kubernetes, group: "Kubernetes", title: "Kubernetes in Overterm",
+            help:
+                "The contexts of your kubeconfig, their namespaces and pods. Nothing runs and no cluster is asked anything until the page or the panel opens, or an agent calls a k8s_ tool (Agents can read the clusters).",
+            kind: .toggle, defaultValue: .bool(true)),
+        SettingSpec(
+            key: "kubernetes.kubeconfigs", section: .kubernetes, group: "Kubeconfigs", title: "More kubeconfig files",
+            help:
+                "Read after KUBECONFIG's files (else ~/.kube/config), merged as kubectl merges them: a context, cluster or user an earlier file names wins. A folder adds every file in it. Overterm never writes a kubeconfig.",
+            kind: .list(placeholder: "~/.kube/other.kubeconfig"), defaultValue: .list([]), requires: "kubernetes.enabled"),
+        SettingSpec(
+            key: "kubernetes.contexts", section: .kubernetes, group: "Contexts", title: "Each context's own settings",
+            help:
+                "By the context's name: its class (production, remote or local; unset, its name decides), writable (every class is unless it says false: writable false makes a context read-only, production included; production's changes are still asked, the destructive ones by name), its namespaces, and its saved queries (charts: your own Prometheus charts on a workload's Metrics tab).",
+            kind: .entries(SettingEntries(noun: "context", fields: KubeContextSettings.fields)), defaultValue: .entries([:]),
+            requires: "kubernetes.enabled", heldWhenEditedOutside: true),
+        SettingSpec(
+            key: "kubernetes.pinnedContexts", section: .kubernetes, group: "Contexts", title: "Pinned contexts",
+            help:
+                "At the top of the context picker and in the palette, in this order. While the Kubernetes Overview shows, each pinned context — production too — is read in the background every 30 seconds for its card (one page of pods, workloads and nodes; reads only), in a connection nothing else needs.",
+            kind: .list(placeholder: "a context's name"), defaultValue: .list([]), requires: "kubernetes.enabled"),
+        SettingSpec(
+            key: "kubernetes.maxProxies", section: .kubernetes, group: "Connections", title: "Contexts connected at once",
+            help:
+                "Each context in use has one kubectl proxy, and kubectl keeps its credentials; a context whose Prometheus charts show has a second, for them, and it counts here too. One is always kept for the page's context; past this many, the least recently used idle one closes.",
+            kind: .integer(1...16, step: 1, unit: "proxies"), defaultValue: .int(4), requires: "kubernetes.enabled"),
+        SettingSpec(
+            key: "kubernetes.proxyIdleMinutes", section: .kubernetes, group: "Connections", title: "Close a context's proxy after",
+            help: "A proxy nothing has used for this long is closed; the next request starts it again.",
+            kind: .integer(1...240, step: 1, unit: "minutes"), defaultValue: .int(10), requires: "kubernetes.enabled"),
+        SettingSpec(
+            key: "kubernetes.logStreams", section: .kubernetes, group: "Connections", title: "Containers followed at once in merged logs",
+            help:
+                "A Deployment's, StatefulSet's, DaemonSet's, Job's or Service's Logs tab follows each of its pods' containers, one stream each, merged by time. Past this many, the rest are left out — the tab says how many — until a followed pod goes.",
+            kind: .integer(1...50, step: 1, unit: "streams"), defaultValue: .int(10), requires: "kubernetes.enabled"),
+        SettingSpec(
+            key: "kubernetes.helmPath", section: .kubernetes, group: "Connections", title: "helm",
+            help:
+                "Empty: /usr/local/bin's, /opt/homebrew/bin's, else your shell's PATH. Overterm runs only helm template itself — a chart rendered from its files, KUBECONFIG=/dev/null, no cluster asked; an upgrade is typed into a tab. Never downloaded.",
+            kind: .text(placeholder: "/opt/homebrew/bin/helm", monospaced: true), defaultValue: .string(""), requires: "kubernetes.enabled",
+            heldWhenEditedOutside: true),
+        SettingSpec(
+            key: "kubernetes.kubectlPath", section: .kubernetes, group: "Connections", title: "kubectl",
+            help:
+                "Empty: the installed kubectl closest to the cluster's version — /usr/local/bin, /opt/homebrew/bin, Docker Desktop's, your shell's PATH. Overterm never downloads one.",
+            kind: .text(placeholder: "/usr/local/bin/kubectl", monospaced: true), defaultValue: .string(""), requires: "kubernetes.enabled",
+            heldWhenEditedOutside: true),
+        SettingSpec(
+            key: "kubernetes.notifyOnFailure", section: .kubernetes, group: "Attention", title: "Mark a bound checkout's tab when what it deploys fails",
+            help:
+                "While a checkout bound to a namespace has a tab open, its Pods and Deployments there are watched in the background — two watches, the binding's selector sent to the server, nothing else read: a pod going into CrashLoopBackOff, OOMKilled or ImagePullBackOff, or a rollout past its progress deadline, marks that tab (and notifies, as Settings ▸ Notifications says), with Ask Why on the mark.",
+            kind: .toggle, defaultValue: .bool(true), requires: "kubernetes.enabled"),
+        SettingSpec(
+            key: "kubernetes.backgroundWatches", section: .kubernetes, group: "Attention", title: "Bound namespaces watched at once",
+            help:
+                "The most recently used checkouts' first. They share Contexts connected at once with the page, never its slot: when the page needs one, a background proxy closes first, and its checkout's tab says \"not watched\" until a slot is free again.",
+            kind: .integer(1...16, step: 1, unit: "namespaces"), defaultValue: .int(4), requires: "kubernetes.notifyOnFailure"),
+        SettingSpec(
+            key: "kubernetes.agentAccess", section: .kubernetes, group: "Agents", title: "Agents can read the clusters",
+            help:
+                "Claude Code started from Overterm gets MCP tools to list a context's objects, describe one, read a pod's logs and events, a rollout's status and history, what pods and nodes use (metrics-server's), and why a pod fails — through the context's proxy, production included. On the contexts Contexts agents may change names, it also gets k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply (a manifest, its dry-run diff shown; on production only where the context sets applyOnProduction), each call asked in the window first. None reads a Secret's values; what looks like a secret is taken out of every answer.",
+            kind: .toggle, defaultValue: .bool(true), requires: "kubernetes.enabled", heldWhenEditedOutside: true),
+        SettingSpec(
+            key: "kubernetes.agentWrites", section: .kubernetes, group: "Agents", title: "Contexts agents may change",
+            help:
+                "By name: the contexts where agents get k8s_restart, k8s_scale, k8s_delete_pod and k8s_apply — empty, agents only read. Only while the context is writable for agents too: a local one not set writable false; a remote or production one only where its kubernetes.contexts entry sets writable true. Each call is still asked in the window, naming the context. An agent started before a name was added needs a restart to see the tools.",
+            kind: .list(placeholder: "a context's name"), defaultValue: .list([]), requires: "kubernetes.agentAccess", heldWhenEditedOutside: true),
+        SettingSpec(
+            key: "kubernetes.debugImage", section: .kubernetes, group: "Tabs", title: "Debug container's image",
+            help:
+                "What E runs beside a pod's container (kubectl debug --target) or on a node, in a tab — unless the context's own debugImage (a node: its nodeShellImage, then debugImage) says another. Only on writable contexts.",
+            kind: .text(placeholder: "busybox:1.36", monospaced: true), defaultValue: .string("busybox:1.36"), requires: "kubernetes.enabled"),
+    ]
+
+    private static let terraform: [SettingSpec] = [
+        SettingSpec(
+            key: "terraform.enabled", section: .terraform, group: "Terraform", title: "Terraform in Overterm",
+            help:
+                "The checkout's roots in the sidebar (⌥⌘E), their workspaces and backends, which are production, and a header over any pane where terraform runs. Nothing is read until the panel opens, and no terraform runs but `terraform version`.",
+            kind: .toggle, defaultValue: .bool(true), heldWhenEditedOutside: true),
+        SettingSpec(
+            key: "terraform.path", section: .terraform, group: "Terraform", title: "terraform",
+            help:
+                "The terraform Overterm runs, as an absolute path. Empty: mise's where a version file asks for one, else the first on your shell's PATH.",
+            kind: .text(placeholder: "/opt/homebrew/bin/terraform", monospaced: true), defaultValue: .string(""), requires: "terraform.enabled",
+            heldWhenEditedOutside: true),
+        SettingSpec(
+            key: "terraform.productionPattern", section: .terraform, group: "Production", title: "Production names",
+            help:
+                "A regular expression matched against a root's workspace, path, backend bucket, key and organisation, var files, AWS_PROFILE and its providers' profile or project. Empty: prod, prd, production or live as a word, a number allowed after it. A state once production stays production.",
+            kind: .text(placeholder: TerraformClassifier.defaultPattern, monospaced: true), defaultValue: .string(""), requires: "terraform.enabled",
+            heldWhenEditedOutside: true),
+        SettingSpec(
+            key: "terraform.productionAccounts", section: .terraform, group: "Production", title: "Production AWS accounts",
+            help: "Account IDs: a root whose provider or backend names one in an ARN is production.",
+            kind: .list(placeholder: "123456789012"), defaultValue: .list([]), requires: "terraform.enabled", heldWhenEditedOutside: true),
+        SettingSpec(
+            key: "terraform.roots", section: .terraform, group: "Roots", title: "Each root's own settings",
+            help:
+                "By the root's path in its repository (envs/prod): a display name; a class — production or remote — that can only raise what the names say, never lower it; writable — every root is unless it says false: writable false makes a root plan-only, production included (production's applies are still asked, with the root's name typed). An agent's test with real providers runs on a remote root only where writable is set true.",
+            kind: .entries(SettingEntries(noun: "root", fields: TerraformRootSettings.fields)), defaultValue: .entries([:]),
+            requires: "terraform.enabled", heldWhenEditedOutside: true),
+        SettingSpec(
+            key: "terraform.newWorktreeInit", section: .terraform, group: "Worktrees", title: "Initialise a new task's roots for validate",
+            help:
+                "After New Task makes a worktree: each root whose init fetches nothing to look at first — every provider it and its local modules use in the committed lock file, every module local or a registry module at an exact version, none from git or elsewhere — gets terraform init -backend=false -lockfile=readonly, with no credential, no SSH agent and no workspace, so validate and the editor work there. It never reads the state or writes the lock file; a plan there needs Init first. Its panel says when a root has no state in this worktree, and how its lock file differs from another worktree's.",
+            kind: .toggle, defaultValue: .bool(true), requires: "terraform.enabled"),
+        SettingSpec(
+            key: "terraform.agentWriteGuard", section: .terraform, group: "Agents", title: "Start agents with Terraform's writes denied",
+            help:
+                "In a checkout with a production root — or one not read yet — Claude Code started from Overterm (New Task, an agent tab, a resumed one) gets --disallowedTools rules for terraform, tofu and terragrunt apply, destroy, import, taint, force-unlock, state, workspace delete, refresh, test, -auto-approve and state migration — for that launch only; nothing is written to its settings. Unverified against Claude Code itself: its parser takes the rules, but whether each one matches, and holds under --dangerously-skip-permissions, is its documentation's word, not tested here. A script, bash -c or make apply get around it, and Codex has no such flag: its pane says \"terraform writes not guarded\". Either way the pane header and the Inbox show an agent's terraform, and Overterm never answers its ask.",
+            kind: .toggle, defaultValue: .bool(true), requires: "terraform.enabled", heldWhenEditedOutside: true),
+        SettingSpec(
+            key: "terraform.agentAccess", section: .terraform, group: "Agents", title: "Agents can read the checkout's Terraform",
+            help:
+                "Claude Code started from Overterm gets MCP tools for its own checkout: tf_roots (roots, classes, backends), tf_fmt_check, tf_validate (no credential; only where the root is initialised and its lock file committed — never init), tf_plan_summary and tf_plan_resource (Overterm's plan, or one it saved, masked: never a sensitive value), tf_run_status and tf_why. tf_plan runs a plan in Overterm: the root's providers and data sources run with your credentials, outside the agent's sandbox — so its first plan of each root this session is asked in the window, naming the profile and what the code runs, and asked again when that grows; never on production. None applies, destroys or changes state.",
+            kind: .toggle, defaultValue: .bool(true), requires: "terraform.enabled", heldWhenEditedOutside: true),
     ]
 
     private static let notifications: [SettingSpec] = [

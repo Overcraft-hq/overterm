@@ -44,6 +44,12 @@ struct TabActivity: Equatable {
     private(set) var mark: Mark = .none
     /// What to say about it, when there is something specific.
     private(set) var note: String?
+    /// The mark is a cluster's (`clusterFailed`): it goes on its own once
+    /// what failed has (`clusterRecovered`).
+    private(set) var fromCluster = false
+    /// The mark is a Terraform ask's (`terraformAsked`): it goes once the
+    /// ask has left the screen (`terraformAnswered`).
+    private(set) var fromTerraform = false
 
     /// Anything to tell you — the Dock badge counts these.
     var needsAttention: Bool { mark != .none }
@@ -92,6 +98,32 @@ struct TabActivity: Equatable {
         guard raised != .none, !visible, raised > mark else { return false }
         mark = raised
         note = text
+        fromCluster = false
+        fromTerraform = false
+        return true
+    }
+
+    /// A pane of the tab asks for a Terraform write (TerraformPrompt,
+    /// analysis 3.3): marked waiting, with what it asks — looked at or not:
+    /// a person's own pane gets the mark, and the caller notifies only for
+    /// an agent's. True when the mark or its words just changed and nobody
+    /// is looking (the moment to notify).
+    @discardableResult
+    mutating func terraformAsked(_ text: String, visible: Bool) -> Bool {
+        let changed = mark != .waiting || note != text
+        mark = .waiting
+        note = text
+        fromCluster = false
+        fromTerraform = true
+        return changed && !visible
+    }
+
+    /// The ask left the screen (answered, in the tab): its mark goes,
+    /// unless something else has marked the tab since.
+    @discardableResult
+    mutating func terraformAnswered() -> Bool {
+        guard fromTerraform, mark == .waiting else { return false }
+        seen()
         return true
     }
 
@@ -103,6 +135,41 @@ struct TabActivity: Equatable {
         guard !visible, Mark.failed > mark else { return false }
         mark = .failed
         note = text
+        fromCluster = false
+        fromTerraform = false
+        return true
+    }
+
+    /// What the tab's checkout deploys failed in its bound namespace
+    /// (KubeAttention): a failure, as a container's is — and a newer one
+    /// says itself over the last cluster mark, which isn't news any more.
+    /// Returns true when the mark just went up (or said something new).
+    @discardableResult
+    mutating func clusterFailed(_ text: String, visible: Bool) -> Bool {
+        guard !visible else { return false }
+        guard Mark.failed > mark || (mark == .failed && fromCluster && note != text) else { return false }
+        mark = .failed
+        note = text
+        fromCluster = true
+        fromTerraform = false
+        return true
+    }
+
+    /// A cluster failure that came while the tab's mark is something
+    /// else's — an agent waiting for you (higher), a command that failed:
+    /// the mark stays what it is, but the failure is still news and is
+    /// told (`markClusterFailure`), with Ask Why on the tab's alerts.
+    func clusterNewsUnderOtherMark(visible: Bool) -> Bool {
+        !visible && (mark > .failed || (mark == .failed && !fromCluster))
+    }
+
+    /// Every cluster failure behind the mark has gone (its pods replaced,
+    /// its rollout progressing): the mark goes, unless something else has
+    /// marked the tab since.
+    @discardableResult
+    mutating func clusterRecovered() -> Bool {
+        guard fromCluster, mark == .failed else { return false }
+        seen()
         return true
     }
 
@@ -110,5 +177,7 @@ struct TabActivity: Equatable {
     mutating func seen() {
         mark = .none
         note = nil
+        fromCluster = false
+        fromTerraform = false
     }
 }

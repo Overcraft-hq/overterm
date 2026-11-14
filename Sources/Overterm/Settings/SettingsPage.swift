@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 
 /// Settings' sections, as in the list on the page's left.
 enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
-    case general, appearance, themes, terminal, agents, editor, browser, api, notes, database, docker, notifications, shortcuts, about
+    case general, appearance, themes, terminal, agents, editor, browser, api, notes, database, docker, kubernetes, terraform, notifications, shortcuts, about
 
     var id: String { rawValue }
 
@@ -22,6 +22,8 @@ enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
         case .notes: "Notes"
         case .database: "Database"
         case .docker: "Docker"
+        case .kubernetes: "Kubernetes"
+        case .terraform: "Terraform"
         case .notifications: "Notifications"
         case .shortcuts: "Keyboard Shortcuts"
         case .about: "About"
@@ -41,6 +43,8 @@ enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
         case .notes: "note.text"
         case .database: "cylinder.split.1x2"
         case .docker: "shippingbox"
+        case .kubernetes: "steeringwheel"
+        case .terraform: "square.stack.3d.up"
         case .notifications: "bell"
         case .shortcuts: "keyboard"
         case .about: "info.circle"
@@ -259,20 +263,30 @@ private struct SettingRow: View {
     private var enabled: Bool { spec.requires.map { settings.isInEffect($0) } ?? true }
 
     var body: some View {
-        if case .order(let options) = spec.kind {
-            // A list is too tall for the right of the row: it goes under.
-            VStack(alignment: .leading, spacing: 8) {
-                HStack(alignment: .center, spacing: 16) {
-                    description
-                    Spacer(minLength: 12)
-                    reset
-                }
-                SettingOrderList(spec: spec, options: options, settings: settings, theme: theme)
-            }
-            .padding(.vertical, 10)
-        } else {
+        switch spec.kind {
+        case .order(let options):
+            under { SettingOrderList(spec: spec, options: options, settings: settings, theme: theme) }
+        case .list(let placeholder):
+            under { SettingListEditor(spec: spec, placeholder: placeholder, settings: settings, theme: theme) }
+        case .entries(let entries):
+            under { SettingEntriesSummary(spec: spec, entries: entries, model: model, settings: settings, theme: theme) }
+        default:
             row
         }
+    }
+
+    /// A list is too tall for the right of the row: it goes under.
+    private func under(@ViewBuilder _ content: () -> some View) -> some View {
+        VStack(alignment: .leading, spacing: 8) {
+            HStack(alignment: .center, spacing: 16) {
+                description
+                Spacer(minLength: 12)
+                reset
+            }
+            content().disabled(!enabled)
+        }
+        .padding(.vertical, 10)
+        .opacity(enabled ? 1 : 0.5)
     }
 
     private var description: some View {
@@ -280,6 +294,10 @@ private struct SettingRow: View {
             Text(spec.title).foregroundStyle(theme.text)
             if let help = spec.help {
                 Text(help).font(.caption).foregroundStyle(theme.dimText).fixedSize(horizontal: false, vertical: true)
+            }
+            if spec.heldWhenEditedOutside {
+                Text("Changed in settings.json outside this page, it waits for your Keep in a banner first.")
+                    .font(.caption).foregroundStyle(theme.dimText).fixedSize(horizontal: false, vertical: true)
             }
             Text(verbatim: spec.key).font(.system(size: ChromeMetrics.text(10), design: .monospaced)).foregroundStyle(theme.dimText.opacity(0.7))
         }
@@ -374,8 +392,8 @@ private struct SettingRow: View {
             SettingColorWell(spec: spec, settings: settings, theme: theme, unset: "From the theme")
         case .file(let types):
             SettingFilePicker(spec: spec, settings: settings, theme: theme, types: types)
-        case .order:
-            EmptyView()  // `body` lays the list out under the row
+        case .order, .list, .entries, .records:
+            EmptyView()  // `body` lays these out under the row (a record list is only ever an entry's field)
         }
     }
 
@@ -455,6 +473,88 @@ private struct SettingOrderList: View {
         .scrollDisabled(true)
         .frame(width: 320, height: CGFloat(rows.count) * Self.rowHeight + 8)
         .background(RoundedRectangle(cornerRadius: 8).fill(theme.dimText.opacity(0.06)))
+    }
+}
+
+/// A `list` setting: its items, each with a way out, and a field to add one.
+private struct SettingListEditor: View {
+    let spec: SettingSpec
+    let placeholder: String
+    @ObservedObject var settings: Settings
+    @ObservedObject var theme: ChromeTheme
+    @State private var draft = ""
+
+    private var items: [String] { settings.value(spec.key)?.list ?? [] }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            ForEach(Array(items.enumerated()), id: \.offset) { index, item in
+                HStack(spacing: 8) {
+                    Text(verbatim: item).font(.system(.body, design: .monospaced)).foregroundStyle(theme.text)
+                        .lineLimit(1).truncationMode(.middle)
+                    Spacer(minLength: 8)
+                    Button {
+                        var list = items
+                        list.remove(at: index)
+                        settings.set(spec.key, .list(list))
+                    } label: {
+                        Image(systemName: "minus.circle")
+                    }
+                    .buttonStyle(.plain)
+                    .foregroundStyle(theme.dimText)
+                    .help("Remove")
+                }
+            }
+            HStack(spacing: 8) {
+                TextField("", text: $draft, prompt: Text(placeholder))
+                    .textFieldStyle(.roundedBorder)
+                    .font(.system(.body, design: .monospaced))
+                    .onSubmit(add)
+                Button("Add", action: add).disabled(draft.trimmingCharacters(in: .whitespaces).isEmpty)
+            }
+        }
+        .frame(width: 420, alignment: .leading)
+    }
+
+    private func add() {
+        let item = draft.trimmingCharacters(in: .whitespaces)
+        draft = ""
+        guard !item.isEmpty, !items.contains(item) else { return }
+        settings.set(spec.key, .list(items + [item]))
+    }
+}
+
+/// An `entries` setting: each entry's name and what it sets. They are
+/// edited in settings.json — or where the entry's own thing is shown (a
+/// context's card).
+private struct SettingEntriesSummary: View {
+    let spec: SettingSpec
+    let entries: SettingEntries
+    @ObservedObject var model: SettingsPageModel
+    @ObservedObject var settings: Settings
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View {
+        let set = settings.value(spec.key)?.entries ?? [:]
+        VStack(alignment: .leading, spacing: 6) {
+            if set.isEmpty {
+                Text("No \(entries.noun) has settings of its own.").font(.callout).foregroundStyle(theme.dimText)
+            }
+            ForEach(set.keys.sorted(), id: \.self) { name in
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(verbatim: name).font(.system(.body, design: .monospaced)).foregroundStyle(theme.text)
+                        .lineLimit(1).truncationMode(.middle)
+                    Text(verbatim: summary(set[name] ?? [:])).font(.caption).foregroundStyle(theme.dimText)
+                }
+            }
+            Button("Edit in settings.json") { model.mode = .json }
+        }
+        .frame(width: 420, alignment: .leading)
+    }
+
+    private func summary(_ fields: [String: SettingValue]) -> String {
+        guard !fields.isEmpty else { return "nothing set" }
+        return fields.keys.sorted().map { "\($0): \(fields[$0]!.json)" }.joined(separator: " · ")
     }
 }
 

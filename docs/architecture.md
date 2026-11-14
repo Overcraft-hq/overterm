@@ -309,9 +309,45 @@ rewriting it whole only when it isn't laid out one key per line. A
 `DirectoryWatcher` applies a hand edit at once. A file that doesn't parse
 is never written over: the last good settings stay, the page says why.
 A value that doesn't fit its setting is listed and its default applies;
-an unknown key is listed and left alone. `changes` names the keys that
+an unknown key is listed and left alone. A `list` setting is the user's own
+names or paths; an `entries` one (`kubernetes.contexts`) is named entries
+with fields of their own, each field checked on its own (Kubernetes,
+below). `changes` names the keys that
 changed, for whatever acts on them. Before 1.17 settings were UserDefaults
 (`settings.*`): `Settings.migrate` carries them over once.
+
+**Security settings, held.** settings.json is a plain file any agent can
+write, so one edit could make production writable or name a context for
+agents' writes. A spec marked `heldWhenEditedOutside` (`SettingsSchema.heldKeys`:
+`kubernetes.contexts`, `kubernetes.agentWrites`, `kubernetes.agentAccess`,
+and `kubernetes.kubectlPath`/`helmPath` — the binaries Overterm runs with the
+user's kubeconfig, outside any agent's sandbox; Terraform's `roots`,
+`productionPattern`, `productionAccounts` and `agent*` will be, as the
+Terraform design's 5.8 says — a unit test holds them to it) changed in the
+file by anyone but the app is held (`Settings.held`, a `HeldSetting` each):
+the value before stays in `values`, so nothing that reads a setting sees
+the new one and `changes` doesn't name it; the rest of the edit applies.
+`apply(_:trusting:)` says whose text it takes: the app's own `set` of a key
+(the page, the Kubernetes context sheet: that key applies), the JSON view's
+Save (a security setting is the person's own only where the saved text
+changes it from the file on disk before the save — the draft is the file,
+an agent's edit included, and a file that didn't parse changes nothing),
+or the watcher's reload (every change held). `set`, `save`, Keep and Revert
+read the file again first, so an edit the watcher hasn't reported yet is
+held before an in-app edit builds on it; `fileValue` answers a security
+setting's last trusted value (`taken`), never what is on disk. `taken` is
+kept on disk too, `settings-confirmed.json` beside settings.json (no
+secret in it): at launch the file is held against it, so an edit left
+unanswered at quit, or made while Overterm wasn't running, is held then
+(with no record yet, the file is taken as it is). Every window shows
+`SettingsHeldBanner` under the title bar — a line for each name or entry
+changed, names quoted, every character visible (`DockerMCP.displayed`),
+what widens first, never cut silently: when the change is longer than the
+banner holds (`HeldBannerSummary`), the banner offers Review instead of
+Keep, a popover with every line whose Keep turns on once each has been on
+screen (`HeldReviewProgress`). Keep takes the shown values (a file changed
+again since is shown again first); Revert writes the values before back in
+place, comments kept.
 
 Appearance and Terminal are Ghostty's own settings: unset, the user's
 Ghostty config decides; set, `writeGhosttyOverrides` puts them in
@@ -938,6 +974,41 @@ like Zed needs a GPU renderer.
   file's own words, `CompletionMatch`), hover, definition, references,
   symbols, formatting. Nothing launches in tests or isolated runs unless
   `discoveryOverride` hands in a fake.
+  - **Watched files.** The client says it can watch
+    (`workspace.didChangeWatchedFiles.dynamicRegistration`, relative
+    patterns too), so servers leave it to us: gopls watches nothing itself,
+    rust-analyzer stops its own watcher, sourcekit-lsp asks for `**/*`,
+    clangd for nothing, and terraform-ls (#953) hears of an `init` or an
+    agent's files only this way. A server's `client/registerCapability` is
+    kept (`LSPWatchedFiles`, pure: the registrations by id, their `LSPGlob`s
+    — `*`, `?`, `**`, `{a,b}`, `[!a-z]`, a `RelativePattern`'s base, matched
+    as one anchored regular expression), and one `DirectoryWatcher` with
+    `fileEvents:` (FSEvents' file events, its flags passed through) watches
+    the root and any folder a pattern names outside it — never `/`, a
+    volume's top, the home folder or above it, the root included (a file
+    opened from `~` with no marker makes `~` its root: then only the
+    registered folders that pass are watched) — only while something is
+    registered. The watcher is stopped on the main queue, always: the stop's
+    hop holds the server, and a server freed elsewhere hands its watcher to
+    main. Events are
+    matched off the main thread; whether a file came or went is what the
+    disk says now (FSEvents' flags are coalesced and sticky); git's objects
+    and the inside of node_modules' packages are never sent (VS Code's
+    `files.watcherExclude`); paths go back under the root as the server was
+    given it, not `/private/var`, and under a folder outside it as the
+    server spelled it (`/tmp`, a link), not its real path. Each server's
+    registration is a fixture in `LSPWatchedFilesTests` (pyright's library
+    folders and vtsls's tsserver watches among them).
+  - **A spec's options and environment.** `Spec.initializationOptions` (a
+    `JSONValue`: Spec is a dictionary key) goes in `initialize`;
+    `Spec.environmentAdded` is set over the app's environment and the
+    command's (terraform-ls: `CHECKPOINT_DISABLE=1`, a scratch `HOME`);
+    `Spec.environmentRemoved` (names, `AWS_*` for a prefix) is taken out of
+    all three after, so a removed name wins and a server that runs tools
+    hands them no credentials (`*_TOKEN` for an ending, `*_SECRET*` for a
+    part). `ServerDiscovery.zedTerraformLS` finds
+    the newest terraform-ls Zed's Terraform extension downloaded
+    (`extensions/work/terraform/terraform-ls-<version>/`), run as `serve`.
 - **Vim** (`Vim/`, Settings ▸ Editor): a pure engine over a `VimBuffer`, which
   the pane is; Zed's choices — yanks go to the clipboard.
 - **Markdown preview** (⇧⌘V, the header's eye on a markdown file): the
@@ -975,9 +1046,26 @@ driving it are in the same window as the code.
 - **Reload on save** (off by default): an editor save, or the checkout's
   files changing under an agent, reloads a local page.
 - **Agents** (`BrowserBridge`, `BrowserMCP`): an MCP server (streamable
-  HTTP, JSON answers) on 127.0.0.1, a random port and a bearer token, one
-  path per pane — `/mcp/<the pane's OVERTERM_TAB_ID>` — so an agent reaches
-  its own tab's browser. Each pane gets `OVERTERM_MCP_CONFIG`, a Claude Code
+  HTTP, JSON answers) on 127.0.0.1, a random port, one path per pane —
+  `/mcp/<the pane's OVERTERM_TAB_ID>` — so an agent reaches its own tab's
+  browser. Each pane has a bearer token of its own (`PaneTokens`: 32 random
+  bytes, made with its config, dropped when it closes), and a token opens
+  only its own pane's path: any other is a 401 before a tool is reached
+  (`BridgeServer.route`). The token is in no file: every config sits in
+  one folder the same user can list, so a token there let an agent in
+  worktree A read B's file and call B's Docker, Kubernetes or database
+  tools — the window's confirmation naming B's checkout (Terraform
+  analysis, D-15). The file's header is `Bearer ${OVERTERM_MCP_TOKEN}`,
+  which Claude Code expands, and `OVERTERM_MCP_TOKEN` is in that pane's
+  environment only (`BrowserBridge.environment(forPane:)`). Every write an
+  MCP call asks about says who asks — "Asked through MCP by Claude in the
+  tab “…”" (`MCPAsker`: the call's pane as a task-local, its tab by
+  `tab.terminals`, the agent by `tab.agent` or its process) — in that
+  pane's window (`WriteConfirmation.ask` fills it in; Docker's, Kubernetes'
+  and the databases' writes). Left open: a same-user process outside a
+  sandbox can read another process's environment (`KERN_PROCARGS2`), and
+  so another pane's token; the sheet then names the pane it pretends to
+  be. Each pane gets `OVERTERM_MCP_CONFIG`, a Claude Code
   config file (0600) written for it, and Overterm starts `claude` with
   `--mcp-config "$OVERTERM_MCP_CONFIG"`. Tools: navigate, snapshot (text and
   the controls, each with a ref), click, type, screenshot, console,
@@ -1358,7 +1446,8 @@ their buckets where a database's schemas would be.
 ## Docker (⌥⌘P, a page; the rail's shippingbox)
 
 Docker Desktop's work on a page of its own, over the body like Settings
-(`WorkspaceOverlay.docker`, made the first time it opens): the engine the
+(`WorkspaceOverlay.docker`, made the first time it opens; the window wires
+it from its declaration, `dockerWorkspacePage` — a `WorkspacePage`): the engine the
 user's `docker` reaches — Docker Desktop, OrbStack, Colima — and its
 containers, grouped by compose project. Settings ▸ Docker turns it off
 (nothing is read then) or points it at another engine.
@@ -1485,11 +1574,32 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   and the scroll position go with it. The filter is `DockerFilter`
   (`status:running project:api image:postgres port:5432 is:test`, `-`
   negates).
-- **Verbs** (`DockerVerb`, `DockerPageModel+Verbs`): what can be done to a
-  container, a project, an image, a volume, a network, a build or a model
-  is one list, drawn twice — as the buttons under its detail's title
-  (`DockerActionBar`: the used ones labelled, the rest behind ⋯, removal
-  last as a red bin) and as its right-click menu (`DockerVerbMenu`) — so
+- **The containers list** is a `ResourceTable` (shared in `ResourcePage/`;
+  `DockerTableRow`, the rows): an AppKit table whose rows are the page's
+  SwiftUI rows, a view only while on screen and reused as they scroll (as
+  a SwiftUI `List`, 160 containers took 39 ms a scroll step). A cell is
+  reused only for a row of its kind in its column (`reuseKind`: a
+  project's, a container's, a planned service's), never another SwiftUI
+  view under the `AnyView`; a container's port pills in the list are
+  tapped labels (`DockerPortPill(inList:)`, accessibility buttons), not
+  `Button`s, identified by place — the detail's stay `Button`s, reached
+  with Tab and Full Keyboard Access — as
+  `Button`s identified by port, every reused row made its pills again
+  (`dockerPerf`: 18.5 ms a step, now ~9). A press goes
+  to the row's view whole — a project's chevron is its button — and
+  selects the row on release (⌘ adds or takes away, ⇧ extends); the
+  right-click menu is the clicked rows' verbs. Docker's has one column
+  under its own SwiftUI header (CPU and memory sort there); given several
+  `ResourceColumn`s the table draws their header and sets a
+  `ResourceSort`, a group's row laid across them — Kubernetes' lists, with
+  the server's columns.
+- **Verbs** (`ResourceVerb`, shared in `ResourcePage/`;
+  `DockerPageModel+Verbs`): what can be done to a container, a project,
+  an image, a volume, a network, a build or a model is one list, drawn twice — as the buttons under its detail's title
+  (`ResourceActionBar`: the used ones labelled, the rest behind ⋯, removal
+  last as a red bin) and as its right-click menu (`ResourceVerbMenu`;
+  `ResourceVerbMenuArea` where the verbs are dear to make: an AppKit menu
+  over a SwiftUI view, made only as it opens) — so
   nothing is only in the menu and the two never disagree. A verb that
   can't be done now (a mounted volume's removal, the shell of a stopped
   container) is greyed with the reason in its help. Too narrow for the
@@ -1509,7 +1619,7 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   event (a list read after a quick restart can look as before), from the
   last line's second, dropping what it already has (timestamps compared
   padded to nine digits: Docker trims a fraction's zeros). Lines go into an
-  NSTextView (`DockerTextView`), only the new ones drawn; 5000 kept.
+  NSTextView (`LogTextView`), only the new ones drawn; 5000 kept.
   Inspect is the engine's JSON with the env's secret values taken out.
 - **CPU and memory in the list** (`DockerUsageMonitor`, one for the app;
   `DockerUsageReadings`, pure): each running or paused container's use,
@@ -1903,12 +2013,13 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
 - **A project's detail** (`ProjectDetailView`, `ProjectSession`): a
   compose project's row selected shows its verbs, its services, and their
   logs merged by time — `docker compose logs -f`, in the app. Logs go
-  through a feed (`DockerLogFeed`: the lines, a revision when they must be
-  drawn again) filled by one follower a container (`DockerLogFollower`:
-  the tail, then the stream, again after a restart from where it stopped,
-  nothing twice); a project's lines are merged in time order, at the end
-  when they are the newest, else merged and drawn again. Each service's
-  name has a colour of its own.
+  through a feed (`LogFeed`: the lines, a revision when they must be
+  drawn again) filled by one follower a container (`LogFollower` over a
+  `DockerLogSource`: the tail, then the stream, again after a restart from
+  where it stopped, nothing twice); a project's lines are merged in time
+  order, at the end when they are the newest, else merged and drawn again.
+  Each service's name has a colour of its own. The feed, the follower, the
+  pane and the text view are shared (Logs, below).
 - **Testcontainers** (`Testcontainers`, pure; `DockerPageModel+Testcontainers`):
   a test run's containers say so in their labels — `org.testcontainers=true`
   and the run's session, which Java and Go write as
@@ -1945,9 +2056,9 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   (`run --rm`) and its logs followed go to a terminal tab in the project's
   folder. Restart goes through the engine, on that service's containers, as
   the project's does. Show Its Logs narrows the merged log to that service
-  (`DockerLogFilter.service`); every service is still followed, so All
+  (`LogFilter.source`); every service is still followed, so All
   services comes back at once. The feed keeps its last 5,000 lines and each
-  service's last 1,000 before them (`DockerLogFeed.trimmed`): a service that
+  service's last 1,000 before them (`LogFeed.trimmed`): a service that
   logs every request would otherwise push a quiet one's lines out, and the
   picker would show it blank. A service with nothing to show says so. The
   choice is kept on the `ProjectSession`,
@@ -2166,11 +2277,11 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   renders the whole model, so the service is picked here. Lines picked
   out of a log go the same way with ⌘L, as whole lines, the container (or
   the project) as context. The log's text view answers ⌘L itself
-  (`DockerLogTextView`), so the menu's action reaches it before the
+  (`LogLinesTextView`), so the menu's action reaches it before the
   terminal hidden under the page; without a selection it passes the
   action on. Every word that can carry a secret goes through
-  `DockerSecrets.scrub`: the env's secret values and every URL's
-  password come out, since the prompt is typed into an agent and lands
+  `DockerSecrets.scrub` (`Secrets`, shared with Kubernetes): the env's
+  secret values and every URL's password come out, since the prompt is typed into an agent and lands
   in its transcript. A command and a health check are masked by their
   flags too (`maskArguments`: `--requirepass`, redis-cli's `-a`): Compose
   has put `.env`'s values into them, and the container's env needn't
@@ -2229,7 +2340,7 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   up/down, `b` rebuild, `w` watch, `v` an image's vulnerabilities (on a
   container, its image's; nothing is scanned for a key), `⌫` remove, `/`
   the filter. The window's key monitor
-  (`handleDockerKey`) hands them over: SwiftUI's `onKeyPress` is macOS 14,
+  (`handlePageKey`, the page's declared `press`) hands them over: SwiftUI's `onKeyPress` is macOS 14,
   and an AppKit table would eat letters for type-select.
 - **The switcher** (⇧⌥⌘P): the palette scoped to its Docker group —
   every container and compose project (`dockerPaletteItems`), restocked as
@@ -2247,7 +2358,7 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   `docker exec -it …` (or attach, debug, an interactive run, Compose's
   exec and run, past Compose's own `-p`/`-f`/`--profile`) is a
   `TabKind.container`, its icon the shippingbox. The title is read in the
-  shell's words (`TabKind.shellWords`): a path with a space is quoted, and
+  shell's words (`ShellCommandLine.words`): a path with a space is quoted, and
   split on spaces its second half would pass for the command.
 - **A debug shell** (`E`, `DockerCommands.debugShell`): for an image
   with no shell of its own (distroless, scratch), a toolbox container
@@ -2279,6 +2390,5822 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   (`Fixtures/scout-cves.sarif.json`) and the fake's `scoutReport`, which
   a stub `docker` prints with its progress, for the store's tests and the
   scenario; a stub signed out, a slow one and a timeout are tested too.
+
+## Logs (shared: Docker's and a pod's)
+
+A log tab's pieces, whoever writes the log (`Sources/Overterm/Logs/`):
+
+- `LogLine` (pure): a line read — its timestamp, its level (a JSON
+  line's `level`, Pino's numbers, `level=`, `[ERROR]`…), its message (a
+  JSON line's `msg` pulled out, its other fields kept as `key=value`),
+  colour codes out, and whose it is in merged logs (`source`).
+- `LogFeed`: the lines, and a revision when they must be drawn again;
+  added at the end, or merged by time with other sources'; older ones put
+  in front (`prepend`, as many as there is room for, `prepended` bumped
+  so the view keeps its place); the last 5,000 kept, and each source's
+  last 1,000 before them (`trimmed`).
+- `LogFollower` over a `LogSource`: the source opens the stream (its last
+  lines, or from the newest line's time) and parses its lines off the main
+  actor, and says whether one that ended is followed again. Followed again
+  from a time, what comes before that time is dropped, and of that time
+  only the lines already shown — the same time and text, once each: two
+  lines can share a time, and the second may have been written while the
+  stream was down. Past that time nothing is dropped. Docker's source is
+  `DockerLogSource` (the engine's frames, `since` in whole seconds, a
+  restart followed again), a pod's `KubePodLogSource` (Kubernetes,
+  below); what a source may do is read.
+- `LogsPane` (filter, level, the source picker, Following/Stopped, wrap,
+  timestamps, newest first, Save As when the page gives it a place,
+  Follow in a Terminal Tab), `LogFilter` (pure: the text plain or a
+  regular expression — case aside; one that isn't is said and picks
+  nothing out — and picking the lines it matches or marking them,
+  `highlight`; `matcher()` makes the expression once for the thousands of
+  lines), `LogViewOptions` (what a page keeps for its window — Kubernetes'
+  does — else the pane's own), `LogStyle` (the time dim, a level's
+  colour, a source's colour, a search's matches marked), and
+  `LogTextView`: an NSTextView that draws only the lines added — on top,
+  newest first, where it keeps to the top as it keeps to the bottom
+  otherwise; older lines put in front are drawn again with the line read
+  kept where it was; scrolled to the oldest line it says so (`onOldest`,
+  only where something older can be asked for). Its `LogLinesTextView`
+  answers ⌘L with the whole lines picked, to a closure the page gives —
+  which scrubs them (Docker's: `DockerSecrets.scrub`; a pod's:
+  `KubeLogScrub`) before an agent sees them.
+
+## Kubernetes
+
+The design is `docs/design/kubernetes/analysis.md` (its Section 15 says
+what was built and where the build departs from it); this is what exists,
+in `Sources/Overterm/Kubernetes/`. Overterm reads the kubeconfigs kubectl
+reads and tells production apart (Contexts), and reaches a cluster only
+through a `kubectl proxy` of its own per context, whose flags refuse what
+Overterm never sends and, on a read-only context, every method but GET —
+kubectl keeps the credentials (Reaching a cluster). Over that one client:
+
+- **the page** (⌥⌘J): any kind or custom resource as a live list in the
+  server's own columns, an object's detail beside it (Overview, YAML,
+  events, its tree, history and health), a pod's or a workload's logs,
+  Secrets shown only when asked, Helm's releases, usage and the Overview,
+  the `:` bar, the pickers and the ⌃⌘J switcher;
+- **terminal tabs pinned to a context**: Terminal in this context, a
+  pod's shell, attach and followed log, and every write that is a process
+  (kubectl, helm, flux, argocd) — each typed into such a tab, never run
+  behind the user's back; files copied in and out of a pod the same way;
+  port-forwards are managed processes;
+- **writes** through one guard path: a writable context, the cluster's
+  access review, a confirmation in the window naming the context and
+  namespace, the name typed where it destroys; a manifest in the editor
+  diffed with its cluster before it is applied, the cluster's own API
+  docs on its fields;
+- **the checkout**: bound to the context and namespace it deploys to —
+  the rail's panel, attention marks on its tab, the deployed commit,
+  Helm upgrade from its chart;
+- **agents**: typed `k8s_` MCP tools, and Ask Why's brief handed to one;
+- **the Docker page**: a pod's container run locally, its image scanned.
+
+Everything reads only while something on screen asks for it; the
+attention marks' background watches are the one exception, with a budget.
+The parts below start underneath — the contexts, the proxy and the
+client, the model and the page — then take each feature in turn; the
+scenarios that check them close the section.
+
+### Contexts and settings
+
+**Which files.** `AppEnvironment.kubeconfigs(extra:)` is the one place the
+list is built (`KubeconfigSources.paths`): the shell's `KUBECONFIG`
+(`ShellEnvironment`; a Dock-launched app has none of its own),
+colon-separated, empty entries and repeats passed over — else
+`~/.kube/config` — then `kubernetes.kubeconfigs`' files, a folder giving
+every file in it. Missing files are passed over, as kubectl does.
+
+**The guard.** This Mac's current context is production, so an isolated run
+(`OVERTERM_E2E`, `OVERTERM_DUMP_LAYOUT`) and a unit test
+(`AppEnvironment.isUnitTest`: XCTest is loaded) read only
+`OVERTERM_KUBECONFIG`'s files — a scenario's fake clusters — and without it
+none: no contexts, so nothing can start a proxy. The shell isn't asked
+there, so an inherited `KUBECONFIG` never comes through, and the setting's
+extras are ignored. A file under `~/.kube` (a symlink followed) is refused
+twice: when the list is built and when `KubeContextList.load` reads it.
+`KubeconfigTests` and the `settings` scenario check it.
+
+**Reading.** `Kubeconfig.parse` reads YAML (or JSON) through `YAMLReader`,
+the API client's tree-sitter reader. Overterm only has to tell contexts
+apart — kubectl signs in — so the credential keys (`client-key-data`,
+`token`, `password`, an auth provider's tokens and secret) are blanked in
+the text first (`Kubeconfig.redacted`), and only names, servers,
+namespaces and the kind of auth leave the parser (`KubeAuth`: an `exec`
+plugin (`KubeExec`), an auth provider, a token, a client certificate, basic, none). An
+exec plugin keeps its command, arguments, the names (not values) of its
+env, `apiVersion`, `interactiveMode` and `installHint`: the arguments are
+for showing (an `aws sso login --profile` to offer), and `description`
+names the plugin alone (`exec: aws`, `exec: kubectl oidc-login`) so none
+reaches a log. `Kubeconfig.merged` is kubectl's merge: the first file to
+name a context, cluster or user wins, and the current context is the first
+file's that sets one. `KubeContextList` holds the resolved contexts (the
+cluster's server, the user's auth, the file), kubectl's current context,
+the files read and what couldn't be — by path, never a value.
+
+**Classes** (`KubeClassifier`, decision 31), first match wins: a class set
+by hand in `kubernetes.contexts`; production by name — the context's or
+the cluster's, `prod`, `prd`, `production` or `live` as a word split on
+`-_/.:@`, case aside (decision 25), so `…:cluster/acme-prod`,
+kubeadm's `kubernetes-admin@prod` and `kind-prod-copy` are production; local by name (`docker-desktop`,
+`orbstack`, `minikube`, `rancher-desktop`, `colima`, `kind-…`, `k3d-…`);
+else remote. A loopback server never makes a context local: a tunnel to a
+remote cluster is on 127.0.0.1 too. `isWritable`: every class — production,
+remote, local — is writable unless its `writable` flag says no (the
+owner's decision, 1.6.0: there is no session switch; production's writes
+are asked, never locked — Writes below).
+
+**Settings** (Settings ▸ Kubernetes): `kubernetes.enabled` (on; nothing runs
+until the page or the panel opens, or an agent calls a `k8s_` tool — which
+reads the kubeconfig and starts that context's proxy), `kubernetes.kubeconfigs` and
+`kubernetes.pinnedContexts` (lists), `kubernetes.maxProxies` (4), `kubernetes.logStreams` (10, a merged log's streams), and
+`kubernetes.contexts` — one entry per context name, the only place a
+context's own settings live (`KubeContextSettings`: `class`, `writable`,
+`displayName`, `defaultNamespace`, `accessibleNamespaces`,
+`favouriteNamespaces`, `terminalDirectory`, `shells`, `debugImage`, `nodeShellImage`, `nodeShell`, `applyOnProduction`, `metrics` and `prometheus` (Usage and Prometheus, below)).
+It is the first `entries` setting: `SettingValue.entries`, written on one
+line and edited in place there, its fields checked one by one
+(`SettingSpec.fitted`) — a field that doesn't fit is reported and left
+out, the rest of the entry kept, so a typo never takes a hand-set
+production class with it. The page lists the entries and sends you to
+settings.json to edit them; one written there over several lines by hand
+is still edited where it stands (`SettingsJSON.endOfValueOverLines`), the
+file's other lines and comments kept, and written over several lines
+again (`SettingsJSON.overLines`): an entry (or a list's item) a line, each
+with its comments — above it, after it on its line, and those inside it
+moved above it —; an entry taken out takes its comments with it, and
+those before the closing bracket stay. A context's settings are also in
+one place on the Kubernetes page: Context Settings… on the context card
+and the sidebar context row's menu (not the `c` picker) opens a sheet (`KubeContextSettingsDraft`,
+pure, + `KubeContextSettingsSheetView`, `KubernetesPageModel+ContextSettings`)
+with its class (unset: by name, said), writes (its class's default, said),
+`metrics` and `prometheus`, `nodeShell` and `nodeShellImage`,
+`defaultNamespace`, whether `kubernetes.agentWrites` names it and — on
+production — `applyOnProduction` (agents' `k8s_apply` there). Save reads both settings again as the
+file has them (`Settings.fileValue`, not fitted: a field this build
+doesn't know, or can't use, in any entry is written back as it was),
+changes only those fields of that entry (its other fields and every other
+entry kept; an entry left empty taken out), checks the values (an image as a
+reference, the Service as `namespace/service:port`, the namespace's
+name) and then the fields it writes by `SettingsSchema` (`problem`,
+`fitted`), and writes through `Settings.set` — refused, the sheet says why
+and nothing is written. A production context — by its name or its
+entry's class — saved as remote or local is asked first, in red in the
+sheet (`lessStrict`, `lessStrictSaid`: its changes no longer asked as
+production's, the band gone, agents if ticked), its name typed
+(`typedName`). `writable` is a field like any other on every class:
+Read-only writes `writable: false`, the default takes the field out. `kubernetes.proxyIdleMinutes` (10) and
+`kubernetes.kubectlPath` (empty: found) are the proxies'
+(`Settings.kubernetesProxyConfiguration`). `kubernetes.agentAccess` (on)
+gives agents the `k8s_` tools (Agents' tools, below);
+`kubernetes.agentWrites` (a list, empty: agents only read) names the
+contexts whose agents get the write tools — a local one unless set
+`writable: false`, a remote or production one only where its entry sets
+`writable: true` (agents' rule as it was before production's switch went);
+`kubernetes.debugImage` (`busybox:1.36`) is what `E` runs unless the
+context names its own (Writes in a tab, below). `kubernetes.notifyOnFailure`
+(on) and `kubernetes.backgroundWatches` (4) are the attention marks';
+`kubernetes.helmPath` (empty: found) is the `helm template` a bound
+release's diff runs (Attention marks and Helm upgrade from the checkout, below).
+
+### Reaching a cluster
+
+**The proxies** (`KubeProxies`, one for the app). Everything Overterm asks a
+cluster goes through the context's own long-lived `kubectl proxy --context
+C --unix-socket S`, started by its first request (`KubeProxy.open`, a
+`ManagedProcess`: ready on kubectl's `Starting to serve on` line, its
+socket removed before and after, spawned in a process group of its own
+(`ProcessGroup`) and closed by it — an exec plugin kubectl started ends
+with it, even one reparented — and at quit) and kept
+in a `ManagedProcessPool` keyed by the whole `KubeProxySpec`, so a dead
+one is opened again on the next use. kubectl keeps the credentials — exec
+plugins, certificates, token refresh — and Overterm speaks plain HTTP on
+the socket (`UnixHTTPTransport.kubernetes`: `Host: localhost`, readiness
+`/version`).
+
+- **The flags** (`KubeProxyFlags`, decision 12): every proxy refuses
+  exec, attach, port-forward and the pod, service and node proxy
+  subresources (and KubeVirt's console) with `--reject-paths` — which
+  replaces kubectl's defaults, so the list repeats them — and answers only
+  `Host: localhost` (`--accept-hosts=^localhost$`); a read-only context's
+  (`!KubeContext.isWritable`: production and remote by default) also
+  `--reject-methods` every method but `GET`, POST included, since a path
+  can't tell a permission review from a create — named as the one let
+  through, because kubectl matches the method as sent: against kind's
+  1.37, `post`, `Delete` and `PROPFIND` passed a list of write methods and
+  reached the apiserver (which said 405; an aggregated server needn't). A context that becomes
+  writable, or stops being, gets a new proxy with the other flags. No
+  kuberc can switch the filters off: kubectl (1.33+) reads `~/.kube/kuberc`,
+  whose `defaults` set any flag the command line leaves out, so every
+  proxy gets `--disable-filter=false` and runs with `KUBERC=off` (and
+  `KUBECTL_KUBERC=false`), whatever the login shell exported. kubectl
+  redirects `//api/…` and `/./` before it proxies anything, and decodes
+  `%2F` before the filter: `KubeProxyTests` runs the real kubectl (when
+  installed) against a server of its own on 127.0.0.1 through a
+  kubeconfig of its own and checks that GET passes, every write and every
+  listed subresource is 403 on a read-only context, writes pass on a
+  writable one while exec stays 403, a wrong Host is 403, and nothing else
+  reached the server.
+- **The socket** (`KubeSocketFolder`): `/tmp/ot-kube-<uid>-<pid>/`, 0700,
+  checked to be a folder (not a link) of this user's; not the support
+  folder, where the spike's path was 132 bytes and the bind failed. The
+  socket is named by the first 12 hex digits of the context's SHA-256, its
+  path checked against the 103 bytes a unix socket has. The folder is
+  removed at quit, and a dead run's swept when the next one makes its own.
+- **The environment** (`KubeProxyEnvironment`): the login shell's
+  (`ShellEnvironment`; `aws` and `kubectl-oidc_login` must be found), with
+  `KUBECONFIG` set to exactly `AppEnvironment.kubeconfigs`' files. Guarded
+  (an isolated run, a unit test) it is the process's own environment, no
+  `AWS_*`, `KUBECONFIG` only `OVERTERM_KUBECONFIG`'s files — never one under
+  `~/.kube` — and a cache folder and a `HOME` of the run's own (in the
+  socket folder), so nothing under the user's home is read; without those files the
+  planner throws `noKubeconfig` before it looks for kubectl or asks any
+  shell (`KubeProxyTests`, and the `settings` scenario).
+- **Which kubectl** (`KubectlLocator`, decision 22): `kubernetes.kubectlPath`
+  if set (it overrides), else `/usr/local/bin`, `/opt/homebrew/bin`, Docker
+  Desktop's bundle, `~/.rd/bin`, then the login shell's PATH, one each with
+  symlinks followed; once a `/version` answer gave the server's minor, the
+  next proxy gets the copy closest to it (`Kubectls` asks each `version
+  --client` once). An isolated run uses only the setting.
+- **Before it starts** (`KubeProxyPlanner`): a plugin with
+  `interactiveMode: Always` needs a terminal the proxy hasn't
+  (`needsTerminal`: run `kubectl --context C version` in a tab), and a
+  plugin that isn't on the PATH says so with its `installHint`.
+- **Slots**: at most `maxProxies`, one always the page's (`setPage`, or a
+  `.page` request): background requests (`.background`: the rail,
+  agents, Ask Why; `.watch`: the attention watches) use `maxProxies − 1`
+  at most, the least recently used idle one's slot first; a
+  `.background` one, none idle, takes the least recently used proxy only
+  watches hold (its watch says "not watched" and tries again), a
+  `.watch` is refused (`noSlot`) — so watches never fill the background's
+  slots for good. The page takes an idle background slot first, then the
+  least recently used idle one, else — every slot busy — a background
+  one's (an entry whose last request was the background's), the least
+  recently used of them, before another busy context's; every background
+  proxy closed for the page is noted (`closedForPage`). A `.watch` never
+  opens a browser sign-in: an oidc context it reaches only once a request
+  someone made has signed in (`needsPageSignIn`, "Sign in on the page
+  first"). A proxy no
+  request has used for `idleTime` is closed (a sweep every minute while any
+  is open); a request or stream in flight keeps it. A request counts
+  itself in its context's entry by the entry's id: two first requests
+  that wait for a slot share one entry, and one whose entry was closed
+  while it waited (another's slot, `retry`, `close`) ends with
+  `closedWhileOpening` — a retry may go — and the kubectl that finished
+  opening for it is ended, not left uncounted.
+- **oidc one at a time**: kubelogin opens a browser and listens on
+  127.0.0.1:8000, so a context whose user signs in with it holds a gate
+  until its first answer; others wait (`status`: `signingIn` — "Waiting
+  for the browser sign-in" — and `waitingForSignIn(behind:)`).
+- **Errors** (`KubeProxyProblem.classify`): the server's own errors pass
+  through as Status JSON and stay responses; the proxy's own failures are
+  a 500 with plain text. "getting credentials: exec: …" stops the
+  context's requests — each would run the plugin again (the spike: 1.3–4.6 s
+  of `aws` apiece) — until `retry`: for `aws`, "Sign in again: aws sso
+  login [--profile p]" (`command`, to run in a tab later); for kubelogin a
+  sign-in that timed out or failed; a missing plugin. A dial error is "the
+  cluster can't be reached (VPN?)" and doesn't stop anything.
+
+**The client** (`KubeClient`) reads a cluster over a `KubeConnection`: a
+context's proxy (`KubeProxyConnection`, through `KubeProxies`) or any
+transport (`KubeSocketConnection`: a socket spoken to directly, the
+tests'). A read has no method to pass — it is a GET; a write is a path
+of its own (`KubeConnection.write`, `KubeClient.write`), refused unless
+the connection's context is writable (Writes, below).
+
+- **Discovery** (`discover`, `KubeDiscovery`): aggregated discovery when
+  the server has it (always since 1.33) — `/api` and `/apis` asked for
+  `APIGroupDiscoveryList`, two requests — else the legacy walk: the core
+  version's resource list, then each group's preferred version's, eight
+  at a time. A group that is down is noted in `failedGroups` rather than
+  thrown: the aggregated list marks an aggregated API that is down
+  (metrics.k8s.io's, often) with `freshness: Stale` — that version is
+  skipped, the group's next one used, as client-go does — and the legacy
+  walk's list answers 503. A kind (`KubeResourceKind`)
+  says its group, version, plural, Kind, scope, verbs, short names and
+  subresources (legacy's `pods/log` folded into `pods`); `kind(_:)` finds
+  one by any of kubectl's names (`po`, `pod`, `Pod`, `deploy`,
+  `deployments.apps`), the core group first, as kubectl resolves `events`.
+- **Lists are Table rows only** (`list`): `Accept: application/json;as=Table;
+  v=v1;g=meta.k8s.io, application/json` and `includeObject=None` — the
+  spike's 2886 pods were 885 KB that way, 35 MB with the default metadata —
+  paged with `limit=500` and `continue`; an expired `continue` (410) lists
+  again from the start. Selectors go to the server. Across all namespaces
+  a namespaced kind's rows carry their metadata (`includeObject=Metadata`,
+  `KubeClient.includeObject`): no core kind's Table has a Namespace column
+  — `kubectl get -A` adds it from the metadata — and with rows only, two
+  pods called `postgres-0` in two namespaces would be one row, a DELETED
+  for one removing the other. In one namespace the request's is the
+  row's, and rows stay cells only. `KubeTableReader` reads
+  a Table (columns with their `priority`: 0 is the default view, the rest
+  `-o wide`'s; `format: name` the identifier) or, from an API without
+  Table support, a plain List as Name and Created At. A row
+  (`KubeRow`) is known by its namespace and name (`KubeRowID`): a
+  Namespace column (a CRD's printer column may have one), else the
+  embedded metadata's, else the request's. A Flux source's rows
+  (`KubeGitOps.isFluxSource`: GitRepository, OCIRepository,
+  HelmRepository…; the reader is told the kind, by `KubeClient`'s lists
+  and watches and `k8s_get`) lose a URL's credentials as they are read
+  (`KubeTableReader.withoutCredentials`): the URL column, `spec.url`,
+  can be `https://user:token@…` — a token with no `:` too, which
+  `Secrets.maskURL` doesn't see — so it goes through
+  `GitRemoteURL.withoutUserinfo` (`Git/GitRemoteURL.swift`, pure: the
+  whole userinfo, cut at the authority's last `@`; the scp form, a user
+  and no secret, as written), and every other text cell (the Ready
+  message quotes the URL) through `stripUserinfo(inText:)`. The page,
+  the watches' changes and an agent never see the token: what else an
+  agent reads — `k8s_describe`'s conditions, events, Ask Why — goes
+  through `stripUserinfo(inText:)` too, in `KubeMCPText.scrubbed` and
+  `KubeAgentBriefing.scrubber` (gitops.md 5.3: the whole userinfo, not
+  just a password after a `:`).
+  `KubePodSummary` reads a pod's Ready, Status and Restarts cells
+  (`7 (2m ago)` since 1.22) into whether it is ready, failing and why
+  (`CrashLoopBackOff`, `OOMKilled`, `Init:…` said as the init container's).
+- **One object** (`object`) is one plain GET, whole, when its detail opens.
+  **Its events** (`events`) are the core Events `kubectl describe` lists,
+  picked by the server: `fieldSelector=involvedObject.name=…,namespace=…,
+  kind=…,uid=…` in its namespace, across all of them for a cluster-scoped
+  object (a node's are in `default`), plain JSON (`KubeEvent.list`:
+  newest first — last seen, a series' last, `eventTime` —, warnings
+  marked).
+- **Following a list** (`follow`) is the informer's loop, as
+  `KubeFollowUpdate`s a `KubeRows` applies: `.listed` (the whole list),
+  then the watch from the list's resourceVersion (`watch=1`,
+  `allowWatchBookmarks`, `includeObject=None`, `timeoutSeconds` 5–10
+  minutes at random) — `.changed` rows, `.bookmark` where it has got. A
+  watch on a Table sends `columnDefinitions` in its first event only, so
+  `KubeWatchDecoder` keeps the list's headers for the rest. A watch the
+  server ends is watched again from the last resourceVersion, not listed;
+  a 410 — an in-stream `ERROR` event or the watch's answer — lists again.
+  Where the server takes them the first list is a streaming list — a
+  watch with `sendInitialEvents=true&resourceVersionMatch=NotOlderThan`,
+  bookmarks, as a Table — its ADDED events the list until the bookmark
+  annotated `k8s.io/initial-events-end` (another bookmark before it only
+  moves the version on). On a Table the end is a Table too, as kind's
+  1.37 sends it: its own metadata only the version, the annotation on its
+  one row's object (whatever `includeObject` asked), its cells empty —
+  `KubeWatchDecoder` reads it there, and the columns an empty list's end
+  carries. Which servers do is `KubeStreamingLists` (the
+  model's, one for the app; every client it makes carries it with its
+  context, `KubeClient.streaming`): a context's `/version` says (1.32,
+  1.34+: `servesStreamingLists`; read when a context is picked or retried;
+  the page's list waits for it on a retry and while the context's is
+  unknown), unknown is list and watch; a name that stops naming the same
+  cluster on a kubeconfig read is forgotten. A streaming list that doesn't
+  reach its end — any error in it, a 410, cut, nothing said within
+  `streamingListDeadline` (30 s: a proxy still starting or waiting for a
+  slot) — is listed and watched instead for that follow; a 429 or 5xx in
+  it first says `.retrying` and waits its Retry-After or the backoff. One
+  refused (400, 406, 422: the gate off) or whose events go quiet for
+  `streamingListQuiet` (5 s) without its end (a server whose Tables'
+  bookmarks lose the annotation) makes the context list and watch for the
+  run, until a version read says another minor. The quiet is decided by
+  the consumer after every piece before it, so an end still buffered at
+  the deadline stands. An empty streaming list's end carries the columns
+  on a real server; one that doesn't takes the kind's from the context's
+  last list (`KubeStreamingLists` keeps them), else a plain list says them. Once whole, the list's own
+  rules apply: resumed from its bookmark, a 410 listed (streamed) again.
+  A list without a resourceVersion (metrics.k8s.io's, which has no watch)
+  is listed again every `unversionedPoll` (30 s), never watched from "".
+  A 429 or the server's 5xx — on the list, as the watch's answer or in
+  the stream — is `.retrying` and tried again from where it got: after
+  the `Retry-After` (10 s at most), else backing off. A watch that ends at
+  once, again and again, waits longer each time (to `maxBackoff`).
+- **Errors**: a proxy's own 500 in plain text is `KubeProxyProblem`
+  (`classify`, with the connection's `KubeSignIn`: an expired AWS session
+  is "aws sso login --profile p"), and a follow ends at it — no retry runs
+  the plugin again; so is a 401 on a context whose user signs in with a
+  plugin (kubectl throws a refused token away and runs the plugin again
+  for the next request — five runs for four against kind); the server's own Status is `KubeAPIError` (status,
+  reason, message); a 429 is retried after its `Retry-After`, three times.
+  A stream's error keeps its answer whole (`HTTPError.response`: the
+  `Content-Type`, the Status, the `Retry-After`), so a watch's JSON 500 is
+  the server's `KubeAPIError`, not the proxy's plain text.
+
+### What it is tested against
+
+**The fake** (`FakeKubeAPI`, `Sources/`, for the tests and the scenario):
+an API server on a unix socket of its own and on 127.0.0.1
+(`listenTCP`, for a real `kubectl proxy` in front of it), holding objects
+of any kind it serves as values versioned as the server versions them —
+pods (`addPod`), and with `add`/`update`/`delete` deployments, services,
+configmaps, secrets (a Table row of Type and how many keys; only a plain
+GET carries `data`), nodes, events — and with `fields` (or `setFields`)
+the rest of an object as a GET answers it (`spec`, `status`,
+`metadata.ownerReferences`, merged over a pod's own), and `addEvent`, a
+core Event about an object by its Kind and uid — each in the columns `kubectl get`
+shows (`columns(for:)`, priority 1 for `-o wide`'s; an event's Name is a
+wide column, `format: name`). `addCRD` serves a new kind from then on, in
+both discoveries and in paths, with its `additionalPrinterColumns`, and
+adds the CRD itself (ADDED to CRD watches); `removeCRD` takes the kind away
+(a 404 after), ends its watches and DELETEs the CRD. One version a group:
+a group's kinds are served at its first kind's. It also serves kinds that
+can't be listed and watched (`componentstatuses`, `bindings`,
+metrics.k8s.io's), for the page to leave out. It answers
+`/version`, both discoveries (`aggregatedDiscovery`; `failingGroups`
+`Stale` in the aggregated list, 503 in the walk),
+lists as Tables (`includeObject` None, Metadata or Object) or plain JSON,
+paged (`expireContinueTokens`), with a field selector on any dotted path
+of the object (`involvedObject.uid=…`), one object, and watches: replayed from a
+version, sent as `addPod`/`updatePod`/`deletePod` change things,
+`bookmark()`, a 410 for a version before `compact()` (in the stream, or
+as the answer with `goneAsAnswer`), `expireWatches` (an in-stream 410),
+`endWatches` (the server's timeout), `sendInitialEvents` (refused with a
+422 without `streamingLists`; `interimBookmarks` puts a plain bookmark
+among the initial events; without `streamingTables` a Table's end isn't
+annotated; its bookmarks are shaped as kind's 1.37 sends them — a Table's
+end on its row's object, the columns on an empty list's, unless
+`bookmarkColumns` is off), and `minor` the version it says (34; 33 serves none). `unversionedLists` answers lists without a
+resourceVersion. A pod's log (`appendLog`, `setLog`; `previous` for the
+last terminated instance's) is served at `pods/{p}/log` as the API serves
+it — `container` (a 400 without one when the pod has several, or for one
+it hasn't), `previous` (a 400 when it never restarted), `timestamps` (nine
+digits of fraction), `sinceSeconds` or `sinceTime` (whole seconds),
+`tailLines` — and with `follow` kept open, a line appended written to it;
+`dropLogStreams` closes the follows mid-stream (a network blip),
+`endLogStreams` ends them as the server does, and a pod deleted ends its
+own. It serves EndpointSlices too (`discovery.k8s.io`, a forward's). A pod can have init and ephemeral containers, declared ports (`ports`), its first container
+ended (`terminatedReason`), env. `failCredentials` makes every answer the proxy's 500 in
+plain text, `throttle` 429s, `failWatches` answers the next watches with a
+429 or a 5xx. What a test sets is behind the fake's lock, as its state
+is. It records every request
+(method, path, query, Accept), so a test shows that no write method and
+no subresource reached it, and which kinds are watched (`watched`)
+(`writes`, `subresourceRequests` — a
+Namespace's own `finalize` and `status` included; a pod's `log`, the one
+Overterm reads, is `isLog`); it has no
+exec, attach or port-forward. `KubeClientTests` checks all of the client
+against it — every test ends by asserting only GETs arrived — and runs
+the real kubectl (when installed) as a read-only context's proxy in
+front of it through a kubeconfig of its own: discovery, a list, a followed
+change and a 410 pass through. A unit test also shows the app's own
+proxies reach nothing from a unit test: no kubeconfig, so no kubectl.
+
+**Against a real cluster** (`KubeRealClusterTests`, opt-in with
+`OVERTERM_KUBE_TESTS=1`; docs/testing.md, Kubernetes): the app's own
+`KubeProxies`, `KubeClient`, `KubeCanIRunner`, `KubeDetailSession`'s tree
+and `KubeHealthSession` against a kind cluster made only for it
+(`Scripts/kube-test-cluster.sh`: cluster `fake`, context `kind-fake`, a
+kubeconfig file of its own, the node container labelled
+`overterm.test`), in a namespace of its own deleted after. It answered
+analysis.md Section 12's questions about the proxy (Kubernetes v1.37.0),
+and three fixes came of it: the read-only filter's methods, a Table's
+streaming-list end, a plugin context's 401.
+
+### The model and the page
+
+**The model** (`KubernetesModel`, one for the app, as `DockerModel` is):
+the contexts, the one the page shows and its namespace, that context's
+pods, how its proxy stands. Each window's page holds it while it shows in
+a window on screen (`show`/`hide`, counted, through
+`updateKubernetesPageHold` — the emitted visibility, since
+`showingOverlay` isn't set yet); nothing is read until then — not the
+kubeconfig, not a cluster — and the last `hide` ends the watch and the
+status poll (a proxy is left to its idle close, so coming back needs no
+new sign-in). The kubeconfig is read on a GCD thread
+(`KubeContextList.fromEnvironment`, so `AppEnvironment`'s guard holds)
+each time a page first shows, and again when `kubernetes.kubeconfigs` or
+`kubernetes.contexts` change while one does; the model follows
+`kubernetes.*` itself, and `kubernetes.enabled` off stops everything and
+closes every proxy. The context shown is the one it showed, else the
+one last picked (remembered in the model's `defaults`, `AppEnvironment.defaults`
+— a unit test's own suite), else the first
+pinned, else kubectl's current, else the first (`choose`); its namespaces
+are the ones last picked for it (kept per context in
+`AppEnvironment.defaults`, `kubernetes.namespaces`), else `defaultNamespace`, else the
+context's own, else `default`, as kubectl has it (`defaultScope`); `0`
+is all of them. A scope (`KubeScope`, pure) is `.all`, `.namespace` or
+`.namespaces` — two or more; `KubeScope.of` makes one or none the
+others, so a scope has one spelling. Several are a follow each, merged
+(`KubeScopeMerge`: one `.listed` once each has been heard from, of
+those that listed, then each namespace's changes; a namespace listed
+again as what changed in it; one refused, a 403, left out and said —
+`.unlisted`, the page's `unlistedNote` — the follow failing only when
+every one refuses; one waiting for the server keeps the list `.retrying`
+whatever the others' changes, and its return always says something, so
+the list is live again), up to `KubeScope.watchCap` (10); past it, the
+follow across the cluster kept to them (`KubeScopeMerge.filtered`) —
+refused where that list is, `KubeScopeRefused` saying to pick fewer.
+The cap is the page's budget: the Overview's parts share it
+(`KubeClusterOverviewSession.watchCap`, the namespaces a part may watch
+one by one), so ten namespaces are a watch a part across the cluster,
+not a hundred. `KubeClient.list` does the same,
+so every reader of the scope follows it: the Overview, the health
+checks and the pinned cards (a list each, `KubeScope.reads`), metrics
+(`KubeMetricsTarget.paths`), Helm's records, the agents' tools. What
+needs one namespace (a template, a manifest's default, a tab's `-n`)
+takes the context's own when it is one of them, else the first
+(`KubeScope.one`); Copy as kubectl is a command a namespace. The list is `KubeClient.follow(kind)` of the kind shown
+(`kind`, Pods until another is picked — `setKind`; the app's, as the
+scope is) over the context's `KubeProxyConnection` (a test's or the
+scenario's stand-in connection through `connectOverride`): the first list is applied at
+once, the watch's changes in batches every `flushInterval` (120 ms), one
+published change each; a `.retrying` says so while the rows stand, and
+a failure (a `KubeProxyProblem`, a 403) is the list's state with its
+reason and, for a sign-in, the command to run. The server's version,
+what it serves and the namespaces (the context's `accessibleNamespaces`,
+else the server's list; a 403 means one is typed, `namespacesRefused`)
+are read once a context is picked.
+
+- **What a context serves** (`discovery`, and `catalog`, below) is kept
+  per context (`discoveries`) for `rediscoveryInterval` (5 minutes): back
+  on a context within it, nothing is read again, and the kind shown is
+  taken as that context serves it — at its version there — else Pods.
+  Discovery read again moves the kind with it: another version (or scope)
+  is followed there; one no longer served stops the list, saying so. What
+  was read for a context is kept only while its name reaches the same
+  cluster (`sameCluster`: server, cluster, user, sign-in): the kubeconfig
+  read again with a name pointing elsewhere drops it.
+- **CRDs without a reconnect** (decision 28). While a page shows, the
+  context's CustomResourceDefinitions are followed (rows only, cluster
+  scope) where discovery says they can be listed and watched: their first
+  list naming one discovery hadn't, a later change, or a list again after
+  a 410 that differs, reads discovery again — once a burst
+  (`rediscoveryDelay`), and the kind shown listed again when its own CRD
+  changed (its printer columns). Where the watch is refused (RBAC) or the
+  CRD kind isn't served, discovery is read again every
+  `rediscoveryInterval` instead. And a 404 for the kind followed reads it
+  again once (`lookedUpAfter404`, cleared by the next list): gone, the
+  list says so (Pods too, when discovery has none); at another version, it
+  is followed there. Hidden, the CRD
+  watch ends with the rest. `selectors` (`KubeListSelectors`: a
+`labelSelector` and a `fieldSelector`) are what the list is asked for with
+(a page's `label:` and `field:` words), the list and its watch: set to
+something else, the list is asked for again with them. They belong to the page that asked last
+(`selectorOwner`): the list is the app's, and two windows can show the
+page at once, so the one that asked last has it and the other says so
+(`listIsOurs`, a line over its list), and a window becoming key asks
+with its page's filter. A page that hides gives it back
+(`releaseSelectors`) and a hidden one asks for nothing, so the ⌃⌘J
+switcher, or another page, never gets a list narrowed by a filter not on
+screen; the last `hide` drops it, and a page held again asks anew. The
+proxy's state (`KubeProxies.status`: open, signing in, waiting behind
+another context's browser sign-in, stopped with its reason) is asked
+once a second while a page shows. The model reads only; it holds the
+writes' access reviews (`writeAccess`), and the page's guard path writes.
+
+**Ages** (`KubeAge`, pure). The server renders Age when it answers, so a
+cell is stale once it arrives. A row across all namespaces carries its
+metadata (`KubeRow.created`, from the embedded `creationTimestamp`) and
+its age is that one's; with rows only (one namespace) the cell is all
+there is, so the age is what it said (`seconds` reads kubectl's
+`2d3h`) plus the time since the row came (`Anchor`, kept per row as
+rows arrive and change). `format` is apimachinery's `HumanDuration`.
+Each visible Age cell is a `TimelineView` a second apart — a cell
+scrolled away isn't drawn, so only the visible ones are recomputed.
+
+**The page** (⌥⌘J, `kubernetes.page`; `WorkspaceOverlay.kubernetes`,
+declared as a `WorkspacePage` in `TerminalWindowController+Kubernetes`):
+`KubernetesPageModel` (a window's: section, filter, selection, sort,
+`wide`, the pickers, the `:` bar, the keys) and `KubernetesPageView`. Left: the contexts, each
+with its class's colour and kubectl's current marked, the sections
+(each with its digit and how many kinds it has; the one showing open on
+its kinds, custom resources under their API group) and the context's card (class, writable or
+read-only, how it signs in, its server). Middle: the kind's list as a
+`ResourceTable` of the server's columns — those `kubectl get` shows for
+it (a CRD's printer columns), `-o wide`'s too with `w`, a namespaced
+kind's Namespace first across all of them as `kubectl get -A` adds it
+(a cluster-scoped kind has none, its count "cluster-wide"); on Deployments,
+whose Table has no Status, a Status of the page's before Age
+(`KubeDeploymentHint`, pure, off the row's Ready, Up-to-date and Available:
+Available, Rolling out 1/3, Unavailable 0/1 in red, Not ready, Scaled to 0
+— the conditions aren't in a row; the detail's Rollout says why) — sorted by any column (numbers as numbers, ages
+— `Age`, or a CRD's `Created At` — by age) or by namespace and name, filtered by text (the name, the
+namespace, the Status — or that hint, or Type — cell), `status:`, `ns:`,
+`label:`, `field:` and `-` (`KubeFilterKey`, through `ResourceFilter`). A row is
+only cells — no labels, no fields — so `label:` and `field:` words are the server's:
+`KubeLabelSelector` reads them as typed (labels are case-sensitive) into
+the list's `labelSelector` — `label:app=web`, `app!=web`, `-label:app`
+(`!app`), `label:a=1,b=2` — refusing what the server wouldn't take (a
+negated pair, a bad key) and saying so; `KubeFieldSelector` reads `field:`
+words into its `fieldSelector` as `kubectl get --field-selector` takes
+one — `field:status.phase=Running`, `field:spec.nodeName==fake-node-1`,
+`-field:status.phase=Running` (`!=`), several with commas — refusing what
+has no operator (a field has no "exists"), a negated pair, a bad path or
+a value with the grammar's own characters; which fields a kind takes is
+the server's to say, its 400 said over the list (every kind
+`metadata.name` and `metadata.namespace`, pods `spec.nodeName`,
+`status.phase`…). The list is asked for again once
+the typing stops (`selectorDelay`, 350 ms) or on ↩, and the page says what
+went to the server (`label app=web, field status.phase=Running`). The rest of the filter matches the rows that came. On the Pods list a failing pod's
+Status is its reason in red (`KubePodSummary.exitReason`:
+`CrashLoopBackOff`, `OOMKilled`, `… (init container)`), and the header
+counts the failing ones. Bottom: the context bar — the proxy's state,
+the server's version, a stopped context's reason with Try Again and the
+command that signs in again (in a terminal tab), the class. On a
+production context a red band runs across the top of the whole page,
+above the sidebar and the list, with the context's name, and its card is
+edged in red. The empty states: Kubernetes off (Settings ▸ Kubernetes),
+no kubeconfig (an isolated run says only OVERTERM_KUBECONFIG's file is
+read; what couldn't be read is listed), loading. The list keeps its
+place in the view tree through all of them — loading, empty, failed lie
+over it — so a keyboard given to it finds it; a table with no columns
+refuses the keyboard, so when the server's columns come the list takes it
+if nothing else has it (`offerListTheKeyboard`). The keys
+(`KubernetesKey`, through `ResourceKey`, while the list has the
+keyboard): `1` the Overview, `2`–`7` the sections of kinds (Workloads,
+Network, Config, Storage, Cluster, Custom Resources), `8` Helm (below), ↩ the detail, `[` `]` back and forward,
+Esc closes it, `:`, `n`, `c`, `w`, `0`, `k`, `/`, `?`, `l` a pod's logs (↩ on a pod is them too), `f` and `o` a forward,
+`9` the Forwards section. `?` shows them all (`KubeKeySheet` +
+`KubeKeySheetView`), grouped — navigation, the list, a resource's verbs,
+writes, sections, and the window's Kubernetes commands with the keys
+they are bound to now — generated from `KubernetesKey`'s `group` (an
+exhaustive switch: a key added without one doesn't build) and
+`KeyCommands`, never a list by hand. Esc or `?` closes it; `:` and `/`
+close it and go on to the bar and the filter; any other key does nothing
+under it. The right-click menu
+only copies — names, Copy as kubectl, Copy List as kubectl, Copy Rows as
+TSV or CSV — and exports the list, and has the object's writes, each
+greyed with why where it can't be done (Writes, below).
+
+**Copy as kubectl** (`k`, the right-click menu, the header's and the
+detail's buttons; `KubectlLine`, pure, docs/design/kubernetes/analysis.md
+3.14): the command that shows what the page shows, always with
+`--context`, offered on every class — a copied command is the user's to
+run. `k` copies the selected rows' (a line each, in the list's order),
+else the list's: `kubectl --context fake-dev get deploy -n shop -l app=web
+--field-selector status.phase=Running` (`-A` across all namespaces,
+nothing for a cluster-wide kind, `-o wide` with `w`; the filter's text
+words have no kubectl twin and are left out). An object's is `kubectl
+--context C -n NS get deploy NAME -o yaml`; on the detail's Events tab,
+`kubectl --context C -n NS events --for deploy/NAME` (`events -A` for a
+cluster-wide object's: `-A` is the command's own flag, after it, where
+`--context` and `-n` are global). The kind is said as kubectl resolves it
+(`resource`): a core kind by its short name (`po`, `svc`), a built-in
+group's by its short name or plural where no other kind served claims it
+(`deploy`), else `plural.group` (`events.events.k8s.io`, every CRD's).
+Every word not ours is quoted for zsh: bare only for letters, digits and
+`_ . / : @ + , - =` (no `=` or `-` in front), else single-quoted, where zsh
+expands nothing — `'app!=web'`. A word with a control or format character
+(^U, ^C, a newline, ESC, a bidi override — a chart folder's name, a pod's
+env value, someone else's) is said in ANSI-C quotes instead, each such
+character an escape (`ShellWord`, shared with `DockerCommands.quote` and
+`shellQuoted`): the line goes to the pty as typed, where ^U erases the
+opening quote and the rest would run in the open; no raw control byte is
+ever on a typed line, and a chart folder holding one is refused. A command never holds a Secret's value: a
+Secret's is `kubectl describe secrets NAME`, which prints its keys' sizes
+as the masked detail does, never `-o yaml`.
+
+**CSV** (View ▸ Export Kubernetes List as CSV…, `kubernetes.exportCSV`,
+no key by default — ⇧⌘E is Tab Peek's; the header's button, the
+right-click menu, the palette; `KubeListExport`, pure): the columns the
+list shows, the rows its filter lets through in its order, each cell as
+drawn (an age as it reads now, a failing pod's reason), to a save panel
+named `<context>-<namespace|all>-<plural>.csv`. RFC 4180 through
+`ResultExport`, and a cell a spreadsheet would run as a formula (`=`, `+`,
+`@`, a tab or a carriage return in front; `-` unless a number) prefixed
+with `'`. An isolated run shows no panel: it writes into its own support
+folder's `Exports` (`kubernetesExportFolder`). A write that fails is
+said — an alert on the window, and the page's `exportProblem`, which the
+scenario checks. **Copy Rows as TSV or CSV** (the right-click menu, the
+palette; `copyRows`): the same columns and cells on the pasteboard, TSV
+for a spreadsheet's paste — the right-clicked rows, else the selected
+ones the filter shows, else every row it shows.
+
+**The sections** (`KubeSection`, `KubeKindCatalog`, pure), Section 6's
+`1`–`9`: Overview (`1`, below), Workloads, Network, Config, Storage,
+Cluster (with RBAC's kinds), Custom Resources — `2`–`7` — then Helm on `8`
+and Forwards on `9`; Overview, Helm and Forwards list no kind
+(`listsKinds`). Each
+names the built-in kinds it shows, in order (`named`, by full name); of
+two that are one Kind the first served shows (`events.events.k8s.io`
+rather than the core `events`). Cluster also takes Kubernetes' own kinds
+no section names, by title; every kind of a group that isn't Kubernetes'
+own (`isBuiltIn`: the core, `*.k8s.io`, `apps`, `batch`, `autoscaling`,
+`policy`, `extensions`) is a custom resource, by group. Only a kind that
+can be listed **and** watched is offered (`isOffered`): a list here is
+kept live, so metrics.k8s.io's, `componentstatuses` and `bindings` aren't.
+A kind's title is its plural Kind (`NetworkPolicies`, `Ingresses`;
+`HPAs`, `PVCs`, `CRDs`). A digit shows the section's kind last shown,
+else its first; a section with none to show (discovery not read yet, no
+CRDs) says so over the list (`waitingForSection`) and takes its first
+kind once it has one — a CRD added while it shows. The section follows
+the kind, whoever picked it (another window, the switcher).
+
+**The `:` bar** (k9s's; `KubeCommand`, `KubeKinds`, `KubeCommandBar`, pure,
+and `KubeCommandBarView`): `:<kind>[ <namespace>|all|-A][ /<filter>][ <label=value,…>][ @<context>]`
+— `:deploy`, `:po shop`, `:svc @fake-dev`, `:widgets /blue`,
+`:po globex /api app=web @globex-eu-west-1-dev`; `:ctx` and `:ns` open
+their pickers, or switch with a name. The filter runs from its `/` word to
+the next `label=value` or `@context` word (its own words, `status:…`,
+`label:…`, have a colon). A kind is any of kubectl's names
+(`KubeDiscovery.kind`: plural, singular, short names, Kind,
+`plural.group`; the core group first) or k9s's aliases discovery lacks
+(`dp`, `sec`, `jo`, `np`, `cr`, `crb`, `rb`, `ro`) — and, of two built-in
+kinds that are one Kind, the one the catalog offers (`ev` is
+events.k8s.io's, as Cluster shows it). The completions follow the word
+being typed: a kind (exact names first, then prefixes, then the rest that
+contain it; `ctx` and `ns`; a plural two kinds share completes to each
+one's `plural.group`), a namespace after it, a context after `@` (after
+the filter too). ↑↓ move, Tab completes (`PaletteField.onTab`), ↩
+completes a word that isn't whole and runs. All of the command is checked
+first — the context named, the kind (as that context is known to serve
+it, else as the one shown does), the namespace — and only then is it
+done: the context, the kind, the namespace, the filter (`label=value`
+words become `label:`). A typo switches no context, so nothing is asked of
+one named with it. What can't be done is said in the bar, which stays;
+Esc closes it and the list has the keyboard again.
+
+**The pickers** (`n`, `c`; `KubePicker`, pure, and `KubePickerView`): a
+field over the page and the namespaces or contexts it lets through,
+ranked by `FuzzyMatch` as the palette is (the field is the palette's
+`PaletteField`: ↑↓, ↩, Esc). The chip beside the filter field says the
+namespaces shown (`All namespaces`, `shop`, `acme-api +2`) and opens the
+same picker as `n`. Namespaces: all of them first, the
+context's favourites, its own (or `defaultNamespace`) and the ones showing,
+then the server's list (or `accessibleNamespaces`), each with its box:
+⌥↩ or a click on the box ticks it and shows the ticked ones at once, the
+picker left open (`togglePicked`); every one the server listed ticked
+is All again — unless listing the kind across the cluster was refused on
+the context (`clusterListRefused`), and if that All is refused, the ones
+ticked are shown again (`setScope(_:refusedAcross:)`); `a,b` typed (or `:ns a,b`) is those; a name typed in full
+(RFC 1123, lowercased) is one more item when nothing listed is it — first
+where listing is refused (a context that carries a namespace often
+means its user is held to it), with the reason shown. An open
+picker follows the namespaces listed after it opened, what is typed kept.
+Contexts: each with its class, read-only or not, kubectl's current,
+production in red; none is typed. ↩ is `setScope` or `select`, and the
+list has the keyboard again.
+
+### An object's detail
+
+**The detail** (`KubeDetailSession`, `KubeDetailView`; Docker's container
+detail is its pattern): beside the list, opened by ↩ on the selected row
+or a plain click on one (`ResourceTable.pressed`), and once open it
+follows the list's one selected row. A `KubeObjectRef` (context, kind,
+namespace, name) is what it shows; it reads that object with one GET as
+it opens — nothing is watched — and drops the session, and all it read,
+when it moves on. A Secret is never asked for by the detail (`isSecret`,
+and an answer that is one is dropped): its object is every value at
+once, so only its Show reads it (**Secrets**, below); its events are read
+as any object's. Its tabs (and a pod's Logs, below):
+- **Overview** (`KubeOverview.of`, pure, from the object's JSON alone):
+  facts at the top and sections, tailored for Pods (phase, the reason,
+  the node as a link, IPs, QoS, each container — init and ephemeral too —
+  with its image, state, restarts and how it last ended: `OOMKilled (exit
+  137)`), Deployments, StatefulSets, DaemonSets and ReplicaSets
+  (desired/ready/updated/available, strategy, selector, images, and the
+  rollout), Services (type, cluster IP, external addresses, ports,
+  selector), Nodes (ready, roles, version, instance type and node group,
+  system, capacity · allocatable, taints), Jobs and CronJobs (active jobs
+  as links), Ingresses (each rule to its Service, as a link; TLS),
+  ConfigMaps (keys and values — they are not secret), PVCs, PVs and
+  Namespaces; and for every kind the object (namespace, created, deleting,
+  finalizers, uid), its owners as links, its status conditions where it
+  has them (a node's pressure conditions are bad when True), labels and
+  annotations — the last-applied one left out. A selector (a workload's,
+  a Service's, a Job's; `KubeSelector`: `matchLabels`, `matchExpressions`
+  as `in`/`notin`/`!key`) lists the pods it picks once the Overview
+  shows: one list, rows only, each a link.
+- **Rollout status** (`KubeRollout`, pure) is `kubectl rollout status`'s
+  own reading: the spec observed (`generation` ≤ `observedGeneration`),
+  then for a Deployment its Progressing condition —
+  `ProgressDeadlineExceeded` is stuck, said in red — and updated, old
+  and available replicas against those wanted; a paused one says so; a
+  StatefulSet's ready replicas, its partition and revisions; a
+  DaemonSet's scheduled and available pods; `OnDelete` isn't tracked.
+- **YAML** (`KubeYAML`, `KubeObjectStrip`, pure): written as `kubectl get
+  -o yaml` writes it — keys sorted, as kubectl's go through a map,
+  sequences under their key unindented, a string quoted only where YAML
+  1.1 would read it as something else (`"true"`, `"0123"`, `"1.0"`,
+  `": "` inside), several lines as a `|` block. Without
+  `metadata.managedFields` and the last-applied annotation by default; a
+  toggle shows them. A container's env value whose name looks secret
+  (`DB_PASSWORD`), or a URL's password, is masked on any kind, as
+  Docker's inspect masks them (`DockerSecrets`); a `secretKeyRef` is only
+  a name. A Secret's — after Show — has its `data` and `stringData`
+  masked and its last-applied never shown, whatever the toggle; before
+  Show its YAML says it comes with the values, with the Show button. Read-only, in
+  Docker's text view, keys brighter than values; Copy.
+- **Events**, asked for once the tab shows (Refresh again), newest first,
+  a warning marked with how often it came.
+
+### Logs
+
+**A pod's logs** (`KubePodLogSession`, `KubePodLogSource`,
+`KubePodLog`, `KubePodLogsView`): a pod's detail has a Logs tab, opened
+by `l` on a selected pod or ↩ on one (the design's Section 7: a pod's ↩ is
+its logs; a click keeps the tab shown; another kind's detail has no Logs
+and opens on its Overview). Through the shared pieces (Logs, above): a
+`LogFollower` over the pod's `KubePodLogSource` into the session's
+`LogFeed`, in the shared `LogsPane`.
+
+- **Which container** (`KubePodContainers`, pure): the one the
+  `kubectl.kubernetes.io/default-container` annotation names if the pod
+  has it, else its first container, as kubectl picks; the picker lists
+  the containers, then the init and the ephemeral ones, marked. Previous
+  (the last terminated instance, `previous=true`) is offered once the
+  container restarted — read whole, not followed. Since (5m, 1h, 6h, 24h,
+  all) is `sinceSeconds`.
+- **The request** (`KubeLogQuery`, pure) is a GET of `pods/{p}/log` like
+  any other, through the context's proxy: `container`, `follow=true`,
+  `tailLines` (500) and always `timestamps=true` — the resume and the
+  ordering need them; shown or not is the view's. Its bytes are lines
+  (`KubeLogText.Splitter`) parsed on the cooperative pool
+  (`KubeClient.logs`; once, `logLines`).
+- **Resume**: a follow ends — the server's timeout, a dropped connection,
+  the proxy restarting. The source then decides (`followsAgain`): the
+  server refused the log (a 400 but "waiting to start", a 403) or a
+  credential failure stops it, said; else the pod is read again (300 ms,
+  backing off to 5 s, a blip asked again): running, it is followed again
+  with `sinceTime` = the last line's second (`metav1.Time` is whole
+  seconds there), and the follower drops what it showed (same time and
+  text); waiting (a back-off, a restart) it waits, saying so; gone (404),
+  or the container ended for good (`KubeLogResume`, pure: the pod
+  Succeeded or Failed, `Never`, `OnFailure` after a success, an init or
+  ephemeral container), it stops and says why.
+- **Older lines on scroll-up**: the API has no offset, so scrolled to
+  the top the log is asked for again with twice the tail (up to 5,000,
+  the feed's cap) and what that answer has before the first line shown
+  (`KubeLogText.older`: where the shown lines start in it, their first
+  lines matched) is put in front; fewer lines than asked is the log's
+  start, and nothing more is asked.
+- **Options kept per window** (`KubernetesPageModel.logOptions`,
+  `logSince`): wrap, timestamps, newest first, the search as a regular
+  expression or marking matches, how far back. Save As writes the lines
+  shown under `<pod>-<container>[-previous]-<yyyyMMdd-HHmmss>.log`
+  (`KubeLogText.fileName`) — a save panel; an isolated run writes into
+  its own `Exports` folder. Copy as kubectl on the tab is `kubectl
+  --context C -n NS logs POD -c CONTAINER [--previous] [--since=1h]
+  [--timestamps]` (`KubectlLine.logs`).
+- **⌘L** on picked lines (`askAboutLogLines`): whole lines, scrubbed
+  (`KubeLogScrub`, pure) of the pod's own env values whose names look
+  secret, a URL's password (`Secrets.scrub`), bearer tokens, JWTs,
+  PEM blocks' bodies, AWS keys, a kubeconfig's `token:` and
+  `client-key-data:`, `password=`-style pairs, base64 blobs
+  (`Secrets.scrubCredentials`) — then the Ask Agent sheet
+  with the pod they come from and the command that reads them.
+- **Reading only while it shows** (`updateLogsReading`): the tab shown,
+  the page on screen, its window on screen. Another tab, the page
+  hidden, the window off screen close the stream; shown again it is
+  resumed from its last line. The detail closing or moving on (the
+  arrows), and another context, end it (`KubeDetailSession.cancel`).
+
+**A workload's logs, merged** (stern's way; `KubeMergedLog`,
+`KubeMergedLogSession`, `KubeMergedLogSource`, `KubeMergedLogsView`): the
+detail of what picks pods by a label selector (`KubeObjectRef.selectsPods`:
+Deployments, StatefulSets, DaemonSets, ReplicaSets, Jobs, Services) has a
+Logs tab too, opened by `l` (↩ stays its Overview); its session is made
+once the object is read and its Overview has the selector
+(`KubeOverview.pods`), shown at once if the tab already shows
+(`KubeDetailSession.showLogs`/`hideLogs`, which the page's
+`updateLogsReading` calls for either kind of Logs).
+
+- **The pods**: one watch of `pods` in the namespace with the selector
+  (`KubeClient.follow`, rows only) while the tab shows — the API has no
+  log of several pods, and a selector given to `kubectl logs` misses pods
+  made later. A pod joining is read once (its GET: the containers, not
+  the init or ephemeral ones, and its env for scrubbing), one gone has its
+  streams closed, what it said kept — and its env with it, for scrubbing
+  those lines, until none of them is left in the feed. Streams start only
+  once the watch has listed the pods, shown again too, so a pod deleted
+  while the tab was hidden is never asked for. A pod that can't be read
+  is said beside the summary (`problems`), never in its place, until it
+  is read or gone.
+- **The plan** (`KubeMergedLogPlan`, pure): one stream a container, the
+  pods by name, their containers in the spec's order, at most
+  `kubernetes.logStreams` (10) at once; streams open keep their place, so
+  a pod joining takes none from them, and one left out joins when a
+  followed one goes, or one ends for good while its pod stays (a Job's
+  Completed pod, an Evicted one: `ended`, its lines kept and still in the
+  picker, not read again until the filter or since changes). A pod not
+  read yet is read only while there is room. The cap is planned again as
+  the setting changes. The tab says what is followed and the cap
+  (`summary`: "N containers of M pods followed · K more left out · E
+  ended · at most C at once").
+- **The streams**: each a `KubePodLogSource` (a pod's log's rules: the
+  resume from `sinceTime`, the back-off, stopped once the pod is gone)
+  under a `KubeMergedLogSource`, which tags each line `pod/container`
+  (`LogLine.source`: its prefix and colour, `LogStyle.sourceColor`) and
+  drops what the filter leaves out, off the main actor; a `LogFollower`
+  each, merging into one `LogFeed` (`merge`: by time, padded fractions,
+  each source's last lines kept), so a resume drops what it showed. The
+  pane's picker shows one stream's lines (`LogFilter.source`); a stream
+  no longer followed nor ended goes back to all of them.
+- **Include and exclude** (`KubeMergedLogFilter`, pure): regular
+  expressions, case aside, over the pods' names (`--pod-query`,
+  `--exclude-pod`), the containers' (`--container`) and the lines
+  (`--include`, `--exclude`; a JSON line's fields too), in a popover; one
+  that isn't one is said and changes nothing. A pod or container left out
+  takes no stream; a change reads every stream again from its start.
+- **Reading only while it shows**: hidden (another tab, the page or the
+  window off screen) the watch and every stream close and nothing is
+  asked; shown again each stream resumes from its last line. ⌘L's lines
+  are scrubbed of every pod's env values and what looks like a credential
+  (`KubeLogScrub`); Save As is `<kind>-<name>-<time>.log`; Copy as kubectl
+  is `kubectl logs -l SELECTOR --all-containers --prefix
+  --max-log-requests=C` (`KubectlLine.mergedLogs`).
+
+### Secrets
+
+**Secrets** (rule 9; `KubeSecretSession`, `KubeSecretView`, `KubeSecret`,
+`KubeCertificate`). The list is the server's Table — Name, Type, Data (how
+many keys), Age — rows only, and across all namespaces the embedded
+metadata, of which a row keeps only the namespace and creation time, so
+the last-applied annotation (which can hold every value) never stays.
+The detail reads nothing until Show: its Overview says what the row said
+(type, how many keys) and offers Show, as its YAML does. On a production
+context — or one the kubeconfig no longer names — the first Show of
+each context asks first, inline, naming it (`KubeSecretConsent`, the
+app's, in memory until quit; Cancel asks again next time). Show is
+the one GET (`KubeClient.secret`), taken apart at once (`KubeSecret.read`):
+the object with every `data`/`stringData` value `***` and the
+last-applied annotation gone is what the Overview and the YAML show; the
+keys come with their decoded lengths; the decoded values stay in the
+session alone; an answer that isn't a Secret is said without what it
+said. A TLS Secret's `tls.key` is counted from its base64, never decoded,
+revealed or copied ("private key · never shown"). Each value is masked
+— `•••••••• · 17 bytes` — and revealed one at a time (another revealed
+masks it; binary as base64), not selectable; Copy copies one, on the
+pasteboard with nspasteboard.org's concealed and transient markers. Its
+values are dropped — released, not zeroed (the response and the strings
+made of it are Foundation's copies), the keys, the certificate and
+the request in flight with them, the detail back to Show with why — when
+the detail moves on or closes (`KubeDetailSession.cancel`), the page hides
+or its window goes off screen, the context changes (the detail goes), on
+Hide, and `timeout` (2 minutes) after Show, a reveal or a copy. A TLS
+Secret's `tls.crt` is read (`KubeCertificate`, pure: PEM's `CERTIFICATE`
+blocks only, a DER reader of its own, bounded by its bytes): subject,
+issuer (self-signed said), SANs (DNS, IP, email, URI), not before and
+after, CA, how many more are in the chain, and valid, expiring within 30
+days, expired or not yet valid. Nothing logs a value, nothing printable
+holds one (`KubeSecretRead`'s description is its keys), and nothing of it
+is written, saved with the session or given to an agent.
+`KubeSecretTests` pins it; the fake's TLS Secret uses
+`FakeKubeAPI.testCertificatePEM`, a public self-signed certificate (no
+key in the repository).
+
+A link (`KubeLink`: `apiVersion`, Kind, namespace, name — as references
+are written) is resolved by the context's discovery (`kind(apiVersion:
+kind:)`: the reference's version where served, else the group's); a kind
+it doesn't serve is said over the detail. **History** (`KubeHistory`,
+pure, the page's): back and forward across resources and kinds, as a
+browser keeps it — a link followed is a visit of its own, while walking
+the list replaces a visit that came from the list, so the arrows don't
+pile up history; closing the detail keeps the way back (`[` shows it
+again); another context clears it, its objects not being this one's. `[`
+`]` while the list has the keyboard, ⌘[ ⌘] while the page shows and no
+text is being typed (`WorkspacePage.commandPress`, before the menus,
+whose ⌘[ is Previous Pane — theirs again with nothing behind), and the
+detail's chevrons.
+
+### Terminals pinned to a context
+
+**Terminal in this context** (`KubeTerminal.swift`,
+docs/design/kubernetes/analysis.md 3.11): a terminal tab whose plain
+`kubectl` (`helm`, `k9s`) goes to a context, the user's current context —
+every other tab's — never changed. It is the user's own kubectl with the
+user's rights, so nothing Overterm checks reaches into it; the pin and the
+production band are its guard.
+
+- **The pin** (`KubeTerminalPin`: the context, its cluster and user by
+  name, the namespace — the one asked for, else `defaultNamespace`, else
+  the context's own —, production or not, the files after it) is the
+  pane's (`TerminalView.kubePin`, with the `environment` its shell was
+  given over the app's own, through libghostty's `env_vars`); a split of
+  the pane gets both. A pane moved into another tab keeps its own, so a
+  tab's panes may differ: `Tab.kubePin` is the focused pane's, and the
+  strip says `KubeTabBadge` (pure) — one context, `⎈ mixed` (red when any
+  pane is production or unpinned: that one reaches the current context),
+  or `⎈ pin lost`. Each pane is saved with its own (`TabState.kubeContext`
+  for a one-pane tab, `paneKubeContexts` in reading order for a split;
+  names and paths only; an older file's one pin goes to every pane).
+- **Restored** (`KubeTerminalRestore`, pure but for the file it writes):
+  each saved pin is looked up again by name in Overterm's kubeconfigs as
+  they are at launch (`kubernetesRestoreList`: `AppEnvironment.kubeconfigs`
+  with `kubernetes.kubeconfigs` and the current `kubernetes.contexts` —
+  guarded, only `OVERTERM_KUBECONFIG`'s; read only when a pane was pinned,
+  blocking, since the shell can't start before its `KUBECONFIG` is known)
+  and pinned again from that: today's files, cluster, user and class (a
+  context made production since comes back with the band), the saved
+  namespace. A context gone, no kubeconfig, a file that can't be written:
+  the pane comes back **lost** (`KubeTerminalLost`) — `KUBECONFIG=/dev/null`,
+  which reaches no cluster, its header `⎈ <context> — pin lost` in red
+  (`KubePinLostLabel`), the page's `terminalProblem` saying why — never a
+  plain shell to the current context; saved again as it was, tried again
+  on the next launch. A production pin restored isn't asked again: it was
+  confirmed when opened, and it comes back with its band.
+- **Followed** (`KubeTerminalFollow`, pure over the list;
+  `followKubernetesPins`, the window's): a `use-context` or `set-context
+  --current --namespace` typed in the tab rewrites the pin's file, so the
+  pins' folder is watched (`DirectoryWatcher`, from the first pinned pane)
+  and each pinned pane's `KUBECONFIG` is read again as kubectl merges it
+  (`KubeContextList.load`: the first `current-context`, the first entry
+  naming it) when a file changes and when the contexts do (a class set in
+  Settings): its label, band and the strip follow, and the session saves
+  what it reaches now. An unset `current-context` falls to the user's own
+  — production here — and says so.
+- **The file** (`KubeTerminalConfig`, pure; `KubeTerminalFiles`): in
+  `AppEnvironment.supportDirectory`/Kubernetes/Contexts (0700), one a tab
+  — `<the context's SHA-256, 12 hex digits>-<the tab's id>-<Overterm's pid>.yaml`,
+  opened 0600 with `O_NOFOLLOW` — holding `current-context` and the
+  context's own entry naming the user's cluster and user (empty when the
+  user's entry names none — the entry is always written: without it the
+  namespace is lost and a `set-context` writes the user's file) with the
+  namespace: kubectl
+  takes the first `current-context`, and a context entry whole from the
+  first file naming it, so the entry repeats the user's names; the server
+  and the credentials stay in the user's files. A `use-context` or a
+  `set-context --namespace` typed in the tab writes this file, never the
+  user's. Names are YAML double-quoted (an ARN's `:` and `/`). None is
+  removed while its Overterm runs (a moved pane keeps its `KUBECONFIG`; a
+  missing first file would send kubectl to the current context): before a
+  run writes its first, only the files whose pid no longer runs go —
+  another Overterm on the same folder (a dev build beside the installed
+  one) keeps its own. The default folder
+  (`KubeTerminalFiles.defaultFolder`) is `supportDirectory`'s
+  `Kubernetes/Contexts`; in a unit test's process, as in any isolated
+  run, `supportDirectory` is a temporary one, so it is never the user's.
+- **The environment** (`KubeTerminalEnvironment`, pure; `KubeTerminalLaunch.prepare`):
+  only `KUBECONFIG` — the pin's file, then exactly
+  `AppEnvironment.kubeconfigs`' files (the proxies' list), in order, a
+  repeat dropped. Guarded (an isolated run, a unit test) a file under
+  `~/.kube`, or none at all, is refused before anything is written.
+- **Where** (`KubeTerminalDirectory`, pure): the context's
+  `terminalDirectory` (`kubernetes.contexts`' field, `~` allowed) when it
+  is a folder, else the checkout bound to the context (the panel's
+  checkout's binding when it is on that context, else the first bound
+  there; `KubeBindingStore`), else home.
+- **Opened from** (`openKubernetesTerminal`, the window's; the page's
+  `KubernetesActions.openTerminal`): the context card's "Terminal in This
+  Context" and a context's right-click (the namespace shown), a row's verb
+  menu (`terminalVerb`: the row's namespace; a Namespace row, that one),
+  the palette (`Terminal in <context>` for every context, and the page's
+  command), View ▸ Terminal in Kubernetes Context… (`kubernetes.terminal`,
+  no key: the switcher with its query). On production it is asked first,
+  naming the context and namespace. The page steps aside for the tab.
+- **What it shows**: the tab is a Kubernetes one (`TabKind.kubernetes`,
+  the helm glyph, unless an agent, a container, a pod or ssh), with `⎈ <context>`
+  after its title on every tab; the pane header's label is `⎈ <context> ·
+  <namespace>` (`KubePinLabel`), and on production "PRODUCTION …" white on
+  the page's red with a red band under the header; the tooltip says what a
+  plain kubectl there reaches.
+- **Checked** (`KubeTerminalTests`): the file's content (no credential, no
+  server), quoting, its name, 0600 and 0700, never through a link, the
+  sweep, `KUBECONFIG`'s order, the guard, the namespace's precedence,
+  the folder, the tab's kind, the session; a restore whose kubeconfig or
+  context is gone (lost, `/dev/null`, never a plain shell), one whose
+  class or files changed since (today's), the pin following a rewritten
+  file, a moved pane (`mixed`) and each pane saved with its own. The
+  `kubernetes` scenario checks the band and the strip's label by their
+  accessibility identifiers (and no band off production), the label and
+  band following a rewritten pin file, View ▸ Terminal in Kubernetes
+  Context… (the switcher on `k.t.*` items only), the card's menu, and a
+  restored session's lost and reclassified pins. `KubeTerminalMergeTests` runs
+  the real kubectl and helm when installed — temporary kubeconfigs, every
+  server a closed port on 127.0.0.1, a HOME of its own, kuberc off —
+  against a user's file whose current context is production: the pin's
+  context, namespace, server and user win, a change typed in the tab
+  writes the pin's file, helm reads its namespace and dials its server.
+
+**A pod's commands in a tab** (`KubeCommands.swift`,
+`KubeCanI.swift`; analysis Sections 2.6, 2.14 and 5): `e` a shell, `A`
+attach, `t` the log followed — kubectl processes with the user's own
+credentials, never the proxy's socket (which refuses exec and attach on
+every context), typed into a new tab pinned to the pod's context and
+namespace as Terminal in this context pins one.
+
+- **The process class check** (`KubeProcessVerb`, `KubeProcessCheck`,
+  pure — rule 1's second half): every process Section 5 names, those
+  not built yet too (port-forward, debug, drain, rollout undo, Helm's,
+  node shells, `auth can-i`/`whoami`/`version`/`kustomize`, `helm
+  template`, Terminal in this context), against the context's class,
+  writable flag and settings: what writes is refused on a read-only
+  context with why; a log followed and a port-forward start after `can-i`;
+  a shell and attach after `can-i`, confirmed on production, off where
+  the context's `shells` setting (`kubernetes.contexts`) is false (a log
+  followed is confirmed on production too: its tab is a pinned shell once
+  the follow ends); a
+  typed name where rule 4 says. `KubeCommands.command` builds nothing it
+  refuses.
+- **The lines** (`KubeCommands`, pure): `kubectl exec -it POD -c C
+  --context CTX -n NS -- sh -c 'command -v bash >/dev/null && exec bash
+  || exec sh'`, `kubectl attach -it POD -c C --context CTX -n NS`,
+  `kubectl logs -f --tail=200 POD -c C --context CTX -n NS` — `--context`
+  and `-n` always (rule 7), whatever the tab's pin says; every word that
+  isn't ours quoted for zsh as `KubectlLine.quoted` quotes it. The word is
+  `kubectl`, the tab's shell's own.
+- **The container** (`KubeContainerPick`, pure): read with one GET of
+  the pod as the verb runs (`KubeClient.object`, through the proxy);
+  one container is it; several are a picker (`KubernetesActions.choose`,
+  an alert's buttons), the Logs tab's default first — kubectl's
+  `default-container` annotation, else the first; a log offers init and
+  ephemeral containers too, a shell and attach only the pod's own.
+- **`kubectl auth can-i`** (`KubeCanI`, pure: its arguments — `--context`,
+  `-n`, guarded the run's `--cache-dir` — and its answer read: `yes`
+  exit 0, `no` with the server's reason after ` - `, anything else a
+  failure with kubectl's last stderr line): a short-lived process
+  (`KubeCanIRunner`, `KubeProcessRun`, on a GCD thread, 20 s — spawned in
+  a process group of its own, so an exec plugin it runs ends with it: the
+  group is ended after it, timed out or not, and every one still running
+  at quit, `KubeProcessRun.stopAll`, by the group's id) with the
+  kubectl and environment the context's proxy gets
+  (`KubeProxyPlanner.tool`, which `plan` now builds on: Overterm's
+  kubeconfig files as `KUBECONFIG`, kuberc off, guarded only
+  `OVERTERM_KUBECONFIG`'s and the run's own HOME), and under the proxies'
+  credential rules (`KubeProxies.beginShortLived`/`endShortLived`): a
+  context the proxies stopped starts no kubectl (its problem is the
+  answer), an oidc context's run waits for any other browser sign-in, a
+  proxy's included, and a credential failure (`KubeCanI.credentialProblem`,
+  read as the proxy's error is) stops the context as a proxy's does. The app's answers are
+  `KubernetesModel.access` (`KubeAccessChecks`, over `KubeAccessCache`,
+  pure: a minute each per context, namespace and verb, a failure ten
+  seconds; one process per question however many ask; a context's
+  questions one after another, never three plugins at once; what has run
+  out pruned as another is kept; a context's answers forgotten when the
+  kubeconfig read again no longer has it or names another cluster, user,
+  credential or class, `KubernetesModel.sameAccess`). Asked when a pod
+  is picked in the list, so the menu is ready; `check` publishes nothing
+  until the answer comes, so a view's update may call it.
+- **Greyed with why** (`KubeAccessState.unavailable`; the page's
+  `podVerbs`, `unavailable`): the three verbs are `ResourceVerb`s — the
+  pod's right-click menu (one pod picked) and its detail's buttons
+  (`ResourceActionBar`, `kubernetes.detail.actions`) — disabled with the
+  process check's refusal, "Checking kubectl auth can-i …" while it is
+  asked, or "Refused: kubectl auth can-i create pods/attach in shop[: the
+  reason]" — the verdict first, so a line cut at its end still says it. A key pressed waits for the answer; refused, the page's
+  `commandProblem` says it (over the list, or under the detail's buttons)
+  until another pod, namespace or context is picked. With the detail
+  open the keys mean the pod it shows (a link followed, back and forward
+  leave the list's selection where it was); on another kind, nothing.
+- **Production** (rule 5): a shell or attach is asked first —
+  `KubernetesActions.confirm`, naming the context, namespace, pod and
+  container, and that the tab is pinned there — once per pod, context
+  and verb a session (`KubeShellConsent`, in memory). A log followed is
+  asked once per context a session, in Terminal in this context's words:
+  once the follow ends (or Ctrl-C) its tab is a plain shell whose kubectl,
+  helm and k9s go to production; it carries the red band.
+- **The tab** (`runKubernetesCommand`, the window's): the pin written and
+  the environment made as `startKubernetesTerminal` makes them, then
+  `newTab(in:environment:kubePin:running:)` through `addTab` — the
+  command typed as the shell starts, the pin's `KUBECONFIG` exported on
+  its line first (`KubeTerminalLaunch.pinnedLine`): the user's startup
+  files run after the tab's environment and may export another, and
+  `--context C` means whatever C is in the files it names — a context
+  of the same name in another file is another cluster than the one
+  reviewed. A shell or attach tab is a pod's
+  (`TabKind.pod`, `shippingbox.circle`: `kubectl exec`/`attach`/`debug`
+  with stdin, read off the title ahead of the pin). A scenario sets
+  `kubernetesCommandRecorder`: the tab opens pinned and the command is
+  handed to it, never typed.
+- **Checked** (`KubeCommandsTests`, `KubePodCommandsPageTests`): the
+  lines and their quoting, every verb against every class (this Mac's
+  context names among them), `shells: false`, the container picked,
+  can-i's arguments and answers, the cache's minute, one process per
+  question, the greyed reasons, the real runner against a stand-in
+  kubectl that records its `KUBECONFIG` and HOME, and on the page `e`,
+  `t` and `A` against the fake (a refused verb greyed and opening
+  nothing, a picker for two containers, production asked once per pod,
+  a log on production once per context, the detail's pod, the problem
+  gone with another pod or namespace, answers forgotten for a changed
+  user); `KubeCanIProcessTests`: on two oidc contexts no two sign-ins and
+  no two of a context's questions at once (a stand-in that logs each
+  run's start and end), a stopped context starting nothing and a
+  plugin's failure stopping one, a timed-out run and `stopAll` ending a
+  stand-in and the child it forked.
+
+### Port-forwards
+
+**Port-forwards** (`KubePortForward.swift` (pure),
+`KubeForwards.swift`, `KubernetesPageModel+Forwards.swift`,
+`KubeForwardsView.swift`; analysis 2.7 and 3.8): `f` on a pod, a Service
+or a Deployment — kubectl processes with the user's own credentials,
+never the proxy's socket, which refuses port-forward on every context.
+
+- **Allowed on read-only contexts** (a forward changes no object) once
+  `kubectl auth can-i create pods/portforward` says yes in the namespace
+  (`KubeProcessCheck`, the page's minute-long `KubeAccessChecks`): Port-
+  forward… and Quick Forward are greyed with why until then, and a forward
+  whose answer is no stops saying so.
+- **The target, resolved by Overterm** (`KubeForwardResolve`, pure over
+  the API's JSON; `KubeForwards.resolve`, GETs only through the
+  context's proxy in the background's slots): a pod is itself while it
+  runs; a Service is one of its **ready** endpoints' pods —
+  EndpointSlices by `kubernetes.io/service-name` (an endpoint whose
+  `ready` isn't false and that isn't terminating, a Pod's `targetRef`),
+  else the legacy Endpoints' `addresses` — and the pod's port is the
+  Service port's `targetPort` (a number, a name looked up in the pod's
+  containers, or the port itself), as kubectl does; a Deployment is one of
+  its selector's ready pods (`matchLabels` and `matchExpressions` as the
+  server's `labelSelector`), oldest first. The pod pinned before is kept
+  while it is still one of them: a forward that works isn't moved.
+  kubectl is only ever given `pod/<name>`, so the pill names it.
+- **The process** (`KubePortForwardCommand`, pure; `KubeForwards.start`):
+  `kubectl port-forward pod/P L:R --context C --namespace NS --address A`
+  (guarded, `--cache-dir` the run's), with the kubectl and environment the
+  context's proxy gets (`KubeProxyPlanner.tool`: Overterm's kubeconfig
+  files as `KUBECONFIG`, kuberc off; guarded only `OVERTERM_KUBECONFIG`'s
+  and the run's own HOME), under the proxies' credential rules
+  (`beginShortLived`/`endShortLived`: a stopped context starts nothing,
+  an oidc sign-in waits for any other, a credential failure stops the
+  context) — a `ManagedProcess`, ready on its `Forwarding from` line, its
+  stderr kept, closed by its pid.
+- **Started again** (`KubeForwards.run`): when kubectl exits, or its pod
+  goes — the pod read every `podCheckInterval` (5 s) while it forwards
+  and the page shows (`checksPods`, the model's `isShown`: hidden, the
+  page reads nothing and kubectl exiting is what says the pod went; shown
+  again, the pod is read at once; a check in flight when the page hides
+  is cancelled, its request closed — `KubernetesModel.visibility` — and a
+  forward started again while hidden waits, `.restarting`, to resolve
+  until the page shows; only its first start, asked for, resolves hidden):
+  gone, terminating or no longer running, and for a Service or a
+  Deployment (`KubeForwardTarget.followsEndpoints`) no longer ready, as
+  a pod failing readiness leaves the Service's endpoints — the target is resolved again
+  and a new kubectl started on the same local port, after
+  `KubeForwardBackoff` (1, 2, 4, 8, 15, 30 s; the count starts over after
+  a forward that ran 30 s; stopped after 8 in a row, saying so). It stops,
+  saying why, when the target itself is gone (`svc/web is gone`), on a
+  credential failure or a missing kubectl (no retry runs the exec plugin
+  again), and when its context leaves the kubeconfig or names another
+  cluster (`contextsChanged`) — a stopped forward's too: its context is
+  forgotten, so Start Again can't take it to a cluster it never went to;
+  Start Again and Edit read the context's class (production's red) and
+  the process check again. A Service's resolve takes the first ready
+  endpoint that has the port, not the first ready one. A run that was
+  cancelled (stopped, edited, started again) and whose launch or read
+  ends late changes nothing (`finish` checks `Task.isCancelled`): the
+  task, kubectl and state are the new run's. `ManagedProcess.start`
+  closes its process when the waiting task is cancelled, so a kubectl
+  stopped before it says it listens ends then, not at the 30 s timeout.
+  Stopped, edited, at quit
+  (`KubeForwards.stopAll`, before `ManagedProcess.closeAll`) and with
+  Kubernetes off, every kubectl is closed by its pid — never a pattern.
+- **The local port** (`KubeForwardPortChoice`, pure): the remote port where
+  it is free, else one at random in 30000–39999 (Quick Forward: always at
+  random) — never one another forward has, or one something on this Mac
+  holds (`ListeningPorts.isBound`), nor under 1024. The sheet
+  (`KubeForwardDraft`, pure, and `KubeForwardSheetView`): the target's TCP
+  ports (`KubeForwardPortOption`: a pod's containers', a template's, a
+  Service's own) or one typed, the local port with Random, the address
+  (127.0.0.1 unless changed; anything else is said to be reachable from
+  other machines), https (what Open and Copy URL say); Edit changes the
+  local end and starts kubectl again.
+- **Where it shows**: the page's **Forwards** section (`KubeSection.forwards`,
+  `9`: every forward of the app, its pod, state (`KubeForwardState`) and restarts; Open, Edit,
+  Stop; Start Again and Remove for one that stopped), the pod's,
+  Service's or Deployment's verbs and detail buttons (Port-forward… `f`,
+  Quick Forward, Open Forward `o`), a pill in the pane header of the tab
+  under the page when it started (`Tab.forwardPorts`, a `ListeningPort`
+  with a `forward` origin, `KubeForwardPill` — `:L → <pod>`, its popover's Kubernetes and
+  Stop), Tab Info's Listening, the browser column's empty page, and the
+  palette (each forward, ↩ as `o`; Kubernetes Forwards). A pod's Overview
+  gives each container its TCP ports (`KubeOverview.Item.ports`), each a
+  button that opens Port-forward… on the pod with that port picked. Open
+  is the browser column, as Docker's links open (`openDockerLink`). One
+  for the app: a forward outlives its window and tab, not the app — so
+  closing a tab with a running forward asks, whatever Settings ▸ General
+  says (`TerminalWindowController.needsCloseConfirmation`,
+  `runningForwards`), and says it keeps running on the page; quitting
+  (and the last window's close) asks for any running forward and says it
+  stops them.
+- **Checked** (`KubePortForwardTests`, `KubeForwardsTests`,
+  `KubeForwardPageTests`): the targets and their ports, the command line
+  and its quoting, ready endpoints only, a named `targetPort`, a
+  Deployment's selector and oldest ready pod, the backoff, the port
+  choice, the sheet's checks; against the fake, a Service forwarded to
+  its ready pod and started again on the new one after the old is
+  deleted (the old process closed), kubectl exiting keeping the pod,
+  the Service gone stopping it, can-i's no starting nothing, failures
+  backing off then stopping, a credential failure not retried, a context
+  gone or pointing elsewhere stopping its forwards, `stopAll`; the real
+  launch through a stand-in that listens (ready on its line, the test's
+  kubeconfig alone, closed by its pid, a port it can't listen on said);
+  the page's `f`, the sheet, `o` and `9`.
+
+**What opens through a forward** (`KubeOpen.swift` (pure),
+`KubernetesPageModel+Open.swift`; analysis 3.8):
+
+- **`o`** on a forward is the browser column of the tab under the page
+  (`openDockerLink`): the page steps aside and the column takes the right
+  slot (`RightSlot`) — the changes pane gives way and comes back when it
+  closes; never a column of its own. That, and the terminal tabs `t`, `e`
+  and `A` open, is Section 2's dock under the list. A forward's URL is the
+  address kubectl listens on (`KubeForwardAddress.host`: 127.0.0.1 for
+  loopback, `localhost` and 0.0.0.0, `[::1]` for IPv6) — never
+  `localhost`, which a browser may try as ::1 first. **`o` on an Ingress**
+  (`KubeIngressLinks`, pure; `ingressRef`, Open in Browser) is where it is
+  reached: each rule's host — https when a TLS entry names it, a wildcard
+  skipped, a regex path the root — else its load balancer's address; the
+  first in the default browser, several asked. An isolated run records it
+  (`kubernetesOpenedExternally`) instead of opening anything.
+- **`d`** on a database pod (`databaseRef`, Open in Database Client on a
+  pod whose detail read it): the image says which (`KubeDatabase.detect`, a
+  `KubeDatabaseTarget`, by `DockerClient`'s table — postgres, mysql and mariadb, clickhouse, redis and valkey; an
+  exporter beside it is a tool; Mongo and the rest are said, with their
+  client in a shell), the container's port (the image's, or the one it
+  declares — unless that is a port the image speaks another protocol on:
+  ClickHouse's native 9000/9440/9009, MySQL's X Protocol 33060,
+  `KubeDatabase.port`), and where its user, database and password come
+  from: each field an ordered list of sources (`KubeEnvValue`: written in
+  the spec, a Secret's key by `secretKeyRef`, an `envFrom` `secretRef`'s
+  key under its prefix *only if the Secret holds it* — `secretIfHeld` —,
+  or elsewhere, never read), resolved against what was read
+  (`KubeDatabase.resolve`, `KubeSecretValues`): a key a Secret read
+  doesn't hold gives way to the image's next name (Bitnami's
+  `POSTGRESQL_PASSWORD`), and MySQL's app user is taken only with its
+  password, else root with root's — decided after the read. What the env
+  takes from a Secret is asked about first — every time, naming the
+  Secret and its keys (`KubeSecretWant`: `envFrom`'s as "whichever of …
+  it holds"), production in its band's words — and Cancel starts nothing.
+  Then a forward to that port — one running reused, else one started on
+  the database's own port where it is free, after `kubectl auth can-i`,
+  marked `forDatabase` — and once it forwards, the Secret read if the
+  user said so (one GET, only the keys named kept, `KubeDatabase.take`,
+  the rest of the answer dropped) and the Database client's form
+  (`newDatabaseConnection`) filled in with 127.0.0.1 and its local port
+  (`KubeDatabase.connection`); a password written in the spec is left to
+  type. Nothing is saved or connected: the form does that, its password
+  to the keychain only (`DatabaseStore`). The window's `databaseDraft`,
+  which the scenarios read, holds the password only in an isolated run
+  and only while the form shows (`presentSheet`'s `ended`).
+- **A forward's API**: the first time a forward forwards on its local port,
+  its server is asked for an OpenAPI document (`KubeForwards.probe`,
+  `APIDiscovery.probe`: every usual path at once, 1.5 s each, 3 s in all) —
+  not a production forward's, not `d`'s (`forDatabase`) nor one to a port
+  where a server speaks no HTTP (`KubeForwards.nonHTTPPorts`: databases,
+  caches, queues — ten requests there are ten bad handshakes, and MySQL
+  counts them toward blocking the host), and only while the API client
+  and its server discovery are on; turned on while forwards run, those
+  are asked then (`probeForwarding`, on Settings' `changes`). One found (`KubeForwards.openAPI`, gone with
+  the forward or its port) is offered, never imported unasked: the API
+  panel lists it with what the checkout has (`APIWorkspace.forwardSources`,
+  `importable`), and the Forwards row and the palette import it on a
+  press (`importForwardAPI`: into the checkout's collection, its first
+  request opened).
+- **The palette** (`forwardPaletteItems`): Kubernetes: New Port-forward…
+  (the sheet on the selected object, else the Services list saying what
+  to pick), each forward (↩ as `o`), its Stop, and its API's import —
+  each named by the address `o` opens (`KubeForwardSpec.hostPort`,
+  127.0.0.1:<port>, as the Forwards list, the pill and the close warning
+  say it); an open palette is restocked as forwards and their APIs
+  change.
+- **Checked** (`KubeOpenTests`, `KubeOpenForwardsTests`): an Ingress's
+  links; the database detection (images, env names, `secretKeyRef` and
+  `envFrom`, ports — a lone other-protocol port not taken —, what isn't
+  spoken); an `envFrom` Secret holding only MySQL's root key or
+  Bitnami's names resolved to those; the connection filled in, a
+  password only from a Secret read on the user's word, never from the
+  spec; only the keys named taken; a pod's connection saved keeps its
+  password out of connections.json; the probe against a local server and
+  bounded against a closed port; a forward probed once, not again on its
+  next pod, forgotten with it, never on production or with discovery
+  off, probed when discovery is turned on while it runs; a database
+  forward never probed (the echo server sees no connection); `d` against
+  the fake (one GET of the Secret when asked, none when not, the forward
+  reused, Redis said, Cancel at the Secret's question starting no
+  forward); the palette's items and what they do. The `kubernetes` scenario opens a forward in the browser column at
+  http://127.0.0.1:<port> in the right slot, `d` on a postgres pod to the
+  filled-in form (the Secret's one GET, nothing saved), a Redis pod said,
+  an Ingress's host recorded, and the palette's Stop.
+
+### Agents
+
+**Ask Why** (`KubeAgentBrief.swift`, `KubeAgentBriefing.swift`,
+`KubernetesPageModel+AskWhy.swift`; analysis 3.4): a failing pod or a stuck
+rollout handed to an agent with what it needs to say why — Docker's Ask Why
+(`DockerAgentBrief`), for Kubernetes. An Argo CD or Flux object that is
+Failed, Blocked or Stuck has its own brief (A GitOps object's detail, below).
+
+- **What is wrong** (`KubeTrouble`, pure): off a pod's object, its
+  containers (init first) — `CrashLoopBackOff` (`OOMKilled` when its last
+  end was the OOM killer), `ImagePullBackOff`/`ErrImagePull`/…,
+  `CreateContainerConfigError`/`CreateContainerError`, one that ended with
+  an error — then its phase (`Failed`, `Pending`); off a Deployment's, a
+  rollout past its progress deadline (`KubeRollout`'s stuck) or fewer
+  available replicas than wanted. The question an agent is started with
+  is the trouble's ("Why does pod shop/worker-1 keep crashing
+  (CrashLoopBackOff)?"). A list row says enough to offer it — a pod's
+  Status failing or Pending, a Deployment not Available — and the
+  detail's object, once read, says it exactly; else the verb is greyed
+  with why ("pod/web-1 isn't failing: Running, 1/1 ready.").
+- **The brief** (`KubeAgentText`, pure, every part bounded): always sent,
+  the pod — where (the context, production said as such, read-only), its
+  phase and reason, QoS, node, owners (`ReplicaSet … ← Deployment …`), its
+  conditions that aren't True, each container's state, restarts and last
+  terminated state with what its exit code means (`exitMeaning`: 1, 2,
+  126, 127, 137 the OOM killer when `OOMKilled` else a kill — a liveness
+  probe, a stop past its grace period —, 139, 143, 128 + a signal),
+  resources, probes, its command (`maskArguments`) and env: a value whose
+  name looks secret masked, a `secretKeyRef` or an `envFrom` Secret named
+  — `DB_PASSWORD from Secret web-db, key password (not read)` — never
+  valued; and how kubectl reads it. Then a chip each: its events (newest
+  first, 15, each message bounded); the last 60 lines of the troubled
+  container, and of one more that restarted or ended (`logTargets`) — its
+  previous instance's (`previous=true`) when it restarted, 8 KB, the newest
+  kept and a crash's one long line cut, not dropped — read with
+  `limitBytes` (256 KB, `KubeClient.logTail`), of which the last 64 KB are
+  taken apart (`KubeLogText.tail`: no part of a line kept where a cut went
+  through it) and each line bounded before it is scrubbed
+  (`KubeAgentText.bounded`), the brief saying when the server stopped at
+  the limit; its owner's pod template — the last owner read that has
+  `spec.template` (a CronJob's Job's) — as `kubectl get -o yaml` writes
+  it (`pod-template-hash` out, `KubeAgentText.masked`: env through
+  `KubeObjectStrip.maskingEnv`, every container's command and args, its
+  probes' and hooks' `exec`, through `Secrets.maskArguments`), and, under
+  a Deployment, its diff with the previous ReplicaSet's
+  (`currentAndPrevious`: the revision the Deployment names, else the
+  highest, and the one before; `lineDiff`, two lines of context; whether
+  they differ asked of the templates, not their masked YAML — a masked
+  value that changed, a rotated password, is marked "(changed)" and named,
+  `markingChanged`); for Pending, the scheduler's `PodScheduled` message,
+  what it requests (`requests`: the containers' summed, or the largest init
+  container's; `KubeQuantity`), its node selector and tolerations, against
+  each node's allocatable, readiness, cordon and taints (20 nodes, and
+  what other pods request isn't counted, said). A Deployment's brief is
+  its rollout as `kubectl rollout status` says it, its replicas, strategy,
+  deadline, conditions and ReplicaSets, then its events, its newest
+  ReplicaSet's (a FailedCreate — a quota — is there), that ReplicaSet's
+  pods (by its `pod-template-hash`), the first failing one's containers and
+  log, the template and the diff. The brief keeps where it is about
+  (`context`, `namespace`) and its images; with a checkout bound to that
+  namespace, `KubeAgentBriefing.withDeployedCommit` adds the deployed
+  commit (3.2) as a part of its own (`deployedCommit`, `checkout`) — the
+  images' SHA-shaped tag looked up in the checkout, nothing read from
+  the cluster for it.
+- **The reads** (`KubeAgentBriefing`): once, when asked — the object, its
+  events, the logs, its owners (by discovery's kinds, else Kubernetes'
+  own; an ownerReference naming a Secret never followed), a Deployment's ReplicaSets (one page of 50), the nodes (one page of
+  50), its pods as rows only — every one a GET through the context's proxy
+  (`KubernetesModel.client`), each given `readTimeout` (10 s,
+  `KubeBriefRace`); one that fails or times out leaves its part out and
+  the brief says what couldn't be read. **No Secret is read**: none is
+  asked for, and a Secret asked about is refused before anything is.
+- **Scrubbed**: every word through `Secrets` — the pod's and its
+  template's env values that look secret and every URL's password
+  (`Secrets.scrub`, the names the brief says anyway kept:
+  `KubeAgentText.names`), then credentials in text
+  (`Secrets.scrubCredentials`: PEM bodies, bearer and basic
+  authorization, JWTs, AWS keys, a kubeconfig's `token`,
+  `client-key-data`, `client-certificate-data`, `password`, an auth
+  provider's `id-token`, `refresh-token`, `client-secret`…, env-style
+  names with a prefix (`DB_PASSWORD=`, `GITHUB_TOKEN:`) — only spaces and
+  tabs around the `:`, so a YAML block under `secret:` stays —, vendor
+  tokens by their prefix (`ghp_`, `xoxb-`, `glpat-`, `sk_live_`…), and
+  base64 or base64url blobs — 32 characters or more with upper- and
+  lowercase and a digit, so a digest, a SHA, a uid or a path stays).
+- **Asked from** `a` (on the list's one selected pod or Deployment, or the
+  detail's), ⌘L over the page (`WorkspacePage.askAboutSelection`; lines
+  picked in a log answer it themselves), a failing pod's Why in its row
+  (Docker's Ask Why, a button), and Ask an Agent Why… on the menu and the
+  detail's buttons (a `ResourceVerb`). Production too: it only reads.
+- **The sheet** (`presentKubernetesBrief`): the Ask Agent sheet with the
+  question typed, the subject the fixed chip, the parts their chips, and
+  the whole prompt shown before it is sent (`AskAgentModel.showsBrief`,
+  updated as chips go off; no git diff chip, which the preview wouldn't
+  show). The agents offered (`kubernetesBriefTargets`, ordered by
+  `KubeBriefTargets`, pure): those in a tab of a checkout bound to the
+  brief's namespace first — the brief's own checkout's leading: the
+  selected tab's binding when it is bound there
+  (`KubeBindingStore.binding(on:namespace:preferring:)`, `KubernetesActions.selectedBinding`;
+  `k8s_why` prefers the calling pane's), else the first —, it has the code
+  that failed —, then the selected tab's, then the window's others, then
+  a new one in the bound checkout (else the selected tab's folder); Send
+  types it, as every Ask Agent does, the page stepping aside.
+- **Checked** (`KubeAgentBriefTests`): each failure kind off fixture
+  objects, the exit codes, a container's env (a Secret named, a secret
+  value masked), the template diff, Pending's requests and nodes, the
+  bounds, the log targets; every scrubbing pattern and what isn't a blob,
+  Docker's scrubbing unchanged; against the fake, a crash loop's brief
+  with every section and its planted secrets out (the previous log read
+  once, never followed), production said, Pending's nodes, a stuck
+  rollout's ReplicaSet events, pods and diff, a pod that is fine and a
+  Secret refused with nothing asked, a read that hangs left out in time —
+  every test ending with only GETs and no `/secrets`; on the page, `a`,
+  the greyed verb, the detail's button, a Deployment's from its object,
+  production. The `kubernetes` scenario: on fake-dev's crash-looping pod,
+  its row's Why drawn, `a` opening the sheet with the brief shown whole
+  (its sections, the exit code's meaning, events, the previous log), the
+  planted secrets out and a Secret's env named, the selected tab's agent
+  first, read with GETs alone and no Secret — then Cancel, nothing sent; a
+  pod that is fine saying why; ⌘L over the page; the detail's button; and
+  on fake-prod the same, said production, reads only.
+
+**Agents' tools** (`KubeMCP.swift`; analysis 3.5): the `k8s_`
+group of the MCP server Claude Code gets from Overterm (`BrowserMCP`, as
+Docker's `docker_` are), offered and answered only while
+`kubernetes.agentAccess` is on (`Settings.kubernetesAgentAccess`, which
+`kubernetes.enabled` off turns off too; the bridge serves while any group
+is on, and follows `kubernetes.*` changes). Eight tools read; four write
+where a context is writable for agents (Agents' writes, below):
+
+- `k8s_contexts`: each context's name, class (production said as such),
+  whether Overterm may write there and whether agents may, its namespace, kubectl's current one,
+  the one the tools use unless told another, and a stopped proxy's
+  reason — never a server, a user or a credential; scrubbed and bounded
+  like every answer. Read from the
+  kubeconfig files (`KubernetesModel.contextsForAgents`: the page's list
+  while one shows, else the files read again, locally) — no cluster asked.
+- `k8s_get`: a kind (any name `KubeKinds.resolve` takes: `po`, `deploy`,
+  a CRD's plural) as the server's Table, one page of `limit` rows (100, at
+  most 500) — rows only, `includeObject` as the page's lists ask, but
+  Secrets across namespaces one namespace at a time with
+  `includeObject=None` (`secretsAcrossNamespaces`, 100 namespaces at
+  most): a row's metadata would carry a Secret's last-applied data —, with
+  `label_selector` and `field_selector` sent to the server, `name` as
+  `metadata.name=`, `filter` on the rows' text once each cell is
+  scrubbed (else a row's being there would test a guess), `wide` for the
+  `priority > 0` columns; printed as kubectl prints it, a NAMESPACE column
+  across namespaces, cells cut at 200 characters, a cut list said
+  (`KubeMCPText.table`).
+- `k8s_describe`: one object's GET, as the YAML tab strips it
+  (`KubeObjectStrip.shown`: managed fields and last-applied out, env that
+  looks secret masked), said by its `KubeOverview` — facts, sections,
+  rollout — then the pods its selector picks (rows, 30) and its events.
+- `k8s_logs`: a pod's container (kubectl's default, else named; checked
+  against the pod's), `tail` (200, at most 2000), `since` (`30s`…`1d`, as
+  `sinceTime`), `previous`, read once — `limitBytes` 1 MB, the last 512 KB
+  taken apart (`KubeClient.logTail`) — every line scrubbed with the pod's
+  env, then `grep`: matched after scrubbing, so a secret can't be found a
+  character at a time.
+- `k8s_events`: a namespace's (or every namespace's) core Events, newest
+  first — every page read (500 a page, 4 pages at most) before the newest
+  are picked, since the server lists them in key order, and a list cut
+  there says so —, `warnings_only` as `type=Warning`, or one object's by `name` (and
+  `kind`, a pod's by default), at most 200.
+- `k8s_why`: Ask Why's brief (`KubeAgentBriefing`) on a pod, a
+  Deployment, or an Argo CD or Flux object (`k8s_gitops`), as one text — the question, the brief, each part; one that
+  isn't failing says why.
+- `k8s_rollout`: a Deployment's, StatefulSet's or DaemonSet's rollout as
+  `KubeRollout` says it, its replicas, and its history — a Deployment's
+  ReplicaSets, the others' ControllerRevisions (where served), the ones it
+  owns, newest first: revision, images, ready, age, change-cause.
+- `k8s_top`: usage as `kubectl top` says it (Usage, below).
+- `k8s_metrics`: an object's usage over a range, as text (Agents' usage,
+  below).
+- `k8s_gitops` (`KubeMCP+GitOps`, gitops.md 6.1): Argo CD's and Flux's
+  objects in the namespace or deploying into it, ranked on the section's
+  ladder, one line each (`KubeMCPGitOpsText`: state, why, the revision
+  applied and Flux's failed attempt, source, where, last error — every
+  message the summary's, through 5.3, then `Secrets` again); `kind`,
+  `failing_only`, `limit`. Read on demand: `pagedObjects` at 200 objects
+  or 16 MB a kind, a kind refused across the cluster read where it lives
+  — the bound held across those places (`KubeGitOpsBudget`), the places
+  past it said, not read.
+  `checkout: true` is what deploys the calling pane's checkout, on its
+  binding's context only (refused unbound or naming another): the
+  workloads' marks and their owners by GET (`KubePanelGitOps.readOwners`,
+  the rail's P2), the rail's listing when `KubeGitOpsMatchCache` holds
+  one, else off production `KubePanelGitOps.listing` at the agent's
+  bounds, a kind's across all its namespaces (not kept), never on production; each match with the deployed
+  sentence and Flux's attempted line (`KubeGitOpsReach`). `k8s_why` takes
+  an Application, ApplicationSet, Kustomization or HelmRelease too (G3's
+  brief; `application` is Argo CD's even where another `applications`
+  kind, app.k8s.io's, is served first). No GitOps write tool. `k8s_apply`
+  is a write (Manifests in the editor, below). A name that isn't one of
+  these is an unknown tool.
+
+**Where**: the context the call names — one the kubeconfig doesn't have
+is an error, never a fallback — else the page's selected one
+(`KubernetesModel.agentDefaultContext`), and with none selected the call
+names one: never the one the page would open on, which falls back to
+kubectl's current context, often production; the namespace
+named (`all` for every one) else the page's on that context, else the
+context's own (`agentDefaultScope`); a tool that needs one namespace and
+gets all says so. Before both comes the calling pane's checkout's
+binding (`KubeMCP.binding(for:in:)`: the pane's tag — `BrowserMCP.handle`'s
+`pane`, from the bridge's path — to its tab's checkout through
+`KubeMCP.paneCheckout`, the windows' answer, then `KubeBindingStore`):
+its context (`defaultContext`) and, on it, its namespace
+(`defaultScope`), when the kubeconfig has that context; `k8s_why` adds
+the bound checkout's deployed commit. Kinds are resolved
+against the page's discovery only while the page's reading of the name is
+the same cluster and user as the tool's (`knownDiscovery(of:)` with
+`sameCluster` — the kubeconfig may change while the page is hidden), else
+against the tools' own, kept five minutes per cluster and user. Every answer starts
+with the context, production in capitals (`KubeBriefContext.said`).
+
+**Reads, no Secret**: every read a GET through
+`KubernetesModel.agentClient` — the context's proxy in a background slot
+(never the page's), under the proxies' rules: a stopped context answers
+its problem and starts nothing, an oidc sign-in waits its turn — each read
+given `readTimeout` (30 s). A read-only context's socket refuses writes
+anyway. A Secret (`sec`, `secret`, `secrets`) is listed and described from
+its Table row alone — type, how many keys, age, with `includeObject=None`
+for one — never GET, since that one GET is every value; Ask Why's brief
+names a Secret's env, never values it. **Scrubbed and bounded**: every
+answer through `Secrets` — the object's env (`KubeLogScrub.env`, its
+template's too, the names said kept), every URL's password, credentials
+and base64 blobs (`KubeMCPText.scrubbed`) — and cut at 60,000 characters
+(a log keeps its end). A failure — a proxy's credential problem, the
+server's — is said scrubbed.
+
+**Checked** (`KubeMCPTests`, against `FakeKubeAPI` and a model of two
+fictional contexts): each tool's answer; the default context and
+namespace, another named, an unknown one refused with nothing asked; a
+read on fake-prod; no selection with fake-prod current refused unnamed,
+nothing asked; a Secret listed and described with no key and no value,
+its alias, none asked for but as a Table, across namespaces each with
+`includeObject=None` and its planted last-applied never seen; a token in
+a cell not found by `filter`; events past a page read before the newest
+are picked, a list cut said; logs scrubbed before `grep`;
+the tool list exactly the eight reads with no writable context, a write
+tool on a read-only context refused asking nothing, `k8s_secret` unknown; a credential
+failure through the real `KubeProxies` answered scrubbed, the context then
+stopped — the next call asks nothing and plans no proxy, `k8s_contexts`
+says why; Kubernetes off; the setting taking the
+group from `tools/list`, the instructions and the calls (a `Settings` of
+the test's own) — every test ending with only GETs, no subresource but a
+log, no Secret's object. `KubeMCPTextTests`: durations, names, the table,
+the bounds and the scrubbing. The `kubernetes` scenario calls them through
+the bridge's real HTTP endpoint at a pane's path, with that pane's token: the list
+without a write tool, `k8s_get` on fake-prod, the page's context when none
+is named, an unknown context refused, a Secret without its value,
+`k8s_why`, an agent's write on production `agentWrites` doesn't name refused, only GETs; `kubernetes.agentAccess` off
+taking the group from the endpoint's list and refusing a call (or, with no
+other group on, the endpoint gone), and on again back in its `tools/list`.
+
+### Writes
+
+**Writes** (`KubeWrites.swift` (pure, and
+`KubeClient`'s writes), `KubernetesPageModel+Writes`,
+`KubeScaleSheetView`, `KubeNamespaceSheetView`; analysis Sections 2.2,
+2.3, 2.4, 2.9, 2.15, 4 and 5):
+
+- **Where** (rule 2): a writable context only — its `writable` flag in
+  `kubernetes.contexts`, yes unless it says no, on every class
+  (`KubeContext.isWritable`; nothing else decides). Production is
+  writable by default: the owner decided (1.6.0) that whoever wants to
+  fix something there may, with nothing to turn on first — the session
+  switch it once had is gone. What stays is confirmation, not a lock:
+  the red band ("each change asked, a destructive one by its name"), the
+  access review, the `WriteConfirmation` naming the context and its
+  kubectl, the name typed where rule 4 says. `writable: false` makes any
+  context read-only — production included — and its socket then refuses
+  every write too (`KubeProxyFlags`), so it stays doubly locked.
+- **The proxies decide for every class** (`KubeProxies.update`): the
+  model tells them the contexts on every read of the kubeconfig and the
+  settings (hidden too, once told, and for the agents' reads), and from
+  then on each proxy's flags and every write are worked out from that
+  list, never the copy a request comes with — a session's stale copy (an
+  attention watch's, a detail's) neither reopens a socket without the
+  method filter nor flaps it, a write's copy must be `sameAccess` with
+  the list's, and a name the list no longer has is read-only. A proxy
+  whose context is gone, now reaches another server, cluster or user
+  (`Entry.reaches`), or has the other flags is closed as the list comes,
+  its metrics proxy too: kubectl read the kubeconfig when it started.
+  Attention watches whose context changed start again on it
+  (`KubeAttentionWatches.contextsChanged`).
+- **Two locks before the socket**: `KubeClient.write` refuses unless the
+  connection's context is writable, and `KubeProxies.sendWrite` refuses
+  unless the proxies know it so (`KubeWriteRefused`); a read-only
+  context's socket refuses writes anyway (`KubeProxyFlags`).
+- **The verbs** (`KubeWriteVerb`, each offered where discovery says the
+  kind takes it, `KubeWriteCheck.offered`): delete (`DELETE` with
+  DeleteOptions, `propagationPolicy: Background`, the pod's own grace
+  period), delete to recreate (`r` on a pod; its controller named from
+  its metadata), force delete (grace 0, warned), remove finalizers (a JSON
+  patch that tests the finalizers confirmed before removing them, warned),
+  evict (`POST pods/{p}/eviction`; a PodDisruptionBudget's 429 said with
+  its cause, never retried), rollout restart (kubectl's strategic merge
+  of the template's `kubectl.kubernetes.io/restartedAt`), scale (a merge
+  patch of the `scale` subresource), rollout pause and resume (a
+  Deployment's `spec.paused`, as kubectl's strategic merge sets it —
+  resume takes the field away), a CronJob triggered (`POST jobs`: the
+  Job `kubectl create job --from=cronjob/…` makes — the jobTemplate's
+  spec and labels, its annotations over
+  `cronjob.kubernetes.io/instantiate: manual`, the CronJob as its
+  controller with `blockOwnerDeletion`, as `metav1.NewControllerRef` sets it, named `<cronjob>-manual-<5>` within 63), suspended and
+  resumed (a merge patch of `spec.suspend`, said as `kubectl patch
+  --type=merge`), a node cordoned and
+  uncordoned (`spec.unschedulable`), and a namespace made (`POST
+  namespaces`, nothing but its name — a DNS label, `KubeNamespaceName`,
+  checked in its sheet as the server would). Pause, suspend and cordon
+  are states (`KubeWriteToggle`): what a row says of one — a CronJob's
+  Suspend, a node's Status, which follow the watch (a Deployment's rows
+  don't say paused; the detail's object is read only as it opens) —
+  greys the verb that is so already with why; the key toggles, and the
+  object read decides — the row may be behind it (the watch's
+  coalescing, a watch stale after sleep). Patches and creates
+  carry `fieldManager=overterm`. Keys: ⌫ delete, `r` restart (a pod:
+  recreate), `+`/`-` by one, `=` the scale sheet (its field takes the
+  keyboard as it appears, Return goes on to the confirmation), `p` pause
+  or resume (a CronJob: suspend or resume), `s` trigger, `u` cordon or
+  uncordon, `N` the new namespace's sheet; the rest are in the right-click
+  menu and the detail's buttons (`ResourceActionBar`, delete as its red
+  bin). ⌘K has New Namespace… and the selected object's writes that can
+  be done now, each by the same path.
+- **The guard path** (`KubernetesPageModel.write`), in this order: the
+  class check (`KubeWriteCheck.rule`: refused with why on a read-only
+  context; production is asked, never refused); the access review — a
+  SelfSubjectAccessReview through the writable socket
+  (`KubeAccessReview`, `KubernetesModel.writeAccess`: a minute per
+  context, namespace and verb, asked as a row is picked so the menu is
+  greyed with the cluster's own reason); a metadata-only read where the
+  confirmation needs it (`PartialObjectMetadata` — a Secret's values are
+  never read —, the scale subresource's replicas, the object whole for a
+  state's field or a CronJob's template — `KubeClient.spec`, never a
+  Secret —, or a namespace's contents counted from Tables of rows alone,
+  `KubeNamespaceContents`: a row a kind with the server's
+  `remainingItemCount`, a page of 500 only without one; its twelve
+  kinds said as a lower bound, a 403 said as not allowed apart from a
+  kind that couldn't be counted, and nothing said as none while
+  discovery isn't known; a
+  toggle read as so already is turned round, its review being the
+  same; carried on as `KubeWriteFacts` — meanwhile the page says
+  Checking…, and no other write starts (`writeChecking`): two triggers
+  confirmed would make two Jobs); the confirmation in
+  the window (`KubeWriteConfirmation`, `confirmKubernetesWrite`: the
+  verb and object, the context and namespace on a line of their own —
+  production's red on production —, the kubectl it equals, the
+  warning; the sheet is `WriteConfirmation`, the one every write is
+  asked with: DockerMCP's `allow` and the page's other asks too) with the object's name typed where rule 4
+  asks — on production a delete, recreate or scale to 0; force delete,
+  finalizers and a namespace's delete on every class — which the page
+  checks (`accepts`), a wrong name sending nothing; the context checked
+  once more as the button is pressed; then the request, its outcome said
+  over the list or under the detail's buttons (`KubeWriteStatus`), the
+  API's 403, 404, 409, 422 and an eviction's 429 in plain words
+  (`KubeWriteOutcome`), the answer's body never kept. The list follows
+  by its watch.
+- **Checked**: `KubeWritesTests` (each verb against each class, the
+  typed name, each request exactly, the review's attributes and answer,
+  the confirmation's words, the outcomes; production writable by
+  default, read-only only by its entry), `KubeWriteClientTests` (each write landing on
+  `FakeKubeAPI` — which applies deletes, finalizers, merge and JSON
+  patches, scale and evictions to its objects and its watches, answers
+  access reviews from `deniedAccess` and a metadata-only GET, and records
+  each write's body and content type — a read-only connection sending
+  nothing), `KubeWritesPageTests` (no write before the review and the
+  confirmation, Cancel, a refused review, a read-only context sending not
+  even a review, production writable with no switch and the typed name,
+  writes turned off while asked, every verb through the page),
+  `KubeProxiesTests` (a `writable` change restarting the proxy without
+  the method filter and back; production's proxy unfiltered unless set
+  `writable: false`), `KubeWriteVerbsTests`
+  (the other verbs' requests exactly, the trigger's Job, the kubectl each
+  equals, their reviews and no typed name, states from an object or a
+  row, a namespace's name, what its delete warns of) and
+  `KubeWriteVerbsPageTests` (each through the page against the fake: the
+  review before the CronJob is read, the Job made and owned, suspend and
+  resume by the row, pause turned round by the read, cordon's
+  SchedulingDisabled, the sheet's name checked, a name taken, a
+  namespace's counts and typed name, fake-dev refusing each with nothing
+  sent, production's switch checked again at the button). The scenario's
+  `kubernetesVerbs` (`E2ERunner+KubernetesVerbs`) triggers, cordons and
+  makes then deletes a namespace on `kind-fake` by the window's keys and
+  sheets, and sees `fake-dev` refuse each.
+
+**Writes in a tab** (`KubeTabWrites.swift` (pure),
+`KubernetesPageModel+TabWrites`; analysis 2.4, 2.9, 2.15 and Section 5's
+process table): a drain, a rollback and a debug container are kubectl in
+a terminal tab — where evictions and what a PodDisruptionBudget blocks
+show as they go, and `rollout undo`'s logic stays kubectl's — not
+requests. `KubeTabWrite` is each one's words: `kubectl drain NODE
+--ignore-daemonsets` (Drain in a Tab…, a node's), `kubectl rollout undo
+deployment/D --to-revision=N` (Roll Back in a Tab…, a Deployment's: the
+revision picked from the ReplicaSets it owns, newest first, each with its
+images and age — `KubeRevision`, the current one never offered),
+`kubectl debug -it POD --image=I --target=C` (`E` on a pod where the
+server serves ephemeral containers; C picked when there are several) and
+a node shell (`E` on a node; Node shells, below), `--context` and `-n`
+always (a drain's `-n` is its tab's, harmless for a node), every word not
+ours quoted for zsh. A pod's image is the context's `debugImage`, else
+`kubernetes.debugImage`; a node's the context's `nodeShellImage` first
+(`KubernetesModel.nodeShellImage`). Those only prefill the confirmation's
+image field (`KubeWriteConfirmation.image`, `WriteConfirmation.imageField`):
+what it says when the button is pressed comes back with the typed name
+(`KubeWriteAnswer`), is checked as the docker CLI reads a name
+(`KubeTabWrite.image(from:)`, `DockerImageReference` — no space, no
+leading `-`); one that isn't an image runs nothing. Another image than
+the one shown is asked again — a new confirmation with that image's exact
+line, its name typed again on production — so the line confirmed is
+always the line that runs (`KubeTabCommand.with(image:)`, quoted). The
+setting stays the default.
+One path (`runTabWrite`), as the page's writes: the process class check
+(`KubeProcessCheck`: refused on every read-only context — each is
+`KubeProcessVerb.writes` —, a node's debug also needs the context's
+`nodeShell`; a debug container and a node's debug are shells, refused
+where the context's `shells` is off); the access review of what the command does
+(`KubeTabWrite.accesses` through `writeAccess`: patch nodes and create
+pods/eviction cluster-wide; patch deployments.apps; patch
+pods/ephemeralcontainers and create pods/attach; create pods); what it
+needs read; the confirmation (`KubeTabWrite.confirmation`, a
+`KubeWriteConfirmation` without a request verb: the context and
+namespace, what happens, the command the tab runs) with the name typed
+where rule 4 says — a drain, rollback or debug container on production,
+a node's debug on every class (decision 20) —; the class check once more
+against the context as it is at the button, which must still be the
+cluster, user and class reviewed (`KubernetesModel.sameAccess`: the tab's
+kubectl reaches it by name); then `KubeCommands.command(_:in:)` —
+which builds nothing the check refuses — typed into a new tab pinned to
+the context (`runKubernetesCommand`), recorded instead in a scenario.
+Checked: `KubeTabWritesTests` (each line, quoting, every read-only
+context refusing each, typed names, the confirmation's words, the
+reviews, which kinds, the revisions) and `KubeTabWritesPageTests`
+(reviewed then asked then typed, a read-only context sending not even a
+review, a refused review, a revision picked, `E`'s container, a wrong
+name, writes turned off and the kubeconfig pointing the name elsewhere
+at the button running nothing). ⌘K lists them beside the page's writes
+(`Kubernetes: Drain node N in a Tab…`).
+
+**Agents' writes** (`KubeMCP.write`, `KubeAgentWrites`; 3.5,
+rule 10): `k8s_restart`, `k8s_scale` and `k8s_delete_pod` work only on
+a context `kubernetes.agentWrites` names (empty by default: agents only
+read) and writable for agents — a local one not set `writable: false`,
+a remote or production one only where its entry sets `writable: true`
+(`KubeAgentWrites.refused`: a person may write wherever the context
+isn't set read-only, the owner's decision; for agents the explicit flag
+stands where production's session switch stood, so their reach didn't
+grow); `tools/list` offers them while the setting
+names any context — by the setting, not the contexts' state at the
+list, which MCP isn't told of again (an agent started before a name was
+added needs a restart) — and `k8s_contexts` says where they work. A call goes the page's way: the class check
+(`KubeWriteCheck.rule`), the access review through the context's
+socket, the replicas read for a scale, the confirmation
+(`KubeWriteConfirmation.make`) asked in the calling pane's window — "An
+agent asks, in <context · namespace>: …", the sheet `WriteConfirmation`
+with Allow and Don't, all of it shown, the name typed where rule 4 says
+—, the contexts read again and every check repeated (writes turned off,
+`agentWrites` changed or the kubeconfig pointing the name elsewhere
+while it asked stop it), then one request (`KubeWrites`) through
+`agentClient`. Declined, a wrong name, refused: an error to the agent
+and nothing sent. An isolated run with no window answers no.
+`KubeMCP.askOverride` answers in tests. Checked: `KubeMCPWritesTests`
+(where agents may write, the tool list by `agentWrites`, a writable
+context it doesn't name refused, every tool asking first and a refusal sending nothing, a
+scale reviewed then landing, production's typed name, a refused review,
+a change while asked); the scenario's `kubernetesTabWrites` and
+`kubernetesAgentWrites` (`E2ERunner+KubernetesTabWrites`): a drain
+refused on fake-dev and recorded on kind-fake after its review and its
+sheet, a rollback's revision picked, `E`'s debug container; through the
+bridge's endpoint no write tool and `k8s_scale` on kind-fake refused
+until `agentWrites` names it, then asked in the window (the runner
+answers) and landing on the fake, a declined delete sending nothing, and
+fake-prod's writes refused to agents until `agentWrites` names it and
+its entry sets `writable: true`, then its name asked.
+
+### Manifests in the editor
+
+**Manifests in the editor** (`KubeApply.swift` (pure),
+`KubeManifestSession.swift`, `KubeManifestViews.swift`,
+`KubeResourceBuffer.swift`, `KubeResourceYAMLView.swift`,
+`KubernetesPageModel+Edit`, `EditorViewController+Kubernetes`,
+`KubeMCP+Apply`; analysis 2.8, 3.3, decisions 11 and 30):
+
+- **A resource's YAML is one buffer** (`KubeResourceBuffer`, one per
+  object in `KubernetesModel.resourceBuffers`, `KubeResourceBuffers`):
+  the detail's YAML tab *is* the editor — an embedded
+  `EditorViewController` (`embedded: true`: no tabs, no breadcrumb, the
+  page's `yamlEditor`, `KubeEmbeddedEditor`) showing it — and `y` (a row,
+  the detail, its Open in Editor) opens the same `EditorBuffer` in the
+  window's editor (`adopt`), so both show the same edits. Two editors
+  share a buffer's `NSTextStorage`: each moves its own layout manager
+  between storages (`attach`, never `replaceTextStorage`, which would
+  drag the other editor's along), and the storage's delegate is the
+  buffer's `EditorStorageRelay`, which notes an edit once and tells every
+  editor showing it. Its text is `forEditing`'s (managedFields, status,
+  the last-applied annotation, resourceVersion, uid, timestamps stripped;
+  a Secret's values and secret-looking env masked), its resourceVersion
+  kept beside it (`KubeManifestEdits.register`, sent with the apply).
+  Never a file: `EditorDocument.loadVirtual` (no read, no write, no
+  language server, no git gutter, nothing in the session), ⌘S refused
+  (`unsaveable`), and its edits count as unsaved — the tab's dirty dot is
+  the resource's (`setVirtualEdited`: undone back to the cluster's text,
+  no dot in either editor), closing the tab with them asks (Discard
+  Edits), and the window's close and the quit name them wherever they
+  were typed (`unsavedNames(everyWindow:)`: the editor's, the detail's,
+  and — the last window, or quitting — every one `KubeResourceBuffers.edited`
+  keeps). Held while the detail shows it or an editor's tab has it, kept
+  while it has edits (they are nowhere else; the detail leaving them
+  says so, `keptEdits`), dropped otherwise; a closing window lets go of
+  its editors' (`releaseResources`). While it shows (the YAML tab on
+  screen — `updateYAMLReading` — or the active tab of the window's
+  editor while that is on screen: its pane open, no page over it, the
+  window visible — `isOnScreen`, `updateEditorOnScreen`) it follows the
+  object: one watch by `metadata.name`, each change read whole; a follow
+  that ends (the proxy closed, the socket reopened) or couldn't start
+  starts again with a backoff while somebody still shows it. Without edits a change
+  replaces the text quietly; with edits it is held (`clusterChange`) for
+  the bar's banner — Reload, Diff against it — and never written over
+  them (`KubeResourceBuffer.rule`, pure). A Secret is never followed: it
+  is read on Show (the detail's stripped read) or `y` (asked once a
+  session on production), only its masks kept — the buffer goes with
+  Show's values unless it has edits, and after an apply the values typed
+  in clear (a Secret's, a secret-looking env's) are masked again in the
+  buffer and its undo dropped (`KubeResourceBuffer.masked`). On the page the diff
+  shows in the tab, in place of the text (`showsDiff`): the right-hand
+  pane is under it. The bar (`KubeManifestBar`) adds the banner, Revert
+  while it has edits, and why Apply is greyed on a read-only context.
+- **What gets the bar** (`attachManifest`, where a `.sql` file's console
+  sits; over the text in the YAML tab): a resource's YAML (above). A YAML file of a
+  checkout's with `apiVersion:` and `kind:` at the top
+  (`KubeManifest.looksLikeManifest`), or `kustomization.yaml` — its folder
+  rendered by `kubectl kustomize` (`KubeKustomize`: the planner's kubectl,
+  `KUBECONFIG=/dev/null`; files only, Section 5 starts it on every class) —
+  the saved files, so refused while one in its folder is unsaved, and
+  labelled so.
+  A copy's context and namespace are fixed; a file picks a context (the
+  page's at first), an object without a namespace going to the page's
+  namespace there.
+- **Diff with Cluster** (`KubeManifestRun.diff`): each object resolved at
+  its own apiVersion (`refs`; discovery holds each group's preferred
+  version, so another one the manifest names — `autoscaling/v1`, a CRD's
+  older one — is read from its own list, `served`), its live
+  object (a GET; 404 is a create), then on a writable context a
+  server-side apply with `dryRun=All` (`PATCH`,
+  `application/apply-patch+yaml`, `fieldManager=overterm`, the body JSON —
+  which is YAML — forced as `kubectl diff --force-conflicts`, since a dry
+  run takes nothing). A read-only context sends nothing, and a refused
+  dry run (RBAC's 403, `KubeWriteRefused`, a webhook's 400 "does not
+  support dry run") falls back too — an admission's denial is shown as
+  the error, never as a client-side diff: the file merged over
+  the live object here (`clientSide`, a Secret's stringData folded),
+  labelled "client-side: defaults and admission not applied" with why.
+  Both sides stripped and masked together (`KubeManifestDiff.masked`): a
+  Secret's `data`/`stringData` `***`, changed `*** (before)` / `***
+  (after)`, a secret-looking env value `••••••` the same way paired by
+  name; a value still masked in the file stands for the live one for the
+  diff only (`KubeApplyCheck.unmasked`, in memory); what an apply sends
+  is each item's own `sent` object — an env value still masked as `y`
+  masked it given back the live entry's value of the same name in the
+  same container (`restoringEnv`, in memory, never a Secret's). A unified diff
+  (`LineDiff.blocks`) per object in the right-hand pane's ⎈ tab
+  (`RightPane.manifest`, `KubeManifestPane`), the fields other managers
+  own named first (`KubeFieldOwners`: managedFields' paths against what
+  the dry run's result changes, for objects whose diff isn't empty — a
+  checkout's list without the server's defaults changes nothing —
+  "Helm manages this…", "Argo CD manages this;
+  your change will be reverted", Flux's two controllers; their labels too).
+  A production Secret's values are read for a diff after the once-a-session
+  ask Show uses. Another context picked while it works drops its answer
+  (the picker is off meanwhile).
+- **Apply** (`runApply`, a step of its own): the class check
+  (`KubeApplyCheck.refused`: writable contexts only, production too —
+  nothing turned on first, the owner's decision —; never forced there), the manifest read once — the diff confirmed and the objects sent
+  are that text's —, a Secret's masked values refused before anything is
+  read (`maskedBeforeReading`; retyped — a key Overterm's own apply owns,
+  `KubeFieldOwners.overterms`, is never offered for taking out, since
+  leaving it out removes it), the access review (`patch` the kind;
+  `create` for a new object) through the context's socket, a fresh dry
+  run of those objects, an env mask the live object couldn't give back
+  refused, the confirmation (`KubeApplyConfirmation`: the context and
+  namespace, the dry-run diff, the owners, `kubectl apply --server-side
+  --field-manager=overterm -f …`, the name typed on production), the
+  context checked again at the button (`sameAccess`), then each item's
+  `sent` PATCHed to its own ref with the resourceVersion a copy was opened at. A 409's
+  `FieldManagerConflict` causes become `KubeApplyConflict.fields` — said
+  with each manager and field, Force… (`force=true`, asked again) offered
+  off production —, one without them `.changed`: Replace… applies without
+  the old version, asked again. The diff is read again after an apply.
+- **Agents** (`k8s_apply`): the same path where `kubernetes.agentWrites`
+  names a context writable for agents — on production
+  `applyOnProduction` too (`KubeApplyCheck.refused(agent:)`) —,
+  no Secret (rule 10: refused before anything is read, so its "no change"
+  can't say whether a guessed value is right),
+  the dry-run diff and owners in the window's confirmation, never forced
+  (a conflict is reported). An object without a namespace goes to the
+  one named — `a,b` refused — or, with several shown and none named, is
+  refused as every one-namespace tool's call is (`oneNamespace`).
+- **The fake** serves a kind at a second version (`serve(_:alsoAt:)`,
+  listed after the preferred one) and server-side apply: `fieldManager` required, a create
+  when absent, a stale resourceVersion's 409, other managers' fields
+  (`setManagedFields`) a 409 naming them unless forced, `dryRun=All`
+  keeping nothing.
+- **Checked**: `KubeApplyTests` (the manifest read, the requests, stripping
+  and masking, owners, a 409 read, production's rules, the confirmation)
+  and `KubeApplySessionTests` (against the fake: the dry run changing
+  nothing, read-only and refused diffs client-side sending nothing, a
+  Secret's values never shown, production's Secret asked once, a
+  kustomization rendered, review then confirmation then apply, Cancel and
+  a refused review sending nothing, a conflict then Force, Replace, masks
+  refused, a person's Apply on writable production with no setting, an
+  agent's there only with `applyOnProduction`, the typed name, `k8s_apply` and its refused Secret, an edit during the review not
+  sent, a non-preferred version, `y`'s env mask applied untouched, a
+  context picked mid-diff, a kustomization's unsaved file, a webhook
+  without dry run and an admission's denial, the copy never saved;
+  `KubeResourceBufferTests`: one buffer for the tab and the editor, the
+  banner rule and the follow over the fake, the follow started again
+  after its stream ends or once there is a client, the window editor's
+  follow only on screen, one dirty state for both editors, read-only
+  greying, a Secret masked, never sent masked and masked again after its
+  apply); the scenario's `kubernetesApply`
+  (`E2ERunner+KubernetesApply`): the YAML tab's editor followed quietly,
+  then the banner over its edits, `y` showing the same buffer (followed by
+  the window's editor only while uncovered), never saved by ⌘S, closing
+  the `y` tab with edits asking (Cancel keeps them, Discard reverts both),
+  edits typed only in the detail's tab said kept and asked about by the
+  window's close, the dry run and its
+  diff drawn, Helm named, the 409 shown, Force landing, a checkout's
+  Secret diffed masked, a kustomization through the stand-in kubectl,
+  fake-dev client-side sending nothing, and Apply offered on writable
+  fake-prod with nothing turned on, its name typed (an agent's only with
+  `applyOnProduction`).
+
+### Helm
+
+**Helm releases** (`KubeHelm.swift` (pure), `KubeHelmSession`,
+`KubernetesPageModel+Helm`, `KubeHelmView`; analysis 2.12, Section 4's
+Helm releases, rule 9): the page's Helm section (`8`, the palette's
+Kubernetes Helm Releases) lists the releases of the context and namespace
+shown with no `helm`, from Helm's own records — a Secret of type
+`helm.sh/release.v1` per revision (`HELM_DRIVER=secret`, the default), a
+ConfigMap (`configmap`), Tiller's ConfigMaps (`OWNER=TILLER`, Helm 2:
+listed only across all namespaces, cluster-wide, since they sit in
+Tiller's namespace and say no other — the row says it is Tiller's) —
+by their metadata alone: `KubeClient.helmRecords` asks with
+`as=PartialObjectMetadataList` and no fallback (a server that couldn't
+would send every record's data), `labelSelector=owner=helm` and, for
+Secrets, `fieldSelector=type=helm.sh/release.v1`, paged. A record's labels
+(`name`, `status`, `version`, `modifiedAt`; Tiller's uppercase) — else its
+name, `sh.helm.release.v1.<name>.v<revision>` — make a `KubeHelmRecord`;
+a release (`KubeHelmRelease`) is a name's records, newest first. Listed
+when the section shows, on Refresh and with another context or namespace
+— not watched. The chart and app version aren't in the labels: the list
+says them once the release was opened (`charts`, names and versions only).
+Opening one (a click, ↩) is the one GET of its latest record — or of a
+revision picked in its History — through the proxy (`helmRelease`), and
+reading it is reading a Secret: on production the session's first asks,
+naming the context (`KubeSecretConsent`, shared with a Secret's Show).
+It is decoded on a queue of its own, one record at a time, never on a
+Swift-concurrency thread (`KubeHelm.decodeOffPool` over
+`KubeHelm.decoding`; cancelled, it stops between steps) (`KubeHelm.decode`: the API's
+base64, Helm's base64, then gzip — inflated with Compression, capped at
+32 MB decompressed — or plain JSON for old releases; Tiller's protobuf is
+said, not read) and masked at once (`KubeHelmMask`); only the masked
+`KubeHelmDetail` stays, whose description names the release alone.
+Values — the user's (`config`) and the computed ones (the chart's
+defaults with the user's over them, a `null` taking one away, Helm's
+coalesce) — have a string under any secret-looking key on its path
+(`Secrets.isSecret`: password, token, key, auth…), a number under one,
+and a secret-named env entry's value — strings and numbers — as `***`, and credentials in other
+text taken out (`Secrets.scrubCredentials`, a URL's password). The
+manifest is read document by document (its `# Source:` lines kept) and
+each shown as `KubeObjectStrip.shown` shows an object (a `*List`'s
+items each so) — every Secret's
+`data` and `stringData` `***`, env values by name — with credentials out
+of every string; a document that can't be read whole is left out and
+said, since it couldn't be masked. Notes and descriptions are scrubbed.
+Tabs: Overview (status, revision, chart, app version, description,
+deployed), History (each revision, its status and age; its description
+once read, kept only while that release stays open), Values (user-supplied or computed), Manifest, Notes — each
+copyable as shown, masked. What was read goes when another release or
+section opens, the context or namespace changes, or on Esc; the page or
+its window hiding leaves it open saying so, with Read Again. A Secret
+list the cluster refuses (403) is said in plain words — releases can't
+be read here because Secrets can't be listed — with `helm list
+--kube-context C -n NS` to copy and Terminal in This Context
+(`KubeHelmLine`, pure, always `--kube-context` and `-n`); ConfigMap
+records still list. A storage whose list fails otherwise (a 5xx, a
+timeout) while another's lists is said over the list (`unlisted`), with
+Refresh, so the rest isn't taken for all of them. While the section shows, ↑ ↓ move along the
+releases, ↩ opens, Esc closes, `k` copies `helm status`, ⌫ uninstalls (below); the sections,
+`n`, `c`, `:` and `0` stay the page's, and a kind's verbs do nothing.
+Nothing of a release is logged, written or given to an agent: there is no
+Helm tool. `FakeKubeAPI.addHelmRelease` writes records in Helm's own
+encoding (`KubeHelm.encode`) and the fake answers
+`as=PartialObjectMetadataList` lists; `KubeHelmTests` decodes members
+made by the system's gzip, and the `kubernetes` scenario checks a
+release's values masked and a forbidden Secret list degrading.
+
+**Helm writes** (`KubeHelmWrites.swift` (pure),
+`KubernetesPageModel+HelmWrites`; analysis 2.12, Section 5, decision 15):
+a release rolled back to a revision of its history, or uninstalled, is
+`helm` in a terminal tab pinned to the context, as drain and `rollout
+undo` are kubectl in one (Writes in a tab, above) — never a request of
+Overterm's, and never a chart browser, an install or repositories.
+`KubeHelmWrite` is each one's words: `helm rollback NAME REVISION` and
+`helm uninstall NAME`, `--kube-context` and `-n` always, every word not
+ours quoted for zsh, and before `helm` `KubeHelmWrite.prefix`: `env -u`
+helm's kube settings that would send the write to another server or
+identity (`HELM_KUBEAPISERVER`, `HELM_KUBETOKEN`, `HELM_KUBEASUSER`…: the
+user's rc files run after a pinned tab's environment is set, so only the
+line can be sure) and the driver always said (`HELM_DRIVER=secret` or
+`configmap`, whatever the shell exports); a Helm 2 (Tiller) release is refused, and so
+is a name helm wouldn't give a release (`isReleaseName`: DNS-1123, at
+most 53) — the name goes before the flags, and quotes don't keep `-x`
+from being a flag to helm. Both
+conform to `KubeTabCommand` with `KubeTabWrite`, so they take the same
+path (`confirmTabCommand`): the process class check (`helmRollback`,
+`helmUninstall` are `KubeProcessVerb.writes`: refused on every read-only
+context — any class set `writable: false`); the access review
+through `writeAccess` — the release's records (create and update
+secrets for a rollback, update and delete for an uninstall; configmaps
+for that storage) and, when the release was opened and its masked
+manifest read, the kinds it names that the server serves, patch or
+delete, at most eight (`KubeHelmWrite.resourceAccesses`; a manifest is
+never read only for this); a rollback's revision picked from the history,
+newest first, the latest never offered, nine at most — every earlier
+one helm keeps by default (`KubeHelmWrite.choices`) —, or the one its
+History row's button names, any kept one but the latest
+(`canRollBack`); the confirmation naming the context
+and namespace and the helm the tab runs, the release's name typed for a
+rollback on production and an uninstall on every class (rule 4); then
+the command typed into a tab whose `KUBECONFIG` is the pin then exactly
+Overterm's files (`runKubernetesCommand`), recorded in a scenario. The
+opened release's header has Roll Back and Uninstall (`helmWriteVerbs`,
+`ResourceActionBar`), its rows the same in their menu, ⌘K both, each
+greyed with why; ⌫ and ⌘K act on the row highlighted, else the one
+opened (`helmPicked`) — ↑ ↓ move the highlight off the opened release. Checked: `KubeHelmWritesTests` (lines, quoting, the
+driver, every read-only context refusing both, Tiller, typed names, the
+confirmation's words, the reviews, the manifest's kinds, the revisions)
+and `KubeHelmWritesPageTests` (reviewed, picked, asked, typed; an opened
+release's kinds reviewed; ⌫'s uninstall and a wrong name; a read-only
+context sending not even a review; a refused review; production's typed
+name and writes turned off at the button); the `kubernetes` scenario's
+`kubernetesHelmWrites` (`E2ERunner+KubernetesHelmWrites`): refused on
+fake-dev, both recorded, not typed, on kind-fake; on fake-prod refused
+while its entry sets `writable: false`, then, writable with no switch,
+the name asked.
+
+### Usage and the Overview
+
+**Usage** (`KubeMetrics.swift` (pure), `KubeMetricsMonitor`,
+`KubernetesPageModel+Metrics`; analysis 2.11, decision 16): the Pods and
+Nodes lists have CPU and Memory columns before Age, from metrics.k8s.io
+as `kubectl top` says them (millicores, Mi; a pod's containers summed, a
+node's with its share of allocatable — the NodeList's
+`status.allocatable`, read with the first sample and every
+`allocatableEvery`th, since a Table row doesn't carry it). `KubeQuantity`
+reads the API's quantities (`n`, `u`, `m`, `Ki`…`Ei`, `k`…`E`, an
+exponent; never `nan`, `inf` or hex). The model's `KubeMetricsMonitor`
+polls only what a page on screen shows (`want`, per page: the pods list,
+the nodes, the Overview's totals) where the model says (`updateMetrics`:
+the context, the namespace, the list's label selector), every `interval`
+(15 s; metrics-server samples every 15 s and keeps no history) — the last
+answer, and Overterm's own ring of the samples taken while shown
+(`KubeUsageRing`, metrics.md 4.1; pure, in memory only), keyed
+(`KubeUsageKey`: the cluster, a node, a pod, a container, a workload's
+or a namespace's pods summed per poll) by metrics-server's own stamp —
+one that didn't move is dropped, a stretch past 2.5 intervals kept as a
+break — in two populations: a list's rows (the pods', the nodes', the
+cluster's) keep the raw tier only — a node's row the whole 15 minutes
+(`rawLimit`, for the Nodes list's strip), a pod's row and the cluster's
+the last 40 points (the Overview's sparkline its 10 minutes) — and are forgotten when their row isn't sampled or the
+list stops (a key both populations hold is read from the one asked
+for: a node's row the list's, so a closed tab's old samples never stand
+in for the row's fresh ones); a detail's keys keep two tiers (raw, 15
+minutes; one-minute min/mean/max buckets, 6 hours), at most 200 by least
+recently fed, each forgotten an hour after it was last polled (decision
+1: coming back to a pod shows what was sampled before, the time away a
+gap). Points are an `Int32` second and `Float32` values, the whole under
+6 MB as malloc counts it (`bytes`: the arrays' capacity, kept at their
+bound, each key's slot and names, a sum's members; list rows given up
+first, the shortest first). A poll's sample is merged off the main
+thread over a copy and assigned whole (`record`; merged again if the
+ring changed meanwhile). The ring belongs to the last context shown
+(`last`): a page hidden, the window occluded, keeps it — it is dropped
+only when another context is shown, on a credential failure, and at
+quit. It draws the sparklines (`KubeSparkline`) in a
+pod's detail and the Overview. A detail polls its own object
+(`wantDetail`, `KubeMetricsDetail` → a `KubeMetricsTarget`: a pod's
+PodMetrics, a node's NodeMetrics, an HPA's autoscaling/v2 object read as
+`KubeHPAStatus` — that one needs no metrics-server — or a workload's or
+namespace's pods into their sum), at most `maxDetailTargets` (3) a
+context, a fourth replacing the oldest; a pod's detail Overview does
+today, whatever the list beside it shows. A 403 (`KubeAPIError.isForbidden`)
+is said once in its own words (`KubeMetricsTarget.refusal`: "metrics-server
+answered 403: you can't list pods.metrics.k8s.io in shop.") and the
+target isn't asked again until the context changes or `retry` — never
+every 15 s, nor at each show; Try Again beside the sentence (the page's
+note, the detail's usage, the Overview) is the model's `retry`, for an
+RBAC grant that changes no credentials. Of a pods target's several
+namespaces each read is its own (`KubeMetricsTarget.pods` →
+`KubePodsRead`): a namespace refused is left out and named
+(`KubeMetricsSample.refusedReads`, "… in locked."), its pods' cells a dash
+saying so, the others' usage standing; not asked again either; only when
+every read is refused is the target (past the cap, the read across the
+cluster: "across the cluster"). Whether there is a metrics-server is discovery's
+to say (`KubeMetricsAvailability`): absent (EKS by default) or down
+(`Stale`, a 503), the columns stand with a dash and why (`KubeUsageCell`), and nothing is
+asked — no error; the context's `metrics` (`auto`, `metricsServer`,
+`none`, `prometheus`) at `none` takes the columns away and
+asks nothing; Prometheus is opt-in, below. A read that fails leaves the last sample, aging, until it
+is older than `staleAfter` (three reads): then a dash, never a stale
+number shown as current (each failed read publishes, so the cells look
+at its age again); the header says why there is none, or the sample's
+age once it is old. A credential failure ends the polling (no retry runs
+the plugin again) and drops the sample at once, keeping why — nothing
+more would age it; a page asking again doesn't start it, only another
+context, namespace, selector or availability, or the model's `retry`
+after a sign-in (`KubeMetricsMonitor.retry`). The list shows raw usage:
+its Table rows carry no spec, so the percentages of requests and limits
+are the pod's detail's, and a node's share is of its allocatable. Sorting by CPU or Memory sorts by the
+numbers; CSV has the cells as drawn. A pod's detail says its containers'
+usage against their requests and limits (`KubeContainerUsage`, from its
+one GET and the pod's own sample, else the list's), red within a
+tenth of its memory limit. `k8s_top` (agents', `KubeMCP+Top`) is the
+same reads: a namespace's (or every) pod, a pod's containers, the nodes
+with their share — sorted by cpu or memory, bounded (20, at most 200),
+scrubbed, saying when metrics-server sampled; without one it says so,
+asking nothing more. The fake serves PodMetrics and NodeMetrics
+(`setPodMetrics`, `setNodeMetrics`, stamped as served unless given a
+time, so the stamp advances as metrics-server's does; `forbidden` takes
+`pods.metrics.k8s.io` for that group alone, `pods.metrics.k8s.io@locked`
+for that group in one namespace) and a cluster without
+metrics-server (`metricsServer = false`); `KubeMetricsTests`,
+`KubeUsageRingTests`.
+
+**The Overview** (`1`; `KubeClusterOverview.swift` (pure),
+`KubeClusterOverviewSession`, `KubeClusterOverviewView`; analysis 2.1,
+2.3, 2.10, 3.9's spirit): health at a glance for the context and
+namespace shown, read only while the section shows on a page on screen —
+every follow ends when another section shows or the page hides, and
+what was read goes. It follows, rows only as the lists do: the pods of
+each phase (`fieldSelector=status.phase=…`, five lists kept live, so the
+counts are the server's phases, not a guess from a Status cell — the
+fake, as the server's watch cache, sends DELETED and ADDED as a change
+leaves or joins a selector), Deployments, StatefulSets, DaemonSets and
+Jobs with their metadata (`KubeListOptions.metadata`: `includeObject=
+Metadata` in one namespace too, for their labels; a row keeps only its
+`app.kubernetes.io/…` ones), the nodes, and the Warning events
+(`type=Warning`). It shows what fails first — pods failing and why (a
+Failed or Unknown phase, a failing reason), workloads not ready
+(`KubeWorkloadState`: Ready `n/n`, a DaemonSet's Ready against Desired, a
+Failed Job), nodes not ready, the last hour's warnings newest first —
+each a link to its detail (`openFromOverview`), under the server's
+version and node count; then the cluster's CPU and memory against its
+nodes' allocatable (the monitor's nodes sample) and over time — X1–X4,
+sampled while it shows or from Prometheus (The Overview's usage, under
+Prometheus below). The pods' requests and limits against
+allocatable come from Prometheus where the context opts in (every pod's
+spec is a whole-object list, which the Overview's rows avoid; Prometheus
+has them as series — Prometheus, below);
+the counts per kind and pods by phase, each a link to its list; and the
+Applications (`KubeApplications`): workloads grouped by namespace and
+`app.kubernetes.io/instance` (else `name`) into applications, those by
+`part-of` into systems, the unlabelled counted. A part the cluster
+refuses (RBAC on events) is said; the rest stands. The list's verbs are
+no keys there; the page's are. The sidebar counts what fails beside it;
+the palette has Kubernetes Overview. `KubeClusterOverviewTests`.
+
+It is drawn as cards (`KubeClusterOverviewView` over `KubeOverviewCards`,
+pure, and the resource pages' `ResourceCard`: the theme's card fill, a
+hairline border, a 10 pt radius, `ResourcePill` for a status in words, a
+`ResourceCardRow` for a row that is a button): a header strip (the
+context, its namespace, the version and node count, Live or reading, the
+pills — `N need attention`, the health count, `N checks pass`, its own
+view observing the health session, which the page doesn't republish —
+and a check passes only if it ran over lists read whole,
+`KubeHealth.Report.ran`: never one over a list refused, cut at its limit
+or not served); a card a kind (pods, each workload kind, nodes: the
+number, a thin bar in the status colours with the same counts said under
+it — pods by phase: running, completed (neutral), pending, failing, a pod
+failing counted once, as failing, whatever its phase, `failingPending` —
+a press shows its list); Needs attention worst first
+(`KubeOverviewCards.attention`: failing before not ready, nodes before
+pods before workloads, the most restarted first; a reason pill each,
+`CrashLoopBackOff · 14×`, `NotReady`, a workload's row as it says it,
+`2/3 ready` — `KubeWorkloadState.said`, kept in `WorkloadCount.said`)
+beside the usage of allocatable (the share in big numbers, its bar at
+≥ 70 and ≥ 90, the samples since shown as a line against allocatable);
+the charts, the health checks (severities as chips, a check a row that
+opens to its findings, the ones with problems open at first), the
+applications as small cards, the warning events. Below 720 pt the paired
+cards stack and the charts go one under the other. A chart's reference
+labels never overlap (`KubePlot.labelled`: lines at one height said once,
+`allocatable = capacity`; near ones pushed apart). Each card is an
+accessibility container (`.contain`), so its own identifier and its
+children's stay. Presentation only:
+nothing more is read for it. `KubeOverviewCardsTests`; the
+`kubernetesOverview` scenario draws it dark, light and narrow
+(OVERTERM_DUMP_PNG captures each), finds the cards by their identifiers
+in SwiftUI's accessibility tree (AXEnhancedUserInterface on, in its own
+process) — side by side wide, one column narrow, nothing scrolling
+sideways — and the pass pill again after a refresh.
+
+### The switcher
+
+**The switcher** (⌃⌘J, `kubernetes.switch`; ⇧⌥⌘J, Docker's pattern, is
+Ghostty's `write_screen_file:open`, and its ⌃⌘ defaults are only `[` and
+`]`): the palette scoped to `PaletteItem.Group.kubernetes` — every
+context, the context's namespaces, the kinds it serves ("Go to
+Deployments", with its section and `:` names) and the rows of the kind
+showing, each a palette item the page's `paletteItems` gives (so ⌘K
+finds them too; rows only while something looks at them, never a list
+left from before). ⌘K also has, while the page shows in its window, the
+page's commands (`kubernetesPageCommands`, actions: Switch Context…,
+Switch Namespace…, Go to Kind…, All Namespaces, Wide Columns, Copy as
+kubectl with the line it copies, Copy Rows as TSV and as CSV, Export
+List as CSV…, New Namespace…, the selected object's writes). It looks
+as the page does: it holds the model while the palette shows it
+(`kubernetesSwitcherHeld`), so the kubeconfig is read and the pods
+followed with the page hidden, and lets go after the palette closes — once
+what was picked has opened the page, so the watch runs on. ↩ on a context
+or a namespace switches to it on the page; on a kind, the page on its
+list; on a row, the page on its kind's list with it selected and in view
+(`revealOnKubernetesPage`).
+
+### A checkout's binding
+
+**A checkout's binding** (`KubeBinding.swift`,
+`KubeDeployedCommit.swift` (pure, and its `Git.run` lookup),
+`KubernetesPanelModel`, `KubernetesPanelView`,
+`TerminalWindowController+KubernetesPanel`; analysis 3.1, 3.2, Section 6):
+a checkout tied to the context, namespace and workloads (or Helm
+release) it deploys — the scope the rail's panel shows, the deployed
+commit is read for, Ask Why's brief goes back to and agents' tools
+default to.
+
+- **The binding** (`KubeBinding`: the checkout's real path, context,
+  namespace, an optional release, label selector and workloads as
+  kubectl's short names — `deploy/web`, `sts/db`, `ds/agent`,
+  `KubeWorkloadRef`). Kept in `Kubernetes/bindings.json` under
+  `AppEnvironment.supportDirectory` (`KubeBindingStore`; an isolated
+  run's own folder, a unit test's temporary one), keyed by the checkout's
+  real path, written whole on each change — never anything in the
+  repository, and no secret. One without a context or a namespace is
+  refused; fields are trimmed, an emptied one is none.
+- **The guess** (`KubeBindingGuess`, pure, over `KubeCheckoutScan`'s
+  files): `Chart.yaml`, `kustomization.yaml`, plain manifests (a YAML
+  whose text has `apiVersion` and `kind`), `skaffold.yaml`, `Tiltfile`,
+  `helmfile.yaml` — a chart's name as the release (and Helm's
+  `app.kubernetes.io/instance=` as its selector), a kustomization's
+  `namespace:` else the namespace most manifests name, their
+  Deployments, StatefulSets and DaemonSets, an
+  `app.kubernetes.io/part-of` label as the selector. The scan walks down
+  breadth first, hidden folders, `node_modules`, `vendor` and the like
+  passed over (`Library` too), bounded (`maxDepth` 5, `maxEntries`, `maxFiles` 120, 256 KB
+  a file), off the main thread, and only from a repository's root
+  (`isRepositoryRoot`: its `.git`; never the home folder or `/` — from
+  `~` a walk would reach Desktop and Documents' privacy prompts, other
+  apps' containers and iCloud's placeholders); any other folder a tab
+  sits in is neither walked nor offered Bind; a YAML inside a chart is a template, not
+  a manifest — `chartRoot` walks up to the checkout's root at most, stopping
+  at `pathComponents.count <= 1` and after a bounded number of steps.
+  The user confirms it and picks the context (the page's when it isn't
+  production, else the first that isn't).
+- **The rail's panel** (`SidebarPanel.kubernetes`, after Docker's, on
+  `kubernetes.enabled`; `KubernetesPanelModel`, one a window): the
+  selected tab's checkout (`Tab.checkoutSource`'s root, as the diff and
+  `KubeMCP.paneCheckout` have it), unbound its guess and Bind…, bound the context and namespace
+  — production red —, the deployed commit, the bound workloads with
+  their health (a Deployment's state off its cells, a StatefulSet's and
+  DaemonSet's Ready), their pods, and the forwards in that namespace.
+  **It reads nothing while it isn't the panel on screen** (the sidebar
+  open on it, the window visible: `updateKubernetesPanelVisibility`): no
+  file of the checkout, no kubeconfig, no cluster. Shown and bound, it
+  follows Deployments, StatefulSets (DaemonSets when one is bound) and
+  Pods in the bound namespace — rows only, the binding's selector sent
+  to the server — through the context's proxy in a background slot
+  (`KubernetesModel.panelClient`, never the page's); events applied in
+  batches every 120 ms (`flushInterval`, as the page's), at most
+  `podLimit` pods listed — failing ones first — and "and N more on the
+  page…". A kind that can't be listed (a 403 for a namespace-scoped
+  user, the background proxy closed for the page's slot) is said over
+  the rest and followed again after a wait (`retryDelays`); all of them
+  failed, Try Again. Hidden, every watch ends and the rows go, the
+  look-ups' state with them. Reads only.
+- **The right slot** (`RightPane.Mode.kubernetes`, `KubeSlotView`): a
+  pod clicked in the panel takes the slot as Docker's container does —
+  its log (`KubeDetailSession`'s `KubePodLogSession`) followed only while
+  it shows and the window is on screen, its Overview from one GET made
+  once the slot shows it. It outlives the panel hiding (the rail on
+  Files, another tab) and goes, its session cancelled, when the binding
+  moves off its namespace or another pod is picked.
+- **The deployed commit** (`KubeDeployedCommit`, 3.2): the sources in
+  order of trust — the image's `org.opencontainers.image.revision` label
+  or annotation (`buildx imagetools inspect --format '{{json .}}'`
+  through the user's docker, only on Look Up Revision; none in an
+  isolated run), a tag shaped like a commit (7–40 hex, the whole tag or
+  its last `-`/`_`/`.` part; digits alone count only when the checkout
+  has them — a build number otherwise), a bound release's chart
+  `appVersion` (on Look Up, not on production; kept by the binding's
+  context, namespace and release, never offered to another binding) — the images read off the
+  workload's Table row (`Images`). The first candidate the checkout has
+  is compared with it by `Git.run`, nothing fetched (`rev-parse`,
+  `rev-list --count`, `--left-right` against `main`/`master`, else
+  `origin/HEAD`): "deployed abc1234, 4 commits behind main; this branch is
+  2 commits ahead", "…, up to date with main", "…; it has 2 commits this
+  branch doesn't"; else "commit abc1234 is not in this checkout", else
+  "no commit found in the image" (`KubeDeployedAnswer.text`). A
+  workload's answer is asked again only when its images, or what was
+  asked, change. Diff Deployed…Current opens a review tab (⇧⌘R) for
+  `deployed...HEAD` (`ReviewSource.range`).
+- **Checked**: `KubeBindingTests` (guesses from fixture checkouts, the
+  bounded scan and walk up, the store by real path, nothing written into
+  the checkout, unit tests off the user's file), `KubeDeployedCommitTests`
+  (the shapes, the sources' order, imagetools' label, every wording, a
+  real repository's ahead, behind, elsewhere, HEAD, missing, none),
+  `KubernetesPanelModelTests` (hidden it reads nothing; unbound it
+  guesses and asks no cluster, a folder that isn't a repository's root
+  not at all; bound it follows with the selector, says
+  the deployed commit, Look Up's label and a release's appVersion for
+  its binding only — refused on production —, a look-up outlived by the
+  panel or the binding leaving nothing behind, a refused kind said and
+  followed again, Try Again, the pods capped, the slot read only once
+  shown and kept while the panel hides, hidden every watch ends),
+  `KubeBriefTargetsTests`, `KubeMCPTests` (the bound pane's context and
+  namespace before the page's, a binding to a gone context passed over,
+  `k8s_why`'s deployed commit) and `KubeAgentBriefTests`. The `kubernetes`
+  scenario (`E2ERunner+KubernetesCheckout`): a fixture checkout guessed
+  without a request, bound to fake-dev/shop in the run's support folder
+  with the repository untouched, its workload and pod drawn, the deployed
+  commit answered and drawn, Diff Deployed…Current's review tab, a pod
+  in the right slot, Ask Why's brief with the commit offered to the
+  checkout's agent first, `k8s_get` from its pane in the bound
+  namespace, and hidden nothing asked — then shown again, read again.
+
+**What deploys the checkout** (`KubernetesPanelModel+GitOps.swift`:
+`KubePanelGitOps`, `KubeGitOpsMatchCache`, `KubeGitOpsCheckouts`,
+`KubeGitOpsPanelHost`; `KubeGitOpsMatch.swift` (pure); `KubePanelGitOpsView`;
+gitops.md 4, G5). The rail's panel says which Argo CD and Flux objects deploy
+the bound checkout, after the deployed commit, only when there is a match,
+an owner, a problem or Find What Deploys This. Two shapes of repository,
+owners first: **the app repo** — the bound workloads' rows carry their
+metadata in the binding's one namespace (`KubeListOptions.owners`;
+`KubeRow.owners` from Flux's labels, Argo CD's tracking id — only one
+naming the row's own object — and instance label, no other annotation
+kept; every other list's rows unchanged), and
+each owner is read by one GET (at most 8 objects with a Flux owner's
+source and chart, 4 MB each); Helm's own `app.kubernetes.io/instance` counts
+only once that Application's `status.resources` names the workload
+(`KubeGitOpsWire.Managed`, names only); a tracking id naming an Application
+the cluster hasn't (a 404, or its kind not served — Argo CD running in
+another cluster: the part says "unserved" and still names it) is said,
+never looked for in another context, while a GET refused or failed, or a
+group discovery couldn't read, is only a problem line, never "not in"
+(`KubeGitOpsMatch.OwnerRead`: present, absent, unreadable); with no
+marks, an Application with the workload's image "probably deploys" it.
+**The config repo** — a source whose URL is one of the checkout's remotes
+(`GitRemoteURL`, read once per checkout through `git remote -v` — again on
+Refresh —, only the normalised value kept; its git, `KubeGitOpsCheckouts.git`,
+runs with `GIT_CONFIG_GLOBAL=/dev/null` and `GIT_CONFIG_NOSYSTEM=1` in isolated
+runs and tests, so no developer's `insteadOf` changes a match; never a fetch): an Application's `source(s)[i]`, a Kustomization's
+or HelmRelease's GitRepository (a `chartRef`'s HelmChart's), an
+OCIRepository whose artifact names the repository; its path checked in the
+checkout (`KubeGitOpsPath`: out of it refused, not on this branch said), a
+`ref:` values source the repository only — and what it tracks ("tracks
+main; this branch is fix/orders", `HEAD` the remote's default branch read
+locally). Its reads, every one a GET on the panel's background slot: P0
+discovery (the page's, else one read, cached), P1 the workloads' marks, P2
+the owners' GETs, P3 GitRepositories' rows (their URL column) and
+OCIRepositories' objects (200 or 8 MB), P4 Applications in `argocd`, the
+namespaces the page's section saw them in and the binding's, and
+Kustomizations and HelmReleases only once a Flux source matched (500 objects
+or 64 MB a kind, `pagedObjects`; a cut said "searched 500 of 1,240…"; a 403
+across the cluster read in Flux's namespace and the binding's, no
+ConfigMap; a `chartRef`'s HelmChart by GET, each once, at most 8, the rest
+said), P5 one rows-only follow per kind and namespace holding a match
+(at most 4: the rail's follows go to at most 8, all on-screen reads on the
+background slot, none an attention watch), P6 a match read again when its
+row changes, once every 15 s. **On production P3 and P4 wait for Find What
+Deploys This**, which says what it will list. P3–P4's answer is kept five
+minutes in memory, app-wide, by context, binding and the remotes' set
+(`KubeGitOpsMatchCache`; dropped on Refresh, a binding of the checkout
+edited or removed, a credential failure, at quit); hidden, every read ends
+and only the cache stays. Only the matches are ranked, against everything
+held (merged once a change), not the whole listing at each row flip.
+Refresh shows whenever the part was read, failed or found neither tool,
+and reads everything again — P0 too after it failed. Its buttons — Open on
+Page, Refresh or Reconcile, Sync (or Reconcile with Source) in a Tab…, Ask
+Why on a problem — go through the window (`KubeGitOpsPanelHost`, the page's
+contexts loaded first) to the page's one guard path; the page's outcome is
+said in the rail too. An Argo CD Application's detail, when a tab of the
+window has a checkout of its repository, offers each history entry's diff
+against the one before it (`KubernetesPageModel+GitOpsHistory`): both
+revisions verified as commits there (`KubeGitOpsGitArgs.resolve`), a
+review tab of `git --literal-pathspecs diff a..b -- <its paths>`
+(`ReviewSource.paths`). `KubeGitOpsMatchTests` (pure: every mark, path,
+source and tracking rule), `KubePanelGitOpsTests` (against the fake: the
+owner by one GET, the sources matched and listed only then, production
+unpressed lists nothing — GitRepositories' rows named —, the cache and the
+remotes and P0 read once, a binding change and Refresh reading again, an
+owner refused or unserved never "not in", production writable by default
+and every rail verb's sheet cancelled sending no non-GET, then one confirmed
+write; no `git fetch`, the developer's config left out; unbound and hidden
+nothing asked, never a Secret),
+`ReviewModelTests` (literal paths) and the `kubernetesCheckoutGitOps`
+scenario (`E2EKubeCheckoutFixture`, the checkout every Kubernetes scenario
+binds) check it.
+
+**Has this branch reached the cluster** (`KubeGitOpsReach.swift`; gitops.md
+4.3, G6). Under each case (a) match — an object that takes its manifests
+from the checkout's repository — the rail compares what it applied with
+the checkout, beside the image's line and never ranked against it (the
+manifests, not the code). `KubeGitOpsReach.question` (pure) reads the
+object: Argo CD's live revision (history's last, else the last
+operation's; a multi-source Application's matched source), a
+Kustomization's `lastAppliedRevision` (an OCI artifact's
+`org.opencontainers.image.revision` when the artifact is the one applied),
+a HelmRelease's newest history entry (its `+<12 hex>` under the Revision
+strategy, else "chart 1.4.2"); a Flux attempt that failed
+(`lastAttemptedRevision` ≠ applied, Ready False; a HelmRelease's rollback);
+what was fetched but not applied (`KubeGitOpsLadder.unattempted`, Argo CD's
+`sync.revision` against its live one); the path, the remote and the branch
+it tracks; HEAD. `answer` asks the checkout, every call through
+`KubeGitOpsCheckouts.git` (isolated in tests) and `KubeGitOpsGitArgs`
+(revisions verified, a 12-character prefix to exactly one commit, refs
+checked, `--literal-pathspecs`, `--end-of-options`), nothing fetched: the
+commit as a `KubeCommitCandidate` of the fourth source
+`KubeCommitSource.gitopsRevision` ("Argo CD's synced revision", "Flux's
+applied revision"), compared by `KubeDeployedCommit` with the tracked
+branch (the remote's, else the local one, given to git as a whole ref and
+said by its name, `KubeDeployedCommit.Base`; not here: compared with none,
+and "origin/release isn't in this checkout — fetch to compare") — "manifests at a77b0d1, up to
+date with origin/main; this branch is 1 commit ahead", "…, not in this
+checkout — fetch to compare", or `KubeDeployedAnswer.notACommit` by source
+("Argo CD's synced revision isn't a commit (chart 1.4.2)"); "Flux tried
+c03f9aa (this branch's HEAD) and failed: …; a77b0d1 is still applied" (the
+summary's scrubbed error); "Flux fetched …, not applied yet (newer than …)"
+by `merge-base --is-ancestor`; for an Application with a path, "no change
+under apps/web since a77b0d1 on origin/main" (`rev-list --count
+<live>..<ref> -- <pathspecs>`); and the files this branch changes
+(`diff --name-only -z <merge-base>...HEAD -- <pathspecs>`, names as on disk,
+`KubeGitOpsChanges`: "3 files under apps/web on this branch", a review tab
+of them, `ReviewSource.paths`). The pathspecs: the path,
+`manifest-generate-paths`' entries, and the path's `kustomization.yaml`
+`resources:` and `components:` one level deep (256 KB at most, `YAMLReader`;
+a remote entry not followed, said), each through `KubeGitOpsPath`, one under
+another left out; the line names what it checked. An answer is keyed by its
+question's git (`Question.key`: the revisions, the path, what it tracks,
+HEAD, the checkout's refs hashed — `KubeGitOpsMatch.Checkout.refs`), never
+its words: a reconcile's Ready → Progressing → Ready, a message, Stuck from
+the clock run no git, the words said again from the question as it is now
+(`KubeGitOpsReach.labeled`). The window hears the diff model's branch, HEAD
+(`DiffModel.head`, set only when it moves), comparison and a fetch
+(`remoteRefsMoved`, from the watchers' paths), deduplicated — a save moves
+none — and `headMayHaveMoved` (debounced) reads the facts again; a new HEAD
+or a moved ref asks again. Diff Deployed…Current opens
+`deployed...HEAD`. The rail's Ask Why adds the checkout's side
+(`KubeGitOpsReach.briefParts`: the lines, `git log --oneline` from applied to
+attempted, at most 20, and the changed files — through `Secrets` again in
+the page's `askWhy(_:extra:)`). `KubeGitOpsReachTests` (pure and against a
+repository of the test's own: each tool's revision, the words, the attempt,
+fetched, the pathspecs, the answers, Ask Why's commits scrubbed),
+`KubePanelGitOpsTests` (the manifests line and its reviews, the attempt on
+HEAD and its commits in Ask Why, an unchanged HEAD running no git and a new
+one recomputing, an Application's "no change under") and
+`kubernetesCheckoutGitOps` parts 4–6 check it.
+
+**Attention marks** (`KubeAttention.swift` (pure),
+`KubeAttentionWatches`, `TerminalWindowController+KubernetesAttention`;
+analysis 3.13, Section 10, decision 9): a failure in a bound namespace
+marks the bound checkout's tab — the one stated exception to "only what
+is on screen", with a budget.
+
+- **The watches** (`KubeAttentionWatches`, one for the app): two a bound
+  namespace — Pods as rows only, Deployments with `includeObject=Object`
+  (`KubeListOptions.objects`; the reader keeps their `status.conditions`
+  as `KubeRow.conditions`, nothing else of the object) —, both with the
+  binding's selector sent to the server, through the context's proxy in a
+  background slot as a `.watch` (`KubernetesModel.watchClient`: no
+  browser sign-in, given up for a request someone made); nothing else is
+  read. Open only while a checkout bound there has a tab open — each
+  window reports its tabs' checkouts and the selected one
+  (`reportKubernetesCheckouts`, nothing while the marks are off) — and
+  `kubernetes.notifyOnFailure` is on; at most `kubernetes.backgroundWatches`
+  bound namespaces (default 4, so 8 watches), the most recently used
+  checkouts first (`KubeAttentionBudget`: one scope a context, namespace
+  and selector). Events applied in batches every 120 ms, a list at once.
+- **What marks** (`KubeAttention`, news only): a pod's Status going into
+  `CrashLoopBackOff`, `OOMKilled` or `ImagePullBackOff` (an init
+  container's too), once a pod — its crash loop's restarts mark nothing
+  more, a new rollout's pod is news of its own —; a Deployment's
+  `Progressing` False with `ProgressDeadlineExceeded`, again each time it
+  gets stuck. What failed when the watches began isn't news. **Cleared**
+  when what marked goes: the pod deleted, the rollout progressing; the
+  tab's mark goes once nothing behind it stands (`TabActivity.clusterFailed`
+  / `clusterRecovered`: only a cluster's mark, never one something else
+  made since). A watch dropped (the budget, its binding edited, the marks
+  off) takes its standing marks down first (`retire`, to the checkouts it
+  told): no later watch knows of them to clear them.
+- **The mark** goes on the checkout's selected tab, else its agent's, else
+  its first (`applyKubernetesAttention`), as a failed command's does —
+  the notification, the Dock badge, the Inbox — with `pod/web-1
+  CrashLoopBackOff — fake-dev · shop` (`KubeAttentionAlert.note`). A tab
+  whose mark is something else's — its agent waiting, a failed command —
+  keeps it, but the failure is still told (`clusterNewsUnderOtherMark`, a
+  notification of its own beside the tab's), and Ask Why follows the
+  tab's alerts, not who holds the mark. Ask Why
+  on the mark (the tab's menu, the Inbox's button: `askWhy(onMarkOf:)`)
+  reads the newest one's brief (`KubeAgentBriefing`, scrubbed, the
+  checkout's deployed commit with it) for the Ask Agent sheet, that tab's
+  agent first.
+- **Not watched**: past the budget, a context the kubeconfig lacks, a
+  list refused, or the proxy closed for the page's slot (or none to be
+  had: `noSlot`) — the tab says "⎈ not watched" in the strip
+  (`Tab.kubeNotWatched`, the reason its help) and the watch tries again
+  after a wait (5, 10, 20, 30 s), watched again once a slot is free.
+- **Checked**: `KubeAttentionTests` (the marks' triggers, once each, the
+  baseline, clearing and re-arming; the budget; a tab's cluster mark; the
+  rows' conditions; the watches against `FakeKubeAPI` — two a namespace,
+  the selector the server's, a crash and a stuck rollout raised, a pod
+  replaced cleared, the budget's over said and moved by use, a refused
+  list not watched then watched again, a gone context said, the tab
+  closed ending them, a watch dropped by the budget taking its marks
+  down; a crash under a waiting mark told, Ask Why in the Inbox; only
+  GETs, no Secret, no log) and `KubeProxiesTests` (the page takes a busy
+  background slot first, an idle background one before an idle
+  foreground one; an agent's request takes a proxy only watches hold; a
+  watch never signs in).
+
+**Helm upgrade from the checkout** (`KubeHelmUpgrade.swift`
+(pure, with `KubeHelmTemplate` and `KubeHelmLocator`),
+`KubeHelmUpgradeSession`, `KubeHelmUpgradeViews`; analysis 2.12, 3.1,
+3.3, Section 5, decision 15): a binding with a release gets, in the
+rail's panel, Diff Chart and Upgrade….
+
+- **The diff**: the checkout's chart for the release
+  (`KubeHelmUpgrade.chart`: the `Chart.yaml` named so, else the only one,
+  through the bounded scan), the release's newest record read — on
+  production asked first, once a context and session (`secretConsent`)
+  — and decoded raw for two things only (`KubeHelm.upgradeInputs`: the
+  user's values as JSON, the manifest), `helm template NAME CHART
+  --namespace NS --values - --is-upgrade` with the cluster as `helm
+  upgrade` will see it (`KubeHelmCapabilities`: `--kube-version` its
+  gitVersion, `--api-versions` the group versions and kinds discovery
+  says it serves — the page's, else read for the diff — over helm's
+  built-in ones; a chart switching on `.Capabilities` renders as it will
+  apply) run by Overterm itself
+  (`KubeHelmTemplate`, a process that changes nothing: every class) with
+  the values on its stdin — a pipe (`KubeProcessRun.run(input:)`), never
+  a file — `KUBECONFIG=/dev/null` and no `HELM_KUBE*` (guarded, helm's
+  folders the run's own, removed after it), `kubernetes.helmPath` else the installed one; then
+  object by object against the release's manifest (`KubeHelmUpgrade.diff`:
+  stripped, masked together as `kubectl diff` masks — `***`, `***
+  (before)`, `*** (after)`, secret-looking env values, credentials in
+  text —, an unreadable document left out and counted), in the right-hand
+  pane where a manifest's diff shows (`KubeManifestPane.helm`,
+  `KubeHelmDiffContent`). Nothing raw is kept.
+- **The upgrade** (`KubeHelmUpgradeWrite`, a `KubeTabCommand`): `helm
+  upgrade NAME CHART --reset-then-reuse-values --kube-context C -n NS`
+  (the chart's defaults with the release's values over them, as the diff
+  rendered; `KubeHelmWrite.prefix` before it; Tiller and a name
+  helm wouldn't give refused), by the guard path: the process class check
+  (`helmUpgrade` is a write: writable contexts only, production with its
+  switch), a fresh diff, the access review through the writable socket
+  (`KubeHelmUpgrade.accesses`, from the diff: the records' create and
+  update, then `create` for an added kind, `patch` for a changed one,
+  `delete` for a removed one — without the server's kinds only the
+  records, and the confirmation says so), the confirmation naming the context,
+  namespace, what changes and the command — the release's name typed on
+  production —, the context checked again, the chart's folder and the
+  release checked to be what was diffed (`KubeChartPrint`: every file's
+  path and bytes hashed before and after the render and again after the
+  button — helm reads the folder again, often one an agent is editing —
+  and the release still at the revision diffed; otherwise "diff again"),
+  then typed into a tab pinned to the context
+  (`KubeHelmUpgradeHost.runHelmUpgrade`), recorded in a scenario.
+- **Checked**: `KubeHelmUpgradeTests` (the chart found, the template's
+  arguments and environment, a stand-in helm given the values through a
+  pipe and nothing written, its failure scrubbed, the diff masked on both
+  sides, the record's inputs, the line and its quoting, every read-only
+  context refusing it, the confirmation, the reviews) and
+  `KubeHelmUpgradeSessionTests` (against the fake's release: the diff,
+  refused on fake-dev with nothing sent, reviewed and run on kind-fake, a
+  refused review and a Cancel running nothing, production's values asked
+  once and its name typed).
+
+### History, structure and health
+
+**A workload's change timeline** (`KubeTimeline.swift` (pure),
+`KubeTimelineSession`, `KubeTimelineView`, `KubernetesPageModel+Timeline`;
+analysis 3.6, 2.9's revision history, 2.12's revision diffs): a
+Deployment's, StatefulSet's or DaemonSet's detail has a History tab (`h` on
+its row opens it), Komodor's "what changed at 14:00?" from what the API
+already keeps — one timeline, newest first, at most 100 entries (`entries`,
+the rest counted and said):
+
+- **Template revisions** (`KubeTemplateRevision`): one list of its
+  ReplicaSets (`deployment.kubernetes.io/revision`) or ControllerRevisions
+  (`revision`, the template in `data`, `$patch` dropped) by its selector,
+  `limit=50` and said when cut, owned by its uid; the controller's
+  `pod-template-hash` / `controller-revision-hash` labels left out. Each
+  against the one before (`summary`, never a value): its images changed
+  (`app: nginx:1.25 → nginx:1.27`), only `restartedAt` changed — a rollout
+  restart —, `revision-history` set — a rollback, its time "after" the one
+  before, since its object is the old one —, else the template's paths that
+  differ, by name (`spec.containers[web].env[LOG_LEVEL].value`).
+- **Helm revisions**: when the workload's `meta.helm.sh/release-name` names
+  a release, its records' metadata alone (`helmRecords(…, release:)`,
+  `owner=helm,name=…`; Secrets, else ConfigMaps — a refused list said);
+  no record read for the timeline.
+- **Its events**, as the Events tab asks them, and the warnings of what it
+  owns — where a real cluster records what broke: the namespace's
+  `type=Warning,involvedObject.kind=ReplicaSet` (a Deployment's; FailedCreate,
+  quota and admission) and `…kind=Pod` (BackOff, FailedScheduling…), each
+  `limit=500` and said when cut, kept for its own (`owns`: its ReplicaSets'
+  names, its pods' `<rs>-xxxxx`, `<name>-<ordinal>`, `<name>-xxxxx`), named
+  in the entry (`replicaset/web-7d9f8c: …`). Scaling as each controller says
+  it: a Deployment's `ScalingReplicaSet`, a rollout's own told apart
+  ("Rollout step": an older ReplicaSet scaled, or the newest while another
+  is within ten minutes — `isRolloutStep`); a StatefulSet's pods created and
+  deleted (`SuccessfulCreate`/`SuccessfulDelete`). The HPA's
+  `SuccessfulRescale` is on the HPA, never read here.
+
+Read once the tab shows (Refresh again; asked for once the object is read,
+by its uid), dropped with the detail. **Diff** on a change, or two
+revisions picked in Compare, opens in the right-hand pane where a
+manifest's diff shows (`KubeManifestPane.change`, `KubeChangeDiffContent`;
+the page steps aside, `showKubernetesChange`): two templates already read,
+stripped and masked together (`templateDiff`, `KubeHelmUpgrade.sides`: a
+secret-looking env value `*** (before)` / `*** (after)` where it changed,
+credentials in text out), or two Helm revisions, their two records read
+then — on production asked first, once a context and session
+(`secretConsent`) — and decoded off the main thread (`KubeHelm.upgradeInputs`):
+the user's values masked together by key (`helmValues`), then each object of
+the manifests (`KubeHelmUpgrade.diff(…, from:, to:)`: a Secret's data
+masked). The diff is the session's task (`startDiff`): navigating away
+cancels it, so no further record is read nor anything shown. Only the
+masked `KubeChangeDiff` is kept; GETs only. Checked:
+`KubeTimelineTests` (fixture ReplicaSets and ControllerRevisions, the
+summaries, the order and the bound, both diffs masked, the reads against
+the fake, `h` and production's ask) and the scenario's `kubernetesTimeline`
+(`E2ERunner+KubernetesTimeline`): `h` on fake-dev, the bounded list and the
+metadata-only records, the timeline drawn, a revision's diff in the changes
+pane masked, a Helm revision's two records read for its diff.
+
+**The dependency tree** (`KubeTree.swift` (pure: `KubeTree`,
+`KubeTreeNode`, `KubeTreeHealth`, `KubeTreeRead`), `KubeGitOpsTree` (pure),
+`KubeTreeSession`, `KubeTreeView`, `KubernetesPageModel+Tree`; analysis 3.7,
+k9s's xray): a pod's, a workload's (Deployment, StatefulSet, DaemonSet,
+ReplicaSet, Job, CronJob), a Service's, an Ingress's and an HTTPRoute's
+Overview has its tree (`x` on its row opens the Overview scrolled to it):
+
+- **Down the owner chain**, by `ownerReferences` uid: a Deployment's
+  ReplicaSets (older ones scaled to 0 counted, not drawn), their pods (50
+  drawn a parent, the rest counted), the pods' containers as their Overview
+  says them; a CronJob's newest five Jobs followed to their pods.
+- **Across**: what the pod spec names (`KubeTree.references`: volumes,
+  projected sources, `env`/`envFrom`, image pull secrets, the
+  ServiceAccount — `default` when none —; a StatefulSet's claim
+  templates' `<template>-<name>-<ordinal>`), each checked against its
+  kind's **Table** with `includeObject=None` — names only, a Secret's Type
+  and a PVC's Status from its row, never a Secret's or a ConfigMap's data:
+  the Accept is a Table and nothing else (`KubeClient.tableOnlyAccept`, no
+  `application/json` to fall back to), and an answer that isn't one is
+  dropped unread and said. Not there is red (`.missing`), grey when
+  `optional`; a list cut, refused or not a Table checks nothing and is said
+  in `notes`.
+- **What reaches it**: the Services whose selector matches its pods'
+  labels (one selecting none of them red — grey when the workload wants
+  none, scaled to 0 or a Job done, "not checked" when its pods weren't
+  listed), under each the Ingresses and
+  HTTPRoutes that send to it (a port it hasn't red; a route's `Accepted` or
+  `ResolvedRefs` False red). A Service's own tree: the pods it selects
+  (none red), the routes to it; an Ingress's or a route's: its Services
+  (missing, selecting nothing or without the port, red) with their pods, an
+  Ingress's TLS Secrets by name, a route's Gateways.
+- **Argo CD and Flux** (`KubeGitOpsTree`, read-only, when their CRDs are
+  served): an Application's `status.resources` with Argo's own sync and
+  health, its sources (another cluster's destination: listed, not
+  opened); a Kustomization's `status.inventory` and `sourceRef`,
+  `dependsOn`; a HelmRelease's chart source and the Deployments,
+  StatefulSets, DaemonSets and Services Helm's controller labelled
+  (`helm.toolkit.fluxcd.io/name`/`namespace`). Either applying to another
+  cluster (`spec.kubeConfig`, `KubeGitOpsTree.fluxRemote`) is Argo's
+  remote case: said, its objects listed without a link — no verb reaches
+  this cluster's same-named object — and a HelmRelease's labels not read
+  here. An Application and a
+  Kustomization read nothing but their own object. A multi-source
+  Application's `revisions[]` (and `source`/`sources`, `sourceType(s)`,
+  in `sync`, `syncResult` and `history[]` alike) are read by one reader,
+  `KubeGitOpsSource` (pure), so neither form comes back empty; Argo CD 3,
+  which keeps each resource's health outside the Application
+  (`status.resourceHealthSource: appTree`), is said once and its objects
+  drawn by sync alone, never as unknown. Who deploys an object, from its
+  marks alone, is `KubeGitOpsOwner` (pure): the tracking-id annotation
+  (`<appNamespace>_<app>` for apps in any namespace), read by
+  `KubeTrackingID` (pure: Argo CD's `<app>:<group>/<Kind>:<ns>/<name>`,
+  exactly three parts, capped at 1,024 bytes, every part's characters
+  checked — anything else is no tracking id) and counted only on the
+  object it names (`isSelf`, Argo CD's `isSelfReferencedObj`; gitops.md
+  14.1, D0): the copy the Deployment controller puts on every ReplicaSet,
+  or an operator's on what it makes, names nobody, nor does a label beside
+  it. The object is the caller's — a row's by the kind listed and the
+  row's name and namespace, never the embedded `PartialObjectMetadata`
+  (`KubeTableReader` requires `kind` with `owners`), an object's by its own
+  `apiVersion` and `kind`, a GitOps object's by its summary;
+  `argocd.argoproj.io/instance`, Argo CD 2.x's default
+  `app.kubernetes.io/instance` as "probably" (Helm sets it too; not with
+  Helm's release annotation or Flux's labels), and Flux's name and
+  namespace labels; the apply's warnings take it
+  (`KubeFieldOwners.managedBy`, `.argoCDProbably`; an Argo mark that
+  names no app — an odd tracking id, an empty label — still says Argo CD
+  surely).
+
+Read once when the Overview shows (`KubeDetailSession.showTree`, asked for
+once the object is read; Refresh again), each list in the object's
+namespace, bounded (`limit`, pods 200, others 500), by a selector where
+there is one, only the kinds it uses and the context serves
+(`KubeTreeSession.kind(_:in:)`) — the root's lists asked at once, then
+those they lead to (`KubeClient.getAll`, four in flight) —, each answer
+decoded and the tree built off the main thread (`KubeBlocking`); no
+watch, GETs only, dropped with the detail. A node's name opens its detail; its right-click menu is its
+object's verbs (`treeVerbs`: Open, the detail's own buttons with their
+guards, Copy as kubectl), made only as it opens (`ResourceVerbMenuArea`,
+an AppKit menu over the row): a guard asks can-i and access reviews, and
+drawing the tree asks nothing — nor observes the page, whose every publish
+would draw each row again. Checked: `KubeTreeTests`
+(which kinds, what each reads, every reference, the trees and their red
+marks, Argo's and Flux's, against the fake: once, names only, no Secret
+read, no watch, `x` and a node's verbs) and the scenario's `kubernetesTree`
+(`E2ERunner+KubernetesTree`): `x` on fake-dev's Deployment, the chain to
+its crashing pod, the missing ConfigMap red, the Secret from its Table,
+the Service and its Ingress, read once in its namespace, a node's verbs,
+a Service selecting nothing red; then an Application's, a Kustomization's
+and a HelmRelease's trees; health checks, the pinned contexts' cards and
+Compare with… (`E2ERunner+KubernetesHealth`, Health checks, above).
+
+**Health checks** (`KubeHealth.swift` (pure), `KubeHealthSession`,
+`KubeHealthView`, `KubernetesPageModel+Health`; analysis 3.9, Popeye's lint,
+Argo's health): rules over objects, each finding a code, a severity and a
+plain sentence about one object (`KubeHealth.Finding`, its `Subject` a link):
+containers without a readiness or liveness probe (not for what ends — a
+Job's, a pod whose restartPolicy isn't Always), without requests, without
+limits, on `:latest` or untagged (K101–K105), checked where they are
+written — a workload's template, a CronJob's — and left to an owner only
+when that owner's checks cover them (`KubeHealth.covers`; in the Overview's
+report, only an owner read and checked there: a ReplicaSet to its
+Deployment, a Job to its CronJob, a pod to its ReplicaSet, StatefulSet,
+DaemonSet or Job), so fifty pods are one finding and a standalone Job's, a
+Rollout's ReplicaSet's or an operator's pod is never silent; a Service selecting no pod (K201, not an
+ExternalName), an Ingress to a Service that isn't there or a port it hasn't
+(K301, K302), each said only from a list read whole; a PodDisruptionBudget
+allowing no disruption of the pods it covers (K401), an HPA at its maximum
+(K402); a container restarted in the last hour (its last termination's
+`finishedAt`, else when it ran again; K501), a pod Pending past a minute
+with the scheduler's word (K502); a custom resource — any group Kubernetes
+doesn't serve itself — whose `Ready` is False (K601: Flux, cert-manager…;
+a Flux kind whose `status.observedGeneration` is behind
+`metadata.generation` is "not yet looked at", whatever its Ready says,
+unless suspended or Flux's `-1` before a first reconcile — `KubeHealth.fluxGenerationLag`, Flux's groups only,
+since cert-manager keeps it per condition),
+an Argo CD Application Failed (K602), or drifted or stuck (K603), by the
+GitOps summaries' own ladder (`KubeGitOpsLadder`, below: an OutOfSync
+auto-sync is fixing says nothing; a failed sync of the current revision,
+Degraded, or Missing while Synced is K602). Above the findings, the card
+says what Argo CD and Flux say of what lives in the scope in a line
+(`KubeOverviewCards.gitOps`: K602 and Flux's K601 `fluxFailing` — its own
+Ready False, never a generation not yet looked at nor a blocked source or
+dependency — failing, K603 drifted or stuck — "GitOps living in shop" with a
+pill a count, "press g for what deploys here"), from the findings already
+read; it is its own card under the kinds' (`KubeOverviewGitOpsCard`), and a
+press shows the GitOps section, which counts what lives in *or deploys
+into* the scope. Two places, read-only:
+
+- **The Overview** (`1`): read once while it shows, in the context and
+  namespace shown (every namespace too), the lists `KubeHealth.reads` names
+  that the context serves and lets be listed — pods (200), the workloads,
+  ReplicaSets, Jobs, CronJobs, Services, Ingresses, PDBs, HPAs, Argo's
+  Applications, Flux's Kustomizations, HelmReleases and GitRepositories,
+  cert-manager's Certificates (500 each) —, one bounded GET each as whole
+  objects, four asked at once (`KubeClient.getAll`: with 100 ms a list,
+  one after the other took 1.5 s, at once 0.84; answers decoded in their
+  order) (the checks read specs: decision 33, a stated addition to 3.9's
+  "nothing extra is read"), never a Secret or a ConfigMap, no watch;
+  decoded and checked off the main thread (`KubeBlocking`), what may carry
+  a secret dropped as each list is decoded (`KubeHealth.kept`: env values,
+  Helm values, Argo's parameters, jsonnet's `extVars`/`tlas`, every patch,
+  Flux's `postBuild.substitute`, generator `elements`, an operation's raw
+  `manifests` — in `spec` and `status` alike, since Argo copies the whole
+  source into `status` —, a URL's userinfo in any string
+  (`GitRemoteURL.stripUserinfo(inText:)`), a message from
+  its first manifest line on, the last-applied copy, managedFields); a list cut or refused said
+  (`Report.notes`), and a Service's selection not judged from a cut pod
+  list. Refresh reads again; hidden, what was read goes. The count sits by
+  the header (`KubeHealthCount`), the findings by check under the usage,
+  each row opening its object (`openFinding`).
+- **A detail**: what its object says of itself (`KubeDetailSession.health`,
+  from the one GET it made), and — where its tree read the lists — a
+  Service's pods, an Ingress's Services (`KubeTreeSession.findings`,
+  `KubeHealth.related`); nothing more is read.
+
+**The pinned contexts** (decision 17; `KubePinnedHealth.swift` — the card,
+pure, and `KubePinnedHealthSession`): `kubernetes.pinnedContexts`, a card
+each across the Overview's top — its pods failing, its Deployments,
+StatefulSets and DaemonSets not ready, its nodes not ready (`summary`, from
+Table rows as the lists read them: `KubePodSummary`, `KubeWorkloadState`),
+the first five named, a cut list said — in the namespace the page would
+show it in (`agentDefaultScope`). One session for the app
+(`KubernetesModel.pinnedHealth`, each window's page a viewer), read only
+while an Overview shows on a page on screen — and again when the setting
+changes there (`pinnedContexts` is published) —, one context after
+another, again every 30 s: one page of rows a list (500,
+`includeObject=None`, Metadata across namespaces), never a watch, through
+each context's proxy in a spare slot (`spareClient`, `KubeProxies.Role.spare`:
+never a browser sign-in, and a proxy opened only in a slot free as it
+stands — nothing is closed for a card, so no kubectl or credential plugin
+is started again every cycle, and the agents', the rail's and the
+attention watches' proxies stay; no slot, a credential, Kubernetes off or
+a context the kubeconfig lacks is the card's "Not read: …"). A press shows
+its context on the page (`showPinned`). Hidden everywhere, nothing is read
+and the cards go.
+
+**Compare with…** (`KubeCompare.swift` (pure),
+`KubernetesPageModel+Compare`; analysis 3.10, Aptakube's diff): on any
+object — the detail's ⋯ and the row's menu (`compareVerb`) — a picker of
+the other side (`KubePicker.compare`: every other context in the object's
+namespace, then its context's other namespaces; `namespace` or
+`namespace@context` typed), then one GET a side through each context's own
+connection (the detail's answer reused for its side; the other in a
+background slot; a 404 is a side that has none, said), both made
+comparable off the main thread — stripped (`KubeManifestDiff.stripped`:
+status, managedFields, the last-applied annotation) and without what names
+each copy (uid, resourceVersion, creation time, generation, namespace, its
+owners' uids) —, masked together (`KubeManifestDiff.masked`: a secret
+env value `*** (before)` / `*** (after)` where it differs), as a
+`KubeChangeDiff` in the right-hand pane where a timeline's change shows
+(`showChange`; production on either side said). A Secret: its keys, each
+value an HMAC-SHA256 under a key made for that one comparison and dropped
+with it (`hashingSecret`: the same value the same hash, no hash comparable
+with any other or looked up), replaced as the answer is read; on production
+its GET is asked first, once a context and session (`secretConsent`), as
+Show is. How it stands (`KubeCompareStatus`, the object's) shows in that
+object's detail, or on the list's bar with none open; it ends — the read
+cancelled, the words gone — with the detail, another object, context or
+namespace, or the page hidden (`endCompare`). Reads only. Checked: `KubeHealthTests` (every rule, what needs a
+whole list, the report's notes; the Overview's reads against the fake —
+bounded, once, no Secret or ConfigMap, no watch —; a detail's and its
+tree's findings; the pinned cards from rows, read while shown and not
+after, a gone context said; Compare's two sides stripped and masked, a
+Secret by keyed hashes, the picker, the page across two fakes with
+production's ask) and the scenario's `kubernetesHealth`
+(`E2ERunner+KubernetesHealth`): fake-dev's findings on `1` (the count
+drawn) and one's detail saying its own (drawn); `fake-stage`, a fake of its
+own, and fake-prod pinned, their cards read through their proxies as rows
+(drawn) and nothing asked once hidden; a Deployment against fake-stage's in
+the changes pane, its secret env value masked (drawn), and a Secret against
+fake-prod asked first, compared by hashes.
+
+### A tab's context
+
+**A tab's context, and what helps type kubectl** (analysis 3.11,
+2.8, 2.11, decision 18):
+- *The pane-header warning* (`KubePaneWarning.swift`): `KubeCommandLine`
+  (pure) reads the command a pane runs — or ran last
+  (`PaneBlocks.latestCommand`, the title shell integration sets) — as zsh
+  splits it (`ShellCommandLine`, shared with `TabKind` and Terraform),
+  only `kubectl`, `helm`, `k9s` and `stern` (behind `sudo`,
+  `env`, `watch`, assignments, in a pipeline), with `--context`
+  (`--kube-context` for helm) and `--kubeconfig` or a `KUBECONFIG=` before
+  it. `KubePaneWarning.resolve` (pure) settles the context in the design's
+  order — the flag, the kubeconfig the flag names, the pane's pin, else
+  the current context of the files a plain kubectl reads, which only says
+  "probably" (a shell's own `KUBECONFIG` is out of sight) — and classes it
+  with the current settings. `KubeAmbientContexts` (the app's) reads those
+  files — `AppEnvironment.kubeconfigs` without the setting's extras, so
+  guarded only `OVERTERM_KUBECONFIG`'s — the first time a kubectl-family
+  title shows (`PaneBlocks.titleChanged`), and then only when one of them
+  or its folder changes (`KubeconfigFileWatcher`: a dispatch source on
+  each file and each folder, nothing below them — a kubeconfig in the home
+  folder must not watch the home tree), or when a folder that wasn't there
+  is at the next such title; never runs kubectl, never writes. A
+  `--kubeconfig` is placed against the folder the command ran in (`./prod.yaml`,
+  `$HOME/…`; `KubePaneWarning.kubeconfigKey`); a pinned pane's `--context`
+  is looked up in its own `KUBECONFIG` (the pin's file, then Overterm's,
+  extras too). Guarded, a file a command names is read only when it is
+  `OVERTERM_KUBECONFIG`'s or a pin's (`KubeAmbientContexts.admitted`). The header's `KubeRunWarningLabel` shows
+  `⎈ fake-prod` in the page's red for production, not again where the
+  pin's own label says it.
+- *New Task pinned* (`KubeTaskPin`, pure, in `KubeTerminal.swift`): the
+  sheet offers every context but production, the repository's bound one
+  first and picked; the task's tab opens as Terminal in this context
+  opens one (`kubernetesTaskPin`: read again — gone or production now,
+  refused before the worktree is made —, the binding's namespace on its
+  context; the pin's file written only once the worktree is made, so a
+  failed one leaves none), its agent started there.
+- *Snippets* (`KubeSnippets.swift`, `KubernetesPageModel+Snippets`): a
+  snippet of the Snippets store naming `${context}`, `${namespace}`,
+  `${pod}`, `${container}`, `${name}` or `${kind}` is a submenu of an
+  object's verbs where it fits (a pod's only on pods), filled and quoted
+  for zsh (`${container}` the pod's default, one GET, a picker for
+  several), its `{{…}}` asked for as Snippets asks, on production asked
+  first with the line shown, typed into a tab pinned to the context and
+  namespace (`runInTab` — recorded by a scenario).
+- *Templates* (`KubeTemplates.swift`, `Resources/kubernetes/templates`,
+  copied by `make-app.sh`; the user's in the support folder's
+  `Kubernetes/Templates`, one of the same name winning): ⌘K's New
+  Kubernetes <Kind> writes Overterm's copy (`KubeManifestEdits.writeTemplate`,
+  0600 under `Kubernetes/Edits`, its `${namespace}` the one shown) and
+  opens it in the editor, where the manifest bar diffs and applies it by
+  2b's path; the buffer is never saved, so a Secret's value typed in it
+  stays in memory, and the copy goes with its tab — which closes once it
+  is applied (`onApplied`; 2.18: the typed value isn't kept open), what
+  was applied said on the page.
+- *Saved filters* (`KubeSavedFilters.swift`,
+  `KubernetesPageModel+Templates`): the filter with its context, kind and
+  namespaces (several in `namespaces`, the first in `namespace` too, so an
+  older build reads one it can list), by name per context, in `Kubernetes/filters.json` under the
+  support folder (an unreadable file set aside); the bookmark beside the
+  filter and ⌘K (`Kubernetes Filter: <name>`) show it again, the context
+  switched to, its `label:` and `field:` asked of the server.
+
+Checked: `KubeTabContextTests` (the line's words, flags and wrappers;
+flag, kubeconfig flag, pin and files in order, "probably", a lost pin;
+New Task's offer; snippets' fit and quoting; every bundled template a
+manifest with its namespace; a user's template winning; a copy's
+permissions and removal; filters kept, replaced, removed, set aside) and
+the scenario's `kubernetesTabContext` (`E2ERunner+KubernetesTabContext`):
+titles set as shell integration sets them — never a kubectl run —, the
+run's kubeconfig read and a `--context fake-prod` said (drawn), the file
+rewritten as a `kubectx` would seen without a command and a plain
+kubectl's "probably fake-prod" (drawn), the file put back; a task in a
+repository of the run's own pinned to kind-fake and one to fake-prod
+refused before its worktree; a snippet recorded on fake-dev and on
+fake-prod after its question; the Deployment template's copy in the
+editor; a saved filter shown again from another context.
+
+### Node shells and in-place resize
+
+**Node shell and in-place resize** (analysis 2.3, 2.6,
+decision 20, Section 5's process table):
+- *Node shell* (`KubeTabWrite.nodeShell`, `E` on a node, Node Shell in a
+  Tab…): `kubectl debug node/N -it --profile=sysadmin --image=I --context
+  C -n NS -- chroot /host sh -c '…'` — a privileged pod on the node, in
+  its process, network and IPC namespaces, its shell rooted in the node's
+  own filesystem (bash where the node has it). The image is the context's
+  `nodeShellImage`, then its `debugImage`, then `kubernetes.debugImage`
+  (it needs `chroot`; busybox has it). It goes 2a's tab-write path: the
+  process class check (writable only, `shells` on, the context's
+  `nodeShell` on), the review (create pods, pods/attach in the tab's
+  namespace), the confirmation with the node's name typed on every class,
+  the check again at the button, then typed into a tab pinned to the
+  context (recorded in a scenario). kubectl leaves its pod
+  (`node-debugger-N-…`); the confirmation says so.
+- *In-place resize* (`KubeResize.swift` (pure: `KubeContainerResources`,
+  `KubeResize` — `Field`, `Change`, `plan`, `qos`, `rebase`, the patch —,
+  `KubeResizeDraft`), `KubeResizeSheetView`, `KubeWriteVerb.resize`):
+  Resize in Place… on a pod (its menu and detail, ⌘K) opens a sheet of
+  its regular containers' cpu and memory requests and limits as the pod
+  says them; what is typed is checked (a quantity, cpu not in bytes or
+  thousands of cores, memory not in millibytes (`512m`), a request under
+  its limit, nothing removed, the pod's QoS class — `qos`, Kubernetes'
+  `GetPodQOS` over its regular and init containers, a missing request its
+  limit — the same after as before, as the server's `ValidatePodResize`
+  insists: a Guaranteed pod's limit raised alone, a BestEffort one's first
+  request, a Burstable one's limits made its requests are refused with
+  why; something changed); a write still being checked is said in the
+  sheet, the values kept; then the page's one guard path: the class
+  check — refused with why where discovery lists no `pods/resize`
+  (Kubernetes 1.33 and later serve it), as on a read-only context —, the
+  review (`patch pods/resize`), the pod read again (`rebase`: the changes
+  typed over it and planned again, so a limit lowered meanwhile or a class
+  changed is refused before the confirmation; each change's from as it is
+  now, one there already dropped, a container gone stops it), the
+  confirmation listing each change with the kubectl it
+  equals (`kubectl patch po P --subresource resize -p '…'`) and a warning
+  that a controller's pod gets its template's values back, then a
+  strategic merge patch of only what changed to `…/pods/P/resize`. The
+  kubelet applies it; the pod's PodResizePending condition says if not.
+  `FakeKubeAPI` serves the subresource (`servesResize`, off for an older
+  server), cpu and memory only, a QoS class change 422 as the server
+  answers it.
+
+Checked: `KubeTabWritesTests` (the node shell's line, its confirmation,
+off until its setting, reviewed then typed with the name, a wrong one
+running nothing), `KubeResizeTests` (the values read, planned, refused,
+rebased; the request and its kubectl; the server and class checks) and
+`KubeResizePageTests` (the sheet, review before the read, the PATCH on
+the fake, the pod's image untouched; an older server and read-only
+contexts sending nothing), and the scenario's
+`kubernetesNodeShellAndResize` (`E2ERunner+KubernetesNodeResize`): `E` on
+a node refused until `kubernetes.contexts` turns kind-fake's `nodeShell`
+on, then reviewed, asked with the name typed and recorded; a pod's
+resize typed into the sheet's field, confirmed, landing on the fake; with
+the fake no longer serving `pods/resize`, refused with why, nothing sent.
+
+### Prometheus
+
+**Prometheus** (`KubePrometheus.swift` (pure),
+`KubePrometheusMonitor`, `KubernetesPageModel+Prometheus`,
+`KubePrometheusViews`; analysis 2.1, 2.11, 2.17, Section 4, decision 16):
+opt-in per context (`KubePrometheusUse`) — `metrics: prometheus`, or `auto`
+set in its entry, or a `prometheus` field naming the Service as
+`namespace/service:port` (`KubePrometheusService`; each part checked as a DNS label, a port a number
+or an IANA name); unset, `metricsServer` or `none`, nothing is looked for.
+The Service is found once for the context — kept while the page hides, by
+the context, its use and its cluster and user; another of either, or
+`retry` after a failure, looks again (`KubePrometheusMonitor.find`,
+one GET each through the context's own proxy, Freelens's order
+(`KubePrometheusProvider`):
+`lens-metrics/prometheus`, then Services labelled
+`operated-prometheus=true`, then the prometheus chart's
+`app.kubernetes.io/{name=prometheus,component=server,managed-by=Helm}`
+(v15 on, `.helm`), then its older `app=prometheus,component=server,heritage=Helm`
+(`.helm14`) — the first by namespace and name, its first
+port, the operator's `web`); a refusal is said with what to set. Its
+queries go through the apiserver's service proxy on a **second `kubectl
+proxy`** of the context's (`KubeProxies.sendPrometheus`; `KubeProxySpec.
+metrics` — the same kubectl, environment and credentials, its socket
+`<hash>-metrics.sock`): `KubePrometheusFlags` give it `--accept-paths` of
+that one Service's `/api/v1/(query|query_range)$` (namespace, Service and
+port escaped, anchored at both ends — kubectl matches the decoded path, so
+another Service, another path of this one, `..` or `%2F` never matches),
+kubectl's rejected paths and the pods' and nodes' proxies, and every write
+method refused; a path that isn't one of the two is refused in Swift
+before any socket too (`KubePrometheusRefused`). It is its own entry in
+`KubeProxies` (keyed apart, a slot like any within `maxProxies`, never the
+page's kept slot; a sign-in is the context's). The page context's is not
+counted in the background's slots and never closed for a watch or a spare
+read (`pageMetrics`; a request someone made takes it only idle, nothing
+else to close). Its answers come from a process in the cluster, so their
+bodies never stop the context: only kubectl's own stderr saying a
+credential failed does (`KubeProxies.metricsProblem`); anything else is
+the chart's problem. It is closed when no chart shows (`closePrometheus`)
+— once the readings have stopped: a query checks for cancellation before
+and after it goes, a metrics entry isn't opened for a cancelled one, and
+the close waits for the cancelled readings — or idle. `connected` names
+contexts (what `close` takes); `proxyLabels` every proxy, a metrics one as
+`<context> (prometheus)`. The model's
+monitor reads only what a page on screen wants (`prometheusWants`): the
+Overview's `.cluster` chart — CPU and memory from cAdvisor over the range (Freelens's queries, `KubePromQL`),
+raw across the cluster only up to 6 h (`KubeChartRange.rawClusterLimit`:
+past it the lines aren't asked — `KubeChartQueries.refused` says why and
+the chart offers 6 h — while the totals still are),
+and the cluster's requests and limits of active pods against allocatable
+(`kube_pod_container_resource_requests`/`_limits` joined
+`* on(namespace,pod) group_left()` to `kube_pod_status_phase` Pending or
+Running — kube-state-metrics keeps finished pods —,
+`kube_node_status_allocatable`, instant `query`s) —, a pod's or a claim's
+chart in its detail's Overview, and the PVC list's Used column
+(`KubeVolumeUsage`: `kubelet_volume_stats_used_bytes` against `_capacity_bytes` by claim,
+every minute; a namespace, the set picked as `namespace=~` through
+`KubePromQL.regexLiteral` — RE2's metacharacters escaped before the
+string's —, or every one), and the Pods list's shares in its wide view
+(`KubePodShares`, pure; metrics.md 2.1, M5b: `%CPU/R %CPU/L %MEM/R
+%MEM/L`, the list's metrics-server sample against each pod's containers'
+requests and limits from kube-state-metrics — one instant query a
+namespace picked, after the probe (its job pin, KSM 1.x's names), read
+with the columns and every 5 min, kept by namespace in
+`KubeShareReading`; each pod's containers counted in the same union —
+a native sidecar too (`kube_pod_init_container_info{restart_policy="Always"}`,
+KSM 2.10), since metrics-server's usage counts it — and a pod's sum kept
+only where every container sets it, so a pod with an unlimited container
+has no limit share, said; a pod sampled with more containers than KSM
+lists (a sidecar older KSM can't tell) has none either; a limit's share
+orange from 80%, red from 100%. Read only while metrics-server serves
+the usage it divides. Across every namespace, or more than ten, none is
+asked and that is said; without Prometheus the cells are a dash and one
+sentence (decision 10) and no pod object is read. `k8s_top` gives the
+same shares: a named pod's from its own GET (a failure said), a
+namespace's from the same query asked for the call where the context
+opts in (`KubePrometheusMonitor.agentShares`: the metrics proxy in a
+background slot, the queue as an agent — the one exception to "only
+while a chart shows", analysis.md §4), else what the list last read
+whole; with containers listed, a pod's shares on its own `(pod)` line).
+`FakePromQL` evaluates the shares' union on raw kube-state-metrics series
+(`or`, `and on`, `== on() group_left()`, `label_replace`). Every sum goes over one series a container
+first — a gauge `max by (namespace,pod,container)`, a counter's rate
+`sum by` — so a restarted container's lingering series isn't counted
+twice, and kube-state-metrics' series `max by` what identifies them (two
+replicas scrape the same); cAdvisor's `container!="POD"` sandbox is left
+out. A chart's range (`KubeChartRange`: 1 h, 6 h, 24 h, 7 d; the
+app's, the picker's) is `query_range`'s start and end (rounded down to a
+step) and step (120 points, a week's 168), a `rate()` window Grafana's
+`$__rate_interval` (`KubeRateWindow`: a step and a scrape, four scrapes
+at least, whole minutes; the scrape taken as 60 s), asked again a step
+later (a minute at least). Every query carries `timeout=20s`, and its
+answer is given up after 25 s (`KubePrometheusMonitor.fetch`, the query
+cancelled), said as Prometheus's own timeout. Answers are read
+bounded, off the main thread (`KubePrometheusReader.answer`: 8 MB at most
+parsed — walked as Foundation's arrays, a pair checked by class rather
+than bridged to `[[Any]]`, which doubled an 8 MB answer's 150 ms
+(stage M12) —, 2,000 series, 2,000 points, `NaN` and
+`Inf` left out; a vector, a matrix or a scalar; native-histogram series
+skipped and counted; `warnings` and `infos` kept as the chart's notes,
+three at most; Prometheus's errors and the apiserver's Status said). A
+line breaks where two points are more than two steps apart
+(`KubePrometheusReader.segments`), never bridged.
+Without Prometheus no picker shows: the metrics-server sparkline says it
+covers the time shown; with it the sparkline gives way to the chart.
+**The probe** (`KubePromProfile`, pure but for `probe`; metrics.md 4.3,
+4.4) asks, once a context and only when a chart that depends on it shows
+(the cluster's, a Metrics tab's — a volume's and the PVC column's don't), four
+instant queries one after another: what exists and each metric's series
+count (`count by (__name__)` over the metrics the charts read and the
+mixin's rules), the duplicates (one `or` union, each arm tagged
+`overterm_s`: cAdvisor by job and `metrics_path`, kube-state-metrics'
+jobs, whether cAdvisor's series carry `node`), the cAdvisor job's own
+scrape (`600 / max(count_over_time(up{job=…}[10m]))`, rounded to 15, 30
+or 60 s) and, where Prometheus scrapes itself, its oldest sample. Every
+chart waiting meanwhile shares the one probe (`KubePrometheusMonitor.
+profile`). From it: `metrics_path="/metrics/cadvisor"` pinned where
+kubelet's two paths both carry cAdvisor's counters, the first
+kube-state-metrics job where two answer, the node label (`node` or
+`instance`), the rate window's scrape, kube-state-metrics 1.x's names or
+its absence (said), the retention hatched as a band ("Prometheus keeps
+data from Oct 28"), and agent mode — an agent's `unavailable`, or a 404
+that isn't the apiserver's — said in the chart's place and never asked
+again within the hour. A first query Prometheus refuses leaves the
+profile unknown and the charts read as before it. It is kept in memory
+with the context, its Service, use and cluster, and asked again after an
+hour while charts show, on a 404 or 422, or by `forgetProfile` (the
+scenario's). **Tiers** (`KubePromTier`): the cluster's lines from the
+mixin's node rules, else node-exporter, else raw cAdvisor where
+`KubeQueryCost` allows it (6 h across the cluster; past it the sentence
+says about how many samples it would read); a pod's raw over an hour or
+less (a 5-minute rule smooths a spike away), its rules past it; requests
+from the mixin's active-pod rules where they exist. The caption names the
+tier and the scrape. `KubeQueryCost` (pure) also holds the namespace,
+subquery, name-regex and ranking caps the later charts use. Every empty
+or partial chart says why from one table (`KubeChartEmpty`: the 403s on
+`services/proxy` and metrics.k8s.io, the credential failure, the
+filter's 403, `bad_data`, a timeout, busy…), and the reader says which
+it was (`KubePrometheusReader.Failure.Kind`). **The queue**
+(`KubePromQueue`, an actor, one a context, Service, use and cluster —
+another of any is another queue — the probe's and the charts' queries
+alike): 4 in flight, identical queries joined, one
+nobody waits for dropped or cancelled (cancelled on its way, it keeps its
+place until it ends but is never joined again), visible charts first, then a
+ranking, a peak, sizing, an agent's below every page's and holding at
+most 2 places; a 429's `Retry-After`, or a 503's that has one, pauses the context (whole
+seconds only, at most `maxPause`, the sentence saying the pause taken; a
+503 without one is said in the apiserver's words), a
+credential failure or a `services/proxy` 403 stops it (said once; a
+sign-in, `retry`, makes every queue again). Requests and limits from the
+active-pod rules are `max by` their pod's labels before the sum, as the
+raw tier is: the rule keeps kube-state-metrics' `instance`. The fake's Prometheus kinds
+(`FakePromProfile`: kube-prometheus-stack, the prometheus chart, without
+node-exporter, kube-state-metrics 1.x, containerd, agent mode) answer the
+probe as fixtures; `refusePrometheusProxy` answers as the apiserver
+would (a 403, a 429 with its `Retry-After`).
+**A chart** (`KubePlot` (pure), `KubeChartView`; metrics.md 3, 5) is
+`KubeChartData` — its series, each with a role (usage, or a reference
+line: request, limit, allocatable, capacity, quota, guide), the window,
+the unit, the step, a `version` its maker changes with the data — drawn
+from a `KubePlot`: the y axis rounded to nice values from 0 (bytes in
+binary units) reaching every visible reference line, 3–5 ticks, time
+ticks on whole local minutes, hours or days 70 pt apart, a `CGPath` per
+series run (broken past two steps, never bridged) and per stacked band
+(cumulative in legend order), min/max decimation past a point a pixel
+column (peaks kept), the references stepped and labelled at their right
+ends, and the tracks hover searches. It is built off the main thread
+(`KubeChartState`, `Task.detached`) whenever `(version, size, hidden
+series, Lines)` changes — its `Key` — and published in one assignment.
+`KubeChartView` draws it in one `Canvas` pass (the renderer made
+`nonisolated`); the y labels, the reference names, the time axis, the
+header and the legend are `Text(verbatim:)`. The crosshair is
+`KubeChartCursor`, one per scope (a `KubePrometheusChartView`'s charts
+share one, held in its `@State` — held, not observed, so a hover never
+runs that body): hovering moves it (`onContinuousHover`, snapped to the nearest
+point by binary search), and only `KubeChartOverlay` observes it — the
+crosshair, the hovered points and, on the chart under the mouse, the
+tooltip (`KubeChartTooltip`: the time local with its zone, `Nov 7,
+14:32:15 GMT+3`, the series by value, each line with the usage's share),
+laid in an overlay so the series layer is never laid out or drawn again
+(`KubeChartDraws` counts, by chart and window, both layers' draws, the
+tooltip's and the cursor holder's bodies; `kubernetesPerf` moves the
+crosshair 200 times over 13 series of 300 points beside a second chart,
+both in a parent holding the cursor as the app does: ≤ 2 ms a move, no
+series draw, no parent body, and the plot built in ≤ 5 ms;
+`kubernetesPrometheus` hovers the Overview's CPU chart and checks the
+memory chart beside it draws the crosshair, no tooltip, no series). The legend (more than three
+series wrap under the header, `KubeFlowLayout`) isolates a series with a
+click, adds or removes one with ⌘-click, dims the others to 25% while
+hovered; "Lines" toggles the reference lines together. Colours:
+`ChromeTheme.chartPalette` — `KubeChartPalette`'s ten, each 3:1 at least
+against its card in both appearances — and the lines' fixed by meaning
+(request green, limit red, allocatable and capacity grey, quota purple),
+each with its own dash too. VoiceOver reads `KubeChartSummary` ("CPU, last
+1h: 750m now, peak … at 14:10, request …") and the series through an
+`AXChartDescriptor` (`KubeChartDescriptor`, made `nonisolated`); a chart's
+identifier is `kubernetes.chart.<subject>.<measure>`, the subject naming
+its object (`cluster`, `pod.shop.web-8k2`, `volume.shop.data-db-0`). The
+charts on screen are in `KubeChartRegistry` from appearing to
+disappearing, an entry per view (its token) with its window (its
+`ChromeTheme`) — two windows' Overviews, or a detail's new view shown
+before the old one goes, never take each other's entry. Only on screen:
+a chart view a `LazyVStack` built ahead, or kept after it scrolled off,
+still hears its data change and its plot built, and once put back an
+entry nobody removed — a chart of 0×0 with no plot (`drawn=0`) that a
+lookup by identifier found before the one shown; so it registers only
+between its `onAppear` and `onDisappear` (`KubeChartState`'s `appear`,
+`disappear` and `register`, which does nothing off screen —
+`KubePlotTests` checks it), and its entry goes when its state does. `OVERTERM_DUMP_LAYOUT` prints a
+line for each of its window's (series, points, drawn after decimation,
+the axis's top, references, source, tier, the size it was laid out
+at), and the scenarios read it — a chart below the fold scrolled to
+first (`revealChart`), as a person would. A Prometheus reading becomes a chart through `KubeChartData.of`:
+the cluster's CPU and memory with active requests, limits and allocatable
+as flat lines, a claim's used against its capacity (stepped); a
+Metrics tab's are `KubePromTabCharts`' (below).
+**A pod's Metrics tab** (`m`; `KubePodCharts` (pure), `KubeMetricsTabView`,
+`KubernetesPageModel+Charts`; metrics.md 2.2–2.4, stage M3a) is the
+detail's last tab where `KubeObjectRef.hasMetrics` (a pod, for now). It
+reads nothing of its own: showing it wants the pod's PodMetrics as its
+Overview's usage block does (`metricsDetailsOnScreen`), and draws the
+ring — Live its raw tier (15 minutes, the ring's breaks kept as
+`KubeChartSeries.breaks` with `breaksMarked`, its step the samples' own
+spacing: metrics-server at `--metric-resolution=60s` samples a minute
+apart however often it is asked, and the ring's break rule counts its
+`window` — `KubeMetricsSample.resolution`), 6h its minute buckets
+(CPU the minute's mean, memory its peak, so the spike before an OOM
+survives), the window ending at the last poll so it stands still between
+polls. `KubeMetricsRange` is the page's (`metricsRange`, in memory);
+`,` and `.` step through the ones that can be picked — without
+Prometheus Live and 6h, 1h, 24h and 7d greyed, needing it (with it, see
+the Metrics tab over Prometheus below). `KubePodCharts.build` makes the pod's
+CPU and memory stacked by container — its native sidecars (init
+containers with `restartPolicy: Always`) among them, as the pod's total
+counts them — then a section a container — kubectl's default
+container first, a picker past four — with the spec's request and limit
+as reference lines (a pod's only when every container has one: a
+partial sum misleads), chips (`KubeChartChip`: `48% of request`, `12% of
+limit`, `no limit`, `working set 93% of limit · OOM risk` red past nine
+tenths) and the caption ("Sampled from metrics-server while shown since
+14:02, every 15 s"). A container's `lastState.terminated` with its
+`finishedAt` is a `KubeChartMarker` on its charts and the pod's (an
+OOMKill red, another end orange; drawn by `KubePlot.markers` as a faint
+line and a tick, `markers=N[kinds]` in the dump): its popover's Previous
+Log (`openMarker`) is the Logs tab on that container with Previous on,
+saying when only the last of several instances is kept (see Change
+markers below). The charts' context menu's Logs from Here
+(`logsFromHere`) is the container's log from a minute before the
+crosshair (`KubePodLogSession.read(from:)` → `sinceTime`, never with
+`sinceSeconds`; read once, not followed, its head kept — no `tailLines`,
+which kubelet applies after `sinceTime`, but `limitBytes` and the feed's
+5,000 lines, `fromCut` saying more came since; no older lines asked;
+Whole Log goes back), saying when its first line kept is well after it.
+The charts are built only when what they come from changes
+(`KubePodChartsKey`: the reading's time, the object's resourceVersion,
+the range): the tab's body runs on every row event and list poll. The charts sit in a `LazyVStack`
+(`KubePodChartsList`, page-free, what `kubernetesPerf` hosts: ten charts
+first drawn in ≤ 50 ms); they share one cursor in the tab's `@State`, its
+body counted (`kubernetes.detail.metrics`). Copy as kubectl there is
+`kubectl top pod … --containers`. `kubernetesCharts` (in `kubernetes`)
+checks the references, the marker, the caption, the ranges, a held
+crosshair's tooltip with no series or tab body drawn again, the marker's
+previous log and Logs from Here's `sinceTime`; `KubePodChartsTests`.
+**The Metrics tab of a workload, an HPA, a node, a namespace**
+(`KubeObjectCharts` with `KubeWorkloadCharts`, `KubeHPACharts`,
+`KubeNodeCharts`, `KubeNamespaceCharts`, all pure over `KubeChartBuild`;
+`KubernetesPageModel+ObjectCharts`, `KubeObjectChartsList`; metrics.md
+2.5–2.8, stage M3b). `KubeObjectRef.metricsSubject` (`KubeMetricsSubject`)
+says which; `objectMetricsDetails` is what each tab polls while it
+shows, through the monitor's details (at most three a context):
+a workload its pods' PodMetrics by its selector (`.workload`, once the
+object's read says it), its own object every minute (`.replicas` →
+`KubeReplicaStatus`) and its HPA when one targets it — found with one
+HPA Table read in its namespace as the tab opens, matched on its
+Reference (`KubeChartLookups`, never repeated while it shows); an HPA
+itself (`.hpa`, 15 s); a node its NodeMetrics and its pods as objects
+every 5 minutes (`.nodePods`: `fieldSelector=spec.nodeName`, `limit=250`,
+decoded off the main thread to requests and phase — `KubeNodePods`,
+nothing else kept, env values never), and on "Sample Top Pods" its
+largest-request pods' namespaces (at most four, `.nodeTopPods` →
+`KubeMetricsTarget.podsOn`, every 30 s, stopped after 15 minutes with
+Sample Again; nothing more when the page's list already samples every
+namespace); a namespace its pods' PodMetrics and its pods as Metadata
+rows every minute (`.namespacePods`, paged: `KubeNamespacePods`, each
+pod's owner — a ReplicaSet's Deployment by `pod-template-hash` — and
+its status as a phase, `KubePodPhase`), its ResourceQuota read once
+(`KubeQuota`). `KubeMetricsTarget.every` spaces the slower reads. The
+ring keeps a sum's parts beside it (`KubeUsageParts`): a workload's
+pods each (`.pod`, at most 50, past that the sum alone), its revisions
+(`.part`, from PodMetrics' `pod-template-hash` or
+`controller-revision-hash`, `KubePodMetrics.revision`), a namespace's
+workloads by owner, else by name (`KubeWorkloadName`), the 30 using
+most. The objects' own numbers go to `KubeStatusHistory` (the monitor's
+`statuses`, kept and dropped with the ring: a point only on a change,
+held to the last reading, a break where unread, 6 hours, 50 keys, an
+hour after). The builders: a workload's CPU and memory Per pod (its top
+five by their last 15 minutes as lines, against one pod's template
+request and limit) or Total (`KubeWorkloadView`; the top five stacked
+at the total's times — `KubeChartBuild.align`, pods on different nodes
+are stamped apart — and "other", against the template × replicas;
+Per pod is the default at five pods or fewer, decision 13), CPU by
+revision labelled from the History tab's revisions ("rev 3
+(nginx:1.27.2)"; its reads made once as the tab opens), its replicas
+stepped (`KubeChartData.stepped`) with its HPA's bounds, and its HPA's
+charts beside; an HPA's replicas against min and max with
+ScalingLimited as a band (`KubeChartBand`, drawn by `KubePlot.bands`,
+`bands=` in the dump) and "flapping" past four scales an hour, each
+metric against its target; a node's CPU and memory against what its
+active pods request, its allocatable and capacity, its pressure and
+cordon as bands (`KubeNodeFacts`, since the condition's transition or
+the taint's `timeAdded`), its pods against `allocatable.pods`, its
+top pods stacked; a namespace's by workload — the top eight and
+"other" — against its quota, and its pods by phase, stacked. Each says
+why a part is left out (`notes`). Built only when what they come from
+changes (`KubeObjectChartsKey`); `kubernetesPerf` checks a 50-pod
+Deployment's tab built and drawn in ≤ 50 ms; `kubernetesCharts`'s M3b
+part (`E2ERunner+KubernetesObjectCharts`) checks each tab's charts,
+references, bands, its reads and nothing hidden; `KubeObjectChartsTests`.
+Without metrics-server (or with the context's metrics off) only an HPA's
+tab reads anything: the others' details are empty and their lookups
+(the HPA Table, the History tab's revisions, the quota) wait until
+metrics-server serves, each marked asked only once started. A
+namespace's workloads named from its pods' names before its rows are
+read give way to the owners' ids once they are (one series each); a pod
+the rows say has no owner is `Pod/<name>`. A node's top pods are those
+Sample Top Pods reads (`topPodsPicked`: the first four namespaces'),
+never a pod it doesn't. A stepped chart's fill steps with its line.
+Hidden, every reading ends, what was read goes, the metrics proxy closes.
+**Change markers on every chart** (`KubeChartMarkers`, pure, and
+`KubernetesPageModel+ChartChanges`; metrics.md 3.2, stage M4). The join
+reads nothing of its own: `KubeChartChanges` is what the detail holds —
+a workload's History (`KubeTimeline`'s entries, read once as the tab
+opens: revisions, restarts and rollbacks blue as rollouts, Helm
+revisions blue, scaling grey, warnings yellow), else the detail's own
+events (asked once: its warnings, an HPA's `SuccessfulRescale`), and its
+pods' states (`KubePodStates`: each container's restarts and last
+termination, decoded off the main thread from one bounded read, env and
+all dropped) — a pod's own GET, a workload's pods by its selector with
+`limit=250` (past it, said) and its answer read only up to
+`KubePodStates.maxBytes` (16 MB, `KubeClient.get(_:maxBytes:)`: past it
+the read stops, the connection closes, and it is said), every
+`podStatesInterval` (60 s) while the tab shows on a page on screen,
+stopped by a 403, a failed sign-in or an answer past the bound and said
+(not a `KubeMetricsMonitor` target: a workload's tab already takes the
+three a context polls); never without metrics-server (nothing would be drawn) or with the
+context's metrics off. `KubeRestartLog` keeps the restarts seen between
+two reads (200 at most, dropped with the detail): one whose termination
+changed meanwhile is that termination, at its exact `finishedAt` (kept,
+since the status keeps only the last); another is "restarted between
+14:02 and 14:03". A pod's charts carry its terminations, restarts and
+events, a container's its own; a workload's every chart its History and
+its CPU and memory (W1, W2) every pod's, named by pod. Each chart keeps
+the newest 50 in its window (`KubeChartMarkers.cap`), the older folded
+into "+N earlier" at its left edge (`KubeChartData.earlierMarkers`), and
+says "events: last hour" (`markerNote`) when its window reaches past the
+hour events are kept and its tab joins events (`eventsJoined`: a
+History once read, which reads them, or the object's events once loaded
+— whether or not any came back, since a quiet 6h chart is when it
+matters). A marker's click opens its popover (`KubeChartView`:
+kind, time, what changed, the button `KubeChartMarker.Opens` says —
+Previous Log, a workload's pod's on that pod's Logs tab (`KubePodLogSession`
+keeps a pick made before the pod is read), Show Diff on its History
+entry, marked (`markedEntry`), with the diff in the changes pane, Show
+in Events — and Show ±30 min); ⌥-click is Show ±30 min:
+`KubeChartWindow.around`, the page's `metricsWindow`, every chart of the
+tab narrowed to it from 6h's minute buckets (`tier`: a window starts at
+least 30 minutes back, past the raw 15, so always that tier; then
+`narrow`), nothing asked; the picker says Custom with Reset; a range
+picked, `,`/`.`, Esc (before it closes the detail) or another object
+ends it, and a window with nothing sampled says so. `KubeChartMarkersTests`;
+`kubernetesCharts`'s M4 part checks a Deployment's rollout on every chart,
+a pod's OOMKill on W2 from the states' read, the window, Esc and the
+History entry with its diff.
+
+**The Metrics tab over Prometheus** (`KubeMetricsSpan`, `KubeChartSource`,
+`KubeTabQueries`, `KubePromTabCharts`, `KubeChartCache`, all pure;
+`KubeTabReading` and the monitor's `.tab` want;
+`KubernetesPageModel+Charts`; metrics.md 3.3–3.5, 4.7, 6.1, stage M6).
+Where the context's Prometheus is found (the tab wants `.locate` until
+it is — where it is, nothing read), a pod's, a workload's, an HPA's and
+a node's tab pick every range (a namespace's too since M7): Live, 1h,
+6h, 24h, 7d (`KubeMetricsRange.prometheusStep`: 30 s, 60 s on a
+minute's scrape, 2m, 5m, 30m — at most 336 points — the end on a step;
+refreshed every step, minute, 2, 5, 15 minutes) and Custom (`.` past
+7d, or its button: `KubeCustomRangeView`, two dates checked by
+`KubeChartWindow.custom` — the start before the end, the end not in the
+future, the start within the probed retention or 30 days). A drag across
+any chart (`KubeChartView.zoom`; the band `KubeChartCursor.selection`,
+drawn by every overlay of the scope) pushes a `KubeChartWindow` (`.zoom`)
+on the page's `metricsZoom` stack — Reset or Esc pops one — asked at its
+own step (`max(scrape, nice(span ÷ 250))`) and never refreshed; with
+sampled numbers it only narrows the axis, from the tier it was drawn
+from (`sampledTier`). Without a pick the tab opens on Live where
+metrics-server answers, on 1h where it is absent or down and only
+Prometheus answers (decision 7) — Live while discovery hasn't said.
+`KubeChartSource.pick` is the ladder: sampled without Prometheus;
+`mixed` in Live with both — the sampled charts, plus what has no sampled
+form (`KubeTabFamily.prometheusOnly`) over 15 minutes; `prometheus` for
+1h on, a marker's window, Custom, and Live without metrics-server — no
+metrics.k8s.io read then (`metricsDetailsOnScreen`). The tab's request
+(`KubeTabRequest`: whose — `KubeTabSubject`, the object's facts read once
+a version: a pod's CPU limits and host network, a workload's HPA, never
+what moves with a scale —, the span, the families) is a
+`KubePrometheusMonitor.Want.tab`; a new request for the same object over
+the same span (`carries(from:)`) takes the last one's answers over until
+it is read, so the tab never flashes "Asking Prometheus…"; its
+poll resolves the span with the profile's scrape, plans the queries
+(`KubeTabQueries.plan`: the tier, raw over an hour or less, the mixin's
+rules past it; a pod's containers' CPU `sum by (container)(rate)`,
+memory `max by (container)` — `max_over_time` past 5-minute steps —,
+throttling (throttled ÷ periods over 5 minutes at least, only where a
+container has a CPU limit), network (one union tagged `overterm_s`: rx,
+tx, drops — none for a host-network pod), restarts a step (each
+container's count against its own `offset` a step back, clamped at 0 —
+never a window one step wide, which Prometheus 3's left-open ranges
+leave a sample in) and the OOMKills kube-state-metrics saw (such a rise
+`and` a last reason of OOMKilled, `or` cAdvisor's OOM events' increase
+over the step and a scrape), from 24h C1's peak band
+(`max_over_time` of a short rate, one pod's subquery) and C2's RSS; a
+workload's pods matched by name (`podPattern`, regex-escaped then
+string-escaped) `sum by (pod)`, its replicas in kube-state-metrics' own
+names, its restarts and its HPA's; an HPA's replicas and metrics against
+their targets (`kube_hpa_*` on 1.x); a node's usage and what its active
+pods request in one union, its active pods, its conditions as bands, its
+largest pods — those only while their group is on screen
+(`KubeObjectCharts.Group.readsWhenShown`, `metricsGroupShown`)) and asks
+them through the context's queue, each its own task, four in flight.
+Range queries go through `KubeChartCache` (per context: 96 entries, 12
+MB, keyed by the query, the range and the step; an answer merged off the
+main thread — `KubeChartCache.merged`, which counts where it ran
+(`mergeThreads`) — and only `put` there if the query's `version`, from
+a count no cache repeats, is what it was before the merge: kept over
+meanwhile, merged again; its key gone (another range, the cache
+dropped, evicted) or the reading cancelled, never kept): a refresh asks from
+`max(2, ⌈(scrape + 30 s) ÷ step⌉)` steps before the last answer's end
+and replaces from there, nothing at all within a step; another range of
+the query is dropped; nothing failed or cancelled is merged; dropped on
+a context, cluster or use change and 10 minutes after the last reading
+(`cacheLifetime`). A query that fails keeps its last answer, the failure
+said under the charts; agent mode and the stopping failures as the
+other charts say them. `KubePromTabCharts` builds the same charts as the
+sampled tab from the answers — a pod's stacked by container then each
+container's against its spec — C1's peak band a faint area behind its
+CPU (`KubeChartRole.peak`: in the legend, never stacked or summed), C2's
+RSS a series hidden until its legend item is clicked (`offByDefault`) —,
+plus C3 (against the 25% guide; "No CPU limit: never throttled"), P3 and
+P4; a workload's top five by the
+range's mean or its total and the rest against its template, by revision
+from its pods' names (a Deployment's ReplicaSets), W4, W5 and its HPA's;
+an HPA's H1 and H2; a node's K1–K5 and K3 — or, `addOnly`, adds the
+Prometheus-only ones to the sampled, its earlier OOMKills on the sampled
+CPU and memory too. The OOMKills are markers on the
+step (`KubeChartChanges.ooms`), one a run of steps, left out where the
+container's `lastState` marks it exactly. Live pauses after 15 minutes
+without input in the window (`metricsIdleLimit`: a key, a mouse move
+over the tab), "Paused · Resume", nothing read meanwhile; any other range
+or a hide ends it, and its idle time counts again from when it runs again. The detail's Overview no longer charts a pod over
+Prometheus: its Metrics tab does. `KubeMetricsSpanTests`,
+`KubeTabQueriesTests`, `KubeMetricsTabPrometheusTests`;
+`kubernetesCharts`'s parts 2, 4 and 11 (Live's throttling from a
+15-minute query_range, 1h raw and 6h from the rules over only the
+Service's two paths, a zoom asked at its step and not refreshed, Reset).
+
+**A workload's pods by owner, its top five and the rest; a namespace's
+over Prometheus** (`KubeTabSelection`, `KubeTabRanking`, `KubeTabRankPlan`
+in `KubeTabQueries`, `KubePromTabCharts.workload`/`.namespace`, pure;
+`KubePrometheusMonitor`'s `rank`; metrics.md 2.5, 2.7, 4.5, 4.6, stage
+M7). A workload's pods are chosen by owner, in tier order
+(`workloadSelection`): the mixin's `namespace_workload_pod:kube_pod_owner:relabel`
+(a Deployment's, StatefulSet's, DaemonSet's; `workload_type` lower case),
+else kube-state-metrics' `kube_pod_owner` — a Deployment's through its
+ReplicaSets (`kube_replicaset_owner`, each `max by`, so two replicas of
+it count once), keeping each pod's `replicaset` —, else the pods' names
+(`podPattern`, said "pods matched by name"); every usage, restart and
+OOMKill query is `(… by namespace, pod, container) * on(namespace,pod)
+group_left() <owner>`, its raw selector keeping a prefix of the pods'
+names beside the join (`podPrefixMatcher`, cut at 58 as Kubernetes cuts
+a generated name), so it reads the workload's series, not the
+namespace's. The top N is two reads: the ranking, one instant
+`topk(5, …)` a measure at the span's end (`time`, a window's too) over
+the whole span — CPU the counter's rate over it (no subquery; at least
+four scrapes), raw only under `KubeQueryCost.rankingSamples` (a
+workload's own series, counted first with its pods — `KubeTabCount`,
+one `count by (pod)` —, the namespace's, else the cluster's), else over
+the last 24h, said; memory the rules' average, or raw de-duplicated in
+a subquery over 24h at most and a workload's 50 pods at most
+(`KubeQueryCost.subquery`) — its two queries at once, below the visible
+charts in the queue (`.ranking`), which are asked meanwhile (the five's
+once it answers), and kept in the reading
+(`KubeTabReading.ranking`, carried to the next request of the same object
+and span) for 10 refreshes of the same span, tier and selection; then the
+range queries: the total by owner, the five by name (`podsMatcher`, each
+regex-escaped then string-escaped), and a Deployment's ReplicaSets
+(`sum by (replicaset)`: kube-state-metrics' own, else read off the pod's
+name). The charts: Per pod the five as lines (the default with five
+replicas or fewer), Total the five stacked with "other" (the total less
+them) against the template × replicas; W3 a line a ReplicaSet labelled
+from its History. A namespace's tab (`KubeTabSubject.namespace`) reads
+over Prometheus from 1h (Live stays sampled): its total, its top eight
+workloads (`ownersIn`: the rule, or kube-state-metrics' owners — a
+ReplicaSet's pods its Deployment's — as `workload`/`workload_type`; a pod
+of nothing is in "other"), from the rules where they are, else raw only
+below 2,000 series (`KubeTabQueries.namespaceCount`, one instant count
+kept with the profile, `KubePromProfile.namespaceSeries`; one that fails
+refuses raw for that reading, `KubePromProfile.uncounted`, never kept,
+counted again at the next refresh — `namespaceRawRefusal`, which the idle
+chip obeys too); its pods by
+phase, its ResourceQuota's hard and used requests over time (the tightest,
+`requests.cpu` before `cpu`; else the quota read as the tab opened), and
+N3's chip — what its active pods request less what they use, averaged
+over the range (an instant subquery; without rules only to 24h).
+`FakePromQL`'s `group_left(l…)` copies those labels, so the owner joins
+are shown on data. `KubeTabTopNTests`, `KubeMetricsTabPrometheusTests`;
+`kubernetesCharts`'s part 5 (a Deployment's two ReplicaSets labelled with
+their revisions, the ranking once a measure, the five by name; its
+namespace by workload against its quota).
+
+**The Overview's usage by namespace and node; a claim's fill forecast**
+(`KubeClusterCharts.swift` — `KubeClusterCharts`, `KubeNodeStripRow`,
+`KubeVolumeForecast` and X3's and X4's queries, pure —,
+`KubeClusterChartsView` (`KubeClusterSampledView`, `KubeNodeStripsView`),
+`KubernetesPageModel+ClusterCharts`; metrics.md 2.9, 4.6, stage M8). The
+Overview's charts replace its sparklines and its requests block. Sampled
+(no Prometheus, or not found yet): the cluster's ring key (X1, X2) against
+the nodes' allocatable and capacity — the `/nodes` read the monitor
+already makes now keeps `status.capacity` too (`KubeMetricsReader.
+nodeResources`, `KubeMetricsSample.capacity`) — with no requests line
+(the rows carry no spec) and the chip "requests need Prometheus
+(kube-state-metrics)"; and X4, each node's last 15 minutes from the
+ring's list keys as the Nodes list's strips. From Prometheus, three
+`KubeChart`s the page wants on the Overview (`overviewCharts`): `.cluster`
+(X1, X2: its totals now with the nodes' capacity, `KubePromQL.capacity`;
+the requests' and limits' shares of allocatable as chips, red past 100%
+and said overcommitted — `KubeClusterCharts.chips`), `.namespaces(names)`
+(X3, the namespaces picked — `KubeScope.names`, every one when none —,
+`page.namespacesChart`: one instant `topk(8, …)` at the range's end over
+the range — the mixin's per-container rule's average, else the raw
+counter's rate where `KubeQueryCost` allows raw across the cluster (6h),
+either past the samples cap over 24h, said — kept in the reading
+(`KubeChartReading.ranked`) for ten readings or until the range changes,
+at `.ranking` below the visible charts, its total asked beside it (an
+`async let`: the ranking never holds a visible chart back); then the
+eight by name, "other" the rest), and `.nodes` (X4: by the rule's `node`, else raw by the
+profile's node label, at a sixtieth of the range — `KubeChartQueries.step`,
+`max_over_time` past 5-minute steps so a cell keeps its peak — against
+kube-state-metrics' allocatable by node, else the `/nodes` read's; the
+50 hottest by name, "the 50 most used of N"). The monitor's chart reading
+grew lines and instant answers by a label (`parts`, `partTotals`,
+`partLabel`). `.cluster` and `.nodes` are `KubeChartQueries.unioned`
+(metrics.md 4.2, 6.5): each measure's line carries its own totals
+(`carried(by:)`) as one range union tagged `overterm_s` by measure, read
+apart (`arm`), a total off its last point; with the lines refused the
+totals are one instant union — 7 queries on open, 6 a refresh. Back
+from an object the Overview opened (`KubeHistory.Origin.overview`,
+`backToOverview`) returns to the Overview, the object ahead. X3 and X4 are drawn in `KubePrometheusChartView(.cluster)`,
+sharing X1's and X2's crosshair; refused (raw past 6h), each says why and
+X4 falls back to the sampled strips. A node's row opens its Metrics tab
+(`openNodeMetrics`); its strips are `kubernetes.overview.heat.<node>.<measure>`
+(`KubeHeatStrip` now takes a cell of any length and says whose it is).
+X4 is one Canvas (stage M12): fifty rows as views — a button, two
+`KubeHeatStripView`s, their shares — took the Overview's first draw to
+70 ms, so `KubeNodeStripsView` draws the names (cut in their middle),
+the strips (`KubeHeatStripView.draw`) and the shares in one pass at
+`KubeNodeStripsLayout`'s places (pure: rows, columns, what a point is
+over); a click on a name opens the node, the hovered strip's summary is
+a label only `KubeNodeStripsHover` redraws, every row and strip an
+`accessibilityChildren` element, and the strips go to
+`KubeHeatStripRegistry` together (`show(_:token:window:)`).
+A claim (V1, V2, the EFS rule): its available bytes and `-deriv` of
+them over 6h — instant totals; `predict_linear` would extend the same
+line, so it isn't asked —, the rate (`KubeVolumeForecast.rate`) giving the chip ("full in ~3 d", red under a
+day; "not filling") and a dotted projection (`KubeChartRole.projection`,
+drawn straight, never stepped) to a quarter of the range past now,
+stopped at the capacity; "Inodes used" toggles V2
+(`.volumeInodes`, `page.volumeInodesShown`, read only while on). A
+capacity past 2^60 (EFS reports 8 EiB, `KubeVolumeUsage.unboundedCapacity`)
+is no size: no capacity line, no %, no forecast asked, said in a sentence,
+the PVC column "3.0Gi (no fixed size)". On a pod's tab C4 (`KubeTabFamily.fs`,
+in Live too): each container's `container_fs_usage_bytes` (a device each
+once) against its `ephemeral_storage` limit, only where the probe found the
+metric — else, or where this pod's node reports none, the sentence that
+the kubelet doesn't report it (containerd) and kubelet's stats need
+`nodes/proxy`. On a node's tab K2's "node total" (MemTotal − MemAvailable
+mapped by `node_uname_info`'s nodename, `KubePromQL.nodeTotalMemory`,
+both sides `max by (instance)` first, so two jobs scraping one
+node-exporter don't double it)
+beside its pods' working set, only where node-exporter maps to nodes —
+else the tab says so. `KubeClusterChartsTests`, `KubePrometheusTests`
+(the ranking once and at the range's end, the nodes at a minute's step,
+a claim's fill, an EFS claim's forecast never asked); `kubernetesMetrics`
+(X1, X2 and X4 sampled), `kubernetesPrometheus` (X3 and X4 over the hour,
+refused over 24h raw and sampled instead, from the rules over 24h at 24
+minutes a cell; X1's capacity line and chips) and `kubernetesCharts`
+part 6 (`prometheusVolumeForecast`: the chip and the projection, inodes
+read only while toggled, an EFS claim with no line, no % and no
+forecast asked; C4 on a pod's tab).
+
+**A node's disks and network from node-exporter** (K6, K7;
+`KubeTabFamily.disks`/`.nodeNetwork`, `KubePromQL.nodeDisks`/`nodeNetwork`
+in `KubeTabQueries.swift`, `KubePromTabCharts.nodeExporterGroup`;
+metrics.md 2.8, 4.6, decision 6, stage M8b). Node-exporter's series
+are mapped to the node by `node_uname_info`'s nodename
+(`KubePromQL.onNode`, K2's total's mapping too), never by host IP, every
+series taken once an instance (a mount, a device) before it is summed.
+Disks: `/` and `/local` (Bottlerocket's), tmpfs, overlay and squashfs
+left out — each mount's size less available against its size, one range
+union tagged `overterm_s`, a chart a mount ("25% used", red from 90%).
+Network: the node's own interfaces (lo, veth, eni, cali, docker, cni
+left out), received and sent a second at the tab's rate window. They
+have no sampled form, so they are Prometheus' in Live too
+(`prometheusOnly`; `addNodeExporter` adds them to the sampled charts).
+They are the tab's last group, read only while on screen like the top
+pods: `KubePromTabCharts.readWhenShown` maps each such group's title to
+its families, `page.metricsGroupsShown` holds the ones on screen (the
+group's header says so as it appears and goes). Where the probe found
+node-exporter unmapped there is no group, and one sentence says the
+node's memory total, disks and network are left out; a collector off
+(no `node_filesystem_avail_bytes`, no `node_network_receive_bytes_total`,
+both now in the probe's list) leaves out that chart alone, said; a node
+with neither mount says so. Only the Service's `query_range`, GET only;
+the kubelet is never reached. `KubeNodeExporterChartsTests`,
+`KubeMetricsTabPrometheusTests` (read only while shown, in Live and over
+the hour); `kubernetesObjectCharts`' `nodeExporterPart`.
+
+**GPUs** (`KubeGPU.swift`: `KubeGPU`, `KubeGPUAllocation`;
+`KubeGPUCharts.swift`; `KubernetesPageModel+GPU`; metrics.md decision 12,
+stage M8c). From the objects, with or without Prometheus or
+metrics-server: `KubePodCharts.Container.gpus` (an extended resource's
+limit: `nvidia.com/gpu`, `nvidia.com/gpu.shared`, `nvidia.com/mig-*`,
+`amd.com/gpu`), `KubeNodePods.Pod.gpus` (the node's pods as objects, the
+read K1 already makes — read for a GPU node without metrics-server too),
+a node's capacity and allocatable. `KubeGPUAllocation` says a node's "1 of
+2 allocated · 1 free" and which active pods hold them (a click opens one),
+a pod's containers', a workload's template times its pods; it shows above
+the Metrics tab's charts whatever their source (`KubeGPUAllocationView`),
+every allocation shown — whether a GPU is busy is DCGM's to say. The
+probe's list gains DCGM exporter's metrics, and where its framebuffer
+gauge is found a fifth query (`KubePromProfile.dcgmQuery`) reads its labels
+(`KubePromProfile.DCGM`): the GPU's pod as `exported_pod` where Prometheus
+scrapes it with honor_labels off (then `pod` is the exporter's own), else
+`pod` where it names some pod not the exporter's; a `pod` that is only
+ever the exporter's own (no GPU allocated when probed, honor_labels off)
+is never a holder — the `exported_*` labels are read, and
+`KubePromProfile.DCGM.isExporter` drops it from a node's holders too; its
+node as `Hostname`, else `node`; MIG instances by `GPU_I_PROFILE`. The tab's `gpu` family (`KubePromQL.gpus`: one range union,
+each GPU `max by` its index, MIG profile and id, and its container, pod or
+holder) is asked only of an object with GPUs (`tabRequest` drops it
+otherwise) — a node's by its node label, a pod's by its exported labels, a
+workload's pods by their names (DCGM's pod label is never
+kube-state-metrics') — and in Live too (`prometheusOnly`). `KubeGPUCharts`
+draws G1 utilisation (the graphics engine's activity where profiling
+metrics are on, a MIG instance's only one), G2 framebuffer against one
+GPU's total (its own arm, used + free at one sample: never a peaked used
+beside a plain free), G3 power and temperature: a line a GPU (twelve at most, the
+busiest), a group "GPUs (DCGM exporter)" after a node's or workload's own
+charts, on a pod's beside its network. A held GPU never above 5% over the
+range is said plainly, who holds it and over what ("allocated, and paid
+for, but unused") and chipped on G1. No DCGM, no pod or node labels, its
+labels unread, nothing answered: each its `KubeChartEmpty` sentence.
+A pod's note says how each resource is given (`KubeGPU.given`): a whole
+device, a time slice shared with other pods (`gpu.shared`), a MIG
+instance. `KubeGPUTests`, `KubePromProfileTests` (the fifth query only with
+DCGM; `FakePromProfile.gpuOperatorIdle`, the exporter's own `pod`);
+`kubernetesObjectCharts`' `gpuPart` on `FakePromProfile.gpuOperator`: a
+node's, a pod's (its holder row clicked) and a StatefulSet's tabs, at 1h
+and in Live beside metrics-server.
+
+**A context's saved queries** (`KubeSavedQueries.swift`: `KubeSavedChart`,
+`KubeSavedQueries`; `KubeSavedCharts.swift`; metrics.md decision 11, stage
+M8d). The user's own application metrics — request rate, latency, queue
+depth — written into the context's `kubernetes.contexts` entry as
+`charts: [{title, query, unit}]` (`KubeSavedChart.field`; a list of objects
+is `SettingValue.records`, checked by `SettingKind.records`, its required
+fields and its `unit` choice said item by item) and drawn on a workload's
+Metrics tab. Never an agent's: no `k8s_` tool reads or writes them, so
+there is still no free-form PromQL for agents. Before anything is sent,
+`KubeSavedQueries.fill` reads the query's tokens (comments, the three
+string quotings, PromQL 3's quoted names; a keyword — `sum`, `and`,
+`offset`, `by`… — only where the grammar puts one, anywhere else a metric's
+name like PromQL takes it, so checked) and refuses — the sentence under the
+charts, in the chart's title's name — a selector without the scope's
+matchers (`namespace="$ns"` on that label itself, never `exported_namespace`;
+and a positive matcher whose whole value is `$pod` in `=~` or `$name` —
+`pod=~"$pod|.*"` mentions it and reads the namespace), a bare metric name,
+a subquery, a range past an
+hour, `$pod` in a non-regex matcher, a placeholder anywhere but a
+matcher's value (`$w` only in a range), more than 2,000 characters; at
+most six a context are asked (`KubeSavedQueries.atMost`). `$ns` and
+`$name` are filled in as a literal in `=` and as a regex in `=~`
+(`regexLiteral`, then `literal`), `$pod` as the workload's pods' names
+(`KubeTabQueries.podPattern`), `$w` as the charts' rate window. Each is a
+`saved` query of the tab's want (`KubeTabRequest.saved`: an edit to
+settings.json is another request) over the Service's `query_range`, through
+the cache and the queue like the rest — read only while their group, last
+on the tab, is on screen (`KubePromTabCharts.readWhenShown`). A query
+Prometheus refuses (`bad_data`, a 422) is said in its words in that chart's
+place (`KubeTabReading.saved`) and not sent again while the reading lasts
+(`savedRejected`); it is never the tab's problem and never drops the
+profile. `KubeSavedCharts` draws one chart each in the unit given
+(`KubeChartUnit.perSecond`, `.seconds` beside the others; a value past
+10¹⁵, anyone's number, said as `%.3g` rather than through `Int`), a series a
+label set named by the labels that tell them apart, twelve at most — the
+rest "other" where the unit adds up, else said. Without Prometheus on for
+the context, the tab says the queries need it and asks nothing.
+`KubeSavedQueriesTests`; `KubeMetricsTabPrometheusTests` (asked only while
+shown, the unscoped one never sent, the refused one not asked again, the
+profile kept); `kubernetesObjectCharts`' `savedQueriesPart`.
+
+**A chart expanded, copied** (`KubeExpandedChart.swift`,
+`KubernetesPageModel+ChartExpand.swift`, `KubeChartExport.swift`;
+metrics.md 2.1, 3.9, stage M9). A Metrics tab chart's ⤢ (or "Expand" in
+its context menu) puts it alone, at the pane's full height, in the right
+slot as `KubeManifestPane.Shown.chart` — the browser column steps aside by
+the `RightSlot` rule, and the page steps aside so the chart sits beside
+the terminal (`showKubernetesExpandedChart`: the slot on screen first, the
+page hidden after, so its reads don't pause). It is the tab's own chart
+(`liveChart(for:)` finds it in `podCharts`/`objectCharts` by id, the same
+caches), drawn under its own identifier (`kubernetes.chart.expanded.<id>`,
+its own crosshair) so the registry, the dump and the draw counter tell the
+two apart; nothing new is asked for it. While the slot shows it in a
+window on screen (`expandedChartOnScreen`, set by
+`updateRightPaneVisibility`) and its object's Metrics tab is still the
+detail's (`expansionFollowed`), `chartsShown` stands in for "the page is
+on screen" in the tab's gates alone — its metrics.k8s.io target, its
+Prometheus `.tab` want (the only want of a hidden page), its pod states,
+Live's pause —, and `KubernetesModel.holdCharts` keeps usage and
+Prometheus read (`readsMetrics`) without the list, discovery or any watch
+(`isShown` stays false). The slot closed, the detail on another tab, the
+window occluded or closed: the hold goes and nothing is read; the slot
+keeps the last chart, said with its time, and "Show in Kubernetes" opens
+the page on that tab again. A drag on it zooms the tab's window (Reset
+there too). Every chart's context menu copies — through the page's
+`actions.copy`, the clipboard only — "Copy Values as CSV" (the window
+shown, a row a time, a column a series the legend shows with its unit, a
+gap empty, a reference held at its last value; every cell through
+`KubeListExport.inert`) and, for a Prometheus chart of a tab, "Copy
+PromQL": the exact queries it was drawn from (`KubeTabReading.queries`,
+the plan the last read sent, matched to the chart by its id's measure,
+`KubeChartExport.queryIDs`; several each after a `#` line). The
+Overview's and a claim's Prometheus charts copy theirs too
+(`KubeChartReading.queries`, what the read sent by the measure each
+answers, `KubeChartExport.attach(_:reading:)`). A query Prometheus refused
+as sent (`bad_data`, a saved query's 422, still reported while it is held
+back) or the metrics proxy's filter did — `KubeChartEmpty.offersCopyPromQL`'s
+rows — is kept as `reported` (`KubeTabReading`, `KubeChartReading`), and
+`KubeCopyPromQLButton` offers it beside the sentence, where no chart is
+drawn to carry it in a menu. The expanded chart's markers and "Logs from
+Here" do what the tab's do, on the page shown again first (its pod's
+container kept on `KubeExpandedChart`); a key or click anywhere in its
+window counts as Live's input while it reads with the page hidden
+(`noteKubernetesWindowInput`, from the window's own monitors); the window
+closing lets it go (`expandedChartWindowClosing`, `dropChart`), so no
+layout pass after can hold the model's metrics again. ⌥↩ waits for chart
+focus (metrics.md M9b). `KubeChartExportTests`;
+`KubeMetricsTabPrometheusTests` (read on while expanded with the page
+hidden, only its tab's; stopped when the tab changes, the slot closes, the
+window is occluded or closes; a refused query reported); `kubernetesCharts`'
+part 10 (`kubernetesChartExpand`: the copied query is one the fake was
+asked, the browser gives up the slot and gets it back, no list, watch or
+discovery read).
+
+**Rightsizing** (`KubeSizing.swift`: `KubeSizingSubject`, `KubeSizingRequest`,
+`KubeSizingPlan`, `KubeSizingReading`, `KubeSizing`, `KubeSizingCard`;
+`KubeSizingView.swift`; `KubernetesPageModel+Sizing.swift`; metrics.md 2.10,
+4.6's R1, stage M10). "Sizing" on a pod's or a workload's Metrics tab, where
+the context's Prometheus is on, asks seven days of its usage — or what
+Prometheus keeps, from the profile's retention, in whole hours; under an
+hour, nothing — once, on the press: never refreshed, never with Live. Per
+pod, never per workload: each measure is taken over each pod's own series
+`by (namespace, pod, container)` and the container's figure is the highest
+pod's (`max by (container)`), so a ten-pod workload's suggestion is one
+pod's, not ten times it. CPU p50, p95 and max and memory p95 and max, one
+instant query each over the Service's `query` (GET, `timeout=20s`): with
+the mixin's rules `quantile_over_time`/`max_over_time` over the rule's
+series, no subquery; raw, each container's rate (`$w5 = max(5m, 4 ×
+scrape)`) or de-duplicated gauge in a subquery at 5 m — memory's max
+straight off the raw samples, a max of maxes needing none. A workload's
+pods are those its owner had at any time in the window
+(`KubeSizing.ownersOver`: the workload rule's or kube-state-metrics'
+owner series' `max_over_time`, a Deployment's through its ReplicaSets;
+no owners, its pods' names), so last week's ReplicaSets count. A raw
+workload's pods over the window are listed first, by name, from a cheap
+source (`KubeSizing.podsOver`: the owner series; by name pattern,
+kube-state-metrics' `kube_pod_info`; without kube-state-metrics, cAdvisor's
+last hour, said — never the week's samples), and its subqueries then read
+those pods by name (`pod=~"a|b"`) and no others: the prefix before an owner
+join would have read a sibling's week (api beside api-gateway) before the
+join filtered it. None found, or past `KubeQueryCost.maxSubqueryPods` (50),
+it is refused, said, with nothing more sent. Where kube-state-metrics is, a
+sixth query asks which containers last ended OOMKilled — and, where its
+restarts are kept, restarted in the window, kube-state-metrics' last reason
+having no time. The reading is a `KubePrometheusMonitor`
+want (`.sizing`), through the context's queue at `.sizing` priority —
+below every chart — standing only while its object's Metrics tab shows on
+a page on screen (`sizingWant`); left before it answers, the press is
+dropped (`updatePrometheusWanted`) and nothing is asked until the next
+one. Read, it is kept in `sizings` — memory only, one a subject, the last
+16 presses, dropped on another context — and drawn by `KubeSizingCard`
+against the pod's spec or the workload's template: CPU's suggested request
+p95 × 1.15 (up to 5 m), memory's request and limit the max × 1.15 (up to a
+Mi), and an OOMKill the objects time inside the window (the pod's last
+terminations, its workload's pods' as the markers read them) or, where
+the objects give that container no time, kube-state-metrics' last reason:
+"the max understates the need". Advice:
+nothing is applied, nothing typed; Copy PromQL copies what was asked.
+`KubeSizingTests` (per pod, never a sum; memory from the max; the OOM note;
+the pods listed by name, a sibling's prefix never read, none refused, and
+the 50-pod bound; rules without a subquery; the retention);
+`KubeSizingPageTests` (nothing before the press, once, never refreshed,
+dropped when left); `kubernetesObjectCharts`' `sizingPart`.
+
+**Agents' usage** (`KubeMCP+Metrics.swift`, `KubeMetricsText.swift`;
+metrics.md 7, stage M11). `k8s_metrics` gives a pod's, a container's, a
+workload's, a namespace's, a node's, a claim's, an HPA's or the cluster's
+usage over 15m, 1h (the default), 6h, 24h or 7d, for `measures` (cpu,
+memory, throttling, network, restarts, replicas, volume, fs; a default
+per kind; a node's top pods, a series per pod on it, only on `top_pods`;
+the cluster's and a claim's charts filtered to them too), as text an
+agent reads — never a matrix. The numbers are the
+Metrics tab's own: its queries (`KubeTabQueries`, the Overview's
+`KubeChart` for the cluster and a claim) and its builders
+(`KubePromTabCharts`, `KubePodCharts`, `KubeObjectCharts`), so the
+references and markers are the tab's — the pod's object (one GET) for its
+request and limit and its last terminations, its events, a workload's
+ReplicaSets or ControllerRevisions for its rollouts. Where they come from,
+in order: Prometheus where the context opts in to it, asked for the call
+(`KubePrometheusMonitor.agentPrepare`: where it is and its profile as the
+page found them, else found and probed now; then `agentTab`, the tab's
+plan without a top N or the cache, `agentChart`, `agentSizing`) — the one
+exception to "only while a chart shows" (analysis.md §4, §10): the metrics
+proxy in a background slot, through the context's `KubePromQueue` as an
+agent — every query of an Overview chart's too, its ranking and its
+totals' union —, below the page and at most two of its four places,
+nothing kept as the page's (`tabs`, `sizings`, its profile never dropped
+by an agent's 404), a failure never stopping the page's reading; an
+`agentTab` read ends at its first timeout or `Retry-After`; else what the
+page sampled of the object while shown, on that context only — its
+name, cluster and user (`KubeMetricsMonitor.ringHolds`; the same name
+pointed elsewhere drops the ring) —; else one metrics.k8s.io read now
+("now only", saying so when Prometheus was tried and gave nothing); a claim without Prometheus says only Prometheus
+has kubelet's volume stats. `KubeMetricsText` (pure) says a chart: each
+usage series' min, p50 and p95 by nearest rank, max and last, with the
+min's, max's and last's times — a gap left out, never zero; the last
+against each reference line ("81% of limit 512Mi"); a stacked chart's
+total first; the newest five markers and how many earlier; the window
+line (span, step, the range in local time with its zone, source, tier);
+a note from Prometheus quoted as data. The answer is bounded to whole
+lines within about 4 KB, scrubbed (`KubeMCPText.finished`, `Secrets`),
+every name cut to 253 characters. `sizing` (a container's, a workload's)
+runs R1 once and says `KubeSizingCard`'s summary. No free-form PromQL.
+Ask Why's brief gets a "usage" part (`KubeMCP.usagePart`, the page's and
+`k8s_why`'s alike): a failing pod's failing container's last hour (the
+pod's where `KubeTrouble` names none), or what was sampled, or now — a
+Deployment's only where it is cheap (the mixin's recording rules, or
+sampled while shown) — from what the brief read (`KubeBriefReads`, from
+`KubeAgentBriefing.read`: the object, its events, a Deployment's
+ReplicaSets, none read twice), within `KubeMCP.usageLimit` (8 s; a slow
+or paused Prometheus never holds the brief, the read cancelled), left out
+where no number can be given. A chart's menu has "Ask Agent About This Chart…"
+(`KubernetesPageModel.askAboutChart`): the chart as `KubeMetricsText.about`
+says it, nothing read for it, in the Ask Agent sheet shown whole before
+it is sent. `KubeMetricsTextTests`, `KubeMCPMetricsTests` (as an agent
+with the page not showing it, only the Service's two paths, nothing kept;
+the ring, by cluster; now; sizing; refusals before any read; Ask Why's
+part through `k8s_why`, the failing container's, nothing read twice, a
+stalled Prometheus left out in time; a node's top pods only on request;
+the cluster's totals' union as an agent's);
+`kubernetesCharts`' part 9 (`kubernetesChartsAgent`: "81% of limit"
+through the MCP's handler, then the chart asked about and cancelled).
+
+**The Nodes list's heat strips** (`KubeHeatStrip`, pure, and
+`KubeHeatStripView`; metrics.md 2.1, stage M3c). Beside a node's CPU and
+memory numbers, its last 15 minutes as 60 cells of 15 s, each the
+largest share of allocatable sampled in it — a sample stands for the
+stretch since the one before it in its run, so a 60 s resolution fills
+four cells; a break or a time before the first sample is an empty cell,
+never zero; the strip ends at the node's newest sample. A cell's level
+(`Level`: under 50%, 80%, 100%, past it; `KubeChartPalette.heat`, the
+series palette's teal, blue, orange and the limit's red) is its colour,
+and its height is its share too, so colour is never the only cue; help
+and VoiceOver say `summary` ("22% now, peak 61% at 14:02"). It is the
+ring's `.node` list key against the allocatable the nodes' read already
+carries (`heatStrip`), only beside a number — a dash has none — and
+nothing more is read for it. `KubeHeatStripRegistry` holds the strips on
+screen (`kubernetes.heat.<node>.<measure>`), which `OVERTERM_DUMP_LAYOUT`
+lists and `kubernetesCharts`'s object-charts part checks: both strips
+filled with the fake's shares, the unsampled stretch empty, no per-node
+or proxy read; `KubeHeatStripTests`. The Pods list's shares wait for
+M5b (no denominator in a list without Prometheus).
+
+`FakeKubeAPI.servePrometheus` answers a Service's two query paths with
+`setPrometheusSeries`' values (`FakePromQL`: selectors with `=`, `!=`,
+`=~`, `!~`, `rate`, `sum`/`max`/`min`/`count` by, `== n`,
+`* on(…) group_left()`; what it can't read answered `bad_data`) and 403s every other proxy path, as the flags
+would. Before evaluating, `setPrometheusMatrix`' fixtures (`FakePromFixture`)
+are matched by a fragment the query contains, whitespace aside — never
+by parsing it: lines that are functions of t (nil a gap), a scripted
+failure, or warnings added to the evaluated answer; a later stage's
+query is a fixture, `FakePromQL` isn't extended (metrics.md §8). A chart
+keeps three notes in all, its queries' together, and none beside a
+problem. `KubePrometheusTests` (the regex — other Services, other paths,
+encoded traversal —, the Service checked, finding it, queries and range,
+answers, the budget, the monitor reading only what shows) runs the real
+kubectl, when installed, as the metrics proxy in front of the fake through
+a kubeconfig of its own; the scenario's `kubernetesPrometheus`
+(`E2ERunner+KubernetesPrometheus`) opts `fake-dev` in and checks the
+Overview's chart and its range, requests against allocatable, a pod's and a
+claim's chart, the Used column, nothing read while hidden, and `fake-prod`
+without a picker.
+
+### Flux and Argo CD
+
+**Flux and Argo CD verbs** (`KubeGitOps.swift` (pure); analysis
+2.23, decision 24): what their CLIs set, as writes of the page's one guard
+path — `KubeWriteVerb`'s `.reconcile`, `.fluxSuspend`, `.fluxResume` on a
+Kustomization, a HelmRelease and every Source kind (`KubeGitOps.fluxKinds`:
+group and resource, and what `flux` calls it), `.refresh` on an
+Application. Each is one merge patch with `fieldManager=overterm` (a
+custom resource takes no strategic one — `FakeKubeAPI` answers 415 as a
+server does): suspend `spec.suspend: true`; resume `false` with
+`reconcile.fluxcd.io/requestedAt` set to now, as `flux resume` does;
+reconcile the annotation alone — refused with why on a suspended object,
+read after its review, since Flux would ignore it; refresh
+`argocd.argoproj.io/refresh: normal`, which Argo CD takes away once done.
+Suspend and resume are a toggle on `KubeWriteToggle.suspended` (`p`, the
+object read decides which); `r` reconciles or refreshes. Reviewed as
+`patch` on the kind, confirmed naming the context and namespace and what
+each equals (`flux suspend kustomization web --context C -n NS`; `kubectl
+annotate … refresh=normal` for Argo), never a typed name (each asks its
+controller for what it does anyway, or is undone by its opposite).
+Argo CD's sync stays argocd's (hooks, waves, pruning): `KubeTabWrite.argoSync`
+(`s`, Sync in a Tab…, `KubeProcessVerb.argoSync`) types `env -u
+ARGOCD_SERVER -u ARGOCD_AUTH_TOKEN -u ARGOCD_OPTS argocd app sync APP
+--app-namespace NS --core --kube-context C` into a tab pinned to the
+context in Argo CD's own namespace — core mode, so it reaches the
+context's cluster and not an Argo CD server argocd is logged in to, and
+it reads Argo CD's settings (argocd-cm, argocd-secret, the repositories'
+and clusters' secrets) in the context's namespace, which with apps in any
+namespace is not the Application's. That namespace is the one holding
+`argocd-cm` (a Table list by field selector, cluster-wide, else in the
+Application's namespace; `KubeGitOps.argoNamespace`: the Application's
+own install first, else the one found, else `argocd`). Reviewed as
+`patch applications.argoproj.io` in the Application's namespace and
+`get configmaps`, `list secrets` in Argo CD's; the name typed on
+production. `KubeTabWrite.fluxReconcile` (Reconcile with Source in a
+Tab…) is `flux reconcile kustomization|helmrelease NAME --with-source
+--context C -n NS`; flux annotates the object's source first, so the
+object is read after its review and its sources resolved
+(`KubeGitOps.sources`/`FluxSource`: a Kustomization's `spec.sourceRef`;
+a HelmRelease's `chartRef`, a HelmChart's own `sourceRef` read from it,
+or the `<ns>-<name>` HelmChart its chart template makes and that
+template's source; `sourceRef.namespace` honoured) and `patch` on each
+reviewed where it is before the confirmation, which names them. One
+naming no source flux knows is refused. Both are writing processes, refused on a read-only
+context by the process class check. The verbs are `ResourceVerb`s like
+every write, so the list's menu, the detail's buttons and the GitOps
+trees' nodes (a Kustomization's source, its `dependsOn`) all have them.
+`KubeGitOpsTests` (pure, and the page against the fake: the order, the
+patches applied, read-only contexts refusing — production set so too —, the tab lines) and
+`kubernetesGitOpsVerbs` (`E2ERunner+KubernetesGitOps`) check them.
+
+**Deleting a GitOps object says what goes with it** (`KubeGitOpsDelete.swift`,
+pure; gitops.md 1.1 rows 6–7, G0b). An Application, a Kustomization or a
+HelmRelease has its controller delete what it manages, so its delete types
+the name on every class (`KubeWriteCheck.rule`, `KubeGitOpsDelete.cascades`;
+an ApplicationSet's is asked as any custom resource's, warned that its
+generated Applications go). After the access review the guard reads the
+object once (`KubeClient.gitOpsDelete`: one GET, 16 MB at most) straight
+into `KubeGitOpsDelete.Wire`'s allow-listed fields — the finalizers, the
+owner marks, `prune`/`deletionPolicy`/`suspend`, the destination, the counts of
+`status.resources` and the inventory with their namespaces — so no value,
+parameter, manifest or last-applied annotation is ever decoded; the facts
+ride `KubeWriteFacts.gitOps` and the warning says them: Argo CD's
+`resources-finalizer.argocd.argoproj.io` matched by prefix (`/background`,
+`/foreground`) with the count ("Argo CD deletes the 42 resources it manages
+with it, across 3 namespaces"), none without it; Flux's prune (Delete and
+WaitForTermination always, Orphan never, MirrorPrune as prune says); a
+HelmRelease's uninstall; neither while suspended (its controller skips the
+cascade then, "unless it is resumed first"); another cluster said.
+A read that fails or is refused gives the worst case ("may delete
+everything it manages"), never no sentence, as does a rule made without
+the read. A parent — Flux's Kustomization labels, an app-of-apps tracking
+id or instance label (KubeGitOpsOwner), an owning ApplicationSet — adds
+"Managed by Kustomization flux-system/apps: it will be recreated" (not a
+bootstrap Kustomization naming itself). A namespace's delete reads each
+GitOps kind it serves in the namespace (`KubeClient.gitOpsHeld`: pages of
+100 into the same wire — Applications 20, as they carry their history and
+sources — 500 objects a kind, the rest from `remainingItemCount` as "at
+least"; a kind merged only once read to its end, so a page that fails
+leaves it unread rather than half counted) into `KubeNamespaceGitOps`,
+which adds
+"And the 31 Applications in it with Argo CD's resources finalizer delete
+what they manage: 1,204 objects across 9 namespaces", the HelmReleases'
+uninstalls, and the kinds that couldn't be read as the worst case — and,
+while the context's discovery isn't known, that its GitOps objects weren't
+counted and may delete what they manage. Numbers
+are grouped the same in every locale. `KubeWritesTests` (pure),
+`KubeGitOpsPageTests` (the order against the fake, the worst case on a 403,
+the namespace's reads) and `kubernetesGitOpsVerbs` check it.
+
+**Changing a GitOps object's source, prune or suspension says so**
+(`KubeGitOpsChange.swift`, pure; gitops.md 1.1 rows 9–10, G0d). An apply or
+a YAML save (`KubeManifestRun.diff`, so the editor's Apply, the YAML tab's
+and `k8s_apply` alike) of an Application, ApplicationSet, Kustomization or
+HelmRelease compares the dry run's answer with the live object at fixed
+paths only (`KubeGitOpsApply.changes`): prune (`spec.prune`,
+`deletionPolicy`, Argo CD's `automated.prune`), auto-sync (`automated`,
+Argo CD 3's `enabled: false` as off), the source (`repoURL`, `sources`,
+`path`, `chart`, `sourceRef`, `chartRef`), the destination
+(`destination`, `targetNamespace`, `kubeConfig` by its reference's name),
+`suspend` — an ApplicationSet's under `spec.template.spec`. Each change is
+a `KubeGitOpsChange` (`.spec.prune: false → true`, a URL without its
+userinfo, a map by its scalar leaves), carried on the `KubeManifestItem`
+with `KubeGitOpsApply.warning` (what it does: prune deleting what the new
+spec doesn't make, auto-sync syncing at once, a resume applying what the
+source holds), which leads the result's warnings — the changes pane says it
+before Apply — and `KubeApplyConfirmation` types the object's name on
+every class when anything changed. An agent's `k8s_apply` of any of the
+four kinds is always name-typed by the person, whatever it changes, a new
+one too. A new object replaces nothing, so it changes nothing here.
+Resume (Flux) on production reads more after the review: the object the
+toggle read already fetched gives `KubeFluxResume.facts` (prune, what is
+applied — a Kustomization's `lastAppliedRevision`, a HelmRelease's
+`history[0].chartVersion` — and what was last attempted), and
+`KubeClient.fluxResume` GETs its source (`KubeGitOps.sources`: the
+`sourceRef`, a HelmRelease's chart) once, 4 MB at most, decoding
+`status.artifact.revision` alone; `KubeWriteFacts.resume` carries it to
+`KubeWriteCheck.rule`, whose warning says "Resuming applies what
+gitrepository flux-system/fleet holds now: applies main@c03f9aa; a77b0d1 is
+applied" (`KubeFluxResume.short`: `sha1:` to 7, `sha256:` to 12) and types
+the name when `spec.prune` is on. An unread source is said as the worst
+("whatever it holds now"), never nothing; off production nothing more is
+read. Refresh, reconcile and suspend are never name-typed.
+`KubeWritesTests` (pure), `KubeApplySessionTests` (the editor's and an
+agent's apply against the fake), `KubeGitOpsPageTests` (Resume on
+`fake-prod`: the source read after the review, a wrong name sending
+nothing) and `kubernetesGitOpsChanges` (`E2ERunner+KubernetesGitOpsChanges`,
+run from `kubernetesGitOpsVerbs`) check it.
+
+**GitOps objects summarised** (gitops.md 2.3–2.6, G1; pure, the section's
+groundwork): an Argo CD or Flux object's bytes go through
+`KubeGitOpsWire` — `Decodable` structs declaring only what a summary
+needs, so the decode is the allow-list (never values, parameters,
+`extVars`/`tlas`, patches, `postBuild`, generator elements, Argo's copies
+of the source in `status`, an operation's manifests, last-applied;
+`history` only at its two ends; `status.resources` and an inventory as
+counts and their namespaces, 64 at most; managedFields as times, managers
+and whether they own `spec`/`spec.suspend`; every URL without its
+userinfo) — into `KubeGitOpsObject` (Sendable; its messages through
+`KubeGitOpsMessage`: cut at the first manifest line, URLs masked and
+stripped, credentials scrubbed, 300 characters in a row, 4 KB for a hover).
+`KubeGitOpsLadder` gives each its `KubeGitOpsState` (evaluated Paused,
+Blocked, Failed, Stuck, Drift, Progressing, Ready, Unknown; shown problems
+first), the reason in one line of at most 300 characters (newlines
+folded, whatever the 4 KB messages it quotes) and since when; "fetched,
+not applied" for a Kustomization by its source's artifact, for a
+HelmRelease by its HelmChart's version or its `chartRef` OCIRepository's
+digest (`lastAttemptedRevisionDigest`; a tag isn't a chart version) — every time from the
+object (`lastTransitionTime`, the operation's `startedAt`/`finishedAt`, an
+artifact's `lastUpdateTime`, managedFields'), so
+`KubeGitOpsSummary.ranked` run again at a later `now` (the tick) moves the
+10-minute, 3-minute and `max(2 × interval, 5 min)` edges with no read; a
+Flux object is Blocked by a peer summary (its source or chart not Ready;
+a `dependsOn` chain, 5 hops) and never by a GET. Tags sit beside a state
+(manual sync, an older failed sync, Paused's last state, "may be stale",
+"not reconciled for…"). `KubeGitOpsSummary` also says what is served, reads
+a GET or a page of a list, orders and counts, and keeps a scope by where an
+object lives or what it deploys into (its managed namespaces; its in-cluster
+destination before anything is applied; an ApplicationSet by its
+Applications; a source by who uses it; a remote one by its own namespace
+only). `KubeGitOpsRevision` reads `main@sha1:…`, legacy `main/<sha>`,
+`sha256:` digests and `1.2.3+<sha12>` into what is shown and a candidate
+commit; `KubeGitOpsPath` checks a cluster's path against a checkout by
+components after resolving symlinks (`..`, absolute, NUL and a symlink out
+refused; one `fileExists`, no walk up); `KubeGitOpsGitArgs` refuses unsafe
+refs and non-SHA revisions, verifies a commit (`--end-of-options`,
+ambiguous said), and runs git with `--literal-pathspecs`. `GitRemoteURL`
+normalises a remote (scp, ssh, `git+ssh`, http(s) userinfo and default
+ports, `ssh.github.com`, Azure's three forms, case on github/gitlab/
+bitbucket) and `Refs.parse(remotes:)` keeps no URL with its userinfo.
+`FakeKubeAPI+GitOps` serves Argo CD's and Flux's CRDs with the pinned CRDs'
+printer columns (`Scripts/fetch-gitops-crds.sh`, SHA-checked into
+`Tests/OvertermTests/Fixtures/gitops-crds`), their controllers, and one
+object for each rung (`setArgoState`, `setFluxReady`,
+`setControllerReady` change body and cells in one MODIFIED, `modify`).
+`KubeGitOpsSummaryTests` (each fixture's rung, each rule in order, the
+tick's edges, the last error, scope), `KubeGitOpsWireTests` (the reviewed
+keys, the sentinel never read), `KubeGitOpsRevisionTests` (revisions,
+paths, git's arguments on a throwaway repository), `KubeGitOpsCRDTests`
+(the fake's columns and every field read against the CRDs),
+`KubeRealClusterTests` (opt-in: the CRDs applied to kind-fake, the
+server's columns) and `kubernetesHealth` (K602/K603 and the card's line)
+check it.
+
+**Apps from Argo CD's marks** (gitops.md 14, D1; pure, the groundwork of
+a spoke's section — Argo CD in another cluster, its Applications not
+here; no list reads them yet). A list that asks `KubeListOptions.marks`
+gets its rows' metadata and keeps `KubeRow.marks` (`KubeMarkWire`, the
+allow-list: the tracking id read by `KubeTrackingID` and checked against
+the kind listed — own, copied or unparsed —, the installation id, the two
+instance labels and whether Helm's release annotation is beside them, the
+hook as gitops-engine's `IsHook` says (Argo CD's but `Skip` alone, else
+Helm's but `crd-install`), ignore-healthcheck, sync-wave, sync-options,
+compare-options, five `link.argocd.argoproj.io/*` as text without userinfo
+or credentials, generation, deletion, and from managedFields one time
+only: the newest of `argocd-controller`'s — "last change applied by Argo
+CD", never a person's edit, an Argo CD UI action or an HPA's; capped, no
+control, format, separator or private-use character; never
+resourceVersion, another manager's time, last-applied, another annotation
+or label, or a field set — a status write changes no row's marks).
+`KubeMarkedWorkloadWire` is a GET's allow-list decode for Argo CD's rule:
+spec's paused, replicas, suspend, strategy and partition, a Rollout's
+`workloadRef`, containers' names and images; status' generations, counts,
+revisions, a CronJob's times and active jobs counted (a Job's an integer),
+a Rollout's phase, conditions with their message scrubbed as a summary's
+(manifest cut, URLs' userinfo and passwords, credentials) then cut to 300,
+every string capped — never env, args, annotations or the template beyond
+its images. `KubeMarkedHealth` is
+gitops-engine's built-in rules (Argo CD's order, Healthy to Unknown):
+from cells where the rule reads what a cell shows (a Deployment's ready
+"from its row", since cells hide a paused or stuck single-replica rollout;
+a LoadBalancer `<pending>`; an Ingress without address; a claim's phase;
+an HPA with an `<unknown>` target, a CronJob and a Rollout — whose
+columns are counts, never its phase — waiting for their object), from the object (Deployments, StatefulSets and DaemonSets never
+Degraded but by a deadline, a Rollout's phase, CronJobs as Argo CD's Lua,
+HPAs by their conditions, Jobs), and an app's verdict — the worst member,
+three causes, hooks and ignore-healthcheck out, a Deployment scaled to 0
+beside its Rollout "scaled by its Rollout", Unknown until a workload of
+its own has a health (never from a Service, a CronJob not yet read, or the
+Deployment its Rollout scales),
+Unknown's rank its worst known member's (D-7). `KubeMarkedApps` groups
+`KubeMarkedMember`s into `KubeMarkedApp`s by installation and instance
+(copies, unparsed marks and Helm's instance label counted, not placed;
+`app.kubernetes.io/instance` alone only when nothing carries Argo CD's
+marks; a cluster-scoped mark's destination), and `merge` makes only the
+changed apps again. `KubeMarkedAppsMode` says when they show: Applications
+not served (`notServed`, "another cluster"), `argoproj.io` failing
+discovery (`undiscovered`), refused (`forbidden`), listed whole with none
+(`noApplications`, "aren't in this cluster" — off with no marks seen), or beside a list — R1's,
+never R2's cut — with the missing ones (a whole read only; a same name
+elsewhere "may be", another installation can't tell, a namespace not read
+unknown). `KubeMarkWireTests` (the sentinel never kept, the copy, the
+managers), `KubeMarkedHealthTests`, `KubeMarkedAppsTests` (the 10,000
+rows' bound counted by `membersMade`, never timed) and `KubeMarkedAppsModeTests` check it.
+
+**Reading them** (gitops.md 14.4, D2). `KubeGitOpsSession` owns `marked`, a
+`KubeMarkedAppsSession`, and starts it from discovery and R1's
+Applications follow (`applicationsRead`, never R2's cut): Applications not
+served, refused, listed whole with none, or missing for most marked apps
+(more than 100, or a majority: `followsBeside`) — the marks followed in
+the watches the section's own follows and the spare in use leave (ten on a
+spoke; with Flux served the marks take a watch a kind before a refused
+Flux kind's namespaces, `spareLeft`); beside Applications that are read,
+listed on show, Refresh and every 5 min, never watched (D-1), only the
+derived apps' objects read (`settling`); before R1's first list, nothing.
+`marksMode` is `KubeMarkedAppsMode` over what it found, made again once a
+flush re-ranked the apps, never on a row event. No discovery (a sign-in
+still waiting) makes no request at all. Rows only, never a list of whole
+objects (14.12's fifth consequence). M1 follows Deployments, StatefulSets,
+DaemonSets and, where served, Argo Rollouts (read for their app's health
+only) as rows with `KubeListOptions.marks`, a watch a kind in that order
+(`allot`: a kind left without one is listed every 5 min, as is any kind
+with no follow); one on All Namespaces or one namespace, a watch a
+namespace only while that fits, else one across the cluster filtered;
+refused across the cluster, paged lists in `accessibleNamespaces` else the
+scope's, said. Every object is read by a GET of one, decoded off the main
+thread by `KubeMarkedWorkloadWire`, within one budget (`KubeMarkedRefetch`,
+pure: 15 s an object, 20 a flush, 60 a minute — kept across a hide and a
+show of the context —, 4 in flight): M2 first, a moved generation or a
+workload new while shown, never readiness alone; then the tick's, in
+progress every 60 s, Degraded every 5 min; then M1b's settle, each marked
+workload not yet settled, the most recently changed by Argo CD first
+("checking rollouts N of M"; "from its row" until then); and M3b, a
+marked CronJob, or an HPA whose Targets read `<unknown>`, once and when
+its row moves. `KubeMarkedSettled` stands for its row while the generation
+agrees and the row hasn't turned not ready since (an HPA's while a target
+still reads `<unknown>`). M3 lists Services, Ingresses, PVCs, Jobs (a hook
+Job is under its app, not in its health), CronJobs and HPAs
+(`autoscaling/v2`) as rows with metadata — `KubeClient.pagedList`, the
+generic under R2's `pagedObjects` —, none watched, again every 5 min.
+Each flush hands the changed rows and settled objects to `KubeMarkedBook`
+(pure) off the main thread — members made, apps merged, only their
+verdicts made again, all ranked problems first — and swaps the result.
+What is settled and what M3 read stay five minutes while the page shows
+(`Store`); `hide` ends every read, `drop` forgets. `KubeMarkedReading`
+says what was read: the count exact only from a whole read, else "At least
+N apps, from what could be read: …", and "carries no marks" only then,
+naming every kind read. `KubeMarkedHealth.member` says a Deployment its
+Rollout scales to 0 "scaled by its Rollout".
+`KubernetesModel.marksSeen` is the contexts whose rows have shown a mark
+(`KubeRow.argoMarked`, a key looked up on every row with metadata: the
+Overview's workload follows, the page's workload lists) — for D3's section
+row. A context whose browser sign-in hasn't answered after
+`KubeProxies.signInPatience` (8 s) — the first, or a signed-in one with a
+request (not a quiet watch) waiting that long and no answer since (a
+session expired while the proxy is open) — says `signInNeeded` — "Sign-in needed
+— run `kubectl --context X get ns` once in a terminal", with a Run button
+— not that it is waiting or unreachable; Run closes the proxy and its
+waiting plugin (`signInAtTerminal`) and the context waits for Try Again,
+whose fresh plugin finds kubelogin's token. `FakeKubeAPI+Marks` is the
+tests' spoke (the survey's shape: `<env>-<ns>-<name>-service` apps, copies
+on ReplicaSets, HPAs and PDBs, every state's object).
+`KubeMarkedAppsSessionTests`, `KubeMarkedReadsTests`, `KubeProxiesTests`
+and `KubeProxyTests` (a real kubectl over a stand-in `kubectl-oidc_login`
+that sleeps) check it.
+
+**Showing them** (gitops.md 14.2, D3). `g`, `:gitops` and `:argo` open the
+section on every context — only `:flux` is refused, where Flux isn't
+served (`gitOpsRefusal(tool:)`) — and its row shows where Argo CD or Flux
+is served or the context's rows have shown a mark (`gitOpsListed`,
+`marksSeen`). `KubeMarkedSection` (pure) makes the session's ranked apps
+into the section's rows whenever the marks' flush ranks them again or the
+mode changes, never on a row event (`KubeGitOpsSession.derived`, laid
+among the rest by `publish`): a `KubeGitOpsRow` whose role is
+`markedApp` ("Marks") and whose `marked` carries its key, Argo CD's word
+(an Unknown with a Degraded member ranked with Failed, D-7), "from rows",
+its images and installation; no resource, so `gitOpsRef` is nil and no
+write key, ⇧K or verb can pair with it — its menu is Open, Copy as argocd
+and Copy Name. Its why is the worst member's sentence and object, its
+tags the members counted by kind ("label only", "probably", another
+installation's id when several mark objects here), its source the main
+image without its registry, its revision empty, its hover Argo CD's own
+word, each member as its app counts it (a Deployment its Rollout scales
+to 0 "scaled by its Rollout") and what isn't known here, at most 4 KB.
+Derived apps Argo CD's whole side (`.only`): among the rows, Flux's too,
+Hide Ready above 50, the Ready chip counting those ready by their rows
+alone ("42 ready (14 from rows only)"); the header says
+`Argo CD: from marks · N apps · read …` and, in the mode's own words (only
+`notServed` "another cluster", `noApplications` "aren't in this
+cluster"; apps by `app.kubernetes.io/instance` alone only "probably"),
+why, then the count — a floor ("At least N apps, from what
+could be read: …") unless the read was whole, none while reading —, a
+muted line on what is the Application's alone (its hover: what else leaves
+the same marks, the kinds read, Rollouts read for health only, the marks
+counted and not shown) and how many installations mark objects here.
+Beside Applications read (`.beside`), the apps with none here are among
+the Applications, each tagged where it stands ("not in this cluster" only
+from R1's whole list, "not where Applications were read", "may be
+ns/name", "installation hub-b"), and a chip shows them alone ("3 marked
+apps with no Application here"); those whose Application's namespace
+wasn't read are counted. No app: "Reading
+the marks on …", a read that wasn't whole's "No Argo CD marks found in
+what could be read: …", or a whole one's "… no Deployment, StatefulSet or
+DaemonSet in <scope> carries Argo CD's marks." with Show All Namespaces;
+no discovery yet (a sign-in waiting), the proxy's own words. `is:marks`
+and `kind:marks` keep them (`kind:app` doesn't), `tool:argo` keeps them
+with Argo CD's own, `repo:` matches none, `image:` any member's image;
+`G` groups them as "Argo CD (from marks)", by image repository, by
+namespace, under no owner, and by installation — offered only while
+several mark objects here. `k` copies `argocd app get <name>
+[--app-namespace <ns>]`, against the person's own Argo CD server, never
+`--core` or `--kube-context` (D-2). ↩ (and `x`) opens
+`KubeMarkedAppDetailView` in the detail's slot (`markedDetail`, Esc
+closes it): a placeholder until D4 — its state, why it is read from marks,
+each member and hook as read, and why Sync, Refresh, Rollback and Diff
+aren't here, reading nothing of its own. `KubeMarkedSectionTests` (pure:
+14.2.1's table row by row), `KubeGitOpsMarksPageTests` (on a spoke: `g`,
+`:flux` refused, the row by marks, no write or ask from any key on a
+writable context or on production, `k`, the menu, ↩ and Esc; R2 cut at 500
+beside R1's 1,000 still deriving the missing) and `kubernetesGitOpsMarks`
+(three fakes: a spoke with Argo Rollouts served, a hub that is also a
+destination, Applications refused) check it.
+
+**The GitOps section** (`g`; gitops.md 2–3, G2): Argo CD's and Flux's
+objects that live in or deploy into the scope on one screen, between Helm
+and Forwards (`KubeSection.gitops`, its key an explicit `g` — the digits
+stay — shown in the sidebar where `KubeGitOpsSummary.served` or a mark was
+seen; `g` opens it everywhere, Argo CD's apps read from marks where no
+Application here deploys them, above). It summarises; it lists no kind (their
+lists stay in Custom Resources). `KubeGitOpsSession` (a window's, as its
+page) reads only while the section shows on a page on screen: **R1** a
+rows-only follow across the cluster of Applications, Kustomizations,
+HelmReleases, GitRepositories and OCIRepositories (`includeObject=Metadata`,
+as any list across the cluster), **R1c** Argo CD's controllers
+(Deployments and StatefulSets in the namespace most Applications live in,
+else `argocd`) and Flux's (`flux-system`) in one namespace each
+(`includeObject=None`; `KubeGitOpsControllers`: one not ready shows the
+banner and tags its tool's rows "may be stale", never a state), **R2** one
+paged list of whole objects a served kind (`KubeClient.pagedObjects`: 20 a
+page and 16 MB, halved on `KubeBodyTooLarge` with the same `continue`, an
+object alone too large stops the kind, a 410 lists again; 500 objects or 64
+MB a kind, two kinds at a time, each page decoded off the main thread by
+the allow-list and dropped; the cut said), **R3** one GET (4 MB) when a
+row's cells move from its summary's (date columns left out — the server
+renders them relative), when a row that isn't healthy changes, or every
+60 s while it is in progress (`KubeGitOpsRefetch`, pure: each at most once
+every 15 s, 20 a flush, Failed, Blocked and Stuck first; 4 in flight; a
+403 or an oversized one "couldn't read why"; the answers ranked and drawn
+together with the next flush, never one by one). The watches are allotted:
+the five kinds, the three controllers, two more for a kind refused across
+the cluster, which is read in `accessibleNamespaces`, else `argocd` and
+the namespaces Applications were seen in, or `flux-system`, plus the
+scope's — never by reading a ConfigMap — said in the header. The
+summaries are kept five minutes (`KubeGitOpsSession.Store`, in memory)
+while the page shows, fresh only for the kinds whose read finished
+(`done`: a section left mid-read reads the rest when shown again; a
+fallback's re-read on a scope change keeps the kinds still pending; Refresh
+holds every summary until its kind's new ones replace it; a refused kind's
+spare watches are given back when its follow ends; a write's ref only for
+the context the rows were read on): ↩ to a detail and `[` back reads no list again;
+leaving the section ends the follows and GETs (`hide`), the page hiding,
+another context or a credential failure drops them (`drop`). A 30 s tick
+re-ranks with no read; a scope change only filters again (but in the
+fallback). `KubeGitOpsSection` (pure) makes the rows (`KubeGitOpsRow`:
+state, kind, `namespace/name`, Into — `→ ns` a destination, the managed
+namespaces, `⇢ server` another cluster —, why, revision — Argo's `live →
+target` while OutOfSync, Flux's applied —, source host-less, age since the
+state began), problems first; live rows without a summary from their cells
+alone, "not placed" off All Namespaces; the chips, Hide Ready (on above 50
+rows), the header's words, the empty scope's hint ("Show argocd" adds the
+namespace) and `k`'s `flux get …`/`argocd app get …` lines.
+`KubeGitOpsSectionView` draws it in the Overview's card and pill language
+over a `ResourceTable` (`kubernetes.gitops`), which stands in for the list's
+table so it has the keyboard. `KubernetesPageModel+GitOps` routes the keys
+(`gitOpsPress`: ↩ the object in its kind's list with its detail,
+`openFromOverview(…, from: .gitops)` so `[` comes back; `x` its tree; `k`
+and ⇧K copy; `s` argocd's sync or flux's reconcile with its source in a
+tab; `r`, `p` and ⌫ on to the page's own writes through `writeTarget`,
+which is the row picked), the right-click (`gitOpsVerbs`: Open, the
+detail's verbs, Copy; several rows Open and Copy only), the palette's rows
+(`k.g.…`) and `:gitops`, `:argo`, `:flux` (the last two one tool's rows).
+`KubeGitOpsSectionTests` (rows, scope, columns, chips, words, R3's policy,
+the banner), `KubeGitOpsSessionTests` (against the fake: GETs only, rows-only
+watches, one paged list a kind, paging never past what is left, the store
+left mid-read, Refresh, R3 at scale — 20 GETs a flush, four in flight, 15 s
+an object —, the fallback across scope changes and a namespace refusing,
+kinds not served never asked, the banner, 600 Applications cut at 500,
+GETs that come back ranked together at the next flush) and `kubernetesGitOpsSection`
+(`E2ERunner+KubernetesGitOpsSection`) check it; `kubernetesPerf`'s GitOps leg
+times it with 1,000 Applications (below).
+
+**Grouped, and its filter's tokens** (gitops.md 2.8, G4). `G`
+(`KubernetesKey.groupBy`, a no-op outside the section) cycles
+`KubeGitOpsGroupBy` — none, tool, source, owner, destination — kept in the
+page's `KubeGitOpsViewState` with the groups folded; the chips' menu picks
+one too. `KubeGitOpsGrouping` (pure, reads nothing) sets each row's
+`KubeGitOpsGroupKeys` as the row is made, the summaries at hand as peers:
+by source a Flux object's source object (a HelmChart standing for its
+repository), which heads its group with its own state, and Argo CD's
+Applications by repository (`GitRemoteURL`, never userinfo); by owner its
+ApplicationSet, else the top of its parents by tracking id, instance label
+or Flux's labels (five hops, a cycle ended; "probably" Argo CD names nobody
+not summarised), else its `dependsOn` root — an object others name heads
+its own group; by destination another cluster said, its destination's
+namespace, the namespaces it manages, sources apart. `groups` keeps the
+visible rows' order inside each group (head first), puts groups with a
+problem first, then by title, the catch-all ("No owner", "Not summarised")
+last; the table's rows are `KubeGitOpsListRow` — a group's own row across
+the columns (↩ or its chevron folds it), or an object's. `KubeGitOpsFilter`
+reads the filter's `is:`, `kind:`, `tool:` and `repo:` words (commas for
+any of several, `-` to turn one around; an unknown value said beside the
+chips, matching anything), then the text over name, why and source; a
+word with another list's key (`label:`, `ns:`) is nothing here, and an
+`is:` asking for a state keeps Hide Ready from hiding it.
+`KubeGitOpsGroupingTests` and `kubernetesGitOpsSection` check it.
+
+**A GitOps object's detail** (`KubeGitOpsDetail.swift`, pure; gitops.md
+2.9, 6.2, G3). An Application, ApplicationSet, Kustomization or
+HelmRelease's Overview opens with a GitOps header, read from the body the
+detail's one GET already brought (`KubeDetailSession.gitOps`) through the
+summaries' allow-list plus `KubeGitOpsWire.Detail` — Argo CD's last 10
+`history` entries (revisions and times, never their `source(s)`), the
+resources out of sync or needing pruning and the operation's failed ones,
+50 each, the rest counted, never decoded. It says the ladder's state and
+why with its age ("Failed: upgrade to 1.5.0 failed; rolled back to 1.4.2
+(4m)"), its sources with their host ("values from this repo" for a `ref:`
+one), the revisions applied, attempted, wanted and fetched with when,
+where it deploys, its interval, prune, auto-sync or suspension, Argo CD's
+last operation, its out-of-sync resources (each opens its object) and
+history, its conditions (5.3's, copyable), and its chain — the source, a
+HelmRelease's chart, each `dependsOn`, the ApplicationSet or object that
+manages it — with each link's state, each opening it. The chain's states
+come from the section's summaries (`KubeGitOpsSession.peers`, kept five
+minutes while the page shows): nothing is read for it, and a link the
+page holds no summary of is said as not summarised. **Ask Why** takes
+these four kinds (`asksWhy`; `a` in the section acts on the row picked,
+`askWhyRef`): offered while the object is Failed, Blocked or Stuck — the
+detail's read, else the section's row, else its own list's cells (which
+can't tell Blocked or Stuck: offered unless Ready) — greyed with why
+otherwise. `KubeAgentBriefing.gitOps` reads the object by one GET (4 MB),
+its chain from the summaries and what they lack by a GET each (at most 6,
+never a Secret, a ConfigMap or a Helm release), so a Blocked one names its
+root cause; the brief (`KubeGitOpsDetail.brief`) is the header's words, the
+conditions, Argo CD's operation, failed and out-of-sync resources and
+history, the chain — every word through `Secrets`, shown whole before it is
+sent. What needs a matched checkout (§4.2) comes with the rail's match:
+each history entry opening a review of `git diff a..b -- <path>` (G5,
+What deploys the checkout, above), and the rail's Ask Why's commits
+between applied and attempted (G6, Has this branch reached the cluster,
+above). The brief's
+chain is followed only where it isn't ready — a summarised link that
+isn't ready or progressing, else what the summaries lack read in
+`readOrder` (the dependency its Ready message names, then its sources),
+stopping at the first that isn't — so the six reads reach the branch that
+fails, never healthy siblings. The detail's body is decoded once
+(`KubeGitOpsWire.detailRead`), off the main thread, and the header
+observes the section's session, so a refetch or the tick redraws it. `KubeGitOpsDetailTests` (pure: the
+sentence, the lines, the chain and root cause, the bounds, the brief, the
+sentinel never in any of it), `KubeGitOpsAskWhyPageTests` (against the
+fake: offered on a Failed one, greyed on a Ready one, a Blocked one's chain
+read by a GET, GETs only) and `kubernetesGitOpsSection` (the header, `a`'s
+brief) check it.
+
+### The cluster's API docs
+
+**The cluster's own API docs** (`KubeOpenAPI.swift` and
+`KubeManifestFields.swift` (pure), `KubeAPIDocs`, `KubeExplainView`;
+analysis 3.15): `kubectl explain` beside the file, from the cluster's own
+`/openapi/v3`, CRDs included. `KubeOpenAPIIndex` reads the index (each group
+version's `serverRelativeURL`, its hash in the query; only a path under
+`/openapi/v3/` is ever followed — the URL is the server's word and goes
+through Overterm's proxy), `KubeOpenAPIDocument` one group version's
+document into `KubeSchema`s by component name and kind
+(`x-kubernetes-group-version-kind`), bounded as it is read: 32 MB, 20,000
+schemas, 500,000 nodes, 64 deep (a deeper schema is taken as saying
+nothing of its fields). `lookup(gvk, path)` walks a field path through
+`$ref`s and `allOf` (folded, refs followed 32 deep, so JSONSchemaProps
+ends), arrays (by `[]` or by the next field's name, kubectl's
+`pod.spec.containers.image`) and maps (any key): the field's
+`KubeFieldDoc` — kubectl's type names (`[]Container`,
+`map[string]string`, `IntOrString`, `Quantity`), required, its words and
+its fields —, else where it stops (`.unknown(index, parent)`), `.opaque`
+under preserve-unknown or a bare `Object`, `.noKind`. `KubeExplain`
+parses `deployment.spec.replicas` and says it as kubectl explain's plain
+text does, and the hover's words. `KubeAPIDocs` (`KubernetesModel.apiDocs`)
+reads them only when asked — a hover over a field, ⌃Space, Explain —, with
+GETs through the context's proxy in a background slot (`agentClient`; a
+hover where the mouse merely rests reads as nobody asked, `spareClient`:
+never a browser sign-in, never a proxy closed for it):
+`/version` (again after five minutes; another version drops what was read),
+`/openapi/v3` (again when it lacks the group version asked and is 30 s
+old: a CRD applied since), the group version's document (once per URL:
+a new hash reads it again), parsed off the main actor, concurrent reads of
+one shared. Kept in memory per context and cluster (`sameCluster`: the
+kubeconfig pointing the name elsewhere is another cache), never on disk:
+4 contexts, 12 documents a context, 96 MB in all, the least recently used
+out first (`maxBytes`). Each answer is read as it arrives
+(`KubeClient.get(_:maxBytes:)`, over the connection's stream) and cut off,
+its connection closed, once it passes its bound — 4 MB for the index,
+32 MB for a document: an aggregated server's oversized one is never held
+whole (`KubeBodyTooLarge`). A failure of the context's (unreachable, a
+sign-in, no OpenAPI v3) is kept a minute, one group version's (its
+document forbidden or too big) for that group version — a hover doesn't
+ask again at every move, an expired sign-in would run its exec plugin each
+time —; a group version the index lacks (`KubeDocsUnserved`) and what an
+unasked read was refused aren't kept, and Explain asks anew (`retry`).
+⌃Space whose docs can't be read falls back to the regular completion
+(`triggerCompletion(skipKube:)`). An explain run's answer shows only if
+it is the latest and its query and context are still the ones asked
+(`generation`); a failure clears the answer before it. `KubeManifestFields` scans a manifest's lines
+— block maps and `- ` items (at their key's indent or deeper), quoted keys,
+comments, block scalars and unclosed flow values skipped, documents split
+on `---`, 2 MB and 50,000 lines at most — into each key's path and the
+document's apiVersion and kind, the key at an offset (its line's, on a
+value), and the `Slot` a key typed at the caret goes in (its holder's
+path, the word typed, the keys already beside it). The editor
+(`EditorViewController+Kubernetes`, a manifest buffer's
+`KubeManifestSession`): a hover asks the session (`fieldHover`) before
+the language server, and falls through to it when the docs say nothing;
+completion offers the holder's fields not yet there (`candidates`:
+prefix first, then required, then by name; `name: ` inserted at a line's
+end) from what is cached while typing, read first on ⌃Space; the fields
+the cached docs don't know are warnings (`fieldMarks`, from the cache
+alone, again once typing pauses: `buffer.kubeDiagnostics`, shown with the
+server's), and a kind the document lacks is marked on its `kind:`. The
+manifest bar's Explain opens `KubeExplainSession` on the field at the caret,
+at the document's apiVersion, in the right-hand pane
+(`KubeManifestPane.Shown.explain`, `showExplain`); the palette's Kubernetes
+Explain… opens it on the page's context, reading nothing until Explain is
+pressed. A field's fields open with a press, Up goes back a step, Copy as
+kubectl gives `kubectl explain Q --context C [--api-version V]`; a kind not
+in the page's discovery is asked of the server once. `FakeKubeAPI` serves
+`/openapi/v3` and each group version's document (`FakeKubeAPI+OpenAPI`:
+the server's shape — `allOf: [{$ref}]`, the shared types in every
+document —; Deployment, Pod, Service, ConfigMap and Secret with their real
+fields, trimmed; others a `spec` that takes anything; a CRD the schema
+`addCRD(schema:)` gave it; `servesOpenAPI` off, an old server's 404).
+`KubeOpenAPITests` (fixture documents in the server's shape — a core
+group's and a CRD's —: refs, allOf, arrays, maps, types, unknown fields,
+a self-referring schema, the bounds, explain's text),
+`KubeManifestFieldsTests` (paths, slots, marks, completion) and
+`KubeAPIDocsTests` (against the fake: GETs only, cached, a new version,
+another cluster, a CRD applied since, a failure kept — the context's or
+one group version's —, an unserved apiVersion not failing other kinds, an
+oversized document cut off as read, the cache's bounds (the bytes' too,
+across contexts), a mouse hover on an unsigned oidc context starting
+nothing;
+the session's hover, marks and completion; explain) check it, and the
+scenario's `kubernetesAPIDocs` (`E2ERunner+KubernetesAPIDocs`): a checkout's
+Deployment reads nothing until hovered, the hover shows `replicas`' docs
+from fake-dev's API through its proxy, `replicaz` is marked, completion
+offers `revisionHistoryLimit` from the cache, Explain says
+`deployment.spec.replicas` in the pane, a CRD's field is explained, and
+⌃Space against a server without OpenAPI v3 still offers the buffer's words.
+
+### Pod files
+
+**Pod files** (`KubePodFiles.swift` (pure: `KubePodCopy`),
+`KubernetesPageModel+PodFiles`; analysis 2.24, decision 10, Section 5's
+process table): no file browser — pod files are rare — but `kubectl cp` in
+a tab. A pod's Copy from Container in a Tab… and Copy into Container in a
+Tab… (`KubeProcessVerb.copyOut`, `.copyIn`; its menu, its detail's More,
+⌘K; no letter, `f` is forwards) build
+`kubectl cp POD:PATH LOCAL` or `kubectl cp LOCAL POD:PATH`, `-c`,
+`--context` and `-n` always, each word quoted for zsh. kubectl cp is tar
+through exec, so both are `KubeProcessVerb`s with `create pods/exec` asked
+of `kubectl auth can-i` first, and a context's `shells` off refuses both; a
+copy in writes the container's files, so it is a writing process — refused
+on a read-only context (any class set `writable: false`). The path: the class check, can-i, the pod read for its
+containers (one picked as a shell's, the default first), the paths — out,
+the container's path asked (from its `workingDir`, else empty), then a
+save panel (the path's last part suggested, a colon made `-`); in, an open panel (a file or a folder), then where in the container
+(`/tmp/<name>` offered) —, `KubePodCopy.problem` (a control character would
+break the typed line; a local path must be absolute and colon-free, since
+kubectl reads `x:` as a pod; a copy out of `/` alone, the container's whole
+filesystem, is refused — `outProblem`), then `confirmTabCommand`: every copy is
+confirmed in the window on every class, naming the context and namespace
+(red on production), the pod, container and both paths and the command,
+the class check made again, and the command typed into a tab pinned to the
+context (`KubernetesActions.askText`, `pickSave`, `pickOpen` ask the
+window). `KubePodFilesTests` checks the lines, odd paths' quoting, the
+paths refused, every class for both directions, shells off and the
+confirmation; the scenario's `kubernetesPodFiles`
+(`E2ERunner+KubernetesPodFiles`): on fake-dev Copy In greyed and refused,
+Copy Out asked through the window's text sheet, the runner answering the
+save panel, cancelled then recorded quoted in a tab pinned to fake-dev;
+fake-dev made writable by its entry, Copy In recorded the same way; on
+fake-prod Copy In refused and Copy Out asked with PRODUCTION; only GETs and
+access reviews on the fake (the stand-in kubectl answers can-i).
+
+### The Docker page
+
+**The Docker page** (`KubeRunLocally.swift` (pure),
+`KubernetesPageModel+RunLocally`; analysis 3.12): a pod's or a workload's
+(Deployment, StatefulSet, DaemonSet, ReplicaSet, Job, CronJob — the pod
+template, `KubeRunLocally.podLike`) Run Locally on Docker… and Scan Image
+on Docker (its menu, its detail's More, ⌘K; no letter). Both are reads —
+one GET of the object, never of a Secret or a ConfigMap it names — so they
+are offered on every class, greyed while Docker is off; the container is
+picked as a shell's. Run Locally hands `KubernetesActions.runLocally` a
+`DockerRunSpec` (`KubeRunLocally.plan`) and the window opens the Docker
+page's Run window on it: the image; a value given copied, `$(VAR)`
+expanded as the kubelet does, unless its name or value looks secret
+(`Secrets.isSecret`, `maskURL`, `scrubCredentials` — a `ghp_…`, a JWT, a
+`password=` pair under a harmless name); a Secret's key, a secret-looking
+value and a ConfigMap's key (named, not read) as `DockerRunSpec.Ask`s — a
+name the wrapper shell or docker itself reads (`PATH`, `IFS`, `LD_*`,
+`DOCKER_*`: `Ask.reserved`) left out and said; the pod's own fields filled
+(name, namespace, node, service account), the rest left out and said;
+`envFrom` named; each port on 127.0.0.1; `command` as `--entrypoint` and
+its first words, `args` after, `$(VAR)` expanded in them too (an asked one
+as `"$VAR"`, `KubeRunLocally.Part`) and a secret flag's value
+(`Secrets.maskArguments`: `--requirepass x`, `-px`) an ask of its own,
+`OVERTERM_ARG_n`, read but not passed to the container (`Ask.env`) — a
+word with two secrets leaves the command out, said; volumes said, not
+mounted. An ask is never
+a value in Overterm: with asks, `DockerRunSpec.line` is a `sh -c` that
+reads each from the tab (`stty -echo` for a secret; ^C or ^D runs nothing)
+and passes it by name, `-e KEY` — so it reaches neither the command line,
+the shell's history nor a file. Nothing runs until Run in a Tab. Scan hands
+`KubernetesActions.scanImage` the spec's image and the digest the kubelet
+ran (`status.containerStatuses[].imageID`); `DockerPageModel.scanImage`
+opens Images, finds the engine's copy — by that
+digest when known, only an image whose `RepoDigests` record it (a local
+tag of the same name is another image), else by any name it goes by
+(`localImage`, pure) — and scans it as `repository@digest` (`pinnedName`) and scans it on its Vulnerabilities tab through
+the existing path (`scanVulnerabilities`); an image the engine hasn't is
+asked first, then pulled — by digest when known — for the engine's
+platform and scanned when it is listed (`pullThenScan`; a pull that can't
+start said). Local contexts (`docker-desktop`, `kind-*`,
+`k3d-*`…) are local by name (Section 5); Overterm never turns a local
+cluster on. `KubeRunLocallyTests` checks the plan from fixture pods and a
+workload's template, the asked command, the image matching, the handoffs
+against `FakeKubeAPI` (only GETs, no Secret or ConfigMap read) and
+`FakeDockerEngine` (here, scanned; not here, asked, nothing pulled; Pull
+and Scan pulling the digest beside a stale tag, then scanning it); the
+scenario's `kubernetesDocker` (`E2ERunner+KubernetesDocker`): from a
+fake-dev pod, Run Locally lands on the Docker page's Run window with the
+image, the plain env, the port, the Secret's key and the secret-looking
+value asked (read off the sheet, no value drawn), Run in a Tab recorded as
+the asking `sh -c`; Scan lands on the image's Vulnerabilities tab, scanned;
+an image not on the engine asked and Cancel pulls nothing.
+
+### The scenarios
+
+**The scenario** (`kubernetes`, `E2ERunner+Kubernetes`; about 260 s,
+each part's time said in its output, `kubernetesPart`; the charts —
+metrics-server's, the workload, node and namespace tabs, Prometheus —
+are `kubernetesCharts`, testKubernetesCharts, about 120 s, on a fake of
+its own set up the same way): testKubernetes
+names a temporary OVERTERM_KUBECONFIG; the scenario opens the page before
+the file exists (no kubeconfig), then starts `FakeKubeAPI` on a socket
+and 127.0.0.1 and writes there two contexts on it, `fake-dev` (remote,
+set read-only by the run's `kubernetes.contexts` — writable is every
+class's default — although its server is loopback) and `fake-prod`
+(production by name, writable, each change asked). `kubernetes.kubectlPath` names a stand-in script
+of the run's own (`writeStandInKubectl`): it answers `auth can-i` itself
+— no for `pods/attach` — recording its KUBECONFIG and arguments, and
+`exec`s the real kubectl for the rest. With kubectl installed the real
+`kubectl proxy` runs through it in front of the fake (that file as its
+only KUBECONFIG, `--context`, a HOME of the run's own); else a stand-in
+connection goes to the fake's socket. It checks the pods
+listed as rows only in the server's columns, a crashing pod's reason
+(and drawn, read off the window), the watch's changes, the keys, all
+namespaces (two same-named pods apart, metadata asked for there),
+`label:` sent to the server through the proxy (and said); `field:` too —
+a finished pod left out by `status.phase=Running`, the fake recording the
+fieldSelector on the list and its watch, said, and `k` by the key as the
+window takes it copying the list's command with it (the user's pasteboard
+put back after); every kind —
+what fake-dev serves read and drawn in its sections, `:` by the key as the
+window takes it (the field given the keyboard, its completions drawn),
+`:deploy`'s deployments in their own columns as rows only, with the Status
+read off them (drawn), `k` on one copying its `-o yaml` command, ⌘K finding
+a deployment, "Go to Deployments" and the page's Copy as kubectl, the list
+exported as CSV by the menu's action into the run's folder in the visible
+columns (no write problem), Copy Rows as TSV (the visible rows) and as CSV
+(the selected one) on the pasteboard, put back after, Tab completing
+and Esc closing by the field's own commands, `:widgets`' custom resources
+in the CRD's printer columns (the wide one behind `w`), a kind nobody
+serves said, `3` and `6` (Network's services, the cluster-wide nodes), a
+secret's row with no value, a CRD applied while the page shows appearing
+by the CRD watch and listed, `:po` back; the detail — a pod by ↩ as the
+window takes it, read with one GET, its phase, node, image and owner
+(drawn), its YAML without managedFields or the last-applied annotation
+(drawn; the toggle shows them), its events by uid, the warning first
+(drawn); the ReplicaSet and the Deployment followed as links, the
+deployment's replicas, strategy, rollout and selected pod; ⌘[ ⌘] by the
+key as the window takes them (⌘[ the menus' with nothing behind), `[`
+`]`; a stuck deployment opened by a click, its progress deadline said
+(drawn), the detail following the list; a pod's logs — `l` by the key
+as the window takes it, its default container's last 500 lines followed
+with timestamps (in the text view, its end in view, drawn), older lines
+by a larger tail when scrolled to the top, a line written coming by the
+follow, the fake dropping the stream and the view resuming by
+`sinceTime` with what was written meanwhile (one of the very time of the
+last line shown) and nothing twice, newest first, Save As into the run's
+folder, ⌘L on picked lines scrubbed with the pod as context, the detail
+following to the crashing pod and Previous showing its crashed
+container's lines (drawn), the stream closed with the detail, only GETs
+of `log`; a Secret's detail that reads
+nothing (drawn) until Show is pressed where a person presses it, then
+one GET, its keys with the values masked (drawn, the length shown), one
+revealed and another masking it (drawn, then not), its YAML masked, the
+next row dropping every value, a TLS Secret's certificate (drawn) and its
+key never revealable, Esc and the page hidden dropping them, and no value
+in the app's unified log — testKubernetes checks the app's output and
+errors hold none either; Esc; `n` by the key
+as the window takes it, a namespace picked by typing, one typed that
+nobody listed, Esc; `c` to `fake-prod` and back;
+`fake-prod`'s band, drawn; that `fake-dev`'s proxy refuses a POST, a
+DELETE, an exec and a port-forward; that the fake recorded no write and
+no subresource but a pod's log; that hidden the page's watch ends and nothing is asked;
+⌃⌘J from the terminal — the model held, a pod (with its reason), a
+context and a namespace found, ↩ showing the pod selected on the page,
+the hold let go; Terminal in this context — opened from the context
+card on `fake-dev`, its tab pinned to `fake-dev` in `shop` and a
+Kubernetes tab, its `KUBECONFIG` the pin's file (in the run's support
+folder, 0600, the context and namespace, no credential) then the run's
+kubeconfig alone and nothing else given the shell, the shell having it
+(a `printf`, never kubectl), its header's label drawn, a split pinned
+too, a row's verb recorded with the row's namespace, `fake-prod` from
+the palette asked first naming it (Cancel opens nothing), confirmed,
+its band drawn, and the kubeconfig never written; a pod's commands —
+can-i asked of the stand-in as a pod is picked (the run's kubeconfig
+alone, `--context`, `-n`, once a minute), attach greyed with its reason,
+`e` and `t` recorded with their tabs (pinned to `fake-dev` in `shop`,
+their KUBECONFIG the pin's file and the run's), `A` opening nothing and
+saying why (drawn), two containers asking which (the default first),
+and on `fake-prod` a shell asked first naming the context and pod
+(Cancel opens nothing), its tab's band, and not asked again for the pod;
+port-forwards — `f` on `fake-dev`'s Service `web` (read-only, after the
+stand-in's `can-i create pods/portforward`), the sheet with the Service's
+port and a free local one (drawn), resolved to its ready endpoint's pod
+and run through the stand-in kubectl (`port-forward pod/web-7d9 L:8080
+--context fake-dev --namespace shop --address 127.0.0.1`, the run's
+kubeconfig alone), which listens and answers with its pod's name; the
+fake then replaces the pod and the stand-in is ended by its pid, as
+kubectl ends when its pod goes, and a second stand-in starts for the new
+pod on the same port — answering, the pill and Tab Info naming it, `9`
+listing it (drawn), `o` opening it; Edit moving its local port, kubectl
+exiting starting it again on the same pod, the Service gone stopping it
+and saying so (drawn); a Quick Forward of a pod opened once it forwards;
+nothing but GETs reaching the API; writes
+(`E2ERunner+KubernetesWrites`) — `kind-fake` (local by name) added to
+the run's kubeconfig and read, a pod deleted by ⌫ as the window takes
+it once its access review reached the fake, the sheet naming the verb,
+object, context and namespace and the kubectl it equals, nothing
+written while it asks, ended by the runner's own `endSheet` and landing
+as one DELETE, the list following by its watch and the outcome drawn; a
+deployment scaled from the `=` sheet (drawn) 1 → 3, the scale
+subresource patched and its row 3/3 by the watch; on `fake-prod` Delete…
+greyed while its entry sets `writable: false` (⌫ only saying so, drawn,
+nothing sent, its proxy refusing a POST), then, the entry gone, writable
+with no switch (the owner's decision): ⌫ asking for the name — a wrong
+one sending nothing, the right one landing; on `fake-dev` every write greyed with why and nothing reaching the
+fake, not even a review; and Kubernetes off stopping every
+forward, its kubectl ended;
+Flux's and Argo CD's verbs (`E2ERunner+KubernetesGitOps`, Flux and Argo
+CD verbs, above): on fake-dev greyed and refused with nothing sent; on
+kind-fake a Kustomization suspended, resumed and reconciled by `p`, `p`,
+`r` as the window takes them, each asked in the sheet with its flux
+command and landing as one merge patch, its tree's GitRepository
+reconciled from the node's verbs, an Application refreshed by `r` and its
+sync by `s` recorded in a pinned tab, nothing else written;
+a manifest in the editor (`E2ERunner+KubernetesApply`, Manifests in the
+editor, above);
+usage and the Overview (`E2ERunner+KubernetesMetrics`): the Pods list's
+CPU and Memory dashes with the fake's metrics-server gone (said, drawn,
+nothing asked of metrics.k8s.io, the list fine), values once it serves
+them (drawn, asked in the namespace, polled while shown, not once
+hidden), `1`'s Overview — pods by phase asked by field selector, the
+crashing pod and the stuck Deployment first, the hour's warnings, an
+application by its labels, the cluster's usage of its allocatable
+(drawn) — and its follows ended by `2`;
+attention and the checkout's chart (`E2ERunner+KubernetesAttention`): a
+fixture checkout bound to fake-dev/shop with a release and a selector,
+its tab open and another selected — its pods and deployments watched in
+the background with the page hidden, the selector the server's and
+nothing else read; a pod going into CrashLoopBackOff marking that tab
+only (its menu's and the Inbox's Ask Why, the brief of that pod for that
+checkout), a stuck rollout marking it again, both gone clearing it; with
+`maxProxies` 2 the page moving to another context while every slot is
+busy closing the background proxy, the tab's "not watched" (drawn), and
+watched again once a slot is free; Diff Chart through a stand-in helm
+(the values on its stdin, `KUBECONFIG=/dev/null`, no values file), the
+Secret masked before and after and the Deployment's replicas in the
+changes pane (drawn); Upgrade… refused on fake-dev, reviewed, asked and
+recorded on kind-fake in a pinned tab, the values asked for and a wrong
+name running nothing on writable fake-prod; its tabs closed, the
+watches end;
+the page with Kubernetes off; and that every kubectl it started ends —
+the scenario's `exit` isn't the app's quit.
+
+**`kubernetesPerf`** (`E2ERunner+KubernetesPerf`, testKubernetesPerf, its
+own OVERTERM_KUBECONFIG): 5,000 pods in one namespace on the fake, with
+usage, spoken to on its socket directly — the first draw (opened until
+the table holds every row, under 5 s; ~0.7 s here), a burst of 500 watch
+events applied by the one watch (under 3 s; ~0.25 s), the list scrolled a
+third of a screen a step (p95 under 35 ms, as dockerPerf's; ~18 ms), and
+the 5,000 rows sorted by CPU (under 250 ms); closed, no watch and no
+polling are left. Its charts' budgets (metrics.md 5.3; `E2ERunner+
+KubernetesChartPerf`, and the rest at scale in `+KubernetesChartBudget`,
+stage M12): a plot of 13 × 300 points (≤ 5 ms; ~0.5), 200 hover moves
+(p95 ≤ 2 ms; ~1.4), a pod's and a 50-pod Deployment's Metrics tab first
+drawn (≤ 50 ms; ~37, ~29), the Overview from Prometheus with 60 nodes —
+X4 the hottest 50 — built and first drawn (≤ 50 ms; ~29, 70 before X4
+was one Canvas), an 8 MB answer of a thousand series decoded off the
+main thread (≤ 150 ms; ~118, 250 before) and merged into the cache off
+it (≤ 50 ms; ~6), the cache within 12 MB, a byte past 8 MB refused
+unread, and the usage ring full — 200 detail keys' six hours and 5,000
+rows — merging a poll off the main thread (p95 ≤ 50 ms; ~5) under its 6 MB.
+The Overview is timed on its own view (`KubePrometheusChartView` over a
+monitor of its own, `present`). The steady states and the hidden page are
+`kubernetesCharts`' (`kubernetesChartsSteady`): at 24h, refreshed every
+500 ms with the tab's clock held, no `query_range` within the step, then
+five minutes on one a query, its last steps only; Live at its own
+intervals, at most one GET a target and one `query_range` a query in 6 s,
+under 3% CPU; hidden, the readings stopped and the metrics proxy closed
+(`proxyCloses`) within 60 s, then nothing of metrics read.
+Its GitOps leg (`E2ERunner+KubernetesGitOpsPerf`, gitops.md 3.2, 8.4, G8):
+1,000 Argo CD Applications (`FakeKubeAPI.addGitOpsPerfApplications`, ~7 KB
+each whole, with the managedFields and the client-side apply's annotation
+a busy one carries — `tableManagedFields` puts them in the rows' metadata,
+as a real server does; `bytesSent` counts what was answered a resource).
+`g` across every namespace drawn with every row live and 500 summarised
+(under 5 s; ~0.7 s, the main thread held under 500 ms; ~0.3 s), the rows'
+first list ~5 MB (~5 KB a row; §3.2's bound 30 MB, so R1 keeps
+`includeObject=Metadata`), the summaries ~4 MB in 25 pages of 20, cut at
+500 and said; a burst of 500 status writes — 450 `reconciledAt` alone,
+nothing read, and 50 turning Degraded, each read once, at most 4 in
+flight and 20 a flush — applied in under 3 s (~1.5–2 s); the table of
+1,000 rows scrolled (p95 under 35 ms; ~18 ms); another section ends its
+follows and `g` again reads no summary. What it found: each GET's answer
+ranked the 1,000 summaries and drew the table again on its own — the
+burst took 7–8 s with the main thread held 0.5–0.8 s at a time; the
+answers now wait for the next flush and are ranked once together
+(`KubeGitOpsSession.reranking`; `KubeGitOpsSessionTests`).
+
+**`kubernetesScale`** (`E2ERunner+KubernetesScale`, testKubernetesScale,
+its own OVERTERM_KUBECONFIG): a large cluster's shape — 5,000 pods across
+50 namespaces, each namespace's ten Deployments with their ReplicaSets and
+a Service each, `acme-00` one Deployment of 200 pods — listed in every
+namespace: the first list to rows by one streaming list (under 5 s; ~0.5
+s here), the list scrolled as dockerPerf scrolls (p95 under 35 ms; ~15),
+500 watch events across 49 namespaces applied by the one watch (under 3
+s; ~0.2 s), the Overview's health checks read, decoded and checked (under
+3 s; ~0.5 s), then with every list answered 100 ms late, one after the
+other against four at once (`KubeHealthSession.readWidth`; 1.5 s, 0.84),
+the 200-pod Deployment's dependency tree (under 2 s; ~0.3 s; its pods one
+bounded read by its selector, 150 counted not drawn), late again (0.71 s,
+0.36), and the footprint after (under 900 MB; ~310, the fake's objects in
+the same process). Reads only.
+
+## Terraform
+
+The design is docs/design/terraform/analysis.md (its Section 9 the
+stages). Built so far: the groundwork of stage 0, stage 1a, HCL in the
+editor, stage 1b, which root, which workspace, and is it production,
+stage 1c, guarding agents, stage 1d, the plan in the right slot,
+stage 2a, the apply, with every guard, stage 2b, a new worktree's roots,
+stage 2c, state and outputs, masked, stage 2d, drift and terraform test,
+stage 2e, force unlock, and stage 2f, a review's Terraform section.
+
+- **Roots** (stage 1b, analysis 4.12, 6.1, 6.2). The rail's Terraform panel
+  (`SidebarPanel.terraform`, ⌥⌘E, `terraform.enabled` on by default) is the
+  selected tab's checkout's (`Tab.checkoutSource`, as the other panels).
+  `TerminalWindowController+TerraformPanel` follows the selection, says
+  when it is on screen (the sidebar open on it, the window visible), and
+  hands it the diff's watcher's paths (`DiffModel.changes`) and files —
+  no watcher of its own. `TerraformPanelModel` reads only while shown: a
+  change while hidden marks it stale (`reads` counts, for the scenario).
+  A read is one `git ls-files` of Terraform's patterns, cached and
+  untracked-not-ignored, so `.terraform/`, `.terragrunt-cache/` and
+  `node_modules` stay out, capped at 20,000 matches and 2,000 folders
+  (`TerraformRootScan`; when git can't list it, a repository's top folder
+  — `KubeCheckoutScan.isRepositoryRoot`, a `.git` there, never `~` or `/`
+  — is walked instead, breadth first, 8 deep, 20,000 entries, hidden
+  folders, links, `.terraform`, `.terragrunt-cache` and Kubernetes'
+  skipped folders passed over, names only; any other folder isn't);
+  each folder's `.tf` files (120 names, 256 KB each) into
+  `TerraformConfigFacts` (pure, over `TerraformBlocks`, which now keeps an
+  attribute's literal value and scans a block's body for nested ones):
+  the backend or `cloud` block through an allow-list of keys
+  (`backendKeys` — never `Secrets.isSecret`, whose `KEY` would hide S3's
+  `key`; an `address` kept without its userinfo, query and fragment,
+  `kept`, from the HCL and the init record alike, so no reason, chip or
+  tooltip can show a token), `required_version` and `required_providers`, providers' literal
+  `profile`, `role_arn`, `project`, `subscription_id`, the types declared,
+  provisioners, `terraform_remote_state`, module sources, the account ID
+  of any ARN. `TerraformRootGuess` (pure) calls a folder a root (a
+  backend, else nothing calling it), a module (called — a local `source`
+  or `modules.json`'s `Dir` — or under `modules/`), an example or test, a
+  Terragrunt unit or its configuration; `callers` follows calls through
+  modules (`modules/acme-net: 2 roots`), `touched` maps the diff's files
+  to the roots they change — a file to the nearest root above it
+  (`nearestRoot`: `envs/prod/templates/user_data.sh` is `envs/prod`'s). Each root's `TerraformRootFacts`: the
+  workspace `.terraform/environment` selects, the init record
+  (`TerraformInitRecord`: `.terraform/terraform.tfstate` through the same
+  allow-list — it holds `-backend-config` passwords in clear), installed
+  modules, the lock file's providers, a local backend's workspaces and
+  whether this one's state file is here, the version pins from the root
+  up to the checkout (`.terraform-version`, `.tool-versions`, `mise.toml`;
+  bounded, stopping at `/`). The repository's other worktrees — the
+  window's `WorktreeModel` list (`TerraformWorktree.others`: not bare,
+  not prunable, at most 12, none while the list is another repository's),
+  never a second `git worktree list` — are read for the same root, their
+  backend and workspace only (`TerraformRootFacts.readIdentity`: the init
+  record, else the backend block; kept by the files' size and mtime): one with the same
+  `TerraformStateIdentity` "shares its state"; a local root whose state is
+  missing here but there says "no state in this worktree: the state is in
+  `main`'s checkout" (3.7). Nothing is written but `TerraformRootStore`'s
+  production identities, in Overterm's folder. A file event redoes the
+  read only when it can change what the panel says
+  (`TerraformPanelModel.isRelevant`: a Terraform file anywhere, a version
+  file, a listed folder or a file of one, `.terraform/`'s `environment`,
+  `terraform.tfstate` and `modules/`; another folder, as the diff's
+  watcher says folders, only when a listing of its names finds a
+  Terraform file — a new root) — never a `.swift` edit,
+  `node_modules` or a build's output; a Terraform file also forgets
+  whether the checkout has roots (`TerraformCheckouts.forget`).
+  - **The identity** (`TerraformStateIdentity`, pure, 4.11): the backend in
+    effect (the init record's, else the HCL's, else `local`), its location
+    keys and the workspace as each backend folds it in — a local `path`
+    for `default` only, others under `terraform.tfstate.d/<ws>`; S3's
+    `env:/<ws>/<key>`; GCS's `<prefix>/<ws>.tfstate`; azurerm's
+    `<key>env:<ws>`; an `http` address's host and path (never its
+    credentials or query); `cloud`/`remote`'s organisation and workspace.
+    `pg` has none (its location is a secret). `summary` is the chip's
+    `s3 · acme-tfstate/prod/network.tfstate · eu-west-1`;
+    `changedSinceInit` says when the HCL and the record disagree.
+  - **The class** (`TerraformClassifier`, pure, 5.1): production when any
+    signal matches `terraform.productionPattern` (empty: Kubernetes'
+    pattern with a digit run, `prod1`, `prd01`, `production2`) — the
+    workspace, the root's path (a Terragrunt tree's top `live` is
+    structure), the backend's keys, the auto-loaded var files, the
+    var files and backend-config files the run names on its command line
+    (`TerraformCommandLine.varFiles`/`backendConfigFiles`; a
+    `-backend-config=key=value` is never kept), the process's or shell's
+    `AWS_PROFILE` (the name, never `~/.aws`), a provider's literal profile,
+    role, project or subscription, a backend's namespace or hostname, a
+    Kubernetes backend's or provider's literal `config_context` as
+    Kubernetes classes it (`isProductionContext`: `kubernetes.contexts`'
+    class, else `KubeClassifier`'s names) — or an account in
+    `terraform.productionAccounts`; or when its identity was production
+    once (`TerraformRootStore`, sticky across worktrees and folder names).
+    What is kept is every production verdict's identity — each workspace
+    of a card, the pane header's, Tab Info's — when the root or its state
+    says so (`TerraformRootCard.identityToRemember`): production by
+    `AWS_PROFILE` alone follows whoever exported it, so it is shown (the
+    panel's note) and never kept. Kept identities are never evicted. Then a class set by hand (`terraform.roots`,
+    `TerraformRootSettings`), which only raises; then local by the strict
+    rule (a local backend inside the checkout, no provisioner,
+    `local_command`, `external` or `http`, no other state read, only
+    null/random/local/time/tls/builtin providers, pinned by a lock file);
+    else remote. The branch is never a signal — the chip shows it,
+    `branch @ commit` from the diff's (`branchLabel`). `terraform.roots`,
+    `productionPattern`, `productionAccounts`, `terraform.path` and
+    `terraform.enabled` (off, the pane header goes) are held when edited
+    outside the page (`heldWhenEditedOutside`).
+    `TerraformClassSettings.current` is the snapshot the readers get.
+  - **The binary and the pill** (4.2): `TerraformCLI.binary(forRoot:)` —
+    guarded, `OVERTERM_TERRAFORM`'s; else `terraform.path`, else `mise which
+    terraform` in the root where a version file asks, else the search —
+    and `version -json` (`TerraformCommands.version`, the stripped
+    environment, `CHECKPOINT_DISABLE`), once per binary (per root where a
+    version file lets a shim choose); the only terraform 1b runs, and only
+    while the panel shows. `TerraformVersion`/`TerraformVersionPins` (pure)
+    turn the pill amber: "1.17.1 ≠ required ~> 1.9".
+  - **The view** (`TerraformPanelView`): roots by top folder, each a chip
+    — the class band and pill, workspace, backend, version, "changed",
+    "needs init", "the backend changed since init", the shell's inherited
+    `TF_WORKSPACE`/`TF_DATA_DIR` (`TerraformInheritedEnvironment`) —, a
+    picked one's reason, its workspaces' classes, the modules it calls,
+    Terminal in This Root and Validate; modules with their callers,
+    Terragrunt's folders labelled, examples folded. ⌃⌘E is the palette on
+    `PaletteItem.Group.terraform`: the roots (↩ in the panel, ⌥↩ a
+    terminal), then other checkouts read (`TerraformCheckouts`); opened
+    before the read lands, it is restocked when the roots do.
+  - **Terminal in this root** (4.9): a shell tab at the root with no
+    `TF_WORKSPACE` — the root's `.terraform/environment` selects —, its
+    panes' `terraformRoot` making it `TabKind.terraform` and its header say
+    `⛰ envs/prod`. Not saved with the session: nothing is pinned.
+- **The pane header** (3.2). `TerraformPaneMonitor` (one for the app)
+  looks every 2 s at the panes where a command runs (the ledger's
+  `running`) or an agent works — never one at its prompt, never a tab
+  without a checkout, and only a checkout with roots: settled once, when
+  something first runs there, by the panel's listing
+  (`TerraformCheckouts.settle`, one bounded `ls-files`; not a repository:
+  none) — by one
+  `proc_listchildpids` walk from the pane's `login` and a name a pid
+  (`TerraformProcesses`); argv, folder and the environment's
+  `TF_WORKSPACE`, `TF_DATA_DIR` and `AWS_PROFILE` are read only for a
+  `terraform`, `tofu` or `terragrunt` (or a script of that name a shell
+  runs), and the root's files only then (kept 10 s). Its folder is the cwd —
+  terraform changes to `-chdir`'s itself —, else cwd and `-chdir`.
+  `TerraformCommandLine` (pure) reads an operation from argv or a title
+  (`state rm`, `run --all apply`, `isWrite`), and `make`, `just`, `task`,
+  `atlantis`, `./deploy*.sh` in a folder of `.tf` files as "probably".
+  `TerraformPaneWarning` (pure) is the label — `⛰ envs/prod · workspace
+  default · s3 · … · AWS_PROFILE … · apply` — white on red on production,
+  amber when the process's own `TF_WORKSPACE` or `TF_DATA_DIR` decides; a
+  notice, not a guard (`TerraformRunWarningLabel`). Tab Info lists each
+  terraform (`TerraformInfoRow`): operation, root, workspace, running
+  for, provider plugins, the root's `.terraform` size (`DiskUsage`, a
+  minute's cache).
+- **Guarding agents** (stage 1c, analysis 3.3–3.5, 5.6, 5.10, D-8).
+  - **The ask** (`TerraformPrompt`, pure): a pane's last 40 lines read for
+    an agent's permission prompt — Claude Code's question with its command
+    block above it (under its "Bash command" header), Codex's with the
+    command between it and the choices (from its `$ ` line); the choices
+    the newest thing on screen, a hint line at most under them, so an
+    answered one scrolled up is no ask — whose command block holds a
+    write (`TerraformCommandLine.all`, every command of the line:
+    `apply`, `destroy`, `import`, `taint`, `untaint`, `force-unlock`,
+    `state rm|mv|push`, `workspace delete`, `refresh`, `test`, `init
+    -migrate-state|-force-copy`, Terragrunt's `run --all apply`, or
+    `-auto-approve`), or Terraform's own `Enter a value:` under one of its
+    confirmations ("Do you want to perform these actions in workspace
+    "acme-prod"?", "Do you really want to destroy all resources?"…). A
+    block's lines are joined — a long command wraps inside the box, more
+    so in a narrow split — one line, then two, …, the reading whose
+    operation is one Terraform has winning when a word was cut; nothing
+    above the block is read (`commandBlocks`), so a `terraform apply` said
+    earlier in the chat is no ask for an `ls`. The command is kept masked
+    (`masked`: every `-var` value, `Secrets.maskArguments`, the text
+    rules): the Inbox's card, the header's tooltip and their accessibility
+    text show no value. `TerraformPaneMonitor` reads the screens of the
+    panes it already walks (something running, or an agent, in a checkout
+    with roots) — **only on a signal** (`readsScreen`: the tab waits on
+    the agent, which Claude Code's OSC 777 notification sets; a terraform
+    runs in its tree; an ask stands there; or `PaneBlocks.outputMark`
+    moved — a scroll, a title, a bell, a notification, a command's end,
+    never an agent's progress), so an idle agent's pane costs the walk
+    alone — and publishes `asks` by pane: the root from where the agent
+    works, a `cd` on the line and `-chdir` (`TerraformPrompt.folder`), or
+    the terraform found there, classed as the header classes it
+    (`TerraformAsk`, its `TerraformPaneWarning`). A folder with no
+    configuration — an agent's Bash keeps its `cd` from earlier calls, so
+    a bare `terraform apply` from the checkout's top may run in
+    `envs/prod` — in a checkout with production roots is said as
+    production: "root unknown — this checkout has production roots
+    (envs/prod)" (`unsettled`). The window (`+TerraformAgents`) puts each
+    tab's first pane's ask on `Tab.terraformAsk` and marks it waiting with
+    what it asks (`TabActivity.terraformAsked`) — looked at or not; an
+    agent's ask notifies; the mark goes with the ask (`terraformAnswered`)
+    unless something else marked the tab since. The pane header shows the
+    ask before its warning (`pane.terraformAsk`). **Nothing answers it**:
+    the Inbox's card (`InboxModel.Entry.terraform`) has Open Tab only — no
+    choices are read from a screen with a Terraform ask, so Return has
+    nothing to press — and `answer` refuses a tab at an ask; Ask Agent and
+    Ask Why neither offer such a tab as a target nor type into it
+    (`terraformAsking`: the mark, or any pane's screen read again;
+    `type(_:intoAgent:)`).
+  - **The launch** (`TerraformAgentGuard`, pure, and `TerraformAgentGuards`,
+    what is known): every agent Overterm types into a pane — New Task's
+    (its worktree's roots read first, `decide`), an agent tab's, a
+    resumed or restored one's (`agentCommand`) — gets, with
+    `terraform.agentWriteGuard` on (default; held when edited outside the
+    page) and its checkout not known to have no production root, Claude
+    Code's `--disallowedTools '<rules>'` last on its line (the flag takes
+    every word after it), for `terraform`, `tofu`, `terragrunt` × `apply`,
+    `destroy`, `import`, `taint`, `untaint`, `force-unlock`, `state`,
+    `workspace delete`, `refresh`, `test`, `apply-all`, `destroy-all` in
+    three forms — `Bash(terraform apply:*)` (the documented prefix),
+    `Bash(*terraform * apply*)` (after flags: `-chdir=…`, `run --all`),
+    `Bash(* terraform apply*)` (after an assignment: `TF_WORKSPACE=prod
+    terraform apply`) — and `-auto-approve`, `-migrate-state`,
+    `-force-copy` anywhere. **It fails closed**: production is kept until
+    the checkout's Terraform files change (`forget`); "none" only from an
+    uncapped listing (`record(complete:)`), and only while the classes'
+    settings and the remembered production identities are the ones it
+    was read under — a root raised by hand, a pattern changed or an
+    identity the header remembered make it unknown again; unknown — never
+    read, capped, not listable (a folder outside a repository) — is
+    guarded. Each launch starts a read again off the main thread (one
+    `git ls-files`, `decide`, once at a time a checkout), so a production
+    root merged into a worktree the panel never shows reaches the next
+    launch; no walk or file read on the main thread. Codex has no
+    per-command deny: `.notGuarded`, a "terraform writes not guarded"
+    chip on its pane's header for as long as it runs
+    (`TerminalView.terraformAgentGuard`). Nothing is written to the
+    agent's settings, no shim on PATH (D-8). **The rules are unverified
+    against Claude Code itself**: running an agent reaches its model
+    provider, so the spike 3.4 asks for was not run. What was checked,
+    statically, in Claude Code 2.1.322: its `--disallowedTools` splitter
+    keeps commas and spaces inside a rule's parentheses (the one quoted
+    word arrives as every rule — `testTheFlagSplitsIntoTheRules` models
+    it), and its rule linter takes a `*` anywhere in a `Bash` rule. That
+    each rule matches at run time, per command of a compound line, and
+    holds under `--dangerously-skip-permissions` is its documentation's
+    word; `TerraformAgentGuard.denies` is the tests' model of that, not
+    Claude Code. The setting's help says so.
+  - **The tools** (`TerraformMCP`, `terraform.agentAccess`, on; held): on
+    the bridge beside Kubernetes' (`BrowserMCP`, both halves: `offered`
+    and the `tf_` prefix's dispatch), the calling pane's checkout only
+    (`paneCheckout`; no pane, no tool). `tf_roots` (the panel's read: class
+    and why, workspace, backend, modules), `tf_fmt_check` (`fmt -check
+    -diff`), `tf_validate` (only where the root's lock file is committed
+    and unchanged and every module is installed — else "needs init: ask
+    the person"; never init), `tf_plan_summary(path, root?)`: a plan the
+    agent saved, its path resolved with `realpath` inside the checkout —
+    no `..`, absolute path or link out (`TerraformMCPPath`) — opened
+    `O_NOFOLLOW`, the descriptor's own path (`F_GETPATH`) inside the
+    checkout too — a folder on the way swapped for a link after the check
+    shows there —, checked (a regular file, ≤ 64 MB, a zip) and handed to
+    `show -json -no-color /dev/fd/3` as fd 3 (`ProcessGroup.spawn`'s
+    `descriptors`, `TerraformRun.short`'s `file`), so the path is never
+    terraform's to open; the root is resolved again before and after the
+    run, its answer dropped if it moved. `show -json` starts the root's
+    providers for their schemas, so it runs only where validate would
+    (`providersRefusal`: the lock file committed and unchanged from HEAD,
+    no provider missing from it, every module installed) — never a binary
+    an agent put in `.terraform/providers` with a lock file to match. The
+    bridge serves whenever any agent tool is on, Terraform's alone
+    included (`BrowserBridge.wanted(in:)`). Every tool runs in `TerraformEnvironment
+    .Purpose.agentRead` (no credential, a scratch HOME): they run outside
+    the agent's sandbox. No `tf_apply`, `tf_destroy`, `tf_state_*`.
+  - **The plan, masked at decode** (`TerraformPlan`, pure): an allow-list
+    — per resource change its address, previous address, mode, type,
+    name, index, provider, actions, reason, `replace_paths`, the import's
+    ID, and `before`/`after` as `TerraformValue`s walked against the
+    `*_sensitive` mirrors (`.sensitive`) and `after_unknown` (`.unknown`),
+    then `TerraformSecretNames` (narrower than `Secrets.isSecret`:
+    `key_name`, `kms_key_id`, `public_key` stay readable) — what an agent
+    reads (`tf_plan_summary`) decodes with `TerraformSecretNames.forAgents`,
+    which adds `Secrets.isSecret` (`private_key_id`, `session_key`) —, every string
+    through `Secrets`' rules; the changed attribute paths compared raw and
+    kept as paths only; outputs' values only when neither mirror marks
+    them; variables by name; from `configuration` only `references` (the
+    cause chain's first links); `prior_state`'s version; actions masked by
+    `config_sensitive`; checks by status. Everything else is dropped as
+    it is read; a top-level key it doesn't know makes it "partly
+    understood", an unknown major refuses. `TerraformPlanText.summary`:
+    the bar and the CLI's sentence, destroys, replaces and forgets first
+    with their reason and what forces them (`triggers_replace ←
+    var.acme_name`), creates and updates folded ×N with their changed
+    paths, moves, imports, drift, outputs, variables — strings cut at
+    200 characters, non-printables escaped.
+  - **Ask Why** on a failed validate: the editor bar's button
+    (`TerraformEditorHost`) hands `TerraformAgentBrief` — the root, its
+    workspace, backend and class, `terraform version`, the lock file's
+    providers and versions (`TerraformLockFile.versions`), each diagnostic's summary, detail,
+    range and code, scrubbed and bounded — to the checkout's agents first
+    (the Ask Agent sheet).
+  - **Scrollback** (5.6 rules 6, 7): a pane whose shell ran `terraform
+    output|show|console|state show|state pull` (`PaneBlocks
+    .printedTerraformSecrets`), where such a terraform ran under it or
+    Terraform asked for a value (`TerminalView.terraformSensitive`) is
+    saved at quit without its text (`scrollbackPanes`, what the save
+    writes), and ⌘L over it is scrubbed as a pinned tab's is
+    (`askSelection`); the `terraformAgents` scenario runs a stand-in
+    `terraform output` printing the sentinel and checks both.
+- **Init's noise** (4.12 step 6): `DiffModel.isNoise` drops FSEvents'
+  folders under `.terraform/` but its own (`environment`,
+  `terraform.tfstate`) and `modules/`, and `.terragrunt-cache/`: `init`'s
+  ~50 MB of providers never recount the changes pane (`refreshCount`, for
+  the scenario).
+
+- **HCL in the editor** (stage 1a, analysis 4.14; Editor above for what
+  it builds on). Colours are tree-sitter-hcl at Helix 25.07.1's pin with
+  Helix's `hcl/` queries (`EditorLanguage("hcl")`: `.tf`, `.tfvars`,
+  `.tofu`, `.hcl`, `.nomad`, `.terraform.lock.hcl`, `terragrunt.hcl`,
+  `root.hcl`; `x.tftest.hcl` by its last extension, `*.tf.json` stays
+  JSON); its `comment` injection has no grammar here and is skipped.
+  terraform-ls is a `LanguageServers.Spec` when found (on the PATH's
+  places or Zed's download), rooted at the checkout's top — one server a
+  worktree —, its validate on save off (`initializationOptions`), started
+  with no credential and none of `TF_CLI_ARGS*`, `TF_LOG*`,
+  `TF_REATTACH_PROVIDERS`, `TF_WORKSPACE`, `TF_DATA_DIR` in its
+  environment (`TerraformEnvironment.languageServerRemoved`, in the
+  patterns `environmentRemoved` takes: `X*`, `*X`, `*X*`, in any case), a
+  scratch HOME and CLI config — made before it is spawned
+  (`LanguageServers.prepareLaunch`) —, `CHECKPOINT_DISABLE=1`, and
+  `terraform.path` the terraform Overterm runs, as far as it is known
+  without waiting (`TerraformCLI.knownBinary`; `warm` asks the login
+  shell when a Terraform file opens — `launchOptions`).
+  - **Runs** (`TerraformRun.short`): a `ProcessGroup` child, cwd the
+    folder (never `-chdir`), stdin from a pipe written off the thread
+    (`F_SETNOSIGPIPE`), output bounded (1 MB, stderr 64 KB), 30 s then
+    SIGTERM and SIGKILL to the group, on a GCD thread. Every live group is
+    in `TerraformRun.live`: quitting (`endRun`) sends each SIGINT
+    (`stopAll`) — a run that writes or takes a lock (`interruptible`
+    false: New Task's init, the lock probe, force-unlock) given up to 3 s
+    to end first, and never interrupted by a cancelled task —, and a group
+    is swept with SIGKILL once terraform has exited, so no provider plugin
+    validate started is left. A read is interrupted when its task is
+    cancelled. It starts only
+    a line `TerraformCommands` builds — `fmt -no-color -`, `fmt -check
+    -list=true [-recursive] -no-color`, `validate -json -no-color` —, which
+    refuses anything else before spawning (`refusal`: a writing or
+    secret-printing subcommand, `-auto-approve`, `-lock=false`,
+    `-refresh=false`, `-upgrade`, `-var`, `-chdir`…), so the editor can
+    never run `init` or `apply`. The binary is `TerraformCLI.binary()`:
+    guarded, `OVERTERM_TERRAFORM`'s with a scenario's recording wrapper in
+    front (`scenarioWrapper`) or none; else the login shell's PATH, then
+    Homebrew's places (per root, `terraform.path` and `mise which` first:
+    stage 1b). The environment is `TerraformEnvironment.build`
+    (pure): `terraformBaseEnvironment()` without credentials or the names
+    above, HOME and `TF_CLI_CONFIG_FILE` the scratch folder's (no
+    `~/.aws`, no `credentials.tfrc.json` for the providers validate
+    starts, nothing downloaded), `CHECKPOINT_DISABLE`, `TF_INPUT=0`,
+    `TF_IN_AUTOMATION`, `TF_DATA_DIR` the root's own `.terraform`.
+  - **Validate** (`TerraformFolder`, one per module folder, the app's
+    `TerraformEditorModel`): on the bar's button or the editor's menu's
+    Validate Terraform (`terraform.validate`, bindable, no default key), and after a save
+    where terraform-ls isn't running. Its JSON is decoded through an
+    allow-list (`TerraformValidation`, pure: severity, summary, detail,
+    range, the snippet's code — never its `values`; every string through
+    `scrub`; a `format_version` major other than 1 refused). Diagnostics
+    land on their lines (`TerraformValidation.range`: line and column in
+    characters, as HCL counts them, to UTF-16, clamped) as the buffer's
+    `terraformDiagnostics`, beside the server's and Kubernetes'; an edit
+    drops them, and a result is laid only over a buffer unedited since
+    that validate started and saved (`TerraformFolder.describes`, by the
+    buffers' versions then). Validate on a buffer with edits saves it and
+    validates once the save has written it (`terraformValidatesOnSave`:
+    format on save writes later than `save` returns). "Needs init" is a diagnostic (`Missing required provider`,
+    `Module not installed`…, analysis 4.12), said once on the bar; a save
+    doesn't validate that folder again until asked. Nothing ever runs
+    `init`, and validate writes nothing in the checkout (the scenario
+    compares it byte for byte).
+  - **Format**: ⇧⌥F or the bar's Format runs `terraform fmt -` over the
+    buffer and applies what comes back as one edit (`replaceText`: one
+    undo); a file that doesn't parse is left as it was, the bar saying
+    the line. On save (`terraform.formatOnSave`, Settings ▸ Terraform, on)
+    only where the checkout already passes `fmt -check` — asked once a
+    run, when its first Terraform file opens, and again on a manual
+    Format or Validate —, so a team that doesn't format isn't
+    reformatted; a Terraform file never gets the language server's format
+    on save. Where `fmt -check` looks is the folder's `formatScope`, found
+    once when the folder is: its git top, recursively, when that passes
+    `LSPWatchedFiles.watchable` (not `/`, a volume's top, the home folder
+    or above — a dotfiles repository at `~`); else the file's own folder
+    alone, never below it.
+  - **Without terraform-ls**: F12 on `var.x`, `local.x`, `module.y`,
+    `data.t.n`, `t.n` (in a `.tfvars`, an assignment's name) by
+    `TerraformConfigIndex` over the folder's `.tf` and `.tofu` files (open
+    buffers as they are on screen; `load` reads the rest off the main
+    thread, 500 names, 2 MB a file, 8 MB in all), and ⇧⌘O and the breadcrumb
+    from the file's own definitions. Both read `TerraformBlocks` (pure): a
+    scan of top-level blocks — type, labels, range, a `locals` block's
+    names — that steps over strings, `${…}` templates (their own strings
+    and braces), heredocs and comments, bounded, never throwing.
+  - **The bar** (`TerraformEditorBar`, under the text where a `.sql`
+    file's console goes): the folder as the checkout names it, Validate,
+    Format, the last validate's state, and whether save formats here.
+
+- **The editor's part** (stage 0, Editor above): language servers hear of
+  files changed outside the editor (`DirectoryWatcher(fileEvents:)`,
+  `LSPGlob`), `Spec.initializationOptions`, `environmentAdded`/`Removed`,
+  `ServerDiscovery.zedTerraformLS`; and every pane's MCP token its own
+  (Browser above).
+- **The plan** (stage 1d, analysis 2.2, 3.1, 4.3–4.10, 4.13, 5.5, 5.6,
+  6.3). Overterm's own process, never a terminal: `TerraformPlanRun` (one
+  run of a root, a plan or an init, in memory) checks first — never an
+  HCP root (`cloud {}`, `remote`: `TerraformProcessCheck.refused(_:backendType:)`,
+  "HCP runs remotely", D-20), **the root read and classed again**
+  (`changedSinceCard`: a workspace selected since the card, a backend
+  edited, a class now production where the card's wasn't — refused, and
+  an agent's run on production always), the
+  backend unchanged since init, and **the workspace it will use exists**
+  (`TerraformWorkspaceCheck`, pure: a local backend's
+  `terraform.tfstate.d`, else the backend's `workspace list`, cached in
+  the registry by identity; a missing one — by `.terraform/environment`
+  too — is refused before anything runs, since `plan` would create it) —
+  then takes its state's turn in `TerraformRunRegistry` (the app's: one
+  run per state identity, a second waiting and saying for whom; the runs
+  of the session; `stateWrites`, a terraform write a pane ran — the
+  ledger's finished command, or a write the pane monitor saw end
+  (`TerraformPaneMonitor.finishedWrites`, `noteWritesEnded`) — which makes
+  every plan of that state made before it stale at once, "applied from
+  `acme-live` at 14:52: plan again"; production's first plan and an
+  agent's first `tf_plan` per root, asked — the agent's again whenever its
+  code runs or reaches something the approved one didn't,
+  `TerraformPlanGate.agentAsks`; a run stopped while it waits leaves the
+  queue at once, `cancelWaiting`). The line is
+  `TerraformCommands.plan` (`-input=false -json -detailed-exitcode
+  -lock=true -lock-timeout=10s|0s|5m -out=<run folder>/plan
+  [-var-file=…]`: var files only inside the root, the out file only in a
+  run folder — `isPlan` checks a line against it, `refusal` refuses any
+  other; init is `init -input=false -json -lockfile=readonly`, the
+  workspace chip's `workspace list` and `workspace select <name>`, never
+  `-or-create`), in `TerraformEnvironment.Purpose.run` (the user's
+  environment, credentials passed through unread, `TF_CLI_ARGS*`,
+  `TF_LOG*`, `TF_REATTACH_PROVIDERS` out, `TF_WORKSPACE` the checked
+  name). `TerraformStreamRun` spawns it into a group of its own through
+  `/bin/sh -c 'umask 077; exec "$0" "$@"'`, reads its `-json` stream line
+  by line on its GCD thread (`TerraformUIMessage`, pure: an unknown `ui`
+  major refused, a non-JSON line raw, a diagnostic by the allow-list)
+  and hands it to the main queue in 120 ms batches; the exit code decides
+  (0, 2, else failed — a file written on exit 1 is dropped; a plan past
+  64 MB is `tooLarge`, said with the stream's `change_summary`). The plan
+  file is written in `TerraformRunFolder` (`$TMPDIR/ot-tf-<uid>-<pid>/<run>`,
+  0700, owner and mode checked, never a link; swept at launch of dead
+  processes' folders only, `sweepable`), then opened, hashed and
+  unlinked: `TerraformPlanFile` holds it by its descriptor for `show
+  -json /dev/fd/3` (and stage 2a's apply), `TerraformPlanZip` (pure: a
+  zip's central directory over `pread`, stored or deflated) reads only
+  the prior state's lineage and serial and the lock file's SHA-256. The
+  JSON is decoded off the main thread through `TerraformPlan`'s
+  allow-list, and **a value Terraform marks sensitive anywhere is masked
+  everywhere it appears** (`sensitiveValues`: a sensitive variable's
+  value copied into an unmarked attribute — `terraform_data`'s `output` —
+  is still that value; `TerraformSensitiveValues`, pure: a leaf equal to
+  one masked whole, numbers and short strings too, a longer one hunted
+  inside strings by a rolling hash per length — one pass whatever their
+  number — and redacted before `scrub`); `TerraformPlanRecord` keeps the masked model, the
+  descriptor, the binary and the run's whole environment, in memory
+  only. The slot: `RightPane.Mode.terraformPlan` (`terraformPlanOpened`),
+  `TerraformPlanPaneModel` (the run shown; the filter and chips; the rows
+  and their chains kept, built again only when the plan, filter, chips or
+  sources change; the selection and the list's keys — ↑↓, ↩, `o`, `a`,
+  `/`, ⌫, ⌘C — through `TerraformPlanKeyView`, which takes the keyboard
+  when a row is pressed; the diff's added lines, `addedLines`, joined to
+  the run's `changedLines` — `TerraformChangedLines`, `git diff -U0 <merge
+  base> -- <root>` read when the plan is asked, committed lines too —; the
+  root's files read once a plan lands) + `TerraformPlanPaneView` — rows
+  that observe nothing, Equatable — the header (root, branch @ commit,
+  age, the profile's and region's names, the counts bar with the CLI's
+  sentence on hover; stale, "creates everything: no state found", partly
+  understood, the risk list, the var files and `TF_VAR_` names), then
+  `TerraformPlanRows` (pure: drift, replace/delete/forget, actions,
+  creates and updates folded ×N, moves, imports, data sources), each
+  risky row's `TerraformCauseChain` (pure: `replace_paths` →
+  `references` → the var file line that sets it last, or its default, or
+  the local's line — "changed in this branch" from the diff), a row's
+  `TerraformAttributeDiff` (pure: ••••••, "known after apply", forcing
+  attributes, unchanged counted, a long string — JSON pretty-printed first
+  — by `LineDiff`); while running its progress and log; on
+  failure the diagnostics, a held lock (`TerraformLockInfo`, pure, from
+  Terraform's own words only — never `.lock.info` —, "no Terraform runs
+  on this Mac" when the holder is this Mac's) with Wait for It (5 min),
+  missing variables with the root's var files offered (read with the
+  run, off the main thread, `offeredVarFiles`; remembered in
+  `TerraformRootStore` per checkout and root). Before a person's plan
+  `TerminalWindowController+TerraformPlan` asks where `TerraformPlanGate`
+  says (pure: production's first plan this session, a branch with a
+  commit not the person's — every author since the merge base, an
+  unknown one counted as not theirs —, `TerraformRunRisks` new against the base branch — command and
+  fetch data sources, provisioners, remote states, actions, providers
+  added to the lock file, module sources —, read by `git show`); never
+  an automatic plan. Init shows `TerraformInitPlan`'s fetch list first
+  (pure: providers not in the lock file, modules not at an exact
+  registry version, branch refs, plain HTTP) and offers the plugin cache
+  once two worktrees of the repository have roots (`TerraformRootStore`
+  keeps the answer; `AppEnvironment.terraformCacheDirectory`, inits one at
+  a time per cache). `TerraformProcessCheck` (pure) is 5.3's table: what
+  starts on which class, the never-built verbs. Copy Summary
+  (`TerraformPlanText.copySummary`) and Ask Why
+  (`TerraformAgentBrief.run`: diagnostics, the lock's holder, the log's
+  last lines) read the masked model only. Agents: `tf_plan` (never
+  production; asked once per root and session; `-lock-timeout=0s`, no
+  flag; returns a run ID — `TerraformMCP.startPlan` reaches the pane's
+  window), `tf_run_status`, `tf_plan_summary` without a path (Overterm's
+  last plan), `tf_plan_resource` and `tf_why`, all through
+  `TerraformPlan.forAgents()` (`Secrets.isSecret`'s names masked too),
+  every risky row with its cause chain (`TerraformCauseChain.texts`); the
+  question names the profile the plan uses. Scenarios `terraformPlan`
+  and `terraformPerf` (Section 10's 2,000 resources: decoded and masked
+  under 0.5 s, rows shown and filtered under 150 ms). Deferred, in the
+  analysis' stage notes: a hunk in the changes pane lighting its plan
+  rows and back, "Open block" through `modules.json`, the rows as a
+  `ResourceTable`.
+- **The apply** (stage 2a, analysis 2.3, 4.7, 4.8, 5.3, 5.4, 6.4, D-1,
+  D-3, D-18, D-21). The only apply is `TerraformCommands.apply` —
+  `apply -input=false -json -lock=true -lock-timeout=60s /dev/fd/3` —
+  of the plan Overterm holds by its descriptor; any other `apply` line is
+  no builder's and refused before spawning. Plans gain modes
+  (`TerraformPlanMode`: destroy, `-target` — "partial", refused at apply on
+  production —, `-replace`; addresses only, `isAddress`: one argument
+  each, no flag, no control or invisible character), from the root's
+  menu (Plan Destroy…, asked) and a row's (Plan Only This, Plan Replacing
+  This). Apply… (`⇧A`) is greyed with why by `TerraformApplyCheck.greyed`
+  (nothing read: `TerraformProcessCheck` — a root `terraform.roots` sets
+  `writable: false` is plan only, whatever its class; every other is
+  writable, production too —, errored, partial on production, partly
+  understood, `dev_overrides`, stale or older than 30 min, another run on
+  the state); the click reads 5.4's facts again off the main thread
+  (`readNow`: the descriptor hashed, the binary and its `version -json`,
+  the workspace checked to exist, the environment built again and compared
+  by name — `changedNames`, never a value —, the data dir, the lock file
+  hashed against the plan zip's — none, or one naming no provider, the
+  same as a zip's that pins none) and `TerraformApplyCheck.check` refuses
+  in 5.4's order or asks. `TerraformApplySheet` (pure) is the
+  `WriteConfirmation`: root, worktree, branch, workspace, backend, class
+  (red on production), the counts, every destroy, replace, forget and
+  action by address (50, escaped), risky updates by name — a heuristic,
+  said —, the plan's code risks, the profile and region, the exact
+  command; the root's name typed (`@<workspace>` past `default`) on every
+  production apply, a destroy, and "creates everything"; a newer minor
+  Terraform than the state's asked on its own (`movesState`, D-18).
+  There is no production switch: the owner decided (1.6.0) that a
+  production root applies like any other, its confirmations kept — the
+  plan gate's questions, this sheet with the name typed, every 5.4
+  check; `writable: false` makes a root plan-only.
+  The apply itself (`TerraformApplyRun`, `TerraformApplyLaunch`) is
+  detached (D-1): a `bash -p` launcher in a session of its own
+  (`ProcessGroup.spawn(newSession:)`, `POSIX_SPAWN_SETSID` — no terminal,
+  no SIGHUP), the plan's binary in the plan's recorded environment
+  (`TerraformApplyLaunch.environment` takes out again whatever injects
+  flags or logs values), fd 3 the plan, stdout and stderr 0600 files in
+  its run folder (never a pipe: no SIGPIPE), its exit code written beside
+  them, `apply.json` (`TerraformApplyMarker`: pid, start time,
+  executable, root — names only) saying who it is, written before the
+  launcher starts terraform (it waits for `go` on fd 4: an app that dies
+  between the spawn and the marker, or a marker that can't be written,
+  leaves no apply nobody could find). `TerraformApplyTail`
+  follows the files on a GCD thread (120 ms batches; `apply_*`,
+  `provision_*`, diagnostics by `address` — `TerraformUIMessage.apply`,
+  `.provision`; never `id_value`), every string through the plan's
+  `TerraformValueMask` first — the values the plan marks sensitive, kept
+  in memory with the record, never described or reflected — since a
+  provisioner's output and an error's detail print values in clear
+  (5.6); rows go waiting → running → done or
+  errored, by address (a dictionary beside them: 6,000 hook lines, no
+  scans), a replace's two steps counted; the end is the exit code and an
+  `apply` `change_summary` (spike 24). It is going while its launcher is,
+  or while anything but a provider plugin is in its group
+  (`TerraformApplyGroup`, pure over `proc_listpids(PROC_PGRP_ONLY)`'s
+  members, counted only when they started no earlier than the launcher, in
+  its session, and none when the leader's pid is another process's): a
+  launcher killed with SIGKILL leaves terraform followed, never killed;
+  plugins are swept by pid once terraform is gone, never `killpg` after
+  the group may be empty. Stop (`.`) is one SIGINT to the
+  group whenever anything of it is there (D-3); a second asks, then
+  another. A failed apply's Ask Why is its own (`TerraformApplyRun.brief`:
+  its diagnostics by address, its log, a lock it couldn't take), a
+  reattached one's too, and Plan Again finds a reattached apply's root
+  on the panel. Applies going that the slot doesn't show are listed above
+  it and on their root's card (`TerraformGoingApplyButton`), each showing
+  its progress and Stop. The class is decided again when Apply is pressed
+  and after the sheet (`TerraformPlanRun.classNow`,
+  `TerraformApplyCheck.risen`: a root become production or remote since
+  its plan is planned again), and every fact of 5.4 is read again after
+  the sheet — the same verdict, or nothing runs. The plan's record and
+  descriptor go once its apply starts; its end marks the state written
+  (every other plan of it stale) and gives back the state's turn
+  (`TerraformRunRegistry.take`: an apply never queues). The slot shows it
+  in the plan's place (`TerraformApplyView`, `TerraformPlanPaneModel.apply`).
+  It outlives the app: the launch sweep keeps a run folder whose apply is
+  alive by its pid, start time and executable (`TerraformApplyMarker.isAlive`)
+  and follows it again (`sweepTerraformRunsAtLaunch` →
+  `reattachTerraformApplies`, "started before Overterm last quit"; every
+  one found listed, the last in the slot; the scenario starts its apply
+  in a dead pid's process folder, `TerraformRunFolder.crashedProcess`,
+  and runs this same path again); quitting while one runs asks "Quit and
+  Let It Finish", never waits. `TerraformCloseGuard` (decision pure) is asked by
+  all four close paths — `closePane`, `closeTabs`, `windowShouldClose`,
+  `applicationShouldTerminate` — whatever the close setting: a terraform
+  apply, destroy, import, `state`, force-unlock or workspace delete in a
+  pane's tree (found by pid) asks Interrupt / Close Anyway / Cancel;
+  Interrupt sends SIGINT to terraform's own group, or terraform alone when
+  it shares an agent's; the pane's header says "shutting down"
+  (`TerraformPaneMonitor.shutting`), and once it has stopped a notice
+  offers Close Now — the close Interrupt held back, a quit sent again —
+  waiting for any sheet already on the window. A plan's "Open block"
+  reaches a module's resources through init's `modules.json`
+  (`TerraformModulesManifest.entries`, folders inside the checkout only). Scenario
+  `terraformApply` (a hostile `TF_CLI_ARGS_apply` through
+  `TerraformCLI.scenarioEnvironment`, never reaching the run).
+- **New Task's worktrees** (stage 2b, analysis 2.1, 2.8, 3.7). Once
+  `git worktree add` made one, `createTask` hands it to
+  `prepareTerraformWorktree` (`TerminalWindowController+TerraformWorktree`),
+  which gives `TerraformWorktreeSetup` (one for the app, in memory) the
+  repository's other worktrees as the window lists them — or, when that
+  list is still another repository's, one `git worktree list` in the new
+  one. It reads the new
+  checkout's roots as the panel does (`TerraformPanelModel.assemble`, the
+  same listing and facts): a local root whose state is in another
+  worktree is warned ("no state here, it is in main's checkout"), a
+  workspace another worktree selects for the root is named and never
+  copied — `.terraform/environment` and `TerraformRootStore`'s choices are
+  per checkout, so the new one starts at `default`. Then, one root at a
+  time, `init -backend=false -input=false -lockfile=readonly`
+  (`TerraformCommands.initializeWithoutBackend`) in validate's
+  environment (`TerraformEnvironment.Purpose.worktreeInit`: no
+  credential, no `TF_WORKSPACE`, a scratch HOME; a CLI config of its own
+  in the user's app — `TerraformGuards.worktreeInitCLIConfig`, registry
+  installs with no `credentials` block, since the installer asks a source
+  before the plugin cache — and a guarded run's mirror-only one; no
+  `SSH_AUTH_SOCK`, `GIT_CONFIG_NOSYSTEM`, no prompt; the plugin cache
+  when the person took it, its turn taken in `TerraformRunRegistry` as
+  the panel's inits take it): providers and modules for validate and the
+  editor, never the backend, the state or the lock file. Only where
+  `TerraformWorktreeRoot.preparation` (pure) allows: every provider the
+  root and the local modules it calls name (`localModules`, bounded,
+  inside the checkout), required or implied by a resource or a
+  `provider` block, in the root's lock file; every module local or a
+  registry module at an exact version — none from git, S3 or HTTP
+  whatever its ref —; never an HCP root; anything else is said, and left
+  to the panel's Init…, which shows its fetch list first (the one
+  automatic init analysis 4.13, 5.3 and 5.9 allow). While it runs in a
+  root, that root's Init and Plan are greyed and refused
+  (`isInitializing`); a second prepare of a worktree waits for the
+  first's init. Reports are keyed by the path with symlinks resolved
+  (`TerraformWorktreeSetup.key`), and a root's is forgotten once the
+  person's own Init or a plan ran there. `terraform.newWorktreeInit`
+  (on) turns the init off; the warnings stay. What it did shows on the
+  root's card. Every card also compares its lock file with the same
+  root's in the other worktrees (`TerraformLockDrift`, pure: "aws 5.80.0
+  here, 6.2.0 in main", "no lock file here"; one line a card, the first
+  and how many more — `summary`), read from the files
+  themselves — committed or not, what each worktree's init uses — and
+  kept by their size and time. Tests: `TerraformWorktreeTests`; the
+  `terraform` scenario's `E2ERunner+TerraformA2b` (New Task's root warned,
+  initialised through the recording wrapper, validate there — its local
+  module installed by that init; a worktree without it needs init).
+- **State and outputs** (stage 2c, analysis 2.4, 5.6 rules 1–3 and 9,
+  5.10). The card's State (and its menu's State and Outputs) shows a
+  root's state in the plan's place in the slot (`TerraformPlanPaneModel
+  .state`, `TerraformStateView`; a plan or an apply shown takes the place
+  back). `TerraformStateRead` (memory only) checks first, as a plan does:
+  the backend unchanged since init, and the workspace it reads exists
+  (`TerraformWorkspaceCheck`; `state pull` creates a missing one, spike
+  13) — then runs two short reads, the only state lines
+  `TerraformCommands` builds: `state list -no-color` (no lock, no
+  provider: the addresses at once, `TerraformStateList`, grouped by
+  module, `TerraformStateRows`) and `show -json -no-color` of the state
+  (the values; `TerraformRun.short`, bounded by `maxPlanBytes`, 300 s),
+  decoded off the main thread through `TerraformState`'s allow-list and
+  dropped once read. A person's read runs in `Purpose.run` (a remote
+  backend's state needs the user's credentials, passed through unread),
+  an agent's in `agentRead`. The decode keeps per object its address,
+  module, mode, type, name, index, provider, `tainted`, `deposed_key`,
+  `depends_on` and its `values` walked against `sensitive_values`, then
+  `TerraformSecretNames`, then — as a plan's — every value marked
+  sensitive anywhere (a sensitive output, an attribute under its mirror)
+  masked wherever it appears (`TerraformState.sensitiveValues` →
+  `TerraformSensitiveValues`: `terraform_data`'s `output` copies its
+  `input` unmarked, and an output can carry that on); every string through
+  `scrub`; an output's name, its type in words (`typeName`), and its value
+  only when not sensitive — an output that doesn't say is taken as
+  sensitive. There is no Show: a sensitive output says "sensitive", and
+  `output -json`/`output NAME` are never run. A non-sensitive output
+  offers what it opens (`TerraformOutputLinks`, pure, over the masked
+  value only): an `http(s)` URL with no userinfo → Open in Browser
+  (`openDockerLink`: the browser column) and Add to API Environment… (the
+  picked environment's `.bru` of the checkout's collection, asked, written
+  through `BruFile` with every other block kept — never over one of its
+  secrets); a database's host (a name saying host or endpoint, and
+  database words in it or the host — `rds`, `postgres`…; or a
+  `postgres://`/`mysql://` URL, its password never carried) → New
+  Database Connection… (`newDatabaseConnection`: the password typed in
+  the form, into the keychain); an EKS ARN or API server, an AKS server, a
+  GKE cluster's ID → Open in Kubernetes (the kubeconfig context with that
+  server's host, else whose name or cluster ends with the cluster's name;
+  none said with the command that adds one, never run). An isolated run
+  records offers (`TerraformStateReads.offerRecorder`). Agents
+  (`TerraformMCP+State`): `tf_state_list`, `tf_state_show` (off on
+  production) and `tf_outputs` answer from the person's read of the same
+  root and workspace in the last 15 minutes, masked again
+  (`TerraformState.forAgents`: `Secrets.isSecret`'s names too, an output
+  so named sensitive), else from the agent's own read — a local
+  backend's only (initialising any other uses what its init record holds,
+  `-backend-config` credentials in clear, spike 4: refused, the person
+  asked to open State — `agentReadRefusal`), in `agentRead`, and `show
+  -json` only where `providersRefusal` lets the root's providers start.
+  A read is kept by its task (`begin`): the card's State, its menu's and
+  Read Again show a read of the same root still going instead of
+  starting another, and one that gives way in the slot, or whose slot is
+  closed, stops (`stop`: `TerraformRun.short` interrupts its group when
+  its task is cancelled; nothing lands after). The view filters groups
+  and objects made once, off the main thread, when the addresses come
+  (`arrange`, `TerraformStateRows.filtered`). The `terraform` scenario's
+  `terraformStateB2c` presses the card's State, checks the view, the
+  accessibility text and the three tools for the sentinel, and the
+  agent's own read's argv and environment through the recorder.
+- **Drift and tests** (stage 2d, analysis 2.6, 2.9, 5.3, 5.10, D-14,
+  D-19). Check Drift (the card's, its menu's) is Overterm's plan with
+  `TerraformPlanMode.refreshOnly` (`-refresh-only`, locked, asked as any
+  plan is; never on a timer): the slot says "Drift · <root>", its
+  `resource_drift` rows and the outputs it changes, and how old the check
+  is (`TerraformDrift.line`, pure) — once the state was written or the
+  root's files changed since, its finding is said as "then", never as
+  now; the card keeps the last one (`TerraformRunRegistry.latest(…,
+  drift: true)`; a check is never the root's last plan). Accept into
+  State is the apply of that plan, the one apply line, with every check
+  of 5.4 (`TerraformPlanMode.verb`: `refreshOnlyApply` — refused on a
+  read-only root, the root's name typed on production, never "creates
+  everything"; `TerraformDrift.nothingToAccept` greys it when nothing
+  drifted) and its own sheet (`TerraformDrift.acceptSheet`: it writes the
+  state only; the next plan proposes to change it back unless the code
+  changes too). Test (the card's) runs `terraform test -json -no-color`
+  (`TerraformCommands.test(file:)`, `-filter=` a test file inside the
+  root; never `-verbose`, `-var`, `-cloud-run` — the only `test` line the
+  refusal lets through). `TerraformTestFiles` (pure) reads the root's
+  test files (beside it and under `tests/`) — `run` blocks and lines,
+  `mock_provider`s (an aliased one mocks no default), `provider` blocks,
+  a run's `module` — and the providers its runs start
+  (`TerraformTestFiles.reach`: the root's and every local module's,
+  followed to `maxDepth` levels and `maxModules` folders; a module from
+  outside the checkout, past the bounds, JSON configuration, a file past
+  256 KB or a test file not read can't be told — real, never mocked):
+  every one mocked or built in, and nothing that runs a command
+  (`riskKinds`: a provisioner, `external`, `http`, an action), is a read
+  (`TerraformVerb.test`, any class, the validate environment — no
+  credential, a scratch HOME); else a write (`testRealProviders`:
+  refused on a read-only root, asked every time — the files, what is
+  real, that quitting cuts its cleanup off — the root's name typed on
+  production, the user's environment). A test file that resolves out of
+  the checkout is refused. `TerraformTestRun.begin` is the one way in
+  (the card's, an agent's): a going run of the root, whatever its file,
+  shown again, one being prepared refusing another (`starting`); `gate`
+  decides. Quitting while a real one runs asks (`TerraformCloseGuard.testQuestion`:
+  Interrupt, Quit Anyway, Cancel). The drift and test lines are drawn on
+  a 30 s clock (`TimelineView`), so their age moves and staleness shows. `TerraformTestRun` (memory only) streams it
+  (`TerraformStreamRun`): `TerraformUIMessage.test` decodes the
+  `test_*` lines and a diagnostic's `@testfile`/`@testrun`
+  (`TerraformTestMessage`, every other `test_*` line — `test_plan`,
+  `test_state` — dropped by type), folded by `TerraformTestReport` into
+  runs listed before they start, their status, and failures at their
+  lines (`TerraformTestView` in the plan's place,
+  `TerraformPlanPaneModel.test`). `TerraformTestResults` keeps each
+  root's last failures by file and tells the editors
+  (`.terraformTestDiagnostics`, `EditorViewController+TerraformTest`: over
+  a saved buffer, beside validate's marks, dropped at the next edit).
+  Agents' `tf_test` (`TerraformMCP+Test`): its `file` resolved inside
+  the checkout; a mocked test at once — the providers (root, modules,
+  the tests' mocks) start for their schemas, so only where
+  `providersRefusal` lets them unless the builtin alone is named —, a real one asked in the
+  window every call and never on production; the answer waits for the
+  run (`testWait`), or says it still runs. Scenario `terraform`'s
+  `terraformDriftAndTestB2d`: a test file's runs listed with one failure
+  at its line (slot, editor, `tf_test`), the checkout byte for byte the
+  same; a drift check finding a changed output, accepted, then none.
+- **Force unlock** (stage 2e, analysis 2.5, 4.10, D-10). A plan refused
+  by a held lock shows its holder (`TerraformLockInfo`, from Terraform's
+  own diagnostic — never a `.lock.info` file) and, beside Wait for It,
+  Force Unlock… (`TerraformForceUnlockButton`), except on the local
+  backend — its lock is the operating system's and went with its
+  process; Terraform refuses to force it — and on HCP's
+  (`TerraformProcessCheck.refused(.forceUnlock, backendType:)`).
+  `TerminalWindowController+TerraformUnlock` takes only that run's
+  parsed ID (`TerraformUnlock.refusalBefore`, pure: a lock, the run the
+  one in this window's pane, not planning again, the backend, Overterm's
+  own run holding the state's turn); refuses while a terraform of this
+  user runs on that state anywhere on the Mac — `TerraformLiveProcesses`
+  lists every pid by name (terraform, tofu, terragrunt, a shell running a
+  script of that name), reads its folder's facts and its `TF_WORKSPACE`
+  or `.terraform/environment` off the main thread, and
+  `TerraformUnlock.holder` matches the same identity, the root's folder,
+  or the same root in another worktree; the panes' identities from
+  `TerraformPaneMonitor` too — before the sheet and again after it; the
+  sheet's "none of yours" note says what can't be seen (another user, a
+  container). It reads the root again (the same workspace, which must
+  exist, and identity; the binary and environment built as the plan's
+  were, credentials included — the backend needs them — but read now,
+  and compared only between the sheet's two reads); then
+  probes: `TerraformCommands.lockProbe`, `state rm -dry-run -lock=true
+  -lock-timeout=0s -no-color terraform_data.overterm_lock_probe`, which
+  takes the lock without refreshing or starting a provider and removes
+  nothing. Never a plan: had the lock gone meanwhile, a plan would run in
+  full. `TerraformUnlock.probe` (pure) reads its text (`state rm` has no
+  `-json`; `TerraformLockInfo.parse(text:)` takes the box off): the same
+  ID goes on; another ID is "changed hands", refused with the new holder;
+  exit 0, or "No state file was found" (state rm locks before it reads —
+  checked against the real terraform), is free, nothing to unlock. The
+  sheet (`TerraformUnlock.sheet`, a `WriteConfirmation`) names the
+  holder, its age, that a still-running apply's state write would collide
+  with the next run, on the http backend (the root's, or the lock's text —
+  `TerraformUnlock.isHTTP`) that its UNLOCK goes with an
+  empty body and so removes whatever lock is there, and the command; the
+  root's name (`@workspace` when not `default`) is typed on every class.
+  After the sheet the place is read and the lock probed again, under the
+  state's turn in `TerraformRunRegistry`, then `force-unlock -force
+  -no-color <id>` (`TerraformCommands.forceUnlock(id:)`, an ID of
+  printable ASCII only). These two, with 2c's `state list`, are the only
+  `state` and `force-unlock` lines `TerraformCommands.refusal` lets through. What it said stays under
+  the lock (`TerraformUnlockModel`, memory only); agents have no tool for
+  it (their briefs say the person decides). Tests: `TerraformUnlockTests`
+  (Terraform 1.17.1's probe text; the refusals before anything runs; a
+  stand-in terraform in a second worktree's checkout of the same http
+  state found and refused), `TerraformRealBackendTests` (opt-in: the
+  probe held, changed hands, free on an empty state, the empty UNLOCK);
+  the `terraformPlan` scenario's
+  `E2ERunner+TerraformA2e` (a lock that changed hands refused at the
+  probe; a run no longer shown and one while the state's turn is held
+  refused with nothing run; a wrong name and Cancel unlock
+  nothing; the name typed probes again, then forces that ID).
+- **A review's Terraform section** (stage 2f, analysis 2.2, 2.9, 5.5):
+  "what will this change do in the cloud", above the review's diff
+  (`TerraformReviewSectionView`, `ReviewModel.terraform`, a
+  `TerraformReviewModel`). Read each time its review loads (opened,
+  Reload) while it is the review on screen — never while hidden (one
+  that loaded hidden is read when it shows, `missed`), never
+  for a review whose checkout has no roots and that changes no Terraform
+  file, nothing with `terraform.enabled` off: one `ls-files` of the
+  checkout with the head, the reviewed Terraform files it lacks added (a
+  root the review adds is listed, "new in this review"), the panel's
+  `assemble`, then `TerraformReview.touched` (pure): a file's nearest
+  root, and every root a changed module reaches through others too
+  (`through modules/acme-net`), production first. Which checkout has the
+  head (`TerraformReview.head`, pure): the review's own for its branch
+  and what isn't committed; else one at the reviewed commit (a range's
+  head resolved, a pull request's `headRefOid` — now in `gh pr view`'s
+  fields with `isCrossRepository`), on the reviewed branch first; else
+  one on the branch at another commit, "pull it, then Reload", Plan and
+  Post greyed. A fork's branch name is never matched (its `main` is not
+  the person's): by commit only;
+  the window's `WorktreeModel` list when it is this repository's, else one
+  `git worktree list`. Each root shows its latest plan there (the
+  registry's `latest`: counts, age, stale), pressed into the right slot.
+  **Plan… always asks** (5.5): code under review, whoever wrote it —
+  `TerraformReviewPlan` hands `preparePlan` what is reviewed
+  (`TerraformPlanGate.question(reviewing:)`: asked on every class, with
+  every risk, the risks of the local modules the root calls too —
+  `TerraformReview.moduleRisks`, "data.external in modules/acme-net";
+  modules not read — past 200, or not in the checkout — said, never the
+  all-clear), the root's facts and modules read again at the press
+  (`TerraformReviewModel.reread`), the checkout's HEAD checked against
+  the reviewed commit,
+  the review's base for the risks and the changed lines, and the head as
+  the plan's branch. With no checkout at the head, Check Out in a New
+  Worktree… (asked, saying what is made; a local branch as itself, a
+  commit, remote branch or tag detached, a pull request by `gh pr
+  checkout --detach` in a new detached worktree — no branch made —, the
+  worktree removed when gh fails; it plans and inits nothing). Post to
+  Pull Request… (a pull request's review, or a branch with an open one):
+  only plans made at the pull request's head — every plan records its
+  checkout's HEAD and whether tracked files differed
+  (`TerraformPlanRun.commit`, `uncommitted`) — whole (no destroy, target,
+  replace), nothing uncommitted (`TerraformReview.postable`: the rest left
+  out, said in the question), each named "branch @ commit": every touched root's latest plan as its
+  masked `TerraformPlanText.copySummary` — never `terraform show`'s text
+  —, each in a fence longer than any run of backticks in it, the line
+  above it with nothing GitHub acts on (`inline`: no mention, no
+  reference), cut to GitHub's size with what was left said — a first plan
+  too long alone cut at a line, said (`TerraformReview.comment`); the
+  whole comment shown in the `WriteConfirmation` (a scenario's question
+  recorder stands in for it, never skips it), then `gh pr comment`. Checks: `terraformC2fChecks`,
+  from the `terraform` scenario.
+- **The guards** (`Terraform/TerraformGuards.swift`, pure but for
+  `prepareScratch`; analysis 4.2, 4.5, 4.13, 5.13 rule 8). Terraform
+  changes real infrastructure, so an isolated run or a unit test
+  (`AppEnvironment.guardsTerraform`) keeps off the user's own: no
+  terraform but `OVERTERM_TERRAFORM`'s (`AppEnvironment.terraformBinary`:
+  `.variable` only for an absolute path to an executable — a name would
+  be resolved by a PATH search or against a checkout —, else `.none`;
+  unguarded always `.search`, the user's, found by `TerraformCLI` in stage
+  1b, so a stray variable never redirects their applies), and every run built on
+  `AppEnvironment.terraformBaseEnvironment()` — the login shell's in the
+  user's app (credential chains reach the providers unchanged), and in a
+  guarded run nothing of the shell's: a HOME and a CLI config of the run's
+  own (`TerraformGuards.Scratch`; the config's `direct { exclude =
+  ["*/*/*"] }` fetches no provider, a `filesystem_mirror` when a test
+  gives one), `CHECKPOINT_DISABLE=1`, proxies at 127.0.0.1:9 with
+  127.0.0.1 and localhost exempt. Everything Terraform keeps has its
+  place in `AppEnvironment`, a guarded run's under its own support
+  directory: `terraformDirectory` (the caches' `Terraform`) with the
+  plugin cache Overterm offers its own runs (`terraformCacheDirectory`)
+  and the scratch HOME validate, agents' reads and terraform-ls get
+  (`terraformScratchDirectory`); `terraformRunsBase`, where the 0700
+  per-process plan folder goes (`$TMPDIR`); `terraformRootsFile`, the
+  root store's names. `terraformUserConfiguresCLI` checks
+  `~/.terraformrc` for existence only — it can hold `credentials` — and a
+  guarded run never looks. `TerraformGuards.credentials(in:)` names the
+  variables that carry or choose a credential (`AWS_*`, `GOOGLE_*`,
+  `CLOUDSDK_*`, `ARM_*`, `AZURE_*`, `TF_TOKEN_*`, `TF_CLOUD_*`,
+  `TF_VAR_*`, the http backend's `TF_HTTP_*`, `VAULT_*`, `CONSUL_HTTP_*`,
+  `TFE_*`, providers' own — `OCI_*`, `ALICLOUD_*`, `CLOUDFLARE_*`… —,
+  `KUBECONFIG`, `TF_REATTACH_PROVIDERS`, `TF_ENCRYPTION`, `PG_CONN_STR`,
+  `PGPASSWORD`, and any name ending `_TOKEN`, `_PASSWORD`, `_API_KEY`… or
+  holding `_SECRET`), never their values: what validate and agents' reads
+  will go without, and what a run refuses to start with — the opt-in
+  suite, and a scenario (`refusedCredentials(scenario:environment:)`,
+  checked first thing in `AppDelegate`, before any pane could inherit one:
+  one failed check naming them, exit 1). The E2E harness drops them from
+  the environment it launches the app with, by the same rule.
+- **The command-line splitter** (`ShellCommandLine.swift`, pure): a line's
+  words as zsh splits them, its commands (split at `|`, `&&`, `;`, `&`,
+  parentheses, newlines outside quotes), and in each the command behind
+  reserved words (`if`, `then`, `do`, `{`, `!`; a `for`/`case` header or
+  a closer has none), its assignments and wrappers (`ShellCommandLine.Wrapper`:
+  the options that take a value, a subcommand — `aws-vault exec`, `op
+  run`, `doppler run`, `mise exec`, `direnv exec` —, its own words before
+  the command — `timeout 600` — and `--`; `sudo`, `doas`, `env`, `watch`,
+  `time`, `nice`, `xargs`, `nohup`…) with what it assigns (`env
+  TF_WORKSPACE=prod terraform -chdir=envs/prod apply`:
+  `assigned("TF_WORKSPACE")`); a string a shell runs is read as a line of
+  its own, behind what came before (`bash -c '…'`, `zsh -lc`, `env -S`,
+  `doppler run --command`, `watch '…'`; four deep at most).
+  `KubeCommandLine`, `TabKind` and `TerraformCommandLine` read through it.
+- **The recording wrapper** (`TerraformRecorder`, analysis 11): a
+  `bin/terraform` script `OVERTERM_TERRAFORM` names, run `bash -p` (no
+  `BASH_ENV`, nothing from startup files), that records each call in a
+  folder of its own under `records/` — its argv (NUL-separated), its
+  folder, its environment's names, and the values of only the variables
+  Overterm sets (`recordedValues`: `TF_WORKSPACE`, `TF_DATA_DIR`, `HOME`…;
+  never a credential's) — then `exec`s the real terraform or a stand-in
+  (`writeStandIn`: canned output and exit code). `calls()` reads them back
+  oldest first. What asserts the argv and environment rules against real
+  runs.
+- **`FakeTerraformBackend`** (SwiftNIO, 127.0.0.1, a port of the
+  system's): Terraform's `http` state backend as its client speaks it —
+  GET (404: no state yet), POST/PUT/DELETE (refused with 409 while a lock
+  is held unless `?ID=` is the lock's), LOCK (423 with the holder's lock
+  info, which Terraform turns into "Error acquiring the state lock …
+  HTTP remote state already locked"), UNLOCK (by the holder's ID, or with
+  an empty body — force-unlock's — whatever lock is there). `holdLock(who:)`
+  plays another machine's run (its `Created` as Terraform writes it:
+  UTC, `Z`, the fraction's trailing zeros dropped — `goTime`, checked
+  against the real lock's shape), `failCredentials` a refused endpoint,
+  `backendBlock(_:)` writes a root's backend with its lock addresses, and
+  every request is recorded (whether it had credentials, never their
+  value). `TerraformRealBackendTests` (`OVERTERM_TF_TESTS=1`) runs the real
+  terraform against it through the wrapper: a plan and its apply lock and
+  write, a held lock named, the lock probe (`state rm -dry-run
+  -lock-timeout=0s`) refused by it and changing nothing, force-unlock's
+  empty UNLOCK, two roots on one state.
 
 ## Simulator
 

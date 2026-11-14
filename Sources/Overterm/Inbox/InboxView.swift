@@ -6,6 +6,8 @@ struct InboxActions {
     /// Type a choice's key and Return into that tab's agent.
     var answer: (Tab.ID, AgentPrompt.Choice) -> Void
     var open: (Tab.ID) -> Void
+    /// Ask Why on a cluster's mark (KubeAttention): the brief to the tab's agent.
+    var askWhy: (Tab.ID) -> Void = { _ in }
     var close: () -> Void
 }
 
@@ -65,11 +67,12 @@ private struct InboxCard: View {
     let actions: InboxActions
 
     private var glyph: (String, Color) {
+        if let ask = entry.terraform { return ("exclamationmark.octagon.fill", ask.isProduction ? TerraformPanelView.production : TabStatusStyle.waiting) }
         switch entry.mark {
-        case .waiting: ("exclamationmark.circle.fill", TabStatusStyle.waiting)
-        case .failed: ("xmark.circle.fill", TabStatusStyle.failed)
-        case .done: ("checkmark.circle.fill", TabStatusStyle.done)
-        case .none: ("circle", theme.text3)
+        case .waiting: return ("exclamationmark.circle.fill", TabStatusStyle.waiting)
+        case .failed: return ("xmark.circle.fill", TabStatusStyle.failed)
+        case .done: return ("checkmark.circle.fill", TabStatusStyle.done)
+        case .none: return ("circle", theme.text3)
         }
     }
 
@@ -89,7 +92,28 @@ private struct InboxCard: View {
                     }
                 }
             }
-            if let prompt = entry.prompt {
+            if let ask = entry.terraform {
+                VStack(alignment: .leading, spacing: 1) {
+                    ForEach(Array(ask.preview.enumerated()), id: \.offset) { _, line in
+                        Text(verbatim: line)
+                            .font(.system(size: ChromeMetrics.text(11.5), design: .monospaced))
+                            .foregroundStyle(ask.isProduction ? Color.white : theme.text2)
+                            .lineLimit(2)
+                            .truncationMode(.middle)
+                            .frame(maxWidth: .infinity, alignment: .leading)
+                    }
+                }
+                .padding(8)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .background(RoundedRectangle(cornerRadius: 6).fill(ask.isProduction ? TerraformPanelView.production : theme.term))
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("inbox.terraform")
+                HStack(spacing: 6) {
+                    Spacer(minLength: 0)
+                    // Never an answer: the person reads it in the tab and answers there.
+                    button("Open tab") { actions.open(entry.id) }
+                }
+            } else if let prompt = entry.prompt {
                 if !prompt.preview.isEmpty {
                     VStack(alignment: .leading, spacing: 1) {
                         ForEach(Array(prompt.preview.enumerated()), id: \.offset) { _, line in
@@ -121,6 +145,7 @@ private struct InboxCard: View {
             } else if entry.note != nil || entry.mark != .waiting {
                 HStack {
                     Spacer(minLength: 0)
+                    if entry.asksWhy { button("Ask Why") { actions.askWhy(entry.id) } }
                     button("Open tab") { actions.open(entry.id) }
                 }
             }

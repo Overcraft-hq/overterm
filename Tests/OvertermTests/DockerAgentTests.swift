@@ -132,7 +132,7 @@ final class DockerAgentTextTests: XCTestCase {
     }
 
     func testLogsAreBoundedAndScrubbed() throws {
-        let lines = (0..<200).map { DockerLogLine.parse("line \($0) " + String(repeating: "x", count: 100), stream: .stdout, timestamps: false) }
+        let lines = (0..<200).map { LogLine.parse("line \($0) " + String(repeating: "x", count: 100), stream: .stdout, timestamps: false) }
         let logs = try XCTUnwrap(DockerAgentText.logs(lines, env: []))
         XCTAssertTrue(logs.text.hasPrefix("Its last \(logs.count) log lines (newest last, secrets taken out):\n… earlier lines left out\n"), String(logs.text.prefix(120)))
         XCTAssertLessThan(logs.count, 200)
@@ -140,7 +140,7 @@ final class DockerAgentTextTests: XCTestCase {
         XCTAssertTrue(logs.text.hasSuffix("line 199 " + String(repeating: "x", count: 100)), "the newest last")
         XCTAssertFalse(logs.text.contains("line 0 "))
 
-        let secret = [DockerLogLine.parse("auth s3cr3t-value against postgres://app:hunter2@db/app", stream: .stderr, timestamps: false)]
+        let secret = [LogLine.parse("auth s3cr3t-value against postgres://app:hunter2@db/app", stream: .stderr, timestamps: false)]
         let scrubbed = try XCTUnwrap(DockerAgentText.logs(secret, env: [(key: "API_TOKEN", value: "s3cr3t-value")]))
         XCTAssertEqual(scrubbed.text, "Its last 1 log line (newest last, secrets taken out):\nauth •••••• against postgres://app:••••••@db/app")
         XCTAssertNil(DockerAgentText.logs([], env: []))
@@ -151,14 +151,14 @@ final class DockerAgentTextTests: XCTestCase {
     func testTheNewestLineIsCutNotDropped() throws {
         let huge = #"{"level":"fatal","msg":"boom","stack":""# + String(repeating: "at Foo.bar(Foo.java:42) ", count: 900) + #""}"#
         XCTAssertGreaterThan(huge.utf8.count, 20_000)
-        let alone = try XCTUnwrap(DockerAgentText.logs([DockerLogLine.parse(huge, stream: .stderr, timestamps: false)], env: []))
+        let alone = try XCTUnwrap(DockerAgentText.logs([LogLine.parse(huge, stream: .stderr, timestamps: false)], env: []))
         XCTAssertEqual(alone.count, 1)
         XCTAssertTrue(alone.text.contains("boom") && alone.text.contains("at Foo.bar(Foo.java:42)"), String(alone.text.prefix(200)))
         XCTAssertTrue(alone.text.hasSuffix(" … (line cut)"), String(alone.text.suffix(80)))
         XCTAssertLessThanOrEqual(alone.text.utf8.count, DockerAgentText.maxLogBytes + 200)
 
         let after = try XCTUnwrap(
-            DockerAgentText.logs(["starting", huge].map { DockerLogLine.parse($0, stream: .stdout, timestamps: false) }, env: []))
+            DockerAgentText.logs(["starting", huge].map { LogLine.parse($0, stream: .stdout, timestamps: false) }, env: []))
         XCTAssertEqual(after.count, 1)
         XCTAssertTrue(after.text.contains("… earlier lines left out\n"), String(after.text.prefix(200)))
         XCTAssertFalse(after.text.contains("starting"))
@@ -272,7 +272,7 @@ final class DockerAgentTextTests: XCTestCase {
         let names = DockerAgentText.names(of: db, image: inspect.Config.Image)
         XCTAssertTrue(names.isSuperset(of: ["shop", "postgres", "shop-postgres-1"]), "\(names)")
         let lines = ["postgres database system is shut down", "token s3cr3t-value"].map {
-            DockerLogLine.parse($0, stream: .stdout, timestamps: false)
+            LogLine.parse($0, stream: .stdout, timestamps: false)
         }
         let logs = try XCTUnwrap(DockerAgentText.logs(lines, env: inspect.env, keeping: names))
         XCTAssertTrue(logs.text.hasSuffix("postgres database system is shut down\ntoken ••••••"), logs.text)
@@ -337,8 +337,8 @@ final class DockerAgentTextTests: XCTestCase {
         let text = "one\ntwo two\nthree three\nfour"
         let from = (text as NSString).range(of: "o two").location
         let to = (text as NSString).range(of: "ree three").location
-        XCTAssertEqual(DockerAgentText.wholeLines(of: text, NSRange(location: from, length: to - from)), "two two\nthree three")
-        XCTAssertEqual(DockerAgentText.wholeLines(of: text, NSRange(location: (text as NSString).length - 2, length: 2)), "four")
+        XCTAssertEqual(LogLinesTextView.wholeLines(of: text, NSRange(location: from, length: to - from)), "two two\nthree three")
+        XCTAssertEqual(LogLinesTextView.wholeLines(of: text, NSRange(location: (text as NSString).length - 2, length: 2)), "four")
     }
 }
 

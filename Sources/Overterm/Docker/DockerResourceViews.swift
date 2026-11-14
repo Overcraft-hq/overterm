@@ -164,7 +164,7 @@ struct DockerImagesView: View {
                         .listRowSeparator(.hidden)
                         .contextMenu {
                             let selected = docker.images.filter { page.imageSelection.contains($0.Id) }
-                            DockerVerbMenu(verbs: page.verbs(for: image, targets: page.imageSelection.contains(image.Id) ? selected : nil))
+                            ResourceVerbMenu(verbs: page.verbs(for: image, targets: page.imageSelection.contains(image.Id) ? selected : nil))
                         }
                     }
                 }
@@ -263,7 +263,7 @@ private struct DockerImageDetail: View {
                         .textSelection(.enabled)
                     DockerEmulationBadge(subject: .image(image.Id), docker: docker)
                 }
-                DockerActionBar(verbs: verbs, theme: theme)
+                ResourceActionBar(verbs: verbs, theme: theme)
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
@@ -320,7 +320,7 @@ private struct DockerImageDetail: View {
         .padding(.bottom, 8)
     }
 
-    private func overview(_ verbs: [DockerVerb]) -> some View {
+    private func overview(_ verbs: [ResourceVerb]) -> some View {
         VStack(alignment: .leading, spacing: 16) {
             if let emulation = docker.emulation(ofImage: image.Id) {
                 DockerEmulationNote(
@@ -446,7 +446,7 @@ struct DockerVolumesView: View {
                     )
                     .tag(volume.Name)
                     .listRowSeparator(.hidden)
-                    .contextMenu { DockerVerbMenu(verbs: page.verbs(for: volume)) }
+                    .contextMenu { ResourceVerbMenu(verbs: page.verbs(for: volume)) }
                 }
             }
             .listStyle(.inset)
@@ -477,7 +477,7 @@ private struct DockerVolumeDetail: View {
         VStack(alignment: .leading, spacing: 0) {
             VStack(alignment: .leading, spacing: 10) {
                 Text(verbatim: volume.shortName).font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
-                DockerActionBar(verbs: page.verbs(for: volume), theme: theme)
+                ResourceActionBar(verbs: page.verbs(for: volume), theme: theme)
             }
             .padding(.horizontal, 16)
             .padding(.top, 16)
@@ -574,7 +574,7 @@ struct DockerNetworksView: View {
                     )
                     .tag(network.Id)
                     .listRowSeparator(.hidden)
-                    .contextMenu { DockerVerbMenu(verbs: page.verbs(for: network)) }
+                    .contextMenu { ResourceVerbMenu(verbs: page.verbs(for: network)) }
                 }
             }
             .listStyle(.inset)
@@ -585,7 +585,7 @@ struct DockerNetworksView: View {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 16) {
                         Text(verbatim: network.Name).font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
-                        DockerActionBar(verbs: page.verbs(for: network), theme: theme)
+                        ResourceActionBar(verbs: page.verbs(for: network), theme: theme)
                         DockerDetailBlock(title: "Network", theme: theme) {
                             DockerDetailRow(key: "Driver", value: network.Driver ?? "", theme: theme)
                             DockerDetailRow(key: "Subnet", value: network.subnet ?? "—", theme: theme)
@@ -662,7 +662,7 @@ struct TestcontainersSessionView: View {
                         Text(verbatim: subtitle).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).lineLimit(2)
                     }
                 }
-                DockerActionBar(verbs: page.verbs(for: session), theme: theme)
+                ResourceActionBar(verbs: page.verbs(for: session), theme: theme)
                 DockerDetailBlock(title: "Run", theme: theme) {
                     DockerDetailRow(key: "Session", value: session.id.isEmpty ? "none — kept for reuse" : session.id, theme: theme)
                     DockerDetailRow(key: "Library", value: library ?? "—", theme: theme)
@@ -798,6 +798,8 @@ struct DockerRunSheet: View {
     @State private var ports = ""
     @State private var env = ""
     @State private var volumes = ""
+    /// Shown when the spec came with one: kept while it is edited, even empty.
+    @State private var showsEntrypoint = false
 
     private var built: DockerRunSpec {
         var spec = spec
@@ -810,12 +812,18 @@ struct DockerRunSheet: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text("Run").font(.system(size: ChromeMetrics.text(17), weight: .semibold))
+            ForEach(Array(spec.notes.enumerated()), id: \.offset) { _, note in
+                Text(verbatim: note).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            .accessibilityIdentifier("docker.run.notes")
             Form {
                 TextField("Image", text: $spec.image, prompt: Text("postgres:16"))
                 TextField("Name", text: $spec.name, prompt: Text("optional"))
                 field("Ports", $ports, "8080:80 — one a line")
                 field("Environment", $env, "KEY=value — one a line; a KEY alone takes its value from the tab's shell")
+                if !spec.asked.isEmpty { askedList }
                 field("Volumes", $volumes, "name:/data or /host/path:/in — one a line")
+                if showsEntrypoint { TextField("Entrypoint", text: $spec.entrypoint, prompt: Text("the image's own")) }
                 TextField("Command", text: $spec.command, prompt: Text("the image's own"))
                 Picker("Restart", selection: $spec.restart) {
                     Text("No").tag("")
@@ -843,7 +851,36 @@ struct DockerRunSheet: View {
             ports = spec.ports.joined(separator: "\n")
             env = spec.env.joined(separator: "\n")
             volumes = spec.volumes.joined(separator: "\n")
+            showsEntrypoint = !spec.entrypoint.isEmpty
         }
+    }
+
+    /// The env asked for in the tab as it runs: named, where it comes
+    /// from, never a value here; one can be left out.
+    private var askedList: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            Text("Asked in the tab when it runs").font(.system(size: ChromeMetrics.text(12)))
+            ForEach(spec.asked) { ask in
+                HStack(spacing: 6) {
+                    Image(systemName: ask.secret ? "key.fill" : "questionmark.circle").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(.secondary)
+                    Text(verbatim: ask.key).font(.system(size: ChromeMetrics.text(12), design: .monospaced))
+                    Text(verbatim: ask.from).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                    Spacer()
+                    // A command's value stays: its Command names it.
+                    if ask.env {
+                        Button {
+                            spec.asked.removeAll { $0.key == ask.key }
+                        } label: {
+                            Image(systemName: "xmark.circle.fill")
+                        }
+                        .buttonStyle(.plain).foregroundStyle(.tertiary).help("Leave \(ask.key) out")
+                    }
+                }
+            }
+            Text("Typed into the tab, hidden for a secret — never kept here, on the command line or in the shell's history.")
+                .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(.tertiary)
+        }
+        .accessibilityIdentifier("docker.run.asked")
     }
 
     private func field(_ title: String, _ text: Binding<String>, _ hint: String) -> some View {
@@ -899,7 +936,7 @@ struct DockerModelsView: View {
                 )
                 .tag(model.id)
                 .listRowSeparator(.hidden)
-                .contextMenu { DockerVerbMenu(verbs: page.verbs(for: model)) }
+                .contextMenu { ResourceVerbMenu(verbs: page.verbs(for: model)) }
             }
             if contents.models.isEmpty { Text("No models pulled yet.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3) }
         }
@@ -976,7 +1013,7 @@ private struct DockerModelDetail: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 16) {
                 Text(verbatim: model.name).font(.system(size: ChromeMetrics.text(15), weight: .semibold)).foregroundStyle(theme.text).textSelection(.enabled)
-                DockerActionBar(verbs: page.verbs(for: model), theme: theme)
+                ResourceActionBar(verbs: page.verbs(for: model), theme: theme)
                 DockerDetailBlock(title: "Model", theme: theme) {
                     DockerDetailRow(key: "Name", value: model.reference, theme: theme)
                     DockerDetailRow(key: "ID", value: model.shortID, theme: theme)

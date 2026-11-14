@@ -11,9 +11,12 @@ enum AttentionNotifier {
     /// Notifications an isolated run would have posted (it posts none).
     static var suppressed = 0
 
-    static func notify(tab: Tab) {
+    /// `note` and `mark`: a notice that isn't the tab's own mark (a cluster
+    /// failure while an agent's waiting mark holds the tab) — posted beside
+    /// the tab's own notification, not over it.
+    static func notify(tab: Tab, note: String? = nil, mark: TabActivity.Mark? = nil) {
         // Settings ▸ Notifications: on at all, and for this kind of mark.
-        guard !NSApp.isActive, Settings.shared.notifies(tab.activity.mark) else { return }
+        guard !NSApp.isActive, Settings.shared.notifies(mark ?? tab.activity.mark) else { return }
         if AppEnvironment.isIsolated {
             suppressed += 1
             return
@@ -23,10 +26,11 @@ enum AttentionNotifier {
         let center = UNUserNotificationCenter.current()
         let content = UNMutableNotificationContent()
         content.title = tab.title
-        content.body = tab.activity.note ?? (tab.agent.map { "\($0.name) is waiting for you" } ?? "Needs your attention")
+        content.body = note ?? tab.activity.note ?? (tab.agent.map { "\($0.name) is waiting for you" } ?? "Needs your attention")
         content.userInfo = [tabIDKey: tab.id.uuidString]
         content.sound = .default
-        let request = UNNotificationRequest(identifier: tab.id.uuidString, content: content, trigger: nil)
+        let identifier = note == nil ? tab.id.uuidString : sideIdentifier(tab)
+        let request = UNNotificationRequest(identifier: identifier, content: content, trigger: nil)
         // Asks for permission the first time; if refused, the badge and the
         // Dock bounce still say it.
         center.requestAuthorization(options: [.alert, .sound, .badge], completionHandler: authorized(then: request))
@@ -63,8 +67,17 @@ enum AttentionNotifier {
         UNUserNotificationCenter.current().requestAuthorization(options: [.alert, .sound], completionHandler: authorized(then: request))
     }
 
+    /// A notice beside the tab's own (`notify(tab:note:mark:)`).
+    private static func sideIdentifier(_ tab: Tab) -> String { tab.id.uuidString + "-cluster" }
+
     static func withdraw(tab: Tab) {
-        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [tab.id.uuidString])
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [tab.id.uuidString, sideIdentifier(tab)])
+    }
+
+    /// Only the notice beside the tab's own: what it said has gone, the tab's mark hasn't.
+    static func withdrawSide(tab: Tab) {
+        guard !AppEnvironment.isIsolated else { return }
+        UNUserNotificationCenter.current().removeDeliveredNotifications(withIdentifiers: [sideIdentifier(tab)])
     }
 
     static func updateBadge(count: Int) {

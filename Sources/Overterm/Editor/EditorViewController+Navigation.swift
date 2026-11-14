@@ -192,6 +192,11 @@ extension EditorViewController {
     }
 
     private func loadTags(_ buffer: EditorBuffer, _ done: @escaping ([EditorSymbol]) -> Void) {
+        if buffer.terraform != nil {
+            let symbols = terraformSymbols(buffer)
+            if buffer === active { currentSymbols = symbols }
+            return done(symbols)
+        }
         guard let syntax = buffer.syntax else { return done([]) }
         // Called back on the main queue (SyntaxDocument.symbols).
         nonisolated(unsafe) let done = done
@@ -244,6 +249,8 @@ extension EditorViewController {
     // MARK: Definitions and references
 
     func goToDefinition(at index: Int) {
+        // Terraform without terraform-ls: the module's own index.
+        if let buffer = active, buffer.terraform != nil, server(for: buffer) == nil { return terraformDefinition(at: index) }
         guard let buffer = active, let server = server(for: buffer), let url = buffer.url else { return NSSound.beep() }
         flushServerChange(buffer)
         let position = lspPosition(of: index)
@@ -328,8 +335,11 @@ extension EditorViewController {
 
     // MARK: Hover
 
-    func showHover(at index: Int, fromKeyboard: Bool) {
-        guard let buffer = active, view.window?.isKeyWindow == true else { return }
+    /// `inKeyWindowOnly` false: an end-to-end run's, whose window is never
+    /// made key while another app is in front (macOS 14's cooperative
+    /// activation) — the hover itself is what it checks.
+    func showHover(at index: Int, fromKeyboard: Bool, inKeyWindowOnly: Bool = true) {
+        guard let buffer = active, view.window?.isKeyWindow == true || !inKeyWindowOnly else { return }
         let problems = buffer.diagnostics.filter {
             NSLocationInRange(index, $0.range) || ($0.range.length == 0 && $0.range.location == index)
         }
@@ -344,6 +354,29 @@ extension EditorViewController {
             popover.show(relativeTo: rect, of: self.textView, preferredEdge: .maxY)
             self.hover = popover
         }
+        // A Kubernetes manifest's field: the cluster's own docs first (3.15).
+        if let manifest = buffer.kubeManifest, Settings.shared.kubernetesEnabled {
+            let version = buffer.version
+            let text = buffer.storage.string
+            Task { [weak self] in
+                // The mouse resting there asks nothing that signs in or closes a proxy.
+                let found = await manifest.fieldHover(at: index, in: text, unasked: !fromKeyboard)
+                guard let self, buffer.version == version, buffer === self.active else { return }
+                self.refreshKubeFieldMarks(buffer)
+                guard let found else {
+                    return self.serverHover(buffer, at: index, anchor: anchor, problems: problems, fromKeyboard: fromKeyboard, present: present)
+                }
+                guard fromKeyboard || self.mouseIsStill(over: anchor, index) else { return }
+                present(found.text)
+            }
+            return
+        }
+        serverHover(buffer, at: index, anchor: anchor, problems: problems, fromKeyboard: fromKeyboard, present: present)
+    }
+
+    private func serverHover(
+        _ buffer: EditorBuffer, at index: Int, anchor: NSRange, problems: [EditorDiagnostic], fromKeyboard: Bool, present: @escaping (String) -> Void
+    ) {
         guard let server = server(for: buffer), let url = buffer.url, server.capabilities?.hover != false else {
             if !problems.isEmpty { present("") }
             return
@@ -354,12 +387,17 @@ extension EditorViewController {
             let answer = try? await server.hover(url, at: position)
             guard let self, buffer.version == version, buffer === self.active else { return }
             // The mouse moved on while the server thought: don't show a stale one.
-            if !fromKeyboard, let window = self.view.window {
-                let mouse = self.textView.convert(window.mouseLocationOutsideOfEventStream, from: nil)
-                guard let now = self.textView.characterIndex(at: mouse), NSLocationInRange(now, anchor) || now == index else { return }
-            }
+            guard fromKeyboard || self.mouseIsStill(over: anchor, index) else { return }
             present(answer?.contents.trimmingCharacters(in: .whitespacesAndNewlines) ?? "")
         }
+    }
+
+    /// Whether the mouse is still over what a hover was asked for.
+    private func mouseIsStill(over anchor: NSRange, _ index: Int) -> Bool {
+        guard let window = view.window else { return true }
+        let mouse = textView.convert(window.mouseLocationOutsideOfEventStream, from: nil)
+        guard let now = textView.characterIndex(at: mouse) else { return false }
+        return NSLocationInRange(now, anchor) || now == index
     }
 
     // MARK: Formatting
@@ -403,7 +441,7 @@ extension EditorViewController {
 
     /// What the last commit has for the file, then the gutter's marks.
     func refreshGitBase(_ buffer: EditorBuffer) {
-        guard Settings.shared.editorGitGutter, let url = buffer.url else {
+        guard Settings.shared.editorGitGutter, let url = buffer.url, !buffer.document.isVirtual else {
             buffer.gitBase = nil
             buffer.gitMarks = []
             if buffer === active { gutter.gitMarks = [] }

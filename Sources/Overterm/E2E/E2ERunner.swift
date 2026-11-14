@@ -1,5 +1,6 @@
 import AppKit
 import Carbon.HIToolbox
+import CryptoKit
 import GhosttyKit
 import UniformTypeIdentifiers
 
@@ -90,11 +91,37 @@ final class E2ERunner {
         "overgitWork": { await $0.overgitWorkScenario() },
         "simulator": { await $0.simulatorScenario() },
         "docker": { await $0.dockerScenario() },
+        "kubernetes": { await $0.kubernetesScenario() },
+        "kubernetesCharts": { await $0.kubernetesChartsScenario() },
+        "kubernetesPerf": { await $0.kubernetesPerfScenario() },
+        "kubernetesOverview": { await $0.kubernetesOverviewScenario() },
+        "kubernetesScale": { await $0.kubernetesScaleScenario() },
+        "kubernetesGitOpsMarks": { await $0.kubernetesGitOpsMarksScenario() },
+        "terraform": { await $0.terraformScenario() },
+        "terraformRoots": { await $0.terraformRootsScenario() },
+        "terraformAgents": { await $0.terraformAgentsScenario() },
+        "terraformPlan": { await $0.terraformPlanScenario() },
+        "terraformPerf": { await $0.terraformPerfScenario() },
+        "terraformApply": { await $0.terraformApplyScenario() },
         "throughput": { await $0.throughputScenario() },
     ]
 
     let app: TerminalWindowController
     private var failures = 0
+    /// What the last read of the window that found nothing saw — the
+    /// window's size and how many lines it read, never the text (a
+    /// scenario reveals a Secret's value) unless OVERTERM_E2E_READ=1 —
+    /// said beside the next check that fails without saying why.
+    var unread: String?
+    /// Whether a failure after that read may save a picture of the window
+    /// (`pictureOfFailure`): not when the read was made while a Secret's
+    /// value may show.
+    var unreadPicture = false
+    /// While a part may draw a Secret's value: a read that found nothing
+    /// says none of what it read, and no picture of the window is saved.
+    var withholdPictures = false
+    /// How many pictures of the window this run has saved.
+    var picturesSaved = 0
     /// Scratch space for this run; removed at the end.
     let scratch = FileManager.default.temporaryDirectory
         .appendingPathComponent("overterm-e2e-\(UUID().uuidString)", isDirectory: true)
@@ -110,15 +137,49 @@ final class E2ERunner {
             // Photographing (README's pictures): every scenario in one
             // fixed frame, so the pictures match whichever scenario took them.
             if ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"]?.isEmpty == false { await runner.photoFrame() }
+            // OVERTERM_E2E_BACKGROUND=1: the app behind another, as when a
+            // person uses the Mac during a run — what a scenario must not depend on.
+            if ProcessInfo.processInfo.environment["OVERTERM_E2E_BACKGROUND"] == "1" {
+                await runner.pause(1)
+                await runner.stepBack()
+                // And kept there: activated later (a launch's own), stepped back again.
+                NotificationCenter.default.addObserver(forName: NSApplication.didBecomeActiveNotification, object: nil, queue: .main) { _ in
+                    MainActor.assumeIsolated { NSApp.deactivate() }
+                }
+            }
             if let scenario = scenarios[name] {
                 await scenario(runner)
             } else {
                 runner.check("scenario exists", false, "unknown scenario \(name)")
             }
+            await runner.endRun()
             try? FileManager.default.removeItem(at: runner.scratch)
             print("E2E DONE \(runner.failures)")
             fflush(stdout)
             exit(Int32(min(runner.failures, 100)))
+        }
+    }
+
+    /// What quitting ends, ended — a scenario exits rather than quits, and
+    /// `applicationWillTerminate` would never run: each context's kubectl
+    /// proxy, a port-forward, an ssh forward outlived every scenario,
+    /// reparented to launchd. Then checked gone, by the pids it started;
+    /// and the run's support folder removed, unless the test handed one in.
+    func endRun() async {
+        let started = ManagedProcess.liveProcesses
+        let asking = KubeProcessRun.livePIDs
+        (NSApp.delegate as? AppDelegate)?.endRun()
+        if !started.isEmpty || !asking.isEmpty {
+            let gone = await eventually(10) {
+                started.allSatisfy { !$0.isRunning } && ManagedProcess.livePIDs.isEmpty && KubeProcessRun.livePIDs.isEmpty
+                    && asking.allSatisfy { kill($0, 0) != 0 }
+            }
+            check(
+                "at the end, every child it started is gone", gone,
+                "running: \(started.filter(\.isRunning).map(\.pid) + ManagedProcess.livePIDs + KubeProcessRun.livePIDs)")
+        }
+        if AppEnvironment.ownsSupportDirectory {
+            try? FileManager.default.removeItem(at: AppEnvironment.supportDirectory)
         }
     }
 
@@ -132,7 +193,14 @@ final class E2ERunner {
 
     func check(_ name: String, _ ok: Bool, _ detail: @autoclosure () -> String = "") {
         if !ok { failures += 1 }
-        let suffix = ok ? "" : " — \(detail())"
+        var said = ok ? "" : detail()
+        if !ok, var unread {
+            if unreadPicture, let path = pictureOfFailure() { unread += " — \(path)" }
+            said += said.isEmpty ? unread : " (\(unread))"
+        }
+        unread = nil
+        unreadPicture = false
+        let suffix = ok ? "" : " — \(said)"
         print("E2E \(ok ? "PASS" : "FAIL") \(name)\(suffix)")
         fflush(stdout)
     }
@@ -219,7 +287,7 @@ final class E2ERunner {
     /// Types `command`, waits for `file` to say `content` — or, with no
     /// content asked for, for the file to be there at all (what a command
     /// that writes its own measurement into it leaves).
-    private func runAndExpect(_ command: String, file: URL, content: String?, _ name: String) async {
+    func runAndExpect(_ command: String, file: URL, content: String?, _ name: String) async {
         let ok = await run(command) {
             guard let written = (try? String(contentsOf: file, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines)
             else { return false }
@@ -257,11 +325,13 @@ final class E2ERunner {
         return true
     }
 
-    private func sheetTexts() -> [String] {
+    func sheetTexts() -> [String] {
         guard let root = window.attachedSheet?.contentView else { return [] }
         var texts: [String] = []
         func walk(_ v: NSView) {
             if let field = v as? NSTextField { texts.append(field.stringValue) }
+            // A long detail is a scrolling text view below the message (WriteConfirmation).
+            if let text = v as? NSTextView { texts.append(text.string) }
             v.subviews.forEach(walk)
         }
         walk(root)
@@ -536,6 +606,29 @@ final class E2ERunner {
         editor.reloadIfChangedOnDisk()
         check("an outside change reloads it", textView?.string == "rewritten by an agent\n")
 
+        // Two editors on one buffer (the Kubernetes detail's YAML tab and
+        // this pane share a cluster object's): an edit in one is the
+        // other's, and a tab switched in one leaves the other on its text.
+        app.openInEditor(file)
+        check("the file is the pane's again", await eventually(2) { editor.document.url == file })
+        if let shared = editor.active, let theme = app.theme {
+            let second = EditorViewController(
+                theme: theme, background: GhosttyRuntime.shared.backgroundColor, foreground: GhosttyRuntime.shared.foregroundColor, opener: app.opener,
+                embedded: true)
+            second.showOnly(shared)
+            editor.replaceText(of: shared, with: "rewritten by an agent\n// both\n")
+            check("an edit in one editor is the other's", second.textView.string == "rewritten by an agent\n// both\n", second.textView.string)
+            let other = out("other.swift")
+            try? "let other = 2\n".write(to: other, atomically: true, encoding: .utf8)
+            app.openInEditor(other)
+            check("the pane shows the other file", await eventually(2) { editor.document.url == other })
+            check("the second editor stays on its text", second.textView.string == "rewritten by an agent\n// both\n", second.textView.string)
+            second.showOnly(nil)
+            if let index = editor.buffers.firstIndex(where: { $0.url == other }) { editor.removeBuffer(at: index) }
+            if let index = editor.buffers.firstIndex(where: { $0 === shared }) { editor.activate(index) }
+            editor.saveDocument(nil)
+        }
+
         let bin = out("blob.bin")
         try? Data([0, 1, 2, 3]).write(to: bin)
         app.openInEditor(bin)
@@ -756,7 +849,7 @@ final class E2ERunner {
                     var request = URLRequest(url: endpoint)
                     request.httpMethod = "POST"
                     request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-                    request.setValue("Bearer \(BrowserBridge.shared.token)", forHTTPHeaderField: "Authorization")
+                    request.setValue("Bearer \(BrowserBridge.shared.token(forPane: tab.terminal.processTag))", forHTTPHeaderField: "Authorization")
                     request.httpBody = try? JSONSerialization.data(
                         withJSONObject: ["jsonrpc": "2.0", "id": 3, "method": "tools/call", "params": ["name": name, "arguments": arguments]])
                     guard let (data, _) = try? await URLSession.shared.data(for: request),
@@ -891,6 +984,12 @@ final class E2ERunner {
         let configText = (try? String(contentsOf: config, encoding: .utf8)) ?? ""
         check("the pane gets its MCP config", configText.contains("127.0.0.1:\(port)/mcp/\(tag)") && configText.contains("Bearer"), configText)
         check("Claude is started with it", Settings.shared.arguments(for: .claude).contains("--mcp-config \"$OVERTERM_MCP_CONFIG\""))
+        // The token is in the pane's environment (checked at the end),
+        // never in its file (analysis D-15).
+        let token = BrowserBridge.shared.token(forPane: tag)
+        check(
+            "the config names the token, and holds none",
+            configText.contains("Bearer ${\(BrowserBridge.tokenVariable)}") && !configText.contains(token), configText)
 
         app.toggleBrowser(nil)
         check("⇧⌘B shows the browser", await eventually(2) { self.app.browserItem?.isCollapsed == false })
@@ -926,7 +1025,7 @@ final class E2ERunner {
 
         // MCP, over HTTP with the token, as an agent in that pane would.
         let endpoint = URL(string: "http://127.0.0.1:\(port)/mcp/\(tag)")!
-        func post(_ body: [String: Any], token: String = BrowserBridge.shared.token) async -> (Int, [String: Any]?) {
+        func post(_ body: [String: Any], token: String = BrowserBridge.shared.token(forPane: tag), at endpoint: URL = endpoint) async -> (Int, [String: Any]?) {
             var request = URLRequest(url: endpoint)
             request.httpMethod = "POST"
             request.setValue("application/json", forHTTPHeaderField: "Content-Type")
@@ -946,6 +1045,42 @@ final class E2ERunner {
         check("MCP initialize answers", status == 200 && ((initialized?["result"] as? [String: Any])?["serverInfo"] as? [String: Any])?["name"] as? String == "overterm-browser", "\(status)")
         let (rejected, _) = await post(["jsonrpc": "2.0", "id": 2, "method": "tools/list"], token: "wrong")
         check("a wrong token is turned away", rejected == 401, "\(rejected)")
+        // What an agent in another worktree finds listing the folder: no
+        // header in any file opens any pane's tools.
+        let folder = AppEnvironment.supportDirectory.appendingPathComponent("mcp", isDirectory: true)
+        let files = (try? FileManager.default.contentsOfDirectory(at: folder, includingPropertiesForKeys: nil)) ?? []
+        let headers = files.compactMap { file -> String? in
+            guard let data = try? Data(contentsOf: file), let json = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                let servers = json["mcpServers"] as? [String: Any], let server = servers["overterm-browser"] as? [String: Any]
+            else { return nil }
+            return (server["headers"] as? [String: String])?["Authorization"]
+        }
+        let panes = app.store.tabs.flatMap(\.terminals).map(\.processTag)
+        let opening = headers.filter { header in
+            panes.contains {
+                BridgeServer.route(HTTPRequest(method: "POST", path: "/mcp/\($0)", headers: ["authorization": header], body: Data()), tokens: BrowserBridge.shared.tokens) != .refused(status: 401)
+            }
+        }
+        check("no config file in the folder opens any pane's tools", !headers.isEmpty && opening.isEmpty, "\(headers.count) headers, \(opening.count) open")
+        // Another pane's token opens only that pane's tools (analysis D-15):
+        // every config file is readable by the same user.
+        if let other = app.store.tabs.first(where: { $0 !== tab })?.terminal.processTag,
+            let otherEndpoint = URL(string: "http://127.0.0.1:\(port)/mcp/\(other)")
+        {
+            let list: [String: Any] = ["jsonrpc": "2.0", "id": 3, "method": "tools/list"]
+            let (crossed, _) = await post(list, token: BrowserBridge.shared.token(forPane: other))
+            check("pane B's token on A's path is a 401", crossed == 401, "\(crossed)")
+            let (crossedBack, _) = await post(list, at: otherEndpoint)
+            check("pane A's token on B's path is a 401", crossedBack == 401, "\(crossedBack)")
+            let (own, _) = await post(list, token: BrowserBridge.shared.token(forPane: other), at: otherEndpoint)
+            check("B's own token on B's path answers", own == 200, "\(own)")
+            // B's file, as A would read it, sent to B's path: what it says is a name, not a key.
+            let otherFile = (try? String(contentsOf: folder.appendingPathComponent("\(other).json"), encoding: .utf8)) ?? ""
+            let (fromFile, _) = await post(list, token: "${\(BrowserBridge.tokenVariable)}", at: otherEndpoint)
+            check("B's file read by A opens nothing", !otherFile.contains(BrowserBridge.shared.token(forPane: other)) && fromFile == 401, "\(fromFile)")
+        } else {
+            check("a second tab to cross tokens with", false)
+        }
         let snapshot = text(await tool("browser_snapshot"))
         check("browser_snapshot reads the page and its controls", snapshot.contains("Hello") && snapshot.contains("“Click me”"), snapshot)
         let ref =
@@ -1034,6 +1169,20 @@ final class E2ERunner {
             "…its MCP config only for the API client's tools",
             Settings.shared.arguments(for: .claude).contains("--mcp-config") == Settings.shared.apiAgentControl)
         Settings.shared.set("browser.enabled", nil)
+
+        // The token is in the pane's own environment (analysis D-15): the
+        // shell hashes it, so it isn't written here either. A tab of its
+        // own, at the end — typed earlier, the browser's address bar came
+        // up empty.
+        check("the bridge is back", await eventually(5) { BrowserBridge.shared.isServing })
+        app.newTab(nil)
+        guard let typing = app.store.selected else { return check("a tab to type in", false) }
+        let own = BrowserBridge.shared.token(forPane: typing.terminal.processTag)
+        let hashed = scratch.appendingPathComponent("mcp-token.sha256")
+        await runAndExpect(
+            "printf %s \"$\(BrowserBridge.tokenVariable)\" | shasum -a 256 | cut -c1-64 > \(DockerCommands.quote(hashed.path))", file: hashed,
+            content: SHA256.hash(data: Data(own.utf8)).map { String(format: "%02x", $0) }.joined(), "the pane's environment has its own token")
+        app.closeTabsWithoutAsking([typing])
     }
 
     /// The file tree's New File…, Rename… and Move to Trash…, each through
@@ -1110,7 +1259,9 @@ final class E2ERunner {
             .appendingPathComponent("../../../Tests/OvertermTests/Fixtures/fake-lsp.py").standardizedFileURL
         let serverLog = scratch.appendingPathComponent("fake-lsp.log")
         LanguageServers.shared.discoveryOverride = { spec in
-            spec.id == "go" ? LanguageServer.Command(executable: URL(fileURLWithPath: "/usr/bin/python3"), arguments: [script.path, serverLog.path]) : nil
+            spec.id == "go"
+                ? LanguageServer.Command(executable: URL(fileURLWithPath: "/usr/bin/python3"), arguments: [script.path, serverLog.path, "watch"])
+                : nil
         }
         defer { LanguageServers.shared.discoveryOverride = nil }
 
@@ -1127,6 +1278,18 @@ final class E2ERunner {
             "the language server's problems show", await eventually(8) { editor.active?.diagnostics.first?.message == "unused" },
             (try? String(contentsOf: serverLog, encoding: .utf8)) ?? "no server log")
         check("…drawn under the text", textView.diagnostics.count == 1)
+        // The files it registered are watched for it: a file an agent writes
+        // beside it is told to it, a README isn't.
+        let server = LanguageServers.shared.existingServer(for: main)
+        check("the server's watched files are watched", await eventually(5) { server?.watchedFileFolders.isEmpty == false })
+        await pause(0.3)
+        try? "package main\n".write(to: repo.appendingPathComponent("helper.go"), atomically: false, encoding: .utf8)
+        try? "notes\n".write(to: repo.appendingPathComponent("NOTES.md"), atomically: false, encoding: .utf8)
+        check(
+            "…and a new .go file is told to it (workspace/didChangeWatchedFiles)",
+            await eventually(5) { ((try? String(contentsOf: serverLog, encoding: .utf8)) ?? "").contains("helper.go 1") },
+            (try? String(contentsOf: serverLog, encoding: .utf8)) ?? "no server log")
+        check("…but not a file it didn't ask for", ((try? String(contentsOf: serverLog, encoding: .utf8)) ?? "").contains("NOTES.md") == false)
         check(
             "…counted in the status bar",
             Self.find(NSButton.self, in: editor.view) { $0.identifier?.rawValue == "editorProblems" }?.accessibilityLabel() == "0 errors, 1 warnings")
@@ -1619,15 +1782,12 @@ final class E2ERunner {
         let x = sidebar.superview!.frame.maxX + splitView.dividerThickness / 2 + 3
         let start = splitView.convert(NSPoint(x: x, y: splitView.bounds.midY), to: nil)
         let end = NSPoint(x: start.x + 80, y: start.y)
-        func mouse(_ type: NSEvent.EventType, _ p: NSPoint) -> NSEvent {
-            NSEvent.mouseEvent(
-                with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
-        }
-        NSApp.postEvent(mouse(.leftMouseDragged, end), atStart: false)
-        NSApp.postEvent(mouse(.leftMouseUp, end), atStart: false)
-        window.sendEvent(mouse(.leftMouseDown, start))
-        check("the sidebar divider drags from 3 pt off the line", abs(sidebar.frame.width - before - 80) < 2, "\(before) → \(sidebar.frame.width)")
+        // In steps, as a hand drags: since macOS 27 a divider's tracking
+        // loop takes the first drag of a press for nothing.
+        await queuedDrag(from: start, to: end)
+        check(
+            "the sidebar divider drags from 3 pt off the line", abs(sidebar.frame.width - before - 80) < 2,
+            "\(before) → \(sidebar.frame.width), the press answered by \(Self.answering(window, at: start))")
         let terminalWidth = app.store.selected?.terminal.frame.width ?? 0
         check("the terminal keeps its minimum", terminalWidth >= 240, "\(terminalWidth)")
 
@@ -1718,6 +1878,11 @@ final class E2ERunner {
         // several places along it, and that view must zoom the window.
         // (The click can't be sent at the window here — the run is never
         // activated, and AppKit holds a mouse-down for an inactive app.)
+        // And it sits on the window's own chrome: no glass the toolbar lays
+        // behind its item (macOS 26's platter hung 8 pt under the bar, a
+        // grey band across the window under the tabs).
+        let backdrops = Self.stripBackdrops(app.tabBarView)
+        check("nothing is drawn behind the strip", backdrops.isEmpty, backdrops.joined(separator: ", "))
         var dragArea: WindowDragView?
         for fraction in [0.35, 0.55, 0.75] {
             let point = NSPoint(x: window.frame.width * fraction, y: lights.midY)
@@ -1733,6 +1898,13 @@ final class E2ERunner {
                 timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil, eventNumber: 0,
                 clickCount: 2, pressure: 1)
         {
+            // On a laptop's own screen the run's window can already fill
+            // it, and zooming a zoomed window whose standard frame is the
+            // same changes nothing: start from a frame smaller than the
+            // screen, so the double-click has something to zoom to.
+            if window.isZoomed, let visible = window.screen?.visibleFrame {
+                window.setFrame(visible.insetBy(dx: visible.width * 0.1, dy: visible.height * 0.1), display: true)
+            }
             let zoomed = window.isZoomed
             dragged.mouseDown(with: doubleClick)
             check("and a double-click on it zooms the window", await eventually(3) { self.window.isZoomed != zoomed }, "still \(zoomed)")
@@ -1740,6 +1912,23 @@ final class E2ERunner {
         } else {
             check("the strip's empty space is the drag area at all", false)
         }
+    }
+
+    /// What lies behind the strip between it and the toolbar's own view:
+    /// glass, a platter or a material — what AppKit draws behind a bordered
+    /// item. Empty when the strip sits on the chrome.
+    static func stripBackdrops(_ strip: NSView?) -> [String] {
+        var found: [String] = []
+        var view = strip?.superview
+        while let current = view {
+            let name = String(describing: Swift.type(of: current))
+            if name.hasPrefix("NSToolbarView") || name.hasPrefix("NSTitlebarView") { break }
+            if current is NSVisualEffectView || (name.contains("Glass") && name != "NSGlassContainerView") || name.contains("Platter") {
+                found.append(name)
+            }
+            view = current.superview
+        }
+        return found
     }
 
     /// Dropping a tab onto a pane: the only way to make a split out of
@@ -2034,9 +2223,12 @@ final class E2ERunner {
         pressReturn()
         let ran = await eventually(10) { blocks.ledger.blocks.contains { !$0.isRunning && $0.command.contains("echo line") } }
         check("a command becomes a block", ran, blocks.ledger.blocks.map(\.command).joined(separator: " | "))
+        // Not asked of `isPrompt` itself: the pane's folder is deep in
+        // $TMPDIR, so Ghostty titles its prompt `…/` and the last three —
+        // which `isPrompt` once missed, and asking it agreed with itself.
         check(
             "and the directory the prompt shows does not",
-            !blocks.ledger.blocks.contains { CommandLedger.isPrompt($0.command, cwd: pane.workingDirectory) },
+            blocks.ledger.blocks.allSatisfy { $0.command.contains("echo line") },
             blocks.ledger.blocks.map(\.command).joined(separator: " | "))
         guard let ok = blocks.ledger.blocks.last(where: { $0.command.contains("echo line") }) else { return }
         check("that did not fail", !ok.failed, "exit \(ok.exit ?? -1)")
@@ -2066,6 +2258,10 @@ final class E2ERunner {
             return check("output that scrolls gets rows", false)
         }
         check("output that scrolls gets rows", scrolled, "\(big.rows) rows (\(big.startRow)…\(big.endRow))")
+        check(
+            "and the prompt after it takes none of them",
+            blocks.ledger.blocks.allSatisfy { $0.command.contains("echo line") || $0.command.contains("seq 1 120") },
+            blocks.ledger.blocks.map(\.command).joined(separator: " | "))
         check("the map can place it", blocks.ledger.position(of: big) != nil)
         app.copyOutput(of: pane)
         let fromRows = NSPasteboard.general.string(forType: .string) ?? ""
@@ -2555,9 +2751,11 @@ final class E2ERunner {
     /// edge. This stages the same scene every time and photographs it:
     ///
     ///     OVERTERM_E2E=showcase OVERTERM_DUMP_PNG=docs/assets/screenshot \
+    ///       OVERTERM_KUBECONFIG=<a scratch file> \
     ///       ./Overterm.app/Contents/MacOS/Overterm
     ///
-    /// writes `-window`, `-tabs`, `-changes`, `-peek` and `-editor` beside that
+    /// writes `-window`, `-tabs`, `-changes`, `-peek`, `-editor`, `-kubernetes`
+    /// (with OVERTERM_KUBECONFIG, the fake's file) and `-terraform` beside that
     /// path. Nothing is typed into the UI to arrange it: the scenario
     /// opens the tabs and panes through the same calls the menus use.
     /// The frame README's pictures are taken in: the same size every time,
@@ -2698,10 +2896,15 @@ final class E2ERunner {
         _ = await eventually(3) { self.app.editor?.document.url == handler }
         await pause(1.0)
         dump("editor")
+
+        // Kubernetes and Terraform, on fakes only (E2ERunner+Showcase).
+        app.editorItem?.isCollapsed = true
+        await showcaseKubernetes()
+        await showcaseTerraform()
     }
 
     /// One of the showcase's pictures, named after what it shows.
-    private func dump(_ name: String) {
+    func dump(_ name: String) {
         guard let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] else { return }
         app.captureWindow(to: "\(png)-\(name).png")
     }
@@ -2733,6 +2936,18 @@ final class E2ERunner {
         }
         NSApp.sendEvent(mouse(.leftMouseUp, end))
         await pause(0.2)
+    }
+
+    /// What answers a press at `point` (window coordinates), as AppKit asks
+    /// the frame view — the view and its chain up, for a failing check.
+    static func answering(_ window: NSWindow, at point: NSPoint) -> String {
+        guard let frame = window.contentView?.superview, var view = frame.hitTest(frame.convert(point, from: nil)) else { return "nothing" }
+        var chain = [String(describing: Swift.type(of: view))]
+        while let parent = view.superview, chain.count < 6 {
+            chain.append(String(describing: Swift.type(of: parent)))
+            view = parent
+        }
+        return chain.joined(separator: " < ")
     }
 
     /// A drag as a hand makes it: the drag and the release are already
@@ -3299,9 +3514,10 @@ final class E2ERunner {
         guard let terminal = app.store.selected?.terminal else { return check("a tab", false) }
         // Every row starts with the path, so a click a few cells in hits it
         // whatever the padding and the row. A script keeps the typed command
-        // short.
+        // short, and prints more rows than any screen's window holds (60
+        // left a tall one's last rows empty).
         let script = scratch.appendingPathComponent("paths.sh")
-        try? "clear\nfor i in $(seq 60); do echo src/main.swift:3; done\necho ok > \(out("printed").path)\n"
+        try? "clear\nfor i in $(seq 200); do echo src/main.swift:3; done\necho ok > \(out("printed").path)\n"
             .write(to: script, atomically: true, encoding: .utf8)
         await runAndExpect("sh \(script.path)", file: out("printed"), content: "ok", "the shell prints a path:line")
         guard let surface = terminal.surface else { return check("a surface", false) }
@@ -3323,8 +3539,24 @@ final class E2ERunner {
         }
         terminal.mouseMoved(with: mouse(.mouseMoved))
         await pause(0.2)
-        window.sendEvent(mouse(.leftMouseDown))
-        window.sendEvent(mouse(.leftMouseUp))
+        if ProcessInfo.processInfo.environment["OVERTERM_E2E_BACKGROUND"] == "1" {
+            // Behind another app on purpose: through the window, a click on
+            // a window that isn't key only asks to activate it. The
+            // window's routing checked as a press asks it, then the click
+            // given to the terminal itself.
+            let hit = window.contentView?.superview?.hitTest(point)
+            check(
+                "the window gives a press there to the terminal", hit.map { $0 === terminal || $0.isDescendant(of: terminal) } == true,
+                hit.map { "\(Swift.type(of: $0))" } ?? "nothing")
+            terminal.mouseDown(with: mouse(.leftMouseDown))
+            terminal.mouseUp(with: mouse(.leftMouseUp))
+        } else {
+            // Through the window, as a person's ⌘-click goes: its hit-testing
+            // and routing are part of what is checked.
+            if !window.isKeyWindow { window.makeKeyAndOrderFront(nil) }
+            window.sendEvent(mouse(.leftMouseDown))
+            window.sendEvent(mouse(.leftMouseUp))
+        }
         check(
             "⌘-click opens the file in the editor, at that line",
             await eventually(3) {
@@ -3513,17 +3745,13 @@ final class E2ERunner {
         // the way down, clear of where the right column's divider meets it.
         let start = host.convert(NSPoint(x: first.frame.maxX + 3, y: host.bounds.height / 4), to: nil)
         let end = NSPoint(x: start.x - 80, y: start.y)
-        func mouse(_ type: NSEvent.EventType, _ p: NSPoint) -> NSEvent {
-            NSEvent.mouseEvent(
-                with: type, location: p, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
-                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
-        }
         let widthBefore = first.frame.width
-        // The divider tracks the drag in its own loop: queue the rest first.
-        NSApp.postEvent(mouse(.leftMouseDragged, end), atStart: false)
-        NSApp.postEvent(mouse(.leftMouseUp, end), atStart: false)
-        window.sendEvent(mouse(.leftMouseDown, start))
-        check("the divider drags", abs(first.frame.width - (widthBefore - 80)) <= 2, "\(widthBefore) → \(first.frame.width)")
+        // The divider tracks the drag in its own loop: queued first, in
+        // steps as a hand drags.
+        await queuedDrag(from: start, to: end)
+        check(
+            "the divider drags", abs(first.frame.width - (widthBefore - 80)) <= 2,
+            "\(widthBefore) → \(first.frame.width), the press answered by \(Self.answering(window, at: start))")
 
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
             await pause(0.8)
@@ -4038,6 +4266,10 @@ final class E2ERunner {
             to: rollouts.appendingPathComponent("rollout-2026-10-15T10-00-00-e2e.jsonl"), atomically: true, encoding: .utf8)
 
         // Nothing is walked while the pane is shut.
+        check(
+            "an isolated run never runs your own claude for its usage",
+            AgentUsageCommand.executableOverride != nil || AgentUsageCommand.executable() == nil,
+            AgentUsageCommand.executable()?.path ?? "")
         app.usage.refresh()
         check("the gauge reads the limits without the pane", await eventually(5) { self.app.usage.chipMeter() != nil })
         // The window you are in, not the weekly one that moves slowly:
@@ -4151,6 +4383,10 @@ final class E2ERunner {
         check("a light theme turns the chrome light", await eventually(3) { self.app.theme?.isDark == false })
         check("and the window with it", app.window?.backgroundColor == app.theme?.winNS)
         check("the title bar too", app.window?.appearance?.name == .aqua, "\(app.window?.appearance?.name as Any)")
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty {
+            await pause(0.6)
+            app.captureWindow(to: (png as NSString).deletingPathExtension + "-light.png")
+        }
         // The editor keeps its own vocabulary for the same colours.
         let file = out("themed.swift")
         try? "let hello = \"hi\"\n".write(to: file, atomically: true, encoding: .utf8)
@@ -4222,7 +4458,34 @@ final class E2ERunner {
         check("its search finds Themes by a setting in it", app.settingsPage.sections == [.themes, .editor], "\(app.settingsPage.sections)")
         app.settingsPage.search = "split"
         check("and Keyboard Shortcuts by a command", app.settingsPage.sections.contains(.shortcuts), "\(app.settingsPage.sections)")
+        app.settingsPage.search = "kubeconfig"
+        check("and Kubernetes by its kubeconfigs", app.settingsPage.sections.contains(.kubernetes), "\(app.settingsPage.sections)")
+        app.settingsPage.search = "kubectl"
+        check("and by which kubectl its proxies run", app.settingsPage.sections.contains(.kubernetes), "\(app.settingsPage.sections)")
         app.settingsPage.search = ""
+        app.settingsPage.show(.kubernetes)
+        await pause(0.3)
+        check("Kubernetes' page shows", app.settingsPage.section == .kubernetes && app.settingsView?.isHidden == false)
+        // This Mac's current context is production: an isolated run sees no
+        // kubeconfig of the user's — not ~/.kube/config, not the setting's.
+        check(
+            "an isolated run reads no kubeconfig of the user's",
+            AppEnvironment.guardsKubeconfig && AppEnvironment.kubeconfigs(extra: ["~/.kube/config"]).isEmpty
+                && KubeContextList.fromEnvironment(extra: ["~/.kube/config"], settings: [:]).contexts.isEmpty)
+        // So no proxy can start: the planner refuses before it asks for a kubectl.
+        let noProxy = await Task.detached {
+            do {
+                _ = try await KubeProxyPlanner().plan(
+                    KubeContext(
+                        name: "fake-dev", cluster: "fake", server: nil, namespace: nil, user: "u", auth: nil, file: nil, contextClass: .remote,
+                        settings: KubeContextSettings()),
+                    configuration: KubeProxies.Configuration(extraKubeconfigs: ["~/.kube/config"]), serverMinor: nil)
+                return false
+            } catch {
+                return (error as? KubeProxyProblem) == .noKubeconfig
+            }
+        }.value
+        check("and starts no kubectl proxy without OVERTERM_KUBECONFIG", noProxy)
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"] {
             app.settingsPage.show(.appearance)
             await pause(0.8)
@@ -4251,6 +4514,7 @@ final class E2ERunner {
         check(
             "a hand edit applies at once (the pane dim)",
             await eventually(4) { abs((self.app.host(of: tab)?.dimColor.alphaComponent ?? 0) - 0.6) < 0.01 })
+        await heldSettingsChecks()
         settings.set("general.newTabDirectory", .string("home"))
         check(
             "the page edits the file in place, comments kept",
@@ -4506,6 +4770,8 @@ final class E2ERunner {
     /// `performance` scenario runs the same three with ten tabs open, which
     /// is the more honest number for this app and the less comparable one.
     private func throughputScenario() async {
+        let fullSpeed = Self.measuredAtFullSpeed()
+        defer { ProcessInfo.processInfo.endActivity(fullSpeed) }
         await settledPrompt()
         await pause(1)
         let stalls = StallMeter()
@@ -4566,6 +4832,8 @@ final class E2ERunner {
     }
 
     private func performanceScenario() async {
+        let fullSpeed = Self.measuredAtFullSpeed()
+        defer { ProcessInfo.processInfo.endActivity(fullSpeed) }
         await settledPrompt()
         for i in 0..<9 {
             app.newTab(nil)
@@ -4583,8 +4851,9 @@ final class E2ERunner {
         let footprint = Self.footprintMB()
         note(
             String(
-                format: "idle, %d tabs / %d panes: CPU %.2f%%, footprint %.0f MB, worst main-thread stall %.0f ms",
-                app.store.tabs.count, app.store.tabs.map(\.terminals.count).reduce(0, +), idleCPU, footprint, idleStall * 1000))
+                format: "idle, %d tabs / %d panes: CPU %.2f%%, footprint %.0f MB, worst main-thread stall %.0f ms, window %@",
+                app.store.tabs.count, app.store.tabs.map(\.terminals.count).reduce(0, +), idleCPU, footprint, idleStall * 1000,
+                app.window?.occlusionState.contains(.visible) == true ? "on screen" : "covered"))
         check("idle with ten tabs costs little CPU (< 3%)", idleCPU < 3, String(format: "%.2f%%", idleCPU))
         check("and never stalls the main thread (< 150 ms)", idleStall < 0.15, String(format: "%.0f ms", idleStall * 1000))
         check("in a sane amount of memory (< 900 MB)", footprint < 900, String(format: "%.0f MB", footprint))
@@ -4776,9 +5045,24 @@ final class E2ERunner {
         stalls.stop()
     }
 
+    /// The app kept out of App Nap while a scenario measures what it costs.
+    /// An isolated run never takes the focus, so its window opens behind
+    /// whatever the person has in front; once covered, macOS naps the app —
+    /// every thread, the main one too, moved to the efficiency cores and
+    /// slowed — and the same work then costs three to five times the CPU
+    /// seconds. Whether it was covered was the person's desktop, not the
+    /// app: a window at the screen's size peeked out from behind theirs and
+    /// measured 2.4% busy, at 1400×880 it was hidden and measured 6%, and
+    /// the main thread slowed enough that FSEvents dropped events. What
+    /// these checks compare against is the app's own work, so it is
+    /// measured awake.
+    static func measuredAtFullSpeed() -> NSObjectProtocol {
+        ProcessInfo.processInfo.beginActivity(options: [.userInitiated], reason: "Overterm's performance scenario measures CPU time")
+    }
+
     /// This process's user + system CPU time, in seconds.
     /// `children`: plus the processes it ran that have ended (git).
-    private static func cpuSeconds(children: Bool = false) -> Double {
+    static func cpuSeconds(children: Bool = false) -> Double {
         func seconds(_ t: timeval) -> Double { Double(t.tv_sec) + Double(t.tv_usec) / 1_000_000 }
         var total = 0.0
         for who in children ? [RUSAGE_SELF, RUSAGE_CHILDREN] : [RUSAGE_SELF] {
@@ -4790,7 +5074,7 @@ final class E2ERunner {
     }
 
     /// Memory as Activity Monitor's "Memory" column counts it.
-    private static func footprintMB() -> Double {
+    static func footprintMB() -> Double {
         var info = task_vm_info_data_t()
         var count = mach_msg_type_number_t(MemoryLayout<task_vm_info_data_t>.size / MemoryLayout<integer_t>.size)
         let result = withUnsafeMutablePointer(to: &info) {

@@ -407,7 +407,7 @@ struct DockerPageView: View {
                         guard !names.isEmpty else { return }
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(names.joined(separator: "\n"), forType: .string)
-                    })
+                    }, accessibilityIdentifier: "docker.list")
             }
         }
     }
@@ -443,7 +443,7 @@ struct DockerPageView: View {
 
     /// The right-click menu's verbs for the rows clicked: the selection
     /// when the click was on it, else the one row.
-    private func listVerbs(_ ids: Set<String>, in groups: [DockerListGroup]) -> [DockerVerb] {
+    private func listVerbs(_ ids: Set<String>, in groups: [DockerListGroup]) -> [ResourceVerb] {
         let containers = groups.flatMap(\.containers).filter { ids.contains($0.Id) }
         if let first = containers.first { return page.verbs(for: first, targets: containers.count > 1 ? containers : nil) }
         guard let id = ids.first, let group = groups.first(where: { $0.id == id || $0.services.contains { DockerPageModel.serviceTag($0) == id } })
@@ -485,22 +485,6 @@ struct DockerPageView: View {
     }
 
     private var cheatSheet: some View {
-        VStack(alignment: .leading, spacing: 6) {
-            Text("Keys in the list").font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text).padding(.bottom, 4)
-            ForEach(DockerKey.allCases, id: \.self) { key in
-                HStack(spacing: 12) {
-                    Text(verbatim: key.key).font(.system(size: ChromeMetrics.text(12), design: .monospaced)).foregroundStyle(theme.text)
-                        .frame(width: 48, alignment: .leading)
-                    Text(key.title).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
-                }
-            }
-            Text("↑↓ to move, ⇧ and ⌘ to pick several, ⌘C copies their names.").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
-                .padding(.top, 6)
-        }
-        .padding(18)
-        .background(RoundedRectangle(cornerRadius: 12).fill(theme.menu).shadow(radius: 20))
-        .overlay(RoundedRectangle(cornerRadius: 12).stroke(theme.menuEdge))
-        .onTapGesture { page.cheatSheet = false }
-        .accessibilityIdentifier("docker.keys")
+        ResourceKeySheet<DockerKey>(theme: theme, identifier: "docker.keys") { page.cheatSheet = false }
     }
 }

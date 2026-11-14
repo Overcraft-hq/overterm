@@ -166,6 +166,33 @@ final class TabStoreTests: XCTestCase {
         XCTAssertEqual(TerminalWindowController.closeWarning(for: [idle, tab("b")]), "Their shells are idle.")
     }
 
+    /// A tab whose only live thing is a port-forward it asked for still asks
+    /// when Settings says "only when something is running", and says the
+    /// forward keeps running (it is the app's); quitting asks for any
+    /// forward, and says it stops them. A stopped one asks nothing.
+    func testARunningForwardMakesClosingAndQuittingAsk() {
+        let idle = tab("idle"), other = tab("other")
+        var forward = KubeForward(
+            spec: KubeForwardSpec(context: "fake-dev", namespace: "shop", target: .service("web"), remotePort: 80, localPort: 31234, tab: idle.id))
+        forward.state = .forwarding(pod: "web-a", pid: 4242)
+        let ask = { (tabs: [Tab], forwards: [KubeForward], quitting: Bool) in
+            TerminalWindowController.needsCloseConfirmation(tabs, forwards: forwards, quitting: quitting, confirmClose: .whenRunning)
+        }
+        XCTAssertFalse(ask([idle], [], false), "nothing runs")
+        XCTAssertTrue(ask([idle], [forward], false), "its forward runs")
+        XCTAssertFalse(ask([other], [forward], false), "another tab's forward isn't this tab's")
+        XCTAssertTrue(ask([other], [forward], true), "quitting stops every forward")
+        XCTAssertEqual(
+            TerminalWindowController.closeWarning(for: [idle], forwards: [forward]),
+            "Its shell is idle. Its port-forward (127.0.0.1:31234 → svc/web) keeps running: Kubernetes ▸ Forwards shows and stops it.")
+        XCTAssertEqual(
+            TerminalWindowController.closeWarning(for: [other], forwards: [forward], quitting: true),
+            "Its shell is idle. Quitting stops the port-forward (127.0.0.1:31234 → svc/web).")
+        forward.state = .stopped("svc/web is gone")
+        XCTAssertFalse(ask([idle], [forward], true), "a stopped one runs nothing")
+        XCTAssertEqual(TerminalWindowController.closeWarning(for: [idle], forwards: [forward]), "Its shell is idle.")
+    }
+
     func testAPageCoversTheSelectedTabWithoutTakingItsSelection() {
         let store = TabStore()
         let a = tab("a")

@@ -14,6 +14,8 @@ struct PaneHeaderActions {
     var zoom: (TerminalView) -> Void
     var close: (TerminalView) -> Void
     var openPort: (ListeningPort) -> Void
+    /// A Kubernetes forward's: the page's Forwards section.
+    var showForwards: () -> Void = {}
 }
 
 /// The bar across the top of every terminal pane: what is running here,
@@ -52,6 +54,13 @@ struct PaneHeaderView: View {
             if let group = store.group(of: tab) {
                 GroupLabel(group: group, theme: theme)
             }
+            if let pin = pane.kubePin {
+                KubePinLabel(pin: pin, theme: theme)
+            } else if let lost = pane.kubePinLost {
+                KubePinLostLabel(lost: lost)
+            }
+            KubeRunWarningLabel(blocks: blocks, kubeconfig: pane.environment["KUBECONFIG"], pin: pane.kubePin, lost: pane.kubePinLost != nil)
+            TerraformRunWarningLabel(tag: pane.processTag, pinnedRoot: pane.terraformRoot, agentGuard: pane.terraformAgentGuard)
             Spacer(minLength: 4)
             if let link = blocks.hoveredLink {
                 // Where the pointer is, since libghostty gives no rectangle
@@ -72,8 +81,9 @@ struct PaneHeaderView: View {
             // This pane's own servers. A checkout's compose stack isn't any
             // pane's: on every header of every tab in the checkout, it said
             // a pane listened where nothing in it did (Tab Info, the Docker
-            // page and the browser still list them).
-            ForEach(tab.ports(of: pane)) { port in
+            // page and the browser still list them). A Kubernetes forward
+            // is the tab's, asked from it: its pill stays.
+            ForEach(tab.ports(of: pane) + tab.forwardPorts) { port in
                 PortPill(port: port, theme: theme, actions: actions)
             }
             HStack(spacing: 0) {
@@ -91,7 +101,17 @@ struct PaneHeaderView: View {
         .padding(.trailing, 6)
         .frame(height: SplitHostView.headerHeight)
         .background(theme.card)
-        .overlay(alignment: .bottom) { Rectangle().fill(theme.border).frame(height: 1) }
+        .overlay(alignment: .bottom) {
+            // A pane pinned to production carries the page's red band from the start.
+            if pane.kubePin?.isProduction == true {
+                Rectangle().fill(KubernetesPageView.production).frame(height: 3)
+                    .accessibilityElement()
+                    .accessibilityLabel("Production")
+                    .accessibilityIdentifier("pane.productionBand")
+            } else {
+                Rectangle().fill(theme.border).frame(height: 1)
+            }
+        }
         .environment(\.colorScheme, theme.isDark ? .dark : .light)
     }
 
@@ -198,28 +218,44 @@ private struct PortPill: View {
             showing.toggle()
         } label: {
             HStack(spacing: 5) {
-                Circle().fill(TabStatusStyle.done).frame(width: 6, height: 6)
-                Text(verbatim: ":\(port.port)")
-                    .font(.system(size: ChromeMetrics.text(11), weight: .semibold, design: .monospaced))
+                if let forward = port.forward {
+                    Image(systemName: "arrow.left.arrow.right").font(.system(size: ChromeMetrics.text(8), weight: .semibold))
+                    // The pod it is pinned to: a Service's forward moves with its pods.
+                    Text(verbatim: ":\(port.port) → \(forward.pod ?? forward.target)")
+                        .font(.system(size: ChromeMetrics.text(11), weight: .semibold, design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                } else {
+                    Circle().fill(TabStatusStyle.done).frame(width: 6, height: 6)
+                    Text(verbatim: ":\(port.port)")
+                        .font(.system(size: ChromeMetrics.text(11), weight: .semibold, design: .monospaced))
+                }
             }
-            .foregroundStyle(theme.greenText)
+            .foregroundStyle(tint)
             .padding(.horizontal, 9)
             .frame(height: ChromeMetrics.row(24))
-            .background(Capsule().fill(TabStatusStyle.done.opacity(hovering ? 0.26 : 0.16)))
+            .frame(maxWidth: port.forward == nil ? nil : 240)
+            .background(Capsule().fill(fill.opacity(hovering ? 0.26 : 0.16)))
             .contentShape(Capsule())
         }
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
-        .help("\(port.process) is listening on \(port.port)")
+        .help(help)
         .popover(isPresented: $showing, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 6) {
-                    Text(verbatim: "localhost:\(port.port)")
+                    Text(verbatim: port.forward == nil ? "localhost:\(port.port)" : "\(KubeForwardAddress.host(for: port.address)):\(port.port)")
                         .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                         .foregroundStyle(theme.text)
-                    Text(verbatim: "· \(port.process) · pid \(port.pid)")
+                    Text(verbatim: origin)
                         .font(.system(size: ChromeMetrics.text(12)))
                         .foregroundStyle(theme.text3)
+                }
+                if let forward = port.forward {
+                    Text(verbatim: "\(forward.target) in \(forward.context) · \(forward.namespace) — \(forward.state)")
+                        .font(.system(size: ChromeMetrics.text(11.5)))
+                        .foregroundStyle(forward.production ? KubernetesPageView.production : theme.text2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack(spacing: 6) {
                     action("Open", filled: true) {
@@ -232,9 +268,20 @@ private struct PortPill: View {
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(url.absoluteString, forType: .string)
                     }
-                    action("Kill") {
-                        showing = false
-                        actions.killPort(port)
+                    if port.forward != nil {
+                        action("Kubernetes") {
+                            showing = false
+                            actions.showForwards()
+                        }
+                        action("Stop") {
+                            showing = false
+                            actions.killPort(port)
+                        }
+                    } else {
+                        action("Kill") {
+                            showing = false
+                            actions.killPort(port)
+                        }
                     }
                 }
             }
@@ -242,6 +289,28 @@ private struct PortPill: View {
             .frame(width: 280)
             .environment(\.colorScheme, theme.isDark ? .dark : .light)
         }
+    }
+
+    private var tint: Color {
+        guard let forward = port.forward else { return theme.greenText }
+        return forward.forwarding ? theme.accentText : theme.orangeText
+    }
+
+    private var fill: Color {
+        guard let forward = port.forward else { return TabStatusStyle.done }
+        return forward.forwarding ? TabStatusStyle.working : TabStatusStyle.waiting
+    }
+
+    private var origin: String {
+        if let forward = port.forward { return forward.forwarding ? "· kubectl · pid \(port.pid)" : "· kubectl, restarting" }
+        return "· \(port.process) · pid \(port.pid)"
+    }
+
+    private var help: String {
+        if let forward = port.forward {
+            return "kubectl port-forward \(forward.target) → pod \(forward.pod ?? "…") in \(forward.context)/\(forward.namespace): \(forward.state)"
+        }
+        return "\(port.process) is listening on \(port.port)"
     }
 
     private func action(_ title: String, filled: Bool = false, _ run: @escaping () -> Void) -> some View {
@@ -255,5 +324,187 @@ private struct PortPill: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(filled ? Color.white : theme.text)
+    }
+}
+
+/// The context a pinned pane's plain `kubectl` reaches (Terminal in this
+/// context): `⎈ fake-dev · shop`, and on production white on the page's red.
+private struct KubePinLabel: View {
+    let pin: KubeTerminalPin
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if pin.isProduction { Image(systemName: "exclamationmark.octagon.fill").font(.system(size: ChromeMetrics.text(10))) }
+            Text(verbatim: pin.isProduction ? "PRODUCTION " + pin.label : pin.label)
+                .font(.system(size: ChromeMetrics.text(11), weight: pin.isProduction ? .semibold : .medium, design: .monospaced))
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .foregroundStyle(pin.isProduction ? Color.white : theme.text2)
+        .padding(.horizontal, 7)
+        .frame(height: 20)
+        .background(RoundedRectangle(cornerRadius: 5).fill(pin.isProduction ? KubernetesPageView.production : theme.rowSel))
+        .help(pin.help)
+        .accessibilityIdentifier("pane.kubeContext")
+    }
+}
+
+/// A pane whose saved pin couldn't be restored: its kubectl reaches no
+/// cluster (`KubeTerminalLost`), and it says so, in the page's red.
+private struct KubePinLostLabel: View {
+    let lost: KubeTerminalLost
+
+    var body: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "exclamationmark.triangle.fill").font(.system(size: ChromeMetrics.text(10)))
+            Text(verbatim: lost.label)
+                .font(.system(size: ChromeMetrics.text(11), weight: .semibold, design: .monospaced))
+                .lineLimit(1)
+                .truncationMode(.middle)
+        }
+        .foregroundStyle(Color.white)
+        .padding(.horizontal, 7)
+        .frame(height: 20)
+        .background(RoundedRectangle(cornerRadius: 5).fill(KubernetesPageView.production))
+        .help(lost.help)
+        .accessibilityIdentifier("pane.kubePinLost")
+    }
+}
+
+/// A kubectl-family command in this pane reaches production (3.11): what
+/// it runs, else ran last, against what Overterm can know of its context —
+/// `⎈ acme-prod` in the page's red, "probably" when only the kubeconfig's
+/// current context says so (`KubePaneWarning`).
+struct KubeRunWarningLabel: View {
+    @ObservedObject var blocks: PaneBlocks
+    /// The pane's own `KUBECONFIG`: where a `--context` in a pinned pane is looked up.
+    let kubeconfig: String?
+    let pin: KubeTerminalPin?
+    let lost: Bool
+    @ObservedObject var ambient: KubeAmbientContexts = .shared
+
+    var body: some View {
+        if let warning = ambient.warning(command: blocks.latestCommand, cwd: blocks.commandFolder, kubeconfig: kubeconfig, pin: pin, lost: lost),
+            warning.shown
+        {
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.octagon.fill").font(.system(size: ChromeMetrics.text(10)))
+                Text(verbatim: warning.label)
+                    .font(.system(size: ChromeMetrics.text(11), weight: .semibold, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .foregroundStyle(Color.white)
+            .padding(.horizontal, 7)
+            .frame(height: 20)
+            .background(RoundedRectangle(cornerRadius: 5).fill(KubernetesPageView.production.opacity(warning.probably ? 0.8 : 1)))
+            .help(warning.help)
+            .accessibilityElement(children: .combine)
+            .accessibilityIdentifier("pane.kubeWarning")
+        }
+    }
+}
+
+/// Terraform runs in this pane, anywhere in its tree — an agent's own
+/// commands included (analysis 3.2): the root, workspace, backend and
+/// operation, white on red on production; amber when `TF_WORKSPACE` or
+/// `TF_DATA_DIR` in its environment decides silently. A pane opened as
+/// Terminal in this root says its root while nothing runs.
+struct TerraformRunWarningLabel: View {
+    let tag: String
+    let pinnedRoot: String?
+    /// How the agent started here was guarded (3.4): "not guarded" said beside a warning.
+    var agentGuard: TerraformAgentGuard.Launch = .none
+    @ObservedObject var monitor: TerraformPaneMonitor = .shared
+
+    private var notGuarded: String? { if case .notGuarded(let why) = agentGuard { why } else { nil } }
+
+    var body: some View {
+        HStack(spacing: 6) {
+            said
+            // An agent with no deny flag in a checkout with a production
+            // root (3.4): said for as long as it runs, not only at an ask.
+            if let notGuarded {
+                Text(verbatim: "terraform writes not guarded")
+                    .font(.system(size: ChromeMetrics.text(10), weight: .medium))
+                    .foregroundStyle(TerraformPanelView.remote)
+                    .padding(.horizontal, 5)
+                    .frame(height: 16)
+                    .background(RoundedRectangle(cornerRadius: 4).stroke(TerraformPanelView.remote.opacity(0.6)))
+                    .lineLimit(1)
+                    .fixedSize()
+                    .help(notGuarded)
+                    .accessibilityIdentifier("pane.terraformNotGuarded")
+            }
+        }
+    }
+
+    @ViewBuilder private var said: some View {
+        if let shutting = monitor.shutting[tag] {
+            // Interrupted by a close (4.8): Terraform stops gracefully, then a notice offers to close.
+            HStack(spacing: 4) {
+                ProgressView().controlSize(.mini)
+                Text(verbatim: shutting).font(.system(size: ChromeMetrics.text(11), weight: .semibold, design: .monospaced)).lineLimit(1)
+            }
+            .foregroundStyle(TerraformPanelView.remote)
+            .padding(.horizontal, 7)
+            .frame(height: 20)
+            .background(RoundedRectangle(cornerRadius: 5).fill(TerraformPanelView.remote.opacity(0.18)))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text(verbatim: shutting))
+            .accessibilityIdentifier("pane.terraformShuttingDown")
+        } else if let ask = monitor.asks[tag] {
+            // The ask before anyone answers (3.3): said, never answered here.
+            HStack(spacing: 4) {
+                Image(systemName: "exclamationmark.octagon.fill").font(.system(size: ChromeMetrics.text(10)))
+                Text(verbatim: "⛰ " + ask.summary + (notGuarded == nil ? "" : " · agent not guarded"))
+                    .font(.system(size: ChromeMetrics.text(11), weight: .semibold, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+            }
+            .foregroundStyle(ask.isProduction ? Color.white : Color.primary)
+            .padding(.horizontal, 7)
+            .frame(height: 20)
+            .background(RoundedRectangle(cornerRadius: 5).fill(ask.isProduction ? TerraformPanelView.production : TerraformPanelView.remote.opacity(0.35)))
+            .help(ask.preview.joined(separator: "\n") + (notGuarded.map { "\n" + $0 } ?? ""))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text(verbatim: ask.summary))
+            .accessibilityIdentifier("pane.terraformAsk")
+        } else if let warning = monitor.warnings[tag] {
+            HStack(spacing: 4) {
+                Image(systemName: warning.isProduction ? "exclamationmark.octagon.fill" : "square.stack.3d.up")
+                    .font(.system(size: ChromeMetrics.text(10)))
+                Text(verbatim: warning.isProduction ? warning.label + "  PRODUCTION" : warning.label)
+                    .font(.system(size: ChromeMetrics.text(11), weight: warning.isProduction ? .semibold : .medium, design: .monospaced))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                if warning.inheritedWorkspace != nil || warning.inheritedDataDir {
+                    Image(systemName: "exclamationmark.triangle.fill").font(.system(size: ChromeMetrics.text(10)))
+                        .foregroundStyle(warning.isProduction ? Color.white : TerraformPanelView.remote)
+                }
+            }
+            .foregroundStyle(warning.isProduction ? Color.white : Color.primary)
+            .padding(.horizontal, 7)
+            .frame(height: 20)
+            .background(
+                RoundedRectangle(cornerRadius: 5).fill(
+                    warning.isProduction
+                        ? TerraformPanelView.production.opacity(warning.probably ? 0.8 : 1)
+                        : (warning.inheritedWorkspace != nil || warning.inheritedDataDir ? TerraformPanelView.remote.opacity(0.25) : Color.gray.opacity(0.18)))
+            )
+            .help(warning.help + (notGuarded.map { "\n" + $0 } ?? ""))
+            .accessibilityElement(children: .combine)
+            .accessibilityLabel(Text(verbatim: warning.isProduction ? warning.label + " PRODUCTION" : warning.label))
+            .accessibilityIdentifier("pane.terraformWarning")
+        } else if let pinnedRoot {
+            Text(verbatim: "⛰ " + pinnedRoot)
+                .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
+                .lineLimit(1)
+                .truncationMode(.middle)
+                .foregroundStyle(.secondary)
+                .help("Terminal in this root: its terraform selects the workspace the root's .terraform/environment says.")
+                .accessibilityIdentifier("pane.terraformRoot")
+        }
     }
 }

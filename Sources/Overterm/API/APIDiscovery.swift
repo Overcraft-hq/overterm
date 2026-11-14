@@ -98,30 +98,46 @@ enum APIDiscovery {
     static func probeServers(_ ports: [Int]) async -> [Source] {
         let unique = Array(Set(ports)).sorted().prefix(12)
         guard !unique.isEmpty else { return [] }
-        let configuration = URLSessionConfiguration.ephemeral
-        configuration.timeoutIntervalForRequest = 1.5
-        configuration.timeoutIntervalForResource = 3
-        let session = URLSession(configuration: configuration)
-        defer { session.finishTasksAndInvalidate() }
         return await withTaskGroup(of: Source?.self) { group in
             for port in unique {
                 group.addTask {
                     guard let base = URL(string: "http://localhost:\(port)") else { return nil }
-                    for path in specPaths {
-                        guard let spec = URL(string: base.absoluteString + path),
-                            let (data, response) = try? await session.data(from: spec),
-                            (response as? HTTPURLResponse)?.statusCode == 200,
-                            let document = APIImport.parseDocument(data), OpenAPIImporter.isOpenAPI(document)
-                        else { continue }
-                        let title = ((document["info"] as? [String: Any])?["title"] as? String) ?? "An API"
-                        return .server(base: base, spec: spec, title: title)
-                    }
-                    return nil
+                    return await probe(base)
                 }
             }
             var found: [Source] = []
             for await source in group { if let source { found.append(source) } }
             return found.sorted { $0.id < $1.id }
         }
+    }
+
+    /// One server's OpenAPI document: every usual path asked at once, each
+    /// for a second and a half, three seconds in all — the first of
+    /// `specPaths` that answers with one wins. `title` names it, else the
+    /// document's own title does. Nothing is imported: it is offered.
+    static func probe(_ base: URL, title: String? = nil) async -> Source? {
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.timeoutIntervalForRequest = 1.5
+        configuration.timeoutIntervalForResource = 3
+        configuration.requestCachePolicy = .reloadIgnoringLocalCacheData
+        let session = URLSession(configuration: configuration)
+        defer { session.finishTasksAndInvalidate() }
+        let root = base.absoluteString.hasSuffix("/") ? String(base.absoluteString.dropLast()) : base.absoluteString
+        let answers = await withTaskGroup(of: (Int, String)?.self) { group in
+            for (index, path) in specPaths.enumerated() {
+                group.addTask {
+                    guard let spec = URL(string: root + path), let (data, response) = try? await session.data(from: spec),
+                        (response as? HTTPURLResponse)?.statusCode == 200, let document = APIImport.parseDocument(data),
+                        OpenAPIImporter.isOpenAPI(document)
+                    else { return nil }
+                    return (index, ((document["info"] as? [String: Any])?["title"] as? String) ?? "An API")
+                }
+            }
+            var answers: [(Int, String)] = []
+            for await answer in group { if let answer { answers.append(answer) } }
+            return answers
+        }
+        guard let (index, documentTitle) = answers.min(by: { $0.0 < $1.0 }), let spec = URL(string: root + specPaths[index]) else { return nil }
+        return .server(base: URL(string: root) ?? base, spec: spec, title: title ?? documentTitle)
     }
 }

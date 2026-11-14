@@ -18,7 +18,7 @@ struct ContainerDetailView: View {
     /// What can be done to it — the page's, or the panel's (`DockerPageModel.verbs(for:)`):
     /// asked as it draws, so its inspect arriving can add one (an image
     /// listed by its ID, named there).
-    let verbs: () -> [DockerVerb]
+    let verbs: () -> [ResourceVerb]
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -48,7 +48,9 @@ struct ContainerDetailView: View {
                     .frame(maxWidth: .infinity, alignment: .leading)
                 }
             case .logs:
-                DockerLogsPane(feed: session.feed, theme: theme, actions: actions, ask: { [container, actions] in actions.askAgent(.logLines($0, container)) })
+                LogsPane(
+                    feed: session.feed, theme: theme, identifier: "docker", runInTerminal: { [actions] in actions.run($0, nil) },
+                    ask: { [container, actions] in actions.askAgent(.logLines($0, container)) })
             case .files: DockerFilesPane(container: container, session: session, theme: theme, actions: actions)
             case .inspect: DockerInspectPane(session: session, theme: theme, actions: actions)
             case .stats: DockerStatsPane(container: container, session: session, theme: theme)
@@ -90,7 +92,7 @@ struct ContainerDetailView: View {
                 Spacer(minLength: 0)
             }
             Text(verbatim: subtitle).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle)
-            DockerActionBar(verbs: verbs(), theme: theme).padding(.top, 4)
+            ResourceActionBar(verbs: verbs(), theme: theme).padding(.top, 4)
         }
         .padding(.horizontal, 16)
         .padding(.vertical, 12)

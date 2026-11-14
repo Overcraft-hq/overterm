@@ -11,7 +11,7 @@ extension TerminalWindowController {
     var reviewActions: ReviewActions {
         ReviewActions(
             openFile: { [weak self] review, file in self?.openReviewedFile(review, file) },
-            openOnGitHub: { NSWorkspace.shared.open($0) })
+            openOnGitHub: { NSWorkspace.shared.open($0) }, terraform: terraformReviewActions)
     }
 
     /// Opens a review tab — or the one already open for the same thing.
@@ -25,6 +25,7 @@ extension TerminalWindowController {
         }
         let review = ReviewModel(root: root, source: source)
         store.reviews.append(review)
+        watchTerraformReview(review)
         showReview(review)
         Task { await review.load() }
         return review
@@ -40,6 +41,7 @@ extension TerminalWindowController {
         store.reviewShowing = review.id
         reviewView.isHidden = false
         window?.makeFirstResponder(reviewView)
+        showTerraformReview(review)
     }
 
     /// Uncovers the selected terminal tab; the review tabs stay in the strip.

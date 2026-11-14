@@ -20,6 +20,13 @@ enum ReviewSource: Hashable, Sendable {
     case commits(from: String, to: String)
     /// A pull request on GitHub, by `gh pr diff` — the branch need not be here.
     case pullRequest(number: Int)
+    /// What changed from `base` to `head` under these paths only — `git
+    /// diff base..head -- <paths>`, every path a literal one
+    /// (`--literal-pathspecs`): an Argo CD history entry against the one
+    /// before it, under the Application's path. Both are verified commits,
+    /// each path checked to be in the checkout (`KubeGitOpsGitArgs`,
+    /// `KubeGitOpsPath`).
+    case paths(base: String, head: String, paths: [String])
 
     /// The tab's name.
     var title: String {
@@ -29,6 +36,7 @@ enum ReviewSource: Hashable, Sendable {
         case .range(let base, let head): "\(Self.short(base))…\(Self.short(head))"
         case .commits(let from, let to): from == to ? Self.short(from) : "\(Self.short(from))…\(Self.short(to))"
         case .pullRequest(let number): "#\(number)"
+        case .paths(let base, let head, _): "\(Self.short(base))..\(Self.short(head))"
         }
     }
 
@@ -40,6 +48,8 @@ enum ReviewSource: Hashable, Sendable {
         case .range(let base, let head): "What \(head) has that \(base) doesn't"
         case .commits(let from, let to): from == to ? "One commit" : "Commits \(Self.short(from)) through \(Self.short(to))"
         case .pullRequest(let number): "Pull request #\(number)"
+        case .paths(let base, let head, let paths):
+            "\(Self.short(base)) to \(Self.short(head)) under \(paths.map { $0 == "." ? "the repository's root" : $0 }.joined(separator: ", "))"
         }
     }
 
@@ -49,6 +59,7 @@ enum ReviewSource: Hashable, Sendable {
         case .uncommitted: "plusminus"
         case .commits: "smallcircle.filled.circle"
         case .pullRequest: "arrow.triangle.pull"
+        case .paths: "clock.arrow.circlepath"
         }
     }
 

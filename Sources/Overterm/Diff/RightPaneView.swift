@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor
 final class RightPane: ObservableObject {
     enum Mode: String {
-        case changes, pullRequest, usage, commit, runner, graph, compare, object, container, redis
+        case changes, pullRequest, usage, commit, runner, graph, compare, object, container, redis, manifest, kubernetes, terraformPlan
     }
 
     @Published var mode: Mode = .changes
@@ -18,6 +18,12 @@ final class RightPane: ObservableObject {
     @Published var containerOpened = false
     /// A Redis key or server was opened (Database panel): its tab stays from then on.
     @Published var redisOpened = false
+    /// A Kubernetes manifest was diffed with its cluster: its tab stays from then on.
+    @Published var manifestOpened = false
+    /// A pod was picked in the Kubernetes panel: its tab stays from then on.
+    @Published var kubernetesOpened = false
+    /// A Terraform root was planned (or init run): its tab stays from then on.
+    @Published var terraformPlanOpened = false
 }
 
 /// The pane on the right: the checkout's changes (uncommitted, or the
@@ -44,6 +50,9 @@ struct RightPaneView: View {
     let container: DockerSlotView
     let redis: RedisSlotView
     let graph: NotesGraphView
+    let manifest: KubeManifestDiffView
+    let kubernetes: KubeSlotView
+    let terraformPlan: TerraformPlanPaneView
 
     private var pr: PullRequestSummary? { diff.branch.flatMap { worktrees.pullRequests[$0] } }
 
@@ -112,6 +121,21 @@ struct RightPaneView: View {
                         Image(systemName: "shippingbox").font(.system(size: ChromeMetrics.text(11)))
                     }
                 }
+                if pane.kubernetesOpened {
+                    tab(.kubernetes, help: "The pod picked in the Kubernetes panel") {
+                        Image(systemName: "helm").font(.system(size: ChromeMetrics.text(11)))
+                    }
+                }
+                if pane.terraformPlanOpened {
+                    tab(.terraformPlan, help: "The Terraform plan, beside the changes that caused it") {
+                        Image(systemName: "square.stack.3d.up").font(.system(size: ChromeMetrics.text(11)))
+                    }
+                }
+                if pane.manifestOpened {
+                    tab(.manifest, help: "A Kubernetes manifest against its cluster") {
+                        Text(verbatim: "⎈").font(.system(size: ChromeMetrics.text(12)))
+                    }
+                }
                 if pane.compareOpened {
                     tab(.compare, help: "The comparison picked in Overgit") {
                         Image(systemName: "arrow.left.arrow.right.square").font(.system(size: ChromeMetrics.text(11)))
@@ -137,6 +161,9 @@ struct RightPaneView: View {
             case .object: object
             case .container: container
             case .redis: redis
+            case .manifest: manifest
+            case .kubernetes: kubernetes
+            case .terraformPlan: terraformPlan
             }
         }
         .background(theme.panelGround)

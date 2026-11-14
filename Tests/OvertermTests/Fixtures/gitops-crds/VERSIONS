@@ -1,0 +1,4 @@
+argo-cd v3.6.1
+source-controller v1.10.1
+kustomize-controller v1.10.1
+helm-controller v1.7.1

@@ -21,12 +21,17 @@ enum AgentUsageCommand {
 
     /// Where a GUI app has to look. Its PATH is not the shell's: `claude`
     /// is as likely to be under nvm, bun or ~/.claude/local as anywhere,
-    /// so the login shell is asked once and the answer kept.
+    /// so the known places are tried, then the login shell's PATH
+    /// (`ShellEnvironment`), and the answer kept.
     private static let lock = NSLock()
     nonisolated(unsafe) private static var found: URL??
 
     static func executable() -> URL? {
         if let executableOverride { return executableOverride }
+        // An isolated run (E2E, the layout dump) never runs the user's own
+        // agent: it talked to their account and wrote their ~/.claude.json,
+        // and the usage scenario's meters waited out its seconds.
+        if AppEnvironment.isIsolated { return nil }
         lock.lock()
         defer { lock.unlock() }
         if let found { return found }
@@ -39,30 +44,8 @@ enum AgentUsageCommand {
             found = URL(fileURLWithPath: path)
             return found!
         }
-        found = askTheShell()
+        found = ShellEnvironment.executable("claude")
         return found!
-    }
-
-    /// `$SHELL -lic 'command -v claude'`: the one way to find a tool a
-    /// version manager put somewhere only the shell knows about.
-    /// **Interactive**, not just a login shell: nvm is set up in .zshrc,
-    /// which a login shell doesn't read — `-lc` here found nothing while
-    /// the same lookup in a pane found it at once.
-    private static func askTheShell() -> URL? {
-        let shell = ProcessInfo.processInfo.environment["SHELL"] ?? "/bin/zsh"
-        let process = Process()
-        process.executableURL = URL(fileURLWithPath: shell)
-        process.arguments = ["-lic", "command -v claude"]
-        let out = Pipe()
-        process.standardOutput = out
-        process.standardError = FileHandle.nullDevice
-        process.standardInput = FileHandle.nullDevice
-        do { try process.run() } catch { return nil }
-        let data = out.fileHandleForReading.readDataToEndOfFile()
-        process.waitUntilExit()
-        let path = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !path.isEmpty, FileManager.default.isExecutableFile(atPath: path) else { return nil }
-        return URL(fileURLWithPath: path)
     }
 
     /// How long a refresh may take before it is given up on: it is one

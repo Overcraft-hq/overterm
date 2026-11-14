@@ -725,26 +725,29 @@ final class DockerPageModel: ObservableObject {
 
     // MARK: Keys
 
-    /// A key typed while the list has the keyboard (DockerKey). Whether it
-    /// meant something; anything else goes on to the list.
+    /// A key typed while the list has the keyboard (DockerKey, read by
+    /// `ResourceKey.press`). Whether it meant something; anything else goes
+    /// on to the list.
     @discardableResult
     func press(_ characters: String) -> Bool {
-        if cheatSheet {
+        guard let press = DockerKey.press(characters, sheetShowing: cheatSheet) else { return false }
+        let key: DockerKey
+        switch press {
+        case .closeSheet:
             cheatSheet = false
             return true
-        }
-        guard let key = DockerKey.of(characters) else { return false }
-        if let section = key.section {
+        case .section(let section):
             self.section = section
             return true
-        }
-        switch key {
         case .filter:
             focusFilter += 1
             return true
         case .help:
             cheatSheet = true
             return true
+        case .key(let pressed): key = pressed
+        }
+        switch key {
         case .cleanUp:
             cleaning = true
             return true

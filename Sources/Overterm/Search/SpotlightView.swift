@@ -30,10 +30,11 @@ struct SpotlightView: View {
                     results
                 }
             }
-            .frame(width: 640)
+            .frame(maxWidth: 640)
             .background(RoundedRectangle(cornerRadius: 12).fill(theme.strip))
             .overlay(RoundedRectangle(cornerRadius: 12).strokeBorder(theme.dimText.opacity(0.25)))
             .shadow(color: .black.opacity(0.35), radius: 24, y: 10)
+            .padding(.horizontal, 16)
             .padding(.top, 40)
         }
     }

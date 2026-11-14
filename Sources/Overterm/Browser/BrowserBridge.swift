@@ -2,32 +2,51 @@ import Foundation
 import Network
 
 /// The browser's door for agents: an MCP server on 127.0.0.1 (a random
-/// port, a random token — nothing off this machine, nothing without the
-/// token), at one path per pane, `/mcp/<the pane's tag>`, so an agent
-/// reaches its own tab's browser and no other.
+/// port — nothing off this machine), at one path per pane,
+/// `/mcp/<the pane's tag>`, so an agent reaches its own tab's tools and no
+/// other's. Each pane has a token of its own (`PaneTokens`), good only at
+/// its own path, and kept out of every file: the config files sit in one
+/// folder any of the user's processes can list, so a token written there
+/// let an agent in worktree A read B's and call B's tools — the window's
+/// confirmation then naming B's checkout (analysis D-15).
 ///
 /// A pane learns its address from `OVERTERM_MCP_CONFIG`, a Claude Code
-/// MCP config file written for it; Overterm starts `claude` with
-/// `--mcp-config "$OVERTERM_MCP_CONFIG"` (Settings.arguments).
+/// MCP config file written for it, and its token from
+/// `OVERTERM_MCP_TOKEN`, in that pane's environment only: the file's header
+/// is `Bearer ${OVERTERM_MCP_TOKEN}`, which Claude Code expands. Overterm
+/// starts `claude` with `--mcp-config "$OVERTERM_MCP_CONFIG"`
+/// (Settings.arguments). What is left: another of the user's processes,
+/// not sandboxed, can read a process's environment (KERN_PROCARGS2) — the
+/// confirmations name the asking tab and agent for that (`MCPAsker`).
 @MainActor
 final class BrowserBridge {
     static let shared = BrowserBridge()
     static let configVariable = "OVERTERM_MCP_CONFIG"
+    /// The pane's token: in its environment, never in a file.
+    nonisolated static let tokenVariable = "OVERTERM_MCP_TOKEN"
 
     /// The browser of the tab a pane is in — the window answers.
     var resolve: ((String) -> AgentBrowser?)?
     /// The API client of the checkout a pane's tab is in — the window answers.
     var resolveAPI: ((String) -> AgentAPI?)?
 
-    /// Agents get the browser, the API client, the notes, the databases — any of them.
-    private var wanted: Bool {
-        Settings.shared.browserAgentControl || Settings.shared.apiAgentControl || Settings.shared.notesAgentAccess
-            || Settings.shared.databaseAgentAccess || Settings.shared.dockerAgentAccess
+    /// Agents get the browser, the API client, the notes, the databases,
+    /// Docker, Kubernetes, Terraform — any of them: the server serves
+    /// whenever `BrowserMCP.offered` would list a tool.
+    private var wanted: Bool { Self.wanted(in: .shared) }
+
+    static func wanted(in settings: Settings) -> Bool {
+        settings.browserAgentControl || settings.apiAgentControl || settings.notesAgentAccess || settings.databaseAgentAccess
+            || settings.dockerAgentAccess || settings.kubernetesAgentAccess || settings.terraformAgentAccess
     }
 
     private var server: BridgeServer?
     private(set) var port: UInt16?
-    let token = UUID().uuidString.replacingOccurrences(of: "-", with: "")
+    /// Every pane's token, read by the server on its own queue.
+    let tokens = PaneTokens()
+
+    /// The token that opens `tag`'s tools, and only them.
+    func token(forPane tag: String) -> String { tokens.token(for: tag) }
 
     private var configDirectory: URL { AppEnvironment.supportDirectory.appendingPathComponent("mcp", isDirectory: true) }
 
@@ -38,7 +57,7 @@ final class BrowserBridge {
     func start() {
         guard server == nil, wanted else { return }
         try? FileManager.default.removeItem(at: configDirectory)
-        let server = BridgeServer(token: token) { [weak self] tag, message in
+        let server = BridgeServer(tokens: tokens) { [weak self] tag, message in
             await self?.handle(tag: tag, message: message)
         }
         self.server = server
@@ -59,28 +78,42 @@ final class BrowserBridge {
     }
 
     private func handle(tag: String, message: [String: Any]) async -> [String: Any]? {
-        await BrowserMCP.handle(message, browser: { [weak self] in self?.resolve?(tag) }, api: { [weak self] in self?.resolveAPI?(tag) })
+        await BrowserMCP.handle(message, browser: { [weak self] in self?.resolve?(tag) }, api: { [weak self] in self?.resolveAPI?(tag) }, pane: tag)
+    }
+
+    /// What a new pane's environment gets — its config file's path and its
+    /// token — or nil when agents don't get the bridge.
+    func environment(forPane tag: String) -> [String: String]? {
+        guard let path = configPath(forPane: tag) else { return nil }
+        return [Self.configVariable: path, Self.tokenVariable: tokens.token(for: tag)]
+    }
+
+    /// A pane's Claude Code config: its path, and the token by name only —
+    /// Claude Code expands `${OVERTERM_MCP_TOKEN}` in a header from the
+    /// environment it was started in, the pane's.
+    nonisolated static func config(port: UInt16, tag: String) -> [String: Any] {
+        [
+            "mcpServers": [
+                "overterm-browser": [
+                    "type": "http",
+                    "url": "http://127.0.0.1:\(port)/mcp/\(tag)",
+                    "headers": ["Authorization": "Bearer ${\(tokenVariable)}"],
+                ]
+            ]
+        ]
     }
 
     /// The config file for a new pane — written now, while the server is
     /// up — or nil when agents don't get the browser.
     func configPath(forPane tag: String) -> String? {
         guard isServing, let port else { return nil }
-        let config: [String: Any] = [
-            "mcpServers": [
-                "overterm-browser": [
-                    "type": "http",
-                    "url": "http://127.0.0.1:\(port)/mcp/\(tag)",
-                    "headers": ["Authorization": "Bearer \(token)"],
-                ]
-            ]
-        ]
+        let config = Self.config(port: port, tag: tag)
         do {
             try FileManager.default.createDirectory(at: configDirectory, withIntermediateDirectories: true)
             let file = configDirectory.appendingPathComponent("\(tag).json")
             let data = try JSONSerialization.data(withJSONObject: config, options: [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes])
             try data.write(to: file, options: .atomic)
-            // The token is a key to the browser: the user's alone.
+            // No secret in it, but where this pane's tools are: the user's alone.
             try FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: file.path)
             return file.path
         } catch {
@@ -88,8 +121,53 @@ final class BrowserBridge {
         }
     }
 
+    /// The pane is gone: its file, and its token with it.
     func removeConfig(forPane tag: String) {
+        tokens.revoke(tag)
         try? FileManager.default.removeItem(at: configDirectory.appendingPathComponent("\(tag).json"))
+    }
+}
+
+/// A random token per pane, bound to its tag: a token opens its own pane's
+/// path and no other (analysis D-15). Made when a pane's config is written
+/// (or first asked for), dropped when the pane closes.
+final class PaneTokens: @unchecked Sendable {
+    private let lock = NSLock()
+    private var byTag: [String: String] = [:]
+
+    /// `tag`'s token, made now if it has none.
+    func token(for tag: String) -> String {
+        lock.lock()
+        defer { lock.unlock() }
+        if let token = byTag[tag] { return token }
+        // The system's generator: arc4random, cryptographically secure.
+        var random = SystemRandomNumberGenerator()
+        let token = (0..<32).map { _ in UInt8.random(in: .min ... .max, using: &random) }.map { String(format: "%02x", $0) }.joined()
+        byTag[tag] = token
+        return token
+    }
+
+    func revoke(_ tag: String) {
+        lock.lock()
+        defer { lock.unlock() }
+        byTag[tag] = nil
+    }
+
+    /// Whether `header` (the request's Authorization) is `tag`'s own bearer token.
+    func authorizes(_ header: String?, tag: String) -> Bool {
+        lock.lock()
+        let expected = byTag[tag]
+        lock.unlock()
+        guard let expected, let header, header.hasPrefix("Bearer ") else { return false }
+        return Self.equal(Array(header.utf8.dropFirst(7)), Array(expected.utf8))
+    }
+
+    /// Compared in time that doesn't depend on where they differ.
+    private static func equal(_ a: [UInt8], _ b: [UInt8]) -> Bool {
+        guard a.count == b.count else { return false }
+        var difference: UInt8 = 0
+        for (x, y) in zip(a, b) { difference |= x ^ y }
+        return difference == 0
     }
 }
 
@@ -99,13 +177,13 @@ final class BrowserBridge {
 /// the protocol allows. One request per connection.
 final class BridgeServer: @unchecked Sendable {
     typealias Handler = @MainActor (String, [String: Any]) async -> [String: Any]?
-    private let token: String
+    private let tokens: PaneTokens
     private let handler: Handler
     private let queue = DispatchQueue(label: "overterm.browser-bridge")
     private var listener: NWListener?
 
-    init(token: String, handler: @escaping Handler) {
-        self.token = token
+    init(tokens: PaneTokens, handler: @escaping Handler) {
+        self.tokens = tokens
         self.handler = handler
     }
 
@@ -153,11 +231,28 @@ final class BridgeServer: @unchecked Sendable {
         }
     }
 
-    private func serve(_ request: HTTPRequest, on connection: NWConnection) {
-        guard request.headers["authorization"] == "Bearer \(token)" else { return respond(connection, status: 401, body: nil) }
-        let parts = request.path.split(separator: "?")[0].split(separator: "/")
-        guard parts.count == 2, parts[0] == "mcp" else { return respond(connection, status: 404, body: nil) }
+    enum Route: Equatable {
+        /// The pane whose tools the request may reach.
+        case pane(String)
+        case refused(status: Int)
+    }
+
+    /// Which pane a request is for, if its token is that pane's: any other
+    /// token — another pane's included — is a 401, before anything is read.
+    static func route(_ request: HTTPRequest, tokens: PaneTokens) -> Route {
+        let parts = request.path.split(separator: "?", omittingEmptySubsequences: false)[0].split(separator: "/")
+        guard parts.count == 2, parts[0] == "mcp" else { return .refused(status: 404) }
         let tag = String(parts[1])
+        guard tokens.authorizes(request.headers["authorization"], tag: tag) else { return .refused(status: 401) }
+        return .pane(tag)
+    }
+
+    private func serve(_ request: HTTPRequest, on connection: NWConnection) {
+        let tag: String
+        switch Self.route(request, tokens: tokens) {
+        case .refused(let status): return respond(connection, status: status, body: nil)
+        case .pane(let pane): tag = pane
+        }
         switch request.method {
         case "POST": break
         case "DELETE": return respond(connection, status: 200, body: nil)

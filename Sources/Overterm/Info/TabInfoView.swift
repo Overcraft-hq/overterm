@@ -13,6 +13,7 @@ struct TabInfoView: View {
             header
             locationSection
             processSection
+            terraformSection
             portSection
             claudeSection
             diskSection
@@ -90,6 +91,37 @@ struct TabInfoView: View {
         }
     }
 
+    /// Terraform running here: what it does, the root and workspace, for how
+    /// long, its provider plugins and the root's `.terraform` on disk.
+    @ViewBuilder private var terraformSection: some View {
+        if !model.terraform.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Terraform").font(.system(size: ChromeMetrics.text(11), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.dimText)
+                ForEach(model.terraform, id: \.pid) { row in
+                    HStack(spacing: 8) {
+                        Text(verbatim: row.operation).font(.system(size: ChromeMetrics.text(12), weight: .semibold, design: .monospaced))
+                        Text(verbatim: "\(row.root) · workspace \(row.workspace)")
+                            .foregroundStyle(row.production ? KubernetesPageView.production : theme.dimText)
+                            .lineLimit(1).truncationMode(.middle)
+                        Spacer()
+                        if let since = row.started {
+                            Text(verbatim: TerraformInfoRow.elapsed(since: since)).foregroundStyle(theme.dimText)
+                        }
+                        if row.providers > 0 {
+                            Text(verbatim: "\(row.providers) provider\(row.providers == 1 ? "" : "s")").foregroundStyle(theme.dimText)
+                        }
+                        if let bytes = row.dataBytes {
+                            Text(verbatim: ".terraform " + ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)).foregroundStyle(theme.dimText)
+                        }
+                    }
+                    .font(.system(size: ChromeMetrics.text(12)))
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("tabInfo.terraform")
+                }
+            }
+        }
+    }
+
     @ViewBuilder private var portSection: some View {
         if !model.ports.isEmpty {
             VStack(alignment: .leading, spacing: 4) {
@@ -97,7 +129,14 @@ struct TabInfoView: View {
                 ForEach(model.ports) { port in
                     HStack(spacing: 8) {
                         Text(verbatim: ":\(port.port)").font(.system(size: ChromeMetrics.text(12), weight: .semibold, design: .monospaced))
-                        if let container = port.container {
+                        if let forward = port.forward {
+                            Label(
+                                "\(forward.target) → \(forward.pod ?? "…") · \(forward.context)/\(forward.namespace)",
+                                systemImage: "arrow.left.arrow.right"
+                            )
+                            .foregroundStyle(forward.production ? KubernetesPageView.production : theme.dimText)
+                            .help("kubectl port-forward · \(forward.state)")
+                        } else if let container = port.container {
                             Label(container, systemImage: "shippingbox").foregroundStyle(theme.dimText)
                         } else {
                             Text(port.process).foregroundStyle(theme.dimText)
