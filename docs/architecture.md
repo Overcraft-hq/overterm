@@ -6601,8 +6601,7 @@ unknown). `KubeMarkWireTests` (the sentinel never kept, the copy, the
 managers), `KubeMarkedHealthTests`, `KubeMarkedAppsTests` (the 10,000
 rows' bound counted by `membersMade`, never timed) and `KubeMarkedAppsModeTests` check it.
 
-**Reading them** (gitops.md 14.4, D2; read, not yet shown — `g` still
-refuses on a spoke). `KubeGitOpsSession` owns `marked`, a
+**Reading them** (gitops.md 14.4, D2). `KubeGitOpsSession` owns `marked`, a
 `KubeMarkedAppsSession`, and starts it from discovery and R1's
 Applications follow (`applicationsRead`, never R2's cut): Applications not
 served, refused, listed whole with none, or missing for most marked apps
@@ -6663,11 +6662,69 @@ on ReplicaSets, HPAs and PDBs, every state's object).
 and `KubeProxyTests` (a real kubectl over a stand-in `kubectl-oidc_login`
 that sleeps) check it.
 
+**Showing them** (gitops.md 14.2, D3). `g`, `:gitops` and `:argo` open the
+section on every context — only `:flux` is refused, where Flux isn't
+served (`gitOpsRefusal(tool:)`) — and its row shows where Argo CD or Flux
+is served or the context's rows have shown a mark (`gitOpsListed`,
+`marksSeen`). `KubeMarkedSection` (pure) makes the session's ranked apps
+into the section's rows whenever the marks' flush ranks them again or the
+mode changes, never on a row event (`KubeGitOpsSession.derived`, laid
+among the rest by `publish`): a `KubeGitOpsRow` whose role is
+`markedApp` ("Marks") and whose `marked` carries its key, Argo CD's word
+(an Unknown with a Degraded member ranked with Failed, D-7), "from rows",
+its images and installation; no resource, so `gitOpsRef` is nil and no
+write key, ⇧K or verb can pair with it — its menu is Open, Copy as argocd
+and Copy Name. Its why is the worst member's sentence and object, its
+tags the members counted by kind ("label only", "probably", another
+installation's id when several mark objects here), its source the main
+image without its registry, its revision empty, its hover Argo CD's own
+word, each member as its app counts it (a Deployment its Rollout scales
+to 0 "scaled by its Rollout") and what isn't known here, at most 4 KB.
+Derived apps Argo CD's whole side (`.only`): among the rows, Flux's too,
+Hide Ready above 50, the Ready chip counting those ready by their rows
+alone ("42 ready (14 from rows only)"); the header says
+`Argo CD: from marks · N apps · read …` and, in the mode's own words (only
+`notServed` "another cluster", `noApplications` "aren't in this
+cluster"; apps by `app.kubernetes.io/instance` alone only "probably"),
+why, then the count — a floor ("At least N apps, from what
+could be read: …") unless the read was whole, none while reading —, a
+muted line on what is the Application's alone (its hover: what else leaves
+the same marks, the kinds read, Rollouts read for health only, the marks
+counted and not shown) and how many installations mark objects here.
+Beside Applications read (`.beside`), the apps with none here are among
+the Applications, each tagged where it stands ("not in this cluster" only
+from R1's whole list, "not where Applications were read", "may be
+ns/name", "installation hub-b"), and a chip shows them alone ("3 marked
+apps with no Application here"); those whose Application's namespace
+wasn't read are counted. No app: "Reading
+the marks on …", a read that wasn't whole's "No Argo CD marks found in
+what could be read: …", or a whole one's "… no Deployment, StatefulSet or
+DaemonSet in <scope> carries Argo CD's marks." with Show All Namespaces;
+no discovery yet (a sign-in waiting), the proxy's own words. `is:marks`
+and `kind:marks` keep them (`kind:app` doesn't), `tool:argo` keeps them
+with Argo CD's own, `repo:` matches none, `image:` any member's image;
+`G` groups them as "Argo CD (from marks)", by image repository, by
+namespace, under no owner, and by installation — offered only while
+several mark objects here. `k` copies `argocd app get <name>
+[--app-namespace <ns>]`, against the person's own Argo CD server, never
+`--core` or `--kube-context` (D-2). ↩ (and `x`) opens
+`KubeMarkedAppDetailView` in the detail's slot (`markedDetail`, Esc
+closes it): a placeholder until D4 — its state, why it is read from marks,
+each member and hook as read, and why Sync, Refresh, Rollback and Diff
+aren't here, reading nothing of its own. `KubeMarkedSectionTests` (pure:
+14.2.1's table row by row), `KubeGitOpsMarksPageTests` (on a spoke: `g`,
+`:flux` refused, the row by marks, no write or ask from any key on a
+writable context or on production, `k`, the menu, ↩ and Esc; R2 cut at 500
+beside R1's 1,000 still deriving the missing) and `kubernetesGitOpsMarks`
+(three fakes: a spoke with Argo Rollouts served, a hub that is also a
+destination, Applications refused) check it.
+
 **The GitOps section** (`g`; gitops.md 2–3, G2): Argo CD's and Flux's
 objects that live in or deploy into the scope on one screen, between Helm
 and Forwards (`KubeSection.gitops`, its key an explicit `g` — the digits
-stay — shown in the sidebar only where `KubeGitOpsSummary.served`; `g`
-elsewhere says neither is served). It summarises; it lists no kind (their
+stay — shown in the sidebar where `KubeGitOpsSummary.served` or a mark was
+seen; `g` opens it everywhere, Argo CD's apps read from marks where no
+Application here deploys them, above). It summarises; it lists no kind (their
 lists stay in Custom Resources). `KubeGitOpsSession` (a window's, as its
 page) reads only while the section shows on a page on screen: **R1** a
 rows-only follow across the cluster of Applications, Kustomizations,

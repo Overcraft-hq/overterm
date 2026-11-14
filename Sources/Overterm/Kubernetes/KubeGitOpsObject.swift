@@ -18,10 +18,15 @@ struct KubeGitOpsObject: Equatable, Sendable, Identifiable {
         case application, applicationSet, kustomization, helmRelease
         /// A Flux source, by its kind: `GitRepository`, `OCIRepository`, `HelmRepository`, `HelmChart`, `Bucket`.
         case source(String)
+        /// An Argo CD app read from the marks on its objects (gitops.md,
+        /// 14.2.2): a section's row only, never a summary — no kind of its
+        /// own, so no write and no verb that needs the Application.
+        case markedApp
 
         /// What the Kind column says.
         var short: String {
             switch self {
+            case .markedApp: "Marks"
             case .application: "App"
             case .applicationSet: "AppSet"
             case .kustomization: "Ks"
@@ -289,6 +294,7 @@ struct KubeGitOpsObject: Equatable, Sendable, Identifiable {
         case .kustomization: "kustomizations"
         case .helmRelease: "helmreleases"
         case .source(let kind): kind.lowercased() + "s"
+        case .markedApp: ""
         }
     }
 
@@ -463,9 +469,14 @@ enum KubeGitOpsTag: Equatable, Hashable, Sendable {
     case mayBeStale
     /// Argo CD hasn't reconciled it for this long (past 3 × 180 s).
     case notReconciled(TimeInterval)
+    /// Fixed words a derived app's row carries (gitops.md 14.2.2): its
+    /// members counted by kind, "label only", its installation, where it
+    /// stands beside the Applications read.
+    case text(String)
 
     func said(now: Date) -> String {
         switch self {
+        case .text(let text): text
         case .manual: "manual"
         case .multiSource: "several sources"
         case .valuesRef: "values from a repository"

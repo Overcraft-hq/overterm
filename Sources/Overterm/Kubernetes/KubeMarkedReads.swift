@@ -276,10 +276,15 @@ struct KubeMarkedReading: Equatable, Sendable {
     /// Still waiting for a kind's first rows.
     var isReading: Bool { !Set(kinds).subtracting(listed).subtracting(failed.keys).subtracting(refused.keys).isEmpty }
 
-    /// What couldn't be read, said: "Deployments refused in 3 namespaces (a, b, c)".
+    /// What couldn't be read, said: "Deployments refused in 3 namespaces
+    /// (a, b, c)"; a kind refused across the cluster and read where it may
+    /// be, where — what a count "at least" and an empty sentence name.
     var unread: [String] {
         var said: [String] = []
         for kind in kinds {
+            if let places = fallback[kind], !places.isEmpty {
+                said.append("\(kind) refused across the cluster; read in \(places.joined(separator: ", ")) every 5 min")
+            }
             if let places = refused[kind] {
                 let named = places.filter { $0 != Self.acrossTheCluster }.sorted()
                 if named.isEmpty {
@@ -298,11 +303,6 @@ struct KubeMarkedReading: Equatable, Sendable {
     /// instead, cuts, M1b's progress.
     var said: [String] {
         var lines = unread
-        for kind in kinds {
-            if let places = fallback[kind], !places.isEmpty {
-                lines.append("\(kind) refused across the cluster; read in \(places.joined(separator: ", ")) every 5 min")
-            }
-        }
         lines += notes.sorted { $0.key < $1.key }.map(\.value)
         if let checking, let checked, checked < checking {
             lines.append("checking rollouts \(checked.formatted()) of \(checking.formatted())")
@@ -325,11 +325,17 @@ struct KubeMarkedReading: Equatable, Sendable {
         let workloads = kinds.isEmpty ? "Deployments, StatefulSets and DaemonSets" : Self.joined(kinds)
         if isReading { return "Reading the marks on \(workloads)…" }
         guard isWhole else { return "No Argo CD marks found in what could be read: \(unread.joined(separator: "; "))" }
-        // Each kind read, one of a kind: "no Deployment, StatefulSet, DaemonSet or Rollout".
-        let one = kinds.map { $0.hasSuffix("s") ? String($0.dropLast()) : $0 }
-        let named = one.count > 1 ? one.dropLast().joined(separator: ", ") + " or " + one.last! : one.first ?? ""
-        let carriers = "no \(named) in \(scope.said) carries Argo CD's marks."
+        let carriers = carriers(scope: scope)
         return served ? "No Argo CD Application deploys here, and \(carriers)" : "No Argo CD Application is served by \(context), and \(carriers)"
+    }
+
+    /// Each kind read, one of a kind: "no Deployment, StatefulSet,
+    /// DaemonSet or Rollout in all namespaces carries Argo CD's marks." —
+    /// said only of a whole read.
+    func carriers(scope: KubeScope) -> String {
+        let one = (kinds.isEmpty ? ["Deployments", "StatefulSets", "DaemonSets"] : kinds).map { $0.hasSuffix("s") ? String($0.dropLast()) : $0 }
+        let named = one.count > 1 ? one.dropLast().joined(separator: ", ") + " or " + one.last! : one.first ?? ""
+        return "no \(named) in \(scope.said) carries Argo CD's marks."
     }
 
     static func joined(_ names: [String]) -> String {

@@ -231,6 +231,10 @@ final class KubeGitOpsSession: ObservableObject {
     let marked = KubeMarkedAppsSession()
     /// When the section derives Argo CD's apps from marks, and which (14.3).
     @Published private(set) var marksMode: KubeMarkedAppsMode = .off
+    /// The apps read from marks as the section's rows (14.2.2), made again
+    /// when the marks' flush ranked them again or the mode changed — never
+    /// on a row event; `publish` lays them among the rest.
+    private(set) var derived = KubeMarkedSection.Derived()
 
     private(set) var context: String?
     private(set) var scope: KubeScope = .all
@@ -378,6 +382,7 @@ final class KubeGitOpsSession: ObservableObject {
         fallbackWatched = [:]
         besideFollowed = false
         if marksMode != .off { marksMode = .off }
+        derived = KubeMarkedSection.Derived()
         for task in follows.values { task.cancel() }
         follows = [:]
         for task in gets.values { task.cancel() }
@@ -859,8 +864,15 @@ final class KubeGitOpsSession: ObservableObject {
         // gave stands until they are back.
         if besideFollowed, marked.state != .live, case .beside = marksMode { return }
         let keys = Set(marked.apps.map(\.app.key))
-        let mode = KubeMarkedAppsMode.of(discovery: discovery, applications: applicationsRead, marked: keys)
+        let read = applicationsRead
+        let mode = KubeMarkedAppsMode.of(discovery: discovery, applications: read, marked: keys)
         if mode != marksMode { marksMode = mode }
+        // Their rows, for the apps as ranked now and what the mode shows of them.
+        let rows = KubeMarkedSection.derived(marked.apps, mode: mode, applications: read)
+        if rows != derived {
+            derived = rows
+            publish()
+        }
         switch mode {
         case .beside(let coexistence):
             marked.settling = coexistence.listed
@@ -1003,7 +1015,7 @@ final class KubeGitOpsSession: ObservableObject {
         said += followNotes.sorted { $0.key < $1.key }.map(\.value)
         if said != notes { notes = said }
         guard state != .idle else { return }
-        let new = KubeGitOpsSection.rows(summaries: objects, live: live, listed: listed, scope: scope, now: now, unreadable: unreadable)
+        let new = KubeGitOpsSection.rows(summaries: objects, live: live, listed: listed, scope: scope, now: now, unreadable: unreadable, derived: derived)
         if new != rows { rows = new }
     }
 

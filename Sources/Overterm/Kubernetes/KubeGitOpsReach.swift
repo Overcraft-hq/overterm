@@ -227,7 +227,7 @@ enum KubeGitOpsReach {
             let parsed = KubeGitOpsRevision.parse(version)
             if let commit = parsed.commit, parsed.prefix { return .commit(commit, prefix: true) }
             return .notACommit("chart \(parsed.shown)")
-        case .applicationSet, .source:
+        case .applicationSet, .source, .markedApp:
             return .none
         }
     }

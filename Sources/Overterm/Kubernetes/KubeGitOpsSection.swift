@@ -28,10 +28,34 @@ struct KubeGitOpsRow: ResourceTableRow, Identifiable, Sendable {
     var hover = ""
     /// What `G` groups it by and `repo:` matches (2.8), set as it is made.
     var grouping = KubeGitOpsGroupKeys()
+    /// An Argo CD app read from the marks on its objects (gitops.md
+    /// 14.2.2): what its row says beyond the columns. Nil for an object.
+    var marked: Marked? = nil
 
     var height: CGFloat { 26 }
 
+    /// Whether it is an app read from marks, with no object of its own.
+    var isMarked: Bool { marked != nil }
+
     static func id(resource: String, _ ref: KubeRowID) -> String { "\(resource)/\(ref.namespace ?? "")/\(ref.name)" }
+
+    /// A derived app's own (gitops.md 14.2.2): its key, Argo CD's word for
+    /// it, whether any of it is said from its rows alone, its images, its
+    /// installation, what its age is.
+    struct Marked: Equatable, Sendable {
+        var key: KubeTrackingID.AppKey
+        /// What the State column says: Argo CD's word, "Unknown" when it
+        /// ranks with a worse member (decision D-7).
+        var word: String
+        /// Some member's state is from its row alone, or not read yet.
+        var fromRows: Bool
+        /// Every member's images, first seen first.
+        var images: [String]
+        /// Its installation id; nil when its marks carry none.
+        var installation: String?
+        /// What its age counts from, for the Age column's hover.
+        var sinceSaid: String?
+    }
 }
 
 /// What the GitOps section draws from what was read (gitops.md, 2.2–2.5):
@@ -57,13 +81,20 @@ enum KubeGitOpsSection {
     ]
 
     /// The rows that live in or deploy into the scope, and those that can't
-    /// be placed (not summarised, off All Namespaces).
+    /// be placed (not summarised, off All Namespaces); beside Applications
+    /// that are read, the apps read from marks that have none here.
     struct Rows: Equatable, Sendable {
         var shown: [KubeGitOpsRow] = []
         var notPlaced: [KubeGitOpsRow] = []
         /// Summaries anywhere (not only the scope's): where the empty scope's hint points.
         var everywhere: [String: Int] = [:]
         var everywhereTool: [String: KubeGitOpsObject.Tool] = [:]
+        /// Beside Applications read (gitops.md 14.2.1): the marked apps
+        /// with no Application here — among `shown` too — their chip's.
+        var beside: [KubeGitOpsRow] = []
+        /// Beside Applications read in some namespaces only: marked apps
+        /// whose Application's namespace wasn't read — counted, not listed.
+        var besideUnread = 0
     }
 
     // MARK: Rows
@@ -75,7 +106,7 @@ enum KubeGitOpsSection {
     /// oldest problem first.
     static func rows(
         summaries: [KubeGitOpsObject], live: [String: KubeRows], listed: Set<String>, scope: KubeScope, now: Date,
-        unreadable: Set<KubeGitOpsObject.Key> = []
+        unreadable: Set<KubeGitOpsObject.Key> = [], derived: KubeMarkedSection.Derived = KubeMarkedSection.Derived()
     ) -> Rows {
         var valid: [KubeGitOpsObject] = []
         var summarisedIDs: Set<String> = []
@@ -99,6 +130,10 @@ enum KubeGitOpsSection {
                 if scope == .all { rows.shown.append(made) } else { rows.notPlaced.append(made) }
             }
         }
+        // The apps read from marks: read in the scope already (14.4.1).
+        rows.shown += derived.shown
+        rows.beside = derived.beside.sorted(by: ordered)
+        rows.besideUnread = derived.unread
         rows.shown.sort(by: ordered)
         rows.notPlaced.sort(by: ordered)
         return rows
@@ -237,7 +272,7 @@ enum KubeGitOpsSection {
             let target = said(object.revisions.wanted)
             if object.sync == "OutOfSync", !target.isEmpty, live != target { return live.isEmpty ? "→ \(target)" : "\(live) → \(target)" }
             return live.isEmpty ? target : live
-        case .applicationSet: return ""
+        case .applicationSet, .markedApp: return ""
         case .kustomization: return said(object.revisions.applied)
         case .helmRelease: return object.revisions.helmHistory?.chartVersion ?? object.revisions.attempted.map(KubeGitOpsRevision.shown) ?? ""
         case .source: return object.artifact?.revision.map(KubeGitOpsRevision.shown) ?? ""
@@ -252,7 +287,7 @@ enum KubeGitOpsSection {
         case .application:
             if object.sources.count > 1 { return "\(object.sources.count) sources" }
             return object.sources.first?.said ?? ""
-        case .applicationSet: return ""
+        case .applicationSet, .markedApp: return ""
         case .kustomization:
             let path = object.sources.first?.path
             guard let reference = object.sourceRef else { return path ?? "" }
@@ -300,6 +335,15 @@ enum KubeGitOpsSection {
         return KubeGitOpsState.allCases.compactMap { state in counts[state].map { (state, $0) } }
     }
 
+    /// A chip's words: `2 failing`, `41 ready`; `878 ready (31 from rows
+    /// only)` when apps read from marks are Ready by their rows' cells
+    /// alone (gitops.md 14.2.2).
+    static func chipText(_ state: KubeGitOpsState, _ count: Int, fromRows: Int) -> String {
+        let text = chipText(state, count)
+        guard fromRows > 0 else { return text }
+        return "\(text) (\(fromRows) from rows only)"
+    }
+
     /// A chip's words: `2 failing`, `41 ready`.
     static func chipText(_ state: KubeGitOpsState, _ count: Int) -> String {
         let word =
@@ -318,17 +362,18 @@ enum KubeGitOpsSection {
 
     /// What the table shows: a chip's state alone; else Ready hidden when
     /// asked (unless `is:` asks for a state); one tool (`:argo`, `:flux`);
-    /// the rows "not placed" when their chip is on; the filter's words
-    /// (`KubeGitOpsFilter`: `is:`, `kind:`, `tool:`, `repo:`, then text
-    /// over name, why and source).
+    /// the rows "not placed", or the marked apps with no Application here,
+    /// when their chip is on; the filter's words (`KubeGitOpsFilter`:
+    /// `is:`, `kind:`, `tool:`, `repo:`, `image:`, then text over name,
+    /// why and source).
     static func visible(
-        _ rows: Rows, chip: KubeGitOpsState?, hideReady: Bool, tool: KubeGitOpsObject.Tool?, notPlaced: Bool, text: String
+        _ rows: Rows, chip: KubeGitOpsState?, hideReady: Bool, tool: KubeGitOpsObject.Tool?, notPlaced: Bool, beside: Bool = false, text: String
     ) -> [KubeGitOpsRow] {
         let filter = KubeGitOpsFilter(text)
-        var shown = notPlaced ? rows.notPlaced : rows.shown
+        var shown = beside ? rows.beside : notPlaced ? rows.notPlaced : rows.shown
         if let chip {
             shown = shown.filter { $0.state == chip }
-        } else if hideReady, !notPlaced, !filter.asksState {
+        } else if hideReady, !notPlaced, !beside, !filter.asksState {
             shown = shown.filter { $0.state != .ready }
         }
         if let tool { shown = shown.filter { $0.tool == tool } }
@@ -369,6 +414,8 @@ enum KubeGitOpsSection {
     /// says it — the context named, the namespace too; nil for a kind
     /// neither CLI names (an ApplicationSet: kubectl's).
     static func cliLine(_ row: KubeGitOpsRow, context: String) -> String? {
+        // An app read from marks: against the person's own Argo CD server.
+        if row.isMarked { return KubeMarkedSection.cliLine(row) }
         let q = KubeCommands.quoted
         let namespace = row.ref.namespace ?? ""
         if row.role == .application {

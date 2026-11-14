@@ -25,7 +25,14 @@ extension FakeKubeAPI {
         var rollouts = false
         /// The named states (stuck, stalled, paused…).
         var states = true
+        /// The first this many plain apps carry another installation's id
+        /// (`argocd.argoproj.io/installation-id: hub-b`) on every member:
+        /// two Argo CDs marking objects here, never merged.
+        var otherInstallation = 0
     }
+
+    /// The second installation's id `otherInstallation` puts on its apps.
+    static let spokeInstallation = "hub-b"
 
     /// What `addSpoke` made, by what the tests look for.
     struct Spoke: Sendable {
@@ -84,9 +91,11 @@ extension FakeKubeAPI {
             let instance = app(index, name, namespace)
             spoke.apps.append(instance)
             spoke.deployments.append((namespace, name))
-            addMarkedDeployment(name, namespace: namespace, app: instance, padding: options.padding, now: now)
-            addMarkedService(name, namespace: namespace, app: instance, now: now)
-            if index % 3 == 0 { addMarkedHPA(name, namespace: namespace, app: instance, now: now) }
+            let installation = index < options.otherInstallation ? Self.spokeInstallation : nil
+            let marked = installation.map { [KubeTrackingID.installationAnnotation: $0] } ?? [:]
+            addMarkedDeployment(name, namespace: namespace, app: instance, annotations: marked, padding: options.padding, now: now)
+            addMarkedService(name, namespace: namespace, app: instance, installation: installation, now: now)
+            if index % 3 == 0 { addMarkedHPA(name, namespace: namespace, app: instance, installation: installation, now: now) }
             // A copy on a few HPAs and PDBs: their Deployment's own mark.
             if index % 7 == 1 { addCopiedMark("horizontalpodautoscalers.autoscaling", "\(name)-extra", namespace: namespace, app: instance, of: name, now: now) }
             if index % 9 == 2 { addCopiedMark("poddisruptionbudgets.policy", name, namespace: namespace, app: instance, of: name, now: now) }
@@ -261,14 +270,16 @@ extension FakeKubeAPI {
             ])
     }
 
-    func addMarkedService(_ name: String, namespace: String, app: String, loadBalancer: String? = nil, now: Date) {
+    func addMarkedService(_ name: String, namespace: String, app: String, loadBalancer: String? = nil, installation: String? = nil, now: Date) {
+        var annotations = marks(app, "/Service", namespace, name)
+        if let installation { annotations[KubeTrackingID.installationAnnotation] = installation }
         add(
             "services", name, namespace: namespace,
             values: ["Type": .text(loadBalancer == nil ? "ClusterIP" : "LoadBalancer"), "Cluster-IP": "10.96.0.12", "External-IP": .text(loadBalancer ?? "<none>"), "Port(s)": "80/TCP"],
-            annotations: marks(app, "/Service", namespace, name), created: now.addingTimeInterval(-86_400))
+            annotations: annotations, created: now.addingTimeInterval(-86_400))
     }
 
-    func addMarkedHPA(_ name: String, namespace: String, app: String, failing: Bool = false, now: Date) {
+    func addMarkedHPA(_ name: String, namespace: String, app: String, failing: Bool = false, installation: String? = nil, now: Date) {
         let conditions: [[String: Any]] =
             failing
             ? [
@@ -285,7 +296,8 @@ extension FakeKubeAPI {
         add(
             "horizontalpodautoscalers.autoscaling", name, namespace: namespace,
             values: ["Reference": .text("Deployment/\(name)"), "Targets": .text(failing ? "cpu: <unknown>/70%" : "cpu: 40%/70%"), "MinPods": 2, "MaxPods": 6, "Replicas": 2],
-            annotations: marks(app, "autoscaling/HorizontalPodAutoscaler", namespace, name), created: now.addingTimeInterval(-86_400),
+            annotations: marks(app, "autoscaling/HorizontalPodAutoscaler", namespace, name).merging(installation.map { [KubeTrackingID.installationAnnotation: $0] } ?? [:]) { $1 },
+            created: now.addingTimeInterval(-86_400),
             fields: ["spec": ["minReplicas": 2, "maxReplicas": 6], "status": ["currentReplicas": 2, "desiredReplicas": 2, "conditions": conditions]])
     }
 

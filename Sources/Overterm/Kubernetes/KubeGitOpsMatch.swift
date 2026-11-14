@@ -204,7 +204,7 @@ enum KubeGitOpsMatch {
                 return fromSource(chart, path: "", in: checkout)
             }
             return nil
-        case .applicationSet, .source:
+        case .applicationSet, .source, .markedApp:
             return nil
         }
     }
@@ -272,7 +272,7 @@ enum KubeGitOpsMatch {
             return source.tracks
         case .source:
             return object.tracks
-        case .applicationSet:
+        case .applicationSet, .markedApp:
             return nil
         }
     }
