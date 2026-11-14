@@ -281,6 +281,9 @@ final class KubernetesPageTests: XCTestCase {
         XCTAssertTrue(page.columns.filter { !["Status", "CPU", "Memory"].contains($0.title) }.allSatisfy { $0.minWidth == 40 }, "the others give way first")
         XCTAssertEqual(page.columns.first { $0.title == "CPU" }?.minWidth, 64, "never narrower than a value: 40 pt drew 250m as 2..m")
         XCTAssertEqual(page.columns.first { $0.title == "Memory" }?.minWidth, 72)
+        XCTAssertEqual(
+            KubernetesPageModel.width(of: "URL"), 300,
+            "a Flux source's URL starts wide enough to read: at the default 130 it was cut while Name had room to spare")
         page.wide = true
         XCTAssertTrue(page.columns.filter { $0.title.hasPrefix("%") }.allSatisfy { $0.minWidth == 56 }, "the shares' headers whole")
         page.wide = false

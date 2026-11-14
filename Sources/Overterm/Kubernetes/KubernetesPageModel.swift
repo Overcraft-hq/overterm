@@ -1320,6 +1320,9 @@ final class KubernetesPageModel: ObservableObject {
         case "age": 72
         case "ip": 120
         case "node": 170
+        // A Flux source's: the address is what the row is read by, and
+        // at 130 it was cut in the middle while Name had room to spare.
+        case "url": 300
         default: 130
         }
     }
