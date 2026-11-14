@@ -31,6 +31,7 @@ version is tagged `v<version>`.
 - window: built with macOS 26's SDK or later, the tab strip no longer sits on a grey glass band across the title bar
 - terminal: in a folder four or more deep, the prompt is no longer taken for a command — a command's rows went to it, so ⇧⌘C copied the wrong output and ⌥⌘↓ missed failures
 - tabs: Tab Info's CPU is measured in a split tab, where every pane's processes read 0%, and in a tab that isn't selected, where they kept dropping to 0%
+- tabs: Tab Info's tooltip masks the passwords and tokens in a command line
 - usage: an isolated run never runs your own claude for its usage
 - terraform: Terraform beside the terminal (⌥⌘E) — the checkout's roots in the sidebar with their workspace, backend, version and class, production in red by its names and once seen always; HCL in the editor (colours, terraform-ls, Validate with no credential, Format, F12); a header over any pane where terraform runs
 - terraform: a plan in the right slot, read as data — Overterm's own plan, asked first on production and when the code isn't yours; destroys and replaces first and why, drift, moves and imports, never a sensitive value; a held lock named, a stale plan said; Init with what it fetches shown first

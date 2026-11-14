@@ -74,9 +74,9 @@ enum MCPAsker {
         }
     }
 
-    /// "Claude" or "Codex" for an agent's process (by name, else argv[0]).
+    /// "Claude" or "Codex" for an agent's process (by name, else argv[0]:
+    /// `argvAgent`, as `command` is masked).
     nonisolated static func agentName(_ node: ProcessNode) -> String? {
-        let first = node.command.split(separator: " ").first.map { (String($0) as NSString).lastPathComponent }
-        return (Agent(rawValue: node.name) ?? first.flatMap(Agent.init(rawValue:)))?.name
+        (Agent(rawValue: node.name) ?? node.argvAgent)?.name
     }
 }

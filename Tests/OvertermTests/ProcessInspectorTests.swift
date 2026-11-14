@@ -53,7 +53,7 @@ final class ProcessInspectorTests: XCTestCase {
         Thread.sleep(forTimeInterval: 1.0)
         let inspector = ProcessInspector()
         // No root: found by tag alone.
-        let found = inspector.tree(root: nil, tag: tag).flatMap(\.flattened)
+        let found = inspector.tree(root: nil, tag: tag, commands: true).flatMap(\.flattened)
         defer {
             found.forEach { kill($0.pid, SIGTERM) }
             [mine, other].forEach { $0.terminate() }
@@ -141,6 +141,81 @@ final class ProcessInspectorTests: XCTestCase {
         XCTAssertTrue(readings.allSatisfy { $0 > 10 }, "each root's busy loop, read in turn: \(readings.map { String(format: "%.1f%%", $0) }.joined(separator: ", "))")
     }
 
+    /// A command is masked as it is read: a shell of the test's own, then
+    /// that same process exec'd with argv[0] `claude` (as the CLI's
+    /// appears), a fake password and a resumed session as later words.
+    /// The exec keeps the pid and the start time, so the line kept from the
+    /// first read must not be the second's. What the checks read of argv
+    /// is there still — masked, the `-r` after `--fork-session` goes —, and
+    /// a read that shows nothing masks nothing.
+    func testACommandIsMaskedWhenItIsRead() throws {
+        let parts = ["Zq8", "vX2", "mN7", "pL4"]
+        let id = "8f2c1e0a-1b2c-4d3e-9f00-aa11bb22cc33"
+        // The shell execs once the test has read it as it was started: when
+        // a file the test makes is there, 10 s at most.
+        let gate = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-exec-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: gate) }
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/bash")
+        // `; true` keeps the shell, its sleep 20 s at most.
+        p.arguments = [
+            "-c",
+            "while [ ! -e '\(gate.path)' ] && [ $SECONDS -lt 10 ]; do sleep 0.05; done; "
+                + "exec -a claude /bin/bash -c 'sleep 20; true' --fork-session -r \(id) --password \(parts.joined())",
+        ]
+        var env = ProcessInfo.processInfo.environment
+        env.removeValue(forKey: ProcessInspector.tagVariable)
+        p.environment = env
+        try p.run()
+        let start = try XCTUnwrap(ProcessInspector.kinfo(p.processIdentifier)?.start)
+        started.append((p.processIdentifier, start))
+        roots.append(p)
+        let inspector = ProcessInspector()
+        func read(commands: Bool = true) -> ProcessNode? {
+            inspector.tree(root: getpid(), tag: nil, commands: commands).flatMap(\.flattened).first { $0.pid == p.processIdentifier }
+        }
+        var before: ProcessNode?
+        let deadline = Date().addingTimeInterval(5)
+        repeat {
+            before = read()
+            if before == nil { Thread.sleep(forTimeInterval: 0.02) }
+        } while before == nil && Date() < deadline
+        let first = try XCTUnwrap(before, "the shell, before its exec")
+        XCTAssertTrue(first.command.hasPrefix("/bin/bash -c "), first.command)
+        XCTAssertFalse(parts.contains { first.command.contains($0) }, "no part of the password: \(first.command)")
+        XCTAssertNil(first.argvAgent)
+
+        try Data().write(to: gate)
+        var after: ProcessNode?
+        var child: (pid: pid_t, start: UInt64, name: String)?
+        let execDeadline = Date().addingTimeInterval(5)
+        repeat {
+            after = read().flatMap { $0.argvAgent == .claude ? $0 : nil }
+            // Once it has exec'd, its one child is the sleep 20.
+            child = after == nil ? nil : ProcessInspector.children(of: p.processIdentifier).first
+            if after == nil || child == nil { Thread.sleep(forTimeInterval: 0.02) }
+        } while (after == nil || child == nil) && Date() < execDeadline
+        if let child { started.append((child.pid, child.start)) }
+        let node = try XCTUnwrap(after, "the shell, exec'd as `claude`")
+        XCTAssertEqual(ProcessInspector.kinfo(p.processIdentifier)?.start, start, "the same process")
+        // The argv it exec'd into, masked again: not the line kept from before.
+        XCTAssertTrue(node.command.hasPrefix("claude -c "), node.command)
+        XCTAssertTrue(node.command.contains(Secrets.credentialMask), node.command)
+        XCTAssertFalse(parts.contains { node.command.contains($0) }, "no part of the password: \(node.command)")
+        XCTAssertTrue(TerminalWindowController.isAgent(node))
+        XCTAssertEqual(node.resumes, id)
+
+        // A read that only decides (the agent poll, a drop, an image paste):
+        // no command, the same answers.
+        let bare = try XCTUnwrap(read(commands: false))
+        XCTAssertEqual(bare.command, "")
+        XCTAssertEqual(bare.argvAgent, .claude)
+        XCTAssertEqual(bare.resumes, id)
+        XCTAssertTrue(TerminalWindowController.isAgent(bare))
+        XCTAssertEqual(AgentOverviewModel.agent(of: bare), .claude)
+        XCTAssertEqual(MCPAsker.agentName(bare), "Claude")
+    }
+
     private let second: UInt64 = 1_000_000_000
 
     /// A pid the system hands to another process: its first reading is 0,
@@ -193,7 +268,7 @@ final class ProcessInspectorTests: XCTestCase {
 
     func testAssembleNestsChildren() {
         func node(_ pid: pid_t, _ parent: pid_t) -> ProcessNode {
-            ProcessNode(pid: pid, parent: parent, name: "p\(pid)", command: "", cpuPercent: 1, memory: 10, workingDirectory: nil)
+            ProcessNode(pid: pid, parent: parent, name: "p\(pid)", arguments: [], cpuPercent: 1, memory: 10, workingDirectory: nil)
         }
         let roots = ProcessInspector.assemble([10: node(10, 1), 11: node(11, 10), 12: node(12, 11), 20: node(20, 99)])
         XCTAssertEqual(roots.map(\.pid), [10, 20])

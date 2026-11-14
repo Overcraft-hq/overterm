@@ -7,7 +7,7 @@ import XCTest
 /// to the next: an agent starts or exits in between.
 final class FirstAgentTests: XCTestCase {
     private func node(_ pid: pid_t, _ name: String, _ command: String) -> ProcessNode {
-        ProcessNode(pid: pid, parent: 1, name: name, command: command, cpuPercent: 0, memory: 0, workingDirectory: "/work/\(pid)")
+        ProcessNode(pid: pid, parent: 1, name: name, arguments: command.split(separator: " ").map(String.init), cpuPercent: 0, memory: 0, workingDirectory: "/work/\(pid)")
     }
 
     func testReadsEachPanesTreeOnceInOrder() {

@@ -290,6 +290,9 @@ private struct ProcessRow: View {
         }
         .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
         .frame(height: ChromeMetrics.row(20))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("tabInfo.process")
+        // Its argv masked as it was read (`ProcessNode.command`).
         .help(node.command.isEmpty ? node.name : node.command)
     }
 }

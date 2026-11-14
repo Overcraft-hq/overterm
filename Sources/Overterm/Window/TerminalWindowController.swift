@@ -1912,13 +1912,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         return nil
     }
 
-    /// Claude Code or Codex, by process name or argv[0].
+    /// Claude Code or Codex, by process name or argv[0] (`argvAgent`, read
+    /// off the raw words: `command` is masked).
     nonisolated static func isAgent(_ node: ProcessNode) -> Bool {
         let names = ["claude", "codex"]
-        if names.contains(node.name) { return true }
-        guard let first = node.command.split(separator: " ").first else { return false }
-        let base = (String(first) as NSString).lastPathComponent
-        return names.contains(base)
+        return names.contains(node.name) || node.argvAgent != nil
     }
 
     /// Pins the selected tab's sidebar and diff to `worktree`.

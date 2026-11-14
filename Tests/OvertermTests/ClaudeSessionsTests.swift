@@ -19,11 +19,11 @@ final class ClaudeSessionsTests: XCTestCase {
         let running = SessionsModel.running(
             sessions,
             [
-                .init(tab: tabA, directory: "/r", command: "claude --resume bb"),
-                .init(tab: tabB, directory: "/wt", command: "claude"),
+                .init(tab: tabA, directory: "/r", resumes: "bb"),
+                .init(tab: tabB, directory: "/wt", resumes: nil),
             ])
         XCTAssertEqual(running, ["bb": tabA, "cc": tabB])
-        let unknown = SessionsModel.running(sessions, [.init(tab: tabA, directory: "/r", command: "claude")])
+        let unknown = SessionsModel.running(sessions, [.init(tab: tabA, directory: "/r", resumes: nil)])
         XCTAssertEqual(unknown, ["aa": tabA], "without --resume: the newest in its directory")
     }
 }

@@ -3214,13 +3214,24 @@ final class E2ERunner {
         await run("python3 \(server.path) &", timeout: 10) { readPort() != nil }
         let port = readPort()
         check("a dev server starts in the tab", port != nil)
+        // A command line with a fake password in it, never typed: a script
+        // of the scenario's own writes its pid, then execs a sleeping perl
+        // (60 s at most) with the password as later words, a flag's and a URL's.
+        let password = ["Zq8", "vX2", "mN7", "pL4"].joined()
+        let secret = out("secret.sh")
+        try? "echo $$ > \"$0.pid\"\nexec /usr/bin/perl -e 'sleep 60' -- acme-cli --password \(password) postgres://acme:\(password)@db.globex.invalid/app\n"
+            .write(to: secret, atomically: true, encoding: .utf8)
+        let secretPID = URL(fileURLWithPath: secret.path + ".pid")
+        await runAndExpect("sh \(secret.path) &", file: secretPID, content: nil, "a command with a password in it runs in the tab")
+        let perl = contents(secretPID).flatMap { pid_t($0) }.flatMap { pid in ProcessInspector.kinfo(pid).map { (pid: pid, start: $0.start) } }
 
         app.showInfo(for: first)
         check("the popover opens", await eventually(2) { self.app.infoPopover?.isShown == true })
         guard let model = app.infoModel else { return check("a model", false) }
         let listed = await eventually { model.processes.flatMap(\.flattened).contains { $0.command.hasPrefix("sleep 61") } }
         let all = model.processes.flatMap(\.flattened)
-        check("its background job is listed", listed, all.map(\.command).joined(separator: " | "))
+        // Counts only: the tab runs what the user's shell config starts too.
+        check("its background job is listed", listed, "\(all.count) processes, \(all.filter { $0.name == "sleep" }.count) sleeps")
         check("under its shell", model.processes.contains { ["zsh", "bash", "fish", "sh"].contains($0.name) && $0.flattened.contains { $0.command.hasPrefix("sleep 61") } })
         check("the other tab's job is not", !all.contains { $0.command.hasPrefix("sleep 62") })
         check("memory is measured", model.totalMemory > 0)
@@ -3236,6 +3247,32 @@ final class E2ERunner {
                 "which makes it a server", onTheTab && first.kind == .server,
                 "\(first.kind.rawValue)")
         }
+        // The perl's row: its command masked when it was read, and so its
+        // tooltip, as the popover's accessibility tree has it.
+        if let perl {
+            func node() -> ProcessNode? { model.processes.flatMap(\.flattened).first { $0.pid == perl.pid && $0.name == "perl" } }
+            let listed = await eventually { node() != nil }
+            let command = node()?.command ?? ""
+            check(
+                "a command with a password in it is listed masked", listed && command.contains(Secrets.credentialMask) && !command.contains(password),
+                command.replacingOccurrences(of: password, with: "<password>"))
+            Self.accessibilityTree(true)
+            var tooltips: [String] = []
+            // The perl's row by a word of its own argv: only its tooltip is
+            // ever printed — the others are what the user's shell config runs.
+            func perlTooltips() -> [String] { tooltips.filter { $0.contains("acme-cli") } }
+            let drawn = await eventually(5) {
+                tooltips = self.app.infoPopover?.contentViewController.map { Self.accessibilityHelps("tabInfo.process", in: $0.view) } ?? []
+                return !perlTooltips().isEmpty
+            }
+            Self.accessibilityTree(false)
+            check(
+                "its row's tooltip shows it masked", drawn && perlTooltips().contains { $0.contains(Secrets.credentialMask) },
+                "\(tooltips.count) tooltips; the perl's: " + perlTooltips().map { $0.replacingOccurrences(of: password, with: "<password>") }.joined(separator: " | "))
+            check("and no tooltip holds the password", drawn && !tooltips.contains { $0.contains(password) })
+        } else {
+            check("the perl's pid", false)
+        }
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], let popoverWindow = app.infoPopover?.contentViewController?.view.window {
             await pause(1.2)
             app.captureWindow(to: png, window: popoverWindow)
@@ -3245,10 +3282,30 @@ final class E2ERunner {
         check("closing it stops the refresh", app.infoModel == nil)
         // Leave no sleeps behind.
         all.filter { $0.name == "sleep" || $0.command.contains("socket.socket") }.forEach { kill($0.pid, SIGTERM) }
+        if let perl, ProcessInspector.kinfo(perl.pid)?.start == perl.start { kill(perl.pid, SIGTERM) }
         for tab in app.store.tabs {
             tab.terminal.insertText("kill %1 2>/dev/null")
             tab.terminal.pressReturn()
         }
+    }
+
+    /// The help — the tooltip `.help` gives — of every element `identifier`
+    /// names under `root`, in the accessibility tree `accessibilityTree` builds.
+    static func accessibilityHelps(_ identifier: String, in root: NSView) -> [String] {
+        func get(_ object: NSObject, _ key: String) -> Any? { object.responds(to: Selector(key)) ? object.value(forKey: key) : nil }
+        var helps: [String] = []
+        var walked: Set<ObjectIdentifier> = []
+        func walk(_ object: NSObject, depth: Int) {
+            guard depth < 80, walked.insert(ObjectIdentifier(object)).inserted else { return }
+            if get(object, "accessibilityIdentifier") as? String == identifier, let help = get(object, "accessibilityHelp") as? String {
+                helps.append(help)
+            }
+            var children = (get(object, "accessibilityChildren") as? [Any] ?? []).compactMap { $0 as? NSObject }
+            if let view = object as? NSView { children += view.subviews }
+            for child in children { walk(child, depth: depth + 1) }
+        }
+        walk(root, depth: 0)
+        return helps
     }
 
     /// Tab Info reads a Claude tab's session transcript (a prepared one, in
@@ -3705,7 +3762,8 @@ final class E2ERunner {
                 let commands = model.processes.flatMap(\.flattened).map(\.command)
                 return commands.contains { $0.hasPrefix("sleep 71") } && commands.contains { $0.hasPrefix("sleep 72") }
             }
-            check("Tab Info lists every pane's processes", both, model.processes.flatMap(\.flattened).map(\.command).joined(separator: " | "))
+            // A count: the panes run what the user's shell config starts too.
+            check("Tab Info lists every pane's processes", both, "\(model.processes.flatMap(\.flattened).count) processes")
             // And measures them, though it reads the panes one after the
             // other: a read once kept only its own pane's CPU baselines, and
             // every pane's processes read 0%.
@@ -4223,7 +4281,7 @@ final class E2ERunner {
         app.newTab(in: worktree)
         guard let claudeTab = app.store.selected else { return check("a tab", false) }
         await run("bash \(script.path) &", timeout: 6) {
-            ProcessInspector().tree(root: SurfaceProcesses.shared.loginPID(of: claudeTab.terminal), tag: claudeTab.terminal.processTag)
+            ProcessInspector().tree(root: SurfaceProcesses.shared.loginPID(of: claudeTab.terminal), tag: claudeTab.terminal.processTag, commands: true)
                 .flatMap(\.flattened).contains { $0.command.contains("--resume") }
         }
         app.refreshSessions()

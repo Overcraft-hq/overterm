@@ -418,6 +418,10 @@ through its menu item, without bringing the app forward.
 `splits` also reads Tab Info's CPU in a split tab: a busy loop of its own in
 each pane (stopped by a file it writes, 60 s at most), each above 0% — a
 pane's read once forgot the other's baselines, and every pane read 0%.
+`info` also runs a sleeping perl of its own (60 s at most) whose argv
+carries a fake password, made at run time and never typed — a script it
+writes execs it —, and reads its row's tooltip from the popover's
+accessibility tree: masked, the password nowhere.
 `marks` leaves one tab in each activity state; with `OVERTERM_DUMP_PNG=<png>`
 it captures the window, for judging the look. Run one by hand while working
 on it:
