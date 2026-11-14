@@ -69,38 +69,67 @@ private struct KubeTreeRow: View {
     let depth: Int
     @ObservedObject var theme: ChromeTheme
 
+    /// On one line when it fits; else what it is now on a line of its own
+    /// under the name, so the name — a source's URL — is never the part
+    /// cut to make room for its revision.
     var body: some View {
-        HStack(alignment: .firstTextBaseline, spacing: 6) {
-            Color.clear.frame(width: CGFloat(depth) * 16, height: 1)
-            Text(verbatim: relation).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3).frame(width: 52, alignment: .leading)
-            Circle().fill(color).frame(width: 7, height: 7).help(node.health.rawValue)
-            Text(verbatim: node.kind).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1).fixedSize()
-            if node.link != nil {
-                Button {
-                    page.openTreeNode(node)
-                } label: {
-                    Text(verbatim: node.name).font(.system(size: ChromeMetrics.text(12))).underline().foregroundStyle(theme.accentText).lineLimit(1).truncationMode(.middle)
+        ViewThatFits(in: .horizontal) {
+            HStack(alignment: .firstTextBaseline, spacing: 6) {
+                head
+                qualifiers
+                Spacer(minLength: 0)
+            }
+            VStack(alignment: .leading, spacing: 2) {
+                HStack(alignment: .firstTextBaseline, spacing: 6) {
+                    head
+                    Spacer(minLength: 0)
                 }
-                .buttonStyle(.plain)
-                .help("Open \(node.kind) \(node.namespace.map { "\($0)/" } ?? "")\(node.name) — right-click for its verbs")
-                .accessibilityIdentifier("kubernetes.detail.tree.node.\(node.kind).\(node.name)")
-            } else {
-                Text(verbatim: node.name).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                // No empty second line for a long name with nothing after it.
+                if node.how != nil || node.status != nil {
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        qualifiers
+                        Spacer(minLength: 0)
+                    }
+                    .padding(.leading, CGFloat(depth) * 16 + 52 + 6 + 7 + 6)
+                }
             }
-            if let how = node.how {
-                Text(verbatim: how).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.tail)
-            }
-            if let status = node.status {
-                Text(verbatim: status).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(node.health.isProblem ? TabStatusStyle.failed : theme.text2).lineLimit(2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-            Spacer(minLength: 0)
         }
         .contentShape(Rectangle())
         .overlay {
             if node.link != nil {
                 ResourceVerbMenuArea { page.treeVerbs(for: node) }
             }
+        }
+    }
+
+    /// How it hangs off its parent, its mark, its kind and name.
+    @ViewBuilder private var head: some View {
+        Color.clear.frame(width: CGFloat(depth) * 16, height: 1)
+        Text(verbatim: relation).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3).frame(width: 52, alignment: .leading)
+        Circle().fill(color).frame(width: 7, height: 7).help(node.health.rawValue)
+        Text(verbatim: node.kind).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(1).fixedSize()
+        if node.link != nil {
+            Button {
+                page.openTreeNode(node)
+            } label: {
+                Text(verbatim: node.name).font(.system(size: ChromeMetrics.text(12))).underline().foregroundStyle(theme.accentText).lineLimit(1).truncationMode(.middle)
+            }
+            .buttonStyle(.plain)
+            .help("Open \(node.kind) \(node.namespace.map { "\($0)/" } ?? "")\(node.name) — right-click for its verbs")
+            .accessibilityIdentifier("kubernetes.detail.tree.node.\(node.kind).\(node.name)")
+        } else {
+            Text(verbatim: node.name).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+        }
+    }
+
+    /// How it is reached (a source's path and branch) and what it is now.
+    @ViewBuilder private var qualifiers: some View {
+        if let how = node.how {
+            Text(verbatim: how).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text3).lineLimit(1).truncationMode(.tail)
+        }
+        if let status = node.status {
+            Text(verbatim: status).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(node.health.isProblem ? TabStatusStyle.failed : theme.text2).lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
         }
     }
 
