@@ -118,8 +118,10 @@ extension GitRunTests {
         XCTAssertEqual(environment["PATH"], "/usr/bin")
         XCTAssertEqual(environment["GIT_CONFIG_GLOBAL"], "/dev/null", "not a repository's: kept")
         XCTAssertEqual(environment["GIT_TERMINAL_PROMPT"], "0")
-        // git's own list of what is local to a repository, all of it.
+        // git's own list of what is local to a repository, all of it —
+        // whichever git this is: older ones name one more.
         let local = try await Git.run(["rev-parse", "--local-env-vars"], in: tmp)
-        XCTAssertEqual(Set(local.split(separator: "\n").map(String.init)), Git.repositoryVariables)
+        let named = Set(local.split(separator: "\n").map(String.init))
+        XCTAssertTrue(named.isSubset(of: Git.repositoryVariables), "not dropped: \(named.subtracting(Git.repositoryVariables).sorted())")
     }
 }
