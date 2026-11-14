@@ -10,18 +10,22 @@ import Foundation
 /// - the instance labels, `argocd.argoproj.io/instance` and
 ///   `app.kubernetes.io/instance` (with whether Helm's own release
 ///   annotation is beside it: then it is Helm's, not Argo CD's);
-/// - the hints: a hook (`argocd.argoproj.io/hook`, else `helm.sh/hook`),
-///   `ignore-healthcheck`, `sync-wave`, `sync-options`, `compare-options`,
-///   and at most 5 `link.argocd.argoproj.io/*` — text, never opened;
-/// - `metadata.generation`, `resourceVersion`, whether it is being deleted;
-/// - from `managedFields`, two times only: the newest of Argo CD's own
-///   managers (`argoManagers`) — when Argo CD last changed it, never a
-///   person's `kubectl edit` or an HPA's write — and the newest of any.
+/// - the hints: whether it is a hook as gitops-engine's `hook.IsHook`
+///   says (`argocd.argoproj.io/hook` present and not `Skip` alone, else
+///   `helm.sh/hook` but `crd-install`), `ignore-healthcheck`, `sync-wave`,
+///   `sync-options`, `compare-options`, and at most 5
+///   `link.argocd.argoproj.io/*` — text, never opened, each URL without
+///   its userinfo and credentials scrubbed;
+/// - `metadata.generation`, whether it is being deleted;
+/// - from `managedFields`, one time only: the newest of Argo CD's own
+///   manager (`argoManagers`) — when Argo CD last changed it, never a
+///   person's `kubectl edit`, an Argo CD UI action or an HPA's write.
 ///
 /// kubectl's `last-applied-configuration`, every other annotation and
-/// label, and `managedFields`' field sets are never kept. Every kept
-/// string is the cluster's text: capped, without control characters.
-/// Pure.
+/// label, `resourceVersion`, other managers' times and `managedFields`'
+/// field sets are never kept: a status write changes no row's marks.
+/// Every kept string is the cluster's text: capped, without control,
+/// format (bidi, zero-width), separator or private-use characters. Pure.
 struct KubeMarkWire: Equatable, Hashable, Sendable {
     /// The tracking annotation as it reads against the object it sits on.
     enum Tracking: Equatable, Hashable, Sendable {
@@ -54,7 +58,9 @@ struct KubeMarkWire: Equatable, Hashable, Sendable {
     var appInstance: String?
     /// Helm's own `meta.helm.sh/release-name` is there: `appInstance` is Helm's.
     var helmRelease = false
-    /// Argo CD's hook type, else Helm's: a hook isn't in the app's health.
+    /// Argo CD's hook types, else Helm's, as written ("" for an empty
+    /// Argo CD annotation); nil when it isn't a hook. A hook isn't in the
+    /// app's health.
     var hook: String?
     /// `argocd.argoproj.io/ignore-healthcheck: "true"`.
     var ignoreHealthcheck = false
@@ -63,15 +69,11 @@ struct KubeMarkWire: Equatable, Hashable, Sendable {
     var compareOptions: String?
     var links: [Link] = []
     var generation: Int?
-    var resourceVersion: String?
     /// `metadata.deletionTimestamp` is set.
     var deleting = false
-    /// The newest `managedFields` time of one of Argo CD's own managers:
-    /// "last change applied by Argo CD", never "last sync".
+    /// The newest `managedFields` time of Argo CD's own manager: "last
+    /// change applied by Argo CD", never "last sync".
     var argoChanged: Date?
-    /// The newest `managedFields` time of any manager: most recently
-    /// changed first, for the settle's order.
-    var lastChanged: Date?
 
     static let installationAnnotation = KubeTrackingID.installationAnnotation
     static let hookAnnotation = "argocd.argoproj.io/hook"
@@ -82,10 +84,15 @@ struct KubeMarkWire: Equatable, Hashable, Sendable {
     static let compareOptionsAnnotation = "argocd.argoproj.io/compare-options"
     static let linkPrefix = "link.argocd.argoproj.io/"
 
-    /// The field managers that are Argo CD's own: server-side apply's
-    /// `argocd-controller`, and the controller's and the server's names.
-    /// Nothing else is ever taken for Argo CD's change.
-    static let argoManagers: Set<String> = ["argocd-controller", "argocd-application-controller", "argocd-server"]
+    /// The field managers that are Argo CD's applies from git: server-side
+    /// apply's `argocd-controller` (gitops-engine's `ArgoCDSSAManager`).
+    /// The client-side apply's name is unverified (gitops.md, 14.11), and
+    /// `argocd-server` writes on a person's action in Argo CD's UI or API
+    /// (an edit, a patch, a restart) — never taken for Argo CD's change.
+    static let argoManagers: Set<String> = ["argocd-controller"]
+
+    /// Argo CD's hook types (gitops-engine's `HookType`).
+    static let hookTypes: Set<String> = ["PreSync", "Sync", "PostSync", "SyncFail", "PostDelete", "PreDelete", "Skip"]
 
     /// At most this many links are kept.
     static let linksKept = 5
@@ -120,33 +127,62 @@ struct KubeMarkWire: Equatable, Hashable, Sendable {
         wire.argoInstance = (labels[KubeGitOpsOwner.argoInstanceLabel] as? String).flatMap(KubeTrackingID.instanceLabel)
         wire.appInstance = (labels[KubeGitOpsOwner.appInstanceLabel] as? String).flatMap(KubeTrackingID.instanceLabel)
         wire.helmRelease = annotations[KubeGitOpsOwner.helmReleaseAnnotation] != nil
-        wire.hook = text(annotations[hookAnnotation], cap: hintCap) ?? text(annotations[helmHookAnnotation], cap: hintCap)
+        wire.hook = hook(argo: annotations[hookAnnotation], helm: annotations[helmHookAnnotation])
         wire.ignoreHealthcheck = (annotations[ignoreHealthcheckAnnotation] as? String)?.lowercased() == "true"
         wire.syncWave = text(annotations[syncWaveAnnotation], cap: hintCap)
         wire.syncOptions = text(annotations[syncOptionsAnnotation], cap: hintCap)
         wire.compareOptions = text(annotations[compareOptionsAnnotation], cap: hintCap)
         wire.links = annotations.keys.filter { $0.hasPrefix(linkPrefix) }.sorted().prefix(linksKept).compactMap { key in
-            guard let name = text(String(key.dropFirst(linkPrefix.count)), cap: hintCap), let value = text(annotations[key], cap: linkCap) else { return nil }
+            guard let name = text(String(key.dropFirst(linkPrefix.count)), cap: hintCap), let value = link(annotations[key]) else { return nil }
             return Link(name: name, value: value)
         }
         wire.generation = (metadata["generation"] as? NSNumber)?.intValue
-        wire.resourceVersion = text(metadata["resourceVersion"], cap: 64)
         wire.deleting = metadata["deletionTimestamp"] is String
         for field in metadata["managedFields"] as? [[String: Any]] ?? [] {
-            guard let time = (field["time"] as? String).flatMap({ try? Date($0, strategy: .iso8601) }) else { continue }
-            wire.lastChanged = max(wire.lastChanged ?? time, time)
-            if let manager = field["manager"] as? String, argoManagers.contains(manager) { wire.argoChanged = max(wire.argoChanged ?? time, time) }
+            guard let manager = field["manager"] as? String, argoManagers.contains(manager),
+                let time = (field["time"] as? String).flatMap({ try? Date($0, strategy: .iso8601) })
+            else { continue }
+            wire.argoChanged = max(wire.argoChanged ?? time, time)
         }
         return wire
     }
 
-    /// A cluster's string as kept: control characters out, at most `cap`
-    /// characters; nil for nothing.
+    /// Whether it is a hook, as gitops-engine's `hook.IsHook` says: Argo
+    /// CD's annotation present (even empty) is one unless its only valid
+    /// type is `Skip`, and then Helm's isn't read; else Helm's annotation
+    /// present is one unless it is `crd-install` (Helm's CRDs, not hooks).
+    /// The value as written, capped; nil when not a hook.
+    static func hook(argo: Any?, helm: Any?) -> String? {
+        if let argo = argo as? String {
+            let types = argo.split(separator: ",").map { $0.trimmingCharacters(in: .whitespaces) }.filter(hookTypes.contains)
+            if types == ["Skip"] { return nil }
+            return text(argo, cap: hintCap) ?? ""
+        }
+        guard let helm = helm as? String, helm.trimmingCharacters(in: .whitespaces) != "crd-install" else { return nil }
+        return text(helm, cap: hintCap) ?? ""
+    }
+
+    /// A link's value as kept: bounded, every URL's userinfo dropped and
+    /// credentials scrubbed (a query's `token=`), then as `text`.
+    static func link(_ value: Any?) -> String? {
+        guard let value = value as? String else { return nil }
+        let bounded = String(String.UnicodeScalarView(value.unicodeScalars.prefix(4096)))
+        let stripped = GitRemoteURL.stripUserinfo(inText: GitRemoteURL.withoutUserinfo(bounded))
+        return text(Secrets.scrubCredentials(stripped), cap: linkCap)
+    }
+
+    /// The general categories a kept string never holds: control,
+    /// format (bidi overrides, zero-width), line and paragraph separators,
+    /// private use — what could show a value reversed or hide part of it.
+    private static let dropped: Set<Unicode.GeneralCategory> = [.control, .format, .lineSeparator, .paragraphSeparator, .privateUse]
+
+    /// A cluster's string as kept: `dropped`'s characters out, at most
+    /// `cap` characters; nil for nothing.
     static func text(_ value: Any?, cap: Int) -> String? {
         guard let value = value as? String else { return nil }
         var kept = String.UnicodeScalarView()
         var count = 0
-        for scalar in value.unicodeScalars where scalar.properties.generalCategory != .control {
+        for scalar in value.unicodeScalars where !dropped.contains(scalar.properties.generalCategory) {
             kept.append(scalar)
             count += 1
             if count >= cap { break }
@@ -168,9 +204,10 @@ struct KubeMarkWire: Equatable, Hashable, Sendable {
 ///   container's name and image (a CronJob's through its job template);
 /// - `status`: generations and replica counts, a DaemonSet's scheduled
 ///   numbers, the revisions, a CronJob's last schedule and success and its
-///   active jobs counted, a Rollout's phase and message, and the
-///   conditions — type, status, reason, time, and a message scrubbed
-///   (`Secrets.scrubCredentials`) and cut to 300 characters as it is read.
+///   active jobs counted (a Job's active pods), a Rollout's phase and
+///   message, and the conditions — type, status, reason, time, and a
+///   message scrubbed (`message`) and cut to 300 characters as it is read.
+///   Every string is capped and kept as `KubeMarkWire.text` keeps it.
 ///
 /// Never env, args, command, volumes, annotations, labels, kubectl's
 /// last-applied copy, or the template beyond its images. Pure.
@@ -187,6 +224,15 @@ struct KubeMarkedWorkloadWire: Decodable, Equatable, Sendable {
     static let containersKept = 20
 
     enum CodingKeys: String, CodingKey, CaseIterable { case apiVersion, kind, metadata, spec, status }
+
+    init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        apiVersion = KubeMarkWire.text(try container.decodeIfPresent(String.self, forKey: .apiVersion), cap: 128)
+        kind = KubeMarkWire.text(try container.decodeIfPresent(String.self, forKey: .kind), cap: 128)
+        metadata = try container.decodeIfPresent(Metadata.self, forKey: .metadata)
+        spec = try container.decodeIfPresent(Spec.self, forKey: .spec)
+        status = try container.decodeIfPresent(Status.self, forKey: .status)
+    }
 
     /// One object's answer.
     static func decode(_ data: Data) throws -> KubeMarkedWorkloadWire {
@@ -207,6 +253,15 @@ struct KubeMarkedWorkloadWire: Decodable, Equatable, Sendable {
         var deletionTimestamp: String?
 
         enum CodingKeys: String, CodingKey, CaseIterable { case name, namespace, resourceVersion, generation, deletionTimestamp }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            name = KubeMarkWire.text(try container.decodeIfPresent(String.self, forKey: .name), cap: 253)
+            namespace = KubeMarkWire.text(try container.decodeIfPresent(String.self, forKey: .namespace), cap: 63)
+            resourceVersion = KubeMarkWire.text(try container.decodeIfPresent(String.self, forKey: .resourceVersion), cap: 64)
+            generation = try container.decodeIfPresent(Int.self, forKey: .generation)
+            deletionTimestamp = KubeMarkWire.text(try container.decodeIfPresent(String.self, forKey: .deletionTimestamp), cap: 64)
+        }
     }
 
     struct Spec: Decodable, Equatable, Sendable {
@@ -289,6 +344,14 @@ struct KubeMarkedWorkloadWire: Decodable, Equatable, Sendable {
         var name: String?
 
         enum CodingKeys: String, CodingKey, CaseIterable { case apiVersion, kind, name }
+
+        /// A CRD's field the API server doesn't check: capped as it is read.
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            apiVersion = KubeMarkWire.text(try container.decodeIfPresent(String.self, forKey: .apiVersion), cap: 128)
+            kind = KubeMarkWire.text(try container.decodeIfPresent(String.self, forKey: .kind), cap: 128)
+            name = KubeMarkWire.text(try container.decodeIfPresent(String.self, forKey: .name), cap: 253)
+        }
     }
 
     struct Status: Decodable, Equatable, Sendable {
@@ -306,7 +369,8 @@ struct KubeMarkedWorkloadWire: Decodable, Equatable, Sendable {
         var conditions: [Condition]?
         var lastScheduleTime: String?
         var lastSuccessfulTime: String?
-        /// How many jobs a CronJob has running: the list counted, never read.
+        /// How many a CronJob's jobs (a list, counted, never read) or a
+        /// Job's pods (an integer) are running.
         var active: Int?
         /// An Argo Rollout's: Healthy, Progressing, Degraded, Paused.
         var phase: String?
@@ -337,7 +401,11 @@ struct KubeMarkedWorkloadWire: Decodable, Equatable, Sendable {
             conditions = try container.decodeIfPresent([Condition].self, forKey: .conditions).map { Array($0.prefix(20)) }
             lastScheduleTime = KubeMarkWire.text(try container.decodeIfPresent(String.self, forKey: .lastScheduleTime), cap: 64)
             lastSuccessfulTime = KubeMarkWire.text(try container.decodeIfPresent(String.self, forKey: .lastSuccessfulTime), cap: 64)
-            active = try container.decodeIfPresent([Skipped].self, forKey: .active)?.count
+            if let jobs = try? container.decodeIfPresent([Skipped].self, forKey: .active) {
+                active = jobs.count
+            } else {
+                active = try container.decodeIfPresent(Int.self, forKey: .active)
+            }
             phase = KubeMarkWire.text(try container.decodeIfPresent(String.self, forKey: .phase), cap: 64)
             message = KubeMarkedWorkloadWire.message(try container.decodeIfPresent(String.self, forKey: .message))
         }
@@ -377,12 +445,16 @@ struct KubeMarkedWorkloadWire: Decodable, Equatable, Sendable {
     /// An element read for its count alone: no key of it is decoded.
     private struct Skipped: Decodable {}
 
-    /// A message as kept: scrubbed whole (a credential cut in half could
-    /// slip past the patterns), then cut to `messageCap` characters. A
-    /// message past 4,096 is cut to that before it is scrubbed.
+    /// A message as kept: bounded to 4,096 characters, then scrubbed whole
+    /// as every summary's message is (`KubeGitOpsMessage.scrubbed`: cut at
+    /// a manifest line, URLs' passwords masked and userinfo dropped,
+    /// credentials scrubbed — a credential cut in half could slip past the
+    /// patterns), folded to one line and cut to `messageCap` characters.
     static func message(_ value: String?) -> String? {
-        guard let bounded = KubeMarkWire.text(value, cap: 4096) else { return nil }
-        return KubeMarkWire.text(Secrets.scrubCredentials(bounded), cap: messageCap)
+        guard let value, !value.isEmpty else { return nil }
+        let bounded = String(String.UnicodeScalarView(value.unicodeScalars.prefix(4096)))
+        let scrubbed = KubeGitOpsMessage.scrubbed(bounded, limit: KubeGitOpsMessage.hoverLimit)
+        return KubeMarkWire.text(KubeGitOpsMessage.oneLine(scrubbed, limit: KubeGitOpsMessage.hoverLimit), cap: messageCap)
     }
 
     /// Each container's image, in order.

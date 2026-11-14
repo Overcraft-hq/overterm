@@ -187,11 +187,16 @@ enum KubeMarkedHealth {
             return "\(text) for \(KubeAge.format(now.timeIntervalSince(notReadySince)))"
         }
         switch kind {
-        case .deployment, .rollout:
-            // A Deployment's Ready is `ready/spec`; a Rollout's cells are counts.
-            let ready = fraction(cell("Ready"))
-            guard let desired = ready?.of ?? number("Desired") else { return nil }
-            let readyCount = ready?.count ?? number("Current") ?? 0
+        case .rollout:
+            // Its health is its phase (survey consequence 2), which no
+            // printer column carries: equal counts can be Paused or an
+            // aborted, Degraded canary. Only its object settles it.
+            return Verdict(status: nil, sentence: "its phase isn't read yet", unread: true)
+        case .deployment:
+            // A Deployment's Ready is `ready/spec`.
+            guard let ready = fraction(cell("Ready")) else { return nil }
+            let desired = ready.of
+            let readyCount = ready.count
             let updated = number("Up-to-date") ?? desired
             let available = number("Available") ?? desired
             if desired == 0, readyCount == 0, available == 0 { return Verdict(status: .healthy, sentence: "scaled to 0", scaledToZero: true) }
@@ -416,6 +421,9 @@ enum KubeMarkedHealth {
         var notes: [String] = []
     }
 
+    /// The sentence a Deployment its Rollout scales to 0 is said with.
+    static let scaledByRollout = "scaled by its Rollout"
+
     static let noWorkload =
         "no Deployment, StatefulSet, DaemonSet, CronJob or Argo Rollout of it was read: its workload may be a kind not read here (a Job, a custom resource)"
 
@@ -429,12 +437,14 @@ enum KubeMarkedHealth {
         let rolloutTargets = Set(app.members.compactMap(\.workloadRef))
         let hasRollout = app.members.contains { $0.id.kind == .rollout }
         var counted: [(member: KubeMarkedMember, verdict: Verdict?)] = []
+        var byRollout = Set<KubeMarkedMember.ID>()
         for member in app.members where !member.marks.ignoreHealthcheck {
             var verdict = member.health
             if member.id.kind == .deployment, hasRollout, verdict?.scaledToZero == true,
                 rolloutTargets.isEmpty || rolloutTargets.contains(member.id.name)
             {
-                verdict = Verdict(status: .healthy, sentence: "scaled by its Rollout")
+                verdict = Verdict(status: .healthy, sentence: scaledByRollout)
+                byRollout.insert(member.id)
             }
             counted.append((member, verdict))
         }
@@ -455,8 +465,15 @@ enum KubeMarkedHealth {
             notes.append("no member here has a health check; Argo CD shows such an app Healthy")
             return ready(app, count: 0, fromRows: false, notes: notes)
         }
-        if !counted.contains(where: { $0.member.id.kind.isWorkload }) {
-            return AppVerdict(status: .unknown, state: .unknown, word: "Unknown", why: noWorkload, fromRows: fromRows, notes: notes)
+        // A workload counts as read only with a health of its own: never a
+        // CronJob or Rollout not yet read, nor the Deployment said scaled by
+        // its Rollout (its 0 says nothing of the app).
+        let workloadRead = rated.contains { entry in
+            entry.member.id.kind.isWorkload && !byRollout.contains(entry.member.id)
+        }
+        if !workloadRead {
+            let waiting = unread.contains { $0.member.id.kind.isWorkload }
+            return AppVerdict(status: .unknown, state: .unknown, word: "Unknown", why: waiting ? "not read yet" : noWorkload, fromRows: fromRows || waiting, notes: notes)
         }
         guard let worst = rated.compactMap(\.verdict?.status).max() else {
             return AppVerdict(status: .unknown, state: .unknown, word: "Unknown", why: "not read yet", fromRows: true, notes: notes)

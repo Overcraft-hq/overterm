@@ -58,12 +58,11 @@ final class KubeMarkWireTests: XCTestCase {
             marks.tracking,
             .own(KubeTrackingID(instance: "prod-acme-pay-checkout-service", group: "apps", kind: "Deployment", namespace: "acme-pay", name: "acme-checkout")))
         XCTAssertEqual(marks.generation, 7)
-        XCTAssertEqual(marks.resourceVersion, "4711")
         XCTAssertEqual(marks.syncWave, "2")
         XCTAssertEqual(marks.syncOptions, "ServerSideApply=true")
         XCTAssertEqual(marks.links, [KubeMarkWire.Link(name: "runbook", value: "https://runbooks.acme.example/checkout")])
         XCTAssertEqual(marks.argoChanged, try Date("2026-11-10T08:00:00Z", strategy: .iso8601))
-        XCTAssertEqual(marks.lastChanged, try Date("2026-11-12T09:00:00Z", strategy: .iso8601))
+        XCTAssertFalse(String(reflecting: marks).contains("4711"), "no resourceVersion: a status write changes no row's marks")
         XCTAssertEqual(row.owners, [], "marks alone: owners only when asked")
         for kept in [String(reflecting: row), String(reflecting: table)] {
             XCTAssertFalse(kept.contains(Self.sentinel), "the row kept something outside the allow-list: \(kept)")
@@ -105,6 +104,7 @@ final class KubeMarkWireTests: XCTestCase {
                 "annotations": [
                     "argocd.argoproj.io/tracking-id": "acme:anything", "argocd.argoproj.io/installation-id": "Hub B!",
                     "helm.sh/hook": "pre-install", "argocd.argoproj.io/ignore-healthcheck": "TRUE",
+                    "argocd.argoproj.io/sync-wave": "\u{202E}1-\u{200B}2\u{2028}\u{E000}",
                     "argocd.argoproj.io/sync-options": String(repeating: "x", count: 2000) + "\u{7}",
                     "meta.helm.sh/release-name": "acme-checkout",
                 ]
@@ -120,6 +120,7 @@ final class KubeMarkWireTests: XCTestCase {
         XCTAssertEqual(marks?.hook, "pre-install", "Helm's hook when Argo CD's isn't there")
         XCTAssertEqual(marks?.ignoreHealthcheck, true)
         XCTAssertEqual(marks?.syncOptions?.count, KubeMarkWire.hintCap)
+        XCTAssertEqual(marks?.syncWave, "1-2", "no bidi override, zero-width, separator or private-use character kept")
         XCTAssertEqual(marks?.links.count, KubeMarkWire.linksKept)
         XCTAssertEqual(marks?.links.first?.value, "https://acme.example/0", "no control character kept")
         XCTAssertEqual(marks?.deleting, true)
@@ -137,13 +138,48 @@ final class KubeMarkWireTests: XCTestCase {
         }
         let argo = try Date("2026-11-01T00:00:00Z", strategy: .iso8601)
         let later = marks([
-            ("argocd-application-controller", "2026-11-01T00:00:00Z"), ("kubectl-edit", "2026-11-05T00:00:00Z"),
+            ("argocd-controller", "2026-11-01T00:00:00Z"), ("kubectl-edit", "2026-11-05T00:00:00Z"),
             ("kube-controller-manager", "2026-11-06T00:00:00Z"), ("kubectl-client-side-apply", "2026-11-07T00:00:00Z"),
+            ("argocd-server", "2026-11-08T00:00:00Z"), ("argocd-application-controller", "2026-11-09T00:00:00Z"),
         ])
-        XCTAssertEqual(later?.argoChanged, argo, "a later edit or HPA write is never Argo CD's")
-        XCTAssertEqual(later?.lastChanged, try Date("2026-11-07T00:00:00Z", strategy: .iso8601))
+        XCTAssertEqual(later?.argoChanged, argo, "a later edit, HPA write, or a person's action in Argo CD's UI is never Argo CD's apply")
+        XCTAssertNil(marks([("argocd-server", "2026-11-05T00:00:00Z")])?.argoChanged, "argocd-server writes on a person's action")
         XCTAssertNil(marks([("kubectl-edit", "2026-11-05T00:00:00Z"), ("acme-operator", "2026-11-06T00:00:00Z")])?.argoChanged, "no Argo CD manager: no time")
         XCTAssertEqual(marks([("argocd-controller", "2026-11-01T00:00:00Z")])?.argoChanged, argo, "server-side apply's manager")
+    }
+
+    /// A hook as gitops-engine's `hook.IsHook` says: Argo CD's annotation,
+    /// even empty, unless `Skip` alone (then Helm's isn't read); Helm's but
+    /// `crd-install`.
+    func testHooksAreGitopsEnginesHooks() {
+        let identity = KubeTrackingID.Identity(group: "batch", kind: "Job", namespace: "acme-pay", name: "acme-migrate")
+        func hook(_ annotations: [String: String]) -> String? { KubeMarkWire.read(metadata: ["annotations": annotations], self: identity)?.hook }
+        XCTAssertEqual(hook(["argocd.argoproj.io/hook": "PreSync"]), "PreSync")
+        XCTAssertNil(hook(["argocd.argoproj.io/hook": "Skip"]), "Skip isn't a hook: it is in the app's health")
+        XCTAssertNil(hook(["argocd.argoproj.io/hook": "Skip", "helm.sh/hook": "pre-install"]), "Argo CD's annotation decides, Helm's isn't read")
+        XCTAssertEqual(hook(["argocd.argoproj.io/hook": "Skip,PreSync"]), "Skip,PreSync", "Skip with another type is a hook")
+        XCTAssertEqual(hook(["argocd.argoproj.io/hook": "", "helm.sh/hook": "pre-install"]), "", "an empty Argo CD hook is one")
+        XCTAssertEqual(hook(["helm.sh/hook": "post-install"]), "post-install")
+        XCTAssertNil(hook(["helm.sh/hook": "crd-install"]), "Helm's CRDs aren't hooks")
+        XCTAssertNil(hook([:]))
+    }
+
+    /// A link is text to copy: never its URL's userinfo or a token in its query.
+    func testLinksLoseTheirCredentials() {
+        let identity = KubeTrackingID.Identity(group: "apps", kind: "Deployment", namespace: "acme-pay", name: "acme-checkout")
+        let token = "abcd" + "ef0123456789"
+        let marks = KubeMarkWire.read(
+            metadata: [
+                "annotations": [
+                    "link.argocd.argoproj.io/grafana": "https://fake-user:\(token)@grafana.acme.example/d/checkout",
+                    "link.argocd.argoproj.io/logs": "https://logs.acme.example/search?token=\(token)&q=checkout",
+                ]
+            ], self: identity)
+        let links = marks?.links ?? []
+        XCTAssertEqual(links.first { $0.name == "grafana" }?.value, "https://grafana.acme.example/d/checkout")
+        let logs = links.first { $0.name == "logs" }?.value ?? ""
+        XCTAssertTrue(logs.hasPrefix("https://logs.acme.example/search?"), logs)
+        for link in links { XCTAssertFalse(link.value.contains(token), link.value) }
     }
 
     /// A GET's workload keeps what Argo CD's rule reads: never env, args,
@@ -188,6 +224,48 @@ final class KubeMarkWireTests: XCTestCase {
         XCTAssertLessThanOrEqual(kept.count, KubeMarkedWorkloadWire.messageCap)
         XCTAssertFalse(kept.contains("abcdefghij0123456789"), "scrubbed before it is cut")
         XCTAssertFalse(String(reflecting: wire).contains(Self.sentinel), "\(wire)")
+    }
+
+    /// A condition's message loses a URL's userinfo and password, as every
+    /// summary's message does, and the object's names are capped and kept
+    /// without format characters.
+    func testAConditionsURLCredentialsAndTheNamesAreScrubbed() throws {
+        let password = "s3cr" + "etpass99"
+        let wire = try KubeMarkedWorkloadWire.decode(
+            JSONSerialization.data(withJSONObject: [
+                "apiVersion": "autoscaling/v2", "kind": "HorizontalPodAutoscaler",
+                "metadata": ["name": "acme-checkout\u{202E}", "namespace": "acme-pay", "resourceVersion": String(repeating: "9", count: 200)],
+                "status": [
+                    "conditions": [
+                        [
+                            "type": "ScalingActive", "status": "False", "reason": "FailedGetExternalMetric",
+                            "message": "unable to get external metric: GET https://fake-user:\(password)@prom.acme.example/api/v1/query failed",
+                        ]
+                    ]
+                ],
+            ]))
+        let message = try XCTUnwrap(wire.condition("ScalingActive")?.message)
+        XCTAssertFalse(message.contains(password), message)
+        XCTAssertFalse(message.contains("fake-user"), message)
+        XCTAssertTrue(message.contains("prom.acme.example"), message)
+        XCTAssertEqual(wire.metadata?.name, "acme-checkout")
+        XCTAssertEqual(wire.metadata?.resourceVersion?.count, 64)
+        let rollout = try KubeMarkedWorkloadWire.decode(
+            JSONSerialization.data(withJSONObject: [
+                "apiVersion": "argoproj.io/v1alpha1", "kind": "Rollout",
+                "spec": ["workloadRef": ["apiVersion": "apps/v1", "kind": "Deployment", "name": String(repeating: "a", count: 400) + "\u{2066}"]],
+            ]))
+        XCTAssertEqual(rollout.spec?.workloadRef?.name?.count, 253, "a CRD's field the API server doesn't check, capped")
+    }
+
+    /// A running Job's `status.active` is its pods' count, an integer.
+    func testARunningJobsActiveIsAnInteger() throws {
+        let job = try KubeMarkedWorkloadWire.decode(
+            JSONSerialization.data(withJSONObject: [
+                "apiVersion": "batch/v1", "kind": "Job", "metadata": ["name": "acme-migrate"], "status": ["active": 1, "conditions": []],
+            ]))
+        XCTAssertEqual(job.status?.active, 1)
+        XCTAssertEqual(KubeMarkedHealth.object(job)?.status, .progressing, "job running")
     }
 
     func testARolloutsAndACronJobsFieldsAreRead() throws {

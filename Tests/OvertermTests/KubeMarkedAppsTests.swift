@@ -153,9 +153,10 @@ final class KubeMarkedAppsTests: XCTestCase {
         XCTAssertEqual(apps, KubeMarkedApps.group(Array(members.filter { ![3, 7, 11].contains(Int($0.id.name.dropFirst(8))!) }) + [moved, relabelled]))
     }
 
-    /// No accidental quadratic work, measured so a debug build on CI holds
-    /// it: 10,000 rows take at most 3× what 5,000 take, and 5,000 under
-    /// 500 ms.
+    /// No accidental quadratic work, counted rather than timed: grouping
+    /// 10,000 rows makes each app once, from its own members only, and a
+    /// merge of a few changed rows makes only their apps again — the
+    /// members it reads are those apps', never the whole scope's.
     func testGroupingScales() {
         func members(_ count: Int) -> [KubeMarkedMember] {
             (0..<count).map { index in
@@ -163,22 +164,19 @@ final class KubeMarkedAppsTests: XCTestCase {
                 return Self.tracked(index % 5 == 0 ? .service : .deployment, app: app, "acme-svc\(index)", namespace: "acme-team\(index % 70)")
             }
         }
-        let small = members(5_000)
-        let large = members(10_000)
-        func timed(_ members: [KubeMarkedMember]) -> TimeInterval {
-            var best = TimeInterval.infinity
-            for _ in 0..<3 {
-                let start = Date()
-                let apps = KubeMarkedApps.group(members)
-                _ = apps.apps.map(\.health)
-                best = min(best, Date().timeIntervalSince(start))
-            }
-            return best
+        for count in [5_000, 10_000] {
+            let all = members(count)
+            var apps = KubeMarkedApps.group(all)
+            XCTAssertEqual(apps.membersMade, count, "\(count) rows: every member read once")
+            XCTAssertEqual(apps.apps.reduce(0) { $0 + $1.members.count }, count)
+            let before = apps.membersMade
+            var changed = all[10]
+            changed.health = .init(status: .progressing, sentence: "1/2 updated", fromRow: true)
+            let dirty = apps.merge(changed: [changed, all[count - 1]], removed: [all[20].id])
+            let touched = dirty.compactMap { apps[$0]?.members.count }.reduce(0, +)
+            XCTAssertEqual(apps.membersMade - before, touched, "a merge reads only its apps' members")
+            XCTAssertLessThanOrEqual(touched, 6, "three apps of two members each, at most")
         }
-        let five = timed(small)
-        let ten = timed(large)
-        XCTAssertLessThan(five, 0.5, "5,000 rows")
-        XCTAssertLessThanOrEqual(ten, max(five * 3, 0.05), "10,000 rows against 5,000")
     }
 }
 
@@ -227,6 +225,12 @@ final class KubeMarkedAppsModeTests: XCTestCase {
         XCTAssertEqual(mode, .only(.noApplications))
         XCTAssertEqual(KubeMarkedAppsMode.Reason.noApplications.line(context: "fake-dev"), "Argo CD's Applications for these aren't in this cluster.")
         XCTAssertEqual(KubeMarkedAppsMode.of(discovery: discovery(served: true), applications: .refused, marked: []), .only(.forbidden))
+    }
+
+    /// A hub with Argo CD installed and no Application yet, and no marks
+    /// anywhere: today's section, never a derived header naming nothing.
+    func testServedWithNoApplicationAndNoMarksIsOff() {
+        XCTAssertEqual(KubeMarkedAppsMode.of(discovery: discovery(served: true), applications: .acrossCluster([]), marked: []), .off)
     }
 
     /// R1's row follow lists every Application, uncut; R2's 500 summaries

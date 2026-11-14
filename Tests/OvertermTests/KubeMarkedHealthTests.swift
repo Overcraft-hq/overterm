@@ -315,6 +315,35 @@ final class KubeMarkedHealthTests: XCTestCase {
         XCTAssertEqual(plain.health.status, .healthy, "without a Rollout, Argo CD's Healthy scaled to 0")
     }
 
+    /// A Rollout's row never settles it: its printer columns are counts,
+    /// and equal counts can be Paused or an aborted, Degraded canary.
+    func testARolloutsRowWaitsForItsPhase() {
+        let fromCells = verdict(.rollout, ["Desired": "3", "Current": "3", "Up-to-date": "3", "Available": "3"])
+        XCTAssertNil(fromCells?.status, "never Healthy from cells")
+        XCTAssertEqual(fromCells?.unread, true)
+        // Its row beside the Deployment it scales to 0: not Ready from that 0.
+        var rollout = member(.rollout, "acme-checkout", fromCells)
+        rollout.workloadRef = "acme-checkout"
+        let zero = KubeMarkedHealth.Verdict(status: .healthy, sentence: "scaled to 0", scaledToZero: true)
+        let waiting = app([member(.deployment, "acme-checkout", zero), rollout, member(.service, "acme-checkout", .init(status: .healthy, sentence: "service"))]).health
+        XCTAssertEqual(waiting.status, .unknown)
+        XCTAssertEqual(waiting.why, "not read yet")
+        let unrated = app([member(.deployment, "acme-checkout", zero), member(.rollout, "acme-checkout", nil)]).health
+        XCTAssertEqual(unrated.status, .unknown, "a Rollout with no verdict leaves a scaled-to-0 Deployment saying nothing")
+    }
+
+    /// A CronJob not yet read beside its Service: Unknown, never Ready
+    /// from the Service (14.5).
+    func testACronJobNotYetReadIsNotReadyFromItsService() {
+        let health = app([
+            member(.cronJob, "acme-reindex", verdict(.cronJob, [:])), member(.service, "acme-reindex", .init(status: .healthy, sentence: "service")),
+        ]).health
+        XCTAssertEqual(health.status, .unknown)
+        XCTAssertEqual(health.state, .unknown)
+        XCTAssertEqual(health.why, "not read yet")
+        XCTAssertTrue(health.fromRows)
+    }
+
     func testReadyAppsSinceArgoCDsLastChange() {
         var marks = KubeMarkWire()
         marks.argoChanged = now.addingTimeInterval(-600)

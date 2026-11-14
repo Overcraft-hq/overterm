@@ -125,9 +125,6 @@ struct KubeMarkedApp: Equatable, Sendable, Identifiable {
     /// The newest change Argo CD's own managers applied to a member.
     var argoChanged: Date? { members.compactMap(\.marks.argoChanged).max() }
 
-    /// The newest change of any member, by any manager.
-    var lastChanged: Date? { members.compactMap(\.marks.lastChanged).max() }
-
     var health: KubeMarkedHealth.AppVerdict { KubeMarkedHealth.app(self) }
 
     /// An app from its members (hooks included), nil when none is left.
@@ -196,6 +193,9 @@ struct KubeMarkedApps: Equatable, Sendable {
     private var placed: [KubeMarkedMember.ID: (placement: Placement, unparsed: Bool)] = [:]
     private var byKey: [Key: [KubeMarkedMember.ID: KubeMarkedMember]] = [:]
     private var probableByKey: [Key: [KubeMarkedMember.ID: KubeMarkedMember]] = [:]
+    /// How many members every app made so far was made from: what `merge`
+    /// costs, counted (the tests' bound on it, never a clock's).
+    private(set) var membersMade = 0
 
     init() {}
 
@@ -268,11 +268,13 @@ struct KubeMarkedApps: Equatable, Sendable {
         for key in dirty {
             let members = Array(byKey[key, default: [:]].values)
             if members.isEmpty { byKey[key] = nil }
+            membersMade += members.count
             certain[key] = KubeMarkedApp.make(key: key, members)
         }
         for key in dirtyProbable {
             let members = Array(probableByKey[key, default: [:]].values)
             if members.isEmpty { probableByKey[key] = nil }
+            membersMade += members.count
             probable[key] = KubeMarkedApp.make(key: key, members)
         }
         return dirty.union(dirtyProbable)
@@ -296,7 +298,7 @@ struct KubeMarkedApps: Equatable, Sendable {
         return marks.helmRelease ? .helm : .probable(Key(installation: "", instance: instance))
     }
 
-    // `placed`'s bookkeeping isn't part of what the apps are.
+    // `placed`'s bookkeeping and `membersMade` aren't part of what the apps are.
     static func == (a: KubeMarkedApps, b: KubeMarkedApps) -> Bool {
         a.certain == b.certain && a.probable == b.probable && a.tally == b.tally
     }
@@ -395,7 +397,8 @@ enum KubeMarkedAppsMode: Equatable, Sendable {
         case .refused:
             return .only(.forbidden)
         case .acrossCluster(let rows):
-            if rows.isEmpty { return .only(.noApplications) }
+            // Argo CD installed with no Application yet, and no marks: today's section.
+            if rows.isEmpty { return marked.isEmpty ? .off : .only(.noApplications) }
             let coexistence = beside(rows: rows, read: nil, marked: marked)
             return coexistence.isEmpty ? .off : .beside(coexistence)
         case .namespaces(let namespaces, let rows):
