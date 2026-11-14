@@ -454,6 +454,12 @@ value, a path or an address of a process that isn't the test's.
   `ManagedProcess`'s member let go to launchd, a helper's by its group; an
   apply's group while a run has it; a sleep
   stopped, continued and ended by its token.
+- `ActivitySignalCheckTests`: the pane pill's Free… over every class a pill
+  can name — the owners' own verbs, the never-list (what runs as the user
+  only for now among it), a terraform write interrupted wherever it runs,
+  the agent's critical Stop, a helm or pulumi write's critical sheet and
+  its reading from a masked argv, what outlives its terminal and apps
+  refused — and every Free asked, the owners' own verbs too.
 
 **The isolated-run gate.** A unit test or an isolated run is guarded
 (`AppEnvironment.guardsSignals`): Activity changes only what the run
