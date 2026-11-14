@@ -145,6 +145,13 @@ struct KubeRow: Equatable, Sendable, Identifiable {
     /// as what deploys it (`KubeGitOpsOwner`) — only where the list asked
     /// (`KubeListOptions.owners`: the rail's workloads).
     var owners: [KubeGitOpsOwner] = []
+    /// Argo CD's marks and what Argo CD's rules read beside them
+    /// (`KubeMarkWire`'s allow-list), its tracking id checked against the
+    /// kind listed — only where the list asked (`KubeListOptions.marks`)
+    /// and the row carried its metadata. Nothing else of the metadata is
+    /// kept: never kubectl's last-applied copy, another annotation or
+    /// label, or a managed field's field set.
+    var marks: KubeMarkWire? = nil
 
     func cell(_ column: String, in columns: [KubeColumn]) -> KubeCell? {
         guard let index = KubeColumn.index(of: column, in: columns), index < cells.count else { return nil }
@@ -180,18 +187,21 @@ enum KubeTableReader {
     /// `columns`: the headers kept from the list, for a watch's later
     /// events, which come without theirs. `kind`: what was listed, for
     /// the kinds whose cells are read with care (`row`), and required with
-    /// `owners`: a mark is checked against it.
-    static func read(_ data: Data, namespace: String?, columns: [KubeColumn]? = nil, kind: KubeResourceKind? = nil, owners: Bool = false) throws -> KubeTable {
+    /// `owners` or `marks`: a mark is checked against it.
+    static func read(
+        _ data: Data, namespace: String?, columns: [KubeColumn]? = nil, kind: KubeResourceKind? = nil, owners: Bool = false, marks: Bool = false
+    ) throws -> KubeTable {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any] else {
             throw Malformed(detail: String(decoding: data.prefix(120), as: UTF8.self))
         }
-        return try read(object, namespace: namespace, columns: columns, kind: kind, owners: owners)
+        return try read(object, namespace: namespace, columns: columns, kind: kind, owners: owners, marks: marks)
     }
 
     static func read(
-        _ object: [String: Any], namespace: String?, columns kept: [KubeColumn]? = nil, kind: KubeResourceKind? = nil, owners: Bool = false
+        _ object: [String: Any], namespace: String?, columns kept: [KubeColumn]? = nil, kind: KubeResourceKind? = nil, owners: Bool = false,
+        marks: Bool = false
     ) throws -> KubeTable {
-        precondition(!owners || kind != nil, "a row's owners are read only against the kind listed")
+        precondition(!(owners || marks) || kind != nil, "a row's marks are read only against the kind listed")
         let metadata = object["metadata"] as? [String: Any] ?? [:]
         let resourceVersion = metadata["resourceVersion"] as? String
         let said = object["kind"] as? String ?? ""
@@ -203,7 +213,8 @@ enum KubeTableReader {
             }
             let rows = (object["rows"] as? [[String: Any]] ?? []).compactMap { row -> KubeRow? in
                 let cells = (row["cells"] as? [Any] ?? []).map { KubeCell(json: $0) }
-                return Self.row(cells, columns: columns, namespace: namespace, object: row["object"] as? [String: Any], kind: kind, owners: owners)
+                return Self.row(
+                    cells, columns: columns, namespace: namespace, object: row["object"] as? [String: Any], kind: kind, owners: owners, marks: marks)
             }
             return KubeTable(
                 columns: columns, rows: rows, resourceVersion: resourceVersion, continueToken: (metadata["continue"] as? String).flatMap { $0.isEmpty ? nil : $0 },
@@ -245,9 +256,12 @@ enum KubeTableReader {
     /// from the row; never the embedded object's, which is a
     /// `PartialObjectMetadata` of `meta.k8s.io`. So `kind` is required
     /// with `owners`: a row whose marks can't be checked names nobody
-    /// surely.
+    /// surely. `marks`: Argo CD's marks kept by `KubeMarkWire`'s
+    /// allow-list (`KubeRow.marks`), checked the same way — `kind` is
+    /// required with it too.
     static func row(
-        _ cells: [KubeCell], columns: [KubeColumn], namespace: String?, object: [String: Any]? = nil, kind: KubeResourceKind? = nil, owners: Bool = false
+        _ cells: [KubeCell], columns: [KubeColumn], namespace: String?, object: [String: Any]? = nil, kind: KubeResourceKind? = nil, owners: Bool = false,
+        marks: Bool = false
     ) -> KubeRow? {
         var cells = cells
         if let kind, KubeGitOps.isFluxSource(kind) { cells = withoutCredentials(cells, columns: columns) }
@@ -266,10 +280,11 @@ enum KubeTableReader {
         let labels = (metadata?["labels"] as? [String: Any] ?? [:]).compactMapValues { $0 as? String }.filter { $0.key.hasPrefix(KubeApplications.prefix) }
         let conditions = KubeRowCondition.read((object?["status"] as? [String: Any])?["conditions"])
         var row = KubeRow(id: KubeRowID(namespace: rowNamespace, name: name), cells: cells, created: created, labels: labels, conditions: conditions)
-        if owners {
-            guard let kind else { preconditionFailure("a row's owners are read only against the kind listed") }
+        if owners || marks {
+            guard let kind else { preconditionFailure("a row's marks are read only against the kind listed") }
             let identity = KubeTrackingID.Identity(group: kind.group, kind: kind.kind, namespace: kind.namespaced ? rowNamespace : nil, name: name)
-            row.owners = KubeGitOpsOwner.parse(metadata: metadata, self: identity)
+            if owners { row.owners = KubeGitOpsOwner.parse(metadata: metadata, self: identity) }
+            if marks { row.marks = KubeMarkWire.read(metadata: metadata, self: identity) }
         }
         return row
     }

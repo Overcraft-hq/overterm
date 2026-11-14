@@ -6550,6 +6550,50 @@ paths, git's arguments on a throwaway repository), `KubeGitOpsCRDTests`
 server's columns) and `kubernetesHealth` (K602/K603 and the card's line)
 check it.
 
+**Apps from Argo CD's marks** (gitops.md 14, D1; pure, the groundwork of
+a spoke's section — Argo CD in another cluster, its Applications not
+here; no list reads them yet). A list that asks `KubeListOptions.marks`
+gets its rows' metadata and keeps `KubeRow.marks` (`KubeMarkWire`, the
+allow-list: the tracking id read by `KubeTrackingID` and checked against
+the kind listed — own, copied or unparsed —, the installation id, the two
+instance labels and whether Helm's release annotation is beside them, the
+hook, ignore-healthcheck, sync-wave, sync-options, compare-options, five
+`link.argocd.argoproj.io/*` as text, generation, resourceVersion,
+deletion, and from managedFields two times only: the newest of Argo CD's
+own managers — "last change applied by Argo CD", never a person's edit or
+an HPA's — and the newest of any; capped, no control character; never
+last-applied, another annotation or label, or a field set).
+`KubeMarkedWorkloadWire` is a GET's allow-list decode for Argo CD's rule:
+spec's paused, replicas, suspend, strategy and partition, a Rollout's
+`workloadRef`, containers' names and images; status' generations, counts,
+revisions, a CronJob's times and active jobs counted, a Rollout's phase,
+conditions with their message scrubbed then cut to 300 — never env, args,
+annotations or the template beyond its images. `KubeMarkedHealth` is
+gitops-engine's built-in rules (Argo CD's order, Healthy to Unknown):
+from cells where the rule reads what a cell shows (a Deployment's ready
+"from its row", since cells hide a paused or stuck single-replica rollout;
+a LoadBalancer `<pending>`; an Ingress without address; a claim's phase;
+an HPA with an `<unknown>` target and a CronJob waiting for their
+object), from the object (Deployments, StatefulSets and DaemonSets never
+Degraded but by a deadline, a Rollout's phase, CronJobs as Argo CD's Lua,
+HPAs by their conditions, Jobs), and an app's verdict — the worst member,
+three causes, hooks and ignore-healthcheck out, a Deployment scaled to 0
+beside its Rollout "scaled by its Rollout", no workload read Unknown,
+Unknown's rank its worst known member's (D-7). `KubeMarkedApps` groups
+`KubeMarkedMember`s into `KubeMarkedApp`s by installation and instance
+(copies, unparsed marks and Helm's instance label counted, not placed;
+`app.kubernetes.io/instance` alone only when nothing carries Argo CD's
+marks; a cluster-scoped mark's destination), and `merge` makes only the
+changed apps again. `KubeMarkedAppsMode` says when they show: Applications
+not served (`notServed`, "another cluster"), `argoproj.io` failing
+discovery (`undiscovered`), refused (`forbidden`), listed whole with none
+(`noApplications`, "aren't in this cluster"), or beside a list — R1's,
+never R2's cut — with the missing ones (a whole read only; a same name
+elsewhere "may be", another installation can't tell, a namespace not read
+unknown). `KubeMarkWireTests` (the sentinel never kept, the copy, the
+managers), `KubeMarkedHealthTests`, `KubeMarkedAppsTests` (and the 10,000
+rows' bound) and `KubeMarkedAppsModeTests` check it.
+
 **The GitOps section** (`g`; gitops.md 2–3, G2): Argo CD's and Flux's
 objects that live in or deploy into the scope on one screen, between Helm
 and Forwards (`KubeSection.gitops`, its key an explicit `g` — the digits
