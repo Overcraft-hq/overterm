@@ -233,10 +233,15 @@ extension E2ERunner {
             !fake.requests.contains { $0.isWatch && $0.path.hasPrefix("/api/v1/namespaces/team-") && $0.query["fieldSelector"] != nil }
                 && fake.requests.contains { $0.isWatch && $0.path == "/api/v1/pods" && $0.query["fieldSelector"] == "status.phase=Running" })
         await pause(2)  // the first lists' work settled
+        // Awake, as `performance` measures: a window the person's windows
+        // cover is napped, and the same work then costs three to five times
+        // the CPU seconds.
+        let fullSpeed = Self.measuredAtFullSpeed()
         let cpu0 = Self.cpuSeconds()
         let wall0 = Date()
         await pause(5)
         let cpu = (Self.cpuSeconds() - cpu0) / Date().timeIntervalSince(wall0) * 100
+        ProcessInfo.processInfo.endActivity(fullSpeed)
         note(String(format: "kubernetes Overview of ten namespaces, quiet: CPU %.2f%%", cpu))
         check("quiet, it costs little CPU", cpu < 10, String(format: "%.2f%%", cpu))
         page.showKind(.pods)
