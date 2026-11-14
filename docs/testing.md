@@ -415,6 +415,9 @@ tree-sitter, editing commands, pickers, vim, and a language server —
 `Overterm.app` (the run's app is the checkout's), the build a positive
 integer, the commit named — and that About Overterm shows them, opened
 through its menu item, without bringing the app forward.
+`splits` also reads Tab Info's CPU in a split tab: a busy loop of its own in
+each pane (stopped by a file it writes, 60 s at most), each above 0% — a
+pane's read once forgot the other's baselines, and every pane read 0%.
 `marks` leaves one tab in each activity state; with `OVERTERM_DUMP_PNG=<png>`
 it captures the window, for judging the look. Run one by hand while working
 on it:

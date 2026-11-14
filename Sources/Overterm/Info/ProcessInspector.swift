@@ -39,8 +39,8 @@ final class ProcessInspector: @unchecked Sendable {
     private let lock = NSLock()
     /// pid → (start time, tag or nil): the environment read once per process.
     private var tags: [pid_t: (start: UInt64, tag: String?)] = [:]
-    /// pid → (cpu nanoseconds, when) for the CPU% delta.
-    private var lastCPU: [pid_t: (ns: UInt64, at: UInt64)] = [:]
+    /// Each process's CPU time as last read, for the CPU% delta.
+    private var cpu = CPUBaselines()
 
     /// The measured tree of a tab: the descendants of `root` (not `root`
     /// itself — for a tab that is the root-owned `login`), plus processes
@@ -73,7 +73,7 @@ final class ProcessInspector: @unchecked Sendable {
         }
         if let tag {
             for (pid, bsd) in infos where bsd.pbi_uid == uid && !members.contains(pid) {
-                let start = UInt64(bsd.pbi_start_tvsec) * 1_000_000 + UInt64(bsd.pbi_start_tvusec)
+                let start = Self.startTime(bsd)
                 if tags[pid]?.start != start {
                     tags[pid] = (start, Self.environment(of: pid)?[Self.tagVariable])
                 }
@@ -91,20 +91,22 @@ final class ProcessInspector: @unchecked Sendable {
         for pid in members {
             guard let bsd = infos[pid] else { continue }
             let task = Self.taskInfo(pid)
-            let cpuNS = task.map { Self.nanoseconds($0.pti_total_user + $0.pti_total_system) } ?? 0
             var percent = 0.0
-            if let last = lastCPU[pid], now > last.at, cpuNS >= last.ns {
-                percent = Double(cpuNS - last.ns) / Double(now - last.at) * 100
+            // A task that can't be read (it is ending) leaves its baseline as it was.
+            if let task {
+                let ns = Self.nanoseconds(task.pti_total_user + task.pti_total_system)
+                percent = cpu.percent(pid: pid, start: Self.startTime(bsd), cpu: ns, at: now)
             }
-            lastCPU[pid] = (cpuNS, now)
             nodes[pid] = ProcessNode(
                 pid: pid, parent: pid_t(bsd.pbi_ppid), name: Self.name(pid, fallback: bsd),
                 command: Self.arguments(of: pid).joined(separator: " "),
                 cpuPercent: percent, memory: task?.pti_resident_size ?? 0, workingDirectory: Self.workingDirectory(of: pid))
         }
-        // Forget processes that are gone (pids get reused).
+        // Forget processes that are gone (pids get reused) — only those: one
+        // outside this tree is another caller's to read (the other panes of
+        // a split tab, the window's agent poll).
         tags = tags.filter { infos[$0.key] != nil }
-        lastCPU = lastCPU.filter { nodes[$0.key] != nil }
+        cpu.forgetEnded { infos[$0].map(Self.startTime) }
         return Self.assemble(nodes)
     }
 
@@ -253,4 +255,48 @@ final class ProcessInspector: @unchecked Sendable {
 
     static func environment(of pid: pid_t) -> [String: String]? { procArgs(pid)?.environment }
     static func arguments(of pid: pid_t) -> [String] { procArgs(pid)?.arguments ?? [] }
+}
+
+extension ProcessInspector {
+    /// When a process started (µs): with its pid, which process it is — a
+    /// pid is reused, the pair never.
+    static func startTime(_ bsd: proc_bsdinfo) -> UInt64 {
+        UInt64(bsd.pbi_start_tvsec) * 1_000_000 + UInt64(bsd.pbi_start_tvusec)
+    }
+
+    /// Each process's CPU time as last read, whoever read it. Tab Info reads
+    /// a split tab pane by pane, and the window's agent poll reads with the
+    /// same inspector: a reading is the rate since that process's previous
+    /// sample, by any of them. (Kept only for the tree just read, each pane's
+    /// read forgot the other's, and every pane read 0%.) Held with the start
+    /// time, so a reused pid never borrows another process's baseline, and
+    /// forgotten only when that process is gone: bounded by the live ones.
+    struct CPUBaselines {
+        /// A rate spans at most this long (ns). A baseline lives as long as
+        /// its process, so one read again after a while — Tab Info on a tab
+        /// nobody read since — would show the gap's average as its CPU now;
+        /// past this, its reading starts again, as a first one does.
+        static let longestInterval: UInt64 = 15_000_000_000
+
+        private var last: [pid_t: (start: UInt64, ns: UInt64, at: UInt64)] = [:]
+
+        /// How many processes have one.
+        var count: Int { last.count }
+
+        /// The share of one core the process used since its previous sample
+        /// (100 = one full core), `ns` its CPU time at `now`; this sample is
+        /// its next baseline. 0 for its first.
+        mutating func percent(pid: pid_t, start: UInt64, cpu ns: UInt64, at now: UInt64) -> Double {
+            defer { last[pid] = (start, ns, now) }
+            guard let previous = last[pid], previous.start == start, now > previous.at, now - previous.at <= Self.longestInterval, ns >= previous.ns
+            else { return 0 }
+            return Double(ns - previous.ns) / Double(now - previous.at) * 100
+        }
+
+        /// Forgets the processes that ended: a pid `started` gives no start
+        /// time for, or another one (the pid reused).
+        mutating func forgetEnded(started: (pid_t) -> UInt64?) {
+            last = last.filter { started($0.key) == $0.value.start }
+        }
+    }
 }

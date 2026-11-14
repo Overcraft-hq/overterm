@@ -78,6 +78,106 @@ final class ProcessInspectorTests: XCTestCase {
         XCTAssertGreaterThan(cpu, 10, "a busy loop's CPU shows between two samples")
     }
 
+    /// What a test started, by pid and start time, children after their
+    /// parents: tearDown ends exactly these, each only while its pid is
+    /// still that process.
+    private var started: [(pid: pid_t, start: UInt64)] = []
+    private var roots: [Process] = []
+
+    override func tearDown() {
+        for process in started.reversed() where ProcessInspector.kinfo(process.pid)?.start == process.start {
+            kill(process.pid, SIGKILL)
+        }
+        roots.forEach { $0.waitUntilExit() }
+        started = []
+        roots = []
+        super.tearDown()
+    }
+
+    /// A shell standing for a pane's `login`, and its one child: a subshell
+    /// spinning on builtins for 20 s at most, so a crash or ⌃C can't leave
+    /// it burning a core.
+    private func busyRoot() throws -> (root: pid_t, busy: pid_t) {
+        let p = Process()
+        p.executableURL = URL(fileURLWithPath: "/bin/bash")
+        // The parenthesised loop is a subshell: a child, which bash waits for.
+        p.arguments = ["-c", "(while [ $SECONDS -lt 20 ]; do :; done); true"]
+        var env = ProcessInfo.processInfo.environment
+        env.removeValue(forKey: ProcessInspector.tagVariable)
+        p.environment = env
+        try p.run()
+        started.append((p.processIdentifier, try XCTUnwrap(ProcessInspector.kinfo(p.processIdentifier)?.start)))
+        roots.append(p)
+        let deadline = Date().addingTimeInterval(5)
+        var child = ProcessInspector.children(of: p.processIdentifier).first
+        while child == nil, Date() < deadline {
+            Thread.sleep(forTimeInterval: 0.02)
+            child = ProcessInspector.children(of: p.processIdentifier).first
+        }
+        let busy = try XCTUnwrap(child, "the busy subshell starts")
+        started.append((busy.pid, busy.start))
+        return (p.processIdentifier, busy.pid)
+    }
+
+    /// Tab Info reads a split tab pane by pane, and the window's agent poll
+    /// reads with the same inspector. Each read kept only its own tree's
+    /// baselines, so reading one root forgot the other's: two busy loops
+    /// read in turn read 0% at every round.
+    func testRootsReadInTurnAreEachMeasured() throws {
+        let panes = try [busyRoot(), busyRoot()]
+        let inspector = ProcessInspector()
+        // One round as Tab Info's: every root's tree, one after the other.
+        func round() -> [Double] {
+            panes.map { pane in inspector.tree(root: pane.root, tag: nil).flatMap(\.flattened).first { $0.pid == pane.busy }?.cpuPercent ?? 0 }
+        }
+        _ = round()  // every process's first sample reads 0
+        var readings: [Double] = []
+        let deadline = Date().addingTimeInterval(15)
+        repeat {
+            Thread.sleep(forTimeInterval: 0.25)
+            readings = round()
+        } while !readings.allSatisfy({ $0 > 10 }) && Date() < deadline
+        // Measured at all, not how much: a loaded machine gives a busy loop well under a core.
+        XCTAssertTrue(readings.allSatisfy { $0 > 10 }, "each root's busy loop, read in turn: \(readings.map { String(format: "%.1f%%", $0) }.joined(separator: ", "))")
+    }
+
+    private let second: UInt64 = 1_000_000_000
+
+    /// A pid the system hands to another process: its first reading is 0,
+    /// as any process's is — never a rate made of the old one's CPU time.
+    func testAReusedPIDReadsZeroNotABorrowedRate() {
+        var cpu = ProcessInspector.CPUBaselines()
+        XCTAssertEqual(cpu.percent(pid: 4242, start: 100, cpu: 0, at: 10 * second), 0, "a first sample")
+        XCTAssertEqual(cpu.percent(pid: 4242, start: 100, cpu: second / 2, at: 11 * second), 50, accuracy: 0.001)
+        // It ends; one started later has its pid, and CPU time of its own.
+        XCTAssertEqual(cpu.percent(pid: 4242, start: 300, cpu: second * 3 / 4, at: 12 * second), 0, "not 25% borrowed from the one before")
+        XCTAssertEqual(cpu.percent(pid: 4242, start: 300, cpu: second, at: 13 * second), 25, accuracy: 0.001, "then its own rate")
+        XCTAssertEqual(cpu.count, 1)
+    }
+
+    /// Another caller's read (a split tab's other pane, the agent poll)
+    /// keeps a process's baseline: only its end, or its pid reused, drops it.
+    func testABaselineIsForgottenOnlyWhenItsProcessEnds() {
+        var cpu = ProcessInspector.CPUBaselines()
+        for pid: pid_t in [10, 11, 12] { _ = cpu.percent(pid: pid, start: 1, cpu: 0, at: second) }
+        // 10 runs on, 11 ended, and 12 is another process's pid now.
+        cpu.forgetEnded { [10: 1, 12: 2][$0] }
+        XCTAssertEqual(cpu.count, 1)
+        XCTAssertEqual(cpu.percent(pid: 10, start: 1, cpu: second / 4, at: 2 * second), 25, accuracy: 0.001, "kept: its rate since its own last sample")
+        XCTAssertEqual(cpu.percent(pid: 12, start: 2, cpu: second, at: 2 * second), 0, "the newcomer's first sample")
+    }
+
+    /// A baseline lives as long as its process: read again after a long
+    /// gap, a reading starts again rather than show the gap's average.
+    func testARateSpansAtMostTheLongestInterval() {
+        var cpu = ProcessInspector.CPUBaselines()
+        let longest = ProcessInspector.CPUBaselines.longestInterval
+        _ = cpu.percent(pid: 7, start: 1, cpu: 0, at: second)
+        XCTAssertEqual(cpu.percent(pid: 7, start: 1, cpu: second, at: second + longest), 100 * Double(second) / Double(longest), accuracy: 0.001, "within it, the rate")
+        XCTAssertEqual(cpu.percent(pid: 7, start: 1, cpu: 2 * second, at: 2 * second + 2 * longest), 0, "past it, a first sample again")
+        XCTAssertEqual(cpu.percent(pid: 7, start: 1, cpu: 3 * second, at: 3 * second + 2 * longest), 100, accuracy: 0.001, "then the rate")
+    }
+
     func testParseProcArgs() {
         var bytes: [UInt8] = []
         var argc = Int32(2)

@@ -776,7 +776,7 @@ A popover per tab, live while open (`TabInfoModel`, `Sources/Overterm/Info/`):
 | Section | Source |
 |---|---|
 | Location | tab cwd → checkout, branch, worktree-of, changed files (git) |
-| Running | `ProcessInspector`: everything under the tab's `login` (paired to its surface by `SurfaceProcesses`, since libghostty doesn't expose the pid), plus anything tagged `OVERTERM_TAB_ID` that left the tree. CPU% from task-time deltas (Mach ticks → ns), resident memory. Links via sysctl KERN_PROC — proc_pidinfo refuses root's `login`. |
+| Running | `ProcessInspector`: everything under the tab's `login` (paired to its surface by `SurfaceProcesses`, since libghostty doesn't expose the pid), plus anything tagged `OVERTERM_TAB_ID` that left the tree. CPU% from task-time deltas (Mach ticks → ns) since the process's previous read, whoever made it — a split tab's panes are read in turn, the agent poll reads with the window's same inspector — its baseline kept by pid and start time while it runs (`CPUBaselines`), a rate over 15 s at most; resident memory. Links via sysctl KERN_PROC — proc_pidinfo refuses root's `login`. |
 | Listening | `lsof` on the tab's pids, every 3 s; Open → localhost |
 | Claude session | `ClaudeUsageReader` on `~/.claude/projects/<cwd as ->/<session>.jsonl`: streamed, incremental, ends-of-line byte search, replies de-duplicated by id |
 | Disk | `DiskUsage` of the checkout only, cancellable, cached 60 s |

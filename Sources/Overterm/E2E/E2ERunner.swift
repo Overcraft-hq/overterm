@@ -3674,6 +3674,12 @@ final class E2ERunner {
         guard let tab = app.store.selected, let host = app.host(of: tab) else { return check("a tab", false) }
         let first = tab.terminal
         await runAndExpect("sleep 71 & echo a > \(out("left").path)", file: out("left"), content: "a", "a job in the first pane")
+        // A busy loop of the scenario's own, for Tab Info's CPU: it writes
+        // its pid beside it, then spins until the stop file is there, 60 s
+        // at most, so a crash can't leave it burning a core.
+        let busy = out("busy.sh")
+        try? "echo $$ > \"$0.$1\"\nwhile [ ! -e \"$0.stop\" ] && [ \"$SECONDS\" -lt 60 ]; do :; done\n".write(to: busy, atomically: true, encoding: .utf8)
+        await runAndExpect("/bin/bash \(busy.path) left &", file: URL(fileURLWithPath: busy.path + ".left"), content: nil, "a busy loop in the first pane")
 
         app.splitRight(nil)
         check("Split Right makes a second pane", tab.terminals.count == 2)
@@ -3685,6 +3691,12 @@ final class E2ERunner {
             "\(first.frame) | \(right.frame)")
         await runAndExpect(
             "sleep 72 & echo right > \(out("right").path)", file: out("right"), content: "right", "typing goes to the focused pane")
+        await runAndExpect("/bin/bash \(busy.path) right &", file: URL(fileURLWithPath: busy.path + ".right"), content: nil, "and a busy loop in the second")
+        let loops = ["left", "right"].compactMap { side -> (pid: pid_t, start: UInt64)? in
+            guard let pid = contents(URL(fileURLWithPath: busy.path + "." + side)).flatMap({ pid_t($0) }), let start = ProcessInspector.kinfo(pid)?.start
+            else { return nil }
+            return (pid, start)
+        }
 
         // Tab Info is the whole tab's: both panes' jobs.
         app.showInfo(for: tab)
@@ -3694,11 +3706,19 @@ final class E2ERunner {
                 return commands.contains { $0.hasPrefix("sleep 71") } && commands.contains { $0.hasPrefix("sleep 72") }
             }
             check("Tab Info lists every pane's processes", both, model.processes.flatMap(\.flattened).map(\.command).joined(separator: " | "))
+            // And measures them, though it reads the panes one after the
+            // other: a read once kept only its own pane's CPU baselines, and
+            // every pane's processes read 0%.
+            func readings() -> [Double] { loops.map { loop in model.processes.flatMap(\.flattened).first { $0.pid == loop.pid }?.cpuPercent ?? 0 } }
+            let measured = await eventually(10) { loops.count == 2 && readings().allSatisfy { $0 > 10 } }
+            check("and measures every pane's CPU", measured, "\(loops.count) busy loops read \(readings().map { String(format: "%.1f%%", $0) }.joined(separator: ", "))")
         } else {
             check("Tab Info opens", false)
         }
         app.infoPopover?.performClose(nil)
         await eventually(2) { self.app.infoPopover?.isShown != true }
+        try? Data().write(to: URL(fileURLWithPath: busy.path + ".stop"))
+        check("the busy loops stop when told", await eventually(5) { loops.allSatisfy { ProcessInspector.kinfo($0.pid)?.start != $0.start } })
         window.makeFirstResponder(right)
 
         // A server in one pane is that pane's: its header says the port, its
