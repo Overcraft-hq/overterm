@@ -207,6 +207,35 @@ final class ProcessArgumentsTests: XCTestCase {
         XCTAssertNotNil(ProcessArguments.read(4242, kernel: kernel, markers: true, codeSigning: restricted)?.command, "argv is still read")
     }
 
+    /// The markers alone (7.3), what the light level reads of a process no
+    /// tree places: argv walked past, never a word of it made — nothing
+    /// masked, no string of it at all — the environment found past a
+    /// title's padding too, and a `CS_RESTRICT` target not read at all.
+    func testTheMarkersAloneMakeNoWord() throws {
+        let read = try XCTUnwrap(bytes.withUnsafeBytes { ProcessArguments.parse($0, markers: true, words: false) })
+        XCTAssertEqual(read.command, "")
+        XCTAssertNil(read.label)
+        XCTAssertEqual(read.markers?.tab, "tab-1")
+        XCTAssertEqual(read.markers?.service, "homebrew.mxcl.postgresql@16")
+        for string in strings(in: read) {
+            for secret in secrets { XCTAssertFalse(string.contains(secret), "a secret in the read's \(string.count)-character string") }
+        }
+        let titled = FakeActivityKernel.arguments(
+            executable: "/opt/acme/bin/node", ["node", "acme-a", "acme-b"], environment: ["OVERTERM_TAB_ID=tab-titled"], title: "acme")
+        XCTAssertEqual(titled.withUnsafeBytes { ProcessArguments.parse($0, markers: true, words: false) }?.markers?.tab, "tab-titled")
+
+        let kernel = FakeActivityKernel()
+        var process = FakeActivityKernel.Process(record: FakeActivityKernel.record(pid: 4242, start: 1, parent: 1))
+        process.arguments = bytes
+        kernel.add(process)
+        XCTAssertEqual(ProcessArguments.markers(4242, kernel: kernel, codeSigning: nil)?.tab, "tab-1")
+        XCTAssertEqual(kernel.count("arguments"), 1)
+        let restricted = ActivityCodeSigning(flags: ActivityCodeSigning.restrict)
+        XCTAssertNil(ProcessArguments.markers(4242, kernel: kernel, codeSigning: restricted))
+        XCTAssertEqual(kernel.count("arguments"), 1, "the kernel hides it: not read")
+        XCTAssertNil(ProcessArguments.markers(9999, kernel: kernel, codeSigning: nil), "gone")
+    }
+
     /// argv over its first 64 KB: the words past it dropped whole — a word
     /// cut in the middle could leave half a password a mask misses — and
     /// the environment still found after them.

@@ -157,4 +157,169 @@ final class ActivityProbeTests: XCTestCase {
         report("sockets again, nothing changed: \(micros(again, 1)) the walk")
         XCTAssertGreaterThan(usages.count, 0)
     }
+
+    /// The sampler's whole ticks (7.3's estimates): a light tick over one
+    /// pane — the test stands for its `login`, its own sleeping children
+    /// for the pane's processes — then the full level over the light
+    /// tick's cache, as when the page opens while windows show, then a
+    /// full census on a cache that read nothing yet. Each cold — back to
+    /// back until the churn budget has read every identity — then steady,
+    /// 500 ms apart, then back to back again, the core awake: wall time on
+    /// `CLOCK_UPTIME_RAW` and the sampler thread's CPU time.
+    func testTheSamplersTicks() throws {
+        var children: [TestChild] = []
+        defer { children.forEach { $0.stop() } }
+        for _ in 0..<8 { children.append(try TestChild("/bin/sleep", ["120"])) }
+        let start = try XCTUnwrap(ProcessInspector.kinfo(getpid())?.start)
+        let tab = UUID()
+        // No app: nothing is a helper.
+        let pane = ActivityContext.Pane(tag: "probe", tab: tab, login: ActivityProcessID(pid: getpid(), start: start))
+        let context = ActivityContext(panes: [pane], appPID: -1)
+        let light = ActivityDemand(.light(tabs: [tab]))
+        let full = ActivityDemand(.full)
+
+        let sampler = ActivitySampler(kernel: kernel)
+        let lightCold = cold(sampler, light, context)
+        let lightSteady = steady(sampler, light, context)
+        let lightAwake = awake(sampler, light, context)
+        let members = sampler.tickNow(light, context: context)?.pane("probe")?.placed.count ?? 0
+        report(
+            "sampler light, \(members) members: cold \(lightCold.count) ticks \(summary(lightCold)); steady \(summary(lightSteady)); "
+                + "back to back \(summary(lightAwake))")
+        let fullCold = cold(sampler, full, context)
+        let fullSteady = steady(sampler, full, context)
+        let fullAwake = awake(sampler, full, context)
+        let last = fullSteady.last ?? ActivityTickCost()
+        report(
+            "sampler full over the light cache, \(last.processes) processes (\(last.own) own): cold \(fullCold.count) ticks "
+                + "\(summary(fullCold)), \(fullCold.reduce(0) { $0 + $1.commandsRead }) argv masked; steady \(summary(fullSteady)); "
+                + "back to back \(summary(fullAwake))")
+        let fresh = ActivitySampler(kernel: kernel)
+        let freshCold = cold(fresh, full, context)
+        report(
+            "sampler full from nothing: cold \(freshCold.count) ticks \(summary(freshCold)), "
+                + "\(freshCold.reduce(0) { $0 + $1.identitiesRead }) identities read; cache \(fresh.cachedIdentities)")
+        XCTAssertFalse(fullSteady.isEmpty)
+    }
+
+    /// The light tick's term a member (7.3: "≈5 µs a member", which D-5's
+    /// comparison relies on): one pane whose tree is the test's own
+    /// children, each holding what an MCP server or a dev server holds — a
+    /// TCP listener and a bound UDP socket on 127.0.0.1, a unix pair — at
+    /// 8, 100 and 300 members, as several agent tabs with their MCP servers
+    /// make. Each size on a sampler of its own, cold, then steady — 500 ms
+    /// apart, the core asleep between them as at the app's 2 s — then back
+    /// to back, the core awake: the work itself. The slope of the medians
+    /// between 100 and 300 is the term a member.
+    func testTheLightTickAMember() throws {
+        let held = try heldSockets()
+        defer { held.forEach { close($0) } }
+        var children: [TestChild] = []
+        defer { children.forEach { $0.stop() } }
+        let start = try XCTUnwrap(ProcessInspector.kinfo(getpid())?.start)
+        let tab = UUID()
+        let pane = ActivityContext.Pane(tag: "probe", tab: tab, login: ActivityProcessID(pid: getpid(), start: start))
+        let context = ActivityContext(panes: [pane], appPID: -1)
+        let light = ActivityDemand(.light(tabs: [tab]))
+        var steadyMedians: [Int: (wall: UInt64, cpu: UInt64)] = [:]
+        var awakeMedians: [Int: (wall: UInt64, cpu: UInt64)] = [:]
+        var awakeLeast: [Int: (wall: UInt64, cpu: UInt64)] = [:]
+        for size in [8, 100, 300] {
+            while children.count < size {
+                children.append(try TestChild("/bin/sleep", ["120"], descriptors: Dictionary(uniqueKeysWithValues: held.map { ($0, $0) })))
+            }
+            let sampler = ActivitySampler(kernel: kernel)
+            let coldTicks = cold(sampler, light, context)
+            let steadyTicks = steady(sampler, light, context)
+            let awakeTicks = awake(sampler, light, context)
+            let snapshot = try XCTUnwrap(sampler.tickNow(light, context: context))
+            let members = snapshot.pane("probe")?.placed ?? []
+            let sockets = members.reduce(0) { $0 + (snapshot.facts[$1]?.sockets?.sockets ?? 0) }
+            report(
+                "sampler light, \(members.count) members holding \(sockets) sockets: cold \(coldTicks.count) ticks \(summary(coldTicks)); "
+                    + "steady \(summary(steadyTicks)); back to back \(summary(awakeTicks))")
+            XCTAssertEqual(members.count, size)
+            steadyMedians[size] = (median(steadyTicks.map(\.wall)), median(steadyTicks.map(\.cpu)))
+            awakeMedians[size] = (median(awakeTicks.map(\.wall)), median(awakeTicks.map(\.cpu)))
+            awakeLeast[size] = (awakeTicks.map(\.wall).min() ?? 0, awakeTicks.map(\.cpu).min() ?? 0)
+        }
+        func perMember(_ medians: [Int: (wall: UInt64, cpu: UInt64)]) -> String {
+            guard let few = medians[100], let many = medians[300] else { return "none" }
+            func slope(_ low: UInt64, _ high: UInt64) -> String { String(format: "%.2f µs", (Double(high) - Double(low)) / 200 / 1_000) }
+            return "wall \(slope(few.wall, many.wall)), CPU \(slope(few.cpu, many.cpu))"
+        }
+        report(
+            "sampler light, a member (100 → 300): steady medians \(perMember(steadyMedians)); back to back medians "
+                + "\(perMember(awakeMedians)), least \(perMember(awakeLeast))")
+    }
+
+    /// What each child of `testTheLightTickAMember` is handed: a TCP
+    /// listener and a bound UDP socket on 127.0.0.1, and a unix pair.
+    private func heldSockets() throws -> [Int32] {
+        func loopback(_ type: Int32) throws -> Int32 {
+            let fd = Darwin.socket(AF_INET, type, 0)
+            guard fd >= 0 else { throw POSIXError(.EMFILE) }
+            var address = sockaddr_in()
+            address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            address.sin_family = sa_family_t(AF_INET)
+            address.sin_addr.s_addr = inet_addr("127.0.0.1")
+            let size = socklen_t(MemoryLayout<sockaddr_in>.size)
+            let bound = withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(fd, $0, size) } }
+            guard bound == 0, type != SOCK_STREAM || listen(fd, 16) == 0 else {
+                close(fd)
+                throw POSIXError(.EADDRNOTAVAIL)
+            }
+            return fd
+        }
+        var pair: [Int32] = [-1, -1]
+        guard socketpair(AF_UNIX, SOCK_STREAM, 0, &pair) == 0 else { throw POSIXError(.EMFILE) }
+        return [try loopback(SOCK_STREAM), try loopback(SOCK_DGRAM)] + pair
+    }
+
+    private func median(_ values: [UInt64]) -> UInt64 {
+        let sorted = values.sorted()
+        return sorted.isEmpty ? 0 : sorted[sorted.count / 2]
+    }
+
+    /// Ticks back to back until nothing waits for the churn budget, at most 20.
+    private func cold(_ sampler: ActivitySampler, _ demand: ActivityDemand, _ context: ActivityContext) -> [ActivityTickCost] {
+        var costs: [ActivityTickCost] = []
+        for _ in 0..<20 {
+            guard let snapshot = sampler.tickNow(demand, context: context) else { break }
+            costs.append(snapshot.cost)
+            if snapshot.unread == 0 { break }
+        }
+        return costs
+    }
+
+    /// Ten ticks 500 ms apart, after the cold ones.
+    private func steady(_ sampler: ActivitySampler, _ demand: ActivityDemand, _ context: ActivityContext) -> [ActivityTickCost] {
+        (0..<10).compactMap { _ in
+            Thread.sleep(forTimeInterval: 0.5)
+            return sampler.tickNow(demand, context: context)?.cost
+        }
+    }
+
+    /// Thirty ticks back to back, after the steady ones: the core awake and
+    /// its caches warm, where a tick 500 ms after the last wakes it first.
+    /// The least of them is the work alone, what else runs on the Mac
+    /// only adding to it.
+    private func awake(_ sampler: ActivitySampler, _ demand: ActivityDemand, _ context: ActivityContext) -> [ActivityTickCost] {
+        (0..<30).compactMap { _ in sampler.tickNow(demand, context: context)?.cost }
+    }
+
+    /// Least, median, p90 and max of the wall and CPU times, in ms.
+    private func summary(_ costs: [ActivityTickCost]) -> String {
+        func line(_ values: [UInt64]) -> String {
+            guard !values.isEmpty else { return "none" }
+            let sorted = values.sorted()
+            let p90 = sorted[min(sorted.count - 1, Int((Double(sorted.count) * 0.9).rounded(.up)) - 1)]
+            return String(
+                format: "least %.2f, median %.2f, p90 %.2f, max %.2f ms", Double(sorted[0]) / 1e6, Double(sorted[sorted.count / 2]) / 1e6,
+                Double(p90) / 1e6, Double(sorted.last ?? 0) / 1e6)
+        }
+        let reads = costs.map(\.identitiesRead).sorted()
+        let churn = reads.isEmpty ? "" : "; identities read a tick: median \(reads[reads.count / 2]), max \(reads.last ?? 0)"
+        return "wall \(line(costs.map(\.wall))); CPU \(line(costs.map(\.cpu)))\(churn)"
+    }
 }

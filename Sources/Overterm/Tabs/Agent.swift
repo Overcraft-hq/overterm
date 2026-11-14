@@ -31,6 +31,15 @@ enum Agent: String, CaseIterable, Identifiable, Codable {
         }
     }
 
+    /// The agent a process is, by its name or its command's first word's
+    /// file (`claude`, `/opt/homebrew/bin/codex`); nil for anything else.
+    /// The window's poll and the census's light tick both ask this.
+    static func of(name: String, command: String) -> Agent? {
+        if let agent = Agent(rawValue: name) { return agent }
+        guard let first = command.split(separator: " ").first else { return nil }
+        return Agent(rawValue: (String(first) as NSString).lastPathComponent)
+    }
+
     /// Picks one conversation back up (Claude Code's --resume); nil for
     /// an id that isn't one.
     static func claudeResume(session id: String, arguments: String = "") -> String? {

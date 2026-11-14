@@ -190,7 +190,7 @@ struct SocketScan: Sendable {
     static let refreshTicks = 5
 
     /// One process's sockets, as far as they were read.
-    struct Sockets: Sendable {
+    struct Sockets: Hashable, Sendable {
         /// Its TCP and UDP sockets known now, by descriptor: read this tick
         /// or kept from an earlier one (a bounded process's listeners only).
         var records: [SocketRecord]

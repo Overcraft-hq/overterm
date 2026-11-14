@@ -4,8 +4,9 @@ import XCTest
 @testable import Overterm
 
 /// The user's processes' usage and its rates (docs/design/activity/
-/// analysis.md, 7.5): by the interval measured, over at least 250 ms, the
-/// first sample "—", baselines kept for every live identity.
+/// analysis.md, 7.5): by the interval measured, over at least 250 ms and
+/// at most 15 s, the first sample "—", baselines kept for every live
+/// identity.
 final class ProcessUsageTests: XCTestCase {
     private func sample(at time: UInt64, cpu: UInt64, energy: UInt64? = 0, wakeups: UInt64 = 0, read: UInt64 = 0) -> ActivityUsage {
         ActivityUsage(
@@ -75,6 +76,26 @@ final class ProcessUsageTests: XCTestCase {
         XCTAssertNil(baselines.rates(of: right))
         let reused = ActivityProcessID(pid: 100, start: 2)
         XCTAssertNil(baselines.record(try XCTUnwrap(kernel.usage(of: 100)), for: reused), "the same pid, a later start: another process")
+    }
+
+    /// A baseline nobody asked about for a while (6.11): a sample further
+    /// than `maximumAge` from it begins again, "—", and what was published
+    /// goes with it; the next has its rate from there.
+    func testARateNeverSpansAGap() throws {
+        let second: UInt64 = 1_000_000_000
+        let identity = ActivityProcessID(pid: 100, start: 1)
+        var baselines = UsageBaselines()
+        XCTAssertEqual(baselines.maximumAge, 15 * second)
+        XCTAssertNil(baselines.record(sample(at: second, cpu: 0), for: identity))
+        XCTAssertEqual(try XCTUnwrap(baselines.record(sample(at: 16 * second, cpu: 15 * second), for: identity)).cpuPercent, 100, accuracy: 1e-9, "15 s: a rate")
+        XCTAssertNil(baselines.record(sample(at: 76 * second, cpu: 60 * second), for: identity), "a minute on: —")
+        XCTAssertNil(baselines.record(sample(at: 76 * second + 10_000_000, cpu: 60 * second), for: identity), "nothing published since")
+        let rates = try XCTUnwrap(baselines.record(sample(at: 78 * second, cpu: 61 * second), for: identity))
+        XCTAssertEqual(rates.cpuPercent, 50, accuracy: 1e-9, "from the new baseline")
+        XCTAssertEqual(rates.interval, 2 * second)
+        var short = UsageBaselines(maximumAge: 2 * second)
+        XCTAssertNil(short.record(sample(at: second, cpu: 0), for: identity))
+        XCTAssertNil(short.record(sample(at: 3 * second + 1, cpu: 0), for: identity), "its own bound")
     }
 
     func testAnotherUsersUsageIsRefused() {

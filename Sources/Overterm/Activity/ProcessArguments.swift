@@ -91,15 +91,30 @@ struct ProcessArguments: Hashable, Sendable {
     /// never for a `CS_RESTRICT` target (`codeSigning`), whose environment
     /// the kernel leaves out anyway (3.9); unknown flags are scanned.
     static func read(_ pid: pid_t, kernel: some ActivityKernel, markers: Bool, codeSigning: ActivityCodeSigning?) -> ProcessArguments? {
+        read(pid, kernel: kernel, markers: markers && codeSigning?.isRestricted != true, words: true)
+    }
+
+    /// `pid`'s markers alone (7.3): the region read and cleared as `read`
+    /// reads it, argv walked past in place — never decoded, never masked —
+    /// and the environment scanned. What the light level reads of a
+    /// process no pane's tree places, to learn whether it carries a tag:
+    /// the masking is most of a read's cost (0.7 ms for an Electron
+    /// helper's line). Nil when refused or gone, unreadable whole, or a
+    /// `CS_RESTRICT` target's, whose environment the kernel leaves out.
+    static func markers(_ pid: pid_t, kernel: some ActivityKernel, codeSigning: ActivityCodeSigning?) -> ProcessMarkers? {
+        guard codeSigning?.isRestricted != true else { return nil }
+        return read(pid, kernel: kernel, markers: true, words: false)?.markers
+    }
+
+    private static func read(_ pid: pid_t, kernel: some ActivityKernel, markers scan: Bool, words: Bool) -> ProcessArguments? {
         guard let length = kernel.argumentsLength(of: pid), length > 0 else { return nil }
-        let scan = markers && codeSigning?.isRestricted != true
         // A region the kernel filled was too small: read once more, at the
         // most it gives (an exec between the calls changed the area).
         let first = min(length + slack, argumentMaximum)
         for size in first < argumentMaximum ? [first, argumentMaximum] : [first] {
             let region = UnsafeMutableRawBufferPointer.allocate(byteCount: size, alignment: 8)
             defer { region.deallocate() }
-            switch read(pid, kernel: kernel, markers: scan, filling: region) {
+            switch read(pid, kernel: kernel, markers: scan, words: words, filling: region) {
             case .whole(let arguments): return arguments
             case .full: continue
             case .refused: return nil
@@ -113,7 +128,7 @@ struct ProcessArguments: Hashable, Sendable {
     /// full — the kernel fills a region too small for the area with the
     /// area's tail, or zeros, and says nothing.
     static func read(_ pid: pid_t, kernel: some ActivityKernel, markers: Bool, in region: UnsafeMutableRawBufferPointer) -> ProcessArguments? {
-        guard case .whole(let arguments) = read(pid, kernel: kernel, markers: markers, filling: region) else { return nil }
+        guard case .whole(let arguments) = read(pid, kernel: kernel, markers: markers, words: true, filling: region) else { return nil }
         return arguments
     }
 
@@ -128,11 +143,13 @@ struct ProcessArguments: Hashable, Sendable {
         case refused
     }
 
-    private static func read(_ pid: pid_t, kernel: some ActivityKernel, markers: Bool, filling region: UnsafeMutableRawBufferPointer) -> RegionRead {
+    private static func read(
+        _ pid: pid_t, kernel: some ActivityKernel, markers: Bool, words: Bool, filling region: UnsafeMutableRawBufferPointer
+    ) -> RegionRead {
         defer { clear(region) }
         guard let written = kernel.readArguments(of: pid, into: region), written > 0 else { return .refused }
         guard written < region.count else { return .full }
-        return .whole(parse(UnsafeRawBufferPointer(rebasing: region.prefix(written)), markers: markers))
+        return .whole(parse(UnsafeRawBufferPointer(rebasing: region.prefix(written)), markers: markers, words: words))
     }
 
     /// `kern.argmax`: the largest region a read uses — the kernel gives no
@@ -152,8 +169,9 @@ struct ProcessArguments: Hashable, Sendable {
     /// The layout (`argc`; the executable's path, NUL-padded to 8 bytes;
     /// argv's words; the environment's entries; an empty string; launchd's
     /// own strings), read in place. Pure over `bytes`; nil for a buffer
-    /// that isn't that.
-    static func parse(_ bytes: UnsafeRawBufferPointer, markers scanEnvironment: Bool) -> ProcessArguments? {
+    /// that isn't that. `words` false walks past argv without making a
+    /// word of it: `command` is empty, no label, nothing masked.
+    static func parse(_ bytes: UnsafeRawBufferPointer, markers scanEnvironment: Bool, words decode: Bool = true) -> ProcessArguments? {
         guard bytes.count >= 4 else { return nil }
         let argc = Int(bytes.loadUnaligned(as: Int32.self))
         guard argc >= 0, argc <= bytes.count else { return nil }
@@ -178,10 +196,15 @@ struct ProcessArguments: Hashable, Sendable {
             let end = index(of: 0, in: bytes, from: position) ?? bytes.count
             if end >= argumentsEnd {
                 cut = true
-            } else if !cut {
+            } else if !cut, decode {
                 words.append(String(decoding: UnsafeRawBufferPointer(rebasing: bytes[position..<end]), as: UTF8.self))
             }
             position = end + 1
+        }
+        guard decode else {
+            while position < bytes.count, bytes[position] == 0 { position += 1 }
+            let markers = scanEnvironment ? scan(bytes, from: position) : nil
+            return ProcessArguments(command: "", label: nil, isCut: cut, isTitle: title, markers: markers)
         }
         let masked = Secrets.maskArguments(words)
         words.removeAll()

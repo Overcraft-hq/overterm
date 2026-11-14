@@ -391,8 +391,8 @@ value, a path or an address of a process that isn't the test's.
 
 - `ProcessTableTests`: the headroom retry, every field, parents by
   start time; a child's start and parent, a zombie child, a `nohup`'d one.
-- `ProcessUsageTests`: rates by the interval measured, 250 ms at least,
-  the first sample "—", baselines that survive readers asking for others
+- `ProcessUsageTests`: rates by the interval measured, 250 ms at least and
+  15 s at most, the first sample "—", baselines that survive readers asking for others
   (Tab Info's split-tab 0%); a busy child's rate.
 - `ProcessArgumentsTests`: argv masked at the read and cut at 64 KB, the
   environment scanned in place for four names only — a sentinel planted
@@ -407,19 +407,49 @@ value, a path or an address of a process that isn't the test's.
 - `ActivityTextTests`: masking for display, for titles (as commands) and
   for agents, `Secrets`' per-program passwords (9.3), interpreters'
   labels, masked before they are cut.
+- `ActivitySamplerTests`: a tick over a fake Mac — two panes read in turn
+  both reading their CPU (Tab Info's split-tab 0%), the first sample "—"
+  and a reused pid's again, rates only over 250 ms and never over a gap,
+  what each level reads, a tagged process joining its pane (a tree's
+  members' environments never read), the pane's agent and its folder, an
+  `exec` read again; the churn budget (200 a tick, the level's own first —
+  what carries a pane's tag among them once it is known —, then the
+  oldest, and the time the reads may take), a read still to come told
+  from a failed one, the cache's bound (ended identities first), the
+  in-flight guard, the stretched cadence, a folder on a mount that
+  doesn't answer, at most 200 folders asked a tick, the app's children
+  for the pairing (a zombie `login` left out); then a busy child of the
+  test's through the real
+  kernel. The fake's clock moves only when told — a call made to cost
+  time or held (`FakeActivityKernel.onCall`, `CallGate`) — so nothing
+  waits on a moment.
 
 `ActivityProbeTests` is opt-in, run on each new macOS and on the oldest
 supported one: the structures' sizes, who answers each call and what it
-costs — `csops` against Security.framework's fallback among them. It reads
-the whole table, read only, and prints counts, errnos and timings, never
-a name or an argv:
+costs — `csops` against Security.framework's fallback among them — and
+the sampler's whole light and full ticks, cold and steady, and the light
+tick's cost a member over 8, 100 and 300 of its own children holding
+sockets. It reads the
+whole table, read only, and prints counts, errnos and timings, never a
+name or an argv:
 
 ```
 OVERTERM_ACTIVITY_PROBES=1 swift test --filter ActivityProbeTests
 ```
 
 Without `OVERTERM_ACTIVITY_PROBES=1` it is skipped, so `make test` and CI
-print nothing of this Mac's.
+print nothing of this Mac's. Its timings are a debug build's — masking
+runs several times slower there — unless it runs in release, as the app
+does:
+
+```
+swift build -c release --build-tests -Xswiftc -enable-testing
+OVERTERM_ACTIVITY_PROBES=1 swift test -c release --skip-build --filter ActivityProbeTests
+```
+
+A tick's cost includes reading the processes that started since the last
+one: a build running beside it shows in the numbers, and the sampler's
+probe prints how many identities each tick read.
 
 ## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 

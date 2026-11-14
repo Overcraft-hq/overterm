@@ -326,4 +326,5 @@ private final class CountingKernel: ActivityKernel, @unchecked Sendable {
         lock.withLock { count += 1 }
         return base.socket(of: pid, descriptor: descriptor)
     }
+    func workingDirectory(of pid: pid_t) -> String? { base.workingDirectory(of: pid) }
 }

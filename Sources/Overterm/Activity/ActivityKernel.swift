@@ -40,6 +40,12 @@ protocol ActivityKernel: Sendable {
     func descriptors(of pid: pid_t) -> [proc_fdinfo]?
     /// `PROC_PIDFDSOCKETINFO`: nil when the descriptor holds no socket now.
     func socket(of pid: pid_t, descriptor: Int32) -> socket_fdinfo?
+    /// `PROC_PIDVNODEPATHINFO`'s working folder: the user's; nil when
+    /// refused, gone or none. It fills a `vn_stat`, so it asks the file
+    /// system, and a folder on a mount that stopped answering can hold it
+    /// for the mount's timeout (7.2): `ProcessFolders` calls it on a queue
+    /// of its own, never a tick.
+    func workingDirectory(of pid: pid_t) -> String?
 }
 
 /// What `csops` said.
@@ -211,13 +217,23 @@ struct LiveActivityKernel: ActivityKernel {
         let size = Int32(MemoryLayout<socket_fdinfo>.size)
         return proc_pidfdinfo(pid, descriptor, PROC_PIDFDSOCKETINFO, &info, size) == size ? info : nil
     }
+
+    func workingDirectory(of pid: pid_t) -> String? {
+        var info = proc_vnodepathinfo()
+        let size = Int32(MemoryLayout<proc_vnodepathinfo>.size)
+        guard proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &info, size) == size else { return nil }
+        let path = withUnsafeBytes(of: info.pvi_cdir.vip_path) { raw in String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self) }
+        return path.isEmpty ? nil : path
+    }
 }
 
 /// A Mac a test makes (10.1): processes of any user — another user's,
 /// which a unit test can't start for real — with their usage, names,
-/// paths, code signing, `KERN_PROCARGS2` bytes, descriptors and sockets,
-/// and a clock that moves only when told. What it was asked is counted, so
-/// a test can say a read was skipped or bounded.
+/// paths, code signing, `KERN_PROCARGS2` bytes, descriptors, sockets and
+/// working folders, and a clock that moves only when told. What it was
+/// asked is counted, so a test can say a read was skipped or bounded; a
+/// hook runs as each call is made (`onCall`), so a test can make a call
+/// cost time or hold it.
 final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     struct Process {
         var record: ActivityProcess
@@ -234,6 +250,8 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
         var argumentsAfterExec: [UInt8]?
         var descriptors: [proc_fdinfo] = []
         var sockets: [Int32: socket_fdinfo] = [:]
+        /// Its working folder (`PROC_PIDVNODEPATHINFO`).
+        var folder: String?
     }
 
     let uid: uid_t
@@ -242,6 +260,7 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     private var clock: UInt64 = 1_000_000_000
     private var counts: [String: Int] = [:]
     private var csops = true
+    private var hook: (@Sendable (String) -> Void)?
 
     init(uid: uid_t = 501) { self.uid = uid }
 
@@ -270,11 +289,19 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
 
     func resetCounts() { lock.withLock { counts = [:] } }
 
+    /// Runs as each call but `uptime` is made, with the call's name,
+    /// outside the fake's lock: a test moves the clock as a call costs, or
+    /// holds a call until it lets go (a tick in flight, a folder on a
+    /// mount that doesn't answer). Nil removes it.
+    func onCall(_ hook: (@Sendable (String) -> Void)?) { lock.withLock { self.hook = hook } }
+
     private func asked<T>(_ call: String, _ body: () -> T) -> T {
-        lock.withLock {
+        let hook = lock.withLock { () -> (@Sendable (String) -> Void)? in
             counts[call, default: 0] += 1
-            return body()
+            return self.hook
         }
+        hook?(call)
+        return lock.withLock(body)
     }
 
     /// A process record, as `KERN_PROC_ALL` would give it.
@@ -445,5 +472,9 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
 
     func socket(of pid: pid_t, descriptor: Int32) -> socket_fdinfo? {
         asked("socket") { table[pid].flatMap { $0.record.effectiveUID == uid ? $0.sockets[descriptor] : nil } }
+    }
+
+    func workingDirectory(of pid: pid_t) -> String? {
+        asked("folder") { table[pid].flatMap { $0.record.effectiveUID == uid && !$0.record.isZombie ? $0.folder : nil } }
     }
 }

@@ -14,6 +14,13 @@ import Darwin
 enum ProcessUsage {
     /// 250 ms (7.3).
     static let minimumInterval: UInt64 = 250_000_000
+    /// The longest interval a rate spans: three times the slowest cadence
+    /// the census ticks at (5 s, `activity.interval`'s longest and a busy
+    /// Mac's stretched one). Past it, a rate would be the average over a gap
+    /// shown as now — the page opened again 20 minutes after it closed, an
+    /// agent's census after a quiet hour — so `UsageBaselines` begins
+    /// again: "—" for one sample (6.11: a gap is a gap).
+    static let maximumInterval: UInt64 = 15_000_000_000
 
     /// `pid`'s usage now; nil when refused or gone. A plain synchronous call
     /// for the sampler's queue.
@@ -57,17 +64,27 @@ enum ProcessUsage {
 /// A sample less than `ProcessUsage.minimumInterval` after the baseline
 /// leaves the baseline where it was and answers with the rates last
 /// published, so a one-shot read soon after a tick neither reads noise nor
-/// shortens the next tick's interval. A value for the sampler's queue.
+/// shortens the next tick's interval. A sample more than `maximumAge`
+/// after the baseline begins again, "—": kept for every live identity, a
+/// baseline is as old as the last time anything asked about it. A value
+/// for the sampler's queue.
 struct UsageBaselines: Sendable {
+    /// The longest interval a rate spans (`ProcessUsage.maximumInterval`).
+    let maximumAge: UInt64
     private var samples: [ActivityProcessID: ActivityUsage] = [:]
     private var published: [ActivityProcessID: ActivityRates] = [:]
+
+    init(maximumAge: UInt64 = ProcessUsage.maximumInterval) {
+        self.maximumAge = maximumAge
+    }
 
     /// How many identities have a baseline.
     var count: Int { samples.count }
 
     /// The rates to show for `identity` after `usage`: new ones over the
     /// interval since its baseline, else the last published; nil for its
-    /// first sample.
+    /// first sample, and for one further from its baseline than
+    /// `maximumAge` — which begins again from it.
     mutating func record(_ usage: ActivityUsage, for identity: ActivityProcessID) -> ActivityRates? {
         guard let baseline = samples[identity] else {
             samples[identity] = usage
@@ -75,6 +92,11 @@ struct UsageBaselines: Sendable {
         }
         if usage.time < baseline.time + ProcessUsage.minimumInterval { return published[identity] }
         samples[identity] = usage
+        guard usage.time - baseline.time <= maximumAge else {
+            // Nobody asked about it for a while: no average over the gap.
+            published[identity] = nil
+            return nil
+        }
         guard let rates = ProcessUsage.rates(from: baseline, to: usage) else {
             // A counter went back, or the clock: begin again from here.
             published[identity] = nil
