@@ -4769,6 +4769,8 @@ final class E2ERunner {
     /// `performance` scenario runs the same three with ten tabs open, which
     /// is the more honest number for this app and the less comparable one.
     private func throughputScenario() async {
+        let fullSpeed = Self.measuredAtFullSpeed()
+        defer { ProcessInfo.processInfo.endActivity(fullSpeed) }
         await settledPrompt()
         await pause(1)
         let stalls = StallMeter()
@@ -4829,6 +4831,8 @@ final class E2ERunner {
     }
 
     private func performanceScenario() async {
+        let fullSpeed = Self.measuredAtFullSpeed()
+        defer { ProcessInfo.processInfo.endActivity(fullSpeed) }
         await settledPrompt()
         for i in 0..<9 {
             app.newTab(nil)
@@ -4846,8 +4850,9 @@ final class E2ERunner {
         let footprint = Self.footprintMB()
         note(
             String(
-                format: "idle, %d tabs / %d panes: CPU %.2f%%, footprint %.0f MB, worst main-thread stall %.0f ms",
-                app.store.tabs.count, app.store.tabs.map(\.terminals.count).reduce(0, +), idleCPU, footprint, idleStall * 1000))
+                format: "idle, %d tabs / %d panes: CPU %.2f%%, footprint %.0f MB, worst main-thread stall %.0f ms, window %@",
+                app.store.tabs.count, app.store.tabs.map(\.terminals.count).reduce(0, +), idleCPU, footprint, idleStall * 1000,
+                app.window?.occlusionState.contains(.visible) == true ? "on screen" : "covered"))
         check("idle with ten tabs costs little CPU (< 3%)", idleCPU < 3, String(format: "%.2f%%", idleCPU))
         check("and never stalls the main thread (< 150 ms)", idleStall < 0.15, String(format: "%.0f ms", idleStall * 1000))
         check("in a sane amount of memory (< 900 MB)", footprint < 900, String(format: "%.0f MB", footprint))
@@ -5037,6 +5042,21 @@ final class E2ERunner {
         app.toggleDiff(nil)
         try? FileManager.default.removeItem(at: bigRepo)
         stalls.stop()
+    }
+
+    /// The app kept out of App Nap while a scenario measures what it costs.
+    /// An isolated run never takes the focus, so its window opens behind
+    /// whatever the person has in front; once covered, macOS naps the app —
+    /// every thread, the main one too, moved to the efficiency cores and
+    /// slowed — and the same work then costs three to five times the CPU
+    /// seconds. Whether it was covered was the person's desktop, not the
+    /// app: a window at the screen's size peeked out from behind theirs and
+    /// measured 2.4% busy, at 1400×880 it was hidden and measured 6%, and
+    /// the main thread slowed enough that FSEvents dropped events. What
+    /// these checks compare against is the app's own work, so it is
+    /// measured awake.
+    static func measuredAtFullSpeed() -> NSObjectProtocol {
+        ProcessInfo.processInfo.beginActivity(options: [.userInitiated], reason: "Overterm's performance scenario measures CPU time")
     }
 
     /// This process's user + system CPU time, in seconds.
