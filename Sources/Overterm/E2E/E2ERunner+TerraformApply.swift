@@ -162,8 +162,15 @@ extension E2ERunner {
         check("not in a terminal: no apply typed anywhere", !recorder.calls().contains { $0.arguments.contains("-auto-approve") })
 
         // 2. A destroy plan: the root's name typed, on any class.
+        // The plan it starts asks its own gate's question right after (the
+        // checkout's commits aren't the person's): the destroy's is the
+        // first asked since, not the last.
+        let questionsBefore = asked.planQuestions.count
         app.planTerraformDestroy(sandbox)
-        check("asked before a destroy plan", await eventually(5) { asked.planQuestions.last?.title == "Plan a destroy of envs/globex-sandbox?" })
+        check(
+            "asked before a destroy plan",
+            await eventually(5) { asked.planQuestions.dropFirst(questionsBefore).first?.title == "Plan a destroy of envs/globex-sandbox?" },
+            asked.planQuestions.dropFirst(questionsBefore).map(\.title).joined(separator: " | "))
         check(
             "the destroy is planned", await eventually(40) { pane.run?.mode == .destroy && pane.run?.phase == .planned },
             "\(String(describing: pane.run?.phase))")
