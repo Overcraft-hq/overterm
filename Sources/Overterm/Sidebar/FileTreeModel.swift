@@ -50,6 +50,20 @@ final class FileTreeModel: ObservableObject {
     private var ignored: Set<URL> = []
     /// Folders whose entries have been (or are being) asked about.
     private var ignoreChecked: Set<URL> = []
+    /// Each listed folder's .gitignore as it was when listed (nil: none).
+    private var gitignoreDates: [URL: Date?] = [:]
+    /// What an invalidated folder held, until it is listed again: listed the
+    /// same — FSEvents rescans folders nothing changed in, the root with
+    /// MustScanSubDirs whenever it dropped events — git isn't asked again.
+    /// A main thread fallen behind (a napped app) got a hundred such rescans
+    /// in 8 s; each re-asked git and redrew every row, which slowed it more.
+    private var replaced: [URL: Listed] = [:]
+    private struct Listed: Equatable {
+        let entries: [FileEntry]
+        let gitignore: Date?
+    }
+    /// `check-ignore` runs started — what the tests count.
+    private(set) var ignoreChecks = 0
 
     /// Noise that is never what you are looking for in a tree.
     private static let hiddenNames: Set<String> = [".git", ".DS_Store"]
@@ -63,6 +77,8 @@ final class FileTreeModel: ObservableObject {
         listedByRealPath = [:]
         ignored = []
         ignoreChecked = []
+        gitignoreDates = [:]
+        replaced = [:]
         selection = nil
         rebuild()
         watcher?.stop()
@@ -88,8 +104,8 @@ final class FileTreeModel: ObservableObject {
             })
         guard !stale.isEmpty else { return }
         for dir in stale {
+            if let entries = listings[dir] { replaced[dir] = Listed(entries: entries, gitignore: gitignoreDates[dir] ?? nil) }
             listings[dir] = nil
-            ignoreChecked.remove(dir)
             listedByRealPath = listedByRealPath.filter { $0.value != dir }
         }
         // A deleted folder that was expanded would otherwise stay "open".
@@ -117,6 +133,8 @@ final class FileTreeModel: ObservableObject {
         listings = [:]
         listedByRealPath = [:]
         ignoreChecked = []
+        gitignoreDates = [:]
+        replaced = [:]
         rebuild()
     }
 
@@ -134,7 +152,8 @@ final class FileTreeModel: ObservableObject {
             }
         }
         walk(root, depth: 0)
-        rows = result
+        // Unchanged, nothing is redrawn.
+        if result != rows { rows = result }
     }
 
     private func listing(of dir: URL) -> [FileEntry] {
@@ -151,6 +170,9 @@ final class FileTreeModel: ObservableObject {
                 return $0.name.localizedStandardCompare($1.name) == .orderedAscending
             }
         listings[dir] = entries
+        let gitignore = Self.modified(dir.appendingPathComponent(".gitignore"))
+        gitignoreDates[dir] = gitignore
+        if replaced.removeValue(forKey: dir) != Listed(entries: entries, gitignore: gitignore) { ignoreChecked.remove(dir) }
         // Under the path as given too (a caller may name it that way), and
         // each with a trailing slash, as FSEvents often reports folders: an
         // event is then a plain lookup, no string trimmed.
@@ -170,6 +192,13 @@ final class FileTreeModel: ObservableObject {
         return String(cString: resolved)
     }
 
+    /// A file's modification date, nil when there is none.
+    nonisolated static func modified(_ file: URL) -> Date? {
+        var info = stat()
+        guard stat(file.path, &info) == 0 else { return nil }
+        return Date(timeIntervalSince1970: TimeInterval(info.st_mtimespec.tv_sec) + TimeInterval(info.st_mtimespec.tv_nsec) / 1_000_000_000)
+    }
+
     /// Paths per `check-ignore`, well under Git.maxArguments.
     static let ignoreBatch = 1000
 
@@ -179,6 +208,7 @@ final class FileTreeModel: ObservableObject {
     private func checkIgnored(_ entries: [FileEntry], in dir: URL) {
         guard let root, !entries.isEmpty, !ignoreChecked.contains(dir) else { return }
         ignoreChecked.insert(dir)
+        ignoreChecks += 1
         let paths = entries.map(\.url.path)
         Task { [weak self] in
             // Exit 1 means "none of these are ignored". Paths come back as
