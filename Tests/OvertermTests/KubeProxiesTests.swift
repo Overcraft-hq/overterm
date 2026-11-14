@@ -444,7 +444,7 @@ final class KubeProxiesTests: XCTestCase {
     }
 
     /// An expired session's plugin waits minutes for a browser nobody saw
-    /// (the spoke's `oidc-login`, gitops.md 14.12): a stand-in plugin that
+    /// (the spoke's `oidc-login`, gitops.md 14.12, consequence 6): a stand-in plugin that
     /// never answers, and after a short wait the page says what to run —
     /// never "unreachable", never a wait for minutes.
     func testASignInThatWaitsSaysToSignInAtATerminal() async throws {
@@ -468,6 +468,84 @@ final class KubeProxiesTests: XCTestCase {
         status = await proxies.status(of: spoke.name)
         XCTAssertEqual(status, .open)
         XCTAssertEqual(KubeProxies.signInCommand("acme prod"), "kubectl --context 'acme prod' get ns", "quoted for zsh")
+    }
+
+    /// A session that expires while the proxy is open (consequence 6
+    /// again): the context signed in, then every request waiting past the
+    /// patience with no answer since says sign-in needed — not `.open`
+    /// until the requests time out minutes later. A watch answered long
+    /// ago and quiet since is no such wait.
+    func testASignedInContextWhoseRequestsAllWaitSaysSignInNeeded() async throws {
+        let proxies = proxies()
+        let spoke = Self.context("globex-eu-west-1-prod", auth: Self.oidc)
+        _ = try await proxies.send(spoke, .GET, "/api")
+        var status = await proxies.status(of: spoke.name)
+        XCTAssertEqual(status, .open, "signed in")
+        // A quiet watch sends nothing for minutes: that is no sign-in.
+        answers.hold(spoke.name)
+        let watch = Task {
+            var pieces = 0
+            for try await _ in proxies.stream(spoke, .GET, "/api/v1/namespaces?watch=1") { pieces += 1 }
+            return pieces
+        }
+        try await until { self.answers.waitingCount(spoke.name) == 1 }
+        clock.advance(KubeProxies.signInPatience * 3)
+        status = await proxies.status(of: spoke.name)
+        XCTAssertEqual(status, .open, "a quiet watch")
+        // The session expires: the plugin waits for a browser again.
+        let waiting = Task { try await proxies.send(spoke, .GET, "/api/v1/namespaces") }
+        try await until { self.answers.waitingCount(spoke.name) == 2 }
+        clock.advance(KubeProxies.signInPatience - 1)
+        status = await proxies.status(of: spoke.name)
+        XCTAssertEqual(status, .open, "not yet")
+        clock.advance(1)
+        status = await proxies.status(of: spoke.name)
+        XCTAssertEqual(status, .signInNeeded(context: spoke.name))
+        // It answers at last: open again.
+        answers.release(spoke.name)
+        _ = try await waiting.value
+        _ = try await watch.value
+        status = await proxies.status(of: spoke.name)
+        XCTAssertEqual(status, .open)
+        clock.advance(KubeProxies.signInPatience * 10)
+        status = await proxies.status(of: spoke.name)
+        XCTAssertEqual(status, .open, "nothing waits: quiet is no sign-in")
+    }
+
+    /// Run at a terminal (the context bar's Run on "Sign-in needed"): the
+    /// proxy whose plugin waits for a browser is closed at once, the
+    /// context waits for Try Again — no request runs a plugin meanwhile —
+    /// and Try Again opens a fresh proxy, whose plugin finds the token.
+    func testSigningInAtATerminalClosesTheWaitingProxyUntilTryAgain() async throws {
+        let proxies = proxies()
+        let spoke = Self.context("globex-eu-west-1-prod", auth: Self.oidc)
+        answers.hold(spoke.name)
+        let waiting = Task { try await proxies.send(spoke, .GET, "/api") }
+        try await until { self.answers.isHeld(spoke.name) }
+        clock.advance(KubeProxies.signInPatience)
+        var status = await proxies.status(of: spoke.name)
+        XCTAssertEqual(status, .signInNeeded(context: spoke.name))
+        await proxies.signInAtTerminal(spoke.name)
+        let connected = await proxies.connected
+        XCTAssertEqual(connected, [], "the waiting proxy and its plugin closed")
+        status = await proxies.status(of: spoke.name)
+        XCTAssertEqual(status, .stopped(.signingInAtTerminal(context: spoke.name)))
+        XCTAssertEqual(status.reason, "Finish the sign-in in the terminal, then Try Again.")
+        XCTAssertEqual(KubeProxyProblem.signingInAtTerminal(context: spoke.name).command, "kubectl --context globex-eu-west-1-prod get ns")
+        do {
+            _ = try await proxies.send(spoke, .GET, "/api")
+            XCTFail("held until Try Again")
+        } catch let problem as KubeProxyProblem {
+            XCTAssertEqual(problem, .signingInAtTerminal(context: spoke.name))
+        }
+        answers.release(spoke.name)
+        waiting.cancel()
+        _ = try? await waiting.value
+        await proxies.retry(spoke.name)
+        let answered = try await proxies.send(spoke, .GET, "/api")
+        XCTAssertEqual(answered.status, 200)
+        status = await proxies.status(of: spoke.name)
+        XCTAssertEqual(status, .open)
     }
 
     func testANobodyFinishedSignInSaysSoAndStops() async throws {

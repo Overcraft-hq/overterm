@@ -23,6 +23,9 @@ enum KubeProxyProblem: Error, Equatable, Sendable, LocalizedError {
     /// The plugin wants a terminal (`interactiveMode: Always`), which a
     /// proxy Overterm starts doesn't have: sign in in a tab first.
     case needsTerminal(context: String)
+    /// The browser sign-in is being done at a terminal (`KubeProxies.
+    /// signInAtTerminal`): its proxy closed until Try Again.
+    case signingInAtTerminal(context: String)
     /// Another credential failure, as kubectl said it.
     case credentials(String)
     /// The cluster didn't answer: a dial error, a VPN that is down.
@@ -50,7 +53,7 @@ enum KubeProxyProblem: Error, Equatable, Sendable, LocalizedError {
     /// each one would run the failing plugin again.
     var stopsRequests: Bool {
         switch self {
-        case .awsSignIn, .signInTimedOut, .signInFailed, .pluginMissing, .needsTerminal, .credentials: true
+        case .awsSignIn, .signInTimedOut, .signInFailed, .pluginMissing, .needsTerminal, .signingInAtTerminal, .credentials: true
         case .unreachable, .transport, .noKubectl, .noKubeconfig, .socket, .noSlot, .proxyFailed, .closedWhileOpening, .needsPageSignIn: false
         }
     }
@@ -60,6 +63,7 @@ enum KubeProxyProblem: Error, Equatable, Sendable, LocalizedError {
         switch self {
         case .awsSignIn(let profile): "aws sso login" + (profile.map { " --profile \(Self.shellQuoted($0))" } ?? "")
         case .needsTerminal(let context): "kubectl --context \(Self.shellQuoted(context)) version"
+        case .signingInAtTerminal(let context): KubeProxies.signInCommand(context)
         default: nil
         }
     }
@@ -71,6 +75,7 @@ enum KubeProxyProblem: Error, Equatable, Sendable, LocalizedError {
         case .signInFailed(let detail): "The sign-in failed: \(detail)"
         case .pluginMissing(let plugin, let hint): "\(plugin) isn't installed." + (hint.map { " \($0)" } ?? "")
         case .needsTerminal: "This context signs in at a terminal: run \(command ?? "kubectl version") in a tab, then try again."
+        case .signingInAtTerminal: "Finish the sign-in in the terminal, then Try Again."
         case .credentials(let detail): "kubectl couldn't get credentials: \(detail)"
         case .unreachable: "The cluster can't be reached (VPN?)."
         case .transport(let detail): detail

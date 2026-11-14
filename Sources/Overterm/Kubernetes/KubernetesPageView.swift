@@ -714,7 +714,11 @@ struct KubernetesPageView: View {
             Spacer(minLength: 8)
             if case .signInNeeded(let context) = model.proxyStatus {
                 let command = KubeProxies.signInCommand(context)
-                Button("Run \(command)") { page.actions?.run(command) }.font(.system(size: ChromeMetrics.text(11)))
+                Button("Run \(command)") {
+                    page.actions?.run(command)
+                    model.signInAtTerminal()
+                }
+                .font(.system(size: ChromeMetrics.text(11)))
             }
             if case .stopped(let problem) = model.proxyStatus {
                 if let command = problem.command {

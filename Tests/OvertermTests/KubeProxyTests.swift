@@ -468,10 +468,7 @@ final class KubeProxyTests: XCTestCase {
         XCTAssertEqual(connected, ["fake-dev", "kind-fake"])
     }
 
-    // MARK: Helpers
-
-    @discardableResult
-    /// The spoke's expired sign-in (gitops.md 14.12): a stand-in
+    /// The spoke's expired sign-in (gitops.md 14.12, the survey's consequence 6): a stand-in
     /// `kubectl-oidc_login` that sleeps, as kubelogin waits for a browser,
     /// behind the real kubectl proxy against a server of the test's own —
     /// after a short wait the context says to sign in at a terminal, not
@@ -531,6 +528,9 @@ final class KubeProxyTests: XCTestCase {
         XCTAssertEqual(server.requests, [], "the plugin never answered: nothing reached the server")
     }
 
+    // MARK: Helpers
+
+    @discardableResult
     private func write(_ text: String, to name: String) throws -> URL {
         let url = dir.appendingPathComponent(name)
         try text.write(to: url, atomically: true, encoding: .utf8)

@@ -18,7 +18,12 @@ import NIOHTTP1
 ///   One that hasn't answered after `signInPatience` — an expired session
 ///   whose plugin waits minutes for a browser nobody saw — says what to
 ///   do instead of waiting on ("Sign-in needed — run `kubectl --context X
-///   get ns` once in a terminal"), never "unreachable".
+///   get ns` once in a terminal"), never "unreachable" — and so does one
+///   signed in with a request (not a quiet watch) unanswered that long and
+///   no answer since (a session that expired while the proxy was open). Once
+///   the person runs that at a terminal (`signInAtTerminal`), the proxy
+///   and its waiting plugin are closed and the context waits for Try
+///   Again, whose fresh plugin finds the token kubelogin kept.
 /// - **A credential failure stops the context** (`KubeProxyProblem`): no
 ///   retries — each would run the plugin again — until `retry`.
 /// - **A metrics proxy** (stage 4, `sendPrometheus`): a context's second
@@ -145,6 +150,14 @@ actor KubeProxies {
     private var signingInSince: Date?
     private let signInPatience: TimeInterval
     private var signedIn: Set<String> = []
+    /// A signed-in oidc context's plain requests not answered yet, by their
+    /// own number, since when (a stream isn't counted: a quiet watch sends
+    /// nothing for minutes); its last answer, a stream's first piece too.
+    /// One waiting past `signInPatience` with no answer since: the plugin
+    /// waits for a browser again.
+    private var unanswered: [String: [UInt64: Date]] = [:]
+    private var lastAnswer: [String: Date] = [:]
+    private var lastRequest: UInt64 = 0
     private var waiting: [String: Int] = [:]
     private var waiters: [CheckedContinuation<Void, Never>] = []
     private var sweeper: Task<Void, Never>?
@@ -286,13 +299,13 @@ actor KubeProxies {
         let key = Self.key(context.name, prometheus)
         // A chart hidden meanwhile: its metrics proxy isn't opened again.
         if prometheus != nil { try Task.checkCancellation() }
-        let (proxy, holds, id) = try await begin(context, role, prometheus: prometheus)
+        let (proxy, holds, id, request) = try await begin(context, role, prometheus: prometheus)
         let watch = role.unasked
         let response: HTTPResponse
         do {
             response = try await proxy.transport.send(method, path, body: body, headers: headers)
         } catch {
-            await finish(context.name, key, id, watch: watch, holds: holds, problem: nil, answered: false)
+            await finish(context.name, key, id, request: request, watch: watch, holds: holds, problem: nil, answered: false)
             throw error
         }
         let problem =
@@ -302,7 +315,7 @@ actor KubeProxies {
                 stderr: proxy.stderr, signIn: proxy.signIn)
             : Self.metricsProblem(status: response.status, stderr: proxy.stderr, signIn: proxy.signIn)
         let minor = prometheus == nil && path == "/version" && response.status == 200 ? KubeVersion.minor(response.body) : nil
-        await finish(context.name, key, id, watch: watch, holds: holds, problem: problem, answered: true, serverMinor: minor)
+        await finish(context.name, key, id, request: request, watch: watch, holds: holds, problem: problem, answered: true, serverMinor: minor)
         if let problem { throw problem }
         return response
     }
@@ -367,17 +380,24 @@ actor KubeProxies {
         let id: UInt64
         let watch = role.unasked
         do {
-            (proxy, holds, id) = try await begin(context, role, prometheus: nil)
+            // A stream isn't counted as waiting: a quiet watch sends nothing
+            // for minutes, and that is no sign-in. Its first piece is an answer.
+            (proxy, holds, id, _) = try await begin(context, role, prometheus: nil, counted: false)
         } catch {
             continuation.finish(throwing: error)
             return
         }
+        var first = proxy.signIn == .oidc
         do {
             for try await piece in proxy.transport.stream(method, path, body: nil, headers: headers) {
                 if holds {
                     // Answered: signed in, the next sign-in may go.
                     await released(context.name, signedIn: true)
                     holds = false
+                }
+                if first {
+                    await heard(context.name, nil)
+                    first = false
                 }
                 continuation.yield(piece)
             }
@@ -394,7 +414,9 @@ actor KubeProxies {
     }
 
     /// The context's proxy, opened if need be, held for one request — and
-    /// whether that request holds the oidc sign-in, and the entry it holds.
+    /// whether that request holds the oidc sign-in, the entry it holds, and
+    /// — a signed-in oidc context's request `counted` as waiting until it is
+    /// answered (a plain request, not a stream) — its number.
     ///
     /// Every `await` here may let another request in: one for the same
     /// context that makes the entry too, or one that closes it. So the
@@ -402,7 +424,9 @@ actor KubeProxies {
     /// the request checks it still holds the entry it counted itself in;
     /// one closed meanwhile ends the request (`closedWhileOpening`) rather
     /// than going on with a proxy that may be gone, uncounted.
-    private func begin(_ copy: KubeContext, _ role: Role, prometheus: KubePrometheusService?) async throws -> (KubeProxy, Bool, UInt64) {
+    private func begin(
+        _ copy: KubeContext, _ role: Role, prometheus: KubePrometheusService?, counted: Bool = true
+    ) async throws -> (KubeProxy, Bool, UInt64, UInt64?) {
         var context = planned(copy)
         let name = context.name
         // The context's proxy is `name`'s entry; its metrics proxy another
@@ -469,12 +493,17 @@ actor KubeProxies {
             throw error
         }
         startSweeping()
+        let holds: Bool
         do {
-            return (proxy, try await signIn(name, proxy.signIn, interactive: !watch), id)
+            holds = try await signIn(name, proxy.signIn, interactive: !watch)
         } catch {
             end(key, id, watch: watch)
             throw error
         }
+        guard counted, proxy.signIn == .oidc, !holds, prometheus == nil else { return (proxy, holds, id, nil) }
+        lastRequest += 1
+        unanswered[name, default: [:]][lastRequest] = now()
+        return (proxy, holds, id, lastRequest)
     }
 
     /// The socket `name`'s proxy (with `prometheus`, its metrics proxy)
@@ -486,12 +515,27 @@ actor KubeProxies {
     /// One request done: its problem kept when it stops the context, the
     /// sign-in released, the server's minor noted.
     private func finish(
-        _ name: String, _ key: String, _ id: UInt64, watch: Bool, holds: Bool, problem: KubeProxyProblem?, answered: Bool, serverMinor: Int? = nil
+        _ name: String, _ key: String, _ id: UInt64, request: UInt64? = nil, watch: Bool, holds: Bool, problem: KubeProxyProblem?, answered: Bool,
+        serverMinor: Int? = nil
     ) {
+        if let request {
+            if answered { heard(name, request) } else { forgetRequest(name, request) }
+        }
         if let problem, problem.stopsRequests { stopped[name] = problem }
         if let serverMinor { serverMinors[name] = serverMinor }
         if holds { released(name, signedIn: answered && problem == nil) }
         end(key, id, watch: watch)
+    }
+
+    /// An oidc context's request answered (a stream's first piece too).
+    private func heard(_ name: String, _ request: UInt64?) {
+        lastAnswer[name] = now()
+        if let request { forgetRequest(name, request) }
+    }
+
+    private func forgetRequest(_ name: String, _ request: UInt64) {
+        unanswered[name]?[request] = nil
+        if unanswered[name]?.isEmpty == true { unanswered[name] = nil }
     }
 
     /// The request no longer holds entry `id` — nothing, when that entry
@@ -621,7 +665,11 @@ actor KubeProxies {
 
     private func closeProxy(_ name: String) async {
         guard let entry = entries.removeValue(forKey: name) else { return }
-        if !Self.isMetrics(name) { signedIn.remove(name) }
+        if !Self.isMetrics(name) {
+            signedIn.remove(name)
+            unanswered[name] = nil
+            lastAnswer[name] = nil
+        }
         if let spec = entry.spec { await pool.close(spec) }
         if entries.isEmpty {
             sweeper?.cancel()
@@ -661,6 +709,13 @@ actor KubeProxies {
             return .signingIn
         }
         if waiting[name] != nil, let other = signingIn { return .waitingForSignIn(behind: other) }
+        if let oldest = unanswered[name]?.values.min(), now().timeIntervalSince(oldest) >= signInPatience,
+            (lastAnswer[name] ?? .distantPast) < oldest
+        {
+            // Signed in, yet nothing answered since: the session expired and
+            // the plugin waits for a browser again.
+            return .signInNeeded(context: name)
+        }
         if let spec = entries[name]?.spec, await pool.existing(spec)?.isOpen == true { return .open }
         return .closed
     }
@@ -687,6 +742,16 @@ actor KubeProxies {
         stopped[name] = nil
         await closeProxy(name)
         await closeProxy(Self.key(name, Self.anyService))
+    }
+
+    /// The sign-in command was run at a terminal: the proxy and the plugin
+    /// waiting in it for a browser are closed, and the context's requests
+    /// wait for Try Again (`retry`), whose fresh plugin finds the token
+    /// kubelogin kept — the closed one would have waited on for minutes.
+    func signInAtTerminal(_ name: String) async {
+        await closeProxy(name)
+        await closeProxy(Self.key(name, Self.anyService))
+        stopped[name] = .signingInAtTerminal(context: name)
     }
 
     /// Closes the context's proxy, and its metrics proxy.

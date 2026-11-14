@@ -3,13 +3,13 @@ import XCTest
 @testable import Overterm
 
 /// The pure halves of the marks' reads (docs/design/kubernetes/gitops.md,
-/// 14.4): when M2 reads an object again — a moved generation, not-ready
-/// cells, a last unhealthy state, never a ready row that stays ready; 15 s
-/// an object, 20 a flush, 60 a minute — what a page of whole objects
-/// keeps (the allow-list, the sentinel nowhere), a settled object
-/// standing for its row only while it still says the same, the book's
-/// ranking, and what a read that wasn't whole may say. Fictional names in
-/// the spoke's shape.
+/// 14.4): when an object is read by a GET — M2 on a moved generation or a
+/// row new while shown, never for readiness alone; M1b's settle of what
+/// isn't settled, the most recently changed first, after M2; M3b's
+/// CronJobs and `<unknown>` HPAs; 15 s an object, 20 a flush, 60 a
+/// minute, kept across a hide — a settled object standing for its row
+/// only while it still says the same, the book's ranking, and what a read
+/// that wasn't whole may say. Fictional names in the spoke's shape.
 final class KubeMarkedReadsTests: XCTestCase {
     let now = Date(timeIntervalSince1970: 1_800_000_000)
     let columns = ["Name", "Ready", "Up-to-date", "Available", "Images"].map { KubeColumn(name: $0, format: $0 == "Name" ? "name" : "") }
@@ -36,34 +36,64 @@ final class KubeMarkedReadsTests: XCTestCase {
         return KubeMarkedSettled(wire, at: at ?? now)
     }
 
-    // MARK: M2's reasons
+    // MARK: When an object is read
 
-    func testAMovedGenerationNotReadyCellsOrALastUnhealthyStateAreReadAgain() {
-        let reason = { (old: KubeRow?, new: KubeRow, settled: KubeMarkedSettled?) in
-            KubeMarkedRefetch.reason(old: old, new: new, kind: .deployment, columns: self.columns, settled: settled, now: self.now)
+    func testAMovedGenerationIsReadNeverReadinessAlone() {
+        let reason = { (old: KubeRow?, new: KubeRow, settled: KubeMarkedSettled?, listing: Bool) in
+            KubeMarkedRefetch.reason(old: old, new: new, kind: .deployment, columns: self.columns, settled: settled, listing: listing, now: self.now)
         }
-        XCTAssertNil(reason(row(), row(), settled()), "nothing moved")
-        XCTAssertNil(reason(row(), row(ready: "3/3", updated: "3", available: "3"), settled()), "a ready row that stays ready")
-        XCTAssertEqual(reason(row(), row(generation: 5), settled()), .moved, "a spec change")
-        XCTAssertEqual(reason(row(), row(ready: "1/2", available: "1"), settled()), .problem, "not ready now")
-        XCTAssertEqual(reason(row(), row(ready: "3/3", updated: "3", available: "3"), settled(ready: 1)), .problem, "last settled unhealthy")
-        XCTAssertEqual(reason(nil, row(), nil), .moved, "new")
+        XCTAssertNil(reason(row(), row(), settled(), false), "nothing moved")
+        XCTAssertNil(reason(row(), row(ready: "3/3", updated: "3", available: "3"), settled(), false), "a ready row that stays ready")
+        XCTAssertEqual(reason(row(), row(generation: 5), settled(), false), .moved, "a spec change")
+        XCTAssertNil(reason(row(), row(ready: "1/2", available: "1"), settled(), false), "not ready, its generation the same: its cells say it")
+        XCTAssertNil(reason(row(), row(ready: "3/3", updated: "3", available: "3"), settled(ready: 1), false), "last settled unhealthy: the tick's")
+        XCTAssertEqual(reason(nil, row(), nil, false), .moved, "new while shown")
+        XCTAssertEqual(reason(nil, row(), nil, true), .settle, "first listed, not settled: the settle's")
+        XCTAssertNil(reason(nil, row(), settled(), true), "settled at its generation: not again on a re-show")
+        XCTAssertEqual(reason(nil, row(generation: 5), settled(), true), .moved, "moved since it was settled")
+        // A Rollout's counts moving with its generation the same: nothing.
+        XCTAssertNil(
+            KubeMarkedRefetch.reason(
+                old: row(ready: "3"), new: row(ready: "1"), kind: .rollout, columns: columns, settled: settled(), listing: false, now: now))
+    }
+
+    func testCronJobsAndUnknownHPAsAreReadOnceAndWhenTheirRowMoves() {
+        let hpaColumns = ["Name", "Reference", "Targets"].map { KubeColumn(name: $0, format: $0 == "Name" ? "name" : "") }
+        func hpa(_ targets: String) -> KubeRow {
+            var row = KubeRow(id: KubeRowID(namespace: "team-5", name: "acme-search"), cells: [.text("acme-search"), .text("Deployment/acme-search"), .text(targets)])
+            row.marks = KubeMarkWire()
+            return row
+        }
+        func reason(_ old: KubeRow?, _ new: KubeRow, _ settled: KubeMarkedSettled?, kind: KubeMarkedKind = .horizontalPodAutoscaler) -> KubeMarkedRefetch.Priority? {
+            KubeMarkedRefetch.reason(old: old, new: new, kind: kind, columns: hpaColumns, settled: settled, listing: old == nil, now: now)
+        }
+        XCTAssertEqual(reason(nil, hpa("cpu: <unknown>/70%"), nil), .settle)
+        XCTAssertNil(reason(nil, hpa("cpu: 40%/70%"), nil), "every target read: Healthy from its row")
+        XCTAssertNil(reason(hpa("cpu: <unknown>/70%"), hpa("cpu: <unknown>/70%"), settled()))
+        XCTAssertEqual(reason(hpa("cpu: <unknown>/70%"), hpa("cpu: <unknown>/80%"), settled()), .settle, "its row moved")
+        XCTAssertEqual(reason(nil, hpa(""), nil, kind: .cronJob), .settle, "a CronJob's last run is in no cell")
+        XCTAssertNil(reason(hpa("a"), hpa("a"), settled(), kind: .cronJob))
+        XCTAssertNil(reason(nil, hpa(""), nil, kind: .service), "a Service's cells say it")
     }
 
     func testFifteenSecondsAnObjectTwentyAFlushSixtyAMinute() {
         var refetch = KubeMarkedRefetch()
         let ids = (0..<100).map { id("acme-svc-\($0)") }
-        for id in ids { refetch.ask(id, .problem) }
+        for id in ids { refetch.ask(id, .moved) }
         XCTAssertEqual(refetch.take(now: now).count, 20)
         XCTAssertEqual(refetch.take(now: now).count, 20)
         XCTAssertEqual(refetch.take(now: now).count, 20)
         XCTAssertEqual(refetch.take(now: now).count, 0, "the minute's 60")
         XCTAssertEqual(refetch.takenInLastMinute(now: now), 60)
+        // Hidden and shown again: what waited goes, the minute's count stays.
+        refetch.forgetPending()
+        XCTAssertTrue(refetch.isEmpty)
+        refetch.ask(ids[99], .moved)
+        XCTAssertEqual(refetch.take(now: now.addingTimeInterval(30)), [], "the same minute: none")
         // Asked again at once: not before 15 s.
-        refetch.ask(ids[0], .problem)
+        refetch.ask(ids[0], .moved)
         let later = refetch.take(now: now.addingTimeInterval(61))
-        XCTAssertEqual(later.count, 20)
-        XCTAssertTrue(later.contains(ids[0]), "problems first, and it is due")
+        XCTAssertEqual(Set(later), [ids[0], ids[99]])
         var spaced = KubeMarkedRefetch()
         spaced.ask(ids[1], .moved)
         XCTAssertEqual(spaced.take(now: now), [ids[1]])
@@ -72,7 +102,31 @@ final class KubeMarkedReadsTests: XCTestCase {
         XCTAssertEqual(spaced.take(now: now.addingTimeInterval(15)), [ids[1]])
     }
 
+    func testTheSettleWaitsBehindMovesNewestChangeFirst() {
+        var refetch = KubeMarkedRefetch()
+        for index in 0..<30 { refetch.ask(id("acme-old-\(index)"), .settle, changed: now.addingTimeInterval(TimeInterval(-3600 - index))) }
+        refetch.ask(id("acme-new"), .settle, changed: now.addingTimeInterval(-60))
+        refetch.ask(id("acme-moved"), .moved)
+        refetch.ask(id("acme-progressing"), .periodic)
+        let first = refetch.take(now: now)
+        XCTAssertEqual(first.count, 20)
+        XCTAssertEqual(Array(first.prefix(3)), [id("acme-moved"), id("acme-progressing"), id("acme-new")], "M2, the tick, then the newest change")
+        XCTAssertEqual(first[3], id("acme-old-0"))
+    }
+
     // MARK: Settled
+
+    func testASettledHPAStandsOnlyWhileATargetReadsUnknown() {
+        let hpaColumns = ["Name", "Targets"].map { KubeColumn(name: $0, format: $0 == "Name" ? "name" : "") }
+        func hpa(_ targets: String) -> KubeRow {
+            var row = KubeRow(id: KubeRowID(namespace: "team-5", name: "acme-search"), cells: [.text("acme-search"), .text(targets)])
+            row.marks = KubeMarkWire()
+            return row
+        }
+        let read = settled()
+        XCTAssertTrue(read.describes(hpa("cpu: <unknown>/70%"), kind: .horizontalPodAutoscaler, columns: hpaColumns, changedAt: nil, now: now))
+        XCTAssertFalse(read.describes(hpa("cpu: 40%/70%"), kind: .horizontalPodAutoscaler, columns: hpaColumns, changedAt: nil, now: now))
+    }
 
     func testASettledObjectStandsForItsRowOnlyWhileItSaysTheSame() {
         let read = settled(at: now)
@@ -82,62 +136,6 @@ final class KubeMarkedReadsTests: XCTestCase {
             read.describes(row(ready: "1/2", available: "1"), kind: .deployment, columns: columns, changedAt: now.addingTimeInterval(5), now: now),
             "not ready since it was read: the row's")
         XCTAssertTrue(read.describes(row(ready: "1/2", available: "1"), kind: .deployment, columns: columns, changedAt: now.addingTimeInterval(-5), now: now))
-    }
-
-    func testAPageOfWholeObjectsKeepsTheAllowListOnly() throws {
-        let sentinel = FakeKubeAPI.gitOpsSentinel
-        let page: [String: Any] = [
-            "kind": "DeploymentList", "apiVersion": "apps/v1", "metadata": ["continue": "next-page", "remainingItemCount": 12],
-            "items": [
-                [
-                    "metadata": [
-                        "name": "acme-pay", "namespace": "team-1", "generation": 3,
-                        "annotations": ["kubectl.kubernetes.io/last-applied-configuration": sentinel, "acme.example/note": sentinel],
-                    ],
-                    "spec": [
-                        "replicas": 1,
-                        "template": ["spec": ["containers": [["name": "app", "image": "registry.acme.example/pay:4.1", "env": [["name": "TOKEN", "value": sentinel]], "args": [sentinel]]]]],
-                    ],
-                    "status": ["observedGeneration": 3, "replicas": 2, "updatedReplicas": 1, "availableReplicas": 1],
-                ]
-            ],
-        ]
-        let data = try JSONSerialization.data(withJSONObject: page)
-        let read = try KubeMarkedWorkloadWire.page(data, kind: KubeGitOpsSession.deployments)
-        XCTAssertEqual(read.next, "next-page")
-        XCTAssertEqual(read.remaining, 12)
-        XCTAssertEqual(read.items.first?.kind, "Deployment", "a list's items carry no kind: the kind listed")
-        XCTAssertEqual(read.items.first?.images, ["registry.acme.example/pay:4.1"])
-        XCTAssertFalse(String(describing: read.items).contains(sentinel), "nothing outside the allow-list")
-        XCTAssertEqual(KubeMarkedHealth.object(read.items[0])?.status, .progressing, "its old pod still serves")
-    }
-
-    func testAPageOfCronJobsKeepsTheirMarksAndHealth() throws {
-        let sentinel = FakeKubeAPI.gitOpsSentinel
-        let cronJobs = KubeResourceKind(group: "batch", version: "v1", resource: "cronjobs", kind: "CronJob", singular: "cronjob", namespaced: true, verbs: ["list"])
-        let page: [String: Any] = [
-            "items": [
-                [
-                    "metadata": [
-                        "name": "acme-reindex", "namespace": "team-8",
-                        "annotations": [
-                            "argocd.argoproj.io/tracking-id": "prod-team-8-acme-reindex-service:batch/CronJob:team-8/acme-reindex",
-                            "kubectl.kubernetes.io/last-applied-configuration": sentinel,
-                        ],
-                    ],
-                    "spec": ["jobTemplate": ["spec": ["template": ["spec": ["containers": [["name": "r", "image": "registry.acme.example/r:2", "env": [["name": "K", "value": sentinel]]]]]]]]],
-                    "status": ["lastScheduleTime": "2026-11-14T09:00:00Z", "lastSuccessfulTime": "2026-11-14T07:00:00Z"],
-                ]
-            ]
-        ]
-        let read = try KubeMarkedMember.objects(JSONSerialization.data(withJSONObject: page), kind: cronJobs)
-        XCTAssertEqual(read.items.count, 1)
-        let member = read.items[0]
-        XCTAssertEqual(member.id, KubeMarkedMember.ID(kind: .cronJob, namespace: "team-8", name: "acme-reindex"))
-        guard case .own(let tracking) = member.marks.tracking else { return XCTFail("its own mark") }
-        XCTAssertEqual(tracking.instance, "prod-team-8-acme-reindex-service")
-        XCTAssertEqual(member.health?.status, .degraded)
-        XCTAssertFalse(String(describing: member).contains(sentinel))
     }
 
     // MARK: The book
@@ -191,6 +189,13 @@ final class KubeMarkedReadsTests: XCTestCase {
         XCTAssertEqual(
             reading.empty(context: "fake-prod", scope: .all, served: false),
             "No Argo CD Application is served by fake-prod, and no Deployment, StatefulSet or DaemonSet in all namespaces carries Argo CD's marks.")
+        var rollouts = reading
+        rollouts.kinds.append("Rollouts")
+        rollouts.listed.insert("Rollouts")
+        XCTAssertEqual(
+            rollouts.empty(context: "fake-dev", scope: .all, served: true),
+            "No Argo CD Application deploys here, and no Deployment, StatefulSet, DaemonSet or Rollout in all namespaces carries Argo CD's marks.",
+            "the Rollouts read too")
         XCTAssertEqual(reading.count(894), "894 apps")
         reading.refused["Deployments"] = ["team-a", "team-b", "team-c"]
         XCTAssertFalse(reading.isWhole)

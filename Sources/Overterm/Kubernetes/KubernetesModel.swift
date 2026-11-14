@@ -592,6 +592,15 @@ final class KubernetesModel: ObservableObject {
         restartReading(side: false)
     }
 
+    /// The sign-in command typed at a terminal (the context bar's Run on
+    /// "Sign-in needed"): the proxy whose plugin waits for a browser closed,
+    /// the context held until Try Again picks up the token kubelogin kept.
+    func signInAtTerminal() {
+        guard let name = selectedName else { return }
+        let proxies = self.proxies
+        Task { await proxies.signInAtTerminal(name) }
+    }
+
     /// After a sign-in, or a failure put right: the context's requests may go again.
     func retry() {
         guard let name = selectedName else { return }

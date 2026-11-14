@@ -8,15 +8,19 @@ import XCTest
 /// (`FakeKubeAPI.addSpoke`) — never a real cluster; every assertion from
 /// the fake's log of requests or the session's own counts, never a moment
 /// sampled: nothing of Argo CD's or Flux's is asked where they aren't
-/// served; three watches, and three still for six namespaces; the check
-/// (M1b) paged, cut at its bound and never watched; a stuck single-replica
-/// rollout whose cells say `1/1` Progressing once checked; M2 only for a
-/// moved generation, not-ready cells or a last unhealthy state, 60 a
-/// minute under 2,000 row events; M3 and M3b never watched; a refusal
+/// served; three watches, and three still for six namespaces; a kind left
+/// without a watch listed every 5 min; the settle (M1b) a GET of one
+/// object each, after M2's moves, within the minute's 60 — kept across a
+/// hide — never a list of whole objects; a stuck single-replica rollout
+/// whose cells say `1/1` Progressing once settled; M2 only for a moved
+/// generation, none under 2,000 readiness-only row events; M3 never
+/// watched, M3b a GET only of a CronJob or an `<unknown>` HPA; a refusal
 /// across the cluster read where it may be, said; argoproj.io failing
-/// discovery "couldn't tell", a failing metrics.k8s.io not; hidden, every
-/// read ends; no discovery, no request. Only GETs, never a Secret, a
-/// ConfigMap, a ReplicaSet or a pod.
+/// discovery "couldn't tell", a failing metrics.k8s.io not; derived where
+/// Applications are served with none, refused, or missing for most marked
+/// apps; hidden, every read ends; no discovery, no request; the sentinel
+/// in nothing kept. Only GETs, never a Secret, a ConfigMap, a ReplicaSet
+/// or a pod.
 @MainActor
 final class KubeMarkedAppsSessionTests: XCTestCase {
     nonisolated(unsafe) private var fakes: [FakeKubeAPI] = []
@@ -29,6 +33,11 @@ final class KubeMarkedAppsSessionTests: XCTestCase {
             XCTAssertFalse(paths.contains { $0.contains("/secrets") || $0.contains("/configmaps") }, "never a Secret or a ConfigMap")
             XCTAssertFalse(paths.contains { $0.contains("/replicasets") || $0.contains("/pods") }, "never a ReplicaSet or a pod")
             XCTAssertFalse(api.requests.contains { $0.isWatch && $0.query["includeObject"] == "Object" }, "never a whole-object watch")
+            let marksKinds = ["/deployments", "/statefulsets", "/daemonsets", "/rollouts", "/cronjobs", "/horizontalpodautoscalers", "/services", "/ingresses", "/persistentvolumeclaims", "/jobs"]
+            let wholeLists = api.requests.filter { request in
+                !request.isDiscovery && !request.accept.contains("as=Table") && marksKinds.contains { request.path.hasSuffix($0) }
+            }
+            XCTAssertEqual(wholeLists.map(\.path), [], "never a list of whole objects: rows, and a GET of one")
             api.stop()
         }
         fakes = []
@@ -55,6 +64,8 @@ final class KubeMarkedAppsSessionTests: XCTestCase {
     private func session() -> KubeMarkedAppsSession {
         let session = KubeMarkedAppsSession()
         session.flushInterval = .milliseconds(20)
+        // The tick is called by the tests that want it, at the clock they set.
+        session.tickInterval = .seconds(3600)
         session.clock = { [unowned self] in self.now }
         return session
     }
@@ -63,22 +74,46 @@ final class KubeMarkedAppsSessionTests: XCTestCase {
         session.apps.first { $0.app.key.instance == instance }
     }
 
-    /// Checked by Argo CD's rule (M1b) and every first list in.
-    private func settled(_ session: KubeMarkedAppsSession) async -> Bool {
-        await eventually {
-            session.state == .live && session.store?.done.contains("check:deployments.apps") == true && session.store?.done.contains("objects:cronjobs.batch") == true
-                && session.store?.done.contains("rows:services") == true && session.reading.checking == nil && session.refetchIdle && session.isMerged
+    /// Every first list in, and every object asked for read (M1b, M3b) —
+    /// the session's clock moved a minute on whenever the minute's 60 are
+    /// taken (`advancing`).
+    private func settled(_ session: KubeMarkedAppsSession, advancing: Bool = true, _ seconds: Double = 30) async -> Bool {
+        let deadline = Date().addingTimeInterval(seconds)
+        while Date() < deadline {
+            let done =
+                session.state == .live && session.store?.done.contains("rows:services") == true && session.store?.done.contains("rows:cronjobs.batch") == true
+                && session.reading.checking == nil && session.refetchIdle && session.isMerged
+            if done { return true }
+            if advancing, session.takenLastMinute >= KubeMarkedRefetch.perMinute, session.getsQueued == 0 { now = now.addingTimeInterval(61) }
+            try? await Task.sleep(for: .milliseconds(20))
         }
+        return false
     }
 
     private func argoOrFlux(_ path: String) -> Bool { path.contains("argoproj.io") || path.contains("toolkit.fluxcd.io") }
 
-    /// An object's GET (M2): a workload by name, not a list.
+    /// An object's GET (M1b, M2, M3b): one by name, not a list.
     private func objectGETs(_ api: FakeKubeAPI) -> [FakeKubeAPI.Request] {
         api.requests.filter { request in
-            !request.isWatch && !request.isDiscovery && request.query["limit"] == nil && request.path.contains("/namespaces/")
-                && request.path.split(separator: "/").count == 7
+            let parts = request.path.split(separator: "/").count
+            return !request.isWatch && !request.isDiscovery && request.path.contains("/namespaces/")
+                && ((request.path.hasPrefix("/apis/") && parts == 7) || (request.path.hasPrefix("/api/") && parts == 6))
         }
+    }
+
+    /// Nothing the session keeps carries what the allow-lists drop.
+    private func assertNoSentinel(_ session: KubeMarkedAppsSession, file: StaticString = #filePath, line: UInt = #line) {
+        let sentinel = FakeKubeAPI.gitOpsSentinel
+        for (what, kept) in [("apps", String(describing: session.apps)), ("store", String(describing: session.store)), ("reading", String(describing: session.reading))] {
+            XCTAssertFalse(kept.contains(sentinel), "the sentinel in the session's \(what)", file: file, line: line)
+        }
+    }
+
+    private func makeGitOps() -> KubeGitOpsSession {
+        let gitOps = KubeGitOpsSession()
+        gitOps.flushInterval = .milliseconds(20)
+        gitOps.marked.flushInterval = .milliseconds(20)
+        return gitOps
     }
 
     // MARK: A spoke
@@ -87,9 +122,7 @@ final class KubeMarkedAppsSessionTests: XCTestCase {
         let (api, client, spoke) = try startFake()
         let discovery = try await client.discover()
         api.forgetRequests()
-        let gitOps = KubeGitOpsSession()
-        gitOps.flushInterval = .milliseconds(20)
-        gitOps.marked.flushInterval = .milliseconds(20)
+        let gitOps = makeGitOps()
         gitOps.show(context: "fake-prod", scope: .all, discovery: discovery, client: client)
         let session = gitOps.marked
         let read = await settled(session)
@@ -110,6 +143,7 @@ final class KubeMarkedAppsSessionTests: XCTestCase {
         let states = session.apps.map(\.health.state)
         XCTAssertEqual(states, states.sorted())
         XCTAssertEqual(session.apps.first?.health.state, .failed)
+        assertNoSentinel(session)
         gitOps.drop()
         XCTAssertTrue(session.apps.isEmpty)
         XCTAssertNil(session.store)
@@ -154,17 +188,46 @@ final class KubeMarkedAppsSessionTests: XCTestCase {
         api.forgetRequests()
         let session = session()
         session.show(context: "fake-prod", scope: .all, discovery: discovery, client: client)
-        let read = await eventually { session.store?.done.contains("check:rollouts.argoproj.io") == true && session.refetchIdle && session.state == .live }
-        XCTAssertTrue(read)
+        let read = await settled(session)
+        XCTAssertTrue(read, "\(session.reading)")
         XCTAssertTrue(session.reading.rolloutsServed)
-        let canary = await eventually { self.app(session, spoke.rollout)?.health.state == .ready }
-        XCTAssertTrue(canary, "\(app(session, spoke.rollout)?.health.why ?? "none")")
-        // Its Deployment, scaled to 0 by the Rollout, is no problem.
-        let deployment = app(session, spoke.rollout)?.app.members.first { $0.id.kind == .deployment }
-        XCTAssertNotNil(deployment)
+        guard let canary = app(session, spoke.rollout) else { return XCTFail("the Rollout's app") }
+        XCTAssertEqual(canary.health.state, .ready, canary.health.why)
+        // The Rollout's object settled it: its workloadRef from the GET.
+        let rollout = canary.app.members.first { $0.id.kind == .rollout }
+        XCTAssertEqual(rollout?.workloadRef, "acme-canary", "from its object")
+        XCTAssertTrue(objectGETs(api).contains { $0.path == "/apis/argoproj.io/v1alpha1/namespaces/team-0/rollouts/acme-canary" })
+        // Its Deployment, scaled to 0 by the Rollout, is said so — never a
+        // problem, and never the workload the app's health was read from.
+        guard let deployment = canary.app.members.first(where: { $0.id.kind == .deployment }) else { return XCTFail("its Deployment") }
+        XCTAssertEqual(KubeMarkedHealth.member(deployment, in: canary.app)?.sentence, KubeMarkedHealth.scaledByRollout)
+        XCTAssertFalse(canary.health.causes.contains { $0.member == deployment.id })
         XCTAssertEqual(app(session, spoke.rolloutDegraded)?.health.state, .failed)
         XCTAssertEqual(api.requests.filter { $0.isWatch }.count(where: { $0.path.contains("/rollouts") }), 1, "its rows followed, as a Deployment's")
         XCTAssertFalse(api.requests.contains { $0.path.contains("argoproj.io") && !$0.path.contains("/rollouts") && !$0.isDiscovery }, "nothing else of Argo's")
+        session.drop()
+    }
+
+    /// The Rollout's object not read (refused in its namespace): its app is
+    /// Unknown, never Ready from the Deployment it scales to 0.
+    func testARolloutNotReadLeavesItsAppUnknownNeverReady() async throws {
+        var options = FakeKubeAPI.SpokeOptions()
+        options.apps = 4
+        options.rollouts = true
+        let (api, client, spoke) = try startFake(options)
+        let discovery = try await client.discover()
+        api.forbidden = ["rollouts@team-0"]
+        let session = session()
+        session.show(context: "fake-prod", scope: .all, discovery: discovery, client: client)
+        let read = await settled(session)
+        XCTAssertTrue(read, "\(session.reading)")
+        XCTAssertTrue(api.requests.contains { $0.path == "/apis/argoproj.io/v1alpha1/namespaces/team-0/rollouts/acme-canary" }, "asked, refused")
+        guard let canary = app(session, spoke.rollout) else { return XCTFail("the Rollout's app") }
+        XCTAssertEqual(canary.health.state, .unknown, canary.health.why)
+        XCTAssertEqual(canary.health.why, "not read yet")
+        XCTAssertNil(canary.app.members.first { $0.id.kind == .rollout }?.workloadRef)
+        let deployment = canary.app.members.first { $0.id.kind == .deployment }
+        XCTAssertEqual(deployment.flatMap { KubeMarkedHealth.member($0, in: canary.app) }?.sentence, KubeMarkedHealth.scaledByRollout)
         session.drop()
     }
 
@@ -193,26 +256,133 @@ final class KubeMarkedAppsSessionTests: XCTestCase {
         session.drop()
     }
 
-    func testTheCheckIsPagedCutAtItsBoundAndNeverWatched() async throws {
+    /// Two watches for three kinds: Deployments and StatefulSets followed,
+    /// DaemonSets — the last — listed, and listed again every 5 min and on
+    /// Refresh, never left frozen.
+    func testAKindLeftWithoutAWatchIsListedEveryFiveMinutes() async throws {
         let (api, client, _) = try startFake()
         let discovery = try await client.discover()
         api.forgetRequests()
         let session = session()
-        session.bounds.checkPage = 7
-        session.bounds.checkObjects = 20
-        session.show(context: "fake-prod", scope: .all, discovery: discovery, client: client)
+        session.show(context: "fake-prod", scope: .all, discovery: discovery, client: client, watches: 2)
         let read = await settled(session)
-        XCTAssertTrue(read)
-        let checks = api.requests.filter { $0.path == "/apis/apps/v1/deployments" && !$0.accept.contains("as=Table") }
-        XCTAssertFalse(checks.isEmpty)
-        XCTAssertTrue(checks.allSatisfy { !$0.isWatch && (Int($0.query["limit"] ?? "") ?? 99) <= 7 }, "\(checks.map(\.query))")
-        XCTAssertEqual(checks.count, 3, "7 + 7 + 6, then cut")
-        XCTAssertEqual(
-            session.reading.notes["check:deployments.apps"]?.hasPrefix("Deployments: 20 of "), true, "\(session.reading.notes)")
-        XCTAssertTrue(session.reading.notes["check:deployments.apps"]?.hasSuffix("checked by Argo CD's rule; the rest from their rows") == true)
-        // Past the cut, a state is from its row.
-        XCTAssertTrue(session.apps.contains { $0.health.fromRows })
-        XCTAssertTrue(session.reading.isWhole, "the check's cut leaves the marks whole")
+        XCTAssertTrue(read, "\(session.reading)")
+        XCTAssertEqual(session.openFollows, 2)
+        XCTAssertEqual(Set(api.requests.filter(\.isWatch).map(\.path)), ["/apis/apps/v1/deployments", "/apis/apps/v1/statefulsets"])
+        func daemonSetLists() -> Int { api.requests.count { !$0.isWatch && $0.path == "/apis/apps/v1/daemonsets" } }
+        XCTAssertEqual(daemonSetLists(), 1)
+        now = now.addingTimeInterval(KubeMarkedAppsSession.rereadEvery + 1)
+        session.tick()
+        let again = await eventually { daemonSetLists() == 2 }
+        XCTAssertTrue(again, "listed again after 5 min")
+        session.refresh()
+        let refreshed = await eventually { daemonSetLists() == 3 }
+        XCTAssertTrue(refreshed, "and on Refresh")
+        XCTAssertLessThanOrEqual(
+            api.requests.count { !$0.isWatch && $0.path == "/apis/apps/v1/deployments" && $0.accept.contains("as=Table") }, 1, "a followed kind isn't listed again")
+        XCTAssertEqual(KubeMarkedAppsSession.allot(3, reads: .follow, kinds: 4), [1, 1, 1, 0], "Rollouts, last, the one listed")
+        XCTAssertEqual(KubeMarkedAppsSession.allot(10, reads: .follow, kinds: 3), [3, 3, 3])
+        XCTAssertEqual(KubeMarkedAppsSession.allot(10, reads: .periodic, kinds: 3), [0, 0, 0])
+        session.drop()
+    }
+
+    /// Flux and Argo Rollouts served on a spoke: Flux's kinds and its
+    /// controller take five, the marks' four kinds a watch each before a
+    /// refused Flux kind's namespaces take what is left — ten at most.
+    func testWithFluxServedTheMarksTakeTheirWatchesFirst() async throws {
+        var options = FakeKubeAPI.SpokeOptions()
+        options.apps = 6
+        options.rollouts = true
+        let (api, client, _) = try startFake(options)
+        api.serveFlux()
+        api.forbidden = ["kustomizations@cluster"]
+        let discovery = try await client.discover()
+        api.forgetRequests()
+        let gitOps = makeGitOps()
+        gitOps.show(context: "fake-prod", scope: .all, discovery: discovery, client: client)
+        let session = gitOps.marked
+        let read = await settled(session)
+        XCTAssertTrue(read, "\(session.reading)")
+        XCTAssertEqual(session.openFollows, 4, "every marks kind followed: \(session.reading.kinds)")
+        let marksWatches = Set(api.requests.filter { $0.isWatch && !$0.path.contains("/namespaces/") }.map(\.path))
+        XCTAssertTrue(
+            marksWatches.isSuperset(of: ["/apis/apps/v1/deployments", "/apis/apps/v1/statefulsets", "/apis/apps/v1/daemonsets", "/apis/argoproj.io/v1alpha1/rollouts"]),
+            "\(marksWatches)")
+        XCTAssertLessThanOrEqual(api.openWatches, KubeScope.watchCap)
+        XCTAssertEqual(gitOps.marksMode, .only(.notServed))
+        gitOps.drop()
+    }
+
+    func testTheSettleIsGETsAfterMovesWithinTheMinutesSixty() async throws {
+        var options = FakeKubeAPI.SpokeOptions()
+        options.apps = 80
+        options.padding = 500
+        let (api, client, spoke) = try startFake(options)
+        let discovery = try await client.discover()
+        api.forgetRequests()
+        let session = session()
+        session.show(context: "fake-prod", scope: .all, discovery: discovery, client: client)
+        // The session's clock stands: one minute's 60, then the settle waits.
+        let first = await eventually { session.state == .live && session.takenLastMinute == KubeMarkedRefetch.perMinute && session.getsQueued == 0 }
+        XCTAssertTrue(first, "\(session.takenLastMinute)")
+        XCTAssertEqual(objectGETs(api).count, 60, "60 a minute, one object each")
+        XCTAssertLessThanOrEqual(session.mostTaken, 20, "20 a flush")
+        XCTAssertLessThanOrEqual(session.mostInFlight, 4)
+        XCTAssertFalse(session.refetchIdle, "the rest wait their minute")
+        let checking = session.reading.said.first { $0.hasPrefix("checking rollouts 60 of ") }
+        XCTAssertNotNil(checking, "\(session.reading.said)")
+        XCTAssertTrue(session.apps.contains { $0.health.fromRows }, "not yet settled: from its row")
+        // A settled Deployment's spec changes: M2's GET comes before the settle's.
+        guard let target = spoke.deployments.first(where: { session.store?.settled[KubeMarkedMember.ID(kind: .deployment, namespace: $0.namespace, name: $0.name)] != nil })
+        else { return XCTFail("one settled") }
+        let (namespace, name) = (target.namespace, target.name)
+        api.modify("deployments.apps", name, namespace: namespace) { body in
+            var metadata = body["metadata"] as? [String: Any] ?? [:]
+            metadata["generation"] = 5
+            body["metadata"] = metadata
+        }
+        let moved = await eventually { session.rowsChanged > 0 }
+        XCTAssertTrue(moved)
+        api.forgetRequests()
+        now = now.addingTimeInterval(61)
+        let next = await eventually { self.objectGETs(api).count >= KubeMarkedAppsSession.inFlight }
+        XCTAssertTrue(next)
+        // Taken first, so among the first in flight (4 at once, in any order).
+        let firstIn = objectGETs(api).prefix(KubeMarkedAppsSession.inFlight).map(\.path)
+        XCTAssertTrue(firstIn.contains("/apis/apps/v1/namespaces/\(namespace)/deployments/\(name)"), "M2 first: \(firstIn)")
+        let all = await settled(session)
+        XCTAssertTrue(all, "\(session.reading)")
+        XCTAssertLessThanOrEqual(session.mostTaken, 20)
+        let paths = api.requests.filter { !$0.isWatch && !$0.isDiscovery && !$0.accept.contains("as=Table") }.map(\.path)
+        XCTAssertEqual(paths.count, objectGETs(api).count, "only GETs of one object: \(paths.filter { !$0.contains("/namespaces/") })")
+        XCTAssertEqual(Set(paths).count, paths.count, "each object once")
+        assertNoSentinel(session)
+        session.drop()
+    }
+
+    /// Hidden and shown again — another scope, the section left and
+    /// back — the minute's 60 aren't given again; another context's are its own.
+    func testTheMinutesSixtyStandAcrossAHide() async throws {
+        var options = FakeKubeAPI.SpokeOptions()
+        options.apps = 80
+        options.padding = 500
+        let (api, client, _) = try startFake(options)
+        let discovery = try await client.discover()
+        let session = session()
+        session.show(context: "fake-prod", scope: .all, discovery: discovery, client: client)
+        let first = await eventually { session.takenLastMinute == KubeMarkedRefetch.perMinute && session.getsQueued == 0 }
+        XCTAssertTrue(first)
+        session.hide()
+        api.forgetRequests()
+        session.show(context: "fake-prod", scope: .of(["team-8", "team-9"]), discovery: discovery, client: client)
+        let shown = await eventually { session.state == .live && session.isMerged && !session.refetchIdle && session.getsQueued == 0 }
+        XCTAssertTrue(shown)
+        XCTAssertEqual(session.takenLastMinute, KubeMarkedRefetch.perMinute)
+        XCTAssertEqual(objectGETs(api).map(\.path), [], "the same minute: no GET")
+        session.drop()
+        session.show(context: "fake-dev", scope: .all, discovery: discovery, client: client)
+        let fresh = await eventually { !self.objectGETs(api).isEmpty }
+        XCTAssertTrue(fresh, "dropped: a minute of its own")
         session.drop()
     }
 
@@ -226,16 +396,19 @@ final class KubeMarkedAppsSessionTests: XCTestCase {
         XCTAssertTrue(read)
         let watched = Set(api.requests.filter(\.isWatch).map(\.path))
         XCTAssertEqual(watched, ["/apis/apps/v1/deployments", "/apis/apps/v1/statefulsets", "/apis/apps/v1/daemonsets"])
-        for path in ["/api/v1/services", "/apis/networking.k8s.io/v1/ingresses", "/api/v1/persistentvolumeclaims", "/apis/batch/v1/jobs"] {
+        for path in [
+            "/api/v1/services", "/apis/networking.k8s.io/v1/ingresses", "/api/v1/persistentvolumeclaims", "/apis/batch/v1/jobs", "/apis/batch/v1/cronjobs",
+            "/apis/autoscaling/v2/horizontalpodautoscalers",
+        ] {
             let asked = api.requests.filter { $0.path == path }
             XCTAssertFalse(asked.isEmpty, path)
             XCTAssertTrue(asked.allSatisfy { $0.accept.contains("as=Table") && $0.query["includeObject"] == "Metadata" }, "rows with their metadata: \(path)")
         }
-        for path in ["/apis/batch/v1/cronjobs", "/apis/autoscaling/v2/horizontalpodautoscalers"] {
-            let asked = api.requests.filter { $0.path == path }
-            XCTAssertFalse(asked.isEmpty, path)
-            XCTAssertTrue(asked.allSatisfy { !$0.accept.contains("as=Table") && $0.query["limit"] != nil }, "whole, paged: \(path)")
-        }
+        // M3b: a GET of the marked CronJob, and of the HPA whose target reads <unknown> — no other HPA's.
+        let gets = objectGETs(api).map(\.path)
+        XCTAssertEqual(gets.filter { $0.contains("/cronjobs/") }, ["/apis/batch/v1/namespaces/team-8/cronjobs/acme-reindex"])
+        XCTAssertEqual(gets.filter { $0.contains("/horizontalpodautoscalers/") }, ["/apis/autoscaling/v2/namespaces/team-5/horizontalpodautoscalers/acme-search"])
+        XCTAssertFalse(gets.contains { $0.contains("/services/") || $0.contains("/ingresses/") || $0.contains("/jobs/") }, "their cells say it")
         session.drop()
     }
 
@@ -253,9 +426,8 @@ final class KubeMarkedAppsSessionTests: XCTestCase {
         session.show(context: "fake-prod", scope: .all, discovery: discovery, client: client)
         let again = await eventually { session.state == .live && session.apps.count == count && session.refetchIdle }
         XCTAssertTrue(again)
-        let lists = api.requests.filter { !$0.isWatch && !$0.isDiscovery && !$0.accept.contains("as=Table") }
-        XCTAssertEqual(lists.map(\.path), [], "no check, no CronJob or HPA again")
-        XCTAssertFalse(api.requests.contains { $0.path == "/api/v1/services" }, "no Service list again")
+        XCTAssertEqual(objectGETs(api).map(\.path), [], "nothing settled is read again")
+        XCTAssertFalse(api.requests.contains { $0.path == "/api/v1/services" || $0.path == "/apis/batch/v1/cronjobs" }, "no Service or CronJob list again")
         session.drop()
     }
 
@@ -278,18 +450,29 @@ final class KubeMarkedAppsSessionTests: XCTestCase {
         let quiet = await eventually { session.refetchIdle }
         XCTAssertTrue(quiet)
         XCTAssertEqual(objectGETs(api).map(\.path), [], "a ready row that stays ready isn't read")
-        // A spec change: its generation moves.
+        // Not ready, its generation the same (a pod restarting): its cells say it.
+        let notReady = session.rowsChanged
+        api.modify("deployments.apps", name, namespace: namespace, values: ["Ready": "2/3", "Available": 2]) { _ in }
+        let turned = await eventually { session.rowsChanged > notReady && session.refetchIdle && session.isMerged }
+        XCTAssertTrue(turned)
+        XCTAssertEqual(objectGETs(api).map(\.path), [], "readiness alone isn't read")
+        // A spec change: its generation moves (15 s past its last GET, an object's least).
+        now = now.addingTimeInterval(KubeMarkedRefetch.perObject)
         api.modify("deployments.apps", name, namespace: namespace) { body in
             var metadata = body["metadata"] as? [String: Any] ?? [:]
             metadata["generation"] = 5
             body["metadata"] = metadata
         }
-        let fetched = await eventually { self.objectGETs(api).contains { $0.path.hasSuffix("/deployments/\(name)") } }
+        let fetched = await eventually { self.objectGETs(api).contains { $0.path.hasSuffix("/deployments/\(name)") } && session.refetchIdle && session.isMerged }
         XCTAssertTrue(fetched, "\(api.requests.map(\.path))")
+        assertNoSentinel(session)
         session.drop()
     }
 
-    func testTwoThousandReadinessEventsAskAtMostSixtyAMinute() async throws {
+    /// 14.9.3's leg: 2,000 readiness-only row events — every Deployment
+    /// turned not ready and back, ten times, its generation never moving —
+    /// cause no GET at all.
+    func testTwoThousandReadinessOnlyEventsCauseNoGET() async throws {
         var options = FakeKubeAPI.SpokeOptions()
         options.apps = 100
         options.padding = 500
@@ -298,28 +481,17 @@ final class KubeMarkedAppsSessionTests: XCTestCase {
         let session = session()
         session.show(context: "fake-prod", scope: .all, discovery: discovery, client: client)
         let read = await settled(session)
-        XCTAssertTrue(read)
+        XCTAssertTrue(read, "\(session.reading)")
         api.forgetRequests()
         let before = session.rowsChanged
+        let asked = session.getsAsked
         let deployments = spoke.deployments
         XCTAssertEqual(deployments.count, 100)
-        // 10 rounds × 2 × 100 = 2,000 events, the generation never moving;
-        // the session's clock stands: one minute.
         api.churnReadiness(deployments, rounds: 10)
-        let all = await eventually(60) { session.rowsChanged - before >= 2000 }
+        let all = await eventually(60) { session.rowsChanged - before >= 2000 && session.refetchIdle && session.isMerged }
         XCTAssertTrue(all, "\(session.rowsChanged - before)")
-        // A hundred turned not ready; the minute's 60 are all it reads.
-        let capped = await eventually(30) { session.takenLastMinute == 60 && session.getsQueued == 0 }
-        XCTAssertTrue(capped, "\(session.takenLastMinute)")
-        XCTAssertEqual(objectGETs(api).count, 60, "60 a minute")
-        XCTAssertLessThanOrEqual(session.mostTaken, 20, "20 a flush")
-        XCTAssertLessThanOrEqual(session.mostInFlight, 4)
-        // The next minute reads what waits — never past its own 60.
-        now = now.addingTimeInterval(61)
-        let next = await eventually(30) { session.takenLastMinute > 0 && session.getsQueued == 0 && self.objectGETs(api).count > 60 }
-        XCTAssertTrue(next, "\(objectGETs(api).count)")
-        XCTAssertLessThanOrEqual(session.takenLastMinute, 60)
-        XCTAssertLessThanOrEqual(objectGETs(api).count, 120)
+        XCTAssertEqual(session.getsAsked, asked, "no GET asked")
+        XCTAssertEqual(objectGETs(api).map(\.path), [], "none reached the server")
         session.drop()
     }
 
@@ -414,19 +586,56 @@ final class KubeMarkedAppsSessionTests: XCTestCase {
         XCTAssertNil(session.store)
     }
 
-    // MARK: Beside Applications
+    // MARK: Beside Applications, and where none deploys these
+
+    /// The development cluster's case (14.12, consequence 1): Applications
+    /// served, R1's whole list across the cluster has none — derived, and
+    /// followed, said "aren't in this cluster", never "another cluster".
+    func testApplicationsServedWithNoneListedAreDerivedAndFollowed() async throws {
+        let (api, client, spoke) = try startFake(FakeKubeAPI.SpokeOptions(apps: 6, env: "dev", states: false))
+        api.serveArgoCD()
+        let discovery = try await client.discover()
+        let gitOps = makeGitOps()
+        gitOps.show(context: "fake-dev", scope: .all, discovery: discovery, client: client)
+        let mode = await eventually { gitOps.marksMode == .only(.noApplications) }
+        XCTAssertTrue(mode, "\(gitOps.marksMode)")
+        XCTAssertEqual(gitOps.marked.reads, .follow)
+        let read = await settled(gitOps.marked)
+        XCTAssertTrue(read, "\(gitOps.marked.reading)")
+        XCTAssertTrue(Set(gitOps.marked.apps.map(\.app.key.instance)).isSuperset(of: spoke.apps))
+        XCTAssertTrue(api.requests.contains { $0.isWatch && $0.path == "/apis/apps/v1/deployments" }, "followed")
+        XCTAssertEqual(KubeMarkedAppsMode.Reason.noApplications.line(context: "fake-dev"), "Argo CD's Applications for these aren't in this cluster.")
+        gitOps.drop()
+    }
+
+    /// Applications served but refused across the cluster and in `argocd`:
+    /// derived, followed, said forbidden (14.9.1's variant).
+    func testApplicationsRefusedEverywhereAreDerivedAndFollowed() async throws {
+        let (api, client, _) = try startFake(FakeKubeAPI.SpokeOptions(apps: 6, states: false))
+        api.serveArgoCD()
+        api.forbidden = ["applications@cluster", "applications@argocd"]
+        let discovery = try await client.discover()
+        let gitOps = makeGitOps()
+        gitOps.show(context: "fake-prod", scope: .all, discovery: discovery, client: client)
+        let mode = await eventually { gitOps.marksMode == .only(.forbidden) && gitOps.marked.state == .live && !gitOps.marked.apps.isEmpty }
+        XCTAssertTrue(mode, "\(gitOps.marksMode)")
+        XCTAssertEqual(gitOps.marked.reads, .follow)
+        XCTAssertFalse(gitOps.marked.apps.isEmpty)
+        gitOps.drop()
+    }
 
     func testBesideApplicationsTheMarksAreListedNotWatched() async throws {
         let (api, client, spoke) = try startFake(FakeKubeAPI.SpokeOptions(apps: 6, states: false))
         api.serveArgoCD()
-        api.addApplication(
-            spoke.apps[0], spec: ["project": "acme", "destination": ["namespace": "team-0"], "source": ["repoURL": "https://git.acme.example/acme/fleet.git"]],
-            status: ["sync": ["status": "Synced"], "health": ["status": "Healthy"]])
+        // Most marked apps have their Application here: the derived ones are extras.
+        for app in spoke.apps.prefix(4) {
+            api.addApplication(
+                app, spec: ["project": "acme", "destination": ["namespace": "team-0"], "source": ["repoURL": "https://git.acme.example/acme/fleet.git"]],
+                status: ["sync": ["status": "Synced"], "health": ["status": "Healthy"]])
+        }
         let discovery = try await client.discover()
         api.forgetRequests()
-        let gitOps = KubeGitOpsSession()
-        gitOps.flushInterval = .milliseconds(20)
-        gitOps.marked.flushInterval = .milliseconds(20)
+        let gitOps = makeGitOps()
         gitOps.show(context: "fake-prod", scope: .all, discovery: discovery, client: client)
         let mode = await eventually {
             if case .beside(let coexistence) = gitOps.marksMode { return !coexistence.missing.isEmpty }
@@ -435,9 +644,38 @@ final class KubeMarkedAppsSessionTests: XCTestCase {
         XCTAssertTrue(mode, "\(gitOps.marksMode)")
         guard case .beside(let coexistence) = gitOps.marksMode else { return XCTFail() }
         XCTAssertFalse(coexistence.missing.contains { $0.instance == spoke.apps[0] }, "its Application is here")
-        XCTAssertTrue(coexistence.missing.contains { $0.instance == spoke.apps[1] })
+        XCTAssertEqual(Set(coexistence.missing.map(\.instance)), Set(spoke.apps.suffix(2)))
         XCTAssertEqual(gitOps.marked.reads, .periodic)
         XCTAssertFalse(api.requests.contains { $0.isWatch && $0.path.hasSuffix("/deployments") && !$0.path.contains("/namespaces/") }, "listed, never watched")
+        // Only the derived apps' objects are read by GET (14.4.5).
+        let derived = spoke.deployments.suffix(2).map { "/apis/apps/v1/namespaces/\($0.namespace)/deployments/\($0.name)" }
+        let gets = await eventually { Set(self.objectGETs(api).map(\.path)) == Set(derived) && gitOps.marked.refetchIdle }
+        XCTAssertTrue(gets, "\(objectGETs(api).map(\.path))")
+        gitOps.drop()
+    }
+
+    /// Beside Applications, most marked apps have none here (a few local
+    /// Applications, a hub's many apps): followed as on a spoke, its
+    /// objects settled only for the derived apps.
+    func testBesideApplicationsMostlyMissingAreFollowed() async throws {
+        let (api, client, spoke) = try startFake(FakeKubeAPI.SpokeOptions(apps: 6, states: false))
+        api.serveArgoCD()
+        api.addApplication(
+            spoke.apps[0], spec: ["project": "acme", "destination": ["namespace": "team-0"], "source": ["repoURL": "https://git.acme.example/acme/fleet.git"]],
+            status: ["sync": ["status": "Synced"], "health": ["status": "Healthy"]])
+        let discovery = try await client.discover()
+        api.forgetRequests()
+        let gitOps = makeGitOps()
+        gitOps.show(context: "fake-prod", scope: .all, discovery: discovery, client: client)
+        let followed = await eventually {
+            guard case .beside = gitOps.marksMode else { return false }
+            return gitOps.marked.reads == .follow && gitOps.marked.state == .live && gitOps.marked.refetchIdle
+        }
+        XCTAssertTrue(followed, "\(gitOps.marksMode) \(gitOps.marked.reads)")
+        XCTAssertTrue(api.requests.contains { $0.isWatch && $0.path == "/apis/apps/v1/deployments" })
+        XCTAssertFalse(objectGETs(api).contains { $0.path.hasSuffix("/deployments/\(spoke.deployments[0].name)") }, "its Application is here: not settled")
+        XCTAssertTrue(KubeGitOpsSession.followsBeside(KubeMarkedAppsMode.Coexistence(missing: Set((0..<101).map { KubeTrackingID.AppKey(installation: "", instance: "fake-\($0)") })), marked: 1000))
+        XCTAssertFalse(KubeGitOpsSession.followsBeside(KubeMarkedAppsMode.Coexistence(missing: [KubeTrackingID.AppKey(installation: "", instance: "fake-1")]), marked: 10))
         gitOps.drop()
     }
 }

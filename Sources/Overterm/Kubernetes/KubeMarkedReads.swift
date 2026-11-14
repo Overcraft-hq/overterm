@@ -1,70 +1,14 @@
 import Foundation
 
 // The pure halves of reading apps from Argo CD's marks (docs/design/
-// kubernetes/gitops.md, 14.4): a page of whole objects by the allow-list,
-// what one object's GET settled, when a row is read again (M2), the
-// members and apps kept as rows come and go (`KubeMarkedBook`), and what
-// the reads could say (`KubeMarkedReading`). `KubeMarkedAppsSession` reads.
+// kubernetes/gitops.md, 14.4): what one object's GET settled, when an
+// object is read (M1b's settle, M2's moves, M3b's CronJobs and `<unknown>`
+// HPAs — one GET each, never a list of whole objects, 14.12's fifth
+// consequence), the members and apps kept as rows come and go
+// (`KubeMarkedBook`), and what the reads could say (`KubeMarkedReading`).
+// `KubeMarkedAppsSession` reads.
 
-extension KubeMarkedWorkloadWire {
-    /// A list's page of whole objects (M1b), by the allow-list: no field
-    /// outside it is kept; an item without its `kind` (a server's list
-    /// items carry none) is the kind listed.
-    static func page(_ data: Data, kind: KubeResourceKind) throws -> KubePage<KubeMarkedWorkloadWire> {
-        let list = try JSONDecoder().decode(ListWire.self, from: data)
-        let items = (list.items ?? []).map { item -> KubeMarkedWorkloadWire in
-            var item = item
-            if item.kind == nil { item.kind = kind.kind }
-            if item.apiVersion == nil { item.apiVersion = kind.groupVersion }
-            return item
-        }
-        return KubePage(items: items, next: list.metadata?.continue.flatMap { $0.isEmpty ? nil : $0 }, remaining: list.metadata?.remainingItemCount)
-    }
-
-    private struct ListWire: Decodable {
-        struct Metadata: Decodable {
-            var `continue`: String?
-            var remainingItemCount: Int?
-        }
-
-        var metadata: Metadata?
-        var items: [KubeMarkedWorkloadWire]?
-    }
-}
-
-extension KubeMarkedMember {
-    /// A list's page of whole objects as members (M3b: CronJobs and HPAs,
-    /// whose health no cell says): each one's marks from its metadata by
-    /// `KubeMarkWire`'s allow-list, checked against the kind listed, and
-    /// its health by Argo CD's rule from `KubeMarkedWorkloadWire` — nothing
-    /// else of the object kept.
-    static func objects(_ data: Data, kind: KubeResourceKind) throws -> KubePage<KubeMarkedMember> {
-        guard let list = try JSONSerialization.jsonObject(with: data) as? [String: Any] else {
-            throw KubeTableReader.Malformed(detail: String(decoding: data.prefix(120), as: UTF8.self))
-        }
-        let marked = KubeMarkedKind(kind)
-        var members: [KubeMarkedMember] = []
-        for item in list["items"] as? [[String: Any]] ?? [] {
-            guard let metadata = item["metadata"] as? [String: Any], let name = metadata["name"] as? String, !name.isEmpty else { continue }
-            let namespace = kind.namespaced ? metadata["namespace"] as? String : nil
-            let identity = KubeTrackingID.Identity(group: kind.group, kind: kind.kind, namespace: namespace, name: name)
-            guard let marks = KubeMarkWire.read(metadata: metadata, self: identity) else { continue }
-            var wire = try JSONDecoder().decode(KubeMarkedWorkloadWire.self, from: JSONSerialization.data(withJSONObject: item))
-            if wire.kind == nil { wire.kind = kind.kind }
-            if wire.apiVersion == nil { wire.apiVersion = kind.groupVersion }
-            let created = (metadata["creationTimestamp"] as? String).flatMap { try? Date($0, strategy: .iso8601) }
-            members.append(
-                KubeMarkedMember(
-                    id: ID(kind: marked, namespace: namespace, name: name), marks: marks, health: KubeMarkedHealth.object(wire), images: wire.images,
-                    created: created))
-        }
-        let metadata = list["metadata"] as? [String: Any]
-        let next = (metadata?["continue"] as? String).flatMap { $0.isEmpty ? nil : $0 }
-        return KubePage(items: members, next: next, remaining: (metadata?["remainingItemCount"] as? NSNumber)?.intValue)
-    }
-}
-
-/// What one object's read by Argo CD's rule said (M1b's list, M2's GET):
+/// What one object's read by Argo CD's rule said (a GET: M1b, M2, M3b):
 /// the allow-listed object, its generation then, when it was read.
 struct KubeMarkedSettled: Equatable, Sendable {
     var wire: KubeMarkedWorkloadWire
@@ -82,89 +26,131 @@ struct KubeMarkedSettled: Equatable, Sendable {
 
     /// Whether it still says what its row says now: the same generation,
     /// and — when the row reads not ready since — not older than that change.
+    /// An HPA's object stands only while a target still reads `<unknown>`:
+    /// every target read again, its row says Healthy.
     func describes(_ row: KubeRow, kind: KubeMarkedKind, columns: [KubeColumn], changedAt: Date?, now: Date) -> Bool {
         if let generation, let rowGeneration = row.marks?.generation, generation != rowGeneration { return false }
+        if kind == .horizontalPodAutoscaler { return KubeMarkedHealth.row(kind, row, columns: columns, marks: row.marks, now: now)?.unread == true }
         guard let changedAt, changedAt > at else { return true }
         let verdict = KubeMarkedHealth.row(kind, row, columns: columns, marks: row.marks, now: now)
         return verdict?.status == .healthy || verdict?.status == nil
     }
 }
 
-/// When a marked workload's object is read again (M2, gitops.md 14.4.1):
-/// on a moved generation (a spec change: a rollout, a pause, a scale),
-/// when its cells now read not ready, or when it was last settled not
-/// Healthy — never for a row whose generation and readiness stand, nor
-/// a Ready row that didn't move (M1b settled it). Each object at most
-/// once every 15 s, at most 20 a flush and 60 a minute for the section,
-/// what is in progress again every 60 s at most. Pure.
+/// When a marked object is read by a GET (gitops.md 14.4.1), every one
+/// within the section's 60 a minute:
+///
+/// - **M2**, a moved generation (a spec change: a rollout, a pause, a
+///   scale) of a workload settled before, or a workload new since shown —
+///   first;
+/// - **M1b's settle**, a workload not yet settled by Argo CD's rule, the
+///   most recently changed by Argo CD first; and **M3b**, a CronJob (its
+///   last run no cell shows) or an HPA whose Targets read `<unknown>`, not
+///   yet read or whose row moved — with what is left of the minute;
+/// - what is in progress again every 60 s at most, a Degraded one every
+///   5 min (the session's tick) — never on a row event.
+///
+/// Never for readiness alone: a row whose cells move with its generation
+/// unchanged — a pod restarting, a node drained — is said from its cells
+/// (14.9.3: 2,000 readiness-only row events cause no GET). Each object at
+/// most once every 15 s, at most 20 a flush and 60 a minute. Pure.
 struct KubeMarkedRefetch: Equatable, Sendable {
     static let perObject: TimeInterval = 15
     static let perFlush = 20
     static let perMinute = 60
     static let inProgressEvery: TimeInterval = 60
+    static let degradedEvery: TimeInterval = 300
 
     enum Priority: Int, Comparable, Sendable {
-        /// Not ready, or last settled not Healthy.
-        case problem
-        /// Its generation moved, or it is new since M1b.
+        /// Its generation moved, or it is new since shown (M2).
         case moved
-        /// In progress, its 60 s look.
+        /// In progress (60 s) or Degraded (5 min): the tick's look.
         case periodic
+        /// Not yet settled by its object, or a CronJob's or an `<unknown>`
+        /// HPA's row moved (M1b, M3b): the most recently changed first.
+        case settle
 
         static func < (lhs: Priority, rhs: Priority) -> Bool { lhs.rawValue < rhs.rawValue }
     }
 
     private(set) var pending: [KubeMarkedMember.ID: Priority] = [:]
+    /// A settle's order: when Argo CD last changed it (else its creation).
+    private(set) var changed: [KubeMarkedMember.ID: Date] = [:]
     private(set) var lastAsked: [KubeMarkedMember.ID: Date] = [:]
     /// When each GET of the last minute was taken.
     private(set) var taken: [Date] = []
 
     var isEmpty: Bool { pending.isEmpty }
 
-    mutating func ask(_ id: KubeMarkedMember.ID, _ priority: Priority) {
+    mutating func ask(_ id: KubeMarkedMember.ID, _ priority: Priority, changed at: Date? = nil) {
         pending[id] = min(pending[id] ?? priority, priority)
+        if let at { changed[id] = at }
     }
 
     /// How many were taken in the minute before `now`.
     func takenInLastMinute(now: Date) -> Int { taken.filter { now.timeIntervalSince($0) < 60 }.count }
 
-    /// Up to 20 whose last GET is 15 s behind, problems first, within the
-    /// minute's 60.
+    /// Up to 20 whose last GET is 15 s behind, M2 first, then the tick's,
+    /// then the settle by its order — within the minute's 60.
     mutating func take(now: Date, limit: Int = perFlush) -> [KubeMarkedMember.ID] {
         taken.removeAll { now.timeIntervalSince($0) >= 60 }
         let room = min(limit, Self.perMinute - taken.count)
         guard room > 0 else { return [] }
         let due = pending.filter { id, _ in lastAsked[id].map { now.timeIntervalSince($0) >= Self.perObject } ?? true }
-        let chosen = due.sorted { $0.value != $1.value ? $0.value < $1.value : $0.key < $1.key }.prefix(room).map(\.key)
+        let chosen = due.sorted { a, b in
+            if a.value != b.value { return a.value < b.value }
+            let first = changed[a.key] ?? .distantPast
+            let second = changed[b.key] ?? .distantPast
+            return first != second ? first > second : a.key < b.key
+        }
+        .prefix(room).map(\.key)
         for id in chosen {
             pending[id] = nil
+            changed[id] = nil
             lastAsked[id] = now
             taken.append(now)
         }
         return chosen
     }
 
-    mutating func forget(_ id: KubeMarkedMember.ID) { pending[id] = nil }
+    mutating func forget(_ id: KubeMarkedMember.ID) {
+        pending[id] = nil
+        changed[id] = nil
+    }
 
-    /// Why a row that changed is read again; nil when it isn't. `old`: the
-    /// row before (nil: new); `settled`: its last read by Argo CD's rule.
-    static func reason(old: KubeRow?, new: KubeRow, kind: KubeMarkedKind, columns: [KubeColumn], settled: KubeMarkedSettled?, now: Date) -> Priority? {
-        guard old != new else { return nil }
-        let generation = new.marks?.generation
-        if let settled {
+    /// Nothing waiting; what was taken in the last minute and when each
+    /// object was last read still count (the section hidden and shown
+    /// again, another scope: the minute's 60 aren't given again).
+    mutating func forgetPending() {
+        pending = [:]
+        changed = [:]
+    }
+
+    /// Why a marked object is read by a GET now; nil when it isn't. `old`:
+    /// its row before (nil: new, or first listed); `listing`: a first list
+    /// (nothing is new in it); `settled`: its last GET.
+    static func reason(old: KubeRow?, new: KubeRow, kind: KubeMarkedKind, columns: [KubeColumn], settled: KubeMarkedSettled?, listing: Bool, now: Date) -> Priority? {
+        if !listing, old == new { return nil }
+        switch kind {
+        case .deployment, .statefulSet, .daemonSet, .rollout:
+            let generation = new.marks?.generation
+            guard let settled else {
+                // A row new while shown is a change being made: M2's. The rest wait for the settle.
+                if !listing, old == nil { return .moved }
+                if !listing, let was = old?.marks?.generation, let generation, was != generation { return .moved }
+                return .settle
+            }
             if let generation, let was = settled.generation, generation != was { return .moved }
-        } else if old == nil || old?.marks?.generation != generation {
-            return .moved
+            return nil
+        case .cronJob:
+            // Its last run is in no cell: read once, and again when its row moves.
+            return settled == nil || (old != nil && old != new) ? .settle : nil
+        case .horizontalPodAutoscaler:
+            guard KubeMarkedHealth.row(kind, new, columns: columns, marks: new.marks, now: now)?.unread == true else { return nil }
+            return settled == nil || (old != nil && old != new) ? .settle : nil
+        default:
+            return nil
         }
-        if kind == .rollout {
-            // No cell says a Rollout's phase: its counts moving is all a row shows.
-            return old.map { $0.cells != new.cells } == true ? .moved : nil
-        }
-        if let verdict = KubeMarkedHealth.row(kind, new, columns: columns, marks: new.marks, now: now), let status = verdict.status, status != .healthy {
-            return .problem
-        }
-        if let status = settled?.status, status != .healthy { return .problem }
-        return nil
     }
 }
 
@@ -188,8 +174,6 @@ struct KubeMarkedBook: Sendable {
         enum Source: Sendable {
             /// A row, its health from its cells unless `settled` still says it.
             case row(KubeRow, columns: [KubeColumn])
-            /// Read whole (a CronJob, an HPA): as it is.
-            case member(KubeMarkedMember)
         }
 
         var id: KubeMarkedMember.ID
@@ -215,8 +199,6 @@ struct KubeMarkedBook: Sendable {
         members.reserveCapacity(changes.count)
         for change in changes {
             switch change.source {
-            case .member(let member):
-                members.append(member)
             case .row(let row, let columns):
                 let kind = change.id.kind
                 // When it first read not ready, kept while it stays so.
@@ -278,7 +260,7 @@ struct KubeMarkedReading: Equatable, Sendable {
     var rowCuts: [String: String] = [:]
     /// Not read, and why.
     var failed: [String: String] = [:]
-    /// Everything else said: M1b's, M3's and M3b's cuts and refusals.
+    /// Everything else said: M3's cuts and refusals.
     var notes: [String: String] = [:]
     /// M1b's progress: objects checked by Argo CD's rule, of how many.
     var checked: Int?
@@ -343,7 +325,10 @@ struct KubeMarkedReading: Equatable, Sendable {
         let workloads = kinds.isEmpty ? "Deployments, StatefulSets and DaemonSets" : Self.joined(kinds)
         if isReading { return "Reading the marks on \(workloads)…" }
         guard isWhole else { return "No Argo CD marks found in what could be read: \(unread.joined(separator: "; "))" }
-        let carriers = "no Deployment, StatefulSet or DaemonSet in \(scope.said) carries Argo CD's marks."
+        // Each kind read, one of a kind: "no Deployment, StatefulSet, DaemonSet or Rollout".
+        let one = kinds.map { $0.hasSuffix("s") ? String($0.dropLast()) : $0 }
+        let named = one.count > 1 ? one.dropLast().joined(separator: ", ") + " or " + one.last! : one.first ?? ""
+        let carriers = "no \(named) in \(scope.said) carries Argo CD's marks."
         return served ? "No Argo CD Application deploys here, and \(carriers)" : "No Argo CD Application is served by \(context), and \(carriers)"
     }
 

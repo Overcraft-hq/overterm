@@ -64,7 +64,7 @@ struct KubePage<Item: Sendable>: Sendable {
 }
 
 /// A paged, byte-bounded read of one kind, whatever its reader keeps
-/// (`KubeClient.pagedList`): R2's summaries, the marks' rows and objects
+/// (`KubeClient.pagedList`): R2's summaries, the marks' rows
 /// (gitops.md 14.4.1). Why it stopped short is the caller's to say.
 struct KubePagedList<Item: Sendable>: Sendable {
     enum Stop: Equatable, Sendable {
@@ -376,6 +376,7 @@ final class KubeGitOpsSession: ObservableObject {
         applicationsRefused = false
         applicationsUnlisted = []
         fallbackWatched = [:]
+        besideFollowed = false
         if marksMode != .off { marksMode = .off }
         for task in follows.values { task.cancel() }
         follows = [:]
@@ -598,18 +599,24 @@ final class KubeGitOpsSession: ObservableObject {
         if fallback {
             let namespaces = fallbackNamespaces(kind)
             fallbackFollows[name] = namespaces
-            let allowed = max(0, Self.spareWatches - spareUsed)
+            let allowed = spareLeft(for: name)
             let watched = Array(namespaces.prefix(allowed))
             let left = namespaces.dropFirst(allowed)
             let title = KubeKindCatalog.title(of: kind)
             followNotes[name] = left.isEmpty ? nil : "\(title) in \(Self.joined(Array(left))): not watched; Refresh reads them"
             fallbackWatched[name] = watched
             guard !watched.isEmpty else {
-                if name == Self.applications { applicationsRefused = true }
+                if name == Self.applications {
+                    // Nowhere to follow them: refused, and the marks read for it.
+                    applicationsRefused = true
+                    updateMarks()
+                }
                 return
             }
             spareUsed += watched.count
             spareByKind[name, default: 0] += watched.count
+            // The marks' share is what the spare leave.
+            updateMarks()
             scope = .of(watched)
             cap = watched.count
         }
@@ -642,7 +649,9 @@ final class KubeGitOpsSession: ObservableObject {
     private func endFollow(_ name: String) {
         follows[name]?.cancel()
         follows[name] = nil
-        spareUsed = max(0, spareUsed - (spareByKind.removeValue(forKey: name) ?? 0))
+        let given = spareByKind.removeValue(forKey: name) ?? 0
+        spareUsed = max(0, spareUsed - given)
+        if given > 0 { updateMarks() }
     }
 
     private func received(_ update: KubeFollowUpdate, kind: KubeResourceKind) {
@@ -772,49 +781,98 @@ final class KubeGitOpsSession: ObservableObject {
         return .acrossCluster(rows)
     }
 
-    /// The watches the section's own follows take (gitops.md 7): its kinds,
-    /// its controllers, and two spare for a refused kind's namespaces — none
-    /// of them when nothing GitOps is served (a spoke's ten are the marks').
-    private var watchesTaken: Int {
+    /// The watches the section's own follows always take (gitops.md 7):
+    /// its kinds and its controllers — none when nothing GitOps is served (a
+    /// spoke's ten are the marks').
+    private var watchesBase: Int {
         let kinds = served.filter { KubeGitOpsSummary.followed.contains(.init(group: $0.group, resource: $0.resource)) && KubeKindCatalog.isOffered($0) }.count
         let tools = KubeGitOpsSummary.tools(KubeDiscovery(kinds: served))
         let controllers = (tools.argo > 0 ? 2 : 0) + (tools.flux > 0 ? 1 : 0)
-        return kinds + controllers + (kinds > 0 ? Self.spareWatches : 0)
+        return kinds + controllers
+    }
+
+    private var applicationsServed: Bool { discovery?.kinds.contains { "\($0.resource).\($0.group)" == Self.applications } ?? false }
+
+    /// Whether the marks are followed, as `updateMarks` decides.
+    private var marksFollowed: Bool {
+        guard discovery != nil else { return false }
+        guard applicationsServed else { return true }
+        switch applicationsRead {
+        case .refused, .acrossCluster([]): return true
+        case .notYetListed: return false
+        case .acrossCluster, .namespaces: return besideFollowed
+        }
+    }
+
+    /// The marks' watches: what the section's own follows and the spare in
+    /// use leave.
+    private var marksWatches: Int { max(0, KubeScope.watchCap - watchesBase - spareUsed) }
+
+    /// The spare watches a refused kind's namespaces may take now. The
+    /// Applications' first (they decide whether marks are read at all);
+    /// another kind's only what the marks' follows leave once they took
+    /// theirs, a kind each (gitops.md 14.4.1: with Flux served the marks'
+    /// three come first).
+    private func spareLeft(for name: String) -> Int {
+        let spare = max(0, Self.spareWatches - spareUsed)
+        guard name != Self.applications, marksFollowed, let discovery else { return spare }
+        let kinds = KubeMarkedAppsSession.kinds(discovery).workloads.count
+        let marks = KubeMarkedAppsSession.allot(marksWatches, reads: .follow, kinds: kinds).reduce(0, +)
+        return max(0, min(spare, marksWatches - marks))
+    }
+
+    /// Beside Applications, so many of the marked apps have none here that
+    /// they are followed as on a spoke (14.4.5's lists every 5 min are for
+    /// a minority of extras): more than `besideFollowBound`, or most of them.
+    private var besideFollowed = false
+    nonisolated static let besideFollowBound = 100
+
+    nonisolated static func followsBeside(_ coexistence: KubeMarkedAppsMode.Coexistence, marked: Int) -> Bool {
+        let derived = coexistence.listed.count
+        return derived > besideFollowBound || derived * 2 > marked
     }
 
     /// The marks read, and how (14.3, 14.4.5): followed where Argo CD's
-    /// Applications aren't served, are refused, or are listed whole with
-    /// none; beside Applications that are read, listed every 5 min with no
-    /// watch (decision D-1); not before R1's first list has come.
+    /// Applications aren't served, are refused, are listed whole with none,
+    /// or are missing for most of the marked apps; beside Applications that
+    /// are read, listed every 5 min with no watch (decision D-1); not before
+    /// R1's first list has come.
     private func updateMarks() {
         guard state != .idle, let context, let client else { return }
-        let served = discovery?.kinds.contains { "\($0.resource).\($0.group)" == Self.applications } ?? false
-        let read = applicationsRead
-        let free = max(0, KubeScope.watchCap - watchesTaken)
-        if !served {
-            marked.show(context: context, scope: scope, discovery: discovery, client: client, accessible: accessible, reads: .follow, watches: free)
+        if !applicationsServed {
+            marked.show(context: context, scope: scope, discovery: discovery, client: client, accessible: accessible, reads: .follow, watches: marksWatches)
+        } else if applicationsRead == .notYetListed {
+            marked.hide()
+        } else if marksFollowed {
+            marked.show(context: context, scope: scope, discovery: discovery, client: client, accessible: accessible, reads: .follow, watches: marksWatches)
         } else {
-            switch read {
-            case .notYetListed:
-                marked.hide()
-            case .refused, .acrossCluster([]):
-                marked.show(context: context, scope: scope, discovery: discovery, client: client, accessible: accessible, reads: .follow, watches: free)
-            case .acrossCluster, .namespaces:
-                marked.show(context: context, scope: scope, discovery: discovery, client: client, accessible: accessible, reads: .periodic, watches: 0)
-            }
+            marked.show(context: context, scope: scope, discovery: discovery, client: client, accessible: accessible, reads: .periodic, watches: 0)
         }
         updateMarksMode()
     }
 
-    /// The mode again, from what the marks' reads have found.
+    /// The mode again, from what the marks' reads have found: once a flush
+    /// re-ranked the apps, and when what decides it changed — never a row event.
     private func updateMarksMode() {
         guard state != .idle else { return }
-        let mode = KubeMarkedAppsMode.of(discovery: discovery, applications: applicationsRead, marked: Set(marked.apps.map(\.app.key)))
+        // Followed beside Applications, the apps read again: the mode they
+        // gave stands until they are back.
+        if besideFollowed, marked.state != .live, case .beside = marksMode { return }
+        let keys = Set(marked.apps.map(\.app.key))
+        let mode = KubeMarkedAppsMode.of(discovery: discovery, applications: applicationsRead, marked: keys)
         if mode != marksMode { marksMode = mode }
-        if case .beside(let coexistence) = mode {
+        switch mode {
+        case .beside(let coexistence):
             marked.settling = coexistence.listed
-        } else {
+            if !besideFollowed, Self.followsBeside(coexistence, marked: keys.count) {
+                besideFollowed = true
+                updateMarks()
+            }
+        case .only:
             marked.settling = nil
+        case .off:
+            // Followed beside Applications: only the derived apps' objects, until the mode says again.
+            if !besideFollowed { marked.settling = nil }
         }
     }
 
