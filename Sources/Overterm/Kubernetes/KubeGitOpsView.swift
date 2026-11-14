@@ -6,11 +6,18 @@ import SwiftUI
 /// what was refused or cut), the banner when a controller isn't ready, the
 /// chips — a state each, counted, a press its rows alone — then one row an
 /// object (`ResourceTable`), state, kind, name, where it deploys, why, its
-/// revision, its source, since when. Presentation only: every row comes
-/// from what `KubeGitOpsSession` already holds.
+/// revision, its source, since when. Where no Application here deploys
+/// them, Argo CD's apps read from the marks on their objects among the rows
+/// (gitops.md 14.2): the header says why, how many (a floor when the read
+/// wasn't whole) and what isn't known here; beside Applications read, the
+/// marked apps with none here among them, their chip showing them alone.
+/// Presentation only: every
+/// row comes from what `KubeGitOpsSession` already holds.
 struct KubeGitOpsSectionView: View {
     @ObservedObject var page: KubernetesPageModel
     @ObservedObject var gitOps: KubeGitOpsSession
+    /// The marks' reads: what the header says of them.
+    @ObservedObject var marked: KubeMarkedAppsSession
     @ObservedObject var model: KubernetesModel
     @ObservedObject var theme: ChromeTheme
 
@@ -53,9 +60,53 @@ struct KubeGitOpsSectionView: View {
 
     // MARK: The header
 
-    private var header: some View {
+    /// The context the rows are of.
+    private var context: String { gitOps.context ?? model.selectedName ?? "this context" }
+
+    /// The header's words: the tools served and how old the summaries are;
+    /// apps read from marks, how many and when (14.2.2).
+    private var headerSaid: String {
         let tools = KubeGitOpsSummary.tools(model.discovery)
-        let said = KubeGitOpsSection.header(argo: tools.argo, flux: tools.flux, summarisedAt: gitOps.summarisedAt, summarising: gitOps.summarising, now: gitOps.now)
+        return KubeMarkedSection.sectionHeader(
+            mode: gitOps.marksMode, argo: tools.argo, flux: tools.flux, summarisedAt: gitOps.summarisedAt, summarising: gitOps.summarising,
+            apps: marked.apps.count, reading: marked.reading, readAt: marked.readAt, now: gitOps.now, probable: marked.probable)
+    }
+
+    /// What the marks' header lines say (14.2.1).
+    private var marksLines: KubeMarkedSection.Lines {
+        let kinds = model.discovery.map { discovery in
+            let read = KubeMarkedAppsSession.kinds(discovery)
+            return (read.workloads + read.rows).map(KubeKindCatalog.title(of:))
+        }
+        return KubeMarkedSection.lines(
+            mode: gitOps.marksMode, context: context, apps: marked.apps.map(\.app), reading: marked.reading, tally: marked.tally, kinds: kinds ?? [],
+            unread: gitOps.rows.besideUnread)
+    }
+
+    /// The marks' notes: what was refused, cut or is being checked — less
+    /// what the lead or the marks' empty sentence on screen already says.
+    private func marksNotes(_ lines: KubeMarkedSection.Lines) -> [String] {
+        KubeMarkedSection.notes(marked.reading, mode: gitOps.marksMode, lines: lines, emptyDrawn: marksEmptyReason != nil)
+    }
+
+    /// Why the marks' empty sentence is what the section draws, when it is
+    /// (14.2.1): Argo CD's side only theirs, and no row at all.
+    private var marksEmptyReason: KubeMarkedAppsMode.Reason? {
+        guard model.discovery != nil, case .only(let reason) = gitOps.marksMode, gitOps.rows.shown.isEmpty, !page.gitOpsView.beside,
+            !page.gitOpsView.notPlaced, !(gitOps.state != .live && gitOps.summarising)
+        else { return nil }
+        return reason
+    }
+
+    /// Each note once: a ForEach's ids must be.
+    private static func once(_ notes: [String]) -> [String] {
+        var seen = Set<String>()
+        return notes.filter { seen.insert($0).inserted }
+    }
+
+    private var header: some View {
+        let said = headerSaid
+        let lines = marksLines
         return VStack(alignment: .leading, spacing: 6) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Image(systemName: KubeSection.gitops.symbol).font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text2)
@@ -69,7 +120,16 @@ struct KubeGitOpsSectionView: View {
                 Button("Refresh") { page.refreshGitOps() }.controlSize(.small).disabled(gitOps.summarising)
                     .help("Every kind summarised again (⌘R)").accessibilityIdentifier("kubernetes.gitops.refresh")
             }
-            ForEach(gitOps.notes, id: \.self) { note in
+            if let lead = lines.lead {
+                Text(verbatim: lead).font(.system(size: ChromeMetrics.text(12.5))).foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
+                    .accessibilityIdentifier("kubernetes.gitops.marks.lead")
+            }
+            // Muted, always shown while apps read from marks are among the rows (14.2.1).
+            if let limits = lines.limits {
+                Text(verbatim: limits).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
+                    .help(lines.hover).accessibilityIdentifier("kubernetes.gitops.marks.limits")
+            }
+            ForEach(Self.once([lines.installations, lines.unread].compactMap { $0 } + marksNotes(lines) + gitOps.notes), id: \.self) { note in
                 Label {
                     Text(verbatim: note).fixedSize(horizontal: false, vertical: true)
                 } icon: {
@@ -103,11 +163,15 @@ struct KubeGitOpsSectionView: View {
             HStack(spacing: 6) {
                 ForEach(counted, id: \.state) { chip in
                     let on = view.chip == chip.state
+                    // Ready apps read from marks by their cells alone, counted apart (14.2.2).
+                    let fromRows = chip.state == .ready ? gitOps.rows.shown.count { $0.state == .ready && $0.marked?.fromRows == true } : 0
                     Button {
                         page.pressGitOpsChip(chip.state)
                     } label: {
-                        ResourcePill(text: KubeGitOpsSection.chipText(chip.state, chip.count), colour: colour(chip.state), symbol: on ? "checkmark" : nil)
-                            .overlay(Capsule().strokeBorder(on ? colour(chip.state) : .clear, lineWidth: 1))
+                        ResourcePill(
+                            text: KubeGitOpsSection.chipText(chip.state, chip.count, fromRows: fromRows), colour: colour(chip.state), symbol: on ? "checkmark" : nil
+                        )
+                        .overlay(Capsule().strokeBorder(on ? colour(chip.state) : .clear, lineWidth: 1))
                     }
                     .buttonStyle(.plain)
                     .help(on ? "Show every state again" : "Only \(chip.state.word)")
@@ -122,6 +186,17 @@ struct KubeGitOpsSectionView: View {
                     .buttonStyle(.plain)
                     .help("Rows not summarised: with no spec or status, they can't be placed in a scope — never implied in or out")
                     .accessibilityIdentifier("kubernetes.gitops.notPlaced")
+                }
+                if !gitOps.rows.beside.isEmpty {
+                    Button {
+                        page.toggleGitOpsBeside()
+                    } label: {
+                        ResourcePill(
+                            text: KubeMarkedSection.besideChip(gitOps.rows.beside.count), colour: theme.text2, symbol: view.beside ? "checkmark" : nil)
+                    }
+                    .buttonStyle(.plain)
+                    .help("Argo CD's apps read from the marks on their objects whose Application isn't among those read here")
+                    .accessibilityIdentifier("kubernetes.gitops.beside")
                 }
                 if let tool = view.tool {
                     Button {
@@ -154,7 +229,7 @@ struct KubeGitOpsSectionView: View {
     private var groupMenu: some View {
         let current = page.gitOpsView.groupBy
         return Menu {
-            ForEach(KubeGitOpsGroupBy.allCases, id: \.self) { by in
+            ForEach(KubeGitOpsGroupBy.offered(installations: page.gitOpsInstallations), id: \.self) { by in
                 Button {
                     page.groupGitOps(by: by)
                 } label: {
@@ -166,22 +241,33 @@ struct KubeGitOpsSectionView: View {
         }
         .menuStyle(.borderlessButton)
         .fixedSize()
-        .help("Group by tool, source, owner or destination (\(KubernetesKey.groupBy.key) cycles)")
+        .help("Group by tool, source, owner or destination — or installation, when several mark objects here (\(KubernetesKey.groupBy.key) cycles)")
         .accessibilityIdentifier("kubernetes.gitops.groupBy")
     }
 
     // MARK: Empty
 
     @ViewBuilder private var empty: some View {
-        if gitOps.state != .live && gitOps.summarising && gitOps.rows.shown.isEmpty {
+        if model.discovery == nil {
+            // What the context serves isn't known yet — a sign-in may be
+            // waiting: nothing is read, so nothing is said of it (14.4.8).
+            HStack(spacing: 8) {
+                ProgressView().controlSize(.small)
+                Text(verbatim: model.proxyStatus.reason ?? "Reading what \(context) serves…").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
+            }
+            .padding(.top, 12)
+            .accessibilityIdentifier("kubernetes.gitops.waiting")
+        } else if gitOps.state != .live && gitOps.summarising && gitOps.rows.shown.isEmpty {
             HStack(spacing: 8) {
                 ProgressView().controlSize(.small)
                 Text(verbatim: "Reading Argo CD's and Flux's objects…").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
             }
             .padding(.top, 12)
-        } else if !gitOps.rows.shown.isEmpty {
+        } else if !gitOps.rows.shown.isEmpty || page.gitOpsView.beside || page.gitOpsView.notPlaced {
             Text(verbatim: page.filter.isEmpty ? "Nothing in this state." : "Nothing matches “\(page.filter)”.")
                 .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3).padding(.top, 12)
+        } else if let reason = marksEmptyReason {
+            marksEmpty(reason)
         } else {
             let hint = KubeGitOpsSection.emptyHint(gitOps.rows, scope: model.scope)
             HStack(spacing: 10) {
@@ -198,6 +284,44 @@ struct KubeGitOpsSectionView: View {
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("kubernetes.gitops.empty")
         }
+    }
+
+    /// No app read from marks, Argo CD's side being only theirs (14.2.1):
+    /// what is read, what couldn't be, or that nothing carries a mark —
+    /// Show All Namespaces when the scope is narrower; Flux's own hint
+    /// after it where Flux is served.
+    private func marksEmpty(_ reason: KubeMarkedAppsMode.Reason) -> some View {
+        let reading = marked.reading
+        let text = KubeMarkedSection.empty(reason, context: context, scope: model.scope, reading: reading)
+        let flux = KubeGitOpsSummary.tools(model.discovery).flux > 0 ? KubeGitOpsSection.emptyHint(gitOps.rows, scope: model.scope) : nil
+        return VStack(alignment: .leading, spacing: 8) {
+            HStack(spacing: 10) {
+                if reading.isReading {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Image(systemName: "arrow.triangle.branch").font(.system(size: ChromeMetrics.text(16))).foregroundStyle(theme.text3)
+                }
+                Text(verbatim: text).font(.system(size: ChromeMetrics.text(12.5))).foregroundStyle(theme.text2).fixedSize(horizontal: false, vertical: true)
+                if !reading.isReading, model.scope != .all {
+                    Button("Show All Namespaces") { model.setScope(.all) }.controlSize(.small)
+                        .help("Every namespace's marks read")
+                        .accessibilityIdentifier("kubernetes.gitops.showAll")
+                }
+                Spacer(minLength: 0)
+            }
+            if let flux {
+                HStack(spacing: 10) {
+                    Text(verbatim: flux.text).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3).fixedSize(horizontal: false, vertical: true)
+                    if let namespace = flux.namespace {
+                        Button("Show \(namespace)") { page.showGitOpsNamespace(namespace) }.controlSize(.small)
+                    }
+                    Spacer(minLength: 0)
+                }
+            }
+        }
+        .resourceCard(theme, padding: 12)
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("kubernetes.gitops.empty")
     }
 
     // MARK: Cells
@@ -248,12 +372,14 @@ struct KubeGitOpsSectionView: View {
         let small = Font.system(size: ChromeMetrics.text(12))
         switch column?.id {
         case "state":
+            // An app read from marks: Argo CD's own word, ranked as its worst known member (D-7).
             return AnyView(
                 HStack(spacing: 5) {
                     Text(verbatim: row.state.glyph).font(.system(size: ChromeMetrics.text(10)))
-                    Text(verbatim: row.state.word).font(.system(size: ChromeMetrics.text(12), weight: .medium))
+                    Text(verbatim: row.marked?.word ?? row.state.word).font(.system(size: ChromeMetrics.text(12), weight: .medium))
                 }
                 .foregroundStyle(colour(row.state)).lineLimit(1)
+                .help(row.isMarked ? row.hover : "")
                 .accessibilityIdentifier("kubernetes.gitops.row.\(row.ref.namespace ?? "").\(row.ref.name)"))
         case "kind":
             return AnyView(Text(verbatim: row.role.short).font(.system(size: ChromeMetrics.text(11), weight: .medium, design: .monospaced)).foregroundStyle(theme.text2))
@@ -275,12 +401,19 @@ struct KubeGitOpsSectionView: View {
                 }
                 .help(row.hover))
         case "revision":
-            return AnyView(Text(verbatim: row.revision).font(.system(size: ChromeMetrics.text(11.5), design: .monospaced)).foregroundStyle(theme.text2).lineLimit(1))
+            return AnyView(
+                Text(verbatim: row.revision).font(.system(size: ChromeMetrics.text(11.5), design: .monospaced)).foregroundStyle(theme.text2).lineLimit(1)
+                    .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
+                    .help(row.marked.map { KubeMarkedSection.revisionHover(gitOps.marksMode, probable: $0.probable) } ?? row.revision))
         case "source":
-            return AnyView(Text(verbatim: row.source).font(small).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle).help(row.source))
+            // An app read from marks: its images, not a repository.
+            let help = row.marked.map { KubeMarkedSection.sourceHover($0.images) } ?? row.source
+            return AnyView(Text(verbatim: row.source).font(small).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.middle).help(help))
         case "age":
             let age = row.since.map { KubeAge.format(max(0, gitOps.now.timeIntervalSince($0))) } ?? ""
-            return AnyView(Text(verbatim: age).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).monospacedDigit())
+            return AnyView(
+                Text(verbatim: age).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).monospacedDigit()
+                    .help(row.marked?.sinceSaid ?? "Since the state began, read from the object"))
         default:
             return AnyView(EmptyView())
         }

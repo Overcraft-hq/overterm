@@ -608,6 +608,31 @@ final class KubeMarkedAppsSessionTests: XCTestCase {
         gitOps.drop()
     }
 
+    /// Served with none listed and no mark anywhere: the marks' from R1's
+    /// whole list on — while they are read, and once read whole with none
+    /// (never `.off`, whose "No GitOps object lives in or deploys into the
+    /// cluster" would stand for seconds on the development cluster before
+    /// its 905 apps came) — said by the marks' empty sentence.
+    func testApplicationsServedWithNoneListedAreTheMarksBeforeAnyIsFound() async throws {
+        let (api, client, _) = try startFake(FakeKubeAPI.SpokeOptions(apps: 0, states: false))
+        api.serveArgoCD()
+        let discovery = try await client.discover()
+        let gitOps = makeGitOps()
+        gitOps.show(context: "fake-dev", scope: .all, discovery: discovery, client: client)
+        let listed = await eventually { gitOps.applicationsRead == .acrossCluster([]) }
+        XCTAssertTrue(listed, "\(gitOps.applicationsRead)")
+        // Decided when R1's list came, in the same turn: no mark found yet.
+        XCTAssertEqual(gitOps.marksMode, .only(.noApplications))
+        let read = await eventually { gitOps.marked.state == .live && gitOps.marked.reading.isWhole }
+        XCTAssertTrue(read, "\(gitOps.marked.reading)")
+        XCTAssertTrue(gitOps.marked.apps.isEmpty)
+        XCTAssertEqual(gitOps.marksMode, .only(.noApplications))
+        XCTAssertEqual(
+            KubeMarkedSection.empty(.noApplications, context: "fake-dev", scope: .all, reading: gitOps.marked.reading),
+            "No Argo CD Application deploys here, and no Deployment, StatefulSet or DaemonSet in all namespaces carries Argo CD's marks.")
+        gitOps.drop()
+    }
+
     /// Applications served but refused across the cluster and in `argocd`:
     /// derived, followed, said forbidden (14.9.1's variant).
     func testApplicationsRefusedEverywhereAreDerivedAndFollowed() async throws {

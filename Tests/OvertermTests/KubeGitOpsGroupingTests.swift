@@ -266,7 +266,7 @@ final class KubeGitOpsGroupingTests: XCTestCase {
 
         let nope = KubeGitOpsFilter("is:nope kind:ks")
         XCTAssertEqual(nope.refused, ["is:nope"])
-        XCTAssertEqual(nope.refusal, "Not read: is:nope — is: failed, blocked, stuck, drift, progressing, paused, ready, unknown")
+        XCTAssertEqual(nope.refusal, "Not read: is:nope — is: failed, blocked, stuck, drift, progressing, paused, ready, unknown, marks")
         XCTAssertTrue(visible(rows, "is:nope kind:ks").allSatisfy { $0.role == .kustomization } && !visible(rows, "is:nope kind:ks").isEmpty, "matches anything, said")
         XCTAssertNil(KubeGitOpsFilter("label:app=web ns:shop cron").refusal, "the kinds' lists' words are nothing here")
         XCTAssertEqual(visible(rows, "label:app=web cron").map(\.ref.name), ["acme-cron"])

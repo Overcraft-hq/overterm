@@ -52,6 +52,35 @@ final class KubeTrackingIDTests: XCTestCase {
         for value in refused { XCTAssertNil(KubeTrackingID.parse(value), value.debugDescription) }
     }
 
+    /// The app part is an Application's name — a DNS subdomain — or its
+    /// namespace, a DNS label, `_` and that name: each side starts and ends
+    /// with `[a-z0-9]`, so no cluster can hand `k`'s argocd line an option
+    /// (`--core`, `--insecure`). The instance labels share the rule.
+    func testTheAppPartIsAnApplicationsNameNeverAnOption() {
+        let refused = [
+            "--core", "-acme", "acme-", "team_--insecure", "--core_web", "-team_web", "team-_web", "team_web-", "te.am_web", ".acme", "acme.", "acme..web",
+            "team__web",
+        ]
+        for app in refused {
+            XCTAssertNil(KubeTrackingID.parse("\(app):apps/Deployment:team/web"), app)
+            XCTAssertNil(KubeTrackingID.instanceLabel(app), app)
+        }
+        XCTAssertEqual(KubeTrackingID.parse("team-a_acme.web-2:apps/Deployment:team/web")?.instance, "team-a_acme.web-2")
+        XCTAssertEqual(KubeTrackingID.parse("prod-team-3-acme-web-service:apps/Deployment:team-3/acme-web")?.appName, "prod-team-3-acme-web-service")
+        XCTAssertEqual(KubeTrackingID.instanceLabel("acme-shop"), "acme-shop")
+        // As a row reads it: a mark that names `--core` is no app, said nowhere.
+        let identity = KubeTrackingID.Identity(group: "apps", kind: "Deployment", namespace: "team", name: "web")
+        let marks = KubeMarkWire.read(
+            metadata: [
+                "labels": ["argocd.argoproj.io/instance": "--core", "app.kubernetes.io/instance": "--core"],
+                "annotations": ["argocd.argoproj.io/tracking-id": "--core:apps/Deployment:team/web"],
+            ], self: identity)
+        XCTAssertEqual(marks?.tracking, .unparsed)
+        XCTAssertNil(marks?.argoInstance)
+        XCTAssertNil(marks?.appInstance)
+        XCTAssertEqual(marks.map(KubeMarkedApps.place), .unparsed)
+    }
+
     func testOverLongPartsAndValuesAreRefused() {
         let long = String(repeating: "a", count: 254)
         XCTAssertNil(KubeTrackingID.parse("\(long):apps/Deployment:shop/web"), "an app part over 253")

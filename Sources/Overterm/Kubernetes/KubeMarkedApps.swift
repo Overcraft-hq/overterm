@@ -37,15 +37,42 @@ struct KubeMarkedMember: Equatable, Sendable, Identifiable {
         return KubeMarkedMember(
             id: ID(kind: kind, namespace: row.id.namespace, name: row.id.name), marks: marks,
             health: KubeMarkedHealth.row(kind, row, columns: columns, marks: marks, notReadySince: notReadySince, now: now),
-            images: KubeDeployedCommit.images(inCell: row.cell("Images", in: columns)?.text), created: row.created)
+            images: images(inCell: row.cell("Images", in: columns)?.text), created: row.created)
+    }
+
+    /// A row's Images cell as kept: the cluster's text, bounded before it
+    /// is split, each image capped and stripped of control and format
+    /// characters (bidi overrides, zero-width) as a GET's are
+    /// (`KubeMarkWire.text`), at most as many as a GET keeps.
+    static func images(inCell cell: String?) -> [String] {
+        guard let cell else { return [] }
+        let bound = KubeMarkWire.linkCap * KubeMarkedWorkloadWire.containersKept
+        let bounded = String(String.UnicodeScalarView(cell.unicodeScalars.prefix(bound)))
+        return KubeDeployedCommit.images(inCell: bounded).prefix(KubeMarkedWorkloadWire.containersKept).compactMap {
+            KubeMarkWire.text($0, cap: KubeMarkWire.linkCap)
+        }
     }
 
     /// Settled by its object (a GET, `KubeMarkedWorkloadWire`): Argo CD's
     /// rule in place of its cells', the images and a Rollout's target from
-    /// the object.
-    func settled(by wire: KubeMarkedWorkloadWire) -> KubeMarkedMember {
+    /// the object. A state Argo CD's rule gives no time of its own (a
+    /// StatefulSet has no condition) keeps its row's — when it was first
+    /// read not ready — else counts from `changedAt`, when its row was
+    /// first read or last changed here.
+    func settled(by wire: KubeMarkedWorkloadWire, changedAt: Date? = nil) -> KubeMarkedMember {
         var member = self
-        if let verdict = KubeMarkedHealth.object(wire) { member.health = verdict }
+        if var verdict = KubeMarkedHealth.object(wire) {
+            if let status = verdict.status, status != .healthy, verdict.since == nil {
+                if let since = health?.since {
+                    verdict.since = since
+                    verdict.sinceSaid = health?.sinceSaid
+                } else if let changedAt {
+                    verdict.since = changedAt
+                    verdict.sinceSaid = KubeMarkedHealth.sinceRowChanged
+                }
+            }
+            member.health = verdict
+        }
         let images = wire.images
         if !images.isEmpty { member.images = images }
         if id.kind == .rollout { member.workloadRef = wire.spec?.workloadRef?.name.flatMap { KubeMarkWire.text($0, cap: 253) } }
@@ -307,12 +334,14 @@ struct KubeMarkedApps: Equatable, Sendable {
 /// When the GitOps section derives Argo CD's apps from marks, and which
 /// (gitops.md, 14.3 and 14.12's first consequence): whenever no
 /// Application here deploys them — Argo CD's Applications not served,
-/// served but none listed, or the marks' apps absent from a whole list.
-/// Read from discovery (its kinds and failed groups) and from what R1's
-/// Applications row follow said — never from R2's summaries, whose cut
-/// leaves Applications unsummarised, not unseen. Unknown is never said as
-/// absent: an app is said missing only where the read behind it was
-/// whole. Pure.
+/// served but none listed (whatever the marks have found so far: their
+/// read, its refusals and its empty sentence are the section's then), or
+/// the marks' apps absent from a whole list. Read from discovery (its
+/// kinds and failed groups) and from what R1's Applications row follow
+/// said — never from R2's summaries, whose cut leaves Applications
+/// unsummarised, not unseen. Unknown is never said as absent: an app is
+/// said missing only where the read behind it was whole, and never one
+/// grouped by `app.kubernetes.io/instance` alone. Pure.
 enum KubeMarkedAppsMode: Equatable, Sendable {
     typealias Key = KubeTrackingID.AppKey
 
@@ -381,8 +410,10 @@ enum KubeMarkedAppsMode: Equatable, Sendable {
     static let applications = KubeGitOpsSummary.Kind(group: "argoproj.io", resource: "applications")
 
     /// The mode. `discovery` nil: nothing is known yet (a sign-in still
-    /// waiting) — off, and nothing read. `marked`: the derived apps' keys.
-    static func of(discovery: KubeDiscovery?, applications read: ApplicationsRead, marked: Set<Key>) -> KubeMarkedAppsMode {
+    /// waiting) — off, and nothing read. `marked`: the derived apps' keys;
+    /// `probable`: they are grouped by `app.kubernetes.io/instance` alone
+    /// (D-5), no Argo CD mark being here.
+    static func of(discovery: KubeDiscovery?, applications read: ApplicationsRead, marked: Set<Key>, probable: Bool = false) -> KubeMarkedAppsMode {
         guard let discovery else { return .off }
         let served = discovery.kinds.contains { $0.group == applications.group && $0.resource == applications.resource }
         if !served {
@@ -396,12 +427,25 @@ enum KubeMarkedAppsMode: Equatable, Sendable {
             return .off
         case .refused:
             return .only(.forbidden)
+        case .acrossCluster(let rows) where rows.isEmpty:
+            // Served, and the whole list has none (14.12's first
+            // consequence): the marks' whatever they find so far — while
+            // they are read, after a refused or cut read, and when a whole
+            // one found none ("No Argo CD Application deploys here, and no
+            // … carries its marks", Argo CD installed with nothing yet). Never
+            // today's "no GitOps object" while the marks aren't all read.
+            return .only(.noApplications)
         case .acrossCluster(let rows):
-            // Argo CD installed with no Application yet, and no marks: today's section.
-            if rows.isEmpty { return marked.isEmpty ? .off : .only(.noApplications) }
+            // Apps grouped by `app.kubernetes.io/instance` alone are only
+            // probably Argo CD's: beside Applications that are read, one
+            // with none here is likelier Helm's, kustomize's or an
+            // operator's than an Application gone — never listed, never
+            // said missing (14.3: false negatives over false alarms).
+            guard !probable else { return .off }
             let coexistence = beside(rows: rows, read: nil, marked: marked)
             return coexistence.isEmpty ? .off : .beside(coexistence)
         case .namespaces(let namespaces, let rows):
+            guard !probable else { return .off }
             let coexistence = beside(rows: rows, read: namespaces, marked: marked)
             return coexistence.isEmpty ? .off : .beside(coexistence)
         }

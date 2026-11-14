@@ -65,7 +65,7 @@ struct KubeGitOpsDetail: Equatable, Sendable {
         guard let read = try? KubeGitOpsWire.detailRead(data), let object = KubeGitOpsObject(read.object, readAt: readAt) else { return nil }
         switch object.role {
         case .application, .applicationSet, .kustomization, .helmRelease: break
-        case .source: return nil
+        case .source, .markedApp: return nil
         }
         var detail = KubeGitOpsDetail(object: object)
         guard object.role == .application, let status = read.detail?.status else { return detail }
@@ -206,7 +206,7 @@ struct KubeGitOpsDetail: Equatable, Sendable {
                 return ["\(chart.kind) \(chart.namespace)/\(chart.name)" + (peer?.sources.first.map { " — \(repository($0.repoURL))" } ?? "")]
             }
             return []
-        case .source: return []
+        case .source, .markedApp: return []
         }
     }
 
@@ -248,7 +248,7 @@ struct KubeGitOpsDetail: Equatable, Sendable {
                 let how = ready?.isFalse == true ? "failed" + (ready?.reason.map { " (\($0))" } ?? "") : "attempted"
                 lines.append(("Attempted", value, ready?.since.map { "\(how) \(KubeAge.format(now.timeIntervalSince($0))) ago" } ?? how))
             }
-        case .applicationSet, .source: break
+        case .applicationSet, .source, .markedApp: break
         }
         // What its source fetched, and when.
         if let key = KubeGitOpsLadder.upstream(object).first, let peer = peers[key], let fetched = peer.artifact?.revision {

@@ -94,6 +94,16 @@ final class KubeMarkedAppsSession: ObservableObject {
     @Published private(set) var state: State = .idle
     /// The derived apps, ranked: problems first.
     @Published private(set) var apps: [KubeMarkedRanked] = []
+    /// Their section rows (`KubeMarkedSection.base`), in the section's
+    /// order — made off the main thread with them, each app's only when
+    /// it was made again; swapped with `apps`.
+    private(set) var sectionRows: [KubeGitOpsRow] = []
+    /// Their keys, made with them: what the section's mode is decided from.
+    private(set) var keys: Set<KubeTrackingID.AppKey> = []
+    /// The apps are grouped by `app.kubernetes.io/instance` alone: no
+    /// object read carries Argo CD's own marks (D-5) — only "probably"
+    /// Argo CD's, never said where Argo CD runs.
+    @Published private(set) var probable = false
     /// Copies, garbled marks and Helm's instance labels: counted, never shown.
     @Published private(set) var tally = KubeMarkedApps.Tally()
     /// What the reads could say of what they read.
@@ -260,6 +270,9 @@ final class KubeMarkedAppsSession: ObservableObject {
         mostTaken = 0
         if state != .idle { state = .idle }
         if !apps.isEmpty { apps = [] }
+        sectionRows = []
+        keys = []
+        if probable { probable = false }
         if tally != KubeMarkedApps.Tally() { tally = KubeMarkedApps.Tally() }
         if reading != KubeMarkedReading() { reading = KubeMarkedReading() }
     }
@@ -672,7 +685,14 @@ final class KubeMarkedAppsSession: ObservableObject {
             let changed = await KubeBlocking.run { box.book.apply(batch, removed: gone, now: now) }
             guard let self, self.generation == generation else { return }
             self.box = box
-            if changed { self.apps = box.book.ranked }
+            if changed {
+                // Made off the main thread: only swapped here (14.4.6).
+                self.sectionRows = box.book.shownRows
+                self.keys = box.book.keys
+                self.apps = box.book.ranked
+            }
+            let probable = box.book.apps.isProbable
+            if probable != self.probable { self.probable = probable }
             let tally = box.book.apps.tally
             if tally != self.tally { self.tally = tally }
             self.settle()

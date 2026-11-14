@@ -327,6 +327,10 @@ final class KubernetesPageModel: ObservableObject {
     let gitOps = KubeGitOpsSession()
     /// How the GitOps section is looked at: selection, order, chip, filters.
     @Published var gitOpsView = KubeGitOpsViewState()
+    /// An app read from marks whose placeholder detail shows beside the
+    /// GitOps section (gitops.md 14.2.3): set by `openMarkedApp` and
+    /// `closeMarkedApp` alone.
+    @Published var markedDetail: KubeMarkedDetailRef?
     private var gitOpsWatch: AnyCancellable?
     /// The section a detail opened from a section's row goes back to (`[`).
     var detailOpenedFrom: KubeSection = .overview
@@ -616,9 +620,11 @@ final class KubernetesPageModel: ObservableObject {
     /// A section's digit: its kind last shown, else its first — or, while
     /// it has none, the section alone until it has.
     func showSection(_ section: KubeSection) {
-        if section == .gitops, let refusal = gitOpsRefusal() {
-            commandProblem = refusal
-            return
+        // `g` opens GitOps on every context: where Argo CD isn't served its
+        // apps are read from marks (gitops.md 14.2.1). A Flux-only filter
+        // left from `:flux` goes where Flux isn't served.
+        if section == .gitops, gitOpsView.tool == .flux, Self.gitOpsRefusal(tool: .flux, discovery: model.discovery, context: model.selectedName) != nil {
+            gitOpsView.tool = nil
         }
         guard section.listsKinds else {
             waitingForSection = false
@@ -1090,9 +1096,9 @@ final class KubernetesPageModel: ObservableObject {
                 guard let typed = KubePicker.typedNamespaces(name) else { return "Not a namespace's name: \(name)" }
                 scope = .of(typed)
             }
-        case .gitops:
+        case .gitops(let tool):
             let served = targetName.flatMap(model.knownDiscovery(of:)) ?? model.discovery
-            if let served, !KubeGitOpsSummary.served(served) { return "Neither Argo CD nor Flux is served by \(targetName ?? "the context")." }
+            if let refusal = Self.gitOpsRefusal(tool: tool, discovery: served, context: targetName ?? "the context") { return refusal }
         case .kind(let name):
             let served = targetName.flatMap(model.knownDiscovery(of:)) ?? model.discovery
             guard let discovery = served else { return "What \(targetName ?? "the context") serves isn't known yet." }

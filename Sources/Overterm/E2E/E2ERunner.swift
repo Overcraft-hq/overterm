@@ -96,6 +96,7 @@ final class E2ERunner {
         "kubernetesPerf": { await $0.kubernetesPerfScenario() },
         "kubernetesOverview": { await $0.kubernetesOverviewScenario() },
         "kubernetesScale": { await $0.kubernetesScaleScenario() },
+        "kubernetesGitOpsMarks": { await $0.kubernetesGitOpsMarksScenario() },
         "terraform": { await $0.terraformScenario() },
         "terraformRoots": { await $0.terraformRootsScenario() },
         "terraformAgents": { await $0.terraformAgentsScenario() },

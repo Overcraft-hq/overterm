@@ -165,9 +165,10 @@ struct KubeMarkedRanked: Equatable, Sendable, Identifiable {
 /// The members and apps read from marks, kept as rows come and go: each
 /// flush's changed rows (or members read whole) and what was settled,
 /// made into members, merged into the apps (only those whose members
-/// changed are made again), their health made again for those alone, and
-/// every app ranked — problems first, as the section shows them. Run off
-/// the main thread, once a flush (gitops.md 14.4.6). Pure.
+/// changed are made again), their health and their section rows made
+/// again for those alone, and every app ranked — problems first, as the
+/// section shows them. Run off the main thread, once a flush (gitops.md
+/// 14.4.6): the main thread only swaps what it made.
 struct KubeMarkedBook: Sendable {
     /// One member to make again.
     struct Change: Sendable {
@@ -179,15 +180,26 @@ struct KubeMarkedBook: Sendable {
         var id: KubeMarkedMember.ID
         var source: Source
         var settled: KubeMarkedSettled?
-        /// When its row last changed, as the session saw it.
+        /// When its row was first read or last changed, as the session saw it.
         var changedAt: Date?
     }
 
     private(set) var apps = KubeMarkedApps()
     private(set) var verdicts: [KubeTrackingID.AppKey: KubeMarkedHealth.AppVerdict] = [:]
     private(set) var ranked: [KubeMarkedRanked] = []
-    /// When each member's row first read not ready: "0/3 ready for 2h".
+    /// Each app's section row, as `KubeMarkedSection.base` makes it.
+    private(set) var rows: [KubeTrackingID.AppKey: KubeGitOpsRow] = [:]
+    /// Those rows in the section's order (`KubeGitOpsSection.ordered`):
+    /// what the main thread lays among the rest, sorted already.
+    private(set) var shownRows: [KubeGitOpsRow] = []
+    /// The apps' keys: what the mode is decided from.
+    private(set) var keys: Set<KubeTrackingID.AppKey> = []
+    /// When each member's row was first read not ready, kept while it
+    /// stays so: its state's `since` — "0/3 ready", the Age column 2h.
     private(set) var notReadySince: [KubeMarkedMember.ID: Date] = [:]
+    /// How many rows every apply made: what a flush costs, counted (the
+    /// tests' bound on it, never a clock's).
+    private(set) var rowsMade = 0
 
     init() {}
 
@@ -210,7 +222,7 @@ struct KubeMarkedBook: Sendable {
                 }
                 guard var member = KubeMarkedMember.row(row, kind: kind, columns: columns, notReadySince: notReadySince[change.id], now: now) else { continue }
                 if let settled = change.settled, settled.describes(row, kind: kind, columns: columns, changedAt: change.changedAt, now: now) {
-                    member = member.settled(by: settled.wire)
+                    member = member.settled(by: settled.wire, changedAt: change.changedAt)
                 }
                 members.append(member)
             }
@@ -218,18 +230,35 @@ struct KubeMarkedBook: Sendable {
         for id in removed { notReadySince[id] = nil }
         let changedIDs = Set(members.map(\.id))
         let dirty = apps.merge(changed: members, removed: removed.filter { !changedIDs.contains($0) })
+        var remade = dirty
         for key in dirty {
             if let app = apps[key] { verdicts[key] = app.health } else { verdicts[key] = nil }
         }
         // The probable apps show only while no Argo CD mark is here: every
-        // app's verdict is the shown set's.
+        // app's verdict is the shown set's — and every row made again.
         let shown = apps.apps
         if verdicts.count != shown.count || shown.contains(where: { verdicts[$0.key] == nil }) {
             verdicts = Dictionary(uniqueKeysWithValues: shown.map { ($0.key, verdicts[$0.key] ?? $0.health) })
+            remade = Set(shown.map(\.key))
         }
         let new = shown.map { KubeMarkedRanked(app: $0, health: verdicts[$0.key] ?? $0.health) }.sorted(by: Self.ordered)
         guard new != ranked else { return false }
         ranked = new
+        // The section's rows: only the apps made again, the rest as they were.
+        var made: [KubeTrackingID.AppKey: KubeGitOpsRow] = [:]
+        made.reserveCapacity(new.count)
+        for app in new {
+            let key = app.app.key
+            if !remade.contains(key), let kept = rows[key] {
+                made[key] = kept
+            } else {
+                made[key] = KubeMarkedSection.base(app)
+                rowsMade += 1
+            }
+        }
+        rows = made
+        keys = Set(made.keys)
+        shownRows = new.compactMap { made[$0.app.key] }.sorted(by: KubeGitOpsSection.ordered)
         return true
     }
 
@@ -276,10 +305,15 @@ struct KubeMarkedReading: Equatable, Sendable {
     /// Still waiting for a kind's first rows.
     var isReading: Bool { !Set(kinds).subtracting(listed).subtracting(failed.keys).subtracting(refused.keys).isEmpty }
 
-    /// What couldn't be read, said: "Deployments refused in 3 namespaces (a, b, c)".
+    /// What couldn't be read, said: "Deployments refused in 3 namespaces
+    /// (a, b, c)"; a kind refused across the cluster and read where it may
+    /// be, where — what a count "at least" and an empty sentence name.
     var unread: [String] {
         var said: [String] = []
         for kind in kinds {
+            if let places = fallback[kind], !places.isEmpty {
+                said.append("\(kind) refused across the cluster; read in \(places.joined(separator: ", ")) every 5 min")
+            }
             if let places = refused[kind] {
                 let named = places.filter { $0 != Self.acrossTheCluster }.sorted()
                 if named.isEmpty {
@@ -298,11 +332,6 @@ struct KubeMarkedReading: Equatable, Sendable {
     /// instead, cuts, M1b's progress.
     var said: [String] {
         var lines = unread
-        for kind in kinds {
-            if let places = fallback[kind], !places.isEmpty {
-                lines.append("\(kind) refused across the cluster; read in \(places.joined(separator: ", ")) every 5 min")
-            }
-        }
         lines += notes.sorted { $0.key < $1.key }.map(\.value)
         if let checking, let checked, checked < checking {
             lines.append("checking rollouts \(checked.formatted()) of \(checking.formatted())")
@@ -325,11 +354,17 @@ struct KubeMarkedReading: Equatable, Sendable {
         let workloads = kinds.isEmpty ? "Deployments, StatefulSets and DaemonSets" : Self.joined(kinds)
         if isReading { return "Reading the marks on \(workloads)…" }
         guard isWhole else { return "No Argo CD marks found in what could be read: \(unread.joined(separator: "; "))" }
-        // Each kind read, one of a kind: "no Deployment, StatefulSet, DaemonSet or Rollout".
-        let one = kinds.map { $0.hasSuffix("s") ? String($0.dropLast()) : $0 }
-        let named = one.count > 1 ? one.dropLast().joined(separator: ", ") + " or " + one.last! : one.first ?? ""
-        let carriers = "no \(named) in \(scope.said) carries Argo CD's marks."
+        let carriers = carriers(scope: scope)
         return served ? "No Argo CD Application deploys here, and \(carriers)" : "No Argo CD Application is served by \(context), and \(carriers)"
+    }
+
+    /// Each kind read, one of a kind: "no Deployment, StatefulSet,
+    /// DaemonSet or Rollout in all namespaces carries Argo CD's marks." —
+    /// said only of a whole read.
+    func carriers(scope: KubeScope) -> String {
+        let one = (kinds.isEmpty ? ["Deployments", "StatefulSets", "DaemonSets"] : kinds).map { $0.hasSuffix("s") ? String($0.dropLast()) : $0 }
+        let named = one.count > 1 ? one.dropLast().joined(separator: ", ") + " or " + one.last! : one.first ?? ""
+        return "no \(named) in \(scope.said) carries Argo CD's marks."
     }
 
     static func joined(_ names: [String]) -> String {

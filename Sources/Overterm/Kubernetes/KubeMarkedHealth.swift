@@ -79,6 +79,19 @@ enum KubeMarkedKind: Hashable, Sendable, Comparable {
         }
     }
 
+    /// Whether its cells can hide what Argo CD's rule reads in its object
+    /// — a paused Deployment, a stale generation, a stuck rollout whose old
+    /// pods still serve — until a GET settles it (14.4.1): the workloads
+    /// M1b settles. An HPA whose every target reads is Healthy from its row
+    /// for good, a Job's row says what its conditions do: neither keeps
+    /// its app "from rows".
+    var cellsMayHide: Bool {
+        switch self {
+        case .deployment, .statefulSet, .daemonSet, .rollout: true
+        default: false
+        }
+    }
+
     private var order: Int {
         switch self {
         case .deployment: 0
@@ -166,26 +179,45 @@ enum KubeMarkedHealth {
         var unread = false
         /// Its state was scaled to zero (for the Rollout that runs instead).
         var scaledToZero = false
-        /// When its state began: a condition's `lastTransitionTime`.
+        /// When its state began: a condition's `lastTransitionTime`, a
+        /// CronJob's last scheduled run; else, while it isn't Healthy,
+        /// when it was first read not ready here — a floor — or its row
+        /// last changed. A date the Age column counts from as the page's
+        /// clock moves, never a duration baked into `sentence`.
         var since: Date?
+        /// What `since` counts from, for the Age column's hover.
+        var sinceSaid: String?
         /// A condition's or a Rollout's message, scrubbed and cut: the
         /// hover's and the brief's only.
         var detail: String?
     }
 
+    /// What a state's `since` counts from.
+    static let sinceCondition = "since its condition changed"
+    static let sinceScheduled = "since its last scheduled run"
+    static let sinceFirstRead = "since it was first read not ready here — it may be longer"
+    static let sinceRowChanged = "since its row was first read here or last changed"
+
     // MARK: From a row
 
     /// A row's health from its cells, where Argo CD's rule reads a field
-    /// a cell shows. `notReadySince`: when the session first saw the row
-    /// not ready, said as a duration ("0/3 ready for 2h").
+    /// a cell shows. `notReadySince`: when the session first read the row
+    /// not ready — the `since` of a state that isn't Healthy, so the Age
+    /// column says how long ("0/3 ready" for 2h, a floor), as the page's
+    /// clock moves.
     static func row(_ kind: KubeMarkedKind, _ row: KubeRow, columns: [KubeColumn], marks: KubeMarkWire?, notReadySince: Date? = nil, now: Date) -> Verdict? {
+        guard var verdict = cells(kind, row, columns: columns, marks: marks) else { return nil }
+        if let status = verdict.status, status != .healthy, verdict.since == nil, let notReadySince {
+            verdict.since = notReadySince
+            verdict.sinceSaid = sinceFirstRead
+        }
+        return verdict
+    }
+
+    private static func cells(_ kind: KubeMarkedKind, _ row: KubeRow, columns: [KubeColumn], marks: KubeMarkWire?) -> Verdict? {
         if marks?.deleting == true { return Verdict(status: .progressing, sentence: "pending deletion") }
         func cell(_ name: String) -> String? { row.cell(name, in: columns)?.text.trimmingCharacters(in: .whitespaces) }
         func number(_ name: String) -> Int? { cell(name).flatMap { Int($0) } }
-        func lasting(_ text: String) -> String {
-            guard let notReadySince else { return text }
-            return "\(text) for \(KubeAge.format(now.timeIntervalSince(notReadySince)))"
-        }
         switch kind {
         case .rollout:
             // Its health is its phase (survey consequence 2), which no
@@ -200,20 +232,20 @@ enum KubeMarkedHealth {
             let updated = number("Up-to-date") ?? desired
             let available = number("Available") ?? desired
             if desired == 0, readyCount == 0, available == 0 { return Verdict(status: .healthy, sentence: "scaled to 0", scaledToZero: true) }
-            if updated < desired { return Verdict(status: .progressing, sentence: lasting("\(updated)/\(desired) updated"), fromRow: true) }
-            if available < updated { return Verdict(status: .progressing, sentence: lasting("\(available)/\(updated) available"), fromRow: true, detail: podsHint) }
-            if readyCount < desired { return Verdict(status: .progressing, sentence: lasting("\(readyCount)/\(desired) ready"), fromRow: true) }
+            if updated < desired { return Verdict(status: .progressing, sentence: "\(updated)/\(desired) updated", fromRow: true) }
+            if available < updated { return Verdict(status: .progressing, sentence: "\(available)/\(updated) available", fromRow: true, detail: podsHint) }
+            if readyCount < desired { return Verdict(status: .progressing, sentence: "\(readyCount)/\(desired) ready", fromRow: true) }
             return Verdict(status: .healthy, sentence: "\(readyCount)/\(desired) ready", fromRow: true)
         case .statefulSet:
             guard let ready = fraction(cell("Ready")) else { return nil }
-            if ready.count < ready.of { return Verdict(status: .progressing, sentence: lasting("\(ready.count)/\(ready.of) ready"), fromRow: true) }
+            if ready.count < ready.of { return Verdict(status: .progressing, sentence: "\(ready.count)/\(ready.of) ready", fromRow: true) }
             return Verdict(status: .healthy, sentence: ready.of == 0 ? "scaled to 0" : "\(ready.count)/\(ready.of) ready", fromRow: true, scaledToZero: ready.of == 0)
         case .daemonSet:
             guard let desired = number("Desired") else { return nil }
             let updated = number("Up-to-date") ?? desired
             let available = number("Available") ?? desired
-            if updated < desired { return Verdict(status: .progressing, sentence: lasting("\(updated)/\(desired) updated"), fromRow: true) }
-            if available < desired { return Verdict(status: .progressing, sentence: lasting("\(available)/\(desired) available"), fromRow: true) }
+            if updated < desired { return Verdict(status: .progressing, sentence: "\(updated)/\(desired) updated", fromRow: true) }
+            if available < desired { return Verdict(status: .progressing, sentence: "\(available)/\(desired) available", fromRow: true) }
             return Verdict(status: .healthy, sentence: "\(available)/\(desired) available", fromRow: true)
         case .service:
             // kubectl prints `<pending>` for a LoadBalancer with no ingress yet.
@@ -229,7 +261,7 @@ enum KubeMarkedHealth {
         case .persistentVolumeClaim:
             switch cell("Status") ?? "" {
             case "Bound": return Verdict(status: .healthy, sentence: "volume claim Bound")
-            case "Pending": return Verdict(status: .progressing, sentence: lasting("volume claim Pending"))
+            case "Pending": return Verdict(status: .progressing, sentence: "volume claim Pending")
             case "Lost": return Verdict(status: .degraded, sentence: "volume claim Lost")
             case let other: return Verdict(status: .unknown, sentence: other.isEmpty ? "volume claim's phase not said" : "volume claim \(KubeMarkWire.text(other, cap: 32) ?? "")")
             }
@@ -264,24 +296,25 @@ enum KubeMarkedHealth {
         let status = wire.status
         let generation = wire.metadata?.generation ?? 0
         let observed = status?.observedGeneration ?? 0
+        func said(_ since: Date?) -> String? { since == nil ? nil : sinceCondition }
         switch kind {
         case .deployment:
             if spec?.paused == true { return Verdict(status: .suspended, sentence: "rollout paused") }
             if generation > observed { return Verdict(status: .progressing, sentence: "waiting for the rollout to be observed") }
             if let stalled = wire.condition("Progressing"), stalled.reason == "ProgressDeadlineExceeded" {
-                return Verdict(status: .degraded, sentence: "rollout stalled (ProgressDeadlineExceeded)", since: stalled.since, detail: stalled.message)
+                return Verdict(status: .degraded, sentence: "rollout stalled (ProgressDeadlineExceeded)", since: stalled.since, sinceSaid: said(stalled.since), detail: stalled.message)
             }
             let wanted = spec?.replicas ?? 1
             let updated = status?.updatedReplicas ?? 0
             let replicas = status?.replicas ?? 0
             let available = status?.availableReplicas ?? 0
             let since = wire.condition("Progressing")?.since
-            if updated < wanted { return Verdict(status: .progressing, sentence: "\(updated)/\(wanted) updated", since: since) }
+            if updated < wanted { return Verdict(status: .progressing, sentence: "\(updated)/\(wanted) updated", since: since, sinceSaid: said(since)) }
             if replicas > updated {
                 let old = replicas - updated
-                return Verdict(status: .progressing, sentence: "\(old) old \(old == 1 ? "replica" : "replicas") pending termination", since: since)
+                return Verdict(status: .progressing, sentence: "\(old) old \(old == 1 ? "replica" : "replicas") pending termination", since: since, sinceSaid: said(since))
             }
-            if available < updated { return Verdict(status: .progressing, sentence: "\(available)/\(updated) available", since: since, detail: podsHint) }
+            if available < updated { return Verdict(status: .progressing, sentence: "\(available)/\(updated) available", since: since, sinceSaid: said(since), detail: podsHint) }
             return Verdict(status: .healthy, sentence: wanted == 0 ? "scaled to 0" : "\(available)/\(wanted) available", scaledToZero: wanted == 0)
         case .statefulSet:
             if observed == 0 || generation > observed { return Verdict(status: .progressing, sentence: "waiting for the update to be observed") }
@@ -331,7 +364,7 @@ enum KubeMarkedHealth {
             }
             if succeeded < scheduled {
                 let name = wire.metadata?.name.flatMap { KubeMarkWire.text($0, cap: 253) }
-                return Verdict(status: .degraded, sentence: name.map { "last run of CronJob \($0) failed" } ?? "last run failed", since: scheduled)
+                return Verdict(status: .degraded, sentence: name.map { "last run of CronJob \($0) failed" } ?? "last run failed", since: scheduled, sinceSaid: sinceScheduled)
             }
             return Verdict(status: .healthy, sentence: "last run succeeded")
         case .horizontalPodAutoscaler:
@@ -339,17 +372,17 @@ enum KubeMarkedHealth {
             let scale = wire.condition("AbleToScale")
             let active = wire.condition("ScalingActive")
             if let scale, ["FailedGetScale", "FailedUpdateScale"].contains(scale.reason ?? "") {
-                return Verdict(status: .degraded, sentence: "can't scale (\(scale.reason ?? ""))", since: scale.since, detail: scale.message)
+                return Verdict(status: .degraded, sentence: "can't scale (\(scale.reason ?? ""))", since: scale.since, sinceSaid: said(scale.since), detail: scale.message)
             }
             if let active, let reason = active.reason, failedMetric(reason) {
-                return Verdict(status: .degraded, sentence: "metrics unavailable (\(reason))", since: active.since, detail: active.message)
+                return Verdict(status: .degraded, sentence: "metrics unavailable (\(reason))", since: active.since, sinceSaid: said(active.since), detail: active.message)
             }
             if scale?.status == "True" || wire.condition("ScalingLimited")?.status == "True" { return Verdict(status: .healthy, sentence: "scaling") }
             return Verdict(status: .progressing, sentence: "waiting to scale")
         case .job:
             if wire.condition("Failed")?.status == "True" {
                 let failed = wire.condition("Failed")
-                return Verdict(status: .degraded, sentence: "job failed", since: failed?.since, detail: failed?.message)
+                return Verdict(status: .degraded, sentence: "job failed", since: failed?.since, sinceSaid: said(failed?.since), detail: failed?.message)
             }
             if wire.condition("Suspended")?.status == "True" { return Verdict(status: .suspended, sentence: "job suspended") }
             if wire.condition("Complete")?.status == "True" { return Verdict(status: .healthy, sentence: "job complete") }
@@ -427,12 +460,6 @@ enum KubeMarkedHealth {
     static let noWorkload =
         "no Deployment, StatefulSet, DaemonSet, CronJob or Argo Rollout of it was read: its workload may be a kind not read here (a Job, a custom resource)"
 
-    /// The app's health: the worst member by Argo CD's order, hooks and
-    /// `ignore-healthcheck` members skipped, kinds with no rule left out;
-    /// a Deployment scaled to 0 beside a Rollout said scaled by it. An app
-    /// with members that have a rule but no workload read is Unknown, not
-    /// Ready from its Service; one none of whose members has a rule is
-    /// Ready, as Argo CD says.
     /// A member's health as its app counts it: a Deployment scaled to 0
     /// beside a Rollout (the one its `workloadRef` names, or any before a
     /// Rollout's object is read) said scaled by it.
@@ -445,6 +472,15 @@ enum KubeMarkedHealth {
         return Verdict(status: .healthy, sentence: scaledByRollout)
     }
 
+    /// The app's health: the worst member by Argo CD's order, hooks and
+    /// `ignore-healthcheck` members skipped, kinds with no rule left out;
+    /// a Deployment scaled to 0 beside a Rollout said scaled by it. An app
+    /// with members that have a rule but no workload read is Unknown, not
+    /// Ready from its Service; one none of whose members has a rule is
+    /// Ready, as Argo CD says. "From rows" while a member waits for its
+    /// object or a workload is said from its cells alone — the members
+    /// named —, never for an HPA or a Job its row settles for good; its
+    /// state's `since` is its worst cause's, and what that counts from.
     static func app(_ app: KubeMarkedApp) -> AppVerdict {
         var counted: [(member: KubeMarkedMember, verdict: Verdict?)] = []
         var byRollout = Set<KubeMarkedMember.ID>()
@@ -462,10 +498,12 @@ enum KubeMarkedHealth {
         for (member, _) in unread {
             notes.append(member.id.kind == .horizontalPodAutoscaler ? "an HPA's state wasn't read: \(member.said)" : "not read yet: \(member.said)")
         }
-        let fromRows = !unread.isEmpty || rated.contains { $0.verdict?.fromRow == true }
-        if rated.contains(where: { $0.verdict?.fromRow == true }) {
-            notes.append("from its row: cells alone can hide a paused Deployment or a stuck rollout whose old pods still serve")
-        }
+        // Only a workload's cells can hide what its object says, and only a
+        // workload's object settles it: an HPA Healthy from its row, a Job's
+        // row, never keep the app "from rows".
+        let fromRow = rated.filter { $0.verdict?.fromRow == true && $0.member.id.kind.cellsMayHide }.map(\.member)
+        let fromRows = !unread.isEmpty || !fromRow.isEmpty
+        if !fromRow.isEmpty { notes.append(fromRowNote(fromRow)) }
         if counted.isEmpty || (rated.isEmpty && unread.isEmpty) {
             notes.append("no member here has a health check; Argo CD shows such an app Healthy")
             return ready(app, count: 0, fromRows: false, notes: notes)
@@ -499,11 +537,22 @@ enum KubeMarkedHealth {
         let first = causes[0]
         var why = "\(first.sentence) · \(first.said)"
         if causes.count > 1 { why += " · and \(causes.count - 1) more" }
-        let since = rated.first { $0.member.id == first.member }?.verdict?.since
+        let worstVerdict = rated.first { $0.member.id == first.member }?.verdict
+        let since = worstVerdict?.since
         notes.insert("Argo CD's rule: \(worst.word)", at: 0)
         return AppVerdict(
             status: worst, state: state, word: worst == .unknown ? "Unknown" : state.word, why: why, causes: Array(causes.prefix(3)),
-            more: max(0, causes.count - 3), fromRows: fromRows, since: since, sinceSaid: since == nil ? nil : "since its condition changed", notes: notes)
+            more: max(0, causes.count - 3), fromRows: fromRows, since: since, sinceSaid: since == nil ? nil : worstVerdict?.sinceSaid ?? sinceCondition, notes: notes)
+    }
+
+    /// The members said from their rows alone, named — the first three,
+    /// then how many more — and what their cells can hide.
+    static func fromRowNote(_ members: [KubeMarkedMember]) -> String {
+        let named = members.prefix(3).map(\.said)
+        let more = members.count - named.count
+        let who = KubeMarkedReading.joined(named + (more > 0 ? ["\(more) more"] : []))
+        let whose = members.count == 1 ? "is from its row" : "are from their rows"
+        return "\(who) \(whose): cells alone can hide a paused Deployment or a stuck rollout whose old pods still serve"
     }
 
     private static func ready(_ app: KubeMarkedApp, count: Int, fromRows: Bool, notes: [String]) -> AppVerdict {

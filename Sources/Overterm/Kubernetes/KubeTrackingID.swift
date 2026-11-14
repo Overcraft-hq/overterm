@@ -20,10 +20,11 @@ import Foundation
 ///
 /// The value is the cluster's text, so it is checked before anything reads
 /// it: at most 1,024 UTF-8 bytes, no control character, the app part and
-/// the name at most 253 characters, the app `[a-z0-9._-]` with at most one
-/// `_`, the group a DNS name or empty, the Kind `[A-Za-z0-9]` up to 63, the
-/// namespace a DNS label or empty, the name a DNS subdomain. Anything else
-/// is no tracking id. Pure.
+/// the name at most 253 characters, the app an Application's name (a DNS
+/// subdomain) or a DNS label, one `_` and that name — never a leading
+/// `-` —, the group a DNS name or empty, the Kind `[A-Za-z0-9]` up to 63,
+/// the namespace a DNS label or empty, the name a DNS subdomain. Anything
+/// else is no tracking id. Pure.
 struct KubeTrackingID: Equatable, Hashable, Sendable {
     /// `Application.InstanceName`: `name`, or `appNamespace_name`.
     var instance: String
@@ -155,16 +156,20 @@ struct KubeTrackingID: Equatable, Hashable, Sendable {
         (UInt8(ascii: "a")...UInt8(ascii: "z")).contains(byte) || (UInt8(ascii: "0")...UInt8(ascii: "9")).contains(byte)
     }
 
-    /// The app part: `[a-z0-9._-]`, at most one `_` with a name on each
-    /// side, at most 253 characters.
+    /// The app part, `Application.InstanceName`: an Application's name —
+    /// a DNS subdomain, as every custom resource's is — or its namespace,
+    /// a DNS label, and its name joined by one `_`; at most 253
+    /// characters. Each side starts and ends with `[a-z0-9]`, so nothing
+    /// that reads it as an argument (`k`'s argocd line) can take it for an
+    /// option: `--core` is no app.
     private static func isInstance(_ text: String) -> Bool {
-        let bytes = Array(text.utf8)
-        guard !bytes.isEmpty, bytes.count <= maxName else { return false }
-        guard bytes.allSatisfy({ isLowerAlphanumeric($0) || $0 == dot || $0 == dash || $0 == underscore }) else { return false }
-        let underscores = bytes.indices.filter { bytes[$0] == underscore }
-        guard underscores.count <= 1 else { return false }
-        if let at = underscores.first { return at > 0 && at < bytes.count - 1 }
-        return true
+        guard !text.isEmpty, text.utf8.count <= maxName else { return false }
+        let parts = text.split(separator: "_", omittingEmptySubsequences: false)
+        switch parts.count {
+        case 1: return isSubdomain(text)
+        case 2: return isLabel(String(parts[0])) && isSubdomain(String(parts[1]))
+        default: return false
+        }
     }
 
     /// A Kind: `[A-Za-z0-9]`, 1 to 63 characters.

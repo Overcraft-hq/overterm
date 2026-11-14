@@ -87,9 +87,15 @@ final class KubeMarkedHealthTests: XCTestCase {
     }
 
     func testStatefulSetsAndDaemonSetsAreNeverDegraded() {
-        let stuck = verdict(.statefulSet, ["Ready": "0/3"], notReadySince: now.addingTimeInterval(-3 * 3600))
+        let firstRead = now.addingTimeInterval(-3 * 3600)
+        let stuck = verdict(.statefulSet, ["Ready": "0/3"], notReadySince: firstRead)
         XCTAssertEqual(stuck?.status, .progressing, "0/3 for three hours is Progressing, in Argo CD as here")
-        XCTAssertEqual(stuck?.sentence, "0/3 ready for 3h")
+        // How long is a date the Age column counts from, never a duration
+        // baked into a sentence that isn't made again.
+        XCTAssertEqual(stuck?.sentence, "0/3 ready")
+        XCTAssertEqual(stuck?.since, firstRead)
+        XCTAssertEqual(stuck?.sinceSaid, KubeMarkedHealth.sinceFirstRead)
+        XCTAssertNil(verdict(.statefulSet, ["Ready": "3/3"], notReadySince: firstRead)?.since, "Healthy: no state's age from the first read")
         XCTAssertEqual(verdict(.daemonSet, ["Desired": "5", "Up-to-date": "5", "Available": "3"])?.status, .progressing)
         let stalled = Self.wire([
             "apiVersion": "apps/v1", "kind": "StatefulSet", "metadata": ["name": "acme-ledger-db", "generation": 1],
@@ -99,6 +105,45 @@ final class KubeMarkedHealthTests: XCTestCase {
         for status in Status.allCases where status == .degraded {
             XCTAssertNotEqual(KubeMarkedHealth.object(stalled)?.status, status)
         }
+    }
+
+    /// 14.2.2's duration: a StatefulSet 0/3 says how long in the Age
+    /// column, from when it was first read not ready — and keeps it once
+    /// its GET settles it, Argo CD's rule giving no time of its own; else
+    /// from its row's last change; a condition's time when there is one.
+    func testAStateKeepsWhenItBeganOnceSettled() {
+        let firstRead = now.addingTimeInterval(-2 * 3600)
+        let object = Self.wire([
+            "apiVersion": "apps/v1", "kind": "StatefulSet", "metadata": ["name": "acme-ledger-db", "generation": 1],
+            "spec": ["replicas": 3], "status": ["observedGeneration": 1, "readyReplicas": 0, "replicas": 3],
+        ])
+        let fromRow = member(.statefulSet, "acme-ledger-db", verdict(.statefulSet, ["Ready": "0/3"], notReadySince: firstRead))
+        let settled = fromRow.settled(by: object, changedAt: now.addingTimeInterval(-60))
+        XCTAssertEqual(settled.health?.sentence, "0/3 ready")
+        XCTAssertEqual(settled.health?.since, firstRead, "the row's first not-ready read, kept")
+        XCTAssertEqual(settled.health?.sinceSaid, KubeMarkedHealth.sinceFirstRead)
+        let health = app([settled]).health
+        XCTAssertEqual(health.state, .progressing)
+        XCTAssertEqual(health.why, "0/3 ready · StatefulSet acme-ledger-db", "no duration in the why")
+        XCTAssertEqual(health.since, firstRead, "the Age column's")
+        XCTAssertEqual(health.sinceSaid, KubeMarkedHealth.sinceFirstRead)
+        // Ready by its cells, not by its object: since its row's last change seen.
+        let readyRow = member(.statefulSet, "acme-ledger-db", verdict(.statefulSet, ["Ready": "3/3"]))
+        let behind = Self.wire([
+            "apiVersion": "apps/v1", "kind": "StatefulSet", "metadata": ["name": "acme-ledger-db", "generation": 2],
+            "spec": ["replicas": 3], "status": ["observedGeneration": 1, "readyReplicas": 3, "replicas": 3],
+        ])
+        let changed = now.addingTimeInterval(-300)
+        let observed = readyRow.settled(by: behind, changedAt: changed).health
+        XCTAssertEqual(observed?.status, .progressing)
+        XCTAssertEqual(observed?.since, changed)
+        XCTAssertEqual(observed?.sinceSaid, KubeMarkedHealth.sinceRowChanged)
+        // A condition's own time wins, and says so.
+        let stalled = member(.deployment, "acme-checkout", verdict(.deployment, ["Ready": "1/1", "Up-to-date": "1", "Available": "1"]))
+            .settled(by: Self.deployment(stalled: true), changedAt: changed).health
+        XCTAssertEqual(stalled?.since, try? Date("2026-11-14T09:00:00Z", strategy: .iso8601))
+        XCTAssertEqual(stalled?.sinceSaid, KubeMarkedHealth.sinceCondition)
+        XCTAssertEqual(app([member(.deployment, "acme-checkout", stalled)]).health.sinceSaid, KubeMarkedHealth.sinceCondition)
     }
 
     func testServicesIngressesAndClaimsFromTheirCells() {
@@ -295,6 +340,38 @@ final class KubeMarkedHealthTests: XCTestCase {
         ]).health
         XCTAssertTrue(unreadHPA.fromRows)
         XCTAssertTrue(unreadHPA.notes.contains("an HPA's state wasn't read: HorizontalPodAutoscaler acme-api"))
+        // The note names what is from its row.
+        XCTAssertTrue(
+            fromRow.notes.contains("Deployment acme-api is from its row: cells alone can hide a paused Deployment or a stuck rollout whose old pods still serve"),
+            "\(fromRow.notes)")
+    }
+
+    /// An HPA whose every target reads is Healthy from its row for good —
+    /// no GET settles it — and nearly every surveyed app has one: it never
+    /// keeps its app "from rows" once the workload is settled; nor does a
+    /// Job's row. A workload not settled still does, named.
+    func testOnlyAWorkloadsRowKeepsItsAppFromRows() {
+        let settledDeployment = member(.deployment, "acme-api", .init(status: .healthy, sentence: "2/2 available"))
+        let hpa = member(.horizontalPodAutoscaler, "acme-api", verdict(.horizontalPodAutoscaler, ["Targets": "cpu: 40%/70%"]))
+        XCTAssertEqual(hpa.health?.fromRow, true, "Healthy from its row, as 14.4.1 says")
+        let withHPA = app([settledDeployment, hpa]).health
+        XCTAssertEqual(withHPA.state, .ready)
+        XCTAssertFalse(withHPA.fromRows, "the chip's \"from rows only\" clears once the workload is settled")
+        XCTAssertFalse(withHPA.notes.contains { $0.contains("from its row") }, "\(withHPA.notes)")
+        let job = member(.job, "acme-export", verdict(.job, ["Status": "Complete", "Completions": "1/1"]))
+        XCTAssertFalse(app([settledDeployment, job]).health.fromRows)
+        let stateful = member(.statefulSet, "acme-ledger-db", verdict(.statefulSet, ["Ready": "3/3"]))
+        let daemon = member(.daemonSet, "acme-agent", verdict(.daemonSet, ["Desired": "2", "Up-to-date": "2", "Available": "2"]))
+        let waiting = app([settledDeployment, hpa, stateful, daemon]).health
+        XCTAssertTrue(waiting.fromRows)
+        XCTAssertTrue(
+            waiting.notes.contains(
+                "StatefulSet acme-ledger-db and DaemonSet acme-agent are from their rows: cells alone can hide a paused Deployment or a stuck rollout whose old pods still serve"
+            ), "\(waiting.notes)")
+        let many = (0..<5).map { member(.deployment, "acme-w\($0)", .init(status: .healthy, sentence: "1/1 ready", fromRow: true)) }
+        XCTAssertTrue(
+            KubeMarkedHealth.fromRowNote(many).hasPrefix("Deployment acme-w0, Deployment acme-w1, Deployment acme-w2 and 2 more are from their rows"),
+            KubeMarkedHealth.fromRowNote(many))
     }
 
     /// A Rollout with `workloadRef` runs instead of its Deployment, which

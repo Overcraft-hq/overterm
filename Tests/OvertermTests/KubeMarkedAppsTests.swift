@@ -227,10 +227,33 @@ final class KubeMarkedAppsModeTests: XCTestCase {
         XCTAssertEqual(KubeMarkedAppsMode.of(discovery: discovery(served: true), applications: .refused, marked: []), .only(.forbidden))
     }
 
-    /// A hub with Argo CD installed and no Application yet, and no marks
-    /// anywhere: today's section, never a derived header naming nothing.
-    func testServedWithNoApplicationAndNoMarksIsOff() {
-        XCTAssertEqual(KubeMarkedAppsMode.of(discovery: discovery(served: true), applications: .acrossCluster([]), marked: []), .off)
+    /// Served, R1's whole list has none, and no mark found yet — the marks
+    /// still read on the development cluster's 1,208 Deployments, refused,
+    /// or a whole read with none: the marks' all the same, so the section
+    /// says what is read, what couldn't be, or that none carries a mark —
+    /// never today's "No GitOps object lives in or deploys into the
+    /// cluster" before the marks are read (14.12, consequence 1).
+    func testServedWithNoApplicationIsTheMarksWhateverTheyFound() {
+        XCTAssertEqual(KubeMarkedAppsMode.of(discovery: discovery(served: true), applications: .acrossCluster([]), marked: []), .only(.noApplications))
+        XCTAssertEqual(
+            KubeMarkedAppsMode.of(discovery: discovery(served: true), applications: .acrossCluster([]), marked: [key("acme-shop")], probable: true),
+            .only(.noApplications), "apps only probably Argo CD's: still the marks', said only probably")
+    }
+
+    /// Apps grouped by `app.kubernetes.io/instance` alone (a hub still on
+    /// label tracking, an operator's StatefulSets) beside Applications read:
+    /// never listed, never said missing — false negatives over false
+    /// alarms (14.3).
+    func testAppsOnlyProbablyArgoCDsAreNeverMissingBesideApplications() {
+        let rows = [KubeRowID(namespace: "argocd", name: "acme-shop")]
+        let marked: Set<Key> = [key("acme-shop"), key("acme-kafka"), key("acme-team_acme-web")]
+        XCTAssertEqual(KubeMarkedAppsMode.of(discovery: discovery(served: true), applications: .acrossCluster(rows), marked: marked, probable: true), .off)
+        XCTAssertEqual(
+            KubeMarkedAppsMode.of(discovery: discovery(served: true), applications: .namespaces(["argocd", "acme-team"], rows), marked: marked, probable: true),
+            .off)
+        guard case .beside(let coexistence) = KubeMarkedAppsMode.of(discovery: discovery(served: true), applications: .acrossCluster(rows), marked: marked)
+        else { return XCTFail("Argo CD's own marks: listed") }
+        XCTAssertEqual(coexistence.missing, [key("acme-kafka"), key("acme-team_acme-web")])
     }
 
     /// R1's row follow lists every Application, uncut; R2's 500 summaries

@@ -113,7 +113,7 @@ enum KubeGitOpsRevision {
             return revisions.helmHistory?.chartVersion ?? revisions.attempted.map(shown) ?? ""
         case .source:
             return object.artifact?.revision.map(shown) ?? ""
-        case .applicationSet:
+        case .applicationSet, .markedApp:
             return ""
         }
     }

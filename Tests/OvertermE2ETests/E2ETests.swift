@@ -291,6 +291,16 @@ final class E2ETests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: dir) }
         _ = try run("kubernetesOverview", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 180)
     }
+    /// The GitOps section on a spoke (Argo CD's apps read from the marks on
+    /// their objects), beside a hub's Applications and where they are
+    /// refused, against three fakes: its kubeconfig is this temporary file
+    /// alone, every context routed to a fake by name.
+    func testKubernetesGitOpsMarks() throws {
+        let dir = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-e2e-kgm-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+        _ = try run("kubernetesGitOpsMarks", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 240)
+    }
     /// 5,000 pods across 50 namespaces with their Deployments, ReplicaSets
     /// and Services: the first list, the scroll, a burst, the Overview's
     /// health checks, a 200-pod Deployment's tree, the footprint after.

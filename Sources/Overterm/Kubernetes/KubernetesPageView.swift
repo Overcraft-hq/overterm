@@ -99,8 +99,8 @@ struct KubernetesPageView: View {
                 caption("Resources").padding(.top, 10)
                 ScrollView {
                     VStack(alignment: .leading, spacing: 1) {
-                        // GitOps only where Argo CD or Flux is served (gitops.md 2.1).
-                        ForEach(KubeSection.allCases.filter { $0 != .gitops || page.gitOpsServed || page.section == .gitops }) { section in
+                        // GitOps where Argo CD or Flux is served, or the rows showed Argo CD's marks (gitops.md 2.1, 14.2.1).
+                        ForEach(KubeSection.allCases.filter { $0 != .gitops || page.gitOpsListed }) { section in
                             sectionRow(section)
                         }
                     }
@@ -451,7 +451,7 @@ struct KubernetesPageView: View {
                 HStack(spacing: 0) {
                     if page.section == .gitops {
                         // Its table stands in for the list's: the page's first, the one given the keyboard.
-                        KubeGitOpsSectionView(page: page, gitOps: page.gitOps, model: model, theme: theme)
+                        KubeGitOpsSectionView(page: page, gitOps: page.gitOps, marked: page.gitOps.marked, model: model, theme: theme)
                     } else {
                         list(rows, failedOutright: failedOutright)
                     }
@@ -459,6 +459,11 @@ struct KubernetesPageView: View {
                         Rectangle().fill(theme.border).frame(width: 1)
                         KubeDetailView(page: page, session: detail, theme: theme)
                             .id(detail.id)
+                            .frame(width: min(560, max(340, geometry.size.width * 0.45)))
+                    } else if page.section == .gitops, page.markedDetail != nil {
+                        // An app read from marks: its detail in the same slot (gitops.md 14.2.3).
+                        Rectangle().fill(theme.border).frame(width: 1)
+                        KubeMarkedAppDetailView(page: page, gitOps: page.gitOps, marked: page.gitOps.marked, theme: theme)
                             .frame(width: min(560, max(340, geometry.size.width * 0.45)))
                     }
                 }

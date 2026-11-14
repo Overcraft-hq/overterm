@@ -176,6 +176,41 @@ final class KubeMarkedReadsTests: XCTestCase {
         XCTAssertEqual(book.ranked.first?.health.fromRows, false)
     }
 
+    /// The section's rows are the book's, made off the main thread with the
+    /// apps (14.4.6): every app's at first, then only the changed apps',
+    /// the rest kept as they were — in the section's own order, so the main
+    /// thread only lays them among the rest.
+    func testTheBookMakesOnlyTheChangedAppsRows() {
+        var book = KubeMarkedBook()
+        let changes = (0..<50).map { index -> KubeMarkedBook.Change in
+            let name = "acme-svc-\(index)"
+            let notReady = index % 10 == 3
+            return .init(id: id(name), source: .row(row(name, ready: notReady ? "1/2" : "2/2", available: notReady ? "1" : "2"), columns: columns))
+        }
+        XCTAssertTrue(book.apply(changes, removed: [], now: now))
+        XCTAssertEqual(book.rowsMade, 50)
+        XCTAssertEqual(book.shownRows.map(\.id), book.shownRows.sorted(by: KubeGitOpsSection.ordered).map(\.id), "the section's order")
+        XCTAssertEqual(Set(book.shownRows.compactMap(\.marked?.key)), Set(book.ranked.map(\.app.key)))
+        XCTAssertEqual(book.shownRows.first?.state, .progressing)
+        XCTAssertEqual(
+            KubeMarkedSection.derived(rows: book.shownRows, mode: .only(.notServed), applications: .notYetListed).shown,
+            KubeMarkedSection.derived(book.ranked, mode: .only(.notServed), applications: .notYetListed).shown.sorted(by: KubeGitOpsSection.ordered),
+            "the same rows as made on the spot")
+        // One app's row moves: one row made again, every other kept as it was.
+        let later = now.addingTimeInterval(30)
+        XCTAssertTrue(book.apply([.init(id: id("acme-svc-7"), source: .row(row("acme-svc-7", ready: "1/2", available: "1"), columns: columns))], removed: [], now: later))
+        XCTAssertEqual(book.rowsMade, 51)
+        let moved = book.rows[.init(installation: "", instance: "prod-team-3-acme-svc-7-service")]
+        XCTAssertEqual(moved?.state, .progressing)
+        XCTAssertEqual(moved?.since, later, "since it was first read not ready, for the Age column")
+        XCTAssertEqual(moved?.marked?.sinceSaid, KubeMarkedHealth.sinceFirstRead)
+        XCTAssertFalse(moved?.why.contains(" for ") ?? true, "no duration baked into the why: \(moved?.why ?? "")")
+        // The same again: nothing shown changed, nothing made.
+        XCTAssertFalse(book.apply([.init(id: id("acme-svc-7"), source: .row(row("acme-svc-7", ready: "1/2", available: "1"), columns: columns))], removed: [], now: later))
+        XCTAssertEqual(book.rowsMade, 51)
+        XCTAssertEqual(book.rows[.init(installation: "", instance: "prod-team-3-acme-svc-7-service")]?.since, later, "still when it was first read not ready")
+    }
+
     // MARK: What a read may say
 
     func testOnlyAWholeReadSaysNoMarks() {
