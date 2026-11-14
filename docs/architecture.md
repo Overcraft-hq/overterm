@@ -6601,6 +6601,68 @@ unknown). `KubeMarkWireTests` (the sentinel never kept, the copy, the
 managers), `KubeMarkedHealthTests`, `KubeMarkedAppsTests` (the 10,000
 rows' bound counted by `membersMade`, never timed) and `KubeMarkedAppsModeTests` check it.
 
+**Reading them** (gitops.md 14.4, D2; read, not yet shown — `g` still
+refuses on a spoke). `KubeGitOpsSession` owns `marked`, a
+`KubeMarkedAppsSession`, and starts it from discovery and R1's
+Applications follow (`applicationsRead`, never R2's cut): Applications not
+served, refused, listed whole with none, or missing for most marked apps
+(more than 100, or a majority: `followsBeside`) — the marks followed in
+the watches the section's own follows and the spare in use leave (ten on a
+spoke; with Flux served the marks take a watch a kind before a refused
+Flux kind's namespaces, `spareLeft`); beside Applications that are read,
+listed on show, Refresh and every 5 min, never watched (D-1), only the
+derived apps' objects read (`settling`); before R1's first list, nothing.
+`marksMode` is `KubeMarkedAppsMode` over what it found, made again once a
+flush re-ranked the apps, never on a row event. No discovery (a sign-in
+still waiting) makes no request at all. Rows only, never a list of whole
+objects (14.12's fifth consequence). M1 follows Deployments, StatefulSets,
+DaemonSets and, where served, Argo Rollouts (read for their app's health
+only) as rows with `KubeListOptions.marks`, a watch a kind in that order
+(`allot`: a kind left without one is listed every 5 min, as is any kind
+with no follow); one on All Namespaces or one namespace, a watch a
+namespace only while that fits, else one across the cluster filtered;
+refused across the cluster, paged lists in `accessibleNamespaces` else the
+scope's, said. Every object is read by a GET of one, decoded off the main
+thread by `KubeMarkedWorkloadWire`, within one budget (`KubeMarkedRefetch`,
+pure: 15 s an object, 20 a flush, 60 a minute — kept across a hide and a
+show of the context —, 4 in flight): M2 first, a moved generation or a
+workload new while shown, never readiness alone; then the tick's, in
+progress every 60 s, Degraded every 5 min; then M1b's settle, each marked
+workload not yet settled, the most recently changed by Argo CD first
+("checking rollouts N of M"; "from its row" until then); and M3b, a
+marked CronJob, or an HPA whose Targets read `<unknown>`, once and when
+its row moves. `KubeMarkedSettled` stands for its row while the generation
+agrees and the row hasn't turned not ready since (an HPA's while a target
+still reads `<unknown>`). M3 lists Services, Ingresses, PVCs, Jobs (a hook
+Job is under its app, not in its health), CronJobs and HPAs
+(`autoscaling/v2`) as rows with metadata — `KubeClient.pagedList`, the
+generic under R2's `pagedObjects` —, none watched, again every 5 min.
+Each flush hands the changed rows and settled objects to `KubeMarkedBook`
+(pure) off the main thread — members made, apps merged, only their
+verdicts made again, all ranked problems first — and swaps the result.
+What is settled and what M3 read stay five minutes while the page shows
+(`Store`); `hide` ends every read, `drop` forgets. `KubeMarkedReading`
+says what was read: the count exact only from a whole read, else "At least
+N apps, from what could be read: …", and "carries no marks" only then,
+naming every kind read. `KubeMarkedHealth.member` says a Deployment its
+Rollout scales to 0 "scaled by its Rollout".
+`KubernetesModel.marksSeen` is the contexts whose rows have shown a mark
+(`KubeRow.argoMarked`, a key looked up on every row with metadata: the
+Overview's workload follows, the page's workload lists) — for D3's section
+row. A context whose browser sign-in hasn't answered after
+`KubeProxies.signInPatience` (8 s) — the first, or a signed-in one with a
+request (not a quiet watch) waiting that long and no answer since (a
+session expired while the proxy is open) — says `signInNeeded` — "Sign-in needed
+— run `kubectl --context X get ns` once in a terminal", with a Run button
+— not that it is waiting or unreachable; Run closes the proxy and its
+waiting plugin (`signInAtTerminal`) and the context waits for Try Again,
+whose fresh plugin finds kubelogin's token. `FakeKubeAPI+Marks` is the
+tests' spoke (the survey's shape: `<env>-<ns>-<name>-service` apps, copies
+on ReplicaSets, HPAs and PDBs, every state's object).
+`KubeMarkedAppsSessionTests`, `KubeMarkedReadsTests`, `KubeProxiesTests`
+and `KubeProxyTests` (a real kubectl over a stand-in `kubectl-oidc_login`
+that sleeps) check it.
+
 **The GitOps section** (`g`; gitops.md 2–3, G2): Argo CD's and Flux's
 objects that live in or deploy into the scope on one screen, between Helm
 and Forwards (`KubeSection.gitops`, its key an explicit `g` — the digits

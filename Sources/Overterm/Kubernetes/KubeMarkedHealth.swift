@@ -433,19 +433,24 @@ enum KubeMarkedHealth {
     /// with members that have a rule but no workload read is Unknown, not
     /// Ready from its Service; one none of whose members has a rule is
     /// Ready, as Argo CD says.
-    static func app(_ app: KubeMarkedApp) -> AppVerdict {
+    /// A member's health as its app counts it: a Deployment scaled to 0
+    /// beside a Rollout (the one its `workloadRef` names, or any before a
+    /// Rollout's object is read) said scaled by it.
+    static func member(_ member: KubeMarkedMember, in app: KubeMarkedApp) -> Verdict? {
+        guard member.id.kind == .deployment, member.health?.scaledToZero == true, app.members.contains(where: { $0.id.kind == .rollout }) else {
+            return member.health
+        }
         let rolloutTargets = Set(app.members.compactMap(\.workloadRef))
-        let hasRollout = app.members.contains { $0.id.kind == .rollout }
+        guard rolloutTargets.isEmpty || rolloutTargets.contains(member.id.name) else { return member.health }
+        return Verdict(status: .healthy, sentence: scaledByRollout)
+    }
+
+    static func app(_ app: KubeMarkedApp) -> AppVerdict {
         var counted: [(member: KubeMarkedMember, verdict: Verdict?)] = []
         var byRollout = Set<KubeMarkedMember.ID>()
         for member in app.members where !member.marks.ignoreHealthcheck {
-            var verdict = member.health
-            if member.id.kind == .deployment, hasRollout, verdict?.scaledToZero == true,
-                rolloutTargets.isEmpty || rolloutTargets.contains(member.id.name)
-            {
-                verdict = Verdict(status: .healthy, sentence: scaledByRollout)
-                byRollout.insert(member.id)
-            }
+            let verdict = Self.member(member, in: app)
+            if verdict?.sentence == scaledByRollout { byRollout.insert(member.id) }
             counted.append((member, verdict))
         }
         var notes: [String] = []

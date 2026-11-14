@@ -152,6 +152,12 @@ struct KubeRow: Equatable, Sendable, Identifiable {
     /// kept: never kubectl's last-applied copy, another annotation or
     /// label, or a managed field's field set.
     var marks: KubeMarkWire? = nil
+    /// Whether its metadata carries one of Argo CD's own marks — the
+    /// tracking annotation or `argocd.argoproj.io/instance` — looked up
+    /// on every row that carries its metadata, nothing of it kept: what
+    /// tells a context's GitOps section that marks are there to read
+    /// (`KubernetesModel.marksSeen`, gitops.md 14.2.1).
+    var argoMarked = false
 
     func cell(_ column: String, in columns: [KubeColumn]) -> KubeCell? {
         guard let index = KubeColumn.index(of: column, in: columns), index < cells.count else { return nil }
@@ -280,6 +286,11 @@ enum KubeTableReader {
         let labels = (metadata?["labels"] as? [String: Any] ?? [:]).compactMapValues { $0 as? String }.filter { $0.key.hasPrefix(KubeApplications.prefix) }
         let conditions = KubeRowCondition.read((object?["status"] as? [String: Any])?["conditions"])
         var row = KubeRow(id: KubeRowID(namespace: rowNamespace, name: name), cells: cells, created: created, labels: labels, conditions: conditions)
+        if let metadata {
+            row.argoMarked =
+                (metadata["annotations"] as? [String: Any])?[KubeGitOpsOwner.trackingAnnotation] != nil
+                || (metadata["labels"] as? [String: Any])?[KubeGitOpsOwner.argoInstanceLabel] != nil
+        }
         if owners || marks {
             guard let kind else { preconditionFailure("a row's marks are read only against the kind listed") }
             let identity = KubeTrackingID.Identity(group: kind.group, kind: kind.kind, namespace: kind.namespaced ? rowNamespace : nil, name: name)
