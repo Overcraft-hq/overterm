@@ -646,6 +646,18 @@ final class KubeMarkedAppsSession: ObservableObject {
         scheduleFlush(now: false)
     }
 
+    /// An object an app's detail read (M4, gitops.md 14.2.3): kept as this
+    /// section's own GET would be, so the settle doesn't read it again and
+    /// its app's row says what the detail does (14.4.2) — the GET it had
+    /// waiting or taken for it forgotten (one already sent answers as it
+    /// would). Nothing while hidden, or for a kind not read here by GET.
+    func settled(byDetail id: KubeMarkedMember.ID, _ wire: KubeMarkedWorkloadWire, at readAt: Date) {
+        guard state != .idle, let kind = fetched.first(where: { KubeMarkedKind($0) == id.kind }) else { return }
+        refetch.forget(id)
+        queue.removeAll { $0 == id }
+        got(id, kind: kind, .success(wire), at: readAt)
+    }
+
     // MARK: The flush, the tick
 
     private func scheduleFlush(now: Bool) {
@@ -790,6 +802,8 @@ final class KubeMarkedAppsSession: ObservableObject {
     private(set) var rowsChanged = 0
     /// Whether M2 has nothing waiting, taken or in flight.
     var refetchIdle: Bool { refetch.isEmpty && queue.isEmpty && gets.isEmpty }
+    /// Whether a GET of `id` waits, is taken or is in flight.
+    func isAsking(_ id: KubeMarkedMember.ID) -> Bool { refetch.pending[id] != nil || queue.contains(id) || gets[id] != nil }
     /// Every change made into the apps: none waiting, none being made.
     var isMerged: Bool { box != nil && changes.isEmpty && removed.isEmpty }
     /// M2's GETs taken and not yet answered.

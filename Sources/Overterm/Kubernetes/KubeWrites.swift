@@ -856,11 +856,13 @@ struct KubeWriteConfirmation: Equatable, Sendable {
         return typed.trimmingCharacters(in: .whitespacesAndNewlines) == typedName
     }
 
-    /// `from`/`to`: a scale's replicas; `meta`: what the pre-read found.
+    /// `from`/`to`: a scale's replicas; `meta`: what the pre-read found;
+    /// `note`: a warning said beside the rule's — never one that guards
+    /// (an Argo CD app's object opened from its detail: Argo CD may undo it).
     static func make(
         _ verb: KubeWriteVerb, _ ref: KubeObjectRef, context: KubeContext, rule: KubeWriteRule, from: Int? = nil, to: Int? = nil,
         meta: KubeObjectMeta? = nil, job: String? = nil, contents: KubeNamespaceContents? = nil, resize: [KubeResize.Change] = [],
-        discovery: KubeDiscovery? = nil
+        discovery: KubeDiscovery? = nil, note: String? = nil
     ) -> KubeWriteConfirmation {
         let object = KubeWriteOutcome.spoken(ref)
         let place = (context.isProduction ? productionMark : "") + context.name + " · " + (ref.namespace.map { "namespace \($0)" } ?? "cluster-wide")
@@ -973,6 +975,7 @@ struct KubeWriteConfirmation: Equatable, Sendable {
         }
         var lines = [what]
         if let warning = rule.warning { lines.append("⚠︎ " + warning) }
+        if let note { lines.append("⚠︎ " + note) }
         let kubectl = KubeWrites.kubectl(verb, ref, replicas: to, job: job, resize: resize, discovery: discovery)
         lines.append(kubectl.map { "Equals: \($0)" } ?? "kubectl drain evicts this way; no kubectl command evicts one pod.")
         let typed = rule.typedName ? ref.name : nil

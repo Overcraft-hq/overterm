@@ -9,8 +9,8 @@ import Foundation
 /// header's lines and their hover, the count (a floor when the read wasn't
 /// whole, none while reading), the notes once; the empty sentences
 /// ("carries no marks" only from a whole read); `k`'s argocd line
-/// (decision D-2); and the placeholder detail's words — Sync, Refresh,
-/// Rollback and Diff are the Application's, never here. Apps grouped by
+/// (decision D-2); and why Sync, Refresh, Rollback and Diff are the
+/// Application's, never here (the detail's, `KubeMarkedAppDetail`, too). Apps grouped by
 /// `app.kubernetes.io/instance` alone are only "probably" Argo CD's in
 /// every sentence: never "another cluster", never missing beside
 /// Applications. Nothing in it reads, and no row it makes has a kind of
@@ -526,9 +526,13 @@ enum KubeMarkedSection {
     /// with `[a-z0-9]` (`KubeTrackingID`); nil for any other, so no part of
     /// it is ever read as an option.
     static func cliLine(_ row: KubeGitOpsRow) -> String? {
-        guard let marked = row.marked else { return nil }
+        row.marked.flatMap { cliLine(key: $0.key) }
+    }
+
+    /// The same for an app by its key: the detail's Copy as argocd.
+    static func cliLine(key: KubeTrackingID.AppKey) -> String? {
         let q = KubeCommands.quoted
-        let instance = marked.key.instance
+        let instance = key.instance
         let parts = instance.split(separator: "_", omittingEmptySubsequences: false).map(String.init)
         guard parts.count <= 2, parts.allSatisfy({ !$0.isEmpty && !$0.hasPrefix("-") }) else { return nil }
         guard parts.count == 2 else { return "argocd app get \(q(instance))" }
@@ -548,68 +552,5 @@ enum KubeMarkedSection {
         case .only(.undiscovered): return "\(verbs), which couldn't be looked for in \(context): argoproj.io didn't answer discovery."
         case .beside, .off: return "\(verbs), which isn't among those read in \(context). Use the Argo CD that deploys it."
         }
-    }
-
-    /// The placeholder detail of one app (↩; its tree, its hints and what
-    /// Argo CD alone knows come with D4): what the section read of it,
-    /// nothing read for it.
-    struct Detail: Equatable, Sendable {
-        /// "Argo CD app", or — grouped by `app.kubernetes.io/instance`
-        /// alone — "Probably an Argo CD app".
-        var label: String
-        /// `payments/checkout-api`, or a bare name in Argo CD's namespace.
-        var title: String
-        /// Argo CD's word for it, ranked as its row is.
-        var word: String
-        var state: KubeGitOpsState
-        var why: String
-        /// The mode's sentence: why it is read from marks.
-        var lead: String?
-        /// Its installation, namespaces, images: one line each.
-        var facts: [String]
-        /// Each member and its health, as its app counts it.
-        var members: [String]
-        /// Its hooks: under the app, never in its health.
-        var hooks: [String]
-        /// Why the Application's verbs aren't here.
-        var absent: String
-        /// Promote and abort are Argo Rollouts' own.
-        var rollouts: String?
-    }
-
-    static func detail(_ ranked: KubeMarkedRanked, mode: KubeMarkedAppsMode, context: String) -> Detail {
-        let app = ranked.app
-        let health = ranked.health
-        // Grouped by `app.kubernetes.io/instance` alone: nothing said of an
-        // Application, its namespace or where Argo CD runs.
-        let probable = app.mark == .appInstance
-        var facts: [String] = []
-        if let installation = app.installation { facts.append("Installation: \(installation)") }
-        if app.appNamespace == nil, !probable { facts.append("Its Application: \(app.appName), in Argo CD's own namespace") }
-        facts.append("Namespaces: \(app.namespaces.isEmpty ? "none read" : app.namespaces.joined(separator: ", "))")
-        if !app.images.isEmpty {
-            facts.append(capped("Images: \(app.images.prefix(6).joined(separator: ", "))\(app.images.count > 6 ? " +\(app.images.count - 6)" : "")"))
-        }
-        let several = app.namespaces.count > 1
-        let members = app.members.map { member -> String in
-            let name = several ? "\(member.id.kind.kind) \(member.id.namespace.map { "\($0)/" } ?? "")\(member.id.name)" : member.said
-            guard let verdict = KubeMarkedHealth.member(member, in: app) else { return "\(name) — no health rule here" }
-            if member.marks.ignoreHealthcheck { return "\(name) — \(verdict.sentence) (ignore-healthcheck: not counted, as in Argo CD)" }
-            let word = verdict.status?.word ?? "not read yet"
-            return "\(name) — \(word): \(verdict.sentence)\(verdict.fromRow ? " (from its row)" : "")"
-        }
-        let hooks = app.hooks.map { "\($0.said) — a hook (\($0.marks.hook.map { $0.isEmpty ? "Argo CD" : $0 } ?? "")): not counted, as in Argo CD" }
-        var lead: String?
-        if probable {
-            lead = "No Argo CD tracking id is here: this app is \(probablyArgos)"
-        } else if case .only(let reason) = mode {
-            lead = reason.line(context: context)
-        }
-        let rollouts =
-            app.members.contains { $0.id.kind == .rollout }
-            ? "Its Argo Rollout is read for its health only: promote and abort are Argo Rollouts' — not here." : nil
-        return Detail(
-            label: probable ? "Probably an Argo CD app" : "Argo CD app", title: app.said, word: health.word, state: health.state, why: health.why, lead: lead,
-            facts: facts, members: members, hooks: hooks, absent: absentVerbs(mode, context: context, probable: probable), rollouts: rollouts)
     }
 }

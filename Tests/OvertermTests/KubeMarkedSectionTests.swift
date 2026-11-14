@@ -343,12 +343,13 @@ final class KubeMarkedSectionTests: XCTestCase {
         let ranked = KubeMarkedRanked(app: app, health: app.health)
         let definite = ["another cluster", "Argo CD's cluster", "kubeconfig", "isn't in this cluster", "Argo CD's own namespace", "Argo CD runs"]
         for mode in [KubeMarkedAppsMode.only(.notServed), .only(.noApplications), .only(.forbidden), .only(.undiscovered)] {
-            let detail = KubeMarkedSection.detail(ranked, mode: mode, context: "kind-fake")
+            let detail = KubeMarkedAppDetail.make(ranked, mode: mode, context: "kind-fake")
             XCTAssertEqual(detail.label, "Probably an Argo CD app")
             XCTAssertEqual(
                 detail.lead,
                 "No Argo CD tracking id is here: this app is only probably Argo CD's, grouped by app.kubernetes.io/instance — a label Helm and kustomize set too.")
-            for text in [detail.absent, detail.lead ?? ""] + detail.facts {
+            let words = [detail.absent, detail.lead ?? "", detail.manifests, detail.knowsTitle, KubeMarkedAppDetail.undone(mode, probable: true)]
+            for text in words + detail.facts + detail.knows.map(\.place) {
                 for claim in definite { XCTAssertFalse(text.contains(claim), "\(mode): \(text)") }
             }
             XCTAssertTrue(detail.absent.contains("only probably Argo CD's"), detail.absent)
@@ -372,7 +373,7 @@ final class KubeMarkedSectionTests: XCTestCase {
         XCTAssertEqual(beside, KubeMarkedSection.Derived(), "an operator's or a chart's workload is no missing Application")
         // The definite words stay for Argo CD's own marks.
         let tracked = spoke()[0]
-        XCTAssertEqual(KubeMarkedSection.detail(tracked, mode: .only(.notServed), context: "fake-prod").label, "Argo CD app")
+        XCTAssertEqual(KubeMarkedAppDetail.make(tracked, mode: .only(.notServed), context: "fake-prod").label, "Argo CD app")
         XCTAssertTrue(KubeMarkedSection.revisionHover(.only(.notServed)).contains("another cluster"))
     }
 
@@ -412,8 +413,8 @@ final class KubeMarkedSectionTests: XCTestCase {
         let instance = "prod-team-1-acme-wide-service"
         let wide = ranked(
             (0..<9).map { member(.deployment, "acme-wide-\($0)", app: instance, .healthy, "1/1 available", images: [many[$0 % many.count] + "\($0)"]) }, instance: instance)
-        let detail = KubeMarkedSection.detail(wide, mode: .only(.notServed), context: "fake-prod")
-        XCTAssertTrue(detail.facts.allSatisfy { $0.utf8.count <= KubeGitOpsMessage.hoverLimit })
+        let detail = KubeMarkedAppDetail.make(wide, mode: .only(.notServed), context: "fake-prod")
+        XCTAssertTrue((detail.facts + detail.images).allSatisfy { $0.utf8.count <= KubeGitOpsMessage.hoverLimit })
     }
 
     func testAnAppWithOnlyAServiceReadIsUnknownNeverReady() {
@@ -464,8 +465,9 @@ final class KubeMarkedSectionTests: XCTestCase {
         XCTAssertEqual(row.state, .ready)
         XCTAssertTrue(row.hover.contains("Deployment acme-canary: scaled by its Rollout"), row.hover)
         XCTAssertFalse(row.hover.contains("scaled to 0"), row.hover)
-        let detail = KubeMarkedSection.detail(app, mode: .only(.notServed), context: "fake-prod")
-        XCTAssertTrue(detail.members.contains { $0.contains("Deployment acme-canary — Healthy: scaled by its Rollout") }, "\(detail.members)")
+        let detail = KubeMarkedAppDetail.make(app, mode: .only(.notServed), context: "fake-prod")
+        let members = detail.tree.map { $0.said(namespaced: detail.namespaced) }
+        XCTAssertTrue(members.contains { $0.contains("Deployment acme-canary — Healthy: scaled by its Rollout") }, "\(members)")
         XCTAssertEqual(detail.rollouts, "Its Argo Rollout is read for its health only: promote and abort are Argo Rollouts' — not here.")
         // A Rollout not read yet: Unknown, never Ready from the Deployment it scales.
         let unread = ranked(
@@ -497,7 +499,9 @@ final class KubeMarkedSectionTests: XCTestCase {
         let row = KubeMarkedSection.row(app, installations: false)
         XCTAssertEqual(row.state, .ready, "a failed hook isn't its health")
         XCTAssertTrue(row.hover.contains("Job acme-orders-migrate: a hook, not counted, as in Argo CD"), row.hover)
-        XCTAssertEqual(KubeMarkedSection.detail(app, mode: .only(.notServed), context: "fake-prod").hooks, ["Job acme-orders-migrate — a hook (PreSync): not counted, as in Argo CD"])
+        let detail = KubeMarkedAppDetail.make(app, mode: .only(.notServed), context: "fake-prod")
+        XCTAssertEqual(
+            detail.hooks.map { $0.said(namespaced: detail.namespaced) }, ["Job acme-orders-migrate — Degraded: job failed — a hook (PreSync): not counted, as in Argo CD"])
     }
 
     func testTheHoverIsCappedAtFourKilobytes() {
@@ -697,9 +701,9 @@ final class KubeMarkedSectionTests: XCTestCase {
         }
     }
 
-    func testThePlaceholderDetailSaysWhyTheApplicationsVerbsArentHere() {
+    func testTheDetailSaysWhyTheApplicationsVerbsArentHere() {
         let app = spoke()[0]
-        let detail = KubeMarkedSection.detail(app, mode: .only(.notServed), context: "fake-prod")
+        let detail = KubeMarkedAppDetail.make(app, mode: .only(.notServed), context: "fake-prod")
         XCTAssertEqual(detail.absent, "Sync, Refresh, Rollback and Diff act on the Application, which is in Argo CD's cluster — not in your kubeconfig. Use Argo CD there.")
         XCTAssertEqual(detail.lead, "Argo CD runs in another cluster — not in your kubeconfig.")
         XCTAssertEqual(detail.word, app.health.word)

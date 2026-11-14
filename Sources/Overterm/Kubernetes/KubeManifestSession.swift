@@ -228,6 +228,41 @@ enum KubeManifestRun {
         return try await client.discover()
     }
 
+    /// Why Argo CD's Applications aren't read in the context, for an apply
+    /// on an object it tracks (gitops.md 14.2.3: "may undo", never "will be
+    /// reverted", which nothing here can back): what discovery says — not
+    /// served, or argoproj.io not answering —; served, what this cluster's
+    /// GitOps section last read of them (`KubernetesModel.marksReason(of:)`:
+    /// none listed, or refused), else one row of them asked
+    /// (`applicationsHere`). nil only where Applications are listed here:
+    /// Argo CD's own words stand. Discovery unread: can't tell, so "may".
+    static func marksReason(_ context: KubeContext, client: KubeClient, model: KubernetesModel) async -> KubeMarkedAppsMode.Reason? {
+        guard let discovery = try? await discovery(context, client: client, model: model) else { return .undiscovered }
+        if case .only(let reason) = KubeMarkedAppsMode.of(discovery: discovery, applications: .notYetListed, marked: []) { return reason }
+        // Served: a section's word holds only for what a cluster serving them can say.
+        if let said = model.marksReason(of: context), said == .noApplications || said == .forbidden { return said }
+        return await applicationsHere(discovery, client: client)
+    }
+
+    /// Applications served, no section's word: one row of them asked across
+    /// the cluster — a Table, no object, nothing kept but the count. None:
+    /// `.noApplications` (the survey's development cluster serves the kind
+    /// with none, its apps' Applications elsewhere); refused: `.forbidden`;
+    /// one or more: nil; no answer: `.undiscovered` — "may" all the same.
+    static func applicationsHere(_ discovery: KubeDiscovery, client: KubeClient) async -> KubeMarkedAppsMode.Reason? {
+        let applications = KubeMarkedAppsMode.applications
+        guard let kind = discovery.kinds.first(where: { $0.group == applications.group && $0.resource == applications.resource }) else { return .undiscovered }
+        let path = KubePath.query(kind.path(namespace: nil), [("limit", "1"), ("includeObject", "None")])
+        do {
+            let data = try await client.get(path, accept: KubeClient.tableOnlyAccept, maxBytes: 1 << 20)
+            return KubeMarkedAppsMode.Reason.ofApplicationsPage(data)
+        } catch let error as KubeAPIError where error.isForbidden {
+            return .forbidden
+        } catch {
+            return .undiscovered
+        }
+    }
+
     /// The namespace an object without one goes to: the page's on the
     /// context (of several, the context's own when it is one, else the
     /// first), else the context's own.
@@ -332,6 +367,9 @@ enum KubeManifestRun {
                     live: lives[index], manifest: KubeApply.body(KubeApplyCheck.unmasked(sent[index], live: lives[index]), ref: refs[index], resourceVersion: nil))
             }
         }
+        // Where Argo CD's Applications aren't read, an object it tracks may be set back — or may not (gitops.md 14.2.3).
+        let tracked = lives.contains { KubeMarkedAppDetail.tracks($0) }
+        let marksReason = tracked ? await marksReason(context, client: client, model: model) : nil
         var items: [KubeManifestItem] = []
         for (index, object) in objects.enumerated() {
             let live = lives[index]
@@ -354,7 +392,8 @@ enum KubeManifestRun {
                     isNew: live == nil, owners: changes ? KubeFieldOwners.others(after: KubeManifestDiff.stripped(afters[index]), live: live) : [],
                     managedBy: KubeFieldOwners.managedBy(live), masked: KubeApplyCheck.masked(given), sent: sent[index],
                     overterms: KubeFieldOwners.overterms(live), gitOps: gitOps,
-                    gitOpsWarning: tool.flatMap { KubeGitOpsApply.warning(gitOps, tool: $0, after: afters[index], spoken: spoken) }))
+                    gitOpsWarning: tool.flatMap { KubeGitOpsApply.warning(gitOps, tool: $0, after: afters[index], spoken: spoken) },
+                    argoMarks: KubeMarkedAppDetail.applyWarning(live: live, reason: marksReason)))
         }
         return KubeManifestDiffResult(
             context: context.name, production: context.isProduction, method: method, items: items, text: text, kustomized: kustomized)

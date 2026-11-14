@@ -231,6 +231,10 @@ final class KubeGitOpsSession: ObservableObject {
     let marked = KubeMarkedAppsSession()
     /// When the section derives Argo CD's apps from marks, and which (14.3).
     @Published private(set) var marksMode: KubeMarkedAppsMode = .off
+    /// Told the mode of a context once it is known — never the `.off` of a
+    /// section hidden or still waiting: an apply's warning there says what
+    /// the section found (gitops.md 14.2.3).
+    var marksModeSaid: ((String, KubeMarkedAppsMode) -> Void)?
     /// The apps read from marks as the section's rows (14.2.2), made again
     /// when the marks' flush ranked them again, the mode changed or R1 saw
     /// an Application come or go — never on a marked row's event; `publish`
@@ -875,6 +879,8 @@ final class KubeGitOpsSession: ObservableObject {
         let read = applicationsRead
         let mode = KubeMarkedAppsMode.of(discovery: discovery, applications: read, marked: keys, probable: marked.probable)
         if mode != marksMode { marksMode = mode }
+        // Said once it is known — never the off of a section hidden, or of R1's first list not come.
+        if let context, discovery != nil, mode != .off || read != .notYetListed { marksModeSaid?(context, mode) }
         // Their rows, as the marks' flush made them, and what the mode shows of them.
         let rows = KubeMarkedSection.derived(rows: marked.sectionRows, mode: mode, applications: read)
         if rows != derived {

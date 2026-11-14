@@ -2,7 +2,7 @@ import AppKit
 import Foundation
 import SwiftUI
 
-/// D3 (docs/design/kubernetes/gitops.md, 14.2, 14.9.3) against fake API
+/// D3 and D4 (docs/design/kubernetes/gitops.md, 14.2, 14.9.3) against fake API
 /// servers on sockets of the scenario's own, never a real cluster — the
 /// run's only kubeconfig is OVERTERM_KUBECONFIG's file, and every context
 /// is routed to a fake by name: `fake-dev` a spoke (no Argo CD Application
@@ -17,18 +17,34 @@ import SwiftUI
 /// 2. The header's two lines verbatim, the chips' counts, the failing apps
 ///    first with their sentences — a Rollout's Deployment "scaled by its
 ///    Rollout", never a problem —, Hide Ready on; ↩ on a failing app opens
-///    its placeholder detail saying why Sync, Refresh, Rollback and Diff
-///    aren't here, Esc closes it; its menu has no write.
+///    its detail saying why Sync, Refresh, Rollback and Diff aren't here,
+///    its objects read (M4) and nothing else, Esc closes it; its menu has
+///    no write.
 /// 3. `is:marks`, `image:` and `G` by installation; beside Applications
 ///    read, the marked apps with no Application here among them, their
 ///    chip and the muted line unpressed; Applications refused, that header.
+/// 4. ↩ on a failing app: its tree drawn — the Deployment Failed by its
+///    object, under it the newest ReplicaSet and the old one still
+///    serving, each carrying its mark as a copy, their pods with their
+///    own health —, "What Argo CD knows" rows, its hints; a hooked app's
+///    hook apart, a Rollout's app saying promote and abort aren't here and
+///    its Deployment scaled by its Rollout; no Sync, Refresh, Rollback,
+///    Diff or write in any menu, no Refresh in the detail but in why it
+///    isn't here (↻ is Read again, this cluster's); ↩ on a node — Tab into
+///    the tree, ↓ ↑ along it — opens the Deployment's detail, whose writes
+///    say Argo CD may undo them, and `[` comes back to the app's detail
+///    with the keyboard on that node; ↩ on a pod's node opens the pod,
+///    whose writes say nothing of Argo CD.
 ///
 /// Reads only: every request a GET; never a Secret or a ConfigMap; on the
 /// spoke no Application and nothing of Flux's; every part's requests —
 /// the hub's and the refused context's too — only of the kinds the marks
 /// are read from (rows, a GET of one object), Argo CD's own and the
 /// namespaces, never a watch of Services, Ingresses, claims, Jobs,
-/// CronJobs or HPAs. The chips are the fixture's own counts.
+/// CronJobs or HPAs; each detail read's — as it opens and read again — its
+/// members' objects and its workloads' lists in its namespace, and beside
+/// them only the section's own reads (`checkDetailReads`). The chips are
+/// the fixture's own counts.
 extension E2ERunner {
     func kubernetesGitOpsMarksScenario() async {
         await settledPrompt()
@@ -96,6 +112,7 @@ extension E2ERunner {
         await kubernetesGitOpsMarksSpoke(model, page, spoke, made: made)
         await kubernetesGitOpsMarksSection(model, page, spoke, made: made)
         await kubernetesGitOpsMarksFilters(model, page, spoke, made: made)
+        await kubernetesGitOpsMarksDetail(model, page, spoke, made: made)
         await kubernetesGitOpsMarksBeside(model, page, hub: hub, refused: refused, hubApps: hubApps)
 
         for (name, fake) in fakes.sorted(by: { $0.key < $1.key }) {
@@ -242,13 +259,13 @@ extension E2ERunner {
             app.captureWindow(to: png.replacingOccurrences(of: ".png", with: "-kube-gitops-marks.png"))
         }
 
-        // ↩ on a failing app: its placeholder detail; Esc closes it.
+        // ↩ on a failing app: its detail, its objects read — and nothing else; Esc closes it.
         guard let stalled = row(made.stalled) else { return check("the stalled app's row", false) }
         check("its menu has no write", page.gitOpsVerbs(for: [stalled.id]).allSatisfy { !["Sync", "Refresh", "Rollback", "Diff", "Delete…", "Restart…"].contains($0.title) && $0.place != .remove })
         page.gitOpsView.selection = [stalled.id]
         page.giveListTheKeyboard()
-        spoke.forgetRequests()
-        check("↩ is the section's", await pressKubernetesKey("\r", keyCode: 36))
+        // Its Deployment's object may be the section's own read of a moment ago: what was asked is checked.
+        await detailRead("↩ on the failing app", page, spoke) { await self.pressKubernetesKey("\r", keyCode: 36) }
         check("its detail beside the section", await eventually(5) { page.markedDetail?.key == stalled.marked?.key } && page.section == .gitops && page.detail == nil)
         let absent = await overviewElement("kubernetes.gitops.marked.absent", timeout: 10)
         check(
@@ -260,8 +277,6 @@ extension E2ERunner {
             app.captureWindow(to: png.replacingOccurrences(of: ".png", with: "-kube-gitops-marks-detail.png"))
         }
         check("its object named", await shownText(15) { $0.contains("acme-cart") } != nil)
-        let detailRead = Set(spoke.requests.filter { !$0.isDiscovery }.compactMap { Self.resource(of: $0.path) })
-        check("nothing new read for it: what the section holds", detailRead.isSubset(of: Self.marksKinds.union(["namespaces"])), "\(detailRead.sorted())")
         check("Esc closes it", await pressKubernetesKey("\u{1B}", keyCode: 53) && page.markedDetail == nil)
         page.gitOpsView.selection = []
     }
@@ -300,6 +315,249 @@ extension E2ERunner {
         page.groupGitOps(by: .none)
         page.gitOpsView.hideReady = nil
         _ = gitOps
+    }
+
+    /// Part 4, on the spoke: a failing app's detail — its tree, per-object
+    /// health, a copied ReplicaSet as a child, what only the Application
+    /// knows, its hints; a hook apart; a Rollout's verbs not here; no
+    /// Sync, Refresh, Rollback, Diff or write in any menu, no Refresh in the
+    /// detail but why it isn't here; ↩ on a node from the keyboard opening
+    /// the Deployment's detail, `[` back to the app's on that node; a pod's
+    /// node, its writes saying nothing of Argo CD. Each read checked.
+    private func kubernetesGitOpsMarksDetail(_ model: KubernetesModel, _ page: KubernetesPageModel, _ spoke: FakeKubeAPI, made: FakeKubeAPI.Spoke) async {
+        let gitOps = page.gitOps
+        func row(_ instance: String) -> KubeGitOpsRow? { gitOps.rows.shown.first { $0.marked?.key.instance == instance } }
+        guard let stalled = row(made.stalled), let key = stalled.marked?.key else { return check("the stalled app's row", false) }
+        page.gitOpsView.selection = [stalled.id]
+        page.giveListTheKeyboard()
+        await detailRead("↩ on the stalled app", page, spoke) { await self.pressKubernetesKey("\r", keyCode: 36) && page.markedDetail?.key == key }
+        // Read again on purpose — what part 2 read may be younger than 30 s —: the detail's own, every member.
+        await detailRead("Read again", page, spoke, everyMember: true) { await self.pressOnce("kubernetes.gitops.marked.readAgain") }
+        let absentSentence = "Sync, Refresh, Rollback and Diff act on the Application, which is in Argo CD's cluster — not in your kubeconfig. Use Argo CD there."
+        let whole = await overviewElement("kubernetes.gitops.marked.detail", timeout: 10)?.text ?? ""
+        check(
+            "no Refresh in the detail but why Argo CD's isn't here", whole.contains(absentSentence) && !whole.replacingOccurrences(of: absentSentence, with: "").contains("Refresh"),
+            whole)
+        guard let detail = page.markedDetailShown else { return check("its detail", false) }
+        // The tree: each object with Argo CD's word; under the Deployment its ReplicaSets, then their pods.
+        guard let deployment = detail.tree.first(where: { $0.kind == "Deployment" && $0.name == "acme-cart" }) else { return check("its Deployment's node", false) }
+        check("the Deployment Failed by its object", deployment.status == .degraded && deployment.sentence == "rollout stalled (ProgressDeadlineExceeded)", deployment.sentence)
+        check(
+            "under it the newest ReplicaSet and the old one still serving", deployment.children.map(\.name) == ["acme-cart-5f8d7c", "acme-cart-7d4b9c"],
+            "\(deployment.children.map(\.name))")
+        check(
+            "each a copy of its mark, never a member",
+            deployment.children.allSatisfy { $0.role == .owned && $0.note == "a copy of Deployment acme-cart's mark: not a member" })
+        check("their health from their rows", deployment.children.map(\.status) == [.progressing, .healthy])
+        let pod = deployment.children.first?.children.first
+        check("the new one's pod crash-looping, its own health", pod?.name == "acme-cart-5f8d7c-x2k9p" && pod?.status == .degraded && pod?.sentence == "CrashLoopBackOff")
+        check("its app Failed by its members, not its pods", detail.word == "Failed")
+        let service = detail.tree.first { $0.kind == "Service" }
+        check("its Service's ignore-healthcheck: not counted", service?.role == .ignored && service?.note == "ignore-healthcheck: not counted, as in Argo CD")
+        let tree = await overviewElement("kubernetes.gitops.marked.tree", timeout: 10)
+        for name in ["acme-cart-5f8d7c", "acme-cart-7d4b9c", "acme-cart-5f8d7c-x2k9p", "rollout stalled (ProgressDeadlineExceeded)", "CrashLoopBackOff", "a copy of Deployment acme-cart's mark"] {
+            check("the tree says \(name)", tree?.text.contains(name) == true, tree?.text ?? "none")
+        }
+        check("drawn", await shownText(15) { $0.contains("acme-cart-5f8d7c-x2k9p") } != nil)
+        // What Argo CD alone knows: fixed rows, never filled.
+        let knows = await overviewElement("kubernetes.gitops.marked.knows", timeout: 10)
+        for field in KubeMarkedAppDetail.applicationFields { check("“\(field)” said", knows?.text.contains(field) == true, knows?.text ?? "none") }
+        check("each in the Application, in Argo CD's cluster", knows?.text.contains("in the Application, in Argo CD's cluster") == true)
+        // A card's caption is drawn in capitals.
+        check("drawn", await shownText(15) { $0.lowercased().contains("what argo cd knows and this cluster") } != nil)
+        check(
+            "its hints, as text",
+            detail.hints.contains("sync-options Prune=false — Deployment acme-cart") && detail.hints.contains { $0.hasPrefix("link external-link: https://grafana.acme.example/") })
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty {
+            app.captureWindow(to: png.replacingOccurrences(of: ".png", with: "-kube-gitops-marks-tree.png"))
+        }
+        // No Sync, Refresh, Rollback, Diff or write in any menu.
+        let absent: Set<String> = ["Sync", "Refresh", "Rollback", "Diff"]
+        let writes = Set(KubernetesPageModel.writeVerbOrder.map(\.title))
+        let menus = (detail.tree.flatMap(\.all) + detail.hooks).map { page.markedNodeVerbs($0).map(\.title) } + [page.gitOpsVerbs(for: [stalled.id]).map(\.title)]
+        check("no Sync, Refresh, Rollback or Diff in any menu", menus.allSatisfy { absent.isDisjoint(with: $0) }, "\(menus)")
+        check("no write in any menu", menus.allSatisfy { writes.isDisjoint(with: $0) })
+
+        // A hooked app: its hook apart, never its health.
+        if let hooked = row(made.hooked)?.marked?.key {
+            await detailRead("the hooked app", page, spoke) {
+                page.openMarkedApp(KubeMarkedDetailRef(context: "fake-dev", key: hooked))
+                return page.markedDetail?.key == hooked
+            }
+            await detailRead("the hooked app read again", page, spoke, everyMember: true) { await self.pressOnce("kubernetes.gitops.marked.readAgain") }
+            let hooks = await overviewElement("kubernetes.gitops.marked.hooks", timeout: 10)
+            check("its hook apart, not counted", hooks?.text.contains("acme-orders-migrate") == true && hooks?.text.contains("not counted, as in Argo CD") == true, hooks?.text ?? "none")
+            check("its app Ready all the same", page.markedDetailShown?.word == "Ready")
+        } else {
+            check("the hooked app's row", false)
+        }
+        // A Rollout's app: promote and abort aren't here; its Deployment scaled by it.
+        if let blue = row(made.rolloutDegraded)?.marked?.key {
+            await detailRead("the Rollout's app", page, spoke) {
+                page.openMarkedApp(KubeMarkedDetailRef(context: "fake-dev", key: blue))
+                return page.markedDetail?.key == blue
+            }
+            // Its Rollout's own GET among them, its lists by its Deployment's selector.
+            await detailRead("the Rollout's app read again", page, spoke, everyMember: true) { await self.pressOnce("kubernetes.gitops.marked.readAgain") }
+            check(
+                "the Rollout read by a GET of its own", page.markedRead.asked.contains("/apis/argoproj.io/v1alpha1/namespaces/team-1/rollouts/acme-blue"),
+                "\(page.markedRead.asked)")
+            let rollouts = await overviewElement("kubernetes.gitops.marked.rollouts", timeout: 10)
+            check("promote and abort are Argo Rollouts'", rollouts?.text.contains("promote and abort are Argo Rollouts' — not here") == true, rollouts?.text ?? "none")
+            let shown = page.markedDetailShown
+            check(
+                "its Deployment scaled by its Rollout",
+                shown?.tree.contains { $0.kind == "Deployment" && $0.sentence == KubeMarkedHealth.scaledByRollout } == true)
+            check(
+                "the Rollout's own ReplicaSet under it, a pod crash-looping",
+                shown?.tree.first { $0.kind == "Rollout" }?.children.first?.children.contains { $0.status == .degraded } == true)
+        } else {
+            check("the Rollout's app row", false)
+        }
+
+        // ↩ on a node, from the keyboard: Tab into the tree, ↓ ↑ along it, ↩ — the Deployment in its own list.
+        page.openMarkedApp(KubeMarkedDetailRef(context: "fake-dev", key: key))
+        check("the stalled app's detail again", await eventually(15) { page.markedDetailShown?.tree.first?.children.first?.children.isEmpty == false })
+        guard let shown = page.markedDetailShown else { return check("its detail", false) }
+        let walk = KubeMarkedAppDetail.walk(shown)
+        guard walk.count > 2, walk[0].name == "acme-cart", let podAt = walk.firstIndex(where: { $0.kind == "Pod" }) else {
+            return check("its tree walked", false, "\(walk.map(\.name))")
+        }
+        check("Tab: the keyboard into its tree, on its first node", await pressKubernetesKey("\t", keyCode: 48) && page.markedNode == walk[0].id, page.markedNode ?? "none")
+        check("its keys said", await shownText(10) { $0.contains("back to the list") } != nil)
+        check("↓ along it", await pressKubernetesKey("\u{F701}", keyCode: 125) && page.markedNode == walk[1].id, page.markedNode ?? "none")
+        check("↑ back", await pressKubernetesKey("\u{F700}", keyCode: 126) && page.markedNode == walk[0].id, page.markedNode ?? "none")
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty {
+            app.captureWindow(to: png.replacingOccurrences(of: ".png", with: "-kube-gitops-marks-node.png"))
+        }
+        check("↩ on the node", await pressKubernetesKey("\r", keyCode: 36))
+        check(
+            "its detail in its own list",
+            await eventually(10) { page.detail?.ref.name == "acme-cart" && page.detail?.ref.kind.fullName == "deployments.apps" && page.section != .gitops },
+            "\(page.detail?.ref.description ?? "none")")
+        if let ref = page.detail?.ref {
+            check(
+                "its writes say Argo CD may undo them",
+                page.markedUndone(.restart, on: ref) == "Argo CD may undo this: whether selfHeal is on is in the Application, in another cluster.")
+            check("a trigger's doesn't", page.markedUndone(.trigger, on: ref) == nil)
+        }
+        check("[ goes back", await pressKubernetesKey("[", keyCode: 33))
+        check(
+            "to the app's detail, the keyboard on its node again",
+            await eventually(15) { page.section == .gitops && page.markedDetail?.key == key && page.markedDetailShown != nil && page.markedNode == walk[0].id },
+            page.markedNode ?? "none")
+        // A pod's node: opened all the same, its writes saying nothing of Argo CD.
+        for _ in 0..<podAt { _ = await pressKubernetesKey("\u{F701}", keyCode: 125) }
+        check("↓ to the crash-looping pod's node", page.markedNode == walk[podAt].id, page.markedNode ?? "none")
+        check("↩ on it", await pressKubernetesKey("\r", keyCode: 36))
+        check("the pod in its own list", await eventually(10) { page.detail?.ref.name == walk[podAt].name && page.detail?.ref.isPod == true }, "\(page.detail?.ref.description ?? "none")")
+        if let ref = page.detail?.ref {
+            check("a pod's writes say nothing of Argo CD", page.markedUndone(.delete, on: ref) == nil && page.markedUndone(.restart, on: ref) == nil)
+            check("yet [ comes back to its app", page.markedOrigin?.app.key == key)
+        }
+        check("[ goes back", await pressKubernetesKey("[", keyCode: 33))
+        check("to the app's detail", await eventually(15) { page.section == .gitops && page.markedDetail?.key == key && page.markedDetailShown != nil })
+        check("Esc closes it", await pressKubernetesKey("\u{1B}", keyCode: 53) && page.markedDetail == nil && page.markedNode == nil)
+        page.gitOpsView.selection = []
+        check("nothing written", spoke.writes.isEmpty, "\(spoke.writes.map(\.description))")
+        // The pod opened Pods under the section: the marks' own kind there again, so the next part's reads are told apart.
+        page.showKind(model.discovery?.kind("deploy") ?? .pods)
+        _ = await eventually(15) { model.kind.resource == "deployments" && model.listState == .live }
+    }
+
+    /// The element `identifier` names under the page, found (SwiftUI builds
+    /// its accessibility tree a moment later), then pressed once.
+    private func pressOnce(_ identifier: String) async -> Bool {
+        Self.accessibilityTree(true)
+        guard await eventually(10, { self.app.kubernetesView.map { Self.accessibilityPress(identifier, in: $0, press: false) } ?? false }),
+            let root = app.kubernetesView
+        else { return false }
+        return Self.accessibilityPress(identifier, in: root)
+    }
+
+    /// A detail read that `open` makes — the fake's log forgotten just
+    /// before —, then what it read checked (`checkDetailReads`). Read
+    /// Again (`everyMember`) reads every member whatever the section
+    /// holds; an app opened again within 30 s asks nothing, what was read
+    /// standing — then nothing of the detail's may be in the log.
+    private func detailRead(_ what: String, _ page: KubernetesPageModel, _ spoke: FakeKubeAPI, everyMember: Bool = false, _ open: () async -> Bool) async {
+        let marked = page.gitOps.marked
+        let read = page.markedRead
+        // The section's GETs while the detail reads: asked from here, and those waiting or in flight now.
+        let sectionAsked = marked.getsAsked
+        let sectionQueued = marked.getsQueued
+        let detailAsked = read.getsAsked + read.listsAsked
+        let at = read.read.at
+        spoke.forgetRequests()
+        check("\(what): opened", await open())
+        check(
+            "\(what): read",
+            await eventually(15) { page.markedDetail != nil && read.ref == page.markedDetail && read.state == .loaded && (!everyMember || read.read.at != at) })
+        let asked = read.getsAsked + read.listsAsked > detailAsked ? read.asked : []
+        checkDetailReads(
+            what, spoke.requests, page: page, asked: asked, sectionGets: marked.getsAsked - sectionAsked + sectionQueued, everyMember: everyMember)
+    }
+
+    /// What an app's detail read (M4, gitops.md 14.2.3; 14.9.3: "for each
+    /// part, the set of paths the part read"), from the fake's log of the
+    /// read and the detail's own account of it (`asked`, its last read's
+    /// paths): GETs only; every object it read one of the app's members
+    /// whose rule reads its object — each of them after Read Again —;
+    /// every list a workload's ReplicaSets or pods by the workload's own
+    /// selector, or a CronJob's Jobs, in the app's namespaces, as Table rows
+    /// with metadata (a Table or nothing), never a watch; each path one the
+    /// fake was asked. Beside them only what the section shown reads — the
+    /// marks' kinds and the page's own (namespaces, CRDs) —: never a new
+    /// kind of read, a ReplicaSet, pod or Job across the cluster, a Secret
+    /// or a ConfigMap, and no more objects read that aren't the app's than
+    /// the section's own GETs meanwhile (`sectionGets`).
+    private func checkDetailReads(_ what: String, _ requests: [FakeKubeAPI.Request], page: KubernetesPageModel, asked: [String], sectionGets: Int, everyMember: Bool) {
+        guard let app = page.markedDetailApp?.app, let discovery = page.model.discovery else { return check("\(what): its app", false) }
+        let kinds = KubeMarkedAppsSession.kinds(discovery)
+        let objectKinds = kinds.workloads + kinds.rows
+        let members = Set(
+            KubeMarkedAppDetail.fetched(app, limit: page.markedRead.bounds.members).read.compactMap { id in
+                objectKinds.first { KubeMarkedKind($0) == id.kind }?.path(namespace: id.namespace, name: id.name)
+            })
+        let namespaces = app.namespaces
+        func base(_ path: String) -> String { String(path.split(separator: "?", maxSplits: 1).first ?? "") }
+        func inItsNamespaces(_ path: String) -> Bool { namespaces.contains { path.contains("/namespaces/\($0)/") } }
+        let objects = Set(asked.filter { !$0.contains("?") })
+        let lists = asked.filter { $0.contains("?") }.map(base)
+        if everyMember { check("\(what): a GET of each member whose rule reads its object", !members.isEmpty && objects == members, "\(objects.symmetricDifference(members).sorted())") }
+        check("\(what): no object but its members'", objects.isSubset(of: members), "\(objects.subtracting(members).sorted())")
+        check(
+            "\(what): its lists in its namespaces, of what is under its workloads",
+            lists.allSatisfy { inItsNamespaces($0) && ["replicasets", "pods", "jobs"].contains(Self.resource(of: $0) ?? "") }, "\(lists)")
+        check("\(what): each the fake was asked", Set(asked.map(base)).isSubset(of: Set(requests.map(\.path))), "\(asked)")
+        // The fake's whole log: the detail's reads, and the section's own beside them.
+        let read = Set(requests.filter { !$0.isDiscovery }.compactMap { Self.resource(of: $0.path) })
+        let allowed = Self.marksKinds.union(["replicasets", "pods", "namespaces", "customresourcedefinitions"])
+        check("\(what): nothing read but the marks' kinds and what is under them", read.isSubset(of: allowed), "\(read.subtracting(allowed).sorted())")
+        // The section never lists ReplicaSets or pods, nor Jobs in a namespace on All Namespaces: the detail's.
+        let children = requests.filter {
+            let resource = Self.resource(of: $0.path)
+            return resource == "replicasets" || resource == "pods" || (resource == "jobs" && $0.path.contains("/namespaces/"))
+        }
+        if asked.isEmpty { check("\(what): nothing asked — what was read within 30 s stands", children.isEmpty, "\(children.map(\.path))") }
+        check(
+            "\(what): ReplicaSets and pods by a selector, a CronJob's Jobs, in its namespaces only, as Table rows",
+            children.allSatisfy { request in
+                inItsNamespaces(request.path) && request.query["includeObject"] == "Metadata" && request.accept == KubeClient.tableOnlyAccept && !request.isWatch
+                    && (Self.resource(of: request.path) == "jobs" || request.query["labelSelector"]?.isEmpty == false)
+            }, "\(children.map { "\($0.path)?\($0.query)" })")
+        let strays = requests.filter { Self.isObjectRead($0) && !members.contains($0.path) }
+        check("\(what): no object read but its members' and the section's own", strays.count <= sectionGets, "\(strays.map(\.path)) beside \(sectionGets) of the section's")
+        check("\(what): GETs only", requests.allSatisfy { $0.method == "GET" })
+        check("\(what): never a Secret or a ConfigMap", !requests.contains { $0.path.contains("/secrets") || $0.path.contains("/configmaps") })
+    }
+
+    /// A GET of one object in a namespace: `…/namespaces/<ns>/<kind>/<name>`.
+    static func isObjectRead(_ request: FakeKubeAPI.Request) -> Bool {
+        guard request.method == "GET", !request.isWatch else { return false }
+        let parts = request.path.split(separator: "/")
+        guard let at = parts.firstIndex(of: "namespaces") else { return false }
+        return parts.count > at + 3
     }
 
     /// Part 3, beside Applications: a hub with most of its marked apps'

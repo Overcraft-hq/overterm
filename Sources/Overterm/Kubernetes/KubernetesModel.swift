@@ -142,6 +142,31 @@ final class KubernetesModel: ObservableObject {
     func sawMarks(in context: String) {
         if !marksSeen.contains(context) { marksSeen.insert(context) }
     }
+
+    /// Why a context's GitOps section reads Argo CD's apps from their marks,
+    /// as it last said it (gitops.md 14.3), and the cluster it said it of —
+    /// the context as read then: an apply there says Argo CD may undo a
+    /// change to an object it tracks, never that it will (14.2.3). In
+    /// memory only; a window's section tells it.
+    private var marksSaid: [String: (context: KubeContext, reason: KubeMarkedAppsMode.Reason)] = [:]
+
+    func noteMarksMode(_ mode: KubeMarkedAppsMode, in context: String) {
+        guard case .only(let reason) = mode, let read = contexts.context(named: context) else {
+            marksSaid[context] = nil
+            return
+        }
+        marksSaid[context] = (read, reason)
+    }
+
+    /// What `context`'s section last said — only while the name reaches the
+    /// same cluster as the same user it said it of (`sameCluster`): a
+    /// kubeconfig pointing the name elsewhere since is another cluster's
+    /// answer to give.
+    func marksReason(of context: KubeContext) -> KubeMarkedAppsMode.Reason? {
+        guard let said = marksSaid[context.name], Self.sameCluster(said.context, context) else { return nil }
+        return said.reason
+    }
+
     @Published private(set) var version: KubeServerVersion?
 
     var selected: KubeContext? { selectedName.flatMap(contexts.context(named:)) }

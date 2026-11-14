@@ -568,12 +568,20 @@ enum KubeFieldOwners {
 
     /// What the diff and the confirmation say of them, before anything is
     /// applied: each tool's warning once, then who owns which fields.
-    static func warnings(_ owners: [Owner], managedBy: [Tool]) -> [String] {
+    /// `argoMarks`: Argo CD's in place of its own — where its Applications
+    /// aren't read, whether it reverts the change (selfHeal) can't be
+    /// known: "may undo", never "will be reverted" (gitops.md 14.2.3).
+    static func warnings(_ owners: [Owner], managedBy: [Tool], argoMarks: String? = nil) -> [String] {
         var tools: [Tool] = []
         for tool in owners.compactMap(\.tool) + managedBy where !tools.contains(tool) { tools.append(tool) }
         // A field Argo CD's controller owns says it surely.
         if tools.contains(.argoCD) { tools.removeAll { $0 == .argoCDProbably } }
-        return tools.map(\.warning) + owners.map { "Also owned: \($0.said)." }
+        var said: [String] = []
+        for tool in tools {
+            let warning = (tool == .argoCD || tool == .argoCDProbably) ? argoMarks ?? tool.warning : tool.warning
+            if !said.contains(warning) { said.append(warning) }
+        }
+        return said + owners.map { "Also owned: \($0.said)." }
     }
 }
 
@@ -869,13 +877,17 @@ struct KubeManifestItem: Identifiable {
     var gitOps: [KubeGitOpsChange] = []
     /// What those changes do, said.
     var gitOpsWarning: String?
+    /// Argo CD tracks the live object where its Applications aren't read:
+    /// it may undo the change, selfHeal being the Application's — said in
+    /// place of "will be reverted" (gitops.md 14.2.3).
+    var argoMarks: String?
 
     var id: String { ref.description }
     var unchanged: Bool { diff.isEmpty && !isNew }
     /// One of the four GitOps kinds whose apply is watched: an agent's is
     /// always name-typed by the person.
     var isGitOps: Bool { KubeGitOpsApply.tool(ref.kind) != nil }
-    var warnings: [String] { [gitOpsWarning].compactMap { $0 } + KubeFieldOwners.warnings(owners, managedBy: managedBy) }
+    var warnings: [String] { [gitOpsWarning].compactMap { $0 } + KubeFieldOwners.warnings(owners, managedBy: managedBy, argoMarks: argoMarks) }
     /// `deployment shop/web`.
     var spoken: String { KubeWriteOutcome.spoken(ref) }
 }

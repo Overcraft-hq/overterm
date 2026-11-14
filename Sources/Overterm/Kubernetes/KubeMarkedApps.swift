@@ -13,6 +13,14 @@ struct KubeMarkedMember: Equatable, Sendable, Identifiable {
         /// "Deployment checkout-api".
         var said: String { "\(kind.kind) \(name)" }
 
+        /// "Deployment payments/checkout-api" where its app spans several
+        /// namespaces — two objects of one name there are told apart —,
+        /// else `said`.
+        func said(namespaced: Bool) -> String {
+            guard namespaced, let namespace else { return said }
+            return "\(kind.kind) \(namespace)/\(name)"
+        }
+
         static func < (a: ID, b: ID) -> Bool {
             (a.kind, a.namespace ?? "", a.name) < (b.kind, b.namespace ?? "", b.name)
         }
@@ -90,6 +98,10 @@ struct KubeMarkedApp: Equatable, Sendable, Identifiable {
     /// Argo CD's hooks (`argocd.argoproj.io/hook`, Helm's `helm.sh/hook`):
     /// shown under the app, never in its health.
     var hooks: [KubeMarkedMember] = []
+    /// Objects read here that carry a copy of one of its marks — an HPA's
+    /// or a PodDisruptionBudget's copy of its Deployment's (14.1): never
+    /// members, shown in its detail under the object their mark names.
+    var copies: [KubeMarkedMember] = []
     /// Its surest mark: a tracking id, else the instance label, else —
     /// "probably" — `app.kubernetes.io/instance` alone.
     var mark: KubeGitOpsOwner.Mark
@@ -154,8 +166,9 @@ struct KubeMarkedApp: Equatable, Sendable, Identifiable {
 
     var health: KubeMarkedHealth.AppVerdict { KubeMarkedHealth.app(self) }
 
-    /// An app from its members (hooks included), nil when none is left.
-    static func make(key: KubeTrackingID.AppKey, _ all: [KubeMarkedMember]) -> KubeMarkedApp? {
+    /// An app from its members (hooks included), nil when none is left —
+    /// copies of its marks alone make no app.
+    static func make(key: KubeTrackingID.AppKey, _ all: [KubeMarkedMember], copies: [KubeMarkedMember] = []) -> KubeMarkedApp? {
         let sorted = all.sorted { $0.id < $1.id }
         let hooks = sorted.filter { $0.marks.hook != nil }
         let members = sorted.filter { $0.marks.hook == nil }
@@ -172,7 +185,8 @@ struct KubeMarkedApp: Equatable, Sendable, Identifiable {
             guard member.id.namespace == nil, case .own(let id) = member.marks.tracking, !id.namespace.isEmpty else { return nil }
             return id.namespace
         }.first
-        return KubeMarkedApp(key: key, members: members, hooks: hooks, mark: mark, destination: destination)
+        return KubeMarkedApp(
+            key: key, members: members, hooks: hooks, copies: copies.sorted { $0.id < $1.id }, mark: mark, destination: destination)
     }
 }
 
@@ -220,6 +234,10 @@ struct KubeMarkedApps: Equatable, Sendable {
     private var placed: [KubeMarkedMember.ID: (placement: Placement, unparsed: Bool)] = [:]
     private var byKey: [Key: [KubeMarkedMember.ID: KubeMarkedMember]] = [:]
     private var probableByKey: [Key: [KubeMarkedMember.ID: KubeMarkedMember]] = [:]
+    /// Copies by the app their mark names, and where each went: shown in
+    /// that app's detail, never its members.
+    private var copiesByKey: [Key: [KubeMarkedMember.ID: KubeMarkedMember]] = [:]
+    private var copiedTo: [KubeMarkedMember.ID: Key] = [:]
     /// How many members every app made so far was made from: what `merge`
     /// costs, counted (the tests' bound on it, never a clock's).
     private(set) var membersMade = 0
@@ -263,7 +281,13 @@ struct KubeMarkedApps: Equatable, Sendable {
             case .probable(let key):
                 probableByKey[key]?[id] = nil
                 dirtyProbable.insert(key)
-            case .copied: tally.copied -= 1
+            case .copied:
+                tally.copied -= 1
+                if let key = copiedTo.removeValue(forKey: id) {
+                    copiesByKey[key]?[id] = nil
+                    if copiesByKey[key]?.isEmpty == true { copiesByKey[key] = nil }
+                    dirty.insert(key)
+                }
             case .unparsed: tally.unparsed -= 1
             case .helm: tally.helm -= 1
             case .unmarked: break
@@ -286,7 +310,13 @@ struct KubeMarkedApps: Equatable, Sendable {
             case .probable(let key):
                 probableByKey[key, default: [:]][member.id] = member
                 dirtyProbable.insert(key)
-            case .copied: tally.copied += 1
+            case .copied:
+                tally.copied += 1
+                if let key = Self.copyKey(member.marks) {
+                    copiesByKey[key, default: [:]][member.id] = member
+                    copiedTo[member.id] = key
+                    dirty.insert(key)
+                }
             case .unparsed: tally.unparsed += 1
             case .helm: tally.helm += 1
             case .unmarked: break
@@ -296,7 +326,7 @@ struct KubeMarkedApps: Equatable, Sendable {
             let members = Array(byKey[key, default: [:]].values)
             if members.isEmpty { byKey[key] = nil }
             membersMade += members.count
-            certain[key] = KubeMarkedApp.make(key: key, members)
+            certain[key] = KubeMarkedApp.make(key: key, members, copies: Array(copiesByKey[key, default: [:]].values))
         }
         for key in dirtyProbable {
             let members = Array(probableByKey[key, default: [:]].values)
@@ -305,6 +335,13 @@ struct KubeMarkedApps: Equatable, Sendable {
             probable[key] = KubeMarkedApp.make(key: key, members)
         }
         return dirty.union(dirtyProbable)
+    }
+
+    /// The app a copied mark names — the same installation's —; nil for
+    /// anything but a copy, or one beside a malformed installation id.
+    static func copyKey(_ marks: KubeMarkWire) -> Key? {
+        guard case .copied(let id) = marks.tracking, !marks.installationUnparsed else { return nil }
+        return id.appKey(installation: marks.installation)
     }
 
     /// Where marks put a member.
@@ -366,6 +403,20 @@ enum KubeMarkedAppsMode: Equatable, Sendable {
             case .undiscovered: "Couldn't tell whether Argo CD runs in \(context): argoproj.io didn't answer discovery."
             case .forbidden: "Argo CD's Applications can't be read in \(context) (forbidden)."
             }
+        }
+
+        /// One page of Applications asked across the cluster (`limit=1`, a
+        /// Table with no object: what an apply's warning asks where no
+        /// section said, `KubeManifestRun.applicationsHere`): none, and none
+        /// past it, `.noApplications`; one or more, nil — they are listed
+        /// here; anything else, `.undiscovered`: can't tell. Only the rows
+        /// are counted; nothing of them is kept.
+        static func ofApplicationsPage(_ data: Data) -> Reason? {
+            guard let table = try? JSONSerialization.jsonObject(with: data) as? [String: Any], table["kind"] as? String == "Table" else { return .undiscovered }
+            // An empty Table's rows may come as null.
+            if let rows = table["rows"] as? [Any], !rows.isEmpty { return nil }
+            let next = (table["metadata"] as? [String: Any])?["continue"] as? String
+            return next?.isEmpty == false ? .undiscovered : .noApplications
         }
     }
 

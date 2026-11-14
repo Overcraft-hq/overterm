@@ -460,11 +460,13 @@ struct KubernetesPageView: View {
                         KubeDetailView(page: page, session: detail, theme: theme)
                             .id(detail.id)
                             .frame(width: min(560, max(340, geometry.size.width * 0.45)))
-                    } else if page.section == .gitops, page.markedDetail != nil {
+                    } else if page.section == .gitops, let marked = page.markedDetail {
                         // An app read from marks: its detail in the same slot (gitops.md 14.2.3).
                         Rectangle().fill(theme.border).frame(width: 1)
-                        KubeMarkedAppDetailView(page: page, gitOps: page.gitOps, marked: page.gitOps.marked, theme: theme)
-                            .frame(width: min(560, max(340, geometry.size.width * 0.45)))
+                        KubeMarkedAppDetailView(
+                            page: page, ref: marked, selected: page.markedNode, gitOps: page.gitOps, marked: page.gitOps.marked, read: page.markedRead, theme: theme
+                        )
+                        .frame(width: min(560, max(340, geometry.size.width * 0.45)))
                     }
                 }
             }

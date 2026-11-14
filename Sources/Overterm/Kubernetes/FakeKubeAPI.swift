@@ -1789,6 +1789,14 @@ final class FakeKubeAPI: @unchecked Sendable {
                 name, column("Ready", "Number of the pod with ready state"), age,
                 column("Containers", priority: 1, "Names of each container in the template."), column("Images", priority: 1, "Images referenced by each container in the template."),
             ]
+        case "replicasets.apps":
+            return [
+                name, column("Desired", "integer", "Replicas is the number of desired pods."),
+                column("Current", "integer", "Replicas is the most recently observed number of replicas."),
+                column("Ready", "integer", "The number of non-terminating pods targeted by this ReplicaSet with a Ready Condition."), age,
+                column("Containers", priority: 1, "Names of each container in the template."), column("Images", priority: 1, "Images referenced by each container in the template."),
+                column("Selector", priority: 1, "Label selector for pods."),
+            ]
         case "daemonsets.apps":
             return [
                 name, column("Desired", "integer", "The desired number of pods."), column("Current", "integer", "The current number of pods."),

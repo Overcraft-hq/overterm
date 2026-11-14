@@ -182,8 +182,10 @@ final class KubeMarkWireTests: XCTestCase {
         for link in links { XCTAssertFalse(link.value.contains(token), link.value) }
     }
 
-    /// A GET's workload keeps what Argo CD's rule reads: never env, args,
-    /// annotations, the last-applied copy, or a message past 300.
+    /// A GET's workload keeps what Argo CD's rule reads — and its selector,
+    /// what a detail lists its pods by (D4) —: never env, args, annotations,
+    /// labels, the template's own metadata, the last-applied copy, or a
+    /// message past 300.
     func testAWorkloadKeepsWhatItsRuleReadsAndNothingElse() throws {
         let message = "progress deadline exceeded token=" + "glp" + "at-abcdefghij0123456789 " + String(repeating: "m", count: 400) + Self.sentinel
         let object: [String: Any] = [
@@ -195,9 +197,9 @@ final class KubeMarkWireTests: XCTestCase {
             ],
             "spec": [
                 "replicas": 1, "strategy": ["type": "RollingUpdate", "rollingUpdate": ["maxSurge": Self.sentinel]],
-                "selector": ["matchLabels": ["app": Self.sentinel]],
+                "selector": ["matchLabels": ["app": "acme-checkout"], "matchExpressions": [["key": "tier", "operator": "In", "values": ["api", "web"]]]],
                 "template": [
-                    "metadata": ["annotations": ["x": Self.sentinel]],
+                    "metadata": ["annotations": ["x": Self.sentinel], "labels": ["app": "acme-checkout", "build": Self.sentinel]],
                     "spec": [
                         "containers": [
                             [
@@ -220,6 +222,7 @@ final class KubeMarkWireTests: XCTestCase {
         XCTAssertEqual(wire.images, ["registry.acme.example/pay/checkout:4.12.0"])
         XCTAssertEqual(wire.spec?.strategy?.type, "RollingUpdate")
         XCTAssertEqual(wire.status?.updatedReplicas, 1)
+        XCTAssertEqual(KubeMarkedAppDetail.selector(wire), "app=acme-checkout,tier in (api,web)", "its selector: what its pods are listed by")
         let kept = try XCTUnwrap(wire.condition("Progressing")?.message)
         XCTAssertLessThanOrEqual(kept.count, KubeMarkedWorkloadWire.messageCap)
         XCTAssertFalse(kept.contains("abcdefghij0123456789"), "scrubbed before it is cut")

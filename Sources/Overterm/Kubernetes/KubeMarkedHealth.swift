@@ -392,6 +392,59 @@ enum KubeMarkedHealth {
         }
     }
 
+    // MARK: A detail's children, from their rows
+
+    /// A pod's health by Argo CD's rule (gitops-engine's `getPodHealth`) as
+    /// far as its row says it — a detail's only (14.2.3): shown, never
+    /// counted toward its app's. A container waiting with a reason that
+    /// starts `Err` or ends `Error` or `BackOff` (the Status cell says the
+    /// reason) is Degraded; an init container's (`Init:…`) isn't — its pod
+    /// is Pending, so Progressing; Succeeded is Healthy, Failed (Evicted,
+    /// OOMKilled…) Degraded; Running is Healthy when every container is
+    /// ready, else Degraded once one has restarted, else Progressing.
+    static func pod(_ row: KubeRow, columns: [KubeColumn]) -> Verdict {
+        func cell(_ name: String) -> String { row.cell(name, in: columns)?.text.trimmingCharacters(in: .whitespaces) ?? "" }
+        let status = KubeMarkWire.text(cell("Status"), cap: 64) ?? ""
+        let ready = fraction(cell("Ready"))
+        // "3 (2m ago)": the count first.
+        let restarts = Int(cell("Restarts").split(separator: " ").first.map(String.init) ?? "") ?? 0
+        let readySaid = ready.map { "\($0.count)/\($0.of) ready" } ?? "not ready"
+        if status.hasPrefix("Init:") || ["Pending", "ContainerCreating", "PodInitializing"].contains(status) {
+            return Verdict(status: .progressing, sentence: status.isEmpty ? "pending" : status, fromRow: true)
+        }
+        if status.hasPrefix("Err") || status.hasSuffix("Error") || status.hasSuffix("BackOff") {
+            return Verdict(status: .degraded, sentence: status, fromRow: true)
+        }
+        switch status {
+        case "Completed", "Succeeded":
+            return Verdict(status: .healthy, sentence: "completed", fromRow: true)
+        case "Running":
+            if let ready, ready.of > 0, ready.count >= ready.of { return Verdict(status: .healthy, sentence: readySaid, fromRow: true) }
+            if restarts > 0 {
+                return Verdict(status: .degraded, sentence: "\(readySaid) after \(restarts) \(restarts == 1 ? "restart" : "restarts")", fromRow: true)
+            }
+            return Verdict(status: .progressing, sentence: readySaid, fromRow: true)
+        case "Terminating":
+            return Verdict(status: .progressing, sentence: "terminating", fromRow: true)
+        case "Failed", "Evicted", "OOMKilled", "ContainerCannotRun", "DeadlineExceeded", "NodeLost", "Shutdown":
+            return Verdict(status: .degraded, sentence: status, fromRow: true)
+        default:
+            return Verdict(status: .unknown, sentence: status.isEmpty ? "its state isn't said" : status, fromRow: true)
+        }
+    }
+
+    /// A ReplicaSet's, from its Desired and Ready cells (Argo CD's rule
+    /// reads its available replicas against its own): one scaled to 0 —
+    /// an old one — is Healthy; fewer ready than desired, Progressing.
+    static func replicaSet(_ row: KubeRow, columns: [KubeColumn]) -> Verdict? {
+        func number(_ name: String) -> Int? { row.cell(name, in: columns).flatMap { Int($0.text.trimmingCharacters(in: .whitespaces)) } }
+        guard let desired = number("Desired") else { return nil }
+        let ready = number("Ready") ?? 0
+        if desired == 0 { return Verdict(status: .healthy, sentence: "scaled to 0", fromRow: true, scaledToZero: true) }
+        if ready < desired { return Verdict(status: .progressing, sentence: "\(ready)/\(desired) ready", fromRow: true) }
+        return Verdict(status: .healthy, sentence: "\(ready)/\(desired) ready", fromRow: true)
+    }
+
     /// The HPA reasons Argo CD's rule calls Degraded.
     private static func failedMetric(_ reason: String) -> Bool {
         ["FailedGetResourceMetric", "FailedGetObjectMetric", "FailedGetPodsMetric", "FailedGetExternalMetric", "FailedGetContainerResourceMetric"]

@@ -23,11 +23,25 @@ struct KubeGitOpsViewState: Equatable {
     var folded: Set<String> = []
 }
 
-/// An app read from marks whose placeholder detail shows beside the
-/// GitOps section (gitops.md 14.2.3): its context and its key.
+/// An app read from marks whose detail shows beside the GitOps section
+/// (gitops.md 14.2.3): its context and its key.
 struct KubeMarkedDetailRef: Equatable, Sendable {
     var context: String
     var key: KubeTrackingID.AppKey
+}
+
+/// An object opened from an app's detail (gitops.md 14.2.3): the app `[`
+/// comes back to, the object, and what a write on it adds — Argo CD may
+/// undo it, whether it does being the Application's, in the mode's words —
+/// only on one of the app's own (`Node.mayBeUndone`): a pod, a ReplicaSet,
+/// a CronJob's Job, a hook or a copy of a mark adds nothing.
+struct KubeMarkedOrigin: Equatable {
+    var app: KubeMarkedDetailRef
+    var object: KubeObjectRef
+    var undone: String?
+    /// The tree's node the keyboard opened it from: the keyboard is on it
+    /// again after `[`.
+    var node: String?
 }
 
 /// The GitOps section (`g`; docs/design/kubernetes/gitops.md, 2): Argo CD's
@@ -39,9 +53,11 @@ struct KubeMarkedDetailRef: Equatable, Sendable {
 /// page's one guard path (`writeTarget`); `k` copies flux's or argocd's
 /// own `get`, ⇧K kubectl's. Where no Application here deploys them, Argo
 /// CD's apps are read from the marks on their objects (14): such a row has
-/// no object of its own — ↩ opens its placeholder detail beside the
-/// section, `k` copies argocd's `get` against the person's own server, and
-/// every write key and ⇧K do nothing (no ref, so `writeTarget` is nil).
+/// no object of its own — ↩ opens its detail beside the section (its
+/// objects as Argo CD would draw them, each opening in its own list: Tab
+/// into its tree, ↑ ↓ along it, ↩ on a node), `k` copies argocd's `get`
+/// against the person's own server, and every write key and ⇧K do nothing
+/// (no ref, so `writeTarget` is nil).
 extension KubernetesPageModel {
     /// Whether the section is on screen.
     var gitOpsShows: Bool { section == .gitops && visible && windowVisible }
@@ -63,13 +79,17 @@ extension KubernetesPageModel {
     func updateGitOpsReading() {
         guard visible, windowVisible, model.enabled else {
             closeMarkedApp()
+            markedRead.drop()
             return gitOps.drop()
         }
         guard section == .gitops, let context = model.selectedName else {
             closeMarkedApp()
             // Another context while another section shows: the summaries are
             // that context's no longer (gitops.md 3.1) — dropped, not kept.
-            if let store = gitOps.store, store.context != model.selectedName { return gitOps.drop() }
+            if let store = gitOps.store, store.context != model.selectedName {
+                markedRead.drop()
+                return gitOps.drop()
+            }
             return gitOps.hide()
         }
         // One detail at a time: the kind's under the section goes; an app
@@ -81,9 +101,11 @@ extension KubernetesPageModel {
             accessible: model.selected?.settings.accessibleNamespaces ?? [])
     }
 
-    /// Refresh: every kind summarised again.
+    /// Refresh: every kind summarised again; an app's detail read again.
     func refreshGitOps() {
-        if gitOpsShows { gitOps.refresh() }
+        guard gitOpsShows else { return }
+        gitOps.refresh()
+        updateMarkedDetailReading(again: true)
     }
 
     /// `:flux` on a context that serves no Flux kind: said, the section not
@@ -222,8 +244,8 @@ extension KubernetesPageModel {
     var gitOpsSelectedRef: KubeObjectRef? { gitOpsPicked.flatMap(gitOpsRef) }
 
     /// ↩: the object in its kind's list, its detail open; `[` comes back
-    /// here. An app read from marks: its placeholder detail beside the
-    /// section — there is no kind list to open it in.
+    /// here. An app read from marks: its detail beside the section — there
+    /// is no kind list to open it in.
     @discardableResult
     func openGitOps(_ row: KubeGitOpsRow) -> Bool {
         if let marked = row.marked {
@@ -239,23 +261,165 @@ extension KubernetesPageModel {
         return true
     }
 
-    /// An app read from marks, its placeholder detail shown beside the
-    /// section; another detail closed first — one at a time.
+    /// An app read from marks, its detail shown beside the section and its
+    /// objects read (M4); another detail closed first — one at a time.
+    /// Another app's: the keyboard leaves the tree of the one before.
     func openMarkedApp(_ ref: KubeMarkedDetailRef) {
         if detail != nil { closeDetail() }
         commandProblem = nil
-        if markedDetail != ref { markedDetail = ref }
+        if markedDetail != ref {
+            if markedNode != nil { markedNode = nil }
+            markedDetail = ref
+        }
+        updateMarkedDetailReading()
     }
 
-    /// The placeholder detail closed. Esc or its × give the section's
-    /// table the keyboard (`giveListTheKeyboard`); the page or the section
-    /// going takes nothing from whoever has it.
+    /// The detail closed: its reads stop, the keyboard leaves its tree. Esc
+    /// or its × give the section's table the keyboard
+    /// (`giveListTheKeyboard`); the page or the section going takes
+    /// nothing from whoever has it.
     func closeMarkedApp() {
+        markedRead.hide()
+        if markedNode != nil { markedNode = nil }
         guard markedDetail != nil else { return }
         markedDetail = nil
     }
 
-    /// The app the placeholder detail shows, as the section ranks it now;
+    /// What the detail shows read (M4): its members' objects and what is
+    /// under its workloads, while it shows on a page on screen — again when
+    /// its members change, or on Refresh (`again`).
+    func updateMarkedDetailReading(again: Bool = false) {
+        guard let ref = markedDetail, gitOpsShows, let ranked = markedDetailApp else {
+            if markedDetail == nil || !gitOpsShows { markedRead.hide() }
+            return
+        }
+        if markedRead.ref.map({ $0.context != ref.context }) == true { markedRead.drop() }
+        markedRead.show(
+            ref, app: ranked.app, discovery: model.knownDiscovery(of: ref.context) ?? model.discovery, client: model.client(for: ref.context),
+            store: gitOps.marked.store?.settled ?? [:], again: again)
+    }
+
+    /// The detail as it reads now: the app as the section ranks it, its
+    /// objects as the detail read them — or as the section read them
+    /// since (its M2 after a rollout began, its tick), whichever is newer.
+    var markedDetailShown: KubeMarkedAppDetail.Detail? {
+        guard let ranked = markedDetailApp, let ref = markedDetail else { return nil }
+        var read = markedRead.ref == ref ? markedRead.read : KubeMarkedAppDetail.Read()
+        if let store = gitOps.marked.store?.settled {
+            for (id, kept) in read.objects {
+                if let newer = store[id], newer.at > kept.at { read.objects[id] = newer }
+            }
+        }
+        return KubeMarkedAppDetail.make(ranked, read: read, mode: gitOps.marksMode, context: ref.context)
+    }
+
+    /// A node of the detail's tree pressed (↩ on it, or its name): its
+    /// object in its own kind's list, its detail open — the verbs it has
+    /// there; `[` comes back to the app's detail (the keyboard on the node
+    /// again when it opened it: `keyboard`). A write's confirmation says
+    /// Argo CD may undo it only on one of the app's own objects
+    /// (`Node.mayBeUndone`, 14.2.3: the detail knows it is a member) —
+    /// never a pod, a ReplicaSet, a CronJob's Job, a hook or a copy of a
+    /// mark. Nothing for a kind the context doesn't serve.
+    @discardableResult
+    func openMarkedNode(_ node: KubeMarkedAppDetail.Node, keyboard: Bool = false) -> Bool {
+        guard let app = markedDetail, app.context == model.selectedName, let discovery = model.knownDiscovery(of: app.context) ?? model.discovery,
+            let ref = node.link.resolve(in: discovery, context: app.context)
+        else {
+            commandProblem = "\(model.selectedName ?? "The context") serves no \(node.kind)."
+            return false
+        }
+        guard model.catalog.kind(fullName: ref.kind.fullName) != nil || ref.kind.fullName == KubeResourceKind.pods.fullName else {
+            commandProblem = "\(app.context) doesn't list \(ref.kind.fullName) as a kind kept live."
+            return false
+        }
+        let probable = markedDetailApp?.app.mark == .appInstance
+        let undone = node.mayBeUndone ? KubeMarkedAppDetail.undone(gitOps.marksMode, probable: probable) : nil
+        openFromOverview(kind: ref.kind.fullName, KubeRowID(namespace: ref.namespace, name: ref.name), from: .gitops)
+        guard let opened = detail?.ref, Self.sameObject(opened, ref) else { return false }
+        markedOrigin = KubeMarkedOrigin(app: app, object: opened, undone: undone, node: keyboard ? node.id : nil)
+        return true
+    }
+
+    /// The same object, whichever version of its kind each names.
+    static func sameObject(_ a: KubeObjectRef, _ b: KubeObjectRef) -> Bool {
+        a.context == b.context && a.kind.fullName == b.kind.fullName && a.namespace == b.namespace && a.name == b.name
+    }
+
+    /// A node's right-click menu: Open, Copy as kubectl, Copy Name — never
+    /// a write (its own list has those) nor a verb that needs the
+    /// Application.
+    func markedNodeVerbs(_ node: KubeMarkedAppDetail.Node) -> [ResourceVerb] {
+        guard let app = markedDetail, let discovery = model.knownDiscovery(of: app.context) ?? model.discovery,
+            let ref = node.link.resolve(in: discovery, context: app.context)
+        else {
+            return [ResourceVerb(title: "Open", symbol: "arrow.up.right", place: .button, unavailable: "\(markedDetail?.context ?? "The context") serves no \(node.kind).")]
+        }
+        let name = "\(node.namespace.map { "\($0)/" } ?? "")\(node.name)"
+        return [
+            ResourceVerb(title: "Open", symbol: "arrow.up.right", place: .button, key: KubernetesKey.open.key) { [weak self] in self?.openMarkedNode(node) },
+            ResourceVerb(title: "Copy as kubectl", symbol: "terminal", group: 9) { [weak self] in
+                guard let self else { return }
+                self.actions?.copy(KubectlLine.object(ref, discovery: self.model.knownDiscovery(of: ref.context)))
+            },
+            ResourceVerb(title: "Copy Name", symbol: "doc.on.doc", group: 9) { [weak self] in self?.actions?.copy(name) },
+        ]
+    }
+
+    /// Copy Names: each of the app's objects, one a line.
+    func copyMarkedNames() {
+        guard let ranked = markedDetailApp else { return }
+        actions?.copy(KubeMarkedAppDetail.names(ranked.app))
+    }
+
+    /// What a write's confirmation adds on one of an app's own objects
+    /// opened from its detail: Argo CD may undo it (14.2.3) — said, never a
+    /// guard; nothing on anything else opened from there.
+    func markedUndone(_ verb: KubeWriteVerb, on ref: KubeObjectRef) -> String? {
+        guard let origin = markedOrigin, Self.sameObject(origin.object, ref), KubeMarkedAppDetail.undoneVerbs.contains(verb) else { return nil }
+        return origin.undone
+    }
+
+    // MARK: The tree, from the keyboard
+
+    /// The nodes of the detail shown, as the keyboard walks them: the tree
+    /// depth first, then the hooks.
+    var markedNodes: [KubeMarkedAppDetail.Node] { markedDetailShown.map(KubeMarkedAppDetail.walk) ?? [] }
+
+    /// A key while an app's detail shows (14.2.3, ↩ on a node): Tab (⇧Tab)
+    /// into its tree — on its first node — and back out to the section's
+    /// rows; on a node, ↑ ↓ along the tree and ↩ opens its object in its
+    /// own list. Nil: not the tree's — the arrows the rows', ↩ the row's,
+    /// Esc closes the detail as ever.
+    func markedTreePress(_ characters: String) -> Bool? {
+        guard markedDetail != nil else { return nil }
+        switch characters {
+        case "\t", "\u{19}":
+            if markedNode != nil {
+                markedNode = nil
+                return true
+            }
+            guard let first = KubeMarkedAppDetail.step(markedNodes, from: nil, by: 0) else { return false }
+            markedNode = first
+            return true
+        case "\u{F700}", "\u{F701}":
+            guard markedNode != nil else { return nil }
+            // Its tree not drawn yet (shown again, its app still being made): the keyboard stays where it is.
+            guard let next = KubeMarkedAppDetail.step(markedNodes, from: markedNode, by: characters == "\u{F701}" ? 1 : -1) else { return true }
+            if next != markedNode { markedNode = next }
+            return true
+        case "\r":
+            guard let id = markedNode else { return nil }
+            // Gone since (read again): nothing opens, the keyboard stays.
+            guard let node = markedNodes.first(where: { $0.id == id }) else { return true }
+            openMarkedNode(node, keyboard: true)
+            return true
+        default:
+            return nil
+        }
+    }
+
+    /// The app the detail shows, as the section ranks it now;
     /// nil when the section no longer shows it as an app read from marks —
     /// its marks gone, another mode, or, beside Applications, its
     /// Application read here now (the marks' apps hold every marked app
@@ -273,10 +437,13 @@ extension KubernetesPageModel {
     /// syncs (Argo CD) or reconciles with its source (Flux) in a tab; `r`, `p` and ⌫ go on to the page's writes on the row picked
     /// (`writeTarget`), `a` to Ask Why on it (`askWhyRef`); the page's own
     /// keys as ever. A pod's verbs would
-    /// act on the kind under the section: refused. Nil: the page's to
-    /// decide, the arrows the table's.
+    /// act on the kind under the section: refused. With an app's detail
+    /// read from marks beside it, Tab, ↑ ↓ and ↩ walk its tree first
+    /// (`markedTreePress`). Nil: the page's to decide, the arrows the
+    /// table's.
     func gitOpsPress(_ characters: String) -> Bool? {
         if cheatSheet { return nil }
+        if let handled = markedTreePress(characters) { return handled }
         if characters == "K" {
             guard let ref = gitOpsSelectedRef else { return false }
             actions?.copy(KubectlLine.object(ref, discovery: model.knownDiscovery(of: ref.context)))
@@ -285,7 +452,7 @@ extension KubernetesPageModel {
         guard case .key(let key) = KubernetesKey.press(characters, sheetShowing: cheatSheet) else { return nil }
         switch key {
         case .close:
-            // Esc: an app's placeholder detail goes; the table keeps the keyboard.
+            // Esc: an app's detail goes; the table keeps the keyboard.
             guard markedDetail != nil else { return false }
             closeMarkedApp()
             giveListTheKeyboard()

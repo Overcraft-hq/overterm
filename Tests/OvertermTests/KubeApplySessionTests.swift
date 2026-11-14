@@ -145,6 +145,106 @@ final class KubeApplySessionTests: XCTestCase {
         XCTAssertNotNil(session.fileDiffs[item.id])
     }
 
+    /// An object Argo CD tracks (its own tracking id) where Argo CD's
+    /// Applications aren't read: whether a change is reverted — selfHeal —
+    /// is the Application's, so the diff says "may undo", never "will be
+    /// reverted" (gitops.md 14.2.3), in the words of why. Not served:
+    /// another cluster, nothing of Argo CD's asked. Served with none — the
+    /// survey's development cluster — before any GitOps section was opened:
+    /// one row asked across the cluster, a Table with no object, "isn't in
+    /// this cluster". Refused: "can't be read here". One listed: Argo CD's
+    /// own words, as before.
+    func testAnObjectArgoCDTracksWhereItsApplicationsArentReadMayBeUndoneNotWillBe() async throws {
+        let model = model()
+        api.setFields(
+            "deployments.apps", "web", namespace: "shop",
+            [
+                "metadata": ["annotations": ["argocd.argoproj.io/tracking-id": "prod-shop-web-service:apps/Deployment:shop/web"]],
+                "spec": ["replicas": 1, "template": ["metadata": ["labels": ["app": "web"]]]], "status": ["replicas": 1],
+            ])
+        let (session, _) = session(model, deployment, context: "kind-fake")
+        let diffed = await session.runDiff()
+        let result = try XCTUnwrap(diffed)
+        XCTAssertEqual(result.warnings, ["Argo CD may undo this: whether selfHeal is on is in the Application, in another cluster."])
+        XCTAssertFalse(api.requests.contains { $0.path.contains("argoproj.io") }, "not served: nothing of Argo CD's asked")
+
+        // Served, none there, no section opened: one row asked.
+        api.serveArgoCD()
+        api.forgetRequests()
+        let none = await session.runDiff()
+        XCTAssertEqual(none?.warnings, ["Argo CD may undo this: whether selfHeal is on is in the Application, which isn't in this cluster."])
+        let asked = api.requests.filter { $0.path.hasSuffix("/applications") }
+        XCTAssertEqual(asked.map(\.path), ["/apis/argoproj.io/v1alpha1/applications"], "across the cluster, once")
+        XCTAssertEqual(asked.first?.query["limit"], "1")
+        XCTAssertEqual(asked.first?.query["includeObject"], "None", "no object: the rows are only counted")
+        XCTAssertEqual(asked.first?.accept, KubeClient.tableOnlyAccept, "a Table or nothing")
+        XCTAssertFalse(asked.contains(where: \.isWatch))
+
+        // Refused across the cluster.
+        api.forbidden = ["applications@cluster"]
+        let refused = await session.runDiff()
+        XCTAssertEqual(refused?.warnings, ["Argo CD may undo this: whether selfHeal is on is in the Application, which can't be read here."])
+        api.forbidden = []
+
+        // One listed here: as before.
+        api.addApplication(
+            "prod-shop-web-service", spec: ["project": "acme", "destination": ["namespace": "shop"], "source": ["repoURL": "https://git.acme.example/acme/fleet.git"]],
+            status: ["sync": ["status": "Synced"], "health": ["status": "Healthy"]])
+        let listed = await session.runDiff()
+        XCTAssertEqual(listed?.warnings, ["Argo CD manages this; your change will be reverted."])
+        XCTAssertTrue(applies(dryRun: false).isEmpty, "diffs only")
+    }
+
+    /// What the context's GitOps section said of its Applications (14.3)
+    /// stands for an apply — with no request — only as long as it fits:
+    /// said of the cluster the name reaches now, as the same user, and a
+    /// reason a cluster serving them can have (none listed, refused).
+    /// "Not served", said before Argo CD came, is asked again.
+    func testASectionsWordStandsOnlyForItsOwnClusterAndWhatItServesNow() async throws {
+        let model = model()
+        model.reloadContexts()
+        for _ in 0..<250 where model.contexts.context(named: "kind-fake") == nil { try? await Task.sleep(for: .milliseconds(10)) }
+        let here = try XCTUnwrap(model.contexts.context(named: "kind-fake"))
+        api.setFields(
+            "deployments.apps", "web", namespace: "shop",
+            [
+                "metadata": ["annotations": ["argocd.argoproj.io/tracking-id": "prod-shop-web-service:apps/Deployment:shop/web"]],
+                "spec": ["replicas": 1, "template": ["metadata": ["labels": ["app": "web"]]]], "status": ["replicas": 1],
+            ])
+        api.serveArgoCD()
+        api.addApplication(
+            "prod-shop-web-service", spec: ["project": "acme", "destination": ["namespace": "shop"], "source": ["repoURL": "https://git.acme.example/acme/fleet.git"]],
+            status: ["sync": ["status": "Synced"], "health": ["status": "Healthy"]])
+        let (session, _) = session(model, deployment, context: "kind-fake")
+        // The section read them refused everywhere it looked: its word, nothing asked.
+        model.noteMarksMode(.only(.forbidden), in: "kind-fake")
+        XCTAssertEqual(model.marksReason(of: here), .forbidden)
+        api.forgetRequests()
+        let said = await session.runDiff()
+        XCTAssertEqual(said?.warnings, ["Argo CD may undo this: whether selfHeal is on is in the Application, which can't be read here."])
+        XCTAssertFalse(api.requests.contains { $0.path.hasSuffix("/applications") }, "the section's word: nothing asked")
+        // "Not served", while discovery serves them now: asked again — one is there.
+        model.noteMarksMode(.only(.notServed), in: "kind-fake")
+        let stale = await session.runDiff()
+        XCTAssertEqual(stale?.warnings, ["Argo CD manages this; your change will be reverted."])
+        XCTAssertTrue(api.requests.contains { $0.path == "/apis/argoproj.io/v1alpha1/applications" })
+        // The name reaching another cluster now: the word was another cluster's.
+        model.noteMarksMode(.only(.noApplications), in: "kind-fake")
+        let elsewhere = KubeContext(
+            name: here.name, cluster: here.cluster, server: "https://10.0.9.9:6443", namespace: here.namespace, user: here.user, auth: here.auth, file: here.file,
+            contextClass: here.contextClass, settings: here.settings)
+        XCTAssertEqual(model.marksReason(of: here), .noApplications)
+        XCTAssertNil(model.marksReason(of: elsewhere), "said of another cluster")
+        let otherUser = KubeContext(
+            name: here.name, cluster: here.cluster, server: here.server, namespace: here.namespace, user: "acme-admin", auth: here.auth, file: here.file,
+            contextClass: here.contextClass, settings: here.settings)
+        XCTAssertNil(model.marksReason(of: otherUser), "said as another user")
+        // A mode that isn't the marks' own forgets it.
+        model.noteMarksMode(.off, in: "kind-fake")
+        XCTAssertNil(model.marksReason(of: here))
+        XCTAssertTrue(applies(dryRun: false).isEmpty, "diffs only")
+    }
+
     func testReadOnlyIsClientSideAndSendsNothing() async throws {
         let model = model()
         let (session, _) = session(model, deployment, context: "fake-dev")

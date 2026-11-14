@@ -201,7 +201,9 @@ struct KubeMarkWire: Equatable, Hashable, Sendable {
 ///   whether it is being deleted;
 /// - `spec.paused`, `spec.replicas`, `spec.suspend`, the strategy's type
 ///   and `rollingUpdate.partition`, a Rollout's `workloadRef`, each
-///   container's name and image (a CronJob's through its job template);
+///   container's name and image (a CronJob's through its job template),
+///   its `selector` (what a detail lists its ReplicaSets and pods by,
+///   bounded — 1 KB in all — and never cut);
 /// - `status`: generations and replica counts, a DaemonSet's scheduled
 ///   numbers, the revisions, a CronJob's last schedule and success and its
 ///   active jobs counted (a Job's active pods), a Rollout's phase and
@@ -277,9 +279,94 @@ struct KubeMarkedWorkloadWire: Decodable, Equatable, Sendable {
         var jobTemplate: JobTemplate?
         /// An Argo Rollout's: the Deployment it runs instead of.
         var workloadRef: WorkloadRef?
+        /// Which pods are its: what a detail lists its ReplicaSets and pods
+        /// by (14.2.3, M4) — the cluster's own selector, never a mark's text.
+        var selector: Selector?
 
         enum CodingKeys: String, CodingKey, CaseIterable {
-            case paused, replicas, suspend, strategy, updateStrategy, template, jobTemplate, workloadRef
+            case paused, replicas, suspend, strategy, updateStrategy, template, jobTemplate, workloadRef, selector
+        }
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            paused = try container.decodeIfPresent(Bool.self, forKey: .paused)
+            replicas = try container.decodeIfPresent(Int.self, forKey: .replicas)
+            suspend = try container.decodeIfPresent(Bool.self, forKey: .suspend)
+            strategy = try container.decodeIfPresent(Strategy.self, forKey: .strategy)
+            updateStrategy = try container.decodeIfPresent(Strategy.self, forKey: .updateStrategy)
+            template = try container.decodeIfPresent(Template.self, forKey: .template)
+            jobTemplate = try container.decodeIfPresent(JobTemplate.self, forKey: .jobTemplate)
+            workloadRef = try container.decodeIfPresent(WorkloadRef.self, forKey: .workloadRef)
+            // A selector it can't read lists nothing: the object's health is read all the same.
+            if container.contains(.selector), (try? container.decodeNil(forKey: .selector)) != true {
+                selector = (try? container.decode(Selector.self, forKey: .selector)) ?? Selector(unusable: true)
+            }
+        }
+    }
+
+    /// A label selector as its object says it, bounded as it is read — at
+    /// most 32 labels and 16 expressions of 16 values, each key and value no
+    /// longer than a label's, and 1 KB in all (`totalBytes`: what the
+    /// section's store keeps of a member stays near its 1 KB; a Rollout's
+    /// selector is a custom resource's, no API server bounds it) — and
+    /// never cut: one past those bounds is `unusable`, as a cut value would
+    /// select other pods. What `KubeMarkedAppDetail.selector` makes a query
+    /// of, after Kubernetes' label syntax.
+    struct Selector: Decodable, Equatable, Sendable {
+        var matchLabels: [String: String]?
+        var matchExpressions: [Expression]?
+        /// Past its bounds, or not a selector: no list is made of it.
+        var unusable = false
+
+        init(unusable: Bool) { self.unusable = unusable }
+
+        struct Expression: Decodable, Equatable, Sendable {
+            var key: String?
+            var `operator`: String?
+            var values: [String]?
+
+            enum CodingKeys: String, CodingKey, CaseIterable { case key, `operator`, values }
+        }
+
+        enum CodingKeys: String, CodingKey, CaseIterable { case matchLabels, matchExpressions }
+
+        /// A label's key (a prefix of 253, `/`, a name of 63) and value, at most.
+        static let keyBytes = 317
+        static let valueBytes = 63
+        /// Its keys, operators and values together, at most.
+        static let totalBytes = 1024
+
+        init(from decoder: Decoder) throws {
+            let container = try decoder.container(keyedBy: CodingKeys.self)
+            let labels: [String: String]?
+            let expressions: [Expression]?
+            do {
+                labels = try container.decodeIfPresent([String: String].self, forKey: .matchLabels)
+                expressions = try container.decodeIfPresent([Expression].self, forKey: .matchExpressions)
+            } catch {
+                unusable = true
+                return
+            }
+            func fits(_ key: String?, _ values: [String]) -> Bool {
+                (key?.utf8.count ?? 0) <= Self.keyBytes && values.count <= 16 && values.allSatisfy { $0.utf8.count <= Self.valueBytes }
+            }
+            let labelsFit = (labels?.count ?? 0) <= 32 && (labels ?? [:]).allSatisfy { fits($0.key, [$0.value]) }
+            let expressionsFit = (expressions?.count ?? 0) <= 16 && (expressions ?? []).allSatisfy { fits($0.key, $0.values ?? []) && ($0.operator?.utf8.count ?? 0) <= 16 }
+            guard labelsFit, expressionsFit else {
+                unusable = true
+                return
+            }
+            // Within each bound, still at most 1 KB in all.
+            let labelBytes = (labels ?? [:]).reduce(0) { $0 + $1.key.utf8.count + $1.value.utf8.count }
+            let expressionBytes = (expressions ?? []).reduce(0) { total, expression in
+                total + (expression.key?.utf8.count ?? 0) + (expression.operator?.utf8.count ?? 0) + (expression.values ?? []).reduce(0) { $0 + $1.utf8.count }
+            }
+            guard labelBytes + expressionBytes <= Self.totalBytes else {
+                unusable = true
+                return
+            }
+            matchLabels = labels
+            matchExpressions = expressions
         }
     }
 

@@ -7,10 +7,14 @@ import Foundation
 /// forms) that never equal a workload's own name, every tracking id naming
 /// its own object, and a few copied ones on HPAs, PodDisruptionBudgets and
 /// every ReplicaSet. Each workload's cells and object agree, except where
-/// a state below says otherwise. `serveArgoCD()` and `serveFlux()` are
-/// never called. Fictional names only; the sentinel sits in every place a
-/// value can hide (kubectl's last-applied copy, env, annotations, Secrets
-/// and ConfigMaps that carry marks and are never to be read).
+/// a state below says otherwise. What an app's detail lists (D4) is there
+/// too: each workload's selector, its ReplicaSets labelled for it and
+/// owned in their rows, the named states' pods (crash-looping, unable to
+/// pull, Pending, a Rollout's) and the CronJob's last Jobs.
+/// `serveArgoCD()` and `serveFlux()` are never called. Fictional names
+/// only; the sentinel sits in every place a value can hide (kubectl's
+/// last-applied copy, env, annotations — a pod's too —, Secrets and
+/// ConfigMaps that carry marks and are never to be read).
 extension FakeKubeAPI {
     /// What a spoke is made of.
     struct SpokeOptions: Sendable {
@@ -108,18 +112,45 @@ extension FakeKubeAPI {
             "acme-pay", namespace: ns(1), app: spoke.stuck, ready: 1, desired: 1, padding: options.padding, now: now,
             status: ["replicas": 2, "updatedReplicas": 1, "readyReplicas": 1, "availableReplicas": 1, "unavailableReplicas": 1],
             progressing: ("True", "ReplicaSetUpdated"))
+        addOwnedReplicaSet(
+            "acme-pay-6c9f5b", of: ("Deployment", "acme-pay"), namespace: ns(1), desired: 1, ready: 0, annotations: marks(spoke.stuck, "apps/Deployment", ns(1), "acme-pay"),
+            created: now.addingTimeInterval(-300))
+        addOwnedPod(
+            "acme-pay-6c9f5b-k2l3m", of: "acme-pay-6c9f5b", app: "acme-pay", namespace: ns(1), FakeKubeAPI.Pod(status: "ImagePullBackOff", phase: "Pending", ready: 0),
+            created: now.addingTimeInterval(-300))
+        addOwnedPod("acme-pay-7d4b9c-h7j6k", of: "acme-pay-7d4b9c", app: "acme-pay", namespace: ns(1), created: now.addingTimeInterval(-86_400))
 
         spoke.stalled = "\(env)-\(ns(2))-acme-cart-service"
         addMarkedDeployment(
-            "acme-cart", namespace: ns(2), app: spoke.stalled, ready: 1, desired: 2, updated: 1, available: 1, padding: options.padding, now: now,
+            "acme-cart", namespace: ns(2), app: spoke.stalled, ready: 1, desired: 2, updated: 1, available: 1,
+            annotations: ["argocd.argoproj.io/sync-wave": "2", "argocd.argoproj.io/sync-options": "Prune=false"], padding: options.padding, now: now,
             status: ["replicas": 2, "updatedReplicas": 1, "readyReplicas": 1, "availableReplicas": 1], progressing: ("False", "ProgressDeadlineExceeded"))
-        addMarkedService("acme-cart", namespace: ns(2), app: spoke.stalled, now: now)
+        // Its rollout stuck: the new ReplicaSet's pod crash-loops, the old one's still serves.
+        modify("replicasets.apps", "acme-cart-7d4b9c", namespace: ns(2), values: ["Desired": 1, "Current": 1, "Ready": 1]) { _ in }
+        addOwnedReplicaSet(
+            "acme-cart-5f8d7c", of: ("Deployment", "acme-cart"), namespace: ns(2), desired: 1, ready: 0,
+            annotations: marks(spoke.stalled, "apps/Deployment", ns(2), "acme-cart"), created: now.addingTimeInterval(-900))
+        addOwnedPod(
+            "acme-cart-5f8d7c-x2k9p", of: "acme-cart-5f8d7c", app: "acme-cart", namespace: ns(2),
+            FakeKubeAPI.Pod(status: "CrashLoopBackOff", phase: "Running", ready: 0, restarts: 6, lastRestart: "40s"), created: now.addingTimeInterval(-900))
+        addOwnedPod("acme-cart-7d4b9c-m4n8q", of: "acme-cart-7d4b9c", app: "acme-cart", namespace: ns(2), created: now.addingTimeInterval(-86_400))
+        addMarkedService(
+            "acme-cart", namespace: ns(2), app: spoke.stalled,
+            annotations: [
+                "argocd.argoproj.io/ignore-healthcheck": "true", "argocd.argoproj.io/compare-options": "IgnoreExtraneous",
+                "link.argocd.argoproj.io/external-link": "https://grafana.acme.example/d/cart?orgId=1",
+            ], now: now)
 
         spoke.paused = "\(env)-\(ns(3))-acme-batch-service"
         addMarkedDeployment("acme-batch", namespace: ns(3), app: spoke.paused, padding: options.padding, now: now, paused: true)
 
         spoke.statefulSet = "\(env)-\(ns(4))-acme-ledger-service"
         addMarkedStatefulSet("acme-ledger-db", namespace: ns(4), app: spoke.statefulSet, ready: 0, desired: 3, now: now)
+        for index in 0..<3 {
+            addOwnedPod(
+                "acme-ledger-db-\(index)", of: "acme-ledger-db", ownerKind: "StatefulSet", app: "acme-ledger-db", namespace: ns(4),
+                FakeKubeAPI.Pod(status: "Pending", phase: "Pending", ready: 0), created: now.addingTimeInterval(-7200))
+        }
         addMarkedService("acme-ledger-db", namespace: ns(4), app: spoke.statefulSet, now: now)
 
         spoke.hpa = "\(env)-\(ns(5))-acme-search-service"
@@ -147,6 +178,14 @@ extension FakeKubeAPI {
                 ],
                 "status": ["lastScheduleTime": Self.time(now.addingTimeInterval(-1200)), "lastSuccessfulTime": Self.time(now.addingTimeInterval(-4800))],
             ])
+        // Its last Jobs, made from its template: no mark of their own.
+        for (minutes, failed) in [(20, true), (80, false)] {
+            let job = "acme-reindex-\(29_400_000 - minutes)"
+            add(
+                "jobs.batch", job, namespace: ns(8), values: ["Status": .text(failed ? "Failed" : "Complete"), "Completions": .text(failed ? "0/1" : "1/1")],
+                labels: ["job-name": job], created: now.addingTimeInterval(-Double(minutes) * 60))
+            setRowOwners("jobs.batch", job, namespace: ns(8), [owner("batch/v1", "CronJob", "acme-reindex", resource: "cronjobs.batch", namespace: ns(8))])
+        }
 
         spoke.claim = "\(env)-\(ns(9))-acme-store-service"
         addMarkedDeployment("acme-store", namespace: ns(9), app: spoke.claim, padding: options.padding, now: now)
@@ -195,6 +234,14 @@ extension FakeKubeAPI {
             addMarkedRollout("acme-canary", namespace: ns(0), app: spoke.rollout, phase: "Healthy", now: now)
             spoke.rolloutDegraded = "\(env)-\(ns(1))-acme-blue-service"
             addMarkedRollout("acme-blue", namespace: ns(1), app: spoke.rolloutDegraded, phase: "Degraded", now: now)
+            // The Rollout's own ReplicaSet, by its Deployment's selector: one pod serving, one crash-looping.
+            addOwnedReplicaSet(
+                "acme-blue-84c6d9", of: ("Rollout", "acme-blue"), apiVersion: "argoproj.io/v1alpha1", resource: "rollouts.argoproj.io", namespace: ns(1), desired: 2,
+                ready: 1, created: now.addingTimeInterval(-1800))
+            addOwnedPod("acme-blue-84c6d9-a1b2c", of: "acme-blue-84c6d9", app: "acme-blue", namespace: ns(1), created: now.addingTimeInterval(-1800))
+            addOwnedPod(
+                "acme-blue-84c6d9-d3e4f", of: "acme-blue-84c6d9", app: "acme-blue", namespace: ns(1),
+                FakeKubeAPI.Pod(status: "CrashLoopBackOff", phase: "Running", ready: 0, restarts: 4, lastRestart: "1m"), created: now.addingTimeInterval(-1800))
         }
         return spoke
     }
@@ -238,19 +285,50 @@ extension FakeKubeAPI {
             fields: [
                 "metadata": ["generation": generation],
                 "spec": [
-                    "replicas": desired, "paused": paused, "strategy": ["type": "RollingUpdate"],
+                    "replicas": desired, "paused": paused, "strategy": ["type": "RollingUpdate"], "selector": ["matchLabels": ["app": name]],
                     "template": [
-                        "spec": ["containers": [["name": "app", "image": image, "env": [["name": "DB_PASSWORD", "value": Self.gitOpsSentinel]], "args": ["--token=\(Self.gitOpsSentinel)"]]]]
+                        "metadata": ["labels": ["app": name]],
+                        "spec": ["containers": [["name": "app", "image": image, "env": [["name": "DB_PASSWORD", "value": Self.gitOpsSentinel]], "args": ["--token=\(Self.gitOpsSentinel)"]]]],
                     ],
                 ],
                 "status": state,
             ])
         if app != nil {
-            // The Deployment controller copies every annotation onto its ReplicaSets.
-            add(
-                "replicasets.apps", "\(name)-7d4b9c", namespace: namespace, values: ["Desired": .integer(desired), "Current": .integer(desired), "Ready": .integer(ready)], annotations: annotations,
+            // The Deployment controller copies every annotation onto its ReplicaSets, and owns them.
+            addOwnedReplicaSet(
+                "\(name)-7d4b9c", of: ("Deployment", name), namespace: namespace, desired: desired, ready: ready, annotations: annotations,
                 created: now.addingTimeInterval(-86_400))
         }
+    }
+
+    /// The `ownerReferences` entry for an object of the fake's.
+    func owner(_ apiVersion: String, _ kind: String, _ name: String, resource: String, namespace: String) -> [String: Any] {
+        ["apiVersion": apiVersion, "kind": kind, "name": name, "uid": uid(resource, name, namespace: namespace) ?? "", "controller": true, "blockOwnerDeletion": true]
+    }
+
+    /// A ReplicaSet its Deployment (or an Argo Rollout) made: labelled for
+    /// its selector (`app`), owned in its rows' metadata too, carrying
+    /// whatever annotations it copied.
+    func addOwnedReplicaSet(
+        _ name: String, of owner: (kind: String, name: String), apiVersion: String = "apps/v1", resource: String = "deployments.apps", namespace: String,
+        desired: Int, ready: Int, annotations: [String: String] = [:], created: Date
+    ) {
+        let hash = String(name.split(separator: "-").last ?? "")
+        add(
+            "replicasets.apps", name, namespace: namespace, values: ["Desired": .integer(desired), "Current": .integer(desired), "Ready": .integer(ready)],
+            labels: ["app": owner.name, "pod-template-hash": hash], annotations: annotations, created: created)
+        setRowOwners("replicasets.apps", name, namespace: namespace, [self.owner(apiVersion, owner.kind, owner.name, resource: resource, namespace: namespace)])
+    }
+
+    /// A pod its ReplicaSet (or StatefulSet) made, labelled for its
+    /// workload's selector and owned in its rows' metadata; the sentinel in
+    /// an annotation of its own, which nothing may keep.
+    func addOwnedPod(
+        _ name: String, of owner: String, ownerKind: String = "ReplicaSet", app: String, namespace: String, _ pod: FakeKubeAPI.Pod = FakeKubeAPI.Pod(), created: Date
+    ) {
+        addPod(name, namespace: namespace, pod, labels: ["app": app], annotations: ["acme.example/debug-token": Self.gitOpsSentinel], created: created)
+        let resource = ownerKind == "StatefulSet" ? "statefulsets.apps" : "replicasets.apps"
+        setRowOwners("pods", name, namespace: namespace, [self.owner("apps/v1", ownerKind, owner, resource: resource, namespace: namespace)])
     }
 
     func addMarkedStatefulSet(_ name: String, namespace: String, app: String, ready: Int, desired: Int, now: Date) {
@@ -261,8 +339,8 @@ extension FakeKubeAPI {
             fields: [
                 "metadata": ["generation": 2],
                 "spec": [
-                    "replicas": desired, "updateStrategy": ["type": "RollingUpdate"],
-                    "template": ["spec": ["containers": [["name": "db", "image": "registry.acme.example/postgres:16.4"]]]],
+                    "replicas": desired, "updateStrategy": ["type": "RollingUpdate"], "selector": ["matchLabels": ["app": name]],
+                    "template": ["metadata": ["labels": ["app": name]], "spec": ["containers": [["name": "db", "image": "registry.acme.example/postgres:16.4"]]]],
                 ],
                 "status": [
                     "observedGeneration": 2, "replicas": desired, "readyReplicas": ready, "currentRevision": "\(name)-5f6", "updateRevision": "\(name)-5f6",
@@ -270,8 +348,10 @@ extension FakeKubeAPI {
             ])
     }
 
-    func addMarkedService(_ name: String, namespace: String, app: String, loadBalancer: String? = nil, installation: String? = nil, now: Date) {
-        var annotations = marks(app, "/Service", namespace, name)
+    func addMarkedService(
+        _ name: String, namespace: String, app: String, loadBalancer: String? = nil, installation: String? = nil, annotations extra: [String: String] = [:], now: Date
+    ) {
+        var annotations = marks(app, "/Service", namespace, name).merging(extra) { $1 }
         if let installation { annotations[KubeTrackingID.installationAnnotation] = installation }
         add(
             "services", name, namespace: namespace,

@@ -529,9 +529,10 @@ extension KubernetesPageModel {
             return
         }
         writeStatus = nil
+        // One of an Argo CD app's objects opened from its detail read from marks: Argo CD may undo it (gitops.md 14.2.3).
         let confirmation = KubeWriteConfirmation.make(
             facts.verb, ref, context: context, rule: rule, from: facts.from, to: facts.to, meta: facts.meta, job: facts.job, contents: facts.contents,
-            resize: facts.resize, discovery: model.knownDiscovery(of: ref.context))
+            resize: facts.resize, discovery: model.knownDiscovery(of: ref.context), note: markedUndone(facts.verb, on: ref))
         actions?.confirmWrite(confirmation) { [weak self] answer in
             guard let self else { return }
             guard confirmation.accepts(answer.typed) else {

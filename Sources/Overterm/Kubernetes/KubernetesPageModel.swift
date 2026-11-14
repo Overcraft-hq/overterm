@@ -326,11 +326,24 @@ final class KubernetesPageModel: ObservableObject {
     /// The GitOps section's reading and its summaries: this window's.
     let gitOps = KubeGitOpsSession()
     /// How the GitOps section is looked at: selection, order, chip, filters.
-    @Published var gitOpsView = KubeGitOpsViewState()
-    /// An app read from marks whose placeholder detail shows beside the
-    /// GitOps section (gitops.md 14.2.3): set by `openMarkedApp` and
-    /// `closeMarkedApp` alone.
+    /// Another row picked (a click, the arrows): the keyboard leaves an
+    /// app's tree for the rows.
+    @Published var gitOpsView = KubeGitOpsViewState() {
+        didSet { if gitOpsView.selection != oldValue.selection, markedNode != nil { markedNode = nil } }
+    }
+    /// An app read from marks whose detail shows beside the GitOps section
+    /// (gitops.md 14.2.3): set by `openMarkedApp` and `closeMarkedApp` alone.
     @Published var markedDetail: KubeMarkedDetailRef?
+    /// The node of that detail's tree the keyboard is on (14.2.3, ↩ on a
+    /// node; `markedTreePress`): nil, the section's rows have the arrows.
+    @Published var markedNode: String?
+    /// What that detail reads of its app (M4): only while it shows.
+    let markedRead = KubeMarkedDetailSession()
+    /// An object opened from that detail: `[` comes back to the app's
+    /// detail, and — one of the app's own — its writes say Argo CD may
+    /// undo them.
+    var markedOrigin: KubeMarkedOrigin?
+    private var markedAppsWatch: AnyCancellable?
     private var gitOpsWatch: AnyCancellable?
     /// The section a detail opened from a section's row goes back to (`[`).
     var detailOpenedFrom: KubeSection = .overview
@@ -537,6 +550,13 @@ final class KubernetesPageModel: ObservableObject {
         gitOpsWatch = model.$selectedName.removeDuplicates().dropFirst().map { _ in () }
             .merge(with: model.$scope.removeDuplicates().dropFirst().map { _ in () }, model.$discovery.removeDuplicates().dropFirst().map { _ in () })
             .sink { [weak self] in DispatchQueue.main.async { self?.updateGitOpsReading() } }
+        // An app's detail reads its members again when they change (after the change).
+        markedAppsWatch = gitOps.marked.$apps.dropFirst().map { _ in () }
+            .sink { [weak self] in DispatchQueue.main.async { self?.updateMarkedDetailReading() } }
+        // What the detail reads, the section keeps: it settles nothing twice (gitops.md 14.4.2).
+        markedRead.settled = { [weak self] id, wire, at in self?.gitOps.marked.settled(byDetail: id, wire, at: at) }
+        // The context's marks mode, for an apply's warning there.
+        gitOps.marksModeSaid = { [weak model] context, mode in model?.noteMarksMode(mode, in: context) }
         // The Overview reads the context and namespace shown, as the
         // cluster serves them: again with each (after the change).
         overviewWatch = model.$selectedName.removeDuplicates().dropFirst().map { _ in () }
@@ -886,8 +906,15 @@ final class KubernetesPageModel: ObservableObject {
     func goBack() {
         // Opened from the Overview (metrics.md 3.7): the Overview again.
         if history.backToOverview() {
+            // An object opened from an app's detail (gitops.md 14.2.3): that
+            // detail again — the keyboard on its node, when it opened it.
+            let origin = markedOrigin
             closeDetail()
             showSection(detailOpenedFrom)
+            if detailOpenedFrom == .gitops, let origin, origin.app.context == model.selectedName {
+                openMarkedApp(origin.app)
+                if let node = origin.node { markedNode = node }
+            }
             return
         }
         guard let ref = history.goBack() else { return }
@@ -926,6 +953,7 @@ final class KubernetesPageModel: ObservableObject {
     /// has the keyboard. Back (`[`) shows it again.
     func closeDetail() {
         guard detail != nil else { return }
+        markedOrigin = nil
         sayKeptEdits()
         detail?.cancel()
         detail = nil
@@ -955,6 +983,8 @@ final class KubernetesPageModel: ObservableObject {
         linkProblem = nil
         guard detail?.ref != ref else { return }
         commandProblem = nil
+        // Another object than the one an app's detail opened: its writes say nothing of Argo CD.
+        if let origin = markedOrigin, !Self.sameObject(origin.object, ref) { markedOrigin = nil }
         // Another object: a comparison of the one before is ended.
         if let status = compareStatus, status.ref != ref { endCompare() }
         sayKeptEdits()

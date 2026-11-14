@@ -6728,11 +6728,9 @@ namespace, under no owner, and by installation — offered only while
 several mark objects here. `k` copies `argocd app get <name>
 [--app-namespace <ns>]`, against the person's own Argo CD server, never
 `--core` or `--kube-context` (D-2), nor a part starting with `-`. ↩ (and
-`x`) opens `KubeMarkedAppDetailView` in the detail's slot (`markedDetail`,
-Esc closes it): a placeholder until D4 — its state, why it is read from
-marks, each member and hook as read, and why Sync, Refresh, Rollback and
-Diff aren't here, reading nothing of its own; gone once the section's rows
-no longer hold it (`markedDetailApp`: its Application read here now). `KubeMarkedSectionTests` (pure:
+`x`) opens its detail in the detail's slot (`markedDetail`, Esc closes it;
+below); gone once the section's rows no longer hold it (`markedDetailApp`:
+its Application read here now). `KubeMarkedSectionTests` (pure:
 14.2.1's table row by row), `KubeGitOpsMarksPageTests` (on a spoke: `g`,
 `:flux` refused, the row by marks, no write or ask from any key on a
 writable context or on production, `k`, the menu, ↩ and Esc; R2 cut at 500
@@ -6741,6 +6739,81 @@ detail gone when its Application comes) and `kubernetesGitOpsMarks`
 (three fakes: a spoke with Argo Rollouts served, a hub that is also a
 destination, Applications refused; the chips the fixture's own counts,
 every part's reads checked) check it.
+
+**Its detail** (gitops.md 14.2.3, D4). `KubeMarkedAppDetail` (pure)
+makes a marked app's detail from the section's ranked app and what the
+detail read (`Read`), its members settled by Argo CD's rule from those
+objects (or the section's newer reads): the header — its state, the
+mode's line with the limits' hover, Copy as argocd, Copy Name, Copy Names
+(each object, a line), and why Sync, Refresh, Rollback and Diff aren't
+here, in the mode's words —; its installation, Application and
+namespaces; "What Argo CD knows and this cluster doesn't", six fixed rows
+(sync status, repository and path, revisions, sync policy, last sync,
+project) saying where the Application is in the mode's words, never
+filled; the tree (`Node`), each member with Argo CD's word — an
+`ignore-healthcheck` one grey, not counted; a Rollout "promote and abort
+are Argo Rollouts' — not here", its Deployment "scaled by its Rollout" —
+and under it by its owner references (`Child`, `Owner`) a Deployment's or
+a Rollout's newest ReplicaSet and any still asking for pods (the rest
+folded), each with its pods (50 drawn, the rest counted), a StatefulSet's,
+DaemonSet's or Job's pods, a CronJob's 5 newest Jobs; pods with their own
+health (`KubeMarkedHealth.pod`, gitops-engine's rule from the Status,
+Ready and Restarts cells: `Err*`, `*Error`, `*BackOff` Degraded, an init
+container's not) and never counted; a ReplicaSet's from its cells
+(`replicaSet`); a copy of a member's mark — the ReplicaSet's, an HPA's
+the section keeps on its app (`KubeMarkedApp.copies`) — under what it
+names, never a member; its hooks apart; the hints its marks carry
+(sync-wave, sync-options, compare-options, links as text, never opened —
+D-3); its images and the commit an image's tag names, the manifests'
+revision the Application's; what wasn't read. `KubeMarkedDetailSession`
+(M4, the page's `markedRead`) reads only while the detail shows: a GET of
+each member whose rule reads its object (workloads, CronJobs, HPAs — a
+Service's, an Ingress's and a claim's cells say theirs), at most 50, 4 in
+flight, 4 MB each, decoded off the main thread by `KubeMarkedWorkloadWire`
+(which keeps `spec.selector` now, bounded — 1 KB in all — and never cut,
+used only where every key and value is a label's) — one the section
+settled in the last 15 s stands, and each read is told back to the
+section (`KubeMarkedAppsSession.settled(byDetail:)`), which keeps it as
+its own settle's and forgets the GET it had waiting —; then each
+workload's ReplicaSets and pods (up to 200) by its own selector in its
+own namespace, a CronJob's namespace's Jobs, as Table rows with their
+metadata, a Table or nothing (`tableOnlyAccept`), 8 MB each, decoded off
+the main thread to the allow-list (name, cells' health, controller, a
+copied tracking id), each object once however many overlapping selectors
+found it (`KubeMarkedAppDetail.unique`). No watch and no timer: read once
+as it shows, again when its members change, shown again past 30 s, or
+Read again (↻ or ⌘R: this cluster's objects, never Argo CD's Refresh).
+A node opens its object in its own list (`openMarkedNode`) — its name
+pressed, or ↩ on it: Tab takes the keyboard from the section's rows into
+the tree (the page's `markedNode`, drawn picked), ↑ ↓ walk it as drawn
+(`walk`, `step`), Tab, another row or Esc give it back —; its menu only
+Open, Copy as kubectl and Copy Name (`markedNodeVerbs`). The object
+opened records `markedOrigin`: `[` comes back to the app's detail (on the
+node the keyboard opened), and on one of the app's own objects
+(`Node.mayBeUndone`: a member, or an `ignore-healthcheck` one — never a
+pod, a ReplicaSet, a CronJob's Job, a hook or a copied mark, which Argo
+CD doesn't set back) its delete, restart, scale, pause, resume, suspend
+or unsuspend confirmation adds "Argo CD may undo this: whether selfHeal
+is on is in the Application, in another cluster" in the mode's words
+(`KubeWriteConfirmation.make(note:)`, `undone`) — said, never a guard;
+the same object from its own list says nothing of it. An apply on a live
+object Argo CD tracks (its own tracking id, or its instance label alone)
+where its Applications aren't read says that sentence in place of "your
+change will be reverted" (`KubeFieldOwners.warnings(argoMarks:)`,
+`KubeMarkedAppDetail.applyWarning`), why from `KubeManifestRun.
+marksReason`: discovery's (not served, argoproj.io not answering); served,
+the section's word of that cluster and user (`KubernetesModel.
+marksReason(of:)`, told by `KubeGitOpsSession.marksModeSaid`) when it is
+none listed or refused; else one row of Applications asked across the
+cluster (`applicationsHere`, a Table, no object, only counted: none,
+refused or no answer say "may"). `KubeMarkedAppDetailTests` (pure, the
+sentinel, overlapping selectors, and M4 against the fake),
+`KubeGitOpsMarksPageTests` (↩'s tree, a node opening its object by the
+keyboard, `r` saying "may undo" on a member and nothing on a pod, a
+ReplicaSet, a Job, a hook or a copy, `[` back, the section keeping what
+the detail read), `KubeApplySessionTests` and the `kubernetesGitOpsMarks`
+scenario's parts 2 and 4 (each detail read checked against the fake's
+log) check it.
 
 **The GitOps section** (`g`; gitops.md 2–3, G2): Argo CD's and Flux's
 objects that live in or deploy into the scope on one screen, between Helm
