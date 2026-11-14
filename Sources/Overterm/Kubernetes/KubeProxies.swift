@@ -15,6 +15,10 @@ import NIOHTTP1
 ///   on 127.0.0.1:8000, then 18000; a third at once fails to bind. A
 ///   context whose user signs in with it waits for its first answer until
 ///   no other such sign-in is running ("Waiting for the browser sign-in").
+///   One that hasn't answered after `signInPatience` — an expired session
+///   whose plugin waits minutes for a browser nobody saw — says what to
+///   do instead of waiting on ("Sign-in needed — run `kubectl --context X
+///   get ns` once in a terminal"), never "unreachable".
 /// - **A credential failure stops the context** (`KubeProxyProblem`): no
 ///   retries — each would run the plugin again — until `retry`.
 /// - **A metrics proxy** (stage 4, `sendPrometheus`): a context's second
@@ -68,6 +72,9 @@ actor KubeProxies {
         case open
         /// Its first request waits for the browser.
         case signingIn
+        /// Its first request has waited for the browser past
+        /// `signInPatience`: the plugin waits for a sign-in nobody saw.
+        case signInNeeded(context: String)
         /// Behind another context's browser sign-in.
         case waitingForSignIn(behind: String)
         /// Its requests stopped until `retry`.
@@ -77,11 +84,20 @@ actor KubeProxies {
             switch self {
             case .closed, .open: nil
             case .signingIn: "Waiting for the browser sign-in"
+            case .signInNeeded(let context): "Sign-in needed — run `\(KubeProxies.signInCommand(context))` once in a terminal"
             case .waitingForSignIn(let other): "Waiting for \(other)'s sign-in in the browser to finish"
             case .stopped(let problem): problem.reason
             }
         }
     }
+
+    /// What signs a context in at a terminal: kubelogin opens the browser
+    /// there and keeps the token for the proxy's next request.
+    static func signInCommand(_ context: String) -> String { "kubectl --context \(KubeProxyProblem.shellQuoted(context)) get ns" }
+
+    /// How long a first request waits for the browser before the page
+    /// says the sign-in is needed.
+    static let signInPatience: TimeInterval = 8
 
     typealias Plan = @Sendable (KubeContext, Configuration, Int?) async throws -> KubeProxySpec
     typealias Open = @Sendable (KubeProxySpec) async throws -> KubeProxy
@@ -125,6 +141,9 @@ actor KubeProxies {
     private var stopped: [String: KubeProxyProblem] = [:]
     private var serverMinors: [String: Int] = [:]
     private var signingIn: String?
+    /// When the sign-in running now started.
+    private var signingInSince: Date?
+    private let signInPatience: TimeInterval
     private var signedIn: Set<String> = []
     private var waiting: [String: Int] = [:]
     private var waiters: [CheckedContinuation<Void, Never>] = []
@@ -138,9 +157,10 @@ actor KubeProxies {
 
     init(
         configuration: Configuration = Configuration(), now: @escaping @Sendable () -> Date = { Date() }, sweepEvery: Duration = .seconds(60),
-        plan: Plan? = nil, open: @escaping Open = { try await KubeProxy.open($0) }
+        plan: Plan? = nil, open: @escaping Open = { try await KubeProxy.open($0) }, signInPatience: TimeInterval = KubeProxies.signInPatience
     ) {
         self.configuration = configuration
+        self.signInPatience = signInPatience
         self.now = now
         self.sweepEvery = sweepEvery
         let planner = KubeProxyPlanner()
@@ -515,6 +535,7 @@ actor KubeProxies {
             guard interactive else { throw KubeProxyProblem.needsPageSignIn }
             if signingIn == nil {
                 signingIn = name
+                signingInSince = now()
                 return true
             }
             waiting[name, default: 0] += 1
@@ -529,6 +550,7 @@ actor KubeProxies {
         guard signingIn == name else { return }
         if ok { signedIn.insert(name) }
         signingIn = nil
+        signingInSince = nil
         let waiting = waiters
         waiters = []
         waiting.forEach { $0.resume() }
@@ -634,7 +656,10 @@ actor KubeProxies {
 
     func status(of name: String) async -> Status {
         if let problem = stopped[name] { return .stopped(problem) }
-        if signingIn == name { return .signingIn }
+        if signingIn == name {
+            if let since = signingInSince, now().timeIntervalSince(since) >= signInPatience { return .signInNeeded(context: name) }
+            return .signingIn
+        }
         if waiting[name] != nil, let other = signingIn { return .waitingForSignIn(behind: other) }
         if let spec = entries[name]?.spec, await pool.existing(spec)?.isOpen == true { return .open }
         return .closed

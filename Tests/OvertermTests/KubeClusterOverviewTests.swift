@@ -190,6 +190,27 @@ final class KubeClusterOverviewTests: XCTestCase {
         try await until(5, "hidden") { self.api.openWatches <= before && session.state == .idle }
     }
 
+    /// A workload's row carrying Argo CD's mark tells the context's GitOps
+    /// section there are marks to read (gitops.md 14.2.1): a key looked up
+    /// on the rows the Overview reads anyway — no request of its own.
+    func testAMarkOnAWorkloadsRowIsSeenWithNoRequestOfItsOwn() async throws {
+        let model = model()
+        let page = KubernetesPageModel(model: model)
+        page.visible = true
+        model.show()
+        defer { model.hide() }
+        try await until(5, "discovery") { model.discovery != nil }
+        XCTAssertTrue(page.press("1"))
+        try await until(5, "live") { page.clusterOverview.state == .live }
+        XCTAssertEqual(model.marksSeen, [], "no mark on the shop's rows")
+        let paths = Set(api.requests.map(\.path))
+        api.add(
+            "deployments.apps", "acme-pay", namespace: "shop", values: ["Ready": "1/1", "Up-to-date": 1, "Available": 1],
+            annotations: ["argocd.argoproj.io/tracking-id": "prod-shop-acme-pay-service:apps/Deployment:shop/acme-pay"])
+        try await until(5, "seen") { model.marksSeen == ["fake-dev"] }
+        XCTAssertTrue(Set(api.requests.map(\.path)).isSubset(of: paths), "nothing more asked for it")
+    }
+
     func testAPartRefusedIsSaidAndTheRestStands() async throws {
         api.forbidden = ["events"]
         let model = model()

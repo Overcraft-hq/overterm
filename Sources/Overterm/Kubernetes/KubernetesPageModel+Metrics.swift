@@ -238,6 +238,7 @@ extension KubernetesPageModel {
             return
         }
         if detail != nil, section == .overview { closeDetail() }
+        clusterOverview.sawMarks = { [weak model] context in model?.sawMarks(in: context) }
         clusterOverview.show(context: context, scope: model.scope, discovery: model.discovery, client: model.client(for: context))
         health.show(context: context, scope: model.scope, discovery: model.discovery, client: model.client(for: context))
         showPinnedHealth()

@@ -54,30 +54,84 @@ struct KubeGitOpsBudget: Sendable {
     }
 }
 
+/// One page of a list as its reader decoded it: what it kept, where the
+/// next page starts, how many are left, and a Table's columns.
+struct KubePage<Item: Sendable>: Sendable {
+    var items: [Item]
+    var next: String?
+    var remaining: Int?
+    var columns: [KubeColumn]? = nil
+}
+
+/// A paged, byte-bounded read of one kind, whatever its reader keeps
+/// (`KubeClient.pagedList`): R2's summaries, the marks' rows and objects
+/// (gitops.md 14.4.1). Why it stopped short is the caller's to say.
+struct KubePagedList<Item: Sendable>: Sendable {
+    enum Stop: Equatable, Sendable {
+        /// One object alone was past a page's bytes.
+        case tooLarge
+        /// `stopAfter` or `totalBytes` reached; how many there were in all, when the server said.
+        case bound(total: Int?)
+    }
+
+    var items: [Item] = []
+    var columns: [KubeColumn]?
+    var bytes = 0
+    var pages = 0
+    var stopped: Stop?
+}
+
 extension KubeClient {
     func pagedObjects(
         _ kind: KubeResourceKind, in namespace: String?, pageLimit: Int = KubeGitOpsSession.pageLimit, maxBytes: Int = KubeGitOpsSession.pageBytes,
         stopAfter: Int = KubeGitOpsSession.kindObjects, totalBytes: Int = KubeGitOpsSession.kindBytes, readAt: Date = Date()
     ) async throws -> KubeGitOpsPaged {
         let title = KubeKindCatalog.title(of: kind)
+        let list = try await pagedList(kind, in: namespace, pageLimit: pageLimit, maxBytes: maxBytes, stopAfter: stopAfter, totalBytes: totalBytes) { data in
+            let page = try KubeGitOpsSummary.page(data, kind: kind, readAt: readAt)
+            return KubePage(items: page.objects, next: page.next, remaining: page.remaining)
+        }
+        var paged = KubeGitOpsPaged(objects: list.items, bytes: list.bytes, pages: list.pages)
+        switch list.stopped {
+        case .tooLarge: paged.cut = "stopped at an object over \(maxBytes >> 20) MB; \(list.items.count) summarised"
+        case .bound(let total):
+            let of = total.map { "\(list.items.count) of \($0.formatted())" } ?? "\(list.items.count) of more"
+            paged.cut = "\(of) \(title) summarised; the rest show their state only"
+        case nil: break
+        }
+        return paged
+    }
+
+    /// One kind read page by page, each page decoded off the main thread by
+    /// `decode` and its bytes dropped at once: `pageLimit` a page, each at
+    /// most `maxBytes` — past it the limit is halved and the same
+    /// `continue` asked again, down to one; one object alone past it stops
+    /// the kind there (`.tooLarge`). An expired `continue` (410) lists again
+    /// from the start. At most `stopAfter` items or `totalBytes` read
+    /// (`.bound`); never a page past what is left. `query`: what else the
+    /// path asks (a Table's `includeObject`).
+    func pagedList<Item: Sendable>(
+        _ kind: KubeResourceKind, in namespace: String?, accept: String = "application/json", query: [(String, String?)] = [], pageLimit: Int,
+        maxBytes: Int, stopAfter: Int, totalBytes: Int, decode: @escaping @Sendable (Data) throws -> KubePage<Item>
+    ) async throws -> KubePagedList<Item> {
         var restarts = 0
         restart: while true {
-            var paged = KubeGitOpsPaged()
+            var paged = KubePagedList<Item>()
             var token: String?
             var limit = max(1, pageLimit)
             // `while true`: a halved page asks the same `continue` again.
             while true {
                 try Task.checkCancellation()
                 // Never more than is left of `stopAfter`: a page past it is not asked.
-                limit = max(1, min(limit, stopAfter - paged.objects.count))
-                let path = KubePath.query(kind.path(namespace: namespace), [("limit", String(limit)), ("continue", token)])
+                limit = max(1, min(limit, stopAfter - paged.items.count))
+                let path = KubePath.query(kind.path(namespace: namespace), [("limit", String(limit)), ("continue", token)] + query)
                 paged.pages += 1
                 let data: Data
                 do {
-                    data = try await get(path, maxBytes: maxBytes)
+                    data = try await get(path, accept: accept, maxBytes: maxBytes)
                 } catch is KubeBodyTooLarge {
                     guard limit > 1 else {
-                        paged.cut = "stopped at an object over \(maxBytes >> 20) MB; \(paged.objects.count) summarised"
+                        paged.stopped = .tooLarge
                         return paged
                     }
                     limit = max(1, limit / 2)
@@ -87,14 +141,13 @@ extension KubeClient {
                     continue restart
                 }
                 paged.bytes += data.count
-                let decoded = await KubeBlocking.run { Result { try KubeGitOpsSummary.page(data, kind: kind, readAt: readAt) } }
+                let decoded = await KubeBlocking.run { Result { try decode(data) } }
                 let page = try decoded.get()
-                paged.objects += page.objects
+                paged.items += page.items
+                if paged.columns == nil { paged.columns = page.columns }
                 token = page.next
-                if token != nil, paged.objects.count >= stopAfter || paged.bytes >= totalBytes {
-                    let total = page.remaining.map { paged.objects.count + $0 }
-                    let of = total.map { "\(paged.objects.count) of \($0.formatted())" } ?? "\(paged.objects.count) of more"
-                    paged.cut = "\(of) \(title) summarised; the rest show their state only"
+                if token != nil, paged.items.count >= stopAfter || paged.bytes >= totalBytes {
+                    paged.stopped = .bound(total: page.remaining.map { paged.items.count + $0 })
                     return paged
                 }
                 if token == nil { return paged }
@@ -172,10 +225,24 @@ final class KubeGitOpsSession: ObservableObject {
     /// Objects whose GET was refused or too large: said once each.
     @Published private(set) var unreadable: Set<KubeGitOpsObject.Key> = []
 
+    /// The apps read from Argo CD's marks where no Application here
+    /// deploys them (gitops.md 14): started here, from discovery and what
+    /// R1's Applications row follow said.
+    let marked = KubeMarkedAppsSession()
+    /// When the section derives Argo CD's apps from marks, and which (14.3).
+    @Published private(set) var marksMode: KubeMarkedAppsMode = .off
+
     private(set) var context: String?
     private(set) var scope: KubeScope = .all
     private var client: KubeClient?
+    private var discovery: KubeDiscovery?
     private var served: [KubeResourceKind] = []
+    /// Applications refused everywhere R1 looked for them.
+    private var applicationsRefused = false
+    /// Of the namespaces Applications were followed in, those that refused.
+    private var applicationsUnlisted: Set<String> = []
+    /// A refused kind's follow: the namespaces it watches.
+    private var fallbackWatched: [String: [String]] = [:]
     private var accessible: [String] = []
     private(set) var store: Store?
 
@@ -224,11 +291,13 @@ final class KubeGitOpsSession: ObservableObject {
         if let store, store.context != context { drop() }
         let same = self.context == context && served.map(\.fullName) == kinds.map(\.fullName) && state != .idle && self.accessible == accessible
         if same {
+            self.discovery = discovery
             scopeChanged(scope)
             return
         }
         hide()
         guard let client else { return }
+        self.discovery = discovery
         self.context = context
         self.scope = scope
         self.client = client
@@ -252,6 +321,8 @@ final class KubeGitOpsSession: ObservableObject {
         startControllers(client: client)
         startTick()
         publish()
+        marked.changed = { [weak self] in self?.updateMarksMode() }
+        updateMarks()
     }
 
     /// Another scope: filtered again — read again only for a kind refused
@@ -259,6 +330,7 @@ final class KubeGitOpsSession: ObservableObject {
     func scopeChanged(_ scope: KubeScope) {
         guard scope != self.scope else { return }
         self.scope = scope
+        defer { updateMarks() }
         guard state != .idle, let client, var store else { return publish() }
         var again: [KubeResourceKind] = []
         for (name, namespaces) in store.fallback.sorted(by: { $0.key < $1.key }) {
@@ -291,12 +363,20 @@ final class KubeGitOpsSession: ObservableObject {
         unreadable = []
         refetch.forget()
         summarise(served, client: client)
+        marked.refresh()
         publish()
     }
 
     /// The section left: every follow ends, every GET is cancelled; the summaries stay.
     func hide() {
         generation += 1
+        marked.changed = nil
+        marked.hide()
+        discovery = nil
+        applicationsRefused = false
+        applicationsUnlisted = []
+        fallbackWatched = [:]
+        if marksMode != .off { marksMode = .off }
         for task in follows.values { task.cancel() }
         follows = [:]
         for task in gets.values { task.cancel() }
@@ -339,6 +419,7 @@ final class KubeGitOpsSession: ObservableObject {
     /// The page hidden, another context, a credential failure: the summaries go too.
     func drop() {
         hide()
+        marked.drop()
         store = nil
         if !objects.isEmpty { objects = [] }
         summarisedAt = nil
@@ -522,7 +603,11 @@ final class KubeGitOpsSession: ObservableObject {
             let left = namespaces.dropFirst(allowed)
             let title = KubeKindCatalog.title(of: kind)
             followNotes[name] = left.isEmpty ? nil : "\(title) in \(Self.joined(Array(left))): not watched; Refresh reads them"
-            guard !watched.isEmpty else { return }
+            fallbackWatched[name] = watched
+            guard !watched.isEmpty else {
+                if name == Self.applications { applicationsRefused = true }
+                return
+            }
             spareUsed += watched.count
             spareByKind[name, default: 0] += watched.count
             scope = .of(watched)
@@ -543,7 +628,11 @@ final class KubeGitOpsSession: ObservableObject {
                 guard let self, self.generation == generation else { return }
                 self.endFollow(name)
                 self.followNotes[name] = "\(KubeKindCatalog.title(of: kind)): not followed — \(KubernetesModel.said(error))"
-                if error is KubeProxyProblem { self.drop() }
+                if error is KubeProxyProblem { return self.drop() }
+                if name == Self.applications, (error as? KubeAPIError)?.isForbidden == true {
+                    self.applicationsRefused = true
+                    self.updateMarks()
+                }
                 self.scheduleFlush(now: true)
             }
         }
@@ -562,6 +651,10 @@ final class KubeGitOpsSession: ObservableObject {
         case .retrying: return
         case .unlisted(let namespace, _):
             followNotes[name] = "\(KubeKindCatalog.title(of: kind)) in \(namespace): forbidden"
+            if name == Self.applications {
+                applicationsUnlisted.insert(namespace)
+                updateMarks()
+            }
             return
         case .listed, .changed, .bookmark: break
         }
@@ -575,7 +668,10 @@ final class KubeGitOpsSession: ObservableObject {
             // Compared with the summaries: a moved cell is read again; an
             // unread baseline is taken from the row.
             for row in rows.sorted { note(row, kind: kind, columns: rows.columns, added: false, listing: true) }
-            if name == "applications.argoproj.io" { followArgoControllers(rows) }
+            if name == Self.applications {
+                followArgoControllers(rows)
+                updateMarks()
+            }
         case .changed(let changes, _):
             for change in changes {
                 switch change {
@@ -658,6 +754,69 @@ final class KubeGitOpsSession: ObservableObject {
     nonisolated static let statefulSets = KubeResourceKind(
         group: "apps", version: "v1", resource: "statefulsets", kind: "StatefulSet", singular: "statefulset", namespaced: true,
         verbs: ["get", "list", "watch"])
+
+    // MARK: Apps from marks
+
+    nonisolated static let applications = "applications.argoproj.io"
+
+    /// What R1's Applications row follow said (14.3): never R2's summaries.
+    var applicationsRead: KubeMarkedAppsMode.ApplicationsRead {
+        let name = Self.applications
+        if applicationsRefused { return .refused }
+        guard listed.contains(name) else { return .notYetListed }
+        let rows = live[name]?.sorted.map(\.id) ?? []
+        if let watched = fallbackWatched[name] {
+            let read = Set(watched).subtracting(applicationsUnlisted)
+            return read.isEmpty ? .refused : .namespaces(read, rows)
+        }
+        return .acrossCluster(rows)
+    }
+
+    /// The watches the section's own follows take (gitops.md 7): its kinds,
+    /// its controllers, and two spare for a refused kind's namespaces — none
+    /// of them when nothing GitOps is served (a spoke's ten are the marks').
+    private var watchesTaken: Int {
+        let kinds = served.filter { KubeGitOpsSummary.followed.contains(.init(group: $0.group, resource: $0.resource)) && KubeKindCatalog.isOffered($0) }.count
+        let tools = KubeGitOpsSummary.tools(KubeDiscovery(kinds: served))
+        let controllers = (tools.argo > 0 ? 2 : 0) + (tools.flux > 0 ? 1 : 0)
+        return kinds + controllers + (kinds > 0 ? Self.spareWatches : 0)
+    }
+
+    /// The marks read, and how (14.3, 14.4.5): followed where Argo CD's
+    /// Applications aren't served, are refused, or are listed whole with
+    /// none; beside Applications that are read, listed every 5 min with no
+    /// watch (decision D-1); not before R1's first list has come.
+    private func updateMarks() {
+        guard state != .idle, let context, let client else { return }
+        let served = discovery?.kinds.contains { "\($0.resource).\($0.group)" == Self.applications } ?? false
+        let read = applicationsRead
+        let free = max(0, KubeScope.watchCap - watchesTaken)
+        if !served {
+            marked.show(context: context, scope: scope, discovery: discovery, client: client, accessible: accessible, reads: .follow, watches: free)
+        } else {
+            switch read {
+            case .notYetListed:
+                marked.hide()
+            case .refused, .acrossCluster([]):
+                marked.show(context: context, scope: scope, discovery: discovery, client: client, accessible: accessible, reads: .follow, watches: free)
+            case .acrossCluster, .namespaces:
+                marked.show(context: context, scope: scope, discovery: discovery, client: client, accessible: accessible, reads: .periodic, watches: 0)
+            }
+        }
+        updateMarksMode()
+    }
+
+    /// The mode again, from what the marks' reads have found.
+    private func updateMarksMode() {
+        guard state != .idle else { return }
+        let mode = KubeMarkedAppsMode.of(discovery: discovery, applications: applicationsRead, marked: Set(marked.apps.map(\.app.key)))
+        if mode != marksMode { marksMode = mode }
+        if case .beside(let coexistence) = mode {
+            marked.settling = coexistence.listed
+        } else {
+            marked.settling = nil
+        }
+    }
 
     // MARK: R3: one object again
 

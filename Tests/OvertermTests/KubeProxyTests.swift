@@ -471,6 +471,66 @@ final class KubeProxyTests: XCTestCase {
     // MARK: Helpers
 
     @discardableResult
+    /// The spoke's expired sign-in (gitops.md 14.12): a stand-in
+    /// `kubectl-oidc_login` that sleeps, as kubelogin waits for a browser,
+    /// behind the real kubectl proxy against a server of the test's own —
+    /// after a short wait the context says to sign in at a terminal, not
+    /// that it is unreachable; the server is never reached. Over https
+    /// (never checked): client-go runs no plugin for a plain http server.
+    /// Skipped without kubectl.
+    func testAPluginWaitingForABrowserSaysSignInNeeded() async throws {
+        let kubectl = URL(fileURLWithPath: "/usr/local/bin/kubectl")
+        try XCTSkipUnless(FileManager.default.isExecutableFile(atPath: kubectl.path), "no kubectl")
+        let server = RecordingServer()
+        let port = try server.start()
+        defer { server.stop() }
+        let plugin = dir.appendingPathComponent("kubectl-oidc_login")
+        try "#!/bin/sh\nexec /bin/sleep 120\n".write(to: plugin, atomically: true, encoding: .utf8)
+        chmod(plugin.path, 0o755)
+        let kubeconfig = try write(
+            """
+            apiVersion: v1
+            kind: Config
+            clusters:
+            - name: fake
+              cluster: {server: "https://127.0.0.1:\(port)", insecure-skip-tls-verify: true}
+            users:
+            - name: oidc
+              user:
+                exec:
+                  apiVersion: client.authentication.k8s.io/v1beta1
+                  command: \(plugin.path)
+                  args: [get-token, --oidc-issuer-url=https://login.acme.example]
+                  interactiveMode: Never
+            contexts:
+            - name: fake-prod
+              context: {cluster: fake, user: oidc}
+            current-context: fake-prod
+            """, to: "oidc.kubeconfig")
+        var planner = planner(kubeconfigs: [kubeconfig], kubectl: kubectl)
+        planner.folder = KubeSocketFolder(base: base)
+        let real = planner
+        let proxies = KubeProxies(
+            configuration: KubeProxies.Configuration(kubectlPath: kubectl.path), plan: { try await real.plan($0, configuration: $1, serverMinor: $2) },
+            signInPatience: 1)
+        defer { proxies.closeAll() }
+        let context = Self.context(
+            "fake-prod", server: "https://127.0.0.1:\(port)", auth: .exec(KubeExec(command: plugin.path, arguments: ["get-token"], interactiveMode: "Never")))
+        XCTAssertEqual(KubeSignIn(context.auth), .oidc)
+        let request = Task { try await proxies.send(context, .GET, "/api/v1/namespaces") }
+        defer { request.cancel() }
+        var status = await proxies.status(of: context.name)
+        let deadline = Date().addingTimeInterval(30)
+        while Date() < deadline {
+            status = await proxies.status(of: context.name)
+            if case .signInNeeded = status { break }
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        XCTAssertEqual(status, .signInNeeded(context: "fake-prod"))
+        XCTAssertEqual(status.reason, "Sign-in needed — run `kubectl --context fake-prod get ns` once in a terminal")
+        XCTAssertEqual(server.requests, [], "the plugin never answered: nothing reached the server")
+    }
+
     private func write(_ text: String, to name: String) throws -> URL {
         let url = dir.appendingPathComponent(name)
         try text.write(to: url, atomically: true, encoding: .utf8)

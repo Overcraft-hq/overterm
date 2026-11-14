@@ -131,6 +131,17 @@ final class KubernetesModel: ObservableObject {
     @Published private(set) var anchors: [KubeRowID: KubeAge.Anchor] = [:]
     @Published private(set) var listState: ListState = .idle
     @Published private(set) var proxyStatus: KubeProxies.Status = .closed
+    /// The contexts whose workloads' rows have shown one of Argo CD's
+    /// marks this run (`KubeRow.argoMarked`: the Overview's workloads, a
+    /// Deployments, StatefulSets or DaemonSets list with metadata): their
+    /// GitOps section has apps to read from marks even where Argo CD isn't
+    /// served (gitops.md 14.2.1). In memory only; no request of its own.
+    @Published private(set) var marksSeen: Set<String> = []
+
+    /// A context's rows showed a mark.
+    func sawMarks(in context: String) {
+        if !marksSeen.contains(context) { marksSeen.insert(context) }
+    }
     @Published private(set) var version: KubeServerVersion?
 
     var selected: KubeContext? { selectedName.flatMap(contexts.context(named:)) }
@@ -912,6 +923,11 @@ final class KubernetesModel: ObservableObject {
             case .bookmark, .retrying, .unlisted: break
             }
         }
+        if let name = selectedName, !marksSeen.contains(name), Self.marksKinds.contains(kind.fullName),
+            pending.contains(where: KubeClusterOverviewSession.marked)
+        {
+            sawMarks(in: name)
+        }
         pending = []
         self.rows = rows
         self.anchors = anchors
@@ -919,6 +935,9 @@ final class KubernetesModel: ObservableObject {
         let state = followRetrying.map(ListState.retrying) ?? .live
         if listState != state { listState = state }
     }
+
+    /// The lists whose rows tell `marksSeen`.
+    nonisolated static let marksKinds: Set<String> = ["deployments.apps", "statefulsets.apps", "daemonsets.apps"]
 
     // MARK: What the cluster serves
 

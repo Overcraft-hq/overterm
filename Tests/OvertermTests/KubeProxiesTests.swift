@@ -443,6 +443,33 @@ final class KubeProxiesTests: XCTestCase {
         _ = try await three.value
     }
 
+    /// An expired session's plugin waits minutes for a browser nobody saw
+    /// (the spoke's `oidc-login`, gitops.md 14.12): a stand-in plugin that
+    /// never answers, and after a short wait the page says what to run —
+    /// never "unreachable", never a wait for minutes.
+    func testASignInThatWaitsSaysToSignInAtATerminal() async throws {
+        let proxies = proxies()
+        let spoke = Self.context("globex-eu-west-1-prod", auth: Self.oidc)
+        answers.hold(spoke.name)
+        let waiting = Task { try await proxies.send(spoke, .GET, "/api") }
+        try await until { self.answers.isHeld(spoke.name) }
+        var status = await proxies.status(of: spoke.name)
+        XCTAssertEqual(status, .signingIn, "at first, the browser's")
+        clock.advance(KubeProxies.signInPatience - 1)
+        status = await proxies.status(of: spoke.name)
+        XCTAssertEqual(status, .signingIn)
+        clock.advance(1)
+        status = await proxies.status(of: spoke.name)
+        XCTAssertEqual(status, .signInNeeded(context: spoke.name))
+        XCTAssertEqual(status.reason, "Sign-in needed — run `kubectl --context globex-eu-west-1-prod get ns` once in a terminal")
+        // Signed in at last: the page's next look is open.
+        answers.release(spoke.name)
+        _ = try await waiting.value
+        status = await proxies.status(of: spoke.name)
+        XCTAssertEqual(status, .open)
+        XCTAssertEqual(KubeProxies.signInCommand("acme prod"), "kubectl --context 'acme prod' get ns", "quoted for zsh")
+    }
+
     func testANobodyFinishedSignInSaysSoAndStops() async throws {
         let proxies = proxies()
         let first = Self.context("globex-eu-west-1-dev", auth: Self.oidc)

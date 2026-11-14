@@ -690,7 +690,7 @@ struct KubernetesPageView: View {
     private var proxyColor: Color {
         switch model.proxyStatus {
         case .open: TabStatusStyle.done
-        case .signingIn, .waitingForSignIn: TabStatusStyle.waiting
+        case .signingIn, .waitingForSignIn, .signInNeeded: TabStatusStyle.waiting
         case .stopped: TabStatusStyle.failed
         case .closed: theme.text3
         }
@@ -712,6 +712,10 @@ struct KubernetesPageView: View {
             DockerStatusDot(color: proxyColor)
             Text(verbatim: proxyText).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text2).lineLimit(1).truncationMode(.tail)
             Spacer(minLength: 8)
+            if case .signInNeeded(let context) = model.proxyStatus {
+                let command = KubeProxies.signInCommand(context)
+                Button("Run \(command)") { page.actions?.run(command) }.font(.system(size: ChromeMetrics.text(11)))
+            }
             if case .stopped(let problem) = model.proxyStatus {
                 if let command = problem.command {
                     Button("Run \(command)") { page.actions?.run(command) }.font(.system(size: ChromeMetrics.text(11)))

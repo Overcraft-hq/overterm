@@ -48,6 +48,11 @@ final class KubeClusterOverviewSession: ObservableObject {
 
     /// How often what came in is folded into the overview.
     var flushInterval: Duration = .milliseconds(250)
+    /// Told, once a show, when a workload's row carries one of Argo CD's
+    /// marks (`KubeRow.argoMarked`): what tells the context's GitOps
+    /// section that there are marks to read (gitops.md 14.2.1).
+    var sawMarks: ((String) -> Void)?
+    private var marksTold = false
 
     private var follows: [Part: Task<Void, Never>] = [:]
     private var rows: [Part: KubeRows] = [:]
@@ -105,6 +110,7 @@ final class KubeClusterOverviewSession: ObservableObject {
         rows = [:]
         kinds = [:]
         anchors = [:]
+        marksTold = false
         context = nil
         scope = nil
         shown = nil
@@ -163,6 +169,10 @@ final class KubeClusterOverviewSession: ObservableObject {
         var rows = self.rows[part] ?? KubeRows()
         rows.apply(update)
         self.rows[part] = rows
+        if case .workload = part, !marksTold, let context, Self.marked(update) {
+            marksTold = true
+            sawMarks?(context)
+        }
         if part == .warnings {
             let now = Date()
             switch update {
@@ -181,6 +191,21 @@ final class KubeClusterOverviewSession: ObservableObject {
         if problems[part] != nil { problems[part] = nil }
         // The first lists at once (once every part has one); changes in batches.
         scheduleFlush(now: state == .loading && self.rows.count == follows.count)
+    }
+
+    /// Whether an update's rows carry one of Argo CD's marks.
+    nonisolated static func marked(_ update: KubeFollowUpdate) -> Bool {
+        switch update {
+        case .listed(let table): return table.rows.contains(where: \.argoMarked)
+        case .changed(let changes, _):
+            return changes.contains { change in
+                switch change {
+                case .added(let row), .modified(let row): row.argoMarked
+                case .deleted: false
+                }
+            }
+        case .bookmark, .retrying, .unlisted: return false
+        }
     }
 
     /// An event's Last Seen, counted on from when it came.

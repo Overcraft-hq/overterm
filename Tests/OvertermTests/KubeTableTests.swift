@@ -107,6 +107,25 @@ final class KubeTableTests: XCTestCase {
         XCTAssertEqual(roles.rows.first?.owners.map(\.name), ["acme-rbac"])
     }
 
+    /// Whether a row's metadata carries one of Argo CD's own marks is
+    /// looked up, nothing of it kept, on every row with metadata — marks
+    /// asked or not; a Helm instance label isn't one.
+    func testARowSaysWhetherItCarriesArgoCDsMark() throws {
+        func row(_ metadata: [String: Any]?) throws -> KubeRow? {
+            var row: [String: Any] = ["cells": ["api"]]
+            if let metadata { row["object"] = ["kind": "PartialObjectMetadata", "metadata": metadata] }
+            return try KubeTableReader.read(
+                json(["kind": "Table", "columnDefinitions": [["name": "Name", "format": "name"]], "rows": [row]]), namespace: nil
+            ).rows.first
+        }
+        let tracked = try row(["name": "api", "namespace": "shop", "annotations": ["argocd.argoproj.io/tracking-id": "prod-shop-api-service:apps/Deployment:shop/api"]])
+        XCTAssertEqual(tracked?.argoMarked, true)
+        XCTAssertNil(tracked?.marks, "nothing kept: marks weren't asked")
+        XCTAssertEqual(try row(["name": "api", "labels": ["argocd.argoproj.io/instance": "prod-shop-api"]])?.argoMarked, true)
+        XCTAssertEqual(try row(["name": "api", "labels": ["app.kubernetes.io/instance": "api"]])?.argoMarked, false)
+        XCTAssertEqual(try row(nil)?.argoMarked, false)
+    }
+
     func testCellsAreAsTheServerSentThem() {
         XCTAssertEqual(KubeCell(json: "x"), .text("x"))
         XCTAssertEqual(KubeCell(json: NSNumber(value: 3)), .integer(3))

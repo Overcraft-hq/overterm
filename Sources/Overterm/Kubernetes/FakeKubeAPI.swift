@@ -131,6 +131,9 @@ final class FakeKubeAPI: @unchecked Sendable {
         /// server's PartialObjectMetadata does (`setRowOwners`); nil, none —
         /// as before, for the tests whose owners only a GET shows.
         var rowOwners: Data? = nil
+        /// `metadata.generation`, from the body's metadata: its rows carry it
+        /// too, as a server's PartialObjectMetadata does.
+        var generation: Int? = nil
     }
 
     /// A self-signed certificate for a fake TLS Secret's `tls.crt`: public
@@ -786,7 +789,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         change("ADDED") {
             Object(
                 resource: resource, namespace: namespace, name: name, uid: UUID().uuidString.lowercased(), resourceVersion: 0, created: created, labels: labels,
-                values: values, annotations: annotations, data: data, body: body)
+                values: values, annotations: annotations, data: data, body: body, generation: Self.generation(in: fields))
         }
     }
 
@@ -809,6 +812,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         change("MODIFIED") {
             guard var object = objects[key] else { return nil }
             object.body = body
+            object.generation = Self.generation(in: fields)
             return object
         }
     }
@@ -823,6 +827,7 @@ final class FakeKubeAPI: @unchecked Sendable {
             var body = object.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] } ?? [:]
             fields(&body)
             object.body = Self.encode(body)
+            object.generation = Self.generation(in: body)
             object.values.merge(values) { $1 }
             return object
         }
@@ -1798,6 +1803,11 @@ final class FakeKubeAPI: @unchecked Sendable {
                 column("Duration", "Time required to complete the job."), age,
                 column("Containers", priority: 1, "Names of each container in the template."), column("Images", priority: 1, "Images referenced by each container in the template."),
             ]
+        case "ingresses.networking.k8s.io":
+            return [
+                name, column("Class", "The ingress class."), column("Hosts", "The hosts it routes."),
+                column("Address", "The load balancer's addresses."), column("Ports", "The ports it listens on."), age,
+            ]
         case "cronjobs.batch":
             return [
                 name, column("Schedule", "The schedule in Cron format."), column("Timezone", "The time zone the schedule is in."),
@@ -1875,6 +1885,7 @@ final class FakeKubeAPI: @unchecked Sendable {
             "name": object.name, "uid": object.uid, "resourceVersion": String(object.resourceVersion), "creationTimestamp": time(object.created),
         ]
         if let namespace = object.namespace { metadata["namespace"] = namespace }
+        if let generation = object.generation { metadata["generation"] = generation }
         if !object.labels.isEmpty { metadata["labels"] = object.labels }
         if !object.annotations.isEmpty { metadata["annotations"] = object.annotations }
         if managedFields, let own = object.managedFields, let entries = try? JSONSerialization.jsonObject(with: own) {
@@ -1888,6 +1899,11 @@ final class FakeKubeAPI: @unchecked Sendable {
             ]
         }
         return metadata
+    }
+
+    /// `metadata.generation` in an object's fields.
+    static func generation(in fields: [String: Any]) -> Int? {
+        ((fields["metadata"] as? [String: Any])?["generation"] as? NSNumber)?.intValue
     }
 
     /// The object whole, as a plain GET answers it.
