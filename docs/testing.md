@@ -423,6 +423,14 @@ value, a path or an address of a process that isn't the test's.
   kernel. The fake's clock moves only when told — a call made to cost
   time or held (`FakeActivityKernel.onCall`, `CallGate`) — so nothing
   waits on a moment.
+- `ActivityMonitorTests`: one tick for every reader at the fastest
+  cadence, the ticks stopped at the last `unwant` and when a reader goes
+  away, an early tick only for a wider want and once for a burst, one-off
+  censuses coalesced and nil when the table can't be read, agents served
+  from a snapshot at most one interval old (at 1 s too), a tick in flight
+  never doubled, the context rebuilt once for a burst of changes, at its
+  limit for one that never quiets, and by the early tick a tab opened and
+  wanted in the same turn makes; a busy Mac's 5 s.
 
 `ActivityProbeTests` is opt-in, run on each new macOS and on the oldest
 supported one: the structures' sizes, who answers each call and what it

@@ -260,6 +260,7 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     private var clock: UInt64 = 1_000_000_000
     private var counts: [String: Int] = [:]
     private var csops = true
+    private var tableRefused = false
     private var hook: (@Sendable (String) -> Void)?
 
     init(uid: uid_t = 501) { self.uid = uid }
@@ -283,6 +284,9 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
 
     /// Without `csops`, as a system that dropped it.
     func dropCodeSigningCall() { lock.withLock { csops = false } }
+
+    /// `KERN_PROC_ALL` refused while set, as a failing sysctl.
+    func refuseTable(_ refused: Bool) { lock.withLock { tableRefused = refused } }
 
     /// How many times `call` ("processes", "usage", "socket"…) was made.
     func count(_ call: String) -> Int { lock.withLock { counts[call] ?? 0 } }
@@ -416,7 +420,9 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
 
     func uptime() -> UInt64 { lock.withLock { clock } }
 
-    func processes() -> [ActivityProcess]? { asked("processes") { table.values.map(\.record).sorted { $0.pid < $1.pid } } }
+    func processes() -> [ActivityProcess]? {
+        asked("processes") { tableRefused ? nil : table.values.map(\.record).sorted { $0.pid < $1.pid } }
+    }
 
     func usage(of pid: pid_t) -> ActivityUsage? {
         asked("usage") {
