@@ -62,7 +62,9 @@ jobs:
     # Draft pull requests don't run.
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: macos-15
-    timeout-minutes: 45
+    # A cold GhosttyKit build (≈10 min, when its cache misses), the tests
+    # (≈17 min) and the release build (≈17 min) don't fit in 45.
+    timeout-minutes: 75
     steps:
       - uses: actions/checkout@v7
 
