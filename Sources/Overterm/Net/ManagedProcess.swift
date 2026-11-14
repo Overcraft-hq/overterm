@@ -253,6 +253,13 @@ final class ManagedProcess: @unchecked Sendable {
     /// Those running, for an end-to-end run to see each gone after quitting.
     static var liveProcesses: [ManagedProcess] { lock.withLock { live.filter(\.isRunning) } }
 
+    /// The process groups of those not closed yet, each its leader's pid,
+    /// while the group is still its own (`groupIsOurs`): what one started
+    /// stays in it — an exec plugin even once kubectl exited and it was
+    /// reparented —, so Activity's signal path refuses it as Overterm's
+    /// own (docs/design/activity/analysis.md, 6.5 rule 2). Any thread.
+    static var openGroups: [pid_t] { lock.withLock { live }.filter { groupIsOurs($0.process) }.map(\.pid) }
+
     /// What it said on a stream — its last 16 KB: a process lives as long
     /// as the app, and ssh adds a line for every refused connection.
     final class Output: @unchecked Sendable {

@@ -97,6 +97,14 @@ struct ActivityProcess: Hashable, Sendable {
     /// Whether `uid` may read it: the effective uid decides, as the kernel
     /// decides reads (7.5).
     func isOwn(by uid: uid_t) -> Bool { effectiveUID == uid }
+
+    /// Whether it runs as `uid` and as nobody else — its effective, real
+    /// and saved uids all `uid` —: what a signal asks (6.10). `kill(2)`
+    /// lets the user signal a setuid program they started (its real uid
+    /// theirs, 3.2) whether it runs as root now or has set its effective
+    /// uid to theirs for a while, root kept as its saved uid to take back;
+    /// and root's process running as the user for now passes `isOwn`.
+    func isWhollyOwn(by uid: uid_t) -> Bool { effectiveUID == uid && realUID == uid && savedUID == uid }
 }
 
 /// What the State column says (6.5). `KERN_PROC_ALL` gives T and Z; R

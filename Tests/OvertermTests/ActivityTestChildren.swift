@@ -14,11 +14,15 @@ final class TestChild {
     let identity: ActivityProcessID
     private var reaped = false
 
-    init(_ executable: String, _ arguments: [String], environment: [String: String] = [:], descriptors: [Int32: Int32] = [:]) throws {
+    /// `stdin`: a descriptor it reads instead of /dev/null — a pipe the
+    /// test writes to when the child should go on.
+    init(
+        _ executable: String, _ arguments: [String], environment: [String: String] = [:], descriptors: [Int32: Int32] = [:], stdin: Int32? = nil
+    ) throws {
         let null = open("/dev/null", O_WRONLY)
         defer { close(null) }
         pid = try ProcessGroup.spawn(
-            URL(fileURLWithPath: executable), arguments, environment, stdout: null, stderr: null, descriptors: descriptors
+            URL(fileURLWithPath: executable), arguments, environment, stdout: null, stderr: null, stdin: stdin, descriptors: descriptors
         ).get()
         guard let start = ProcessInspector.kinfo(pid)?.start else {
             var status: Int32 = 0
@@ -43,6 +47,23 @@ final class TestChild {
     }
 
     deinit { stop() }
+
+    /// SIGKILL to its pid, after its identity is read again, and not
+    /// reaped: a zombie, its identity kept, until `stop` or `exited` reaps it.
+    func killUnreaped() {
+        guard !reaped, ProcessInspector.kinfo(pid)?.start == identity.start else { return }
+        kill(pid, SIGKILL)
+    }
+
+    /// Waits up to `seconds` for it to end by itself, and reaps it: how it
+    /// ended (`waitpid`'s status); nil while it still runs.
+    func exited(within seconds: TimeInterval = 10) -> Int32? {
+        guard !reaped else { return nil }
+        var status: Int32 = 0
+        guard TestChild.eventually(seconds, { waitpid(pid, &status, WNOHANG) == pid }) else { return nil }
+        reaped = true
+        return status
+    }
 
     /// Waits for `condition`, up to `seconds`: never a moment sampled.
     static func eventually(_ seconds: TimeInterval = 10, _ condition: () -> Bool) -> Bool {

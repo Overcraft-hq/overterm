@@ -431,13 +431,50 @@ value, a path or an address of a process that isn't the test's.
   never doubled, the context rebuilt once for a burst of changes, at its
   limit for one that never quiets, and by the early tick a tab opened and
   wanted in the same turn makes; a busy Mac's 5 s.
+- `ProcessSignalsTests`: the one signal path over a fake Mac — the refusals
+  made before any call that touches a process (pid ≤ 1, this process, what
+  doesn't run as the user alone: a setuid program's, root's, another
+  user's, and what runs as the user only for now, its real or saved uid
+  another's), a pid taken again before the token or after it (the token
+  then reaches nothing), or, with no token, after the path was read and
+  before the kill, an exec since it was listed or between the token and the
+  send told apart from an end (its own binary again too), a deleted
+  executable, a stopped target continued after TERM and INT but never a
+  traced one, no token or no token call (only a single TERM falls back),
+  Overterm's helpers by where they sit and by their group (an apply found
+  again, a plugin reparented), the gate and the real kernel's own check of
+  it; then the test's own children through the real kernel: a setuid `top`,
+  refused by its effective uid though `kill(child, 0)` passes, kept alive by
+  an output pipe the test never reads and ended by its own SIGPIPE; a bash
+  that execs sleep after it was listed, and between the token and the send
+  (the old token's ESRCH); a token across an exec and an end (a zombie's
+  ESRCH the kernel's, a reaped pid's the gate's); a dead child, a zombie and
+  then reaped; an unregistered child the real kernel's sends refuse, though
+  a `ProcessSignals` was handed a gate that registered it; a
+  `ManagedProcess`'s member let go to launchd, a helper's by its group; an
+  apply's group while a run has it; a sleep
+  stopped, continued and ended by its token.
+
+**The isolated-run gate.** A unit test or an isolated run is guarded
+(`AppEnvironment.guardsSignals`): Activity changes only what the run
+registered as its own (`ActivitySignalGate.register`, a child's pid and
+start read at spawn) and what runs under a `login` its own panes spawned.
+`ProcessSignals` refuses anything else before a token is taken, and the
+real kernel's sends refuse it again before their call, by the app's gate
+(`ActivitySignalGate.shared`) and this process, whatever gate or app a
+`ProcessSignals` was handed. A test that signals its own children
+registers them in `.shared` for the test's length. A real process that
+isn't the test's — the runner's parent — is only ever asked about through
+`RecordingKernel`, whose signals reach nothing but the test's own
+children, so not even a broken gate could signal it.
 
 `ActivityProbeTests` is opt-in, run on each new macOS and on the oldest
 supported one: the structures' sizes, who answers each call and what it
 costs — `csops` against Security.framework's fallback among them — and
 the sampler's whole light and full ticks, cold and steady, and the light
 tick's cost a member over 8, 100 and 300 of its own children holding
-sockets. It reads the
+sockets; whether `proc_signal_with_audittoken` is there, and what a token
+and a whole send cost, a CONT to its own running child. It reads the
 whole table, read only, and prints counts, errnos and timings, never a
 name or an argv:
 

@@ -253,6 +253,42 @@ final class ActivityProbeTests: XCTestCase {
                 + "\(perMember(awakeMedians)), least \(perMember(awakeLeast))")
     }
 
+    /// The signal path at a button (6.10, 3.11's spike): whether
+    /// `proc_signal_with_audittoken` is there, what a token costs alone,
+    /// and a whole send — its reads, the lineage up to this process, the
+    /// helpers' groups, the token, the identity through it, the signal and,
+    /// a test being guarded, the kernel's own gate check before it — of a
+    /// CONT to the probe's own running child, which changes nothing.
+    func testTheSignalPath() throws {
+        let child = try TestChild("/bin/sleep", ["60"])
+        defer { child.stop() }
+        // The app's gate, which the real kernel's sends check too.
+        XCTAssertTrue(ActivitySignalGate.shared.register(child.identity))
+        defer { ActivitySignalGate.shared.unregister(child.identity) }
+        let signals = ProcessSignals(kernel: kernel)
+        let target = ActivitySignalTarget(child.identity, path: kernel.path(of: child.pid))
+        var tokens: [UInt64] = []
+        var sends: [UInt64] = []
+        var answers: [ActivitySignalAnswer: Int] = [:]
+        for _ in 0..<500 {
+            let (token, tokenTime) = timed { kernel.auditToken(of: child.pid) }
+            XCTAssertNotNil(token)
+            tokens.append(tokenTime)
+            let (answer, sendTime) = timed { signals.send(.cont, to: target, alone: false) }
+            answers[answer, default: 0] += 1
+            sends.append(sendTime)
+        }
+        func line(_ values: [UInt64]) -> String {
+            let sorted = values.sorted()
+            let p90 = sorted[min(sorted.count - 1, Int((Double(sorted.count) * 0.9).rounded(.up)) - 1)]
+            return String(format: "least %.1f, median %.1f, p90 %.1f µs", Double(sorted[0]) / 1e3, Double(sorted[sorted.count / 2]) / 1e3, Double(p90) / 1e3)
+        }
+        report(
+            "signal path: proc_signal_with_audittoken \(kernel.signalsByToken ? "there" : "missing"); a token \(line(tokens)); "
+                + "a whole send \(line(sends)); \(answers[.sent(pinned: true)] ?? 0) of 500 sent by token")
+        XCTAssertEqual(answers[.sent(pinned: true)], 500)
+    }
+
     /// What each child of `testTheLightTickAMember` is handed: a TCP
     /// listener and a bound UDP socket on 127.0.0.1, and a unix pair.
     private func heldSockets() throws -> [Int32] {

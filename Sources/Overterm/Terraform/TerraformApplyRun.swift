@@ -337,6 +337,28 @@ final class TerraformApplyTail: @unchecked Sendable {
     }
 }
 
+/// The process groups of this app's applies, by the run that follows each:
+/// the launcher's pid, which leads its group and its session — terraform,
+/// its plugins, a provisioner's commands in it — from when the run is made
+/// (started, or found again after a relaunch, its launcher launchd's child
+/// by then) until it ends or is let go. Read off the main actor by
+/// Activity's signal path, which refuses what is in one as Overterm's own:
+/// an apply's way out is its own Stop (docs/design/activity/analysis.md,
+/// 6.5 rule 2, 6.10's helpers row).
+final class TerraformApplyGroupRegistry: @unchecked Sendable {
+    static let shared = TerraformApplyGroupRegistry()
+
+    private let lock = NSLock()
+    private var groups: [ObjectIdentifier: pid_t] = [:]
+
+    /// Every group a run follows now.
+    var all: Set<pid_t> { lock.withLock { Set(groups.values) } }
+
+    func insert(_ group: pid_t, for run: ObjectIdentifier) { lock.withLock { groups[run] = group } }
+
+    func remove(_ run: ObjectIdentifier) { _ = lock.withLock { groups.removeValue(forKey: run) } }
+}
+
 /// One apply of a shown plan (6.4), in memory only: the plan's rows, each
 /// waiting → running → done or errored, a replace's two steps counted; the
 /// provisioners' output under its row; the diagnostics by address; the
@@ -438,7 +460,10 @@ final class TerraformApplyRun: ObservableObject, Identifiable {
         self.planned = plan != nil
         if let plan { rows = Self.rows(of: plan) }
         for (index, row) in rows.enumerated() where rowIndexes[row.address] == nil { rowIndexes[row.address] = index }
+        if marker.pid > 0 { TerraformApplyGroupRegistry.shared.insert(marker.pid, for: ObjectIdentifier(self)) }
     }
+
+    deinit { TerraformApplyGroupRegistry.shared.remove(ObjectIdentifier(self)) }
 
     /// The plan's rows that apply does something to, risky first.
     nonisolated static func rows(of plan: TerraformPlan) -> [Row] {
@@ -579,11 +604,13 @@ final class TerraformApplyRun: ObservableObject, Identifiable {
     /// crash leaves (the scenario's), found again by `TerraformApplyLaunch.detached`.
     func detach() {
         tail.cancel()
+        TerraformApplyGroupRegistry.shared.remove(ObjectIdentifier(self))
     }
 
     /// The end: the exit code and an `apply` summary decide (spike 24).
     func ended(status: Int32?, stderr: String) {
         guard isGoing else { return }
+        TerraformApplyGroupRegistry.shared.remove(ObjectIdentifier(self))
         // terraform is gone: a provider plugin it left in its group goes
         // too — by pid, each checked just now, never the group's id, which
         // another group may hold once this one is empty.

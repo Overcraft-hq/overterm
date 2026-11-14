@@ -327,4 +327,11 @@ private final class CountingKernel: ActivityKernel, @unchecked Sendable {
         return base.socket(of: pid, descriptor: descriptor)
     }
     func workingDirectory(of pid: pid_t) -> String? { base.workingDirectory(of: pid) }
+    func process(_ pid: pid_t) -> ActivityProcess? { base.process(pid) }
+    func auditToken(of pid: pid_t) -> ActivityAuditToken? { base.auditToken(of: pid) }
+    func path(of token: ActivityAuditToken) -> String? { base.path(of: token) }
+    var signalsByToken: Bool { base.signalsByToken }
+    // A socket test signals nothing: these never reach the kernel.
+    func signal(_ signal: Int32, by token: ActivityAuditToken) -> Int32 { EPERM }
+    func signal(_ signal: Int32, pid: pid_t) -> Int32 { EPERM }
 }

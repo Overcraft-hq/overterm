@@ -7,8 +7,9 @@ import Security
 /// Mach; `FakeActivityKernel` is a whole Mac a test makes — another user's
 /// processes, thousands of sockets, a clock that moves when told. Every
 /// call is a plain synchronous one for the sampler's queue, never the main
-/// thread. ProcessSignals' calls (the audit token, the signal, the
-/// priority) join it, so a fake can say a refusal made none.
+/// thread — but `ProcessSignals`', a deliberate fresh read at a button
+/// (7.1), each bounded. Its calls — one process read now, the audit
+/// token, the signal — are here too, so a fake can say a refusal made none.
 protocol ActivityKernel: Sendable {
     /// The user the census reads for: `getuid()`.
     var uid: uid_t { get }
@@ -46,6 +47,72 @@ protocol ActivityKernel: Sendable {
     /// for the mount's timeout (7.2): `ProcessFolders` calls it on a queue
     /// of its own, never a tick.
     func workingDirectory(of pid: pid_t) -> String?
+
+    // MARK: What ProcessSignals asks (6.10), at the button
+
+    // The two sends are `ProcessSignals`' alone: a caller of its own skips
+    // its refusals and the identity check. In an isolated run or a unit
+    // test the live kernel's make the isolated-run gate's check themselves,
+    // before their call (`ActivitySignalGate.refusal(of:kernel:app:)`).
+
+    /// `KERN_PROC_PID`: one process's structure, read now — any user's, a
+    /// zombie's too; nil once it is gone.
+    func process(_ pid: pid_t) -> ActivityProcess?
+    /// `task_name_for_pid`, then `task_info(TASK_AUDIT_TOKEN)`: the token
+    /// of the image `pid` runs now. The user's own processes only: nil for
+    /// another user's, for a setuid one the user started (KERN_FAILURE,
+    /// 3.2), a zombie, or one gone.
+    func auditToken(of pid: pid_t) -> ActivityAuditToken?
+    /// `proc_pidpath_audittoken`: the executable of the image the token
+    /// names; nil once that image is gone (the process ended or exec'd) or
+    /// its file was deleted.
+    func path(of token: ActivityAuditToken) -> String?
+    /// Whether `proc_signal_with_audittoken` is there: its availability
+    /// isn't stated (3.9), so it is looked up, never linked.
+    var signalsByToken: Bool { get }
+    /// `proc_signal_with_audittoken`: 0 when sent, else the errno it
+    /// returns as its value — ESRCH once the token's image is gone: the
+    /// process ended, or exec'd (3.9). ENOSYS without the call.
+    func signal(_ signal: Int32, by token: ActivityAuditToken) -> Int32
+    /// `kill(pid, signal)`: 0 when sent, else the errno. The
+    /// identity-checked fallback's one call (6.10 step 6), for a single
+    /// Stop; never a pid ≤ 1 — no group, no `kill(-1)` — nor this process.
+    func signal(_ signal: Int32, pid: pid_t) -> Int32
+}
+
+/// A process's audit token (`TASK_AUDIT_TOKEN`, 3.9): it names one
+/// executable image of one process — its pid, and the pid's version, which
+/// an `exec` moves on. A signal sent by it reaches that image or nothing:
+/// once the process ended or exec'd, the call answers ESRCH.
+struct ActivityAuditToken: Hashable, Sendable {
+    /// `audit_token_t`'s eight words, as the kernel fills them: libbsm's
+    /// accessors read the same places (`audit_token_to_pid` the sixth).
+    let words: [UInt32]
+
+    init(_ token: audit_token_t) {
+        words = withUnsafeBytes(of: token.val) { Array($0.bindMemory(to: UInt32.self)) }
+    }
+
+    /// A fake's.
+    init(pid: pid_t, effectiveUID: uid_t, realUID: uid_t? = nil, version: UInt32) {
+        words = [0, effectiveUID, 0, realUID ?? effectiveUID, 0, UInt32(bitPattern: pid), 0, version]
+    }
+
+    /// Who it was when the token was taken: its effective and real uids
+    /// (libbsm's second and fourth words).
+    var effectiveUID: uid_t { words[1] }
+    var realUID: uid_t { words[3] }
+    var pid: pid_t { pid_t(bitPattern: words[5]) }
+    /// The pid's version: an `exec` moves it on.
+    var version: UInt32 { words[7] }
+
+    var token: audit_token_t {
+        var token = audit_token_t()
+        withUnsafeMutableBytes(of: &token.val) { raw in
+            for (index, word) in words.prefix(8).enumerated() { raw.storeBytes(of: word, toByteOffset: index * 4, as: UInt32.self) }
+        }
+        return token
+    }
 }
 
 /// What `csops` said.
@@ -225,6 +292,67 @@ struct LiveActivityKernel: ActivityKernel {
         let path = withUnsafeBytes(of: info.pvi_cdir.vip_path) { raw in String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self) }
         return path.isEmpty ? nil : path
     }
+
+    func process(_ pid: pid_t) -> ActivityProcess? {
+        guard pid >= 0 else { return nil }
+        var info = kinfo_proc()
+        var size = MemoryLayout<kinfo_proc>.stride
+        var mib: [Int32] = [CTL_KERN, KERN_PROC, KERN_PROC_PID, pid]
+        // A pid nobody holds answers 0 bytes, no error.
+        guard sysctl(&mib, 4, &info, &size, nil, 0) == 0, size >= MemoryLayout<kinfo_proc>.size, info.kp_proc.p_pid == pid else { return nil }
+        return ProcessTable.record(info)
+    }
+
+    func auditToken(of pid: pid_t) -> ActivityAuditToken? {
+        var name: mach_port_name_t = 0
+        guard pid > 0, task_name_for_pid(mach_task_self_, pid, &name) == KERN_SUCCESS else { return nil }
+        defer { mach_port_deallocate(mach_task_self_, name) }
+        var token = audit_token_t()
+        // TASK_AUDIT_TOKEN_COUNT, a macro Swift doesn't import.
+        var count = mach_msg_type_number_t(MemoryLayout<audit_token_t>.size / MemoryLayout<natural_t>.size)
+        let answer = withUnsafeMutablePointer(to: &token) { pointer in
+            pointer.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { task_info(name, task_flavor_t(TASK_AUDIT_TOKEN), $0, &count) }
+        }
+        return answer == KERN_SUCCESS ? ActivityAuditToken(token) : nil
+    }
+
+    func path(of token: ActivityAuditToken) -> String? {
+        var audit = token.token
+        var buffer = [UInt8](repeating: 0, count: 4 * Int(MAXPATHLEN))
+        let length = proc_pidpath_audittoken(&audit, &buffer, UInt32(buffer.count))
+        guard length > 0 else { return nil }
+        return String(decoding: buffer.prefix(Int(length)), as: UTF8.self)
+    }
+
+    private typealias SignalByToken = @convention(c) (UnsafeMutablePointer<audit_token_t>, Int32) -> Int32
+
+    /// `proc_signal_with_audittoken`: in libproc, declared with no
+    /// availability (3.9) — looked up, so a system without it still starts,
+    /// and `ProcessSignals` takes the identity-checked path instead.
+    private static let signalByToken: SignalByToken? = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "proc_signal_with_audittoken").map {
+        unsafeBitCast($0, to: SignalByToken.self)
+    }
+
+    var signalsByToken: Bool { Self.signalByToken != nil }
+
+    func signal(_ signal: Int32, by token: ActivityAuditToken) -> Int32 {
+        // Never this process nor launchd, whoever asks.
+        guard token.pid > 1, token.pid != getpid() else { return EPERM }
+        // The isolated-run gate, whoever holds this kernel (6.10 step 11):
+        // the process holding the pid now must be the run's own.
+        if let refused = ActivitySignalGate.shared.refusal(of: token.pid, kernel: self) { return refused }
+        guard let call = Self.signalByToken else { return ENOSYS }
+        var audit = token.token
+        // It returns the errno itself — ESRCH as 3, not -1 (3.9).
+        let answer = call(&audit, signal)
+        return answer == -1 ? errno : answer
+    }
+
+    func signal(_ signal: Int32, pid: pid_t) -> Int32 {
+        guard pid > 1, pid != getpid() else { return EPERM }
+        if let refused = ActivitySignalGate.shared.refusal(of: pid, kernel: self) { return refused }
+        return kill(pid, signal) == 0 ? 0 : errno
+    }
 }
 
 /// A Mac a test makes (10.1): processes of any user — another user's,
@@ -233,7 +361,9 @@ struct LiveActivityKernel: ActivityKernel {
 /// working folders, and a clock that moves only when told. What it was
 /// asked is counted, so a test can say a read was skipped or bounded; a
 /// hook runs as each call is made (`onCall`), so a test can make a call
-/// cost time or hold it.
+/// cost time or hold it. Its signals reach nothing real: each is recorded
+/// (`sent`), a stop and a continue change the record's state, and a
+/// token answers ESRCH once its process is gone or exec'd (`exec`).
 final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     struct Process {
         var record: ActivityProcess
@@ -252,6 +382,17 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
         var sockets: [Int32: socket_fdinfo] = [:]
         /// Its working folder (`PROC_PIDVNODEPATHINFO`).
         var folder: String?
+        /// The pid's version, as an audit token carries it: each image's own,
+        /// as the kernel's are — `add` gives a process one, `exec` the next.
+        var image: UInt32 = 0
+    }
+
+    /// A signal the fake was asked to send.
+    struct Sent: Hashable, Sendable {
+        let pid: pid_t
+        let signal: Int32
+        /// By an audit token; false for the fallback's `kill(pid, …)`.
+        let pinned: Bool
     }
 
     let uid: uid_t
@@ -262,12 +403,25 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     private var csops = true
     private var tableRefused = false
     private var hook: (@Sendable (String) -> Void)?
+    private var tokens = true
+    private var tokenCall = true
+    private var sends: [Sent] = []
+    private var lastImage: UInt32 = 0
 
     init(uid: uid_t = 501) { self.uid = uid }
 
     // MARK: The test's side
 
-    func add(_ process: Process) { lock.withLock { table[process.record.pid] = process } }
+    /// A process, its image a new one: a token taken of whatever held its
+    /// pid before names nothing now.
+    func add(_ process: Process) {
+        lock.withLock {
+            var process = process
+            lastImage += 1
+            process.image = lastImage
+            table[process.record.pid] = process
+        }
+    }
 
     func remove(_ pid: pid_t) { _ = lock.withLock { table.removeValue(forKey: pid) } }
 
@@ -287,6 +441,39 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
 
     /// `KERN_PROC_ALL` refused while set, as a failing sysctl.
     func refuseTable(_ refused: Bool) { lock.withLock { tableRefused = refused } }
+
+    /// No audit token for anyone while set, as the one same-uid process in
+    /// 856 that gave none (6.10 step 6).
+    func refuseTokens(_ refused: Bool) { lock.withLock { tokens = !refused } }
+
+    /// Without `proc_signal_with_audittoken`, as a system that lacks it.
+    func dropTokenSignal() { lock.withLock { tokenCall = false } }
+
+    /// `pid` execs `path`: the same pid and start, another image — its
+    /// version moved on, so a token taken before names nothing now.
+    func exec(_ pid: pid_t, path: String?, name: String) {
+        lock.withLock {
+            guard var process = table[pid] else { return }
+            lastImage += 1
+            process.image = lastImage
+            process.path = path
+            process.name = name
+            process.record = Self.record(process.record, status: process.record.status, shortName: String(name.prefix(16)))
+            table[pid] = process
+        }
+    }
+
+    /// The signals it was asked to send, in order.
+    var sent: [Sent] { lock.withLock { sends } }
+
+    /// `record` with another state, or another name.
+    static func record(_ record: ActivityProcess, status: Int32, shortName: String? = nil) -> ActivityProcess {
+        ActivityProcess(
+            identity: record.identity, parentPID: record.parentPID, group: record.group, terminal: record.terminal,
+            terminalGroup: record.terminalGroup, effectiveUID: record.effectiveUID, realUID: record.realUID, savedUID: record.savedUID,
+            status: status, flags: record.flags, ignoredSignals: record.ignoredSignals, caughtSignals: record.caughtSignals, nice: record.nice,
+            shortName: shortName ?? record.shortName)
+    }
 
     /// How many times `call` ("processes", "usage", "socket"…) was made.
     func count(_ call: String) -> Int { lock.withLock { counts[call] ?? 0 } }
@@ -308,15 +495,16 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
         return lock.withLock(body)
     }
 
-    /// A process record, as `KERN_PROC_ALL` would give it.
+    /// A process record, as `KERN_PROC_ALL` would give it. `uid` is its
+    /// effective uid; its real and saved ones are `uid` unless given.
     static func record(
-        pid: pid_t, start: UInt64, parent: pid_t, uid: uid_t = 501, realUID: uid_t? = nil, group: pid_t? = nil, terminal: dev_t? = nil,
-        status: Int32 = SRUN, flags: ActivityProcess.Flags = [], ignoredSignals: UInt32 = 0, name: String = "fake"
+        pid: pid_t, start: UInt64, parent: pid_t, uid: uid_t = 501, realUID: uid_t? = nil, savedUID: uid_t? = nil, group: pid_t? = nil,
+        terminal: dev_t? = nil, status: Int32 = SRUN, flags: ActivityProcess.Flags = [], ignoredSignals: UInt32 = 0, name: String = "fake"
     ) -> ActivityProcess {
         ActivityProcess(
             identity: ActivityProcessID(pid: pid, start: start), parentPID: parent, group: group ?? pid, terminal: terminal,
-            terminalGroup: terminal == nil ? nil : group ?? pid, effectiveUID: uid, realUID: realUID ?? uid, savedUID: uid, status: status,
-            flags: flags, ignoredSignals: ignoredSignals, caughtSignals: 0, nice: 0, shortName: String(name.prefix(16)))
+            terminalGroup: terminal == nil ? nil : group ?? pid, effectiveUID: uid, realUID: realUID ?? uid, savedUID: savedUID ?? uid,
+            status: status, flags: flags, ignoredSignals: ignoredSignals, caughtSignals: 0, nice: 0, shortName: String(name.prefix(16)))
     }
 
     /// Usage counters, `time` filled in when read.
@@ -482,5 +670,52 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
 
     func workingDirectory(of pid: pid_t) -> String? {
         asked("folder") { table[pid].flatMap { $0.record.effectiveUID == uid && !$0.record.isZombie ? $0.folder : nil } }
+    }
+
+    func process(_ pid: pid_t) -> ActivityProcess? { asked("process") { table[pid]?.record } }
+
+    /// As the kernel answers: the user's live processes only — a setuid
+    /// one's effective uid is root's, and gives no token.
+    func auditToken(of pid: pid_t) -> ActivityAuditToken? {
+        asked("token") {
+            guard tokens, let process = table[pid], process.record.effectiveUID == uid, !process.record.isZombie else { return nil }
+            return ActivityAuditToken(pid: pid, effectiveUID: uid, realUID: process.record.realUID, version: process.image)
+        }
+    }
+
+    func path(of token: ActivityAuditToken) -> String? {
+        asked("tokenPath") {
+            guard let process = table[token.pid], process.image == token.version, !process.record.isZombie else { return nil }
+            return process.path
+        }
+    }
+
+    var signalsByToken: Bool { lock.withLock { tokenCall } }
+
+    func signal(_ signal: Int32, by token: ActivityAuditToken) -> Int32 {
+        asked("signal") {
+            guard tokenCall else { return ENOSYS }
+            guard let process = table[token.pid], process.image == token.version, !process.record.isZombie else { return ESRCH }
+            deliver(signal, to: process, pinned: true)
+            return 0
+        }
+    }
+
+    /// As `kill(2)` answers: a zombie takes it too.
+    func signal(_ signal: Int32, pid: pid_t) -> Int32 {
+        asked("kill") {
+            guard pid > 1, let process = table[pid] else { return ESRCH }
+            deliver(signal, to: process, pinned: false)
+            return 0
+        }
+    }
+
+    /// Recorded; a stop and a continue change its state. Under the lock.
+    private func deliver(_ signal: Int32, to process: Process, pinned: Bool) {
+        sends.append(Sent(pid: process.record.pid, signal: signal, pinned: pinned))
+        guard !process.record.isZombie, signal == SIGSTOP || signal == SIGCONT else { return }
+        var changed = process
+        changed.record = Self.record(process.record, status: signal == SIGSTOP ? SSTOP : SRUN)
+        table[process.record.pid] = changed
     }
 }
