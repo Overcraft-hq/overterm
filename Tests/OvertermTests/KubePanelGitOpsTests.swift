@@ -285,6 +285,41 @@ final class KubePanelGitOpsTests: XCTestCase {
         panel.panelVisible = false
     }
 
+    /// A mark copied onto a workload names nobody (14.1, D0): an
+    /// operator's StatefulSet carrying its custom resource's tracking id is
+    /// no Application's — beside one whose own mark the rail still says,
+    /// read by the same list.
+    func testUnservedACopiedMarkIsNotMatched() async throws {
+        api.add(
+            "statefulsets.apps", "shop-db", namespace: "shop", values: ["Ready": "1/1"], labels: ["app.kubernetes.io/part-of": "ot-shop"],
+            annotations: ["argocd.argoproj.io/tracking-id": "prod-shop-db-service:apps/StatefulSet:shop/shop-db"])
+        api.add(
+            "statefulsets.apps", "orders-db", namespace: "shop", values: ["Ready": "1/1"],
+            labels: ["app.kubernetes.io/part-of": "ot-shop", "app.kubernetes.io/instance": "prod-shop-orders-service"],
+            annotations: ["argocd.argoproj.io/tracking-id": "prod-shop-orders-service:acme.example.com/Database:shop/orders"])
+        let panel = bound("fake-dev")
+        try await until(15, "the self mark said") { self.match(panel, "Application", "prod-shop-db-service") != nil }
+        XCTAssertNil(match(panel, "Application", "prod-shop-orders-service"), "\(panel.gitOps.matches.map(\.key))")
+        XCTAssertFalse(panel.gitOps.matches.contains { $0.why.contains("prod-shop-orders-service") }, "\(panel.gitOps.matches.map(\.why))")
+        panel.panelVisible = false
+    }
+
+    /// An app-of-apps: the Application the rail reads carries its parent's
+    /// tracking id, which names the child itself — so its parent is kept.
+    func testAnAppOfAppsChildKeepsItsParent() async throws {
+        api.add(
+            "applications.argoproj.io", "acme-child", namespace: "argocd", values: ["Sync Status": "Synced", "Health Status": "Healthy"],
+            annotations: ["argocd.argoproj.io/tracking-id": "acme-root:argoproj.io/Application:argocd/acme-child"],
+            fields: ["spec": ["project": "acme", "destination": ["server": "https://kubernetes.default.svc", "namespace": "shop"]], "status": [:]])
+        api.add(
+            "statefulsets.apps", "shop-db", namespace: "shop", values: ["Ready": "1/1"], labels: ["app.kubernetes.io/part-of": "ot-shop"],
+            annotations: ["argocd.argoproj.io/tracking-id": "acme-child:apps/StatefulSet:shop/shop-db"])
+        let panel = bound("fake-dev")
+        try await until(15, "the child read") { self.match(panel, "Application", "acme-child")?.object != nil }
+        XCTAssertEqual(match(panel, "Application", "acme-child")?.object?.parentOwner?.name, "acme-root")
+        panel.panelVisible = false
+    }
+
     /// The owner's GET refused (403): said as a problem, never as "not in
     /// this cluster" — it may well be there.
     func testARefusedOwnerIsNotSaidMissing() async throws {

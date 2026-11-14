@@ -146,9 +146,9 @@ final class KubeGitOpsMatchTests: XCTestCase {
     func testTheOwnersFromEachMark() {
         let web = KubeWorkloadRef(kind: .deployment, name: "web")
         let api = KubeWorkloadRef(kind: .deployment, name: "api")
-        let flux = KubeGitOpsOwner.parse(labels: ["kustomize.toolkit.fluxcd.io/name": "acme-apps", "kustomize.toolkit.fluxcd.io/namespace": "flux-system"], annotations: [:])
-        let tracked = KubeGitOpsOwner.parse(labels: [:], annotations: ["argocd.argoproj.io/tracking-id": "team-a_acme-web:apps/Deployment:shop/web"])
-        let helm = KubeGitOpsOwner.parse(labels: ["app.kubernetes.io/instance": "acme-web"], annotations: [:])
+        let flux = KubeGitOpsOwner.parse(labels: ["kustomize.toolkit.fluxcd.io/name": "acme-apps", "kustomize.toolkit.fluxcd.io/namespace": "flux-system"], annotations: [:], self: nil)
+        let tracked = KubeGitOpsOwner.parse(labels: [:], annotations: ["argocd.argoproj.io/tracking-id": "team-a_acme-web:apps/Deployment:shop/web"], self: nil)
+        let helm = KubeGitOpsOwner.parse(labels: ["app.kubernetes.io/instance": "acme-web"], annotations: [:], self: nil)
         let owners = KubeGitOpsMatch.owners([(web, flux + tracked), (api, flux + helm)])
         XCTAssertEqual(owners.map(\.owner.said), ["Application team-a/acme-web", "Kustomization flux-system/acme-apps", "probably Argo CD Application acme-web"])
         XCTAssertEqual(owners[1].workloads, [web, api])
@@ -227,7 +227,7 @@ final class KubeGitOpsMatchTests: XCTestCase {
                 ]
             ],
         ]
-        let asked = try KubeTableReader.read(table, namespace: "shop", owners: true)
+        let asked = try KubeTableReader.read(table, namespace: "shop", kind: .deployments, owners: true)
         XCTAssertEqual(asked.rows.first?.owners.map(\.said), ["Application acme-shop", "Kustomization flux-system/acme-apps"])
         XCTAssertFalse(String(describing: asked.rows).contains(FakeKubeAPI.gitOpsSentinel), "no other annotation is kept")
         XCTAssertEqual(try KubeTableReader.read(table, namespace: "shop").rows.first?.owners, [], "every other list's rows unchanged")

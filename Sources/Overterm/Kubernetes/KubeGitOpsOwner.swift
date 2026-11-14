@@ -6,7 +6,8 @@ import Foundation
 ///
 /// - Argo CD's `argocd.argoproj.io/tracking-id` annotation
 ///   (`<app>:<group>/<Kind>:<namespace>/<name>`; `<appNamespace>_<app>`
-///   for an Application outside Argo CD's own namespace);
+///   for an Application outside Argo CD's own namespace), checked by
+///   `KubeTrackingID` and counted only on the object it names (14.1);
 /// - its `argocd.argoproj.io/instance` label;
 /// - `app.kubernetes.io/instance`, Argo CD 2.x's default tracking label
 ///   (`application.instanceLabelKey`) — "probably" Argo CD only, because
@@ -15,8 +16,9 @@ import Foundation
 /// - Flux's `kustomize.toolkit.fluxcd.io/name|namespace` and
 ///   `helm.toolkit.fluxcd.io/name|namespace` labels.
 ///
-/// Used by the apply's warnings (`KubeFieldOwners.managedBy`), and by what
-/// later reads who deploys a workload. Pure.
+/// Used by the rows that ask (`KubeListOptions.owners`), the apply's
+/// warnings (`KubeFieldOwners.managedBy`), a GitOps object's delete and
+/// its parent — each with the object's identity. Pure.
 struct KubeGitOpsOwner: Equatable, Hashable, Sendable {
     enum Tool: String, Equatable, Hashable, Sendable {
         case argoCD, fluxKustomize, fluxHelm
@@ -66,13 +68,27 @@ struct KubeGitOpsOwner: Equatable, Hashable, Sendable {
     /// Every owner the marks name: Argo CD's (the surest mark only), then
     /// Flux's. An object Flux deploys through Helm carries Helm's instance
     /// label too, which then names nobody.
-    static func parse(labels: [String: String], annotations: [String: String]) -> [KubeGitOpsOwner] {
+    ///
+    /// `self`: the object the marks sit on, when the caller knows it (a
+    /// list's kind and row, an object's own kind and metadata). A tracking
+    /// id that names another object is a copied mark — the Deployment
+    /// controller copies a Deployment's annotations onto its ReplicaSets,
+    /// operators their resource's onto what they make — and Argo CD tracks
+    /// the object by none of its marks then (`isSelfReferencedObj`), so no
+    /// Argo CD owner is said, from that mark or a label beside it. nil
+    /// checks nothing: only a caller that can't know the object.
+    static func parse(labels: [String: String], annotations: [String: String], self object: KubeTrackingID.Identity?) -> [KubeGitOpsOwner] {
         var owners: [KubeGitOpsOwner] = []
-        if let value = annotations[trackingAnnotation], let owner = tracking(value) {
-            owners.append(owner)
+        var copied = false
+        if let value = annotations[trackingAnnotation], let id = KubeTrackingID.parse(value) {
+            if let object, !id.isSelf(object) {
+                copied = true
+            } else {
+                owners.append(KubeGitOpsOwner(tracking: id))
+            }
         }
         // A tracking id that doesn't parse leaves the instance label to say who.
-        if owners.isEmpty, let name = nonEmpty(labels[argoInstanceLabel]) {
+        if owners.isEmpty, !copied, let name = nonEmpty(labels[argoInstanceLabel]) {
             owners.append(KubeGitOpsOwner(tool: .argoCD, name: name, namespace: nil, mark: .argoInstance))
         }
         if let name = nonEmpty(labels[kustomizeName]) {
@@ -81,31 +97,22 @@ struct KubeGitOpsOwner: Equatable, Hashable, Sendable {
         if let name = nonEmpty(labels[helmName]) {
             owners.append(KubeGitOpsOwner(tool: .fluxHelm, name: name, namespace: nonEmpty(labels[helmNamespace]), mark: .fluxLabels))
         }
-        if owners.isEmpty, annotations[helmReleaseAnnotation] == nil, let name = nonEmpty(labels[appInstanceLabel]) {
+        if owners.isEmpty, !copied, annotations[helmReleaseAnnotation] == nil, let name = nonEmpty(labels[appInstanceLabel]) {
             owners.append(KubeGitOpsOwner(tool: .argoCD, name: name, namespace: nil, mark: .appInstance))
         }
         return owners
     }
 
     /// From an object's metadata, labels and annotations as JSON gives them.
-    static func parse(metadata: [String: Any]?) -> [KubeGitOpsOwner] {
-        parse(labels: strings(metadata?["labels"]), annotations: strings(metadata?["annotations"]))
+    static func parse(metadata: [String: Any]?, self object: KubeTrackingID.Identity?) -> [KubeGitOpsOwner] {
+        parse(labels: strings(metadata?["labels"]), annotations: strings(metadata?["annotations"]), self: object)
     }
 
-    /// `argocd.argoproj.io/tracking-id`: `<app>:<group>/<Kind>:<ns>/<name>`
-    /// — the Application before the first `:`; `<appNamespace>_<app>` when
-    /// it lives outside Argo CD's namespace (no Kubernetes name has a `_`).
+    /// `argocd.argoproj.io/tracking-id`'s Application, the value checked
+    /// by `KubeTrackingID` (which object it names is the caller's to
+    /// check: `parse(…self:)`); nil when it isn't one.
     static func tracking(_ value: String) -> KubeGitOpsOwner? {
-        guard let colon = value.firstIndex(of: ":") else { return nil }
-        let app = String(value[..<colon])
-        guard !app.isEmpty else { return nil }
-        if let underscore = app.firstIndex(of: "_") {
-            let namespace = String(app[..<underscore])
-            let name = String(app[app.index(after: underscore)...])
-            guard !namespace.isEmpty, !name.isEmpty else { return nil }
-            return KubeGitOpsOwner(tool: .argoCD, name: name, namespace: namespace, mark: .trackingID)
-        }
-        return KubeGitOpsOwner(tool: .argoCD, name: app, namespace: nil, mark: .trackingID)
+        KubeTrackingID.parse(value).map { KubeGitOpsOwner(tracking: $0) }
     }
 
     private static func strings(_ value: Any?) -> [String: String] {
@@ -115,5 +122,13 @@ struct KubeGitOpsOwner: Equatable, Hashable, Sendable {
     private static func nonEmpty(_ value: String?) -> String? {
         guard let value, !value.isEmpty else { return nil }
         return value
+    }
+}
+
+extension KubeGitOpsOwner {
+    /// The Application a tracking id names: `<appNamespace>_<app>` when it
+    /// lives outside Argo CD's namespace (no Kubernetes name has a `_`).
+    init(tracking id: KubeTrackingID) {
+        self.init(tool: .argoCD, name: id.appName, namespace: id.appNamespace, mark: .trackingID)
     }
 }

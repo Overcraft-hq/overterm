@@ -262,8 +262,10 @@ struct KubeGitOpsObject: Equatable, Sendable, Identifiable {
         }
         generationChangedAt = specChanged
 
-        // Who deploys it.
-        parentOwner = KubeGitOpsOwner.parse(labels: metadata?.labels?.marks ?? [:], annotations: metadata?.annotations?.marks ?? [:])
+        // Who deploys it: an app-of-apps' child Application names itself
+        // in its parent's tracking id; a mark naming another object is a copy.
+        let identity = KubeTrackingID.Identity(group: group, kind: kind, namespace: namespace, name: name)
+        parentOwner = KubeGitOpsOwner.parse(labels: metadata?.labels?.marks ?? [:], annotations: metadata?.annotations?.marks ?? [:], self: identity)
             .first { !($0.tool.kind == kind && $0.name == name) }
         if let set = metadata?.ownerReferences?.first(where: { $0.kind == "ApplicationSet" }), let setName = set.name, !setName.isEmpty {
             ownerAppSet = KubeRowID(namespace: namespace, name: setName)

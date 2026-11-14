@@ -69,6 +69,44 @@ final class KubeTableTests: XCTestCase {
         XCTAssertEqual(embedded.rows.first?.id.description, "ns/p")
     }
 
+    /// A Metadata row's embedded object is a `PartialObjectMetadata` of
+    /// `meta.k8s.io`: a tracking id is checked against the kind the list
+    /// asked for and the row's own name and namespace, never against what
+    /// the embedded object says it is.
+    func testARowsMarkIsCheckedAgainstTheKindListedNotTheEmbeddedOne() throws {
+        func table(kind: String, apiVersion: String, namespace: String?, name: String, mark: String) -> [String: Any] {
+            var metadata: [String: Any] = ["name": name, "annotations": ["argocd.argoproj.io/tracking-id": mark]]
+            metadata["namespace"] = namespace
+            return [
+                "kind": "Table", "columnDefinitions": [["name": "Name", "format": "name"]],
+                "rows": [["cells": [name], "object": ["kind": kind, "apiVersion": apiVersion, "metadata": metadata]]],
+            ]
+        }
+        let mark = "prod-shop-api-service:apps/Deployment:shop/api"
+        let deployments = try KubeTableReader.read(
+            table(kind: "PartialObjectMetadata", apiVersion: "meta.k8s.io/v1", namespace: "shop", name: "api", mark: mark), namespace: nil, kind: .deployments,
+            owners: true)
+        XCTAssertEqual(deployments.rows.first?.owners.map(\.said), ["Application prod-shop-api-service"], "PartialObjectMetadata, read as the Deployment listed")
+        // An embedded object that claims to be the Deployment doesn't make a ReplicaSet's copy its own.
+        let replicaSets = try KubeTableReader.read(
+            table(kind: "Deployment", apiVersion: "apps/v1", namespace: "shop", name: "api", mark: mark), namespace: nil, kind: .replicaSets, owners: true)
+        XCTAssertEqual(replicaSets.rows.first?.owners, [])
+        // Its namespace from the row: the same name in another namespace is a copy.
+        let elsewhere = try KubeTableReader.read(
+            table(kind: "PartialObjectMetadata", apiVersion: "meta.k8s.io/v1", namespace: "shop-2", name: "api", mark: mark), namespace: nil,
+            kind: .deployments, owners: true)
+        XCTAssertEqual(elsewhere.rows.first?.owners, [])
+        // A cluster-scoped kind: the mark's namespace is the destination's, not compared.
+        let clusterRoles = KubeResourceKind(
+            group: "rbac.authorization.k8s.io", version: "v1", resource: "clusterroles", kind: "ClusterRole", singular: "clusterrole", namespaced: false,
+            verbs: ["get", "list", "watch"])
+        let roles = try KubeTableReader.read(
+            table(
+                kind: "PartialObjectMetadata", apiVersion: "meta.k8s.io/v1", namespace: nil, name: "acme-reader",
+                mark: "acme-rbac:rbac.authorization.k8s.io/ClusterRole:payments/acme-reader"), namespace: nil, kind: clusterRoles, owners: true)
+        XCTAssertEqual(roles.rows.first?.owners.map(\.name), ["acme-rbac"])
+    }
+
     func testCellsAreAsTheServerSentThem() {
         XCTAssertEqual(KubeCell(json: "x"), .text("x"))
         XCTAssertEqual(KubeCell(json: NSNumber(value: 3)), .integer(3))
