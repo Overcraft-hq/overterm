@@ -261,6 +261,12 @@ extension E2ERunner {
     }
 
     func kubernetesChartsSteady(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, service: KubePrometheusService) async {
+        // Awake for both CPU windows, as `performance` measures: covered by
+        // the person's windows, the napped app's agent poll alone cost
+        // 6.35% here (its process scan's sysctl six times the samples, every
+        // thread at priority 4), against 1.5% for the same window awake.
+        let fullSpeed = Self.measuredAtFullSpeed()
+        defer { ProcessInfo.processInfo.endActivity(fullSpeed) }
         let interval = model.prometheus.interval
         let metricsInterval = model.metrics.interval
         defer {
@@ -323,7 +329,10 @@ extension E2ERunner {
         let metrics = Dictionary(grouping: fake.requests.filter { $0.path.hasPrefix("/apis/metrics.k8s.io/") }, by: \.path).mapValues(\.count)
         let live = perQuery(ranges())
         let said = windows.map { String(format: "%.2f%%", $0) }.joined(separator: ", ")
-        note(String(format: "kubernetes Live tab, quiet, steady: CPU %.2f%% ", cpu) + "(mean of \(said)); metrics GETs \(metrics), query_range \(live.values.reduce(0, +))")
+        note(
+            String(format: "kubernetes Live tab, quiet, steady: CPU %.2f%% ", cpu)
+                + "(mean of \(said)); metrics GETs \(metrics), query_range \(live.values.reduce(0, +)); window "
+                + (app.window?.occlusionState.contains(.visible) == true ? "on screen" : "covered"))
         check("Live read, then steady", settled)
         check("at most one GET a target in 9 s (its 15 s interval)", metrics.values.allSatisfy { $0 <= 1 }, "\(metrics)")
         check("at most one query_range a chart's query in 9 s (its 30 s step)", live.values.allSatisfy { $0 <= 1 }, "\(live)")
