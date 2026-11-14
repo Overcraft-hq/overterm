@@ -4813,11 +4813,12 @@ source and chart, 4 MB each); Helm's own `app.kubernetes.io/instance` counts
 only once that Application's `status.resources` names the workload
 (`KubeGitOpsWire.Managed`, names only); a tracking id naming an Application
 the cluster hasn't (a 404, or its kind not served — Argo CD running in
-another cluster: the part says "unserved" and still names it) is said,
-never looked for in another context, while a GET refused or failed, or a
-group discovery couldn't read, is only a problem line, never "not in"
-(`KubeGitOpsMatch.OwnerRead`: present, absent, unreadable); with no
-marks, an Application with the workload's image "probably deploys" it.
+another cluster) is said as its app read from the workloads' marks, with
+its health (below, "In the checkout's rail"), never looked for in another
+context, while a GET refused or failed, or a group discovery couldn't
+read, is never "not in" (`KubeGitOpsMatch.OwnerRead`: present, absent,
+unreadable); with no marks, an Application with the workload's image
+"probably deploys" it.
 **The config repo** — a source whose URL is one of the checkout's remotes
 (`GitRemoteURL`, read once per checkout through `git remote -v` — again on
 Refresh —, only the normalised value kept; its git, `KubeGitOpsCheckouts.git`,
@@ -6814,6 +6815,94 @@ ReplicaSet, a Job, a hook or a copy, `[` back, the section keeping what
 the detail read), `KubeApplySessionTests` and the `kubernetesGitOpsMarks`
 scenario's parts 2 and 4 (each detail read checked against the fake's
 log) check it.
+
+**In the checkout's rail** (gitops.md 14.2.5, D5). Where Argo CD's
+Applications aren't read — not served, `argoproj.io` not answering
+discovery, none listed (the section's word of the last five minutes —
+`KubernetesModel.marksReason(of:now:)` —, else one row of them asked
+across the cluster once P4 found none in its places; never once the
+rail's own reads hold an Application, `updateMarksReason`), refused, or a
+bound workload's own Application not there — the rail's GitOps part
+(`KubePanelGitOps`) says the Argo CD apps that deploy the checkout as
+read from their marks, in place of "managed by … (not in …)". The panel's
+workload follows keep the marks (`KubeListOptions.marks`, its
+`Workload.member`). **A**, the bound workloads' own marks: their app
+`owns` them — the only answer that may — and each bound workload is
+settled by one GET (`KubeMarkedWorkloadWire`, Argo CD's rule) as the part
+first shows, within what P2 left of the read's 8, the rest "from its row";
+again on a row event when its generation moved or it wasn't Healthy, 15 s
+apart (`rowsMoved`); its health "the N objects bound here", its other
+members as option B listed them counted beside ("1 more in jobs … not
+counted"; "not all read" from a listing cut or refused), or "other
+namespaces not read" where B didn't list the app. Where Argo Rollouts are
+served and a bound Deployment is scaled to 0, the binding namespace's
+Rollouts are listed as rows once (no watch; a Rollout runs a Deployment of
+its own namespace only): the app's Rollout joins its bound app ("with its
+app's Argo Rollout"), its GET — its phase — is spent instead of the
+Deployment's, which is "scaled by its Rollout"; unread or refused, the
+Deployment is an Unknown member, ranked with the others by Argo CD's
+rules, never overriding a Degraded sibling (`KubeGitOpsMatch.health(_:
+rollouts:)`). The settle asks the bound apps' Rollouts first, then the
+bound workloads, then the Rollouts of the apps B, C or D found; one past
+the 8 or whose GET failed says so (`settle(_:)`, `settledApp`).
+**B**, `KubeCheckoutManifests`: the checkout's tracked `*.yaml`/`*.yml`
+(`git ls-files` through the rail's isolated git; 2,000 files, 256 KB each,
+32 MB in all; opened `O_NOFOLLOW`, inside the checkout once open by
+`F_GETPATH`; test, example, fixture and vendored folders skipped; a file
+holding `{{` the grammar can't read a Helm template, counted, and in one it
+reads only a document whose four keys hold `{{` left out; each document's
+`apiVersion`, `kind`, `metadata.name` and `metadata.namespace` read off the
+YAML grammar's tree, nothing deeper, an alias left out; a kustomization's
+prefix counted) set against the members' tracking ids, the cluster's
+marked workloads listed as rows with their marks
+(`KubeMarkedAppsSession.readRows`, Rollouts first, 5,000 objects and 30 MB
+for every kind together — the M1 bound —, no watch; refused across the
+cluster, read in the accessible namespaces) — or the section's apps when
+it ranked them whole across the cluster in the last five minutes
+(`KubernetesModel.keepMarkedApps`/
+`markedApps(of:)`, kept while its page shows, by the page) —: a document
+naming its namespace `describes` N of an app's objects, never `owns`; one
+naming none only in the binding's namespace, and only "probably". **C**
+(the app's name, its `<env>-<ns>-` and `-service` left out —
+`KubeGitOpsMatch.stem` —, against the repository's name, a folder under
+`apps/`, `deploy/`, `k8s/`, `charts/` or `manifests/`, a manifest's name in
+its namespace) and **D** (an image's `org/repo` or last part against the
+remote) are "probably", apart and muted, only when A and B found nothing,
+none past three ("too many to tell"). B lists only where something here
+carries a mark (a bound workload, `KubernetesModel.marksSeen`, the
+section's apps); on production only once Find What Deploys This is
+pressed; kept five minutes with the cache, whose key now holds what
+discovery said of each tool apart (`KubePanelGitOps.mode(of:)`:
+`argo=served|unserved|undiscovered;flux=…`). Nothing found says what was
+compared and what couldn't be, never "not deployed"
+(`KubeGitOpsMatch.MarkedAnswer`). A plain name's 404 in `argocd` is "not
+in" only where this context's Applications were seen in `argocd` (the
+section's, the rail's own listing) or none is here; else unreadable,
+"its Application wasn't found in argocd; Argo CD's namespace here is
+unknown" (`KubePanelGitOps.resolved`, `k8s_gitops checkout`'s too). The
+part's line says why it reads from marks — "Argo CD isn't in <ctx>" only
+where `argoproj.io` answered discovery (`KubeGitOpsMatch.marksLine`,
+`MarkedPlace`) —; a row: the app, its state and why, whose health, where
+its Application stands, why it matched, and Open — the page on the
+binding's context (one the page's list hasn't read is read once more, else
+said, the page's scope left alone), its GitOps section, the app's detail,
+its namespaces added to the scope (`KubeGitOpsPanelHost.gitOpsOpenMarked`);
+no GitOps verb, and Ask Why comes with D6. `KubeGitOpsMatchTests` (B, C,
+D, too many, nothing found, a scaled-to-0 Deployment beside a Degraded
+sibling and beside its Rollout, the manifests reader's links, templates —
+`{{` in a quoted alert beside a Deployment —, prefix and bounds),
+`KubePanelGitOpsTests` (the stuck single replica by its GET, a settled row
+read again only for a moved generation or an unhealthy state, ten bound
+workloads and the 8, a Rollout-run app, the objects bound here, a cut
+listing, production's B only pressed, a plain name not found in argocd
+unreadable, a section's "none here" beside Applications the rail listed,
+argoproj.io not answering, the section's verdict with no read, the
+cache's key by what discovery said of each tool, a failed listing said
+once and gone when one reads — `KubePanelGitOps.searched` —, the sentinel
+kept out) and the `kubernetesGitOpsMarks` scenario's part 5 (the checkout
+scenario's part 7 on the spoke: the paused app, team-1's Rollout-run app,
+the config repository, nothing the rail keeps or draws holding the
+sentinel) check it.
 
 **The GitOps section** (`g`; gitops.md 2–3, G2): Argo CD's and Flux's
 objects that live in or deploy into the scope on one screen, between Helm

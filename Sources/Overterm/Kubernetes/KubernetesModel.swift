@@ -144,27 +144,81 @@ final class KubernetesModel: ObservableObject {
     }
 
     /// Why a context's GitOps section reads Argo CD's apps from their marks,
-    /// as it last said it (gitops.md 14.3), and the cluster it said it of —
-    /// the context as read then: an apply there says Argo CD may undo a
-    /// change to an object it tracks, never that it will (14.2.3). In
+    /// as it last said it (gitops.md 14.3), the cluster it said it of — the
+    /// context as read then — and when: an apply there says Argo CD may undo
+    /// a change to an object it tracks, never that it will (14.2.3). In
     /// memory only; a window's section tells it.
-    private var marksSaid: [String: (context: KubeContext, reason: KubeMarkedAppsMode.Reason)] = [:]
+    private var marksSaid: [String: (context: KubeContext, reason: KubeMarkedAppsMode.Reason, at: Date)] = [:]
 
-    func noteMarksMode(_ mode: KubeMarkedAppsMode, in context: String) {
+    func noteMarksMode(_ mode: KubeMarkedAppsMode, in context: String, now: Date = Date()) {
         guard case .only(let reason) = mode, let read = contexts.context(named: context) else {
             marksSaid[context] = nil
             return
         }
-        marksSaid[context] = (read, reason)
+        marksSaid[context] = (read, reason, now)
     }
 
-    /// What `context`'s section last said — only while the name reaches the
-    /// same cluster as the same user it said it of (`sameCluster`): a
-    /// kubeconfig pointing the name elsewhere since is another cluster's
-    /// answer to give.
-    func marksReason(of context: KubeContext) -> KubeMarkedAppsMode.Reason? {
-        guard let said = marksSaid[context.name], Self.sameCluster(said.context, context) else { return nil }
+    /// What `context`'s section said in the last five minutes
+    /// (`markedAppsLife`, as its apps are kept) — only while the name
+    /// reaches the same cluster as the same user it said it of
+    /// (`sameCluster`): a kubeconfig pointing the name elsewhere since is
+    /// another cluster's answer to give, and "none here" said hours ago no
+    /// answer now (14.3: "not in" only from a read that is).
+    func marksReason(of context: KubeContext, now: Date = Date()) -> KubeMarkedAppsMode.Reason? {
+        guard let said = marksSaid[context.name], Self.sameCluster(said.context, context), now.timeIntervalSince(said.at) <= Self.markedAppsLife else { return nil }
         return said.reason
+    }
+
+    /// A context's apps as a GitOps section last ranked them from marks
+    /// (gitops.md 14.2.5, 14.4.2): what the checkout's rail takes instead
+    /// of reading again — an app's health with its age, option B's members
+    /// when they were read whole across the cluster.
+    struct MarkedAppsKept: Sendable {
+        /// The context as read then: its answer only while the name reaches the same cluster (`sameCluster`).
+        var context: KubeContext
+        var apps: [KubeMarkedRanked]
+        var at: Date
+        var scope: KubeScope
+        /// Every workload kind's rows read whole.
+        var whole: Bool
+    }
+
+    /// Kept while the page that ranked them shows, five minutes at most; in memory only.
+    private var markedKept: [String: [ObjectIdentifier: MarkedAppsKept]] = [:]
+    nonisolated static let markedAppsLife: TimeInterval = 300
+
+    /// A section's apps, as it ranked them again — nil: forgotten (its
+    /// page hidden, another context, a credential failure).
+    func keepMarkedApps(_ kept: MarkedAppsKept?, context: String, by owner: AnyObject) {
+        let id = ObjectIdentifier(owner)
+        // What a page gone without a word left is past its life: dropped here.
+        let now = Date()
+        markedKept = markedKept.compactMapValues { kept in
+            let fresh = kept.filter { now.timeIntervalSince($0.value.at) <= Self.markedAppsLife }
+            return fresh.isEmpty ? nil : fresh
+        }
+        if let kept {
+            markedKept[context, default: [:]][id] = kept
+        } else {
+            markedKept[context]?[id] = nil
+            if markedKept[context]?.isEmpty == true { markedKept[context] = nil }
+        }
+    }
+
+    /// Every context's apps a page kept: forgotten with it.
+    func forgetMarkedApps(by owner: AnyObject) {
+        let id = ObjectIdentifier(owner)
+        for name in Array(markedKept.keys) {
+            markedKept[name]?[id] = nil
+            if markedKept[name]?.isEmpty == true { markedKept[name] = nil }
+        }
+    }
+
+    /// The freshest apps a section ranked of `context`, under five minutes old, of the same cluster.
+    func markedApps(of context: KubeContext, now: Date = Date()) -> MarkedAppsKept? {
+        (markedKept[context.name]?.values ?? [:].values)
+            .filter { now.timeIntervalSince($0.at) <= Self.markedAppsLife && Self.sameCluster($0.context, context) }
+            .max { $0.at < $1.at }
     }
 
     @Published private(set) var version: KubeServerVersion?

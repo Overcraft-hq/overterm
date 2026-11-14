@@ -15,6 +15,10 @@ protocol KubeGitOpsPanelHost: AnyObject {
     func gitOpsTabWrite(_ verb: KubeProcessVerb, on ref: KubeObjectRef) async
     /// The binding's context on the page, the object's list and detail open.
     func gitOpsOpenOnPage(_ ref: KubeObjectRef) async
+    /// An Argo CD app read from marks (gitops.md 14.2.5): the binding's
+    /// context on the page, its GitOps section, the app's detail — its
+    /// namespaces in the page's scope, so the section reads it.
+    func gitOpsOpenMarked(_ ref: KubeMarkedDetailRef, namespaces: [String]) async
     /// Ask Why: the page's brief, shown whole before it is sent — with
     /// what the rail knows of the checkout (`extra`, scrubbed): the
     /// commits between applied and attempted, the files this branch changes.
@@ -26,11 +30,15 @@ protocol KubeGitOpsPanelHost: AnyObject {
 /// What the rail has read of a binding, kept five minutes in memory, app
 /// wide (gitops.md 4.4, decision 11): its lists across the cluster (P3,
 /// P4) — the sources that name the checkout and the objects that take from
-/// them —, each keyed by the context, the binding and the remotes'
-/// normalised set; whether Find What Deploys This was pressed for it; each
-/// context's discovery the rail read (P0); and the namespaces the page's
-/// section saw Applications in. Dropped on Refresh, a binding change, a
-/// credential failure and at quit; never written to disk.
+/// them — and, where it reads Argo CD's apps from marks, option B's
+/// (14.2.5: the matched apps, each app's members listed, what was
+/// compared), each keyed by the context, the binding, the remotes'
+/// normalised set and what discovery said of Argo CD and Flux (a listing
+/// made of one isn't another's); whether Find What Deploys This was
+/// pressed for it; each context's discovery the rail read (P0); and the
+/// namespaces the page's section saw Applications in. Dropped on Refresh,
+/// a binding change, a credential failure and at quit; never written to
+/// disk.
 @MainActor
 final class KubeGitOpsMatchCache {
     static let shared = KubeGitOpsMatchCache()
@@ -40,6 +48,8 @@ final class KubeGitOpsMatchCache {
         var checkout: String
         var namespace: String
         var remotes: String
+        /// What discovery said of each tool when it was read (`KubePanelGitOps.mode(of:)`).
+        var mode: String
     }
 
     struct Listing: Sendable {
@@ -56,6 +66,7 @@ final class KubeGitOpsMatchCache {
     var clock: () -> Date = Date.init
 
     private var listings: [Key: (at: Date, listing: Listing)] = [:]
+    private var marked: [Key: (at: Date, listing: KubeGitOpsMatch.MarkedListing)] = [:]
     private var pressed: [Key: Date] = [:]
     private var discoveries: [String: (at: Date, discovery: KubeDiscovery)] = [:]
     private var seen: [String: Set<String>] = [:]
@@ -66,6 +77,14 @@ final class KubeGitOpsMatchCache {
     }
 
     func keep(_ listing: Listing, for key: Key) { listings[key] = (clock(), listing) }
+
+    /// Option B's, where the rail reads from marks (14.2.5).
+    func marked(_ key: Key) -> KubeGitOpsMatch.MarkedListing? {
+        guard let kept = marked[key], clock().timeIntervalSince(kept.at) < life else { return nil }
+        return kept.listing
+    }
+
+    func keep(_ listing: KubeGitOpsMatch.MarkedListing, for key: Key) { marked[key] = (clock(), listing) }
 
     /// Find What Deploys This pressed for it (a production binding): its lists may run, for as long as they are kept.
     func press(_ key: Key) { pressed[key] = clock() }
@@ -89,6 +108,7 @@ final class KubeGitOpsMatchCache {
     /// Refresh, a binding change: that binding's listing and its press.
     func drop(_ key: Key) {
         listings[key] = nil
+        marked[key] = nil
         pressed[key] = nil
     }
 
@@ -97,6 +117,7 @@ final class KubeGitOpsMatchCache {
     func drop(binding: KubeBinding) {
         func same(_ key: Key) -> Bool { key.context == binding.context && key.checkout == binding.checkout && key.namespace == binding.namespace }
         listings = listings.filter { !same($0.key) }
+        marked = marked.filter { !same($0.key) }
         pressed = pressed.filter { !same($0.key) }
     }
 
@@ -106,6 +127,7 @@ final class KubeGitOpsMatchCache {
     /// A credential failure: everything of the context.
     func drop(context: String) {
         listings = listings.filter { $0.key.context != context }
+        marked = marked.filter { $0.key.context != context }
         pressed = pressed.filter { $0.key.context != context }
         discoveries[context] = nil
         seen[context] = nil
@@ -113,6 +135,7 @@ final class KubeGitOpsMatchCache {
 
     func dropAll() {
         listings = [:]
+        marked = [:]
         pressed = [:]
         discoveries = [:]
         seen = [:]
@@ -214,8 +237,8 @@ final class KubeGitOpsCheckouts {
 /// Its reads (4.4), every one a GET through the panel's background slot:
 /// - **P0** the context's discovery, the page's when it knows it, else one
 ///   read, kept with the cache;
-/// - **P1** the bound workloads' owners, from the panel's own follows
-///   (`KubeListOptions.owners`, in the binding's namespace);
+/// - **P1** the bound workloads' owners and marks, from the panel's own
+///   follows (`KubeListOptions.owners`, `.marks`, in the binding's namespace);
 /// - **P2** each owner named read by one GET (at most 8 objects, 4 MB
 ///   each), with a Flux owner's source and chart;
 /// - **P3** GitRepositories' rows across the cluster (their URL column),
@@ -229,10 +252,32 @@ final class KubeGitOpsCheckouts {
 ///   (at most 4), filtered here by name;
 /// - **P6** a match read again when its row changes, once every 15 s at most.
 ///
-/// On a production binding P3 and P4 wait for Find What Deploys This. A
+/// Where Argo CD's Applications aren't read here (14.2.5) — not served,
+/// argoproj.io not answering discovery, none listed (the section's word of
+/// the last five minutes, or one row asked once P4 found none — never once
+/// the rail's own reads hold an Application), refused, or a bound
+/// workload's own Application not there —, its apps are read from the
+/// marks on their objects: **A** the bound workloads' own (`owns`), with
+/// their apps' Argo Rollouts in the binding's namespace where one may scale
+/// a bound Deployment to 0 (one paged list, no watch: the Rollout is the
+/// app's workload, the Deployment "scaled by its Rollout"), each settled by
+/// one GET as the part first shows — a Rollout's phase in place of its
+/// Deployment's 0 — within what P2 left of the read's 8 (the rest "from its
+/// row"), again when its generation moves or it isn't Healthy, once every
+/// 15 s at most; **B** the cluster's marked workloads listed as rows (5,000
+/// or 30 MB for every kind together; or the GitOps section's apps, ranked
+/// in the last five minutes) set against the checkout's committed
+/// manifests — `describes`, never `owns` —, their Rollouts read within the
+/// same 8; **C** and **D** by name and image, "probably". B lists only
+/// where something here carries a mark (a bound workload, the page's
+/// lists, the section). No GitOps verb on such an app: Open shows its
+/// detail on the page.
+///
+/// On a production binding P3, P4 and B wait for Find What Deploys This. A
 /// list across the cluster refused (403) is read in Flux's or Argo CD's
-/// own namespace and the binding's instead — no ConfigMap. Hidden, every
-/// read ends and only the cache stays (`KubeGitOpsMatchCache`).
+/// own namespace and the binding's instead (B's in the context's
+/// accessible namespaces) — no ConfigMap. Hidden, every read ends and only
+/// the cache stays (`KubeGitOpsMatchCache`).
 @MainActor
 final class KubePanelGitOps: ObservableObject {
     enum State: Equatable {
@@ -246,26 +291,66 @@ final class KubePanelGitOps: ObservableObject {
         case failed(String)
     }
 
+    /// An Argo CD app read from the marks on its objects (14.2.5): its
+    /// health by Argo CD's built-in rules, whose that health is, where its
+    /// Application stands as far as can be said.
+    struct Marked: Equatable {
+        var app: KubeMarkedApp
+        var health: KubeMarkedHealth.AppVerdict
+        var scope: KubeGitOpsMatch.MarkedScope
+        var place: KubeGitOpsMatch.MarkedPlace
+        /// By name, image, or a manifest with no namespace: "probably".
+        var probable: Bool
+    }
+
     /// One object that deploys the checkout.
     struct Match: Identifiable, Equatable {
         var key: KubeGitOpsObject.Key
-        /// Ranked by the ladder; nil for an owner the cluster hasn't.
+        /// Ranked by the ladder; nil for an owner the cluster hasn't, and an app read from marks.
         var object: KubeGitOpsObject?
         var whys: [KubeGitOpsMatch.Why]
         var tracks: String?
         /// Has this branch reached the cluster (4.3): a case (a) match's
         /// manifests line and what goes with it, once the checkout answered.
         var reach: KubeGitOpsReach.Answer?
+        /// An app read from marks: no object of its own.
+        var marked: Marked?
 
         var id: String { key.description }
 
-        /// `Application argocd/acme-shop-prod`.
-        var said: String { key.description }
+        /// `Application argocd/acme-shop-prod`; an app read from marks,
+        /// `Argo CD app prod-shop-api-service`.
+        var said: String {
+            guard let marked else { return key.description }
+            return "Argo CD app \(marked.app.said)" + (marked.app.installation.map { " · installation \($0)" } ?? "")
+        }
 
         /// "apps/web · owns Deployment/shop-api".
         var why: String { whys.map(\.said).joined(separator: " · ") }
 
         var isProblem: Bool { object.map { [.failed, .blocked, .stuck].contains($0.state) } ?? false }
+
+        /// Its state: the object's by the ladder, or an app's from marks by Argo CD's rules.
+        var state: KubeGitOpsState? { object?.state ?? marked?.health.state }
+    }
+
+    /// One bound workload as the panel's follows list it.
+    struct Bound: Equatable, Sendable {
+        var ref: KubeWorkloadRef
+        var owners: [KubeGitOpsOwner]
+        var images: [String]
+        /// Its Argo CD marks and health from its row (`KubeListOptions.marks`).
+        var member: KubeMarkedMember?
+    }
+
+    /// What the rail says over the apps read from marks.
+    struct MarksSaid: Equatable {
+        /// More than three by name or image.
+        var tooMany: String?
+        /// Nothing matched, B having compared: what was, never "not deployed".
+        var nothing: String?
+        /// What B's compare couldn't do.
+        var caveats: [String] = []
     }
 
     @Published private(set) var state: State = .idle
@@ -278,12 +363,31 @@ final class KubePanelGitOps: ObservableObject {
     @Published private(set) var willRead = ""
     /// The outcome of a verb asked from the rail.
     @Published var status: KubeWriteStatus?
-    /// Whether the part shows: a match, an owner, a problem, or the button.
+    /// Why the rail reads Argo CD's apps from marks across this cluster
+    /// (14.2.5); nil where Applications are read here.
+    @Published private(set) var marksReason: KubeMarkedAppsMode.Reason?
+    @Published private(set) var marksSaid = MarksSaid()
+    /// Whether the part shows: a match, an owner, a problem, what the marks
+    /// say, or the button.
     var shows: Bool {
         if !matches.isEmpty || !problems.isEmpty || !searched.isEmpty || status != nil { return true }
+        if marksSaid.nothing != nil || marksSaid.tooMany != nil { return true }
         if case .waiting = state { return true }
         if case .failed = state { return true }
         return false
+    }
+
+    /// The part's line where it reads from marks across the cluster:
+    /// "Argo CD isn't in fake-dev; read from the marks on shop's workloads"
+    /// — the cluster's where only option B, C or D found its apps — only
+    /// once there is something read from them, or waiting to be.
+    var marksLine: String? {
+        guard let reason = marksReason, let context, let binding else { return nil }
+        var waiting = false
+        if case .waiting = state { waiting = marksWanted }
+        guard waiting || matches.contains(where: { $0.marked != nil }) || marksSaid.nothing != nil || marksSaid.tooMany != nil else { return nil }
+        let bound = matches.contains { match in match.marked != nil && match.whys.contains { if case .owns = $0 { true } else { false } } }
+        return KubeGitOpsMatch.marksLine(reason, context: context.name, namespace: bound || waiting ? binding.namespace : nil)
     }
 
     weak var host: KubeGitOpsPanelHost?
@@ -292,7 +396,8 @@ final class KubePanelGitOps: ObservableObject {
     let checkouts: KubeGitOpsCheckouts
     var clock: () -> Date = Date.init
 
-    /// At most this many objects read for the owners (P2).
+    /// At most this many objects read for the owners (P2), and with them
+    /// the bound workloads' settle (14.2.5).
     nonisolated static let ownerReads = 8
     nonisolated static let getBytes = 4 << 20
     /// P3's OCIRepositories: 200 objects or 8 MB.
@@ -302,6 +407,36 @@ final class KubePanelGitOps: ObservableObject {
     nonisolated static let liveFollows = 4
     /// P6: an object read again at most this often.
     nonisolated static let refetchEvery: TimeInterval = 15
+    /// B's rows across the cluster: 500 a page, 5,000 objects and 30 MB
+    /// for every kind together — the design's M1 bound, "rows under 30 MB
+    /// together" (gitops.md 14.4.1) —, each kind read with what the ones
+    /// before it left.
+    nonisolated static let markedRows = KubeMarkedAppsSession.Bounds(rowsPage: 500, pageBytes: 16 << 20, rowsObjects: 5000, rowsBytes: 30 << 20)
+    /// The binding namespace's Argo Rollouts: one paged list, 500 objects or 8 MB.
+    nonisolated static let rolloutRows = KubeMarkedAppsSession.Bounds(rowsPage: 500, pageBytes: 8 << 20, rowsObjects: 500, rowsBytes: 8 << 20)
+    /// B's bound as this rail reads it: `markedRows` but for a test's.
+    var markedRowsBounds = KubePanelGitOps.markedRows
+
+    /// What discovery says of each tool, apart, as the cache keeps a
+    /// listing by — `argo=served;flux=unserved`: Argo CD's Applications
+    /// served, not served, or argoproj.io not answering; Flux's kinds
+    /// served, not, or its groups not answering. A listing made while one
+    /// said one thing isn't another's (Flux served, Argo CD's answer changed).
+    nonisolated static func mode(of discovery: KubeDiscovery) -> String {
+        let argo: String
+        if kind(of: "Application", in: discovery) != nil {
+            argo = "served"
+        } else {
+            argo = failedGroup(of: "Application", in: discovery) != nil ? "undiscovered" : "unserved"
+        }
+        let flux: String
+        if discovery.kinds.contains(where: { $0.group.hasSuffix(".toolkit.fluxcd.io") }) {
+            flux = "served"
+        } else {
+            flux = discovery.failedGroups.keys.contains { $0.split(separator: "/").first?.hasSuffix(".toolkit.fluxcd.io") == true } ? "undiscovered" : "unserved"
+        }
+        return "argo=\(argo);flux=\(flux)"
+    }
 
     private var generation = 0
     private var binding: KubeBinding?
@@ -315,14 +450,16 @@ final class KubePanelGitOps: ObservableObject {
     private var listing = KubeGitOpsMatchCache.Listing() {
         didSet { held = nil }
     }
-    /// The workloads' owners as last given (P1), and their images.
-    private var workloads: [(ref: KubeWorkloadRef, owners: [KubeGitOpsOwner], images: [String])] = []
-    private var ownersRead: [KubeGitOpsOwner] = []
+    /// P3/P4's listing is in (read, or kept): B may follow where Applications are served.
+    private var listed = false
+    /// The workloads' owners and marks as last given (P1), and their images.
+    private var workloads: [Bound] = []
+    private var ownersNamed: [KubeGitOpsOwner] = []
     /// P2's: the owners' objects, and what each GET said.
     private var owned: [KubeGitOpsObject.Key: KubeGitOpsObject] = [:] {
         didSet { held = nil }
     }
-    private var reads: [KubeGitOpsOwner: KubeGitOpsMatch.OwnerRead] = [:]
+    private var ownersAnswer: OwnersRead?
     /// P6's: objects read again since.
     private var refetched: [KubeGitOpsObject.Key: KubeGitOpsObject] = [:] {
         didSet { held = nil }
@@ -351,6 +488,45 @@ final class KubePanelGitOps: ObservableObject {
     private(set) var reachRuns = 0
     /// A review tab in the checkout: the panel's (`openReview`).
     var openReview: (ReviewSource, URL) -> Void = { _, _ in }
+
+    /// B's listing (14.2.5), and whether it is being read.
+    private var marksListing: KubeGitOpsMatch.MarkedListing?
+    private var marksReading = false
+    /// Why the rail reads from marks across a cluster serving Applications,
+    /// as told: the page's section's word of the last five minutes
+    /// (`sectionReason`), B's own — one row of Applications asked
+    /// (`listedReason`) —; neither stands once the rail's own reads hold an
+    /// Application (`updateMarksReason`).
+    private var sectionReason: KubeMarkedAppsMode.Reason?
+    private var listedReason: KubeMarkedAppsMode.Reason?
+    /// Each bound workload as one GET settled it (A), and when each was
+    /// last asked; asked in this read; its row's last change seen.
+    private var settled: [KubeMarkedMember.ID: KubeMarkedSettled] = [:]
+    private var settleLast: [KubeMarkedMember.ID: Date] = [:]
+    private var settleAsked: Set<KubeMarkedMember.ID> = []
+    private var settleTasks: [KubeMarkedMember.ID: Task<Void, Never>] = [:]
+    private var rowChangedAt: [KubeMarkedMember.ID: Date] = [:]
+    /// The Argo Rollouts past the read's 8, and those whose GET failed:
+    /// their phase not read, said — never "not read yet" for good.
+    private var settleSkipped: Set<KubeMarkedMember.ID> = []
+    private var settleFailed: Set<KubeMarkedMember.ID> = []
+    /// The binding namespace's Argo Rollouts as rows with their marks (a
+    /// Rollout runs a Deployment of its own namespace only, by
+    /// `workloadRef`): read once — one paged list, no watch — where Argo
+    /// Rollouts are served and a bound Deployment of an app read from marks
+    /// is scaled to 0; what was read of them, said for such a Deployment.
+    private var rollouts: [KubeMarkedMember] = []
+    private var rolloutsRead = KubeGitOpsMatch.RolloutsRead.notServed
+    private var rolloutsAsked = false
+    private var rolloutsDone = false
+    /// The settle's GETs made since made (a test's).
+    private(set) var settleGets = 0
+    /// Whether a settle GET waits or is in flight (a test's).
+    var settleAsking: Bool { !settleTasks.isEmpty }
+    /// Whether option B's listing is being read (a test's).
+    var readingMarks: Bool { marksReading }
+    /// The binding namespace's Rollouts listed since made (a test's).
+    private(set) var rolloutLists = 0
 
     init(kubernetes: KubernetesModel, cache: KubeGitOpsMatchCache = .shared, checkouts: KubeGitOpsCheckouts = .shared) {
         self.kubernetes = kubernetes
@@ -389,19 +565,25 @@ final class KubePanelGitOps: ObservableObject {
                 let facts = await self.checkouts.facts(checkout)
                 guard self.generation == generation else { return }
                 self.facts = facts
-                let key = KubeGitOpsMatchCache.Key(context: context.name, checkout: binding.checkout, namespace: binding.namespace, remotes: facts.remotesKey)
-                self.key = key
-                if press { self.cache.press(key) }
                 guard let discovery = await self.discover(context, client: client, generation: generation) else { return }
                 self.discovery = discovery
+                let key = KubeGitOpsMatchCache.Key(
+                    context: context.name, checkout: binding.checkout, namespace: binding.namespace, remotes: facts.remotesKey, mode: Self.mode(of: discovery))
+                self.key = key
+                if press { self.cache.press(key) }
+                // The section's word only while it is fresh: one said hours ago is no answer now.
+                self.sectionReason = self.kubernetes.marksReason(of: context)
+                self.rolloutsRead = Self.rolloutKind(discovery) == nil ? .notServed : .unread("\(binding.namespace)'s Rollouts not read yet")
+                self.updateMarksReason()
+                self.updateWillRead()
                 guard KubeGitOpsSummary.served(discovery) else {
-                    // Argo CD may run in another cluster and deploy to this one: a
-                    // workload's tracking id is still said (no GET for a kind not served).
+                    // Argo CD may run in another cluster and deploy to this one: the
+                    // workloads' own marks say its apps (no GET for a kind not served).
                     self.state = .unserved
                     self.readOwners()
+                    self.listMarks(generation: generation)
                     return
                 }
-                self.willRead = Self.willRead(discovery, context: context.name, seen: self.argoNamespaces(binding))
                 self.readOwners()
                 self.list(generation: generation)
             })
@@ -418,20 +600,37 @@ final class KubePanelGitOps: ObservableObject {
         discovery = nil
         key = nil
         listing = .init()
+        listed = false
         workloads = []
-        ownersRead = []
+        ownersNamed = []
         owned = [:]
-        reads = [:]
+        ownersAnswer = nil
         refetched = [:]
         lastGet = [:]
         asked = [:]
         questions = [:]
         reached = [:]
+        marksListing = nil
+        marksReading = false
+        sectionReason = nil
+        listedReason = nil
+        settled = [:]
+        settleLast = [:]
+        settleAsked = []
+        settleSkipped = []
+        settleFailed = []
+        rowChangedAt = [:]
+        rollouts = []
+        rolloutsRead = .notServed
+        rolloutsAsked = false
+        rolloutsDone = false
         state = .idle
         if !matches.isEmpty { matches = [] }
         searched = []
         problems = []
         willRead = ""
+        if marksReason != nil { marksReason = nil }
+        if marksSaid != MarksSaid() { marksSaid = MarksSaid() }
         // A verb's outcome outlives the panel hiding a moment (a sheet, the
         // window covered): it goes with the binding (`follow`).
     }
@@ -449,6 +648,8 @@ final class KubePanelGitOps: ObservableObject {
         queued = [:]
         for task in reachTasks.values { task.cancel() }
         reachTasks = [:]
+        for task in settleTasks.values { task.cancel() }
+        settleTasks = [:]
         headTask?.cancel()
         headTask = nil
     }
@@ -463,6 +664,9 @@ final class KubePanelGitOps: ObservableObject {
 
     /// How many rows-only follows P5 holds now (a test's).
     var openFollows: Int { follows.count }
+
+    /// The binding's context, as the part names it.
+    var contextName: String? { context?.name }
 
     // MARK: P0
 
@@ -485,21 +689,80 @@ final class KubePanelGitOps: ObservableObject {
         state = .failed("Couldn't read what \(context) serves: \(KubernetesModel.said(error))")
     }
 
+    /// Why the rail reads Argo CD's apps from marks across `discovery`'s
+    /// cluster: Applications not served (argoproj.io answering, or not), or
+    /// served and — as a GitOps section of this cluster last read them —
+    /// none there or refused everywhere; nil otherwise (P4 then decides).
+    nonisolated static func marksReason(_ discovery: KubeDiscovery, said: KubeMarkedAppsMode.Reason?) -> KubeMarkedAppsMode.Reason? {
+        if case .only(let reason) = KubeMarkedAppsMode.of(discovery: discovery, applications: .notYetListed, marked: []) { return reason }
+        if let said, said == .noApplications || said == .forbidden { return said }
+        return nil
+    }
+
+    /// The reason as it stands (14.3: "not in" only from a whole read):
+    /// discovery's; served, none listed or refused as the section said it
+    /// in the last five minutes or B's own row of Applications found — but
+    /// never once the rail's own reads hold an Application (P4's listing,
+    /// P2's owners): Applications are here, and what deploys the checkout
+    /// is theirs to say.
+    private func updateMarksReason() {
+        guard let discovery else { return }
+        var reason = Self.marksReason(discovery, said: sectionReason ?? listedReason)
+        if reason == .noApplications || reason == .forbidden, applicationsHeld { reason = nil }
+        if marksReason != reason { marksReason = reason }
+    }
+
+    /// An Application among the rail's own reads: P4's listing, P2's owners.
+    private var applicationsHeld: Bool {
+        listing.objects.values.contains { $0.role == .application } || owned.values.contains { $0.role == .application }
+    }
+
+    /// Argo Rollouts as discovery serves them, listable.
+    nonisolated static func rolloutKind(_ discovery: KubeDiscovery) -> KubeResourceKind? {
+        discovery.kinds.first { $0.fullName == KubeMarkedAppsSession.rollouts && $0.canList }
+    }
+
     // MARK: P1, P2: the owners
 
     /// The bound workloads as the panel's follows list them: their owners
-    /// read (P2) when the set of owners changed.
-    func workloadsChanged(_ given: [(ref: KubeWorkloadRef, owners: [KubeGitOpsOwner], images: [String])]) {
+    /// read (P2) when the set of owners changed; a member's row that
+    /// changed noted, for its settle; B listed once a mark is first seen.
+    func workloadsChanged(_ given: [Bound]) {
+        let now = clock()
+        var before: [KubeMarkedMember.ID: KubeMarkedMember] = [:]
+        for bound in workloads { if let member = bound.member { before[member.id] = member } }
+        for bound in given { if let member = bound.member, before[member.id] != member { rowChangedAt[member.id] = now } }
+        let hadMarks = marksEvidence
         workloads = given
         guard discovery != nil else { return }
+        if !hadMarks, marksEvidence { updateWillRead() }
         let owners = KubeGitOpsMatch.owners(given.map { ($0.ref, $0.owners) }).map(\.owner)
-        if owners != ownersRead { readOwners() } else { compute() }
+        if owners != ownersNamed {
+            readOwners()
+        } else {
+            compute()
+        }
+        if !hadMarks, marksEvidence { listMarks(generation: generation) }
+    }
+
+    /// The bound workloads whose rows had events in a flush: one settled
+    /// before (14.2.5) is read again when its generation moved, or when it
+    /// wasn't Healthy — once every 15 s at most; readiness alone of a
+    /// Healthy one, never.
+    func rowsMoved(_ refs: Set<KubeWorkloadRef>) {
+        guard !refs.isEmpty, discovery != nil else { return }
+        for bound in workloads where refs.contains(bound.ref) {
+            guard let member = bound.member, let was = settled[member.id], isDerived(bound) else { continue }
+            let moved = member.marks.generation.map { $0 != was.generation } ?? false
+            guard moved || was.status != .healthy else { continue }
+            settleGet(member.id, kind: bound.ref.kind.kind)
+        }
     }
 
     private func readOwners() {
         guard let client, let discovery else { return }
         let named = KubeGitOpsMatch.owners(workloads.map { ($0.ref, $0.owners) })
-        ownersRead = named.map(\.owner)
+        ownersNamed = named.map(\.owner)
         ownerTask?.cancel()
         let generation = self.generation
         let namespace = binding?.namespace
@@ -507,8 +770,8 @@ final class KubePanelGitOps: ObservableObject {
             guard let read = await Self.readOwners(named, client: client, discovery: discovery, namespace: namespace, now: Date()) else { return }
             guard let self, self.generation == generation, !Task.isCancelled else { return }
             self.owned = read.objects
-            self.reads = read.reads
-            self.problems = read.problems
+            self.ownersAnswer = read
+            self.updateMarksReason()
             self.compute()
         }
     }
@@ -517,14 +780,29 @@ final class KubePanelGitOps: ObservableObject {
     struct OwnersRead: Sendable {
         var objects: [KubeGitOpsObject.Key: KubeGitOpsObject] = [:]
         var reads: [KubeGitOpsOwner: KubeGitOpsMatch.OwnerRead] = [:]
-        var problems: [String] = []
+        /// Each owner that couldn't be read, and why, in order.
+        var unread: [(owner: KubeGitOpsOwner, said: String)] = []
+        /// GETs made, of the read's 8.
+        var spent = 0
+        /// Plain names whose GET in `argocd` found nothing: not in this
+        /// cluster only where its Applications were seen in `argocd`
+        /// (14.2.5) — `resolved` says which.
+        var unplaced: Set<KubeGitOpsOwner> = []
+        /// Refused (403).
+        var refused: Set<KubeGitOpsOwner> = []
+        /// Their kind's group didn't answer discovery.
+        var undiscovered: Set<KubeGitOpsOwner> = []
+
+        /// What couldn't be read, said: the rail's problem lines, `k8s_gitops`' notes.
+        var problems: [String] { unread.map(\.said) }
     }
 
     /// P2: each owner the workloads' marks name read by one GET, at most
     /// `ownerReads` objects with a Flux owner's source and chart — the
     /// rail's, and `k8s_gitops checkout`'s. Helm's own label names the
     /// Application only when it manages one of those workloads in
-    /// `namespace`. Nil when cancelled.
+    /// `namespace`. A plain Argo CD name not found in `argocd` is left for
+    /// `resolved` to place. Nil when cancelled.
     nonisolated static func readOwners(
         _ named: [(owner: KubeGitOpsOwner, workloads: [KubeWorkloadRef])], client: KubeClient, discovery: KubeDiscovery, namespace: String?,
         now: Date
@@ -538,13 +816,15 @@ final class KubePanelGitOps: ObservableObject {
                 // group failed to answer discovery, which says nothing.
                 if let group = failedGroup(of: key.kind, in: discovery) {
                     read.reads[owner] = .unreadable
-                    read.problems.append("Couldn't read \(owner.said): \(group) didn't answer discovery")
+                    read.undiscovered.insert(owner)
+                    read.unread.append((owner, "Couldn't read \(owner.said): \(group) didn't answer discovery"))
                 } else {
                     read.reads[owner] = .absent
                 }
                 continue
             }
             budget -= 1
+            read.spent += 1
             do {
                 let data = try await client.get(kind.path(namespace: key.namespace, name: key.name), maxBytes: getBytes)
                 var object = try await KubeBlocking.run { Result { try KubeGitOpsSummary.object(data, readAt: now) } }.get()
@@ -559,10 +839,12 @@ final class KubePanelGitOps: ObservableObject {
                     // A Flux owner's source, and its chart's.
                     for upstream in KubeGitOpsLadder.upstream(object) where budget > 0 && read.objects[upstream] == nil {
                         budget -= 1
+                        read.spent += 1
                         if let source = await get(upstream, client: client, discovery: discovery, now: now) {
                             read.objects[source.key] = source
                             for further in KubeGitOpsLadder.upstream(source) where budget > 0 && read.objects[further] == nil {
                                 budget -= 1
+                                read.spent += 1
                                 if let found = await get(further, client: client, discovery: discovery, now: now) { read.objects[found.key] = found }
                             }
                         }
@@ -571,16 +853,42 @@ final class KubePanelGitOps: ObservableObject {
                     read.reads[owner] = .absent
                 }
             } catch let error as KubeAPIError where error.isNotFound {
-                read.reads[owner] = .absent
+                if owner.tool == .argoCD, owner.isCertain, owner.namespace == nil {
+                    // A plain name, looked for in argocd: Argo CD's own namespace here may be another.
+                    read.reads[owner] = .unreadable
+                    read.unplaced.insert(owner)
+                } else {
+                    read.reads[owner] = .absent
+                }
             } catch is CancellationError {
                 return nil
             } catch {
                 // Refused (403), failed, timed out: unknown — never "not in" the cluster.
                 read.reads[owner] = .unreadable
-                read.problems.append("Couldn't read \(owner.said): \(KubernetesModel.said(error))")
+                if let api = error as? KubeAPIError, api.isForbidden { read.refused.insert(owner) }
+                read.unread.append((owner, "Couldn't read \(owner.said): \(KubernetesModel.said(error))"))
             }
         }
         return Task.isCancelled ? nil : read
+    }
+
+    /// A plain Argo CD name's 404 in `argocd` placed (14.2.5): not in this
+    /// cluster where its Applications were seen in `argocd` — the page's
+    /// section, the rail's own listing — or where none is here at all
+    /// (`noApplications`); else unknown, said: Argo CD's own namespace here
+    /// may be another.
+    nonisolated static func resolved(_ read: OwnersRead, seen: Set<String>, noApplications: Bool) -> OwnersRead {
+        var read = read
+        let placed = noApplications || seen.contains(KubeGitOps.argoDefaultNamespace)
+        for owner in read.unplaced.sorted(by: { $0.name < $1.name }) {
+            if placed {
+                read.reads[owner] = .absent
+            } else {
+                read.unread.append((owner, "\(owner.said) wasn't found in \(KubeGitOps.argoDefaultNamespace); Argo CD's namespace here is unknown"))
+            }
+        }
+        if placed { read.unplaced = [] }
+        return read
     }
 
     /// One object by its key, summarised; nil when it isn't there or can't be read.
@@ -613,6 +921,279 @@ final class KubePanelGitOps: ObservableObject {
         return discovery.failedGroups.keys.contains { $0 == group || $0.hasPrefix(group + "/") } ? group : nil
     }
 
+    // MARK: Apps from marks (14.2.5)
+
+    /// Whether anything here carries Argo CD's marks: a bound workload's
+    /// own, a list's rows on the page (`KubernetesModel.marksSeen`), the
+    /// section's apps. Without, B lists nothing.
+    private var marksEvidence: Bool {
+        guard let context else { return false }
+        return workloads.contains { $0.member?.marks.hasArgoMark == true } || kubernetes.marksSeen.contains(context.name)
+            || freshSection(context) != nil
+    }
+
+    /// Whether B would read here: the rail reads from marks across the
+    /// cluster, or Applications are served and may turn out none.
+    private var marksWanted: Bool {
+        guard let discovery else { return false }
+        return marksReason != nil || KubePanelGitOps.kind(of: "Application", in: discovery) != nil
+    }
+
+    /// The section's apps of `context` ranked in the last five minutes.
+    private func freshSection(_ context: KubeContext) -> KubernetesModel.MarkedAppsKept? {
+        kubernetes.markedApps(of: context, now: clock())
+    }
+
+    /// The Argo CD owner a bound workload's own mark names, when it is sure.
+    private static func argoOwner(_ bound: Bound) -> KubeGitOpsOwner? {
+        bound.owners.first { $0.tool == .argoCD && $0.isCertain }
+    }
+
+    /// A bound workload of an app read from marks: its own Argo CD mark
+    /// names an app whose Application isn't read present here (14.2.5),
+    /// once its owner's read is known — or needs none (not served).
+    private func isDerived(_ bound: Bound) -> Bool {
+        guard let member = bound.member, member.marks.hasArgoMark, case .app = KubeMarkedApps.place(member.marks) else { return false }
+        guard let owner = Self.argoOwner(bound) else { return marksReason != nil }
+        guard let read = ownersAnswer?.reads[owner] else { return false }
+        return read != .present
+    }
+
+    /// The settle (14.2.5): one GET of each, as the part first shows,
+    /// settled by Argo CD's rule within what P2 left of the read's 8 — the
+    /// bound apps' Argo Rollouts first (a Rollout's row has no health: its
+    /// phase is its object's), then each bound workload of an app read from
+    /// marks (a Deployment scaled to 0 where Rollouts are served only once
+    /// the namespace's Rollouts were read and none of its app's is there: a
+    /// Rollout's GET says that app's health, the Deployment's can't), then
+    /// the Rollouts of the apps option B, C or D found. The rest stay "from
+    /// its row" — a Rollout's phase said unread (`settleSkipped`). None for
+    /// an app the section ranked in the last five minutes: its verdict is shown.
+    private func settle(_ answered: KubeGitOpsMatch.MarkedAnswer) {
+        guard let context, let discovery, ownersAnswer != nil else { return }
+        let section = Set((freshSection(context)?.apps ?? []).map(\.app.key))
+        let rolloutKind = Self.rolloutKind(discovery)
+        let shown = (answered.found + answered.probably).filter { !section.contains($0.app.key) }
+        var wanted: [(id: KubeMarkedMember.ID, kind: KubeResourceKind)] = []
+        var runByRollout = Set<KubeTrackingID.AppKey>()
+        if let rolloutKind {
+            for entry in shown where entry.bound {
+                for member in entry.app.members where member.id.kind == .rollout {
+                    wanted.append((member.id, rolloutKind))
+                    runByRollout.insert(entry.app.key)
+                }
+            }
+        }
+        for bound in workloads {
+            guard let member = bound.member, member.id.kind.cellsMayHide, isDerived(bound), case .app(let key) = KubeMarkedApps.place(member.marks),
+                !section.contains(key)
+            else { continue }
+            if rolloutKind != nil, member.id.kind == .deployment, member.health?.scaledToZero == true, !rolloutsDone || runByRollout.contains(key) { continue }
+            wanted.append((member.id, bound.ref.kind.kind))
+        }
+        if let rolloutKind {
+            for entry in shown where !entry.bound {
+                for member in entry.app.members where member.id.kind == .rollout { wanted.append((member.id, rolloutKind)) }
+            }
+        }
+        var left = Self.ownerReads - (ownersAnswer?.spent ?? 0) - settleAsked.count
+        var skipped = Set<KubeMarkedMember.ID>()
+        var seen = Set<KubeMarkedMember.ID>()
+        for (id, kind) in wanted where seen.insert(id).inserted && settled[id] == nil && !settleAsked.contains(id) {
+            guard left > 0 else {
+                skipped.insert(id)
+                continue
+            }
+            left -= 1
+            settleAsked.insert(id)
+            settleGet(id, kind: kind)
+        }
+        settleSkipped = skipped
+    }
+
+    /// The binding namespace's Argo Rollouts as rows with their marks, once
+    /// a read — one paged list, no watch — where Rollouts are served and a
+    /// bound Deployment of an app read from marks is scaled to 0 (the
+    /// section's apps aside): the Rollout that runs it, by `workloadRef`,
+    /// is its app's workload (14.12's second consequence), and a Rollout
+    /// runs a Deployment of its own namespace only.
+    private func readRollouts() {
+        guard !rolloutsAsked, let client, let discovery, let binding, let context, let kind = Self.rolloutKind(discovery) else { return }
+        let section = Set((freshSection(context)?.apps ?? []).map(\.app.key))
+        let scaledToZero = workloads.contains { bound in
+            guard let member = bound.member, member.id.kind == .deployment, member.health?.scaledToZero == true, isDerived(bound),
+                case .app(let key) = KubeMarkedApps.place(member.marks)
+            else { return false }
+            return !section.contains(key)
+        }
+        guard scaledToZero else { return }
+        rolloutsAsked = true
+        rolloutLists += 1
+        let namespace = binding.namespace
+        let generation = self.generation
+        tasks.append(
+            Task { [weak self] in
+                let read = await KubeMarkedAppsSession.readRows(kind, places: [namespace], client: client, bounds: Self.rolloutRows)
+                guard let self, self.generation == generation, !Task.isCancelled else { return }
+                switch read {
+                case .read(let rows, let refused, let cut, _):
+                    let now = Date()
+                    self.rollouts = rows.sorted.compactMap { KubeMarkedMember.row($0, kind: .rollout, columns: rows.columns, now: now) }
+                    if !refused.isEmpty {
+                        self.rolloutsRead = .unread("\(namespace)'s Rollouts can't be read (forbidden)")
+                    } else if cut {
+                        self.rolloutsRead = .unread("\(namespace)'s Rollouts read in part")
+                    } else {
+                        self.rolloutsRead = .read
+                    }
+                case .refusedAcross:
+                    self.rolloutsRead = .unread("\(namespace)'s Rollouts can't be read (forbidden)")
+                case .failed(let error):
+                    if error is KubeProxyProblem { self.cache.drop(context: context.name) }
+                    self.rolloutsRead = .unread("\(namespace)'s Rollouts couldn't be read")
+                }
+                self.rolloutsDone = true
+                self.compute()
+            })
+    }
+
+    /// An app's members as the rail's GETs settled them; an Argo Rollout
+    /// past the read's 8 said so — its row has no health to stand in.
+    private func settledApp(_ app: KubeMarkedApp) -> KubeMarkedApp {
+        var app = app
+        app.members = app.members.map { given in
+            var member = settledMember(given)
+            guard member.id.kind == .rollout, settled[member.id] == nil else { return member }
+            if settleFailed.contains(member.id) {
+                member.health = KubeMarkedHealth.Verdict(status: .unknown, sentence: "its phase couldn't be read")
+            } else if settleSkipped.contains(member.id) {
+                member.health = KubeMarkedHealth.Verdict(status: .unknown, sentence: "its phase not read: the rail reads \(Self.ownerReads) objects at most")
+            }
+            return member
+        }
+        return app
+    }
+
+    /// One bound workload's GET (`KubeMarkedWorkloadWire`), once every 15 s at most.
+    private func settleGet(_ id: KubeMarkedMember.ID, kind: KubeResourceKind) {
+        guard settleTasks[id] == nil, let client else { return }
+        let wait = settleLast[id].map { max(0, Self.refetchEvery - clock().timeIntervalSince($0)) } ?? 0
+        let generation = self.generation
+        let path = kind.path(namespace: id.namespace, name: id.name)
+        settleTasks[id] = Task { [weak self] in
+            if wait > 0 { try? await Task.sleep(for: .seconds(wait)) }
+            guard !Task.isCancelled, let self, self.generation == generation else { return }
+            let at = self.clock()
+            self.settleLast[id] = at
+            self.settleGets += 1
+            let result: Result<KubeMarkedWorkloadWire, Error>
+            do {
+                let data = try await client.get(path, maxBytes: Self.getBytes)
+                result = await KubeBlocking.run { Result { try KubeMarkedWorkloadWire.decode(data) } }
+            } catch {
+                result = .failure(error)
+            }
+            guard self.generation == generation, !Task.isCancelled else { return }
+            self.settleTasks[id] = nil
+            switch result {
+            case .success(var wire):
+                if wire.kind == nil { wire.kind = kind.kind }
+                if wire.apiVersion == nil { wire.apiVersion = kind.groupVersion }
+                self.settled[id] = KubeMarkedSettled(wire, at: at)
+                self.settleFailed.remove(id)
+            case .failure(let error as KubeAPIError) where error.isNotFound:
+                self.settled[id] = nil
+                self.settleFailed.insert(id)
+            case .failure:
+                // Refused, too large, failed: from its row, as before (a Rollout's phase said unread).
+                self.settleFailed.insert(id)
+            }
+            self.compute()
+        }
+    }
+
+    /// A member as its GET settled it, while that still says what its row
+    /// does: the same generation, and no row turned not ready since.
+    private func settledMember(_ member: KubeMarkedMember) -> KubeMarkedMember {
+        guard let was = settled[member.id] else { return member }
+        if let generation = member.marks.generation, let read = was.generation, generation != read { return member }
+        if let changed = rowChangedAt[member.id], changed > was.at, let status = member.health?.status, status != .healthy { return member }
+        return member.settled(by: was.wire, changedAt: rowChangedAt[member.id])
+    }
+
+    /// The words a listing of the workloads' marks that failed leaves among the searched lines.
+    nonisolated static let marksFailed = "Couldn't list the workloads' marks"
+
+    /// The searched lines once a listing of the workloads' marks ended:
+    /// the last one's failure replaced by this one's outcome — said once,
+    /// never left beside a listing that read (Refresh once the VPN is back).
+    nonisolated static func searched(_ lines: [String], marksFailed error: String?) -> [String] {
+        var kept = lines.filter { !$0.hasPrefix(marksFailed + ":") }
+        if let error { kept.append("\(marksFailed): \(error)") }
+        return kept
+    }
+
+    /// B: the cluster's marked workloads (or the section's apps) against
+    /// the checkout's manifests — where the rail reads from marks and
+    /// something here carries one. Where Applications are served, only
+    /// once P4's listing is in and the rail's own reads hold none —
+    /// whatever a section said, which only spares B its one row of them
+    /// asked across the cluster. On production, only once Find What
+    /// Deploys This was pressed (decision 11).
+    private func listMarks(generation: Int, force: Bool = false) {
+        guard let key, let context, let binding, let client, let discovery, let facts, marksEvidence, !marksReading else { return }
+        let served = Self.kind(of: "Application", in: discovery) != nil
+        if served {
+            guard listed, !applicationsHeld else { return }
+        }
+        // Not served: discovery's reason; served, the section's fresh word, else B asks.
+        let known = served ? sectionReason : marksReason
+        if !force, let kept = cache.marked(key) {
+            marksListing = kept
+            listedReason = kept.reason
+            updateMarksReason()
+            return compute()
+        }
+        if context.isProduction, !cache.isPressed(key) {
+            if case .failed = state {} else { state = .waiting(willRead) }
+            return compute()
+        }
+        if case .waiting = state { state = KubeGitOpsSummary.served(discovery) ? .reading : .unserved }
+        var section: (apps: [KubeMarkedApp], at: Date)?
+        if let kept = freshSection(context), kept.scope == .all, kept.whole { section = (kept.apps.map(\.app), kept.at) }
+        let accessible = context.settings.accessibleNamespaces
+        let git = checkouts.git
+        let bounds = markedRowsBounds
+        marksReading = true
+        tasks.append(
+            Task { [weak self] in
+                let read = await Self.markedListing(
+                    client: client, discovery: discovery, checkout: facts, namespace: binding.namespace, reason: known, accessible: accessible, section: section,
+                    git: git, bounds: bounds)
+                guard let self, self.generation == generation, !Task.isCancelled else { return }
+                self.marksReading = false
+                var failed: String?
+                switch read {
+                case .success(let found?):
+                    self.cache.keep(found, for: key)
+                    self.marksListing = found
+                    self.listedReason = found.reason
+                    self.updateMarksReason()
+                case .success(nil):
+                    // Applications are here: what deploys the checkout is theirs to say.
+                    self.marksListing = nil
+                    self.listedReason = nil
+                    self.updateMarksReason()
+                case .failure(let error):
+                    if error is KubeProxyProblem { self.cache.drop(context: context.name) }
+                    failed = KubernetesModel.said(error)
+                }
+                let searched = Self.searched(self.searched, marksFailed: failed)
+                if searched != self.searched { self.searched = searched }
+                self.compute()
+            })
+    }
+
     // MARK: P3, P4: the lists across the cluster
 
     /// Where Applications are listed: Argo CD's namespace, those the page
@@ -626,23 +1207,40 @@ final class KubePanelGitOps: ObservableObject {
         return ([KubeGitOps.argoDefaultNamespace] + seen + [binding.namespace]).filter { names.insert($0).inserted }
     }
 
-    /// "lists Applications in argocd and shop and GitRepositories on fake-prod".
-    static func willRead(_ discovery: KubeDiscovery, context: String, seen: [String]) -> String {
+    /// Find What Deploys This' label, as what would be read stands now.
+    private func updateWillRead() {
+        guard let discovery, let context, let binding else { return }
+        willRead = Self.willRead(discovery, context: context.name, seen: argoNamespaces(binding), marks: marksWanted && marksEvidence)
+        if case .waiting = state { state = .waiting(willRead) }
+    }
+
+    /// "lists Applications in argocd and shop and GitRepositories on
+    /// fake-prod, then what takes from a match" — and, `marks`, the
+    /// workloads' marks to compare with the checkout's manifests (14.2.5).
+    static func willRead(_ discovery: KubeDiscovery, context: String, seen: [String], marks: Bool = false) -> String {
         var parts: [String] = []
         if kind(of: "Application", in: discovery) != nil { parts.append("Applications in \(seen.joined(separator: ", "))") }
         if kind(of: "GitRepository", in: discovery) != nil { parts.append("GitRepositories") }
         if kind(of: "OCIRepository", in: discovery) != nil { parts.append("OCIRepositories") }
-        guard !parts.isEmpty else { return "" }
-        return "lists \(parts.joined(separator: " and ")) on \(context), then what takes from a match"
+        let said = parts.isEmpty ? "" : "lists \(parts.joined(separator: " and ")) on \(context), then what takes from a match"
+        guard marks else { return said }
+        let named = KubeMarkedReading.joined(KubeMarkedAppsSession.kinds(discovery).workloads.map(KubeKindCatalog.title(of:)))
+        let kinds = named.isEmpty ? "the workloads" : named
+        let compared = "with Argo CD's marks, to compare with this checkout's manifests"
+        if said.isEmpty { return "lists \(kinds) on \(context) \(compared)" }
+        if parts.first?.hasPrefix("Applications") == true { return said + "; where no Application is there, its \(kinds) \(compared)" }
+        return said + "; and its \(kinds) \(compared)"
     }
 
     private func list(generation: Int, force: Bool = false) {
         guard let key, let context, let binding, let client, let discovery, let facts else { return }
         if !force, let kept = cache.listing(key) {
             listing = kept
+            listed = true
             searched = kept.searched
+            updateMarksReason()
             compute()
-            return
+            return listMarks(generation: generation)
         }
         if context.isProduction, !cache.isPressed(key) {
             state = .waiting(willRead)
@@ -659,8 +1257,12 @@ final class KubePanelGitOps: ObservableObject {
                 case .success(let listing):
                     self.cache.keep(listing, for: key)
                     self.listing = listing
+                    self.listed = true
                     self.searched = listing.searched
+                    // Applications listed here: a section's "none here" is no answer now.
+                    self.updateMarksReason()
                     self.compute()
+                    self.listMarks(generation: generation)
                 case .failure(let error):
                     if error is KubeProxyProblem { self.cache.drop(context: context.name) }
                     self.state = .failed("Couldn't look for what deploys this: \(KubernetesModel.said(error))")
@@ -670,9 +1272,9 @@ final class KubePanelGitOps: ObservableObject {
 
     /// Find What Deploys This (production): the lists across the cluster, now.
     func find() {
-        guard let key else { return }
+        guard let key, let discovery else { return }
         cache.press(key)
-        list(generation: generation)
+        if KubeGitOpsSummary.served(discovery) { list(generation: generation) } else { listMarks(generation: generation) }
     }
 
     /// Refresh: the cache dropped, the checkout's remotes and everything
@@ -691,8 +1293,20 @@ final class KubePanelGitOps: ObservableObject {
         discovery = nil
         refetched = [:]
         lastGet = [:]
-        ownersRead = []
+        ownersNamed = []
         asked = [:]
+        listed = false
+        marksListing = nil
+        marksReading = false
+        listedReason = nil
+        settled = [:]
+        settleLast = [:]
+        settleAsked = []
+        settleSkipped = []
+        settleFailed = []
+        rollouts = []
+        rolloutsAsked = false
+        rolloutsDone = false
         start(press: pressed)
     }
 
@@ -844,11 +1458,108 @@ final class KubePanelGitOps: ObservableObject {
         }
     }
 
+    /// B (14.2.5): the cluster's marked workloads as rows with their marks
+    /// (`KubeMarkedAppsSession.kinds`' workloads, Argo Rollouts first — the
+    /// fewest, and the only health of the apps they run —, paged, no watch,
+    /// within `markedRows` for every kind together, each read with what the
+    /// ones before it left; refused across the cluster, read in the
+    /// context's accessible namespaces, else the binding's), or the
+    /// section's apps when it read them whole across the cluster in the
+    /// last five minutes (no request); then the checkout's manifests, set
+    /// against them off the main thread. `reason` nil: Applications are
+    /// served and P4 found none — one row of them asked across the cluster
+    /// first; some there, nil (what deploys the checkout is theirs to say).
+    nonisolated static func markedListing(
+        client: KubeClient, discovery: KubeDiscovery, checkout: KubeGitOpsMatch.Checkout, namespace: String, reason known: KubeMarkedAppsMode.Reason?,
+        accessible: [String], section: (apps: [KubeMarkedApp], at: Date)?, git: @escaping KubeGitOpsCheckouts.Runner, bounds rowsBound: KubeMarkedAppsSession.Bounds = markedRows
+    ) async -> Result<KubeGitOpsMatch.MarkedListing?, Error> {
+        var reason: KubeMarkedAppsMode.Reason
+        if let known {
+            reason = known
+        } else {
+            guard let asked = await KubeManifestRun.applicationsHere(discovery, client: client), asked == .noApplications || asked == .forbidden else {
+                return .success(nil)
+            }
+            reason = asked
+        }
+        var apps: [KubeMarkedApp] = []
+        var notes: [String] = []
+        let workloads = KubeMarkedAppsSession.kinds(discovery).workloads
+        let kinds = workloads.filter { $0.fullName == KubeMarkedAppsSession.rollouts } + workloads.filter { $0.fullName != KubeMarkedAppsSession.rollouts }
+        var rollouts: KubeGitOpsMatch.RolloutsRead = kinds.contains { $0.fullName == KubeMarkedAppsSession.rollouts } ? .read : .notServed
+        if let section {
+            // Apps grouped by app.kubernetes.io/instance alone are only probably
+            // Argo CD's (D-5): never said where Argo CD runs, so never here.
+            // Every workload kind's rows read whole across the cluster: Rollouts too.
+            apps = section.apps.filter { $0.mark != .appInstance }
+        } else {
+            var members: [KubeMarkedMember] = []
+            // One bound for every kind: each read with what the ones before it left.
+            var left = (objects: rowsBound.rowsObjects, bytes: rowsBound.rowsBytes)
+            for kind in kinds {
+                guard !Task.isCancelled else { return .failure(CancellationError()) }
+                let title = KubeKindCatalog.title(of: kind)
+                let isRollouts = kind.fullName == KubeMarkedAppsSession.rollouts
+                guard left.objects > 0, left.bytes > 0 else {
+                    let rows = rowsBound.rowsObjects
+                    notes.append("\(title) not read: \(rows.formatted()) \(rows == 1 ? "row" : "rows") or \(rowsBound.rowsBytes >> 20) MB read already")
+                    if isRollouts { rollouts = .unread("the cluster's Rollouts not read") }
+                    continue
+                }
+                var bounds = rowsBound
+                bounds.rowsObjects = left.objects
+                bounds.rowsBytes = left.bytes
+                var read = await KubeMarkedAppsSession.readRows(kind, places: [nil], client: client, bounds: bounds)
+                if case .refusedAcross = read {
+                    let places = accessible.isEmpty ? [namespace] : accessible
+                    read = await KubeMarkedAppsSession.readRows(kind, places: places, client: client, bounds: bounds)
+                    notes.append("\(title) refused across the cluster; read in \(places.joined(separator: ", "))")
+                    if isRollouts { rollouts = .unread("the cluster's Rollouts read in part") }
+                }
+                switch read {
+                case .read(let rows, let refused, let cut, let bytes):
+                    left.objects -= rows.count
+                    left.bytes -= bytes
+                    if !refused.isEmpty { notes.append("\(title) refused in \(refused.count) \(refused.count == 1 ? "namespace" : "namespaces") (\(refused.joined(separator: ", ")))") }
+                    if cut { notes.append("\(title): the list stopped at \(rows.count.formatted())") }
+                    if isRollouts, !refused.isEmpty || cut { rollouts = .unread("the cluster's Rollouts read in part") }
+                    let now = Date()
+                    for row in rows.sorted {
+                        if let member = KubeMarkedMember.row(row, kind: KubeMarkedKind(kind), columns: rows.columns, now: now) { members.append(member) }
+                    }
+                case .refusedAcross:
+                    notes.append("\(title) refused across the cluster")
+                    if isRollouts { rollouts = .unread("the cluster's Rollouts can't be read (forbidden)") }
+                case .failed(let error):
+                    if error is KubeProxyProblem || error is CancellationError { return .failure(error) }
+                    notes.append("\(title) not read: \(KubernetesModel.said(error))")
+                    if isRollouts { rollouts = .unread("the cluster's Rollouts couldn't be read") }
+                }
+            }
+            let grouped = KubeMarkedApps.group(members)
+            apps = grouped.isProbable ? [] : grouped.apps
+        }
+        let manifests = await KubeCheckoutManifests.read(checkout.root, git: git)
+        let made = apps
+        let said = notes
+        let found = reason
+        let at = section?.at
+        let read = rollouts
+        let listing = await KubeBlocking.run {
+            KubeGitOpsMatch.markedListing(
+                made, manifests: manifests, checkout: checkout, namespace: namespace, reason: found, notes: said, whole: said.isEmpty, rollouts: read, fromSection: at)
+        }
+        return .success(listing)
+    }
+
     // MARK: What is shown
 
     /// The matches from every object held; only theirs ranked (each
     /// against all it holds — its source, its dependencies), a handful,
-    /// not the whole listing at every row flip of a rollout.
+    /// not the whole listing at every row flip of a rollout. Beside them,
+    /// the apps read from marks (14.2.5): A from the bound workloads, B, C
+    /// and D from the listing — an Argo CD owner whose Application isn't
+    /// read here said as its app, with its health, in place of "not in".
     private func compute() {
         guard let facts, let context else { return }
         let objects: [KubeGitOpsObject.Key: KubeGitOpsObject]
@@ -861,32 +1572,129 @@ final class KubePanelGitOps: ObservableObject {
             held = merged
             objects = merged
         }
+        // A plain name's 404 in argocd: placed by where Applications were seen —
+        // "none here" only while the rail's own reads hold no Application.
+        var seen = cache.seenApplications(context.name)
+        for object in listing.objects.values where object.role == .application { if let namespace = object.ref.namespace { seen.insert(namespace) } }
+        let answer = ownersAnswer.map { Self.resolved($0, seen: seen, noApplications: marksReason == .noApplications && !applicationsHeld) }
+        let reads = answer?.reads ?? [:]
         // An owner not read yet says nothing yet.
         let owners = KubeGitOpsMatch.owners(workloads.map { ($0.ref, $0.owners) }).compactMap { owner, refs in
             reads[owner].map { (owner: owner, workloads: refs, read: $0) }
         }
-        let found = KubeGitOpsMatch.found(
+        var found = KubeGitOpsMatch.found(
             owned: owners, objects: objects, workloads: workloads.map { ($0.ref, $0.images) }, checkout: facts, context: context.name)
         let now = clock()
-        let new = found.map { found in
+
+        // A: the bound workloads whose own marks name an app whose Application isn't
+        // read present here, with their apps' Argo Rollouts in the binding's namespace.
+        readRollouts()
+        var bound: [(member: KubeMarkedMember, ref: KubeWorkloadRef, owner: KubeGitOpsOwner?)] = []
+        var boundKeys = Set<KubeTrackingID.AppKey>()
+        for workload in workloads where isDerived(workload) {
+            guard let member = workload.member else { continue }
+            bound.append((settledMember(member), workload.ref, Self.argoOwner(workload)))
+            if case .app(let key) = KubeMarkedApps.place(member.marks) { boundKeys.insert(key) }
+        }
+        let theirRollouts = rollouts.filter { rollout in
+            if case .app(let key) = KubeMarkedApps.place(rollout.marks) { boundKeys.contains(key) } else { false }
+        }
+        let grouped = KubeMarkedApps.group(bound.map(\.member) + theirRollouts).apps
+        var boundApps: [(app: KubeMarkedApp, workloads: [KubeWorkloadRef])] = []
+        var ownerOf: [KubeTrackingID.AppKey: KubeGitOpsOwner] = [:]
+        for app in grouped {
+            let ids = Set(app.members.map(\.id))
+            let mine = bound.filter { ids.contains($0.member.id) }
+            boundApps.append((app, mine.map(\.ref)))
+            if let owner = mine.compactMap(\.owner).first { ownerOf[app.key] = owner }
+        }
+        let answered = KubeGitOpsMatch.marked(bound: boundApps, listing: marksListing)
+        // Their owners' "not in" lines are theirs now, and what their place says, said once.
+        let replaced = Set(ownerOf.values.map { KubeGitOpsMatch.key(of: $0) })
+        found.removeAll { replaced.contains($0.key) && $0.whys.allSatisfy { if case .notInCluster = $0 { true } else { false } } }
+        let derivedOwners = Set(ownerOf.values)
+        let problems = (answer?.unread ?? []).filter { entry in
+            guard derivedOwners.contains(entry.owner) else { return true }
+            // Said by its place — refused, its group not answering, not found in argocd; any other failure stays.
+            return
+                !(answer?.refused.contains(entry.owner) == true || answer?.undiscovered.contains(entry.owner) == true
+                || answer?.unplaced.contains(entry.owner) == true)
+        }.map(\.said)
+        if problems != self.problems { self.problems = problems }
+
+        // Each one's GET within the read's 8, before their health is said.
+        settle(answered)
+        let section = freshSection(context)
+        func derived(_ entry: KubeGitOpsMatch.MarkedFound) -> Match {
+            let app = settledApp(entry.app)
+            let health: KubeMarkedHealth.AppVerdict
+            let scope: KubeGitOpsMatch.MarkedScope
+            if let section, let ranked = section.apps.first(where: { $0.app.key == app.key }) {
+                health = ranked.health
+                scope = .section(section.at)
+            } else if entry.bound {
+                health = KubeGitOpsMatch.health(app, rollouts: rolloutsRead)
+                let rollouts = app.members.count { $0.id.kind == .rollout }
+                scope = .bound(app.members.count - rollouts, rollouts: rollouts, elsewhere: elsewhere(app), whole: marksListing?.whole ?? true)
+            } else {
+                health = KubeGitOpsMatch.health(app, rollouts: marksListing?.rollouts ?? .notServed)
+                scope = .listed(app.members.count)
+            }
+            let marked = Marked(app: app, health: health, scope: scope, place: place(app.key, owner: ownerOf[app.key], answer: answer), probable: entry.probable)
+            return Match(key: KubeGitOpsObject.Key(kind: "Marks", namespace: nil, name: app.id), object: nil, whys: entry.whys, marked: marked)
+        }
+        let fromMarks = answered.found.map(derived).sorted(by: Self.rankedMarks)
+        let probably = answered.probably.map(derived).sorted(by: Self.rankedMarks)
+        let marksSaid = MarksSaid(tooMany: answered.tooMany, nothing: answered.nothing, caveats: answered.caveats)
+        if marksSaid != self.marksSaid { self.marksSaid = marksSaid }
+
+        let plain = found.map { found in
             Match(
                 key: found.key, object: objects[found.key].map { KubeGitOpsSummary.evaluated($0, now: now, peers: objects) }, whys: found.whys,
                 tracks: found.tracks, reach: reached[found.key])
-        }.sorted { a, b in
-            switch (a.object, b.object) {
-            case let (x?, y?): return KubeGitOpsSummary.ordered(x, y)
-            case (nil, _?): return false
-            case (_?, nil): return true
-            default: return a.id < b.id
-            }
         }
+        let withObjects = plain.filter { $0.object != nil }.sorted { KubeGitOpsSummary.ordered($0.object!, $1.object!) }
+        let without = plain.filter { $0.object == nil }.sorted { $0.id < $1.id }
+        let new = withObjects + fromMarks + without + probably
         if new != matches { matches = new }
         switch state {
-        case .waiting, .failed, .unserved: break
-        default: state = .live
+        case .waiting, .failed: break
+        default:
+            let served = discovery.map(KubeGitOpsSummary.served) ?? true
+            state = served ? .live : .unserved
         }
         followLive()
         reach(objects: objects, facts: facts)
+    }
+
+    /// Apps from marks in the order the section shows them: problems first, then by name.
+    private static func rankedMarks(_ a: Match, _ b: Match) -> Bool {
+        let first = a.marked?.health.state ?? .unknown
+        let second = b.marked?.health.state ?? .unknown
+        return first != second ? first < second : a.said < b.said
+    }
+
+    /// An app's other members, as option B listed them, by namespace — nil
+    /// when nothing listed the app (B not run, its rows cut or refused
+    /// before it, or listed before it came): "other namespaces not read";
+    /// empty when all are bound here.
+    private func elsewhere(_ app: KubeMarkedApp) -> [String: Int]? {
+        guard let listing = marksListing, let listed = listing.members[app.key] else { return nil }
+        let mine = Set(app.members.map(\.id))
+        var counts: [String: Int] = [:]
+        for id in listed where !mine.contains(id) { counts[id.namespace ?? "the cluster", default: 0] += 1 }
+        return counts
+    }
+
+    /// Where an app's Application stands, as far as can be said: the
+    /// rail's reason across the cluster, else its owner's read.
+    private func place(_ key: KubeTrackingID.AppKey, owner: KubeGitOpsOwner?, answer: OwnersRead?) -> KubeGitOpsMatch.MarkedPlace {
+        if let reason = marksReason { return .reason(reason) }
+        guard let owner, let answer else { return .unread }
+        if answer.undiscovered.contains(owner) { return .reason(.undiscovered) }
+        if answer.refused.contains(owner) { return .refused }
+        if answer.unplaced.contains(owner) { return .notFound }
+        return answer.reads[owner] == .absent ? .absent : .unread
     }
 
     // MARK: Has this branch reached the cluster (4.3)
@@ -1045,8 +1853,18 @@ final class KubePanelGitOps: ObservableObject {
     }
 
     func openOnPage(_ match: Match) {
+        if match.marked != nil { return openMarked(match) }
         guard let ref = ref(match), let host else { return }
         Task { await host.gitOpsOpenOnPage(ref) }
+    }
+
+    /// Open on an app read from marks: its detail on the page (14.2.3) —
+    /// it has no object, so no list of a kind to open it in.
+    func openMarked(_ match: Match) {
+        guard let marked = match.marked, let context, let host else { return }
+        let ref = KubeMarkedDetailRef(context: context.name, key: marked.app.key)
+        let namespaces = marked.app.namespaces
+        Task { await host.gitOpsOpenMarked(ref, namespaces: namespaces) }
     }
 
     /// Ask Why, with the checkout's side when the match has one: the

@@ -520,13 +520,20 @@ final class KubeMarkedAppsSession: ObservableObject {
         }
     }
 
-    private enum RowsRead: Sendable {
-        case read(KubeRows, refused: [String], cut: Bool)
+    /// One kind's rows with their marks as a paged list said them, and the
+    /// bytes its pages took (what a caller sharing one bound across kinds
+    /// spends: the checkout rail's option B).
+    enum RowsRead: Sendable {
+        case read(KubeRows, refused: [String], cut: Bool, bytes: Int)
         case refusedAcross
         case failed(Error)
     }
 
-    private nonisolated static func readRows(_ kind: KubeResourceKind, places: [String?], client: KubeClient, bounds: Bounds) async -> RowsRead {
+    /// One kind's rows with their marks (`includeObject=Metadata`), paged,
+    /// no watch, in each place (nil: across the cluster) within `bounds` —
+    /// M1 listed, M3, and the checkout rail's option B and its namespace's
+    /// Argo Rollouts (14.2.5).
+    nonisolated static func readRows(_ kind: KubeResourceKind, places: [String?], client: KubeClient, bounds: Bounds) async -> RowsRead {
         var columns: [KubeColumn] = []
         var all: [KubeRow] = []
         var bytes = 0
@@ -558,7 +565,7 @@ final class KubeMarkedAppsSession: ObservableObject {
                 return .failed(error)
             }
         }
-        return .read(KubeRows(KubeTable(columns: columns, rows: all)), refused: refused, cut: cut)
+        return .read(KubeRows(KubeTable(columns: columns, rows: all)), refused: refused, cut: cut, bytes: bytes)
     }
 
     private func tookRows(_ kind: KubeResourceKind, _ read: RowsRead) {
@@ -566,7 +573,7 @@ final class KubeMarkedAppsSession: ObservableObject {
         let title = KubeKindCatalog.title(of: kind)
         let workload = workloads.contains { $0.fullName == name }
         switch read {
-        case .read(let kept, let refused, let cut):
+        case .read(let kept, let refused, let cut, _):
             took(kept, kind: kind)
             let cutSaid = cut ? "\(title): the list stopped at \(kept.count.formatted()); the rest not read" : nil
             if workload {

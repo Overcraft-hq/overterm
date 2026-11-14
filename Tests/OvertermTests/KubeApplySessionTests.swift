@@ -239,6 +239,9 @@ final class KubeApplySessionTests: XCTestCase {
             name: here.name, cluster: here.cluster, server: here.server, namespace: here.namespace, user: "acme-admin", auth: here.auth, file: here.file,
             contextClass: here.contextClass, settings: here.settings)
         XCTAssertNil(model.marksReason(of: otherUser), "said as another user")
+        // Said more than five minutes ago: no answer now (14.3), asked again.
+        model.noteMarksMode(.only(.noApplications), in: "kind-fake", now: Date().addingTimeInterval(-(KubernetesModel.markedAppsLife + 1)))
+        XCTAssertNil(model.marksReason(of: here), "a stale word")
         // A mode that isn't the marks' own forgets it.
         model.noteMarksMode(.off, in: "kind-fake")
         XCTAssertNil(model.marksReason(of: here))

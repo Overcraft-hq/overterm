@@ -46,7 +46,10 @@ import SwiftUI
 ///    nothing across the cluster and says to press Find What Deploys This.
 ///
 /// Unbound and hidden, the rail asks nothing. Every write lands on the
-/// fake; every sheet is ended by the runner.
+/// fake; every sheet is ended by the runner. The rail on a spoke, where
+/// Argo CD's apps are read from their marks (D5, gitops.md 14.9.3's part
+/// 7), needs the spoke `kubernetesGitOpsMarks` serves: it runs there
+/// (`kubernetesCheckoutGitOpsMarks`, below).
 extension E2ERunner {
     func kubernetesCheckoutGitOps(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
         let panel = app.kubernetesPanel
@@ -387,6 +390,186 @@ extension E2ERunner {
         check("no Secret, no ConfigMap", !fake.requests.contains { $0.path.contains("/secrets") || $0.path.contains("/configmaps") })
     }
 
+    /// D5 (gitops.md 14.2.5, 14.9.3: the design's checkout part 7), on the
+    /// marks scenario's spoke, where Argo CD's Applications aren't served
+    /// (`kubernetesGitOpsMarksScenario` runs it last): a checkout bound to
+    /// team-3 shows its app read from the bound Deployment's marks — Paused
+    /// by its object's GET, though its cells read 2/2 — and the "another
+    /// cluster" sentence; bound to team-1's Deployment its Argo Rollout
+    /// scales to 0, its app is Failed by the Rollout's phase (the
+    /// namespace's Rollouts listed once, the Rollout's GET in place of the
+    /// Deployment's); Open shows the paused app's detail on the page; then
+    /// fake-dev classed production, a config repository whose committed
+    /// manifest names team-5's acme-search is matched by option B only once
+    /// Find What Deploys This was pressed — "describes", never "owns" — and
+    /// nothing is listed across the cluster before. Each part's reads
+    /// checked against the fake's log, and nothing the rail keeps or draws
+    /// holds the sentinel its objects carry; nothing written.
+    func kubernetesCheckoutGitOpsMarks(_ model: KubernetesModel, _ page: KubernetesPageModel, _ spoke: FakeKubeAPI, made: FakeKubeAPI.Spoke) async {
+        let panel = app.kubernetesPanel
+        let gitOps = panel.gitOps
+        Settings.shared.set("kubernetes.notifyOnFailure", .bool(false))
+        defer { Settings.shared.set("kubernetes.notifyOnFailure", nil) }
+        if app.store.showingOverlay != nil { app.hideOverlay(focus: false) }
+        KubeGitOpsMatchCache.shared.dropAll()
+        func marked(_ instance: String) -> KubePanelGitOps.Match? { gitOps.matches.first { $0.marked?.app.key.instance == instance } }
+        /// The workloads' rows across the cluster: option B's list.
+        func listedAcross() -> [FakeKubeAPI.Request] {
+            spoke.requests.filter { request in
+                !request.isWatch && ["/apis/apps/v1/deployments", "/apis/apps/v1/statefulsets", "/apis/apps/v1/daemonsets", "/apis/argoproj.io/v1alpha1/rollouts"].contains(request.path)
+            }
+        }
+        /// What the rail may read: its bound namespace's rows, one object's GET there, option B's rows, discovery.
+        func checkReads(_ part: String, bound namespace: String) {
+            let requests = spoke.requests.filter { !$0.isDiscovery }
+            // The page's own (its namespace picker, the CRDs it follows) aside.
+            let outside = requests.filter { request in
+                !request.path.contains("/namespaces/\(namespace)/") && !listedAcross().contains(request) && request.path != "/api/v1/namespaces"
+                    && !request.path.hasSuffix("/customresourcedefinitions")
+            }
+            check("\(part): only the bound namespace, one object's GET there, and the workloads' marks across the cluster", outside.isEmpty, "\(outside.map(\.path))")
+            check("\(part): GETs only", requests.allSatisfy { $0.method == "GET" })
+            check("\(part): never a Secret, a ConfigMap or an Application", !requests.contains { $0.path.contains("/secrets") || $0.path.contains("/configmaps") || $0.path.contains("/applications") })
+            check("\(part): the marks' rows never watched, never whole", listedAcross().allSatisfy { $0.query["includeObject"] == "Metadata" })
+        }
+
+        // The app repository: its tab, the rail on its panel, bound to team-3's paused Deployment.
+        guard let fixture = await E2EKubeCheckoutFixture.make(in: scratch, name: "ot-kube-spoke-batch") else {
+            return check("the spoke's checkout is made", false)
+        }
+        _ = try? await fixture.git(["remote", "add", "origin", "git@git.acme.example:acme/acme-batch.git"])
+        let previous = app.store.selected
+        app.newTab(in: fixture.repo)
+        guard let tab = app.store.selected else { return check("the spoke checkout's tab opens", false) }
+        defer {
+            app.closeTabsWithoutAsking([tab])
+            if let previous { app.store.select(previous) }
+        }
+        let real = FileTreeModel.realPath(fixture.repo)
+        check("the panel follows it", await eventually(10) { panel.checkout.map(FileTreeModel.realPath) == real })
+        app.showKubernetesPanel(nil)
+        defer {
+            panel.unbind()
+            app.sidebarPanel.panel = .files
+        }
+        spoke.forgetRequests()
+        let team = "team-3"
+        check("bound to fake-dev/team-3", panel.bind(KubeBinding(checkout: real, context: "fake-dev", namespace: team, selector: "app=acme-batch")))
+        check(
+            "its app read from the bound Deployment's marks, Paused by its object",
+            await eventually(20) { marked(made.paused)?.marked?.health.state == .paused }, "\(gitOps.state) \(gitOps.matches.map { "\($0.said): \($0.why)" })")
+        let paused = marked(made.paused)
+        check("rollout paused, though its cells read 2/2", paused?.marked?.health.why == "rollout paused · Deployment acme-batch", paused?.marked?.health.why ?? "none")
+        check("it owns the bound Deployment", paused?.whys.first == .owns([KubeWorkloadRef(kind: .deployment, name: "acme-batch")]), paused?.why ?? "none")
+        check(
+            "where Argo CD runs", paused?.marked?.place.said(context: "fake-dev") == "Argo CD runs in another cluster — not in your kubeconfig",
+            paused?.marked?.place.said(context: "fake-dev") ?? "none")
+        check("the part's line", gitOps.marksLine == "Argo CD isn't in fake-dev; read from the marks on team-3's workloads", gitOps.marksLine ?? "none")
+        check("A found it: nothing by name", !gitOps.matches.contains { $0.marked?.probable == true } && gitOps.marksSaid.tooMany == nil)
+        check("the one GET of it", spoke.requests.contains { $0.path == "/apis/apps/v1/namespaces/team-3/deployments/acme-batch" && !$0.isWatch })
+        check("its app drawn, by its name", await railShows { $0.contains("team-3-acme") || $0.contains("acme-batch-service") })
+        check("Paused, by its object", await railShowsPhrase("Paused: rollout paused"))
+        check("in another cluster", await railShowsPhrase("Argo CD runs in another cluster"))
+        check("whose health", await railShowsPhrase("health of the 1 object bound here"))
+        // The settle's GET read an object whose env, args and last-applied copy carry the sentinel.
+        check("nothing the rail keeps holds the sentinel", !railKept(gitOps).contains(FakeKubeAPI.gitOpsSentinel))
+        check("nothing the rail draws holds the sentinel", await railNeverShows { $0.contains(FakeKubeAPI.gitOpsSentinel) })
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty {
+            app.captureWindow(to: png.replacingOccurrences(of: ".png", with: "-kube-rail-marks.png"))
+        }
+        // Off production, option B listed at once: the app repository's manifest names nothing marked.
+        check("off production, the marks listed across the cluster", await eventually(15) { !listedAcross().isEmpty })
+        checkReads("bound to team-3", bound: team)
+        check("no GitOps verb on it", gitOps.ref(paused ?? KubePanelGitOps.Match(key: .init(kind: "Marks", namespace: nil, name: ""), whys: [])) == nil)
+
+        // Bound to a Deployment its Argo Rollout scales to 0 (14.12's second
+        // consequence): its app's health is its Rollout's phase, never a scaled-down app.
+        spoke.forgetRequests()
+        check("rebound to team-1's Rollout-run Deployment", panel.bind(KubeBinding(checkout: real, context: "fake-dev", namespace: "team-1", selector: "app=acme-blue")))
+        check(
+            "its app's health its Rollout's phase", await eventually(20) { marked(made.rolloutDegraded)?.marked?.health.state == .failed },
+            "\(gitOps.matches.map { "\($0.said): \($0.marked?.health.word ?? "") \($0.marked?.health.why ?? "")" })")
+        let blue = marked(made.rolloutDegraded)?.marked
+        check("rollout degraded, by its Rollout", blue?.health.why == "rollout degraded · Rollout acme-blue", blue?.health.why ?? "none")
+        let scaled = blue.flatMap { app in app.app.members.first { $0.id.kind == .deployment }.flatMap { KubeMarkedHealth.member($0, in: app.app) } }
+        check("the Deployment scaled by its Rollout", scaled?.sentence == KubeMarkedHealth.scaledByRollout, scaled?.sentence ?? "none")
+        check("drawn: Failed by its Rollout", await railShowsPhrase("rollout degraded"))
+        check("drawn: whose health", await railShowsPhrase("with its app's Argo Rollout"))
+        let teamRollouts = "/apis/argoproj.io/v1alpha1/namespaces/team-1/rollouts"
+        check(
+            "the namespace's Rollouts listed once as rows, never watched",
+            spoke.requests.filter { $0.path == teamRollouts && $0.query["includeObject"] == "Metadata" }.count == 1
+                && !spoke.requests.contains { $0.isWatch && $0.path.contains("/rollouts") })
+        check(
+            "the Rollout's GET, none of the Deployment it scales",
+            spoke.requests.contains { $0.path == teamRollouts + "/acme-blue" } && !spoke.requests.contains { $0.path == "/apis/apps/v1/namespaces/team-1/deployments/acme-blue" })
+        check("nothing it keeps holds the sentinel", !railKept(gitOps).contains(FakeKubeAPI.gitOpsSentinel))
+        checkReads("bound to team-1", bound: "team-1")
+
+        // Open: its detail on the page, the section reading it.
+        if let paused {
+            gitOps.openMarked(paused)
+            check(
+                "Open shows its detail on the page",
+                await eventually(20) { self.app.store.showingOverlay == .kubernetes && page.section == .gitops && page.markedDetail?.key.instance == made.paused },
+                "\(String(describing: page.markedDetail))")
+            check("read, its tree drawn", await eventually(30) { page.markedDetailShown?.title.contains(made.paused) == true }, page.markedDetailShown?.title ?? "none")
+            page.closeMarkedApp()
+            if app.store.showingOverlay == .kubernetes { app.toggleKubernetesPage(nil) }
+            app.showKubernetesPanel(nil)
+        }
+
+        // The config repository on a production-classed spoke: option B only once pressed.
+        panel.unbind()
+        _ = await eventually(5) { spoke.openWatches == 0 }
+        let settingsBefore = Settings.shared.fileValue("kubernetes.contexts")
+        Settings.shared.set("kubernetes.contexts", Self.kubeContexts(["fake-dev": ["class": .string("production")]]))
+        defer {
+            Settings.shared.set("kubernetes.contexts", settingsBefore)
+            KubeGitOpsMatchCache.shared.dropAll()
+        }
+        check("fake-dev classed production", await eventually(10) { model.contexts.context(named: "fake-dev")?.isProduction == true })
+        guard let fleet = await E2EKubeCheckoutFixture.make(in: scratch, name: "ot-kube-spoke-fleet") else { return check("the config checkout is made", false) }
+        _ = try? await fleet.git(["remote", "add", "origin", "git@git.acme.example:acme/fleet.git"])
+        let manifest = "apiVersion: apps/v1\nkind: Deployment\nmetadata:\n  name: acme-search\n  namespace: team-5\n"
+        try? FileManager.default.createDirectory(at: fleet.repo.appendingPathComponent("apps/acme-search"), withIntermediateDirectories: true)
+        try? manifest.write(to: fleet.repo.appendingPathComponent("apps/acme-search/deployment.yaml"), atomically: true, encoding: .utf8)
+        _ = try? await fleet.git(["add", "apps"])
+        _ = try? await fleet.git(["commit", "-q", "-m", "acme-search"])
+        app.newTab(in: fleet.repo)
+        guard let fleetTab = app.store.selected else { return check("the config checkout's tab opens", false) }
+        defer { app.closeTabsWithoutAsking([fleetTab]) }
+        let fleetReal = FileTreeModel.realPath(fleet.repo)
+        check("the panel follows the config checkout", await eventually(10) { panel.checkout.map(FileTreeModel.realPath) == fleetReal })
+        app.showKubernetesPanel(nil)
+        spoke.forgetRequests()
+        check(
+            "bound to fake-dev/team-0, its Helm-installed agent",
+            panel.bind(KubeBinding(checkout: fleetReal, context: "fake-dev", namespace: "team-0", selector: "app=fake-metrics-agent")))
+        check(
+            "Find What Deploys This offered, naming what it lists", await eventually(20) { if case .waiting(let reads) = gitOps.state { reads.contains("with Argo CD's marks") } else { false } },
+            "\(gitOps.state)")
+        check("drawn", await shownText(15) { $0.contains("Find What Deploys This") } != nil)
+        await pause(0.5)
+        check("nothing listed across the cluster before it is pressed", listedAcross().isEmpty, "\(listedAcross().map(\.path))")
+        check("and nothing matched", marked(made.hpa) == nil)
+        gitOps.find()
+        check("pressed: option B finds the app its manifest names", await eventually(20) { marked(made.hpa) != nil }, "\(gitOps.state) \(gitOps.matches.map(\.said))")
+        let search = marked(made.hpa)
+        check("it describes its object, never owns it", search?.whys == [.describes(1, of: 1)] && search?.why.contains("owns") == false, search?.why ?? "none")
+        check("listed across the cluster once pressed", !listedAcross().isEmpty)
+        check("described, drawn", await railShowsPhrase("describe 1 of its 1 object"))
+        check(
+            "read from the marks on the cluster's workloads, not the bound namespace's",
+            gitOps.marksLine == "Argo CD isn't in fake-dev; read from the marks on the cluster's workloads", gitOps.marksLine ?? "none")
+        // Option B's rows across the cluster carry kubectl's last-applied copy, the sentinel in it.
+        check("nothing kept of B's rows holds the sentinel", !railKept(gitOps).contains(FakeKubeAPI.gitOpsSentinel))
+        check("nothing drawn of them holds it", await railNeverShows { $0.contains(FakeKubeAPI.gitOpsSentinel) })
+        checkReads("the config checkout", bound: "team-0")
+        check("nothing written", spoke.writes.isEmpty, "\(spoke.writes.map(\.description))")
+        railScroll(to: 0)
+    }
+
     /// The rail's scroll views (the sidebar's, on the window's left), tallest content first.
     private func railScrolls() -> [NSScrollView] {
         var found: [NSScrollView] = []
@@ -423,6 +606,24 @@ extension E2ERunner {
             if await shownText(2, file: file, line: line, match) != nil { return true }
         }
         return false
+    }
+
+    /// Whether no line the rail draws matches, read at each step as a person
+    /// scrolls it down.
+    private func railNeverShows(_ match: @escaping (String) -> Bool) async -> Bool {
+        defer { railScroll(to: 0) }
+        for step in 0...5 {
+            railScroll(to: CGFloat(step) / 5)
+            await pause(0.4)
+            if await readWindow().contains(where: { match($0.text) }) { return false }
+        }
+        return true
+    }
+
+    /// Everything the rail's GitOps part keeps and says, as text.
+    private func railKept(_ gitOps: KubePanelGitOps) -> String {
+        String(describing: gitOps.matches) + String(describing: gitOps.marksSaid) + (gitOps.marksLine ?? "") + gitOps.problems.joined()
+            + gitOps.searched.joined()
     }
 
     /// Whether the rail draws `phrase`, on a line or wrapped onto the next,

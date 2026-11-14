@@ -6,7 +6,12 @@ import SwiftUI
 /// state and why, its revision and age, and in grey why it matched —
 /// "deploy/fake-dev", "owns Deployment/shop-api" — with what it tracks.
 /// Its buttons go through the window (`KubeGitOpsPanelHost`), so through
-/// the page's guard path; what they did is said here.
+/// the page's guard path; what they did is said here. An Argo CD app read
+/// from marks (14.2.5): its state by Argo CD's built-in rules and why,
+/// whose health that is, where its Application stands, why it matched —
+/// Open shows its detail on the page, and no GitOps verb is offered; those
+/// matched only by name or image apart, muted, as "probably"; nothing
+/// matched said by what was compared.
 struct KubePanelGitOpsView: View {
     @ObservedObject var gitOps: KubePanelGitOps
     @ObservedObject var theme: ChromeTheme
@@ -50,13 +55,85 @@ struct KubePanelGitOpsView: View {
                     .padding(.horizontal, 12).padding(.vertical, 2)
                 }
                 if case .failed(let reason) = gitOps.state { line(reason, failed: true) }
+                if let marks = gitOps.marksLine {
+                    line(marks, failed: false).accessibilityIdentifier("kubernetes.panel.gitops.marks")
+                }
                 ForEach(gitOps.problems, id: \.self) { line($0, failed: true) }
-                ForEach(gitOps.matches) { match in row(match) }
+                ForEach(gitOps.matches.filter { $0.marked?.probable != true }) { match in
+                    if let marked = match.marked { markedRow(match, marked) } else { row(match) }
+                }
+                probablyPart
+                if let nothing = gitOps.marksSaid.nothing {
+                    // What was compared, whole: it is all a nothing found may say.
+                    // Its notes carry the API server's own words: the hover capped, as every hover here.
+                    Text(verbatim: nothing).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).lineLimit(8)
+                        .fixedSize(horizontal: false, vertical: true).padding(.horizontal, 12).padding(.vertical, 2).help(KubeMarkedSection.capped(nothing))
+                        .accessibilityIdentifier("kubernetes.panel.gitops.nothing")
+                }
+                ForEach(gitOps.marksSaid.caveats, id: \.self) { line($0, failed: false) }
                 ForEach(gitOps.searched, id: \.self) { line($0, failed: false) }
             }
             .accessibilityElement(children: .contain)
             .accessibilityIdentifier("kubernetes.panel.gitops")
         }
+    }
+
+    /// The apps matched by name, image or a manifest with no namespace:
+    /// apart, muted, never as found — or, past three, how many.
+    @ViewBuilder private var probablyPart: some View {
+        let probable = gitOps.matches.filter { $0.marked?.probable == true }
+        if !probable.isEmpty || gitOps.marksSaid.tooMany != nil {
+            VStack(alignment: .leading, spacing: 0) {
+                Text(verbatim: "May deploy this checkout (by name)").font(.system(size: ChromeMetrics.text(10.5), weight: .medium)).foregroundStyle(theme.text3)
+                    .padding(.horizontal, 12).padding(.top, 6).padding(.bottom, 2)
+                if let tooMany = gitOps.marksSaid.tooMany { line(tooMany, failed: false) }
+                ForEach(probable) { match in
+                    if let marked = match.marked { markedRow(match, marked) }
+                }
+            }
+            .opacity(0.85)
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("kubernetes.panel.gitops.probably")
+        }
+    }
+
+    /// An app read from marks: its state and why, whose health, where its
+    /// Application stands, why it matched; Open — never a GitOps verb.
+    private func markedRow(_ match: KubePanelGitOps.Match, _ marked: KubePanelGitOps.Marked) -> some View {
+        let now = Date()
+        let health = marked.health
+        let age = health.since.map { " · \(KubeAge.format(max(0, now.timeIntervalSince($0))))" } ?? ""
+        return VStack(alignment: .leading, spacing: 2) {
+            // Its name whole, over two lines if it must: the part's line says it is Argo CD's.
+            HStack(alignment: .firstTextBaseline, spacing: 8) {
+                Circle().fill(color(health.state)).frame(width: 7, height: 7)
+                Text(verbatim: marked.app.said + (marked.app.installation.map { " · installation \($0)" } ?? ""))
+                    .font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(2).truncationMode(.middle)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .help(match.said)
+                Spacer(minLength: 0)
+            }
+            Text(verbatim: "\(health.word): \(health.why)" + age)
+                .font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(health.state.mark == .bad ? TabStatusStyle.failed : theme.text2).lineLimit(2)
+                .fixedSize(horizontal: false, vertical: true)
+                .accessibilityIdentifier("kubernetes.panel.gitops.marked.health")
+            small(marked.scope.said(now: now), failed: false, id: "kubernetes.panel.gitops.marked.scope")
+            small(marked.place.said(context: gitOps.contextName ?? ""), failed: false, id: "kubernetes.panel.gitops.marked.place")
+            Text(verbatim: match.why).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).lineLimit(3)
+                .fixedSize(horizontal: false, vertical: true)
+            HStack(spacing: 10) {
+                Button("Open") { gitOps.openMarked(match) }
+                    .help("Its detail on the page: its objects as Argo CD would draw them, each with its health")
+                    .accessibilityIdentifier("kubernetes.panel.gitops.marked.open")
+            }
+            .buttonStyle(.link)
+            .font(.system(size: ChromeMetrics.text(11)))
+        }
+        .padding(.horizontal, 12)
+        .padding(.vertical, 4)
+        .help(KubeMarkedSection.capped(([health.word == health.state.word ? nil : "Argo CD's word: \(health.word)"].compactMap { $0 } + health.notes).joined(separator: "\n")))
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("kubernetes.panel.gitops.marked.\(marked.app.id)")
     }
 
     private func line(_ text: String, failed: Bool) -> some View {

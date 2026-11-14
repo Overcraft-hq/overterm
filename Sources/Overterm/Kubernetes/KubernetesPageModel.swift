@@ -550,9 +550,15 @@ final class KubernetesPageModel: ObservableObject {
         gitOpsWatch = model.$selectedName.removeDuplicates().dropFirst().map { _ in () }
             .merge(with: model.$scope.removeDuplicates().dropFirst().map { _ in () }, model.$discovery.removeDuplicates().dropFirst().map { _ in () })
             .sink { [weak self] in DispatchQueue.main.async { self?.updateGitOpsReading() } }
-        // An app's detail reads its members again when they change (after the change).
+        // An app's detail reads its members again when they change (after
+        // the change); the checkout's rail takes them as they are ranked.
         markedAppsWatch = gitOps.marked.$apps.dropFirst().map { _ in () }
-            .sink { [weak self] in DispatchQueue.main.async { self?.updateMarkedDetailReading() } }
+            .sink { [weak self] in
+                DispatchQueue.main.async {
+                    self?.updateMarkedDetailReading()
+                    self?.keepMarkedApps()
+                }
+            }
         // What the detail reads, the section keeps: it settles nothing twice (gitops.md 14.4.2).
         markedRead.settled = { [weak self] id, wire, at in self?.gitOps.marked.settled(byDetail: id, wire, at: at) }
         // The context's marks mode, for an apply's warning there.

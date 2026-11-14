@@ -224,12 +224,7 @@ extension FakeKubeAPI {
             data: ["token": sentinel], created: now)
 
         if options.rollouts {
-            addCRD(
-                group: "argoproj.io", version: "v1alpha1", plural: "rollouts", kind: "Rollout", shortNames: ["ro"],
-                columns: [
-                    Column(name: "Desired", type: "integer"), Column(name: "Current", type: "integer"), Column(name: "Up-to-date", type: "integer"),
-                    Column(name: "Available", type: "integer"),
-                ])
+            serveRollouts()
             spoke.rollout = "\(env)-\(ns(0))-acme-canary-service"
             addMarkedRollout("acme-canary", namespace: ns(0), app: spoke.rollout, phase: "Healthy", now: now)
             spoke.rolloutDegraded = "\(env)-\(ns(1))-acme-blue-service"
@@ -387,9 +382,21 @@ extension FakeKubeAPI {
         add(resource, name, namespace: namespace, annotations: marks(app, "apps/Deployment", namespace, deployment), created: now.addingTimeInterval(-86_400))
     }
 
+    /// Argo Rollouts served: their CRD, its printer columns counts only (a
+    /// Rollout's phase is in its object, never a cell).
+    func serveRollouts() {
+        addCRD(
+            group: "argoproj.io", version: "v1alpha1", plural: "rollouts", kind: "Rollout", shortNames: ["ro"],
+            columns: [
+                Column(name: "Desired", type: "integer"), Column(name: "Current", type: "integer"), Column(name: "Up-to-date", type: "integer"),
+                Column(name: "Available", type: "integer"),
+            ])
+    }
+
     /// An Argo Rollout running its Deployment by `workloadRef`, the
-    /// Deployment scaled to 0 by the Rollouts controller.
-    func addMarkedRollout(_ name: String, namespace: String, app: String, phase: String, now: Date) {
+    /// Deployment scaled to 0 by the Rollouts controller and carrying
+    /// `labels` (a binding's selector).
+    func addMarkedRollout(_ name: String, namespace: String, app: String, phase: String, labels: [String: String] = [:], now: Date) {
         add(
             "rollouts.argoproj.io", name, namespace: namespace, values: ["Desired": 3, "Current": 3, "Up-to-date": 3, "Available": phase == "Healthy" ? 3 : 1],
             annotations: marks(app, "argoproj.io/Rollout", namespace, name), created: now.addingTimeInterval(-86_400),
@@ -398,7 +405,7 @@ extension FakeKubeAPI {
                 "spec": ["replicas": 3, "workloadRef": ["apiVersion": "apps/v1", "kind": "Deployment", "name": name]],
                 "status": ["observedGeneration": "6", "phase": phase, "message": phase == "Healthy" ? "" : "RolloutAborted: metric \"error-rate\" assessed Failed"],
             ])
-        addMarkedDeployment(name, namespace: namespace, app: app, ready: 0, desired: 0, padding: 0, now: now)
+        addMarkedDeployment(name, namespace: namespace, app: app, ready: 0, desired: 0, labels: labels, padding: 0, now: now)
     }
 
     /// Readiness churn on Deployments, their generation unchanged: each

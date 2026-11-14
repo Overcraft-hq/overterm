@@ -109,7 +109,8 @@ struct KubeListOptions: Hashable, Sendable {
     var owners = false
     /// The rows keep Argo CD's marks (`KubeRow.marks`, `KubeMarkWire`'s
     /// allow-list), and carry their metadata for them: the GitOps section's
-    /// reads from marks (gitops.md 14.4.1). No list asks it yet.
+    /// reads from marks (gitops.md 14.4.1), the rail's bound workloads and
+    /// its option B's rows (14.2.5).
     var marks = false
 
     init(

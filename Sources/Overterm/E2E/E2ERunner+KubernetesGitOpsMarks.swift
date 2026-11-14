@@ -36,6 +36,11 @@ import SwiftUI
 ///    with the keyboard on that node; ↩ on a pod's node opens the pod,
 ///    whose writes say nothing of Argo CD.
 ///
+/// 5. The checkout's rail on the spoke (D5, the checkout scenario's part
+///    7, `kubernetesCheckoutGitOpsMarks`): its app read from the bound
+///    workload's marks, by its object's GET, "another cluster"; option B on
+///    production only once Find What Deploys This was pressed.
+///
 /// Reads only: every request a GET; never a Secret or a ConfigMap; on the
 /// spoke no Application and nothing of Flux's; every part's requests —
 /// the hub's and the refused context's too — only of the kinds the marks
@@ -114,6 +119,9 @@ extension E2ERunner {
         await kubernetesGitOpsMarksFilters(model, page, spoke, made: made)
         await kubernetesGitOpsMarksDetail(model, page, spoke, made: made)
         await kubernetesGitOpsMarksBeside(model, page, hub: hub, refused: refused, hubApps: hubApps)
+        // The checkout's rail on the spoke (gitops.md 14.9.3: the checkout scenario's part 7).
+        if model.selectedName != "fake-dev" { model.select("fake-dev") }
+        await kubernetesCheckoutGitOpsMarks(model, page, spoke, made: made)
 
         for (name, fake) in fakes.sorted(by: { $0.key < $1.key }) {
             check("\(name): nothing written", fake.writes.isEmpty, "\(fake.writes.map(\.description))")

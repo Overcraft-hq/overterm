@@ -250,6 +250,26 @@ final class KubeMCPGitOpsTests: XCTestCase {
         XCTAssertNil(rail.said("Applications"))
     }
 
+    /// Neither tool served, said as discovery said it: "serves neither"
+    /// only where both answered — argoproj.io (or Flux's groups) not
+    /// answering discovery can't tell.
+    func testTheUnservedNoteSaysOnlyWhatDiscoveryAnswered() {
+        let answered = KubeDiscovery(kinds: [], failedGroups: ["metrics.k8s.io/v1beta1": "503"])
+        XCTAssertEqual(
+            KubeMCP.unservedNote(answered, context: "fake-dev", marks: true),
+            "fake-dev serves neither Argo CD's Applications nor any Flux kind: only the workloads' own marks are said.")
+        XCTAssertEqual(KubeMCP.unservedNote(answered, context: "fake-dev", marks: false), "fake-dev serves neither Argo CD's Applications nor any Flux kind.")
+        let argo = KubeMCP.unservedNote(KubeDiscovery(kinds: [], failedGroups: ["argoproj.io/v1alpha1": "503"]), context: "fake-dev", marks: true)
+        XCTAssertEqual(
+            argo,
+            "fake-dev serves no Flux kind, and whether it serves Argo CD's Applications can't be told: argoproj.io didn't answer discovery; only the workloads' own marks are said."
+        )
+        XCTAssertFalse(argo.contains("serves neither"))
+        let both = KubeMCP.unservedNote(
+            KubeDiscovery(kinds: [], failedGroups: ["argoproj.io/v1alpha1": "503", "kustomize.toolkit.fluxcd.io/v1": "503"]), context: "fake-dev", marks: false)
+        XCTAssertEqual(both, "Couldn't tell whether fake-dev serves Argo CD or Flux: argoproj.io and Flux's groups didn't answer discovery.")
+    }
+
     // MARK: Why
 
     func testWhyOnAnApplicationAnswersAndASourceIsRefused() async throws {
@@ -302,8 +322,10 @@ final class KubeMCPGitOpsTests: XCTestCase {
             "the workloads with their marks, in the binding's namespace")
         // Not kept: the rail's listing is the rail's.
         let facts = await KubeMCP.gitOpsCheckouts.facts(repo)
+        let discovery = try await KubeClient(KubeSocketConnection(socket: socket, context: "fake-dev")).discover()
         let key = KubeGitOpsMatchCache.Key(
-            context: "fake-dev", checkout: try XCTUnwrap(store.binding(for: repo)?.checkout), namespace: "shop", remotes: facts.remotesKey)
+            context: "fake-dev", checkout: try XCTUnwrap(store.binding(for: repo)?.checkout), namespace: "shop", remotes: facts.remotesKey,
+            mode: KubePanelGitOps.mode(of: discovery))
         XCTAssertNil(KubeMCP.gitOpsCache.listing(key))
     }
 
@@ -354,7 +376,7 @@ final class KubeMCPGitOpsTests: XCTestCase {
         else { return XCTFail("listed") }
         // The binding's checkout is its real path (/private/var/…): the key the tool asks by.
         let checkout = try XCTUnwrap(store.binding(for: repo)?.checkout)
-        let key = KubeGitOpsMatchCache.Key(context: "fake-prod", checkout: checkout, namespace: "shop", remotes: facts.remotesKey)
+        let key = KubeGitOpsMatchCache.Key(context: "fake-prod", checkout: checkout, namespace: "shop", remotes: facts.remotesKey, mode: KubePanelGitOps.mode(of: discovery))
         KubeMCP.gitOpsCache.keep(listing, for: key)
         api.forgetRequests()
         let said = await text("k8s_gitops", ["checkout": true], pane: "pane-bound")

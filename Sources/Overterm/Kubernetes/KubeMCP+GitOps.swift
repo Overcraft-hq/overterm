@@ -108,7 +108,7 @@ extension KubeMCP {
         let discovery = try await discovery(for: target, kubernetes: kubernetes)
         var lines = [target.header()]
         guard KubeGitOpsSummary.served(discovery) else {
-            lines.append("\(target.context.name) serves neither Argo CD's Applications nor any Flux kind.")
+            lines.append(unservedNote(discovery, context: target.context.name, marks: false))
             return KubeMCPText.finished(lines.joined(separator: "\n"))
         }
         let wanted = filter.reads
@@ -204,14 +204,15 @@ extension KubeMCP {
         let client = target.client
         let root = URL(fileURLWithPath: binding.checkout)
         let facts = await gitOpsCheckouts.facts(root)
-        let key = KubeGitOpsMatchCache.Key(context: context.name, checkout: binding.checkout, namespace: binding.namespace, remotes: facts.remotesKey)
         var lines = [target.header(), "What deploys this checkout (\(root.lastPathComponent)), bound to \(context.name)/\(binding.namespace):"]
         var notes: [String] = []
 
         // P0
         let discovery = try await discovery(for: target, kubernetes: kubernetes)
         let served = KubeGitOpsSummary.served(discovery)
-        if !served { notes.append("\(context.name) serves neither Argo CD's Applications nor any Flux kind: only the workloads' own marks are said.") }
+        let key = KubeGitOpsMatchCache.Key(
+            context: context.name, checkout: binding.checkout, namespace: binding.namespace, remotes: facts.remotesKey, mode: KubePanelGitOps.mode(of: discovery))
+        if !served { notes.append(Self.unservedNote(discovery, context: context.name, marks: true)) }
 
         // P1: the bound workloads, their owner marks and images, in the binding's namespace.
         var workloads: [(ref: KubeWorkloadRef, owners: [KubeGitOpsOwner], images: [String])] = []
@@ -231,11 +232,12 @@ extension KubeMCP {
 
         // P2: each owner named, by one GET.
         let named = KubeGitOpsMatch.owners(workloads.map { ($0.ref, $0.owners) })
-        let owners =
+        let read =
             try await within {
                 await KubePanelGitOps.readOwners(named, client: client, discovery: discovery, namespace: binding.namespace, now: now)
             } ?? KubePanelGitOps.OwnersRead()
-        notes += owners.problems
+        // Their problems go here, once a plain name's 404 is placed (below).
+        let ownersSaid = notes.count
 
         // P3–P4: the rail's, when kept; else off production, at the agent's bounds.
         var listing = KubeGitOpsMatchCache.Listing()
@@ -259,6 +261,14 @@ extension KubeMCP {
             }
         }
         notes += listing.searched
+        // A plain name not found in argocd: not in this cluster only where its Applications were
+        // seen there (14.2.5), or where the section said none is here in the last five minutes —
+        // never once an Application was read here (its listing, the owners' GETs).
+        var seen = gitOpsCache.seenApplications(context.name)
+        for object in listing.objects.values where object.role == .application { if let namespace = object.ref.namespace { seen.insert(namespace) } }
+        let held = listing.objects.values.contains { $0.role == .application } || read.objects.values.contains { $0.role == .application }
+        let owners = KubePanelGitOps.resolved(read, seen: seen, noApplications: kubernetes.marksReason(of: context) == .noApplications && !held)
+        notes.insert(contentsOf: owners.problems, at: ownersSaid)
 
         var objects = listing.objects
         objects.merge(owners.objects) { _, owner in owner }
@@ -306,6 +316,21 @@ extension KubeMCP {
         if matches.count > limit { lines.append("… \(matches.count - limit) more not listed.") }
         lines += notes
         return KubeMCPText.finished(lines.joined(separator: "\n"))
+    }
+
+    /// Neither tool's kinds served, as discovery said it: absent only where
+    /// the groups answered — argoproj.io or Flux's not answering discovery
+    /// can't tell (`KubePanelGitOps.mode(of:)`). `marks`: the workloads'
+    /// own marks are said all the same (`checkout`'s).
+    static func unservedNote(_ discovery: KubeDiscovery, context: String, marks: Bool) -> String {
+        let mode = KubePanelGitOps.mode(of: discovery)
+        let argo = mode.contains("argo=undiscovered")
+        let flux = mode.contains("flux=undiscovered")
+        let tail = marks ? "; only the workloads' own marks are said." : "."
+        if argo, flux { return "Couldn't tell whether \(context) serves Argo CD or Flux: argoproj.io and Flux's groups didn't answer discovery" + tail }
+        if argo { return "\(context) serves no Flux kind, and whether it serves Argo CD's Applications can't be told: argoproj.io didn't answer discovery" + tail }
+        if flux { return "\(context) serves no Argo CD Application, and whether it serves Flux can't be told: Flux's groups didn't answer discovery" + tail }
+        return "\(context) serves neither Argo CD's Applications nor any Flux kind" + (marks ? ": only the workloads' own marks are said." : ".")
     }
 }
 

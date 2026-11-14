@@ -41,6 +41,14 @@ enum KubeGitOpsMatch {
         case repoOnly(String, source: Int?)
         /// A tracking id names it, and the cluster hasn't it.
         case notInCluster(String)
+        /// An app read from marks (14.2.5, option B): the checkout's
+        /// committed manifests name `count` of the `of` objects read of it
+        /// here — never that it deploys this checkout (identity isn't
+        /// provenance).
+        case describes(Int, of: Int)
+        /// An app read from marks by its name, an image, or a manifest with
+        /// no namespace (14.2.5, options B, C, D): probably, the words said.
+        case probably(String)
 
         /// In grey under the row: "apps/web", "owns Deployment/shop-api".
         var said: String {
@@ -50,6 +58,8 @@ enum KubeGitOpsMatch {
             case .repoAndPath(let path, _): path.isEmpty ? "the repository's root" : path
             case .repoOnly(let why, _): why
             case .notInCluster(let said): said
+            case .describes(let count, let of): "this checkout's manifests describe \(count) of its \(of) \(of == 1 ? "object" : "objects") read here"
+            case .probably(let words): "probably: \(words)"
             }
         }
 

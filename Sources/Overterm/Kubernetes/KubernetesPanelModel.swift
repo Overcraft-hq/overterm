@@ -21,7 +21,9 @@ import Foundation
 /// wait. The pod picked in the right slot outlives the panel hiding — its
 /// reads follow the slot and the window — and goes when the binding does.
 /// The workloads' rows carry their metadata there, so their Argo CD or
-/// Flux owners are known (`KubeListOptions.owners`); what deploys the
+/// Flux owners are known (`KubeListOptions.owners`), and Argo CD's marks
+/// by their allow-list (`.marks`: an app read from them where its
+/// Application isn't read here, gitops.md 14.2.5); what deploys the
 /// checkout is `gitOps`'s (`KubePanelGitOps`, gitops.md 4), started and
 /// stopped with these follows. Its own follows (at most 4, rows only) take
 /// the rail's to at most 8, all on the background slot — on-screen reads,
@@ -45,7 +47,14 @@ final class KubernetesPanelModel: ObservableObject {
         var images: [String]
         /// The Argo CD or Flux objects its marks name (`KubeRow.owners`).
         var owners: [KubeGitOpsOwner] = []
+        /// Argo CD's marks on it and its health from its row
+        /// (`KubeRow.marks`): what the rail reads an app from where its
+        /// Application isn't read here (gitops.md 14.2.5).
+        var member: KubeMarkedMember?
         var id: String { ref.said }
+
+        /// As the rail's GitOps part takes it.
+        var bound: KubePanelGitOps.Bound { KubePanelGitOps.Bound(ref: ref, owners: owners, images: images, member: member) }
     }
 
     /// One of its pods.
@@ -333,9 +342,10 @@ final class KubernetesPanelModel: ObservableObject {
     private func follow(_ kind: KubeResourceKind, generation: Int) {
         guard let following else { return }
         let client = client(for: following.context)
-        // A workload's rows say who deploys it (its metadata, in this one namespace); a pod's needn't.
+        // A workload's rows say who deploys it (its metadata, in this one
+        // namespace: its owners, Argo CD's marks by their allow-list); a pod's needn't.
         let workload = kind.fullName != KubeResourceKind.pods.fullName
-        let options = KubeListOptions(labelSelector: following.binding.selector, metadata: workload, owners: workload)
+        let options = KubeListOptions(labelSelector: following.binding.selector, metadata: workload, owners: workload, marks: workload)
         let scope = KubeScope.namespace(following.binding.namespace)
         let key = kind.fullName
         follows[key]?.cancel()
@@ -375,16 +385,22 @@ final class KubernetesPanelModel: ObservableObject {
         }
     }
 
-    /// What came since the last flush, applied in one change.
+    /// What came since the last flush, applied in one change; the
+    /// workloads whose rows had events told to the rail's GitOps part (a
+    /// settled one may be read again: gitops.md 14.2.5).
     private func flush() {
         guard !pending.isEmpty, let following else { return }
+        var moved = Set<KubeWorkloadRef>()
         for (key, update) in pending {
             var kept = rows[key] ?? KubeRows()
             kept.apply(update)
             rows[key] = kept
+            guard case .changed(let changes, _) = update, let kind = KubeWorkloadKind.allCases.first(where: { $0.kind.fullName == key }) else { continue }
+            for change in changes { moved.insert(KubeWorkloadRef(kind: kind, name: change.id.name)) }
         }
         pending = []
         rowsChanged(following.binding, checkout: following.checkout)
+        gitOps.rowsMoved(moved)
     }
 
     private func kindFailed(_ kind: KubeResourceKind, _ said: String, generation: Int) {
@@ -439,7 +455,7 @@ final class KubernetesPanelModel: ObservableObject {
         }
         if found != workloads {
             workloads = found
-            gitOps.workloadsChanged(found.map { ($0.ref, $0.owners, $0.images) })
+            gitOps.workloadsChanged(found.map(\.bound))
         }
         let kept = rows[KubeResourceKind.pods.fullName] ?? KubeRows()
         let (shown, hidden) = Self.limited(kept.sorted.compactMap { KubePodSummary(row: $0, columns: kept.columns).map(Pod.init) })
@@ -460,28 +476,31 @@ final class KubernetesPanelModel: ObservableObject {
     }
 
     /// A workload's row read into its health: a Deployment's state off its
-    /// cells (as the page's Status), a StatefulSet's or DaemonSet's Ready.
+    /// cells (as the page's Status), a StatefulSet's or DaemonSet's Ready;
+    /// with Argo CD's marks, its member as an app read from them counts it.
     static func workload(_ kind: KubeWorkloadKind, row: KubeRow, columns: [KubeColumn]) -> Workload {
         let ref = KubeWorkloadRef(kind: kind, name: row.id.name)
         let images = KubeDeployedCommit.images(inCell: row.cell("Images", in: columns)?.text)
+        let member = KubeMarkedMember.row(row, kind: KubeMarkedKind(kind.kind), columns: columns, now: Date())
         switch kind {
         case .deployment:
             let hint = KubeDeploymentHint(row: row, columns: columns)
             let failing = hint.map { if case .available = $0 { false } else if case .scaledToZero = $0 { false } else { true } } ?? false
             return Workload(
-                ref: ref, health: hint?.text ?? row.cell("Ready", in: columns)?.text ?? "—", failing: failing, images: images, owners: row.owners)
+                ref: ref, health: hint?.text ?? row.cell("Ready", in: columns)?.text ?? "—", failing: failing, images: images, owners: row.owners,
+                member: member)
         case .statefulSet:
             let ready = row.cell("Ready", in: columns)?.text ?? "—"
             let parts = ready.split(separator: "/").compactMap { Int($0) }
             let failing = parts.count == 2 && parts[0] < parts[1]
-            return Workload(ref: ref, health: "\(ready) ready", failing: failing, images: images, owners: row.owners)
+            return Workload(ref: ref, health: "\(ready) ready", failing: failing, images: images, owners: row.owners, member: member)
         case .daemonSet:
             let ready = row.cell("Ready", in: columns).flatMap { Int($0.text) }
             let desired = row.cell("Desired", in: columns).flatMap { Int($0.text) }
             let failing = (ready ?? 0) < (desired ?? 0)
             return Workload(
                 ref: ref, health: "\(ready.map(String.init) ?? "?")/\(desired.map(String.init) ?? "?") ready", failing: failing, images: images,
-                owners: row.owners)
+                owners: row.owners, member: member)
         }
     }
 

@@ -146,6 +146,32 @@ extension TerminalWindowController: KubeGitOpsPanelHost {
         kubernetesPage.openFromOverview(kind: ref.kind.fullName, KubeRowID(namespace: ref.namespace, name: ref.name), from: .gitops)
     }
 
+    /// The page on the binding's context, its GitOps section, the app read
+    /// from marks in its detail: the app's namespaces added to the page's
+    /// scope when it doesn't hold them — the section reads only what is in
+    /// it. A context the page's list hasn't (one added since it was read)
+    /// is read again once; still not there, the page says so and nothing
+    /// else changes — never another cluster's scope or section.
+    func gitOpsOpenMarked(_ ref: KubeMarkedDetailRef, namespaces: [String]) async {
+        await kubernetesContextsLoaded()
+        let model = kubernetesPage.model
+        if model.contexts.context(named: ref.context) == nil {
+            model.reloadContexts()
+            for _ in 0..<50 where model.contexts.context(named: ref.context) == nil { try? await Task.sleep(for: .milliseconds(100)) }
+        }
+        if model.selectedName != ref.context { model.select(ref.context) }
+        showKubernetesPage()
+        for _ in 0..<100 where model.selectedName != ref.context { try? await Task.sleep(for: .milliseconds(100)) }
+        guard model.selectedName == ref.context else {
+            kubernetesPage.commandProblem = "\(ref.context) isn't among the page's contexts: \(ref.key.instance) isn't opened on another one."
+            return
+        }
+        let missing = namespaces.filter { !model.scope.includes($0) }
+        if !missing.isEmpty { model.setScope(.of((model.scope.names ?? []) + missing)) }
+        kubernetesPage.showSection(.gitops)
+        kubernetesPage.openMarkedApp(ref)
+    }
+
     func gitOpsAskWhy(_ ref: KubeObjectRef, extra: [AskAgentModel.Part]) async {
         await kubernetesContextsLoaded()
         kubernetesPage.askWhy(ref, extra: extra)

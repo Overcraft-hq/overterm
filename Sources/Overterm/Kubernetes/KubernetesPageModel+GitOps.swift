@@ -80,6 +80,7 @@ extension KubernetesPageModel {
         guard visible, windowVisible, model.enabled else {
             closeMarkedApp()
             markedRead.drop()
+            model.forgetMarkedApps(by: self)
             return gitOps.drop()
         }
         guard section == .gitops, let context = model.selectedName else {
@@ -88,6 +89,7 @@ extension KubernetesPageModel {
             // that context's no longer (gitops.md 3.1) — dropped, not kept.
             if let store = gitOps.store, store.context != model.selectedName {
                 markedRead.drop()
+                model.forgetMarkedApps(by: self)
                 return gitOps.drop()
             }
             return gitOps.hide()
@@ -99,6 +101,23 @@ extension KubernetesPageModel {
         gitOps.show(
             context: context, scope: model.scope, discovery: model.discovery, client: model.client(for: context),
             accessible: model.selected?.settings.accessibleNamespaces ?? [])
+    }
+
+    /// The apps the section ranked from marks, kept for the checkout's rail
+    /// while this page shows (`KubernetesModel.keepMarkedApps`, gitops.md
+    /// 14.2.5): only while they are read — a section left keeps its last
+    /// ranking five minutes; dropped with the page, another context or a
+    /// credential failure.
+    func keepMarkedApps() {
+        let marked = gitOps.marked
+        guard marked.state != .idle, let name = marked.context, name == gitOps.context, let context = model.contexts.context(named: name) else {
+            // Its reads dropped (the page, another context, a credential failure): forgotten.
+            if marked.state == .idle, marked.store == nil { model.forgetMarkedApps(by: self) }
+            return
+        }
+        model.keepMarkedApps(
+            KubernetesModel.MarkedAppsKept(context: context, apps: marked.apps, at: Date(), scope: marked.scope, whole: marked.reading.isWhole),
+            context: name, by: self)
     }
 
     /// Refresh: every kind summarised again; an app's detail read again.
