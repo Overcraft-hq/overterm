@@ -19,6 +19,7 @@ version is tagged `v<version>`.
 - docker: the containers list scrolls in half the time; env names with PASS, PWD, PASSPHRASE or PIN as a word (`RABBITMQ_DEFAULT_PASS`, `MYSQL_PWD`) look secret — their values were shown, handed to agents and copied onto a command line
 - security: a word with a control character (a container's or chart folder's name, an env value, a dropped path) is written as an escape, never typed raw into a tab
 - git: started from a git hook or `git bisect run`, Overterm's git works in the folder it names, never in the GIT_DIR it inherited
+- sidebar: the Files tree no longer asks git again and redraws when a folder is rescanned unchanged — behind other windows, a tab in ~ could keep the app busy
 - build: Xcode 27 builds the app, and an app built with it takes clicks on macOS 27; double-clicking the strip's empty space zooms the window there again
 - window: built with macOS 26's SDK or later, the tab strip no longer sits on a grey glass band across the title bar
 - terminal: in a folder four or more deep, the prompt is no longer taken for a command — a command's rows went to it, so ⇧⌘C copied the wrong output and ⌥⌘↓ missed failures
