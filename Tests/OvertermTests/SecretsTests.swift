@@ -85,6 +85,140 @@ final class SecretsTests: XCTestCase {
             XCTAssertFalse(cases.map { Secrets.scrubCredentials($0.0) }.joined().contains(leftover), leftover)
         }
     }
+
+    /// A fake password for the programs' cases, made at run time.
+    private let pw = ["hunt", "er2"].joined()
+
+    /// The passwords programs take where no flag's name says so (Activity's
+    /// analysis, 9.3): they went through `maskArguments` into Docker's and
+    /// Kubernetes' text, agents' briefs and every command a page shows.
+    func testProgramsOwnPasswordPlacesAreMasked() {
+        let cases: [(String, String)] = [
+            ("docker login -u acme -p \(pw)-docker registry.acme.test", "docker login -u acme -p •••••• registry.acme.test"),
+            ("docker login -p\(pw)-docker", "docker login -p••••••"),
+            ("docker login -p=\(pw)-docker", "docker login -p=••••••"),
+            ("/usr/local/bin/docker --context acme login -p \(pw)-docker", "/usr/local/bin/docker --context acme login -p ••••••"),
+            ("podman login -p \(pw)-podman quay.io", "podman login -p •••••• quay.io"),
+            ("nerdctl login --username acme -p \(pw)-nerdctl", "nerdctl login --username acme -p ••••••"),
+            ("helm registry login ghcr.io -u acme -p \(pw)-helm", "helm registry login ghcr.io -u acme -p ••••••"),
+            ("crane auth login ghcr.io -u acme -p \(pw)-crane", "crane auth login ghcr.io -u acme -p ••••••"),
+            ("sshpass -p \(pw)-ssh ssh -p 2222 acme@globex.test", "sshpass -p •••••• ssh -p 2222 acme@globex.test"),
+            ("sshpass -p\(pw)-ssh scp -P 2222 a b", "sshpass -p•••••• scp -P 2222 a b"),
+            ("sshpass -v -p \(pw)-ssh ssh host", "sshpass -v -p •••••• ssh host"),
+            (
+                "ldapsearch -x -H ldap://ldap.acme.test -D cn=admin,dc=acme -w \(pw)-ldap -b dc=acme -s sub",
+                "ldapsearch -x -H ldap://ldap.acme.test -D cn=admin,dc=acme -w •••••• -b dc=acme -s sub"
+            ),
+            ("ldapsearch -xw\(pw)-ldap -b dc=acme", "ldapsearch -xw•••••• -b dc=acme"),
+            ("ldapmodify -a -w \(pw)-ldap -f add.ldif", "ldapmodify -a -w •••••• -f add.ldif"),
+            ("ldapwhoami -x -w \(pw)-ldap", "ldapwhoami -x -w ••••••"),
+            ("ldappasswd -x -w \(pw)-bind -a old-\(pw) -s new-\(pw) cn=acme", "ldappasswd -x -w •••••• -a •••••• -s •••••• cn=acme"),
+            ("smbclient //files.acme.test/share -U alice%\(pw)-smb", "smbclient //files.acme.test/share -U alice%••••••"),
+            ("smbclient -Ualice%\(pw)-smb //files/share", "smbclient -Ualice%•••••• //files/share"),
+            ("rpcclient --user=alice%\(pw)-smb files", "rpcclient --user=alice%•••••• files"),
+            ("smbclient -U alice //files/share", "smbclient -U alice //files/share"),
+            ("htpasswd -b .htpasswd alice \(pw)-htpasswd", "htpasswd -b .htpasswd alice ••••••"),
+            ("htpasswd -bcB -C 12 .htpasswd alice \(pw)-htpasswd", "htpasswd -bcB -C 12 .htpasswd alice ••••••"),
+            ("htpasswd -nb alice \(pw)-htpasswd", "htpasswd -nb alice ••••••"),
+            ("htpasswd -c .htpasswd alice", "htpasswd -c .htpasswd alice"),
+            ("mount_smbfs //alice:\(pw)-smbfs@files.acme.test/share /Volumes/share", "mount_smbfs //alice:••••••@files.acme.test/share /Volumes/share"),
+            ("openssl rsa -in key.pem -passin pass:\(pw)-openssl -passout env:NEW", "openssl rsa -in key.pem -passin pass:•••••• -passout env:NEW"),
+            // `mount` keeps its argv while mount_smbfs runs: the form, whatever the program.
+            ("mount -t smbfs //alice:\(pw)-smbfs@files.acme.test/share /Volumes/share", "mount -t smbfs //alice:••••••@files.acme.test/share /Volumes/share"),
+            ("acme-sync --remote=//alice:\(pw)-smbfs@files.acme.test/share", "acme-sync --remote=//alice:••••••@files.acme.test/share"),
+            ("openssl enc -aes-256-cbc -k \(pw)-openssl -in a -out b", "openssl enc -aes-256-cbc -k •••••• -in a -out b"),
+            ("podman pull --creds acme:\(pw)-podman quay.io/acme/web", "podman pull --creds acme:•••••• quay.io/acme/web"),
+            ("buildah from --creds=acme:\(pw)-buildah quay.io/acme/web", "buildah from --creds=acme:•••••• quay.io/acme/web"),
+            (
+                "skopeo copy --src-creds acme:\(pw)-src --dest-creds=globex:\(pw)-dest docker://a docker://b",
+                "skopeo copy --src-creds acme:•••••• --dest-creds=globex:•••••• docker://a docker://b"
+            ),
+            ("skopeo inspect --creds acme docker://a", "skopeo inspect --creds acme docker://a"),
+            ("oras push -u acme -p \(pw)-oras registry.acme.test/web:1 a.txt", "oras push -u acme -p •••••• registry.acme.test/web:1 a.txt"),
+            // A login's subcommand after the global flags and their values.
+            ("docker -H tcp://docker.acme.test:2376 --tlsverify login -u acme -p \(pw)-docker", "docker -H tcp://docker.acme.test:2376 --tlsverify login -u acme -p ••••••"),
+            ("docker --config /tmp/acme -l debug login -p \(pw)-docker", "docker --config /tmp/acme -l debug login -p ••••••"),
+            ("helm --kube-context acme registry login ghcr.io -p \(pw)-helm", "helm --kube-context acme registry login ghcr.io -p ••••••"),
+        ]
+        for (line, masked) in cases {
+            let words = line.split(separator: " ").map(String.init)
+            XCTAssertEqual(Secrets.maskArguments(words).joined(separator: " "), masked, line)
+        }
+        XCTAssertTrue(Secrets.isSecret("SSHPASS"), "sshpass -e reads it")
+        XCTAssertEqual(Secrets.maskArguments(["SSHPASS=\(pw)-ssh", "sshpass", "-e", "ssh", "host"]), ["SSHPASS=••••••", "sshpass", "-e", "ssh", "host"])
+    }
+
+    /// Where only a password ever goes, a `/` starts a password, not a
+    /// path — one generated in 64 starts so —; a `${VAR}` alone stays. And
+    /// htpasswd's options end at its first operand: a password that starts
+    /// with `-` is still the password.
+    func testAPasswordPlaceKeepsNoPath() {
+        let cases: [(String, String)] = [
+            ("docker login -u acme -p /Xy9\(pw)", "docker login -u acme -p ••••••"),
+            ("sshpass -p /Xy9\(pw) ssh h", "sshpass -p •••••• ssh h"),
+            ("ldapsearch -x -w /Xy9\(pw) -b dc=acme", "ldapsearch -x -w •••••• -b dc=acme"),
+            ("smbclient -U acme%/Xy9\(pw) //files/share", "smbclient -U acme%•••••• //files/share"),
+            ("openssl rsa -in key.pem -passin pass:/Xy9\(pw)", "openssl rsa -in key.pem -passin pass:••••••"),
+            ("htpasswd -b .htpasswd acme /Xy9\(pw)", "htpasswd -b .htpasswd acme ••••••"),
+            ("podman pull --creds acme:/Xy9\(pw) quay.io/acme/web", "podman pull --creds acme:•••••• quay.io/acme/web"),
+            ("SSHPASS=/Xy9\(pw) sshpass -e ssh h", "SSHPASS=•••••• sshpass -e ssh h"),
+            ("htpasswd -b .htpasswd acme -Xy9\(pw)", "htpasswd -b .htpasswd acme ••••••"),
+            ("htpasswd -nb acme -Xy9\(pw)", "htpasswd -nb acme ••••••"),
+            ("htpasswd -bC12 .htpasswd acme \(pw)-htpasswd", "htpasswd -bC12 .htpasswd acme ••••••"),
+            ("htpasswd -b -- .htpasswd acme \(pw)-htpasswd", "htpasswd -b -- .htpasswd acme ••••••"),
+            // A flag that may name a file keeps its path, as it always did.
+            ("acme-server --key /certs/acme.pem", "acme-server --key /certs/acme.pem"),
+        ]
+        for (line, masked) in cases {
+            let words = line.split(separator: " ").map(String.init)
+            XCTAssertEqual(Secrets.maskArguments(words).joined(separator: " "), masked, line)
+            XCTAssertFalse(Secrets.maskArguments(words).joined().contains(pw), line)
+        }
+        XCTAssertEqual(Secrets.maskArguments(["sshpass", "-p", "\"${SSH_PW}\"", "ssh", "h"]), ["sshpass", "-p", "\"${SSH_PW}\"", "ssh", "h"])
+    }
+
+    /// Each rule ends with its command: a port's `-p` elsewhere is no
+    /// password — a later `docker run`, the command sshpass runs, another
+    /// program's `-w` or `-U`.
+    func testAProgramsRuleEndsWithItsCommand() {
+        let unchanged = [
+            "docker run -p 8080:80 nginx",
+            "docker compose up -p acme",
+            "podman run -p 5432:5432 postgres",
+            "helm install acme ./chart -p",
+            "ssh -p 2222 acme@globex.test",
+            "curl -w %{http_code} https://acme.test",
+            "lsof -U",
+            "grep -w login file",
+            "openssl s_client -connect acme.test:443 -passin env:PW",
+            // `login` as a container's name, a context's, an image's: no subcommand.
+            "docker run --name login -p 8080:80 nginx",
+            "podman run --name login -p 3000:3000 acme/web",
+            "docker --context login run -p 8080:80 nginx",
+            "docker run -d acme/login -p 8080",
+            "helm install login ./chart --set registry.login=true -p",
+        ]
+        for line in unchanged {
+            let words = line.split(separator: " ").map(String.init)
+            XCTAssertEqual(Secrets.maskArguments(words), words, line)
+        }
+        let script = ["sh", "-c", "docker login -u acme -p \(pw)-docker && docker run -p 8080:80 nginx; sshpass -p \(pw)-ssh ssh -p 2222 h"]
+        XCTAssertEqual(
+            Secrets.maskArguments(script),
+            ["sh", "-c", "docker login -u acme -p •••••• && docker run -p 8080:80 nginx; sshpass -p •••••• ssh -p 2222 h"])
+        let glued = "docker login -p \(pw)-docker; docker run -p 8080:80 nginx".split(separator: " ").map(String.init)
+        XCTAssertEqual(Secrets.maskArguments(glued).joined(separator: " "), "docker login -p ••••••; docker run -p 8080:80 nginx")
+        // A ${VAR} stays as written, as for every other flag.
+        XCTAssertEqual(Secrets.maskArguments(["docker", "login", "-p", "${REGISTRY_PASSWORD}"]), ["docker", "login", "-p", "${REGISTRY_PASSWORD}"])
+    }
+
+    /// A linker's argv is thousands of words: one pass, not one a word.
+    func testALongCommandIsMaskedInOnePass() {
+        let words = ["ld"] + (0..<20_000).map { "obj\($0).o" } + ["docker", "login", "-p", "\(pw)-docker"]
+        let masked = Secrets.maskArguments(words)
+        XCTAssertEqual(masked.last, "••••••")
+        XCTAssertEqual(masked.count, words.count)
+    }
 }
 
 /// ⌘L on a selection in a pod's or a pinned tab (rule 9): what the cluster
