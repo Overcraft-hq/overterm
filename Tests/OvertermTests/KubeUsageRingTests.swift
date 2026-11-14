@@ -175,8 +175,9 @@ final class KubeUsageRingTests: XCTestCase {
         return Int(stats.size_in_use)
     }
 
-    func testTheWholeRingStaysUnderSixMegabytes() {
-        let before = Self.heapInUse()
+    /// The ring the cap test fills: 200 detail keys full, the list's 5,000
+    /// rows at 40 points and a namespace's sum across them.
+    private func fullRing() -> (ring: KubeUsageRing, detailBytes: Int) {
         var ring = KubeUsageRing()
         // 200 detail keys, full: 60 raw points and 360 minutes each.
         for index in 0..<KubeUsageRing.detailKeys {
@@ -189,7 +190,6 @@ final class KubeUsageRingTests: XCTestCase {
             }
         }
         let detailBytes = ring.bytes
-        XCTAssertLessThan(detailBytes, Int(2.6 * 1_048_576), "about 2.5 MB: \(detailBytes)")
         // The list's 5,000 rows at 40 points (names past a String's inline
         // 15 bytes), and a namespace's sum across them — its members' names too.
         let names = (0..<5_000).map { String(format: "checkout-api-%05d", $0) }
@@ -202,7 +202,24 @@ final class KubeUsageRingTests: XCTestCase {
             ring.recordSum(.namespace("acme-shop"), members, .detail, now: at(21_600))
         }
         ring.enforceCap()
-        let held = Self.heapInUse() - before
+        return (ring, detailBytes)
+    }
+
+    func testTheWholeRingStaysUnderSixMegabytes() {
+        // malloc's count is the whole process's: whatever another test left
+        // running allocates into it too. The ring is built the same each time,
+        // so the least of three reads is the ring's own.
+        var held = Int.max
+        var built: (ring: KubeUsageRing, detailBytes: Int)?
+        for _ in 0..<3 {
+            built = nil
+            let before = Self.heapInUse()
+            let attempt = fullRing()
+            held = min(held, Self.heapInUse() - before)
+            built = attempt
+        }
+        guard var ring = built?.ring, let detailBytes = built?.detailBytes else { return XCTFail("never built") }
+        XCTAssertLessThan(detailBytes, Int(2.6 * 1_048_576), "about 2.5 MB: \(detailBytes)")
         XCTAssertLessThanOrEqual(ring.bytes, KubeUsageRing.defaultByteCap, "\(ring.bytes)")
         // What it says it takes is what it takes: malloc's own count, within a tenth.
         XCTAssertGreaterThanOrEqual(Double(ring.bytes), Double(held) * 0.9, "says \(ring.bytes), holds \(held)")

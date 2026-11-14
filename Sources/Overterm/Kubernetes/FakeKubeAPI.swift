@@ -305,6 +305,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// Paths whose answers are held this many milliseconds (`answerSlowly`).
     private var slowPaths: [String: Int] = [:]
     private var heldNow = 0
+    private var heldPeak = 0
     private var dropped: [String] = []
     private var throttleAfter = 0
     /// The next watches' answer: a status, its `Retry-After`.
@@ -668,7 +669,12 @@ final class FakeKubeAPI: @unchecked Sendable {
     var openWatches: Int { locked { watchers.count } }
     /// The kinds watched now, by full name, one entry a watch.
     var watched: [String] { locked { watchers.values.map(\.resource).sorted() } }
-    func forgetRequests() { locked { asked = [] } }
+    func forgetRequests() {
+        locked {
+            asked = []
+            heldPeak = heldNow
+        }
+    }
 
     // MARK: State, as a test sets it
 
@@ -1105,6 +1111,9 @@ final class FakeKubeAPI: @unchecked Sendable {
     func answerSlowly(_ path: String, milliseconds: Int?) { locked { slowPaths[path] = milliseconds } }
     /// Answers held now.
     var heldAnswers: Int { locked { heldNow } }
+    /// The most answers held at once since the last `forgetRequests` — what
+    /// a poll of `heldAnswers` could miss between two looks.
+    var mostHeldAnswers: Int { locked { heldPeak } }
     /// The paths of held answers whose client closed before they went.
     var droppedAnswers: [String] { locked { dropped } }
 
@@ -1112,6 +1121,7 @@ final class FakeKubeAPI: @unchecked Sendable {
     fileprivate func holding(_ change: Int, dropped path: String? = nil) {
         locked {
             heldNow += change
+            heldPeak = max(heldPeak, heldNow)
             if let path { dropped.append(path) }
         }
     }

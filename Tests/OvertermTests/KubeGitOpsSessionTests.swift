@@ -417,6 +417,7 @@ final class KubeGitOpsSessionTests: XCTestCase {
         }
         XCTAssertTrue(settled)
         XCTAssertEqual(gets().count, 20, "exactly 20 GETs in the first flush")
+        most = max(most, api.mostHeldAnswers)
         XCTAssertLessThanOrEqual(most, KubeGitOpsSession.inFlight, "at most four in flight")
         XCTAssertGreaterThan(most, 1, "several at once")
         let rest = await eventually(8) {
@@ -424,6 +425,7 @@ final class KubeGitOpsSessionTests: XCTestCase {
             return gets().count >= 30
         }
         XCTAssertTrue(rest, "the other ten at the next flush: \(gets().count)")
+        most = max(most, api.mostHeldAnswers)
         XCTAssertLessThanOrEqual(most, KubeGitOpsSession.inFlight)
         XCTAssertEqual(Set(gets().map(\.path)), Set(paths), "each once")
         XCTAssertEqual(gets().count, 30)
