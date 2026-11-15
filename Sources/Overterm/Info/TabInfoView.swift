@@ -73,7 +73,7 @@ struct TabInfoView: View {
             .foregroundStyle(theme.dimText)
             ScrollView {
                 VStack(spacing: 0) {
-                    ForEach(rows, id: \.node.pid) { row in
+                    ForEach(rows, id: \.node.id) { row in
                         ProcessRow(node: row.node, depth: row.depth, theme: theme)
                     }
                 }

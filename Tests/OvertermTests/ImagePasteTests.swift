@@ -28,7 +28,7 @@ final class ImagePasteTests: XCTestCase {
 
     func testAnAgentMustHaveTheKeyboard() {
         func node(_ pid: pid_t, _ name: String, _ command: String) -> ProcessNode {
-            ProcessNode(pid: pid, parent: 1, name: name, arguments: command.split(separator: " ").map(String.init), cpuPercent: 0, memory: 0, workingDirectory: nil)
+            ProcessNode(identity: ActivityProcessID(pid: pid, start: UInt64(pid)), parent: 1, name: name, command: command, cpuPercent: 0, memory: 0, workingDirectory: nil)
         }
         let nodes = [node(10, "zsh", "-zsh"), node(20, "node", "claude --resume"), node(30, "codex", "codex")]
         let groups: [pid_t: pid_t] = [10: 10, 20: 20, 30: 30]
