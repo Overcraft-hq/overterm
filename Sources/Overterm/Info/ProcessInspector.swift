@@ -132,8 +132,9 @@ final class ProcessInspector: @unchecked Sendable {
     }
 
     /// `members` as nodes from `snapshot`, assembled. An agent's folder is
-    /// waited for when the census hasn't read it yet: the poll, Sessions and
-    /// a drop read it at once (`ProcessFolders.folder(waitingFor:now:)`).
+    /// waited for when the census hasn't read it yet: the overview,
+    /// Sessions, an MCP confirmation and a drop read it at once
+    /// (`ProcessFolders.folder(waitingFor:now:)`).
     func nodes(_ members: [ActivityProcessID], in snapshot: ActivitySnapshot) -> [ProcessNode] {
         Self.nodes(members, in: snapshot) { identity, isAgent in
             guard isAgent, case .path(let path)? = census.folders.folder(waitingFor: identity, now: census.kernel.uptime()) else { return nil }

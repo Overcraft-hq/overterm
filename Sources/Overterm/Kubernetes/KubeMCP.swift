@@ -88,6 +88,7 @@ enum KubeMCP {
                 message: "Unknown tool: \(name). Agents read Kubernetes here, and restart, scale, delete a pod or apply a manifest where it is writable.")
         }
         let call = Call(name: name, arguments: arguments)
+        if let pane { await paneFollow?(pane) }
         guard let list = await kubernetes.contextsForAgents() else {
             return BrowserMCP.errorResult("Kubernetes is off in Overterm's settings (Settings ▸ Kubernetes).")
         }
@@ -185,8 +186,15 @@ enum KubeMCP {
     }
 
     /// The checkout a pane's tab works in — the window answers (nil
-    /// outside any window's tabs, and in tests that set none).
+    /// outside any window's tabs, and in tests that set none) — as the tab
+    /// says it: a call's helpers ask it, after `paneFollow` at its start.
     static var paneCheckout: ((String) -> URL?)?
+    /// Where the calling pane's agent works, read again at a call's start
+    /// while its window is off screen — no light tick reads its tabs then,
+    /// and agents ask exactly while the person looks elsewhere (docs/design/
+    /// activity/analysis.md, 7.1, 7.9): what `paneCheckout` answers then.
+    /// The window sets it; none in tests.
+    static var paneFollow: ((String) async -> Void)?
     /// Where bindings are kept (a test's own store).
     static var bindings: KubeBindingStore = .shared
 

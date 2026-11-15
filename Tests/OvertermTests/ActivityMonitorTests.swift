@@ -397,7 +397,7 @@ final class ActivityMonitorTests: XCTestCase {
     /// A busy Mac stretches the cadence to 5 s (7.3).
     func testABusyMacStretchesTheCadence() async throws {
         let owner = Owner()
-        kernel.onCall { [kernel] call in if call == "processes" { kernel.advance(10_000_000) } }
+        kernel.onCall { [kernel] call in if call == "processes" { kernel.advance(20_000_000) } }
         monitor.want(owner, .light(tabs: nil), every: .milliseconds(10))
         XCTAssertEqual(monitor.cadence, .milliseconds(10))
         await eventually("stretched") { monitor.snapshot?.isStretched == true }

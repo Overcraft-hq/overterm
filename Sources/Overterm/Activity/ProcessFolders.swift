@@ -48,7 +48,9 @@ final class ProcessFolders: @unchecked Sendable {
     /// (`folder(waitingFor:now:)`): a read ending wakes it.
     private let lock = NSCondition()
     // Under `lock`.
-    private var known: [ActivityProcessID: (folder: Folder, at: UInt64)] = [:]
+    /// Each folder known: what the read found, when it ended, and when it
+    /// began — what a caller asking for one read since a moment checks.
+    private var known: [ActivityProcessID: (folder: Folder, at: UInt64, began: UInt64)] = [:]
     private var waiting: [ActivityProcessID] = []
     private var reading: (identity: ActivityProcessID, since: UInt64)?
     private var draining = false
@@ -69,7 +71,7 @@ final class ProcessFolders: @unchecked Sendable {
                 hangs = true
                 if skipped[reading.identity] == nil {
                     skipped[reading.identity] = now + Self.skipFor
-                    known[reading.identity] = (.notAnswering, now)
+                    known[reading.identity] = (.notAnswering, now, now)
                 }
                 // Behind a hung read nothing would come: asked again later.
                 waiting.removeAll()
@@ -112,7 +114,8 @@ final class ProcessFolders: @unchecked Sendable {
 
     /// `identity`'s folder for a caller that answers at once — the old
     /// API's lookups (`ProcessInspector`): an agent's folder is what the
-    /// poll, Sessions and a drop ask of a tree — where a tick never waits.
+    /// overview, Sessions, an MCP confirmation and a drop ask of a tree —
+    /// where a tick never waits.
     /// The one known, of any age; else its read is asked, and waited for
     /// `deadline` at most: one that doesn't come by then is nil, its
     /// process marked as not answering by the next ask, as a tick's would
@@ -129,28 +132,55 @@ final class ProcessFolders: @unchecked Sendable {
         return known[identity]?.folder
     }
 
+    /// `identity`'s folder as a read begun at `since` or later found it —
+    /// an agent's MCP call's (`TerminalWindowController.paneCheckout`):
+    /// where it works now, never the one known while a read goes on, which
+    /// a tick and `folder(waitingFor:now:)` hand back. A read is asked
+    /// unless one begun since is going or waiting, and waited for
+    /// `deadline` at most: nil when none came by then, or none could be
+    /// asked — nothing is queued behind a read that hangs. One skipped as
+    /// not answering is that at once. Never from this queue.
+    func folder(readSince since: UInt64, of identity: ActivityProcessID) -> Folder? {
+        dispatchPrecondition(condition: .notOnQueue(queue))
+        // Asked as an agent's is at each tick: queued unless it is being read.
+        if folders([Request(identity: identity, everyTick: true)], now: kernel.uptime())[identity] == .notAnswering { return .notAnswering }
+        let until = Date().addingTimeInterval(Double(Self.deadline) / 1e9)
+        lock.lock()
+        defer { lock.unlock() }
+        while true {
+            if let entry = known[identity], entry.began >= since { return entry.folder }
+            if skipped[identity] != nil { return .notAnswering }
+            let readNow = reading?.identity == identity
+            // The read going began before: another after it.
+            if readNow, let reading, reading.since < since, !waiting.contains(identity) { waiting.append(identity) }
+            guard readNow || waiting.contains(identity) else { return nil }
+            guard lock.wait(until: until) else { return nil }
+        }
+    }
+
     /// Whether a read is going or waiting: the tests wait for it.
     var isBusy: Bool { lock.withLock { draining } }
 
     /// The reads, one at a time, until none waits.
     private func drain() {
         while true {
-            let next: ActivityProcessID? = lock.withLock {
+            let next: (identity: ActivityProcessID, began: UInt64)? = lock.withLock {
                 guard !waiting.isEmpty else {
                     draining = false
                     return nil
                 }
                 let identity = waiting.removeFirst()
-                reading = (identity, kernel.uptime())
-                return identity
+                let began = kernel.uptime()
+                reading = (identity, began)
+                return (identity, began)
             }
-            guard let next else { return }
+            guard let (next, began) = next else { return }
             let path = kernel.workingDirectory(of: next.pid)
             let at = kernel.uptime()
             lock.withLock {
                 // A read that outlived its deadline answers too late: the
                 // skip stands its minute.
-                if skipped[next] == nil { known[next] = (path.map(Folder.path) ?? .unknown, at) }
+                if skipped[next] == nil { known[next] = (path.map(Folder.path) ?? .unknown, at, began) }
                 reading = nil
                 lock.broadcast()
             }

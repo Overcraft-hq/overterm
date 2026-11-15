@@ -52,8 +52,16 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// The ⌘F overlay over the terminal (terminal + files + contents).
     let spotlight = SpotlightModel()
     private(set) var spotlightView: NSView?
-    /// Polls where the selected tab's agent works (see Tab.agentDirectory).
-    private var agentPoll: Timer?
+    /// This window wants the census's light tick for its tabs: it is on
+    /// screen (`updateLightTick`, TerminalWindowController+Activity).
+    var lightTickWanted = false
+    /// A scenario's say over whether the window counts as on screen for
+    /// the light tick; nil follows the window.
+    var lightTickVisibility: Bool?
+    /// Each tab's agent's folder as the light tick last decided it against
+    /// the tab's shell: the folder, the shell's then, and what the tab
+    /// follows — decided again only when either moved.
+    var lightTickAgents: [UUID: (folder: String, shell: String?, following: String?)] = [:]
     /// This window's readers' lookups in the app's census (`ProcessInspector`,
     /// docs/design/activity/analysis.md 7.8). It keeps nothing of its own:
     /// the CPU baselines and what was read of each process live with the
@@ -771,7 +779,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         tabBarView = tabBar
         installTabRightClick()
         installTabDragging()
-        startAgentPoll()
+        watchLightTick()
         watchActivityContext()
 
         let content = NSView()
@@ -991,12 +999,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                                 self?.dockerPage.act(.stop, on: DockerModel.shared.container(container).map { [$0] } ?? [])
                                 return
                             }
-                            // The exact pid lsof reported, asked first, and
-                            // only while it is still that process holding
-                            // the port (`stopListener`). Never a pattern:
-                            // `pkill -f` once killed the shell running the
-                            // tests (CLAUDE.md).
-                            self?.stopListener(port)
+                            // The exact process the census named, read again —
+                            // its pid and start — and only while it runs as
+                            // you alone (ListeningPort.killable). Never a
+                            // pattern: `pkill -f` once killed the shell
+                            // running the tests (CLAUDE.md).
+                            let now = port.identity.flatMap { LiveActivityKernel().process($0.pid) }
+                            guard let pid = port.killable(now: now, uid: getuid()) else { return NSSound.beep() }
+                            kill(pid, SIGTERM)
                         },
                         rerun: { [weak self] in self?.rerun(in: $0) },
                         splitRight: { [weak self] in self?.split($0, .right) },
@@ -1825,70 +1835,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     // MARK: Following the agent
 
-    /// Every 2 s, where the selected tab's agent process (claude, codex)
-    /// works. Claude Code moves its process into a worktree on
-    /// EnterWorktree (and back on exit); the sidebar and diff follow.
-    private func startAgentPoll() {
-        agentPoll = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.pollAgentDirectory() }
-        }
-    }
-
-    /// A scan still running: the next tick skips it (see pollAgentDirectory).
-    private var agentPollInFlight = false
-    /// Ports are read every third tick: `lsof` costs far more than reading
-    /// the process table, and a server's port does not move.
-    private var agentPollTick = 0
-
-    private func pollAgentDirectory() {
-        // A process scan slower than the 2 s tick (a loaded machine) would
-        // otherwise stack up scans on the pool, their answers out of order.
-        guard !agentPollInFlight, let tab = store.selected else { return }
-        agentPollInFlight = true
-        agentPollTick += 1
-        let readPorts = agentPollTick % 3 == 1
-        // The focused pane's agent first, then any other pane's.
-        let panes = [tab.terminal] + tab.terminals.filter { $0 !== tab.terminal }
-        let roots = panes.map { (SurfaceProcesses.shared.loginPID(of: $0), $0.processTag) }
-        let inspector = self.inspector
-        DispatchQueue.global(qos: .utility).async {
-            // Only the port tick needs every pane's tree; the rest of the
-            // time the scan stops at the first pane with an agent in it.
-            let agent: ProcessNode?
-            var pids: [pid_t] = []
-            var paneOf: [pid_t: Int] = [:]
-            if readPorts {
-                let trees = roots.map { inspector.tree(root: $0.0, tag: $0.1) }
-                agent = Self.firstAgent(in: trees)
-                for (index, tree) in trees.enumerated() {
-                    for pid in tree.flatMap(\.flattened).map(\.pid) {
-                        pids.append(pid)
-                        paneOf[pid] = paneOf[pid] ?? index
-                    }
-                }
-            } else {
-                agent = Self.firstAgent(in: roots) { inspector.tree(root: $0, tag: $1) }
-            }
-            let directory = agent?.workingDirectory
-            Task { @MainActor in
-                self.agentPollInFlight = false
-                // Only when it differs from the shell's: an agent in the
-                // tab's own directory changes nothing.
-                let shell = tab.workingDirectory.map { FileTreeModel.treeRoot(for: $0) }
-                let following = directory.flatMap { FileTreeModel.treeRoot(for: $0) == shell ? nil : $0 }
-                if tab.agentDirectory != following { tab.agentDirectory = following }
-                guard readPorts else { return }
-                let ports = await ListeningPorts.of(pids)
-                if tab.ports != ports { tab.ports = ports }
-                var byPane: [ObjectIdentifier: [ListeningPort]] = [:]
-                for port in ports {
-                    guard let index = paneOf[port.pid] else { continue }
-                    byPane[ObjectIdentifier(panes[index]), default: []].append(port)
-                }
-                if tab.panePorts != byPane { tab.panePorts = byPane }
-            }
-        }
-    }
+    // Where each tab's agent works, and what its processes listen on, come
+    // from the census's light tick (TerminalWindowController+Activity).
 
     /// The first agent process under a tab's panes (`roots`: each pane's
     /// login and tag, in order). `tree` is ProcessInspector.tree, read once
@@ -1900,15 +1848,6 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     nonisolated static func firstAgent(in roots: [(pid_t?, String)], tree: (pid_t?, String) -> [ProcessNode]) -> ProcessNode? {
         for (root, tag) in roots {
             if let agent = tree(root, tag).flatMap(\.flattened).first(where: isAgent) { return agent }
-        }
-        return nil
-    }
-
-    /// The same, over trees already in hand — for a caller that needs every
-    /// pane's tree anyway (the port scan does) and so cannot stop early.
-    nonisolated static func firstAgent(in trees: [[ProcessNode]]) -> ProcessNode? {
-        for tree in trees {
-            if let agent = tree.flatMap(\.flattened).first(where: isAgent) { return agent }
         }
         return nil
     }
@@ -4279,6 +4218,18 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     func windowDidChangeOcclusionState(_ notification: Notification) {
         for page in pages.all { page.occlusionChanged?() }
         updateEditorOnScreen()
+        updateLightTick()
+    }
+
+    func windowDidMiniaturize(_ notification: Notification) { updateLightTick() }
+
+    func windowDidDeminiaturize(_ notification: Notification) { updateLightTick() }
+
+    /// Shown, its tabs are the light tick's (an isolated run's window too,
+    /// which may never be told its occlusion changed).
+    override func showWindow(_ sender: Any?) {
+        super.showWindow(sender)
+        updateLightTick()
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -4288,7 +4239,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         if let peekKeys { NSEvent.removeMonitor(peekKeys) }
         peek.close()
         saveFinalSession()
-        agentPoll?.invalidate()
+        endLightTick()
         usage.stop()
         pullRequestPoll?.invalidate()
         overviewPoll?.invalidate()

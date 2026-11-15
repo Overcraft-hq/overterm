@@ -92,11 +92,23 @@ struct ListeningPort: Identifiable, Hashable {
         case .oneAddress: "Network · \(address)"
         }
     }
+
+    /// The pid a pill's Kill may signal (docs/design/activity/analysis.md,
+    /// 6.12): its holder as the census named it, read again — `now`, what
+    /// holds that pid now — only while it is the same process, its start
+    /// the same, and runs as the user alone, its effective, real and saved
+    /// uids `uid`: `kill(2)` would let a setuid program the user started
+    /// through by its real uid (6.10's never-list). Nil otherwise, and for
+    /// a container's or a forward's, whose owners stop them. Pure.
+    func killable(now: ActivityProcess?, uid: uid_t) -> pid_t? {
+        guard let identity, let now, now.identity == identity, now.isWhollyOwn(by: uid), !now.isZombie else { return nil }
+        return identity.pid
+    }
 }
 
+/// What listens, as the census's socket walk reads it (docs/design/
+/// activity/analysis.md, 7.6): no reading path runs lsof.
 enum ListeningPorts {
-    static let lsof = URL(fileURLWithPath: "/usr/sbin/lsof")
-
     /// Whoever of the user's listens on `port` — a TCP listener, or a bound
     /// UDP socket for `udp` — as a one-off census reads it
     /// (docs/design/activity/analysis.md, 7.6: `ActivityMonitor.census`, at
@@ -262,57 +274,5 @@ enum ListeningPorts {
         guard let hostIP, !["0.0.0.0", "::", "*"].contains(hostIP) else { return ("localhost", .network) }
         let host = hostIP.contains(":") ? "[\(hostIP)]" : hostIP
         return (host, KubeForwardAddress.isLoopback(hostIP) ? .thisMac : .oneAddress)
-    }
-
-    /// The listening TCP sockets of `pids`, each with its process's start
-    /// time read right after the listing, off the main thread as it is.
-    static func of(_ pids: [pid_t]) async -> [ListeningPort] {
-        guard !pids.isEmpty else { return [] }
-        let list = pids.map(String.init).joined(separator: ",")
-        // -a: AND the filters (these pids AND listening TCP); -n/-P: no DNS or
-        // service names; -F: machine-readable fields. Exit 1 = none found.
-        let output =
-            (try? await Git.run(
-                lsof, ["-nP", "-a", "-iTCP", "-sTCP:LISTEN", "-p", list, "-F", "pcn"],
-                in: URL(fileURLWithPath: "/"), success: [0, 1])) ?? ""
-        return parse(output).map { port in
-            var port = port
-            port.start = start(of: port.pid)
-            return port
-        }
-    }
-
-    /// When `pid`'s process started (µs), if it runs and is the user's:
-    /// proc_pidinfo answers for no one else's.
-    static func start(of pid: pid_t) -> UInt64? {
-        ProcessInspector.bsdInfo(pid).map(ProcessInspector.startTime)
-    }
-
-    /// Parses `lsof -F pcn`: `p<pid>` and `c<command>` start a process, each
-    /// `n<address:port>` is one of its sockets. IPv4 and IPv6 bindings of the
-    /// same port collapse into one entry.
-    static func parse(_ output: String) -> [ListeningPort] {
-        var result: [ListeningPort] = []
-        var seen = Set<String>()
-        var pid: pid_t = 0
-        var command = ""
-        for line in output.split(separator: "\n") {
-            guard let tag = line.first else { continue }
-            let value = String(line.dropFirst())
-            switch tag {
-            case "p":
-                pid = pid_t(value) ?? 0
-            case "c":
-                command = value
-            case "n":
-                guard let colon = value.lastIndex(of: ":"), let port = Int(value[value.index(after: colon)...]) else { continue }
-                let key = "\(pid):\(port)"
-                guard seen.insert(key).inserted else { continue }
-                result.append(ListeningPort(pid: pid, process: command, port: port, address: String(value[..<colon])))
-            default:
-                continue
-            }
-        }
-        return result.sorted { $0.port < $1.port }
     }
 }

@@ -32,7 +32,9 @@ enum MCPAsker {
         guard let (tab, terminal) = locate(pane) else { return line(tab: nil, agent: nil) }
         var agent = tab.agent?.name
         if agent == nil { agent = await Self.agent(root: SurfaceProcesses.shared.loginPID(of: terminal), tag: terminal.processTag) }
-        return line(tab: tab.title, checkout: tab.checkoutSource?.root.lastPathComponent, agent: agent)
+        // Where its agent works now, read again first while its window is off screen.
+        let checkout = await TerminalWindowController.paneCheckout(pane) ?? tab.checkoutSource?.root
+        return line(tab: tab.title, checkout: checkout?.lastPathComponent, agent: agent)
     }
 
     /// The window the pane is in, else the main one, else any terminal

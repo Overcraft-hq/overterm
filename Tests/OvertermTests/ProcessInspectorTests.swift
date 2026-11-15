@@ -152,17 +152,17 @@ final class ProcessInspectorTests: XCTestCase {
         XCTAssertEqual(tree.flatMap(\.flattened).map(\.pid).sorted(), [1101, 1103], "the shell, and what sudo started as the user")
         XCTAssertTrue(tree.contains { $0.identity == started }, "a root of its own, its parent not listed")
         XCTAssertEqual(TabSuspension.order(tree).sorted(), [1101, 1103], "what Suspend Tab would stop")
-        XCTAssertNil(TerminalWindowController.firstAgent(in: [tree]), "an ended agent isn't running")
+        XCTAssertNil(TerminalWindowController.firstAgent(in: [(1100, "pane-a")]) { _, _ in tree }, "an ended agent isn't running")
         let snapshot = try XCTUnwrap(sampler.latest)
         let slice = try XCTUnwrap(snapshot.pane("pane-a"))
         let named = ProcessInspector.nodes(slice.tree, in: snapshot)
         XCTAssertEqual(named.flatMap(\.flattened).map(\.pid).sorted(), [1101, 1102, 1103, 1104, 1105], "Tab Info's own nodes name them all")
-        XCTAssertNotNil(TerminalWindowController.firstAgent(in: [named]), "the zombie is a claude by its name")
+        XCTAssertNotNil(TerminalWindowController.firstAgent(in: [(1100, "pane-a")]) { _, _ in named }, "the zombie is a claude by its name")
     }
 
-    /// The pane's agent's folder is read at once (the poll, Sessions and a
-    /// drop ask for it), though the census reads folders off its queue and
-    /// never waits.
+    /// The pane's agent's folder is read at once (the overview, Sessions,
+    /// an MCP confirmation and a drop ask for it), though the census reads
+    /// folders off its queue and never waits.
     func testAnAgentsFolderIsReadAtOnce() throws {
         let tab = UUID()
         let left = pane("pane-a", login: 1100, tab: tab)

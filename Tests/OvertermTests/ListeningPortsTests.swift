@@ -3,15 +3,6 @@ import XCTest
 @testable import Overterm
 
 final class ListeningPortsTests: XCTestCase {
-    func testParse() {
-        let output = "p501\ncnode\nn*:5173\nn[::1]:5173\np777\ncpython3\nn127.0.0.1:8000\n"
-        let ports = ListeningPorts.parse(output)
-        XCTAssertEqual(ports.map(\.port), [5173, 8000])
-        XCTAssertEqual(ports.map(\.process), ["node", "python3"])
-        XCTAssertEqual(ports.first?.address, "*")
-        XCTAssertEqual(ports.first?.url?.absoluteString, "http://localhost:5173")
-    }
-
     // MARK: Where a listener is reached (docs/design/activity/analysis.md, 6.8)
 
     /// A fixture's socket as the census decodes it.
@@ -82,6 +73,27 @@ final class ListeningPortsTests: XCTestCase {
         XCTAssertEqual(linkLocal.endpoint, "[fe80::1]:3000", "what Copy gives")
         let udp = try listener(K.udp(local: "127.0.0.1", port: 5353))
         XCTAssertEqual(udp.proto, "udp")
+    }
+
+    /// A pill's Kill reaches only the process the census named, read again:
+    /// the same pid and start, running as the user alone — never one whose
+    /// pid was taken since, a setuid program the user started (as root, or
+    /// as the user for now with root kept as its saved uid), a zombie, or
+    /// a container's or a forward's port, whose owners stop them.
+    func testAPillsKillReachesOnlyTheProcessItNamed() throws {
+        typealias K = FakeActivityKernel
+        let port = try listener(K.tcp(local: "127.0.0.1", port: 3000))
+        func now(start: UInt64 = 1_000_007, uid: uid_t = 501, realUID: uid_t? = nil, savedUID: uid_t? = nil, status: Int32 = SRUN) -> ActivityProcess {
+            K.record(pid: 4242, start: start, parent: 1, uid: uid, realUID: realUID, savedUID: savedUID, status: status, name: "acme-dev")
+        }
+        XCTAssertEqual(port.killable(now: now(), uid: 501), 4242)
+        XCTAssertNil(port.killable(now: nil, uid: 501), "ended")
+        XCTAssertNil(port.killable(now: now(start: 9_000_000), uid: 501), "its pid another process's now")
+        XCTAssertNil(port.killable(now: now(uid: 0, realUID: 501), uid: 501), "a setuid program, root's now")
+        XCTAssertNil(port.killable(now: now(savedUID: 0), uid: 501), "running as the user for now, root kept as its saved uid")
+        XCTAssertNil(port.killable(now: now(status: SZOMB), uid: 501), "a zombie")
+        let container = ListeningPort(pid: 0, process: "web", port: 8080, address: "*", container: "acme-web-1")
+        XCTAssertNil(container.killable(now: now(), uid: 501), "a container's is its owner's to stop")
     }
 
     /// A container's published port is reached where it is published, as

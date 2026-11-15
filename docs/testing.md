@@ -310,7 +310,13 @@ Codex's is "not guarded", a checkout with no Terraform gets nothing. A
 script in the agent tab prints a Claude Code permission prompt for
 `cd envs/prod && terraform apply -auto-approve`: the tab is marked with
 envs/prod, production; the Inbox's card has no answer and `answer` types
-nothing; the mark goes when the screen is cleared. The scenario runs the
+nothing; the mark goes when the screen is cleared. With the window off
+screen (`lightTickVisibility = false`, so no light tick), an agent tab whose
+shell is in a checkout with no Terraform runs a stand-in agent that works
+in the one with production roots: its folder is followed there all the same
+(`OffScreenAgents`), a stand-in `terraform output` it runs marks the pane
+as having printed secrets, and its ask is read and said as production —
+each step waiting for a file the scenario writes. The scenario runs the
 real terraform itself (init and `plan -out`, `terraform_data` only, in the
 guarded scratch environment) and reads the plan through `tf_plan_summary`:
 the sensitive variable's sentinel absent, `show -json /dev/fd/3` the only
@@ -419,7 +425,8 @@ value, a path or an address of a process that isn't the test's.
   oldest, and the time the reads may take), a read still to come told
   from a failed one, the cache's bound (ended identities first), the
   in-flight guard, the stretched cadence, a folder on a mount that
-  doesn't answer, one waited for bounded by its deadline, at most 200
+  doesn't answer, one waited for bounded by its deadline, one read since
+  a moment (an MCP call's) never the one known while a read goes on, at most 200
   folders asked a tick, the app's children
   for the pairing and the logins no pane has, listed on its queue (a
   zombie `login` left out); a lookup answered from the
@@ -469,6 +476,18 @@ value, a path or an address of a process that isn't the test's.
   listener. A forward's scope is where kubectl listens, and
   Tab Info says the address of one that isn't this Mac's alone
   (`KubePortForwardTests`).
+- `TabLightReadTests`: the light tick's consumers from a fake census —
+  each pane's own ports (what carries its tag outside its tree under it),
+  a holder's v4 and v6 sockets one pill, none for a setuid program the
+  pane runs (only what runs as the user alone), the tab's ports sorted, a pane
+  the snapshot has for another tab not this tab's; an agent's folder read
+  since a moment over the one the tick knew (the `follow` scenario's: off
+  screen, an agent's `tf_` and `k8s_` calls scoped at their first ask to
+  the worktree it just entered); the focused pane's
+  agent first, its folder followed once read, kept while it isn't, nothing
+  to follow where it can't be read. Setting them on the tabs is the
+  `info` scenario's: a server started in a tab that isn't selected shows
+  on its pill, and a window off screen wants no light tick until it shows.
 - `ActivityMonitorTests`: one tick for every reader at the fastest
   cadence, the ticks stopped at the last `unwant` and when a reader goes
   away, an early tick only for a wider want and once for a burst, one-off

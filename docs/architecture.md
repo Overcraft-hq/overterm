@@ -54,8 +54,13 @@ libghostty's own threads and git calls.
 
 "That checkout" is `Tab.checkoutSource`, in order: an **attached** checkout
 (Worktrees → Attach to This Tab), else where the tab's **agent** works
-(`Tab.agentDirectory`, polled every 2 s from the claude/codex process's cwd —
-Claude Code chdirs into a worktree on EnterWorktree), else the **shell's**
+(`Tab.agentDirectory`, the claude/codex process's cwd as the census's light
+tick reads it every 2 s for every tab of a window on screen, and — a window
+off screen has no light tick — `OffScreenAgents` for its tabs where an
+agent may work, and an agent's MCP call reads it again first, waiting for
+it (`TerminalWindowController.paneCheckout`) — Claude Code chdirs into a
+worktree on EnterWorktree, often while the person looks elsewhere), else
+the **shell's**
 directory (OSC 7 → `Tab.workingDirectory`). Each is turned into a root by
 `FileTreeModel.treeRoot(for:)`: the nearest ancestor with a `.git` (a file in a
 linked worktree), never promoted to `$HOME`.
@@ -525,22 +530,28 @@ gives the keyboard back to that page's list, not to the hidden terminal.
 ## Live ports and links
 
 A pane's header shows what anything in its process tree is listening on
-(`Info/ListeningPorts`, an `lsof`, run on every third tick of the poll
-that already walks the selected tab; each port with its process's start
-time, `ListeningPort.start`, read right after the listing). A pill opens
-a popover with the process, its pid, and Open / Copy URL / Stop….
-Stop… (`PortStop`, `stopListener`) asks first, every time — the process,
-its pid, the port, its command line masked as Tab Info's, SIGTERM — in
-the sheet every write uses (`WriteConfirmation`); then reads again, the
-pid's sockets (`lsof`) and its start time last, and sends SIGTERM to
-that pid alone, never a group or a pattern, only while it is still the
-process listed (the same pid and start time) and still holds the port.
-Otherwise nothing is sent and a sheet says why ("… has exited", "… no
-longer holds :3000"): the pid used to be signalled from an lsof up to
-6 s old, and after a server ended, whatever took its pid got it. A port
-whose start time couldn't be read can't be stopped from its pill. A
-forward's Stop is `KubeForwards`'; a checkout's containers have no pill.
-A tab that listens is a server, which is what its icon then says
+— its tree, and what carries its tag outside it (a nohup'd server). It
+comes from the census's light tick (docs/design/activity/analysis.md,
+D-5, 7.3; `TerminalWindowController.takeLightTick` over `TabLightRead`):
+while a window is on screen it wants the light level for its own tabs,
+every 2 s, and every snapshot that read them gives each tab its ports,
+each pane's, and where its agent works — every tab, a tab never selected
+too. A minimized or wholly covered window, or one on another Space, gives
+its want back, and its tabs are read again as it shows; with no window on
+screen there is no light tick — only the agents of its tabs where one may
+work are followed, every 2 s, by a lookup at the light level of those tabs
+alone (`OffScreenAgents`), since a tab's checkout follows its agent and
+`TerraformPaneMonitor`, the agents' tools and the marks by checkout read
+it while no window shows. No lsof: the ports are the census's socket
+walk (`ListeningPorts.of(_:in:)`). It replaced the agent poll, which
+walked the selected tab every 2 s at `.utility` and ran lsof every 6 s —
+about 1 s of CPU a minute a window, the light tick's being about 0.1 s
+(D-5's measure, docs/design/activity/analysis.md 15). A pill opens a popover with the
+process, its pid, and Open / Copy URL / Kill — the process the census
+named, its pid and start read again and only while it runs as you alone
+(`ListeningPort.killable`: a setuid program, which `kill(2)` would let
+through by its real uid, holds no pill and is never signalled), never a
+pattern. A tab that listens is a server, which is what its icon then says
 (`TabKind`).
 
 A port is opened where it listens (`ListeningPort.url`, docs/design/
@@ -1883,9 +1894,10 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   network's own record lists only running members).
 - **Ports in the panes** (`ComposeProjects.ports`, `Tab.containerPorts`):
   Docker's own process (`com.docker.backend`) holds a container's
-  published ports, so lsof never finds them under a tab. What the compose
-  projects of a tab's checkout publish is shown beside its own ports, with
-  a shippingbox; Stop goes through the engine, Docker shows it on the page.
+  published ports, so the census's socket walk never finds them under a
+  tab. What the compose projects of a tab's checkout publish is shown
+  beside its own ports, with a shippingbox, reached where it is published;
+  Stop goes through the engine, Docker shows it on the page.
   Kept apart from `ports`: a stack running doesn't make the shell a server.
   Tab Info lists them too, and the API client's discovery asks them for
   an OpenAPI document as it asks the tab's own ports.
@@ -3996,7 +4008,9 @@ context's own (`agentDefaultScope`); a tool that needs one namespace and
 gets all says so. Before both comes the calling pane's checkout's
 binding (`KubeMCP.binding(for:in:)`: the pane's tag — `BrowserMCP.handle`'s
 `pane`, from the bridge's path — to its tab's checkout through
-`KubeMCP.paneCheckout`, the windows' answer, then `KubeBindingStore`):
+`KubeMCP.paneCheckout`, the windows' answer — its agent's folder read
+again at the call's start while its window is off screen, `paneFollow` —,
+then `KubeBindingStore`):
 its context (`defaultContext`) and, on it, its namespace
 (`defaultScope`), when the kubeconfig has that context; `k8s_why` adds
 the bound checkout's deployed commit. Kinds are resolved
@@ -7843,7 +7857,9 @@ stage 2e, force unlock, and stage 2f, a review's Terraform section.
   - **The tools** (`TerraformMCP`, `terraform.agentAccess`, on; held): on
     the bridge beside Kubernetes' (`BrowserMCP`, both halves: `offered`
     and the `tf_` prefix's dispatch), the calling pane's checkout only
-    (`paneCheckout`; no pane, no tool). `tf_roots` (the panel's read: class
+    (`paneCheckout`, the pane's tab's — its agent's folder read again
+    first, and waited for, while its window is off screen:
+    `TerminalWindowController.paneCheckout`; no pane, no tool). `tf_roots` (the panel's read: class
     and why, workspace, backend, modules), `tf_fmt_check` (`fmt -check
     -diff`), `tf_validate` (only where the root's lock file is committed
     and unchanged and every module is installed — else "needs init: ask

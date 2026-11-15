@@ -489,10 +489,10 @@ final class ActivitySamplerTests: XCTestCase {
             for _ in 0..<count { stretched = try tick(sampler, demand, context).isStretched }
             return stretched
         }
-        XCTAssertFalse(try ticks(2, costing: 10_000_000, light))
+        XCTAssertFalse(try ticks(2, costing: 20_000_000, light))
         XCTAssertFalse(try ticks(1, costing: 0, light), "not three in a row")
-        XCTAssertFalse(try ticks(2, costing: 10_000_000, light))
-        XCTAssertTrue(try ticks(1, costing: 10_000_000, light), "a light tick over 8 ms, three in a row")
+        XCTAssertFalse(try ticks(2, costing: 20_000_000, light))
+        XCTAssertTrue(try ticks(1, costing: 20_000_000, light), "a light tick over 16 ms, three in a row")
         XCTAssertTrue(try ticks(1, costing: 0, light), "back only after a minute")
         kernel.advance(30 * second)
         XCTAssertTrue(try ticks(1, costing: 0, light))
@@ -506,17 +506,57 @@ final class ActivitySamplerTests: XCTestCase {
         var cadence = ActivityCadence()
         cadence.record(cost: 9_000_000, full: false, at: 0)
         cadence.record(cost: 9_000_000, full: false, at: 1)
-        XCTAssertFalse(cadence.isStretched)
         cadence.record(cost: 9_000_000, full: false, at: 2)
+        XCTAssertFalse(cadence.isStretched, "a light tick of 9 ms: twice its idle cost 2 s apart, not a busy Mac")
+        cadence.record(cost: 17_000_000, full: false, at: 3)
+        cadence.record(cost: 17_000_000, full: false, at: 4)
+        XCTAssertFalse(cadence.isStretched)
+        cadence.record(cost: 17_000_000, full: false, at: 5)
+        XCTAssertTrue(cadence.isStretched, "over 16 ms, three in a row")
+        cadence.record(cost: 1, full: false, at: 5 + ActivityCadence.recovery - 1)
         XCTAssertTrue(cadence.isStretched)
-        cadence.record(cost: 1, full: false, at: 2 + ActivityCadence.recovery - 1)
-        XCTAssertTrue(cadence.isStretched)
-        cadence.record(cost: 1, full: false, at: 2 + ActivityCadence.recovery)
+        cadence.record(cost: 1, full: false, at: 5 + ActivityCadence.recovery)
         XCTAssertFalse(cadence.isStretched)
         cadence.record(cost: 47_000_000, full: true, at: 0)
         cadence.record(cost: 47_000_000, full: true, at: 0)
         cadence.record(cost: 47_000_000, full: true, at: 0)
         XCTAssertFalse(cadence.isStretched)
+    }
+
+    /// A lookup that isn't paced (a window off screen's, its app perhaps
+    /// napped) leaves the cadence as it was, however slow; the ticks after
+    /// it count as ever.
+    func testAnUnpacedLookupLeavesTheCadenceAlone() throws {
+        appAndLaunchd()
+        let sampler = sampler()
+        let context = ActivityContext(appPID: app)
+        let light = ActivityDemand(.light(tabs: nil))
+        kernel.onCall { [kernel] call in if call == "processes" { kernel.advance(40_000_000) } }
+        for _ in 0..<4 {
+            let snapshot = try XCTUnwrap(sampler.lookup(within: 0, demand: light, context: context, paced: false) { _ in false })
+            XCTAssertFalse(snapshot.isStretched, "a slow tick off screen says nothing of the Mac")
+        }
+        for _ in 0..<2 { XCTAssertFalse(try tick(sampler, light, context).isStretched) }
+        XCTAssertTrue(try tick(sampler, light, context).isStretched, "three paced ones over 16 ms")
+    }
+
+    /// A light tick's budget grows with the processes it read: a window of
+    /// agents' tabs with their MCP servers is no busier a Mac. 300 members
+    /// at 26 ms a tick keep the cadence, where 5 at 17 ms stretch it, and
+    /// 300 at 29 ms do too: 4 ms and 10 µs a member, four times over.
+    func testALightTicksBudgetGrowsWithItsMembers() {
+        XCTAssertEqual(ActivityCadence.budget(full: false, members: 0), 4_000_000)
+        XCTAssertEqual(ActivityCadence.budget(full: false, members: 300), 7_000_000)
+        XCTAssertEqual(ActivityCadence.budget(full: true, members: 300), 12_000_000, "the full level's is for every process already")
+        var many = ActivityCadence()
+        for time in 0..<UInt64(5) { many.record(cost: 26_000_000, full: false, members: 300, at: time) }
+        XCTAssertFalse(many.isStretched, "300 members at 26 ms: under 28")
+        var few = ActivityCadence()
+        for time in 0..<UInt64(3) { few.record(cost: 17_000_000, full: false, members: 5, at: time) }
+        XCTAssertTrue(few.isStretched, "5 members at 17 ms: over 16.2")
+        var busy = ActivityCadence()
+        for time in 0..<UInt64(3) { busy.record(cost: 29_000_000, full: false, members: 300, at: time) }
+        XCTAssertTrue(busy.isStretched, "300 members at 29 ms: a busy Mac")
     }
 
     // MARK: Folders
@@ -565,6 +605,33 @@ final class ActivitySamplerTests: XCTestCase {
         defer { gate.open() }
         kernel.onCall { call in if call == "folder" { gate.hold() } }
         XCTAssertNil(sampler.folders.folder(waitingFor: stuck, now: kernel.uptime()), "a read that hangs: given up")
+        XCTAssertEqual(gate.held, 1)
+    }
+
+    /// A folder read since a moment (an agent's MCP call, its window off
+    /// screen): never the one known — the agent may have moved since it
+    /// was read —, a read begun since, waited for; one that hangs gives nil
+    /// within the folders' deadline, never the caller held for the mount's
+    /// timeout.
+    func testAFolderReadSinceAMomentIsNeverTheOneKnown() throws {
+        appAndLaunchd()
+        let agent = add(2400, parent: 1, name: "claude", folder: "/work/acme")
+        let stuck = add(2401, parent: 1, name: "codex", folder: "/Volumes/acme-share/work")
+        let sampler = sampler()
+        XCTAssertEqual(sampler.folders.folder(waitingFor: agent, now: kernel.uptime()), .path("/work/acme"))
+        // EnterWorktree moves it: what is known is old now.
+        kernel.update(2400) { $0.folder = "/work/acme/.worktrees/feat" }
+        kernel.advance(1_000_000)
+        let since = kernel.uptime()
+        XCTAssertEqual(sampler.folders.folder(waitingFor: agent, now: since), .path("/work/acme"), "a lookup's: the one known, of any age")
+        XCTAssertEqual(sampler.folders.folder(readSince: since, of: agent), .path("/work/acme/.worktrees/feat"), "a read begun since, waited for")
+        XCTAssertEqual(kernel.count("folder"), 2)
+        XCTAssertEqual(sampler.folders.folder(readSince: since, of: agent), .path("/work/acme/.worktrees/feat"), "one begun since answers")
+        XCTAssertEqual(kernel.count("folder"), 2, "no read more")
+        let gate = CallGate()
+        defer { gate.open() }
+        kernel.onCall { call in if call == "folder" { gate.hold() } }
+        XCTAssertNil(sampler.folders.folder(readSince: kernel.uptime(), of: stuck), "a read that hangs: given up")
         XCTAssertEqual(gate.held, 1)
     }
 

@@ -46,9 +46,11 @@ final class ActivitySampler: @unchecked Sendable {
     struct Limits: Sendable {
         /// Identities read a tick (7.3).
         var identitiesPerTick = 200
-        /// …and the time those reads may take, on the kernel's clock: twice
-        /// the level's budget, so the reads alone never make a tick slow.
-        var lightReadTime: UInt64 = 2 * ActivityCadence.lightBudget
+        /// …and the time those reads may take, on the kernel's clock: at
+        /// the light level 4 ms, a quarter of what makes a tick slow, at
+        /// the full level twice its budget — the reads alone never make a
+        /// tick slow.
+        var lightReadTime: UInt64 = 4_000_000
         var fullReadTime: UInt64 = 2 * ActivityCadence.fullBudget
         /// Identities whose reads are kept (7.3).
         var cacheLimit = 8_192
@@ -128,18 +130,22 @@ final class ActivitySampler: @unchecked Sendable {
     /// (`ActivitySnapshot.unread`) — `rounds` ticks at most — so a cold
     /// census reads what a lookup asks in one call: a nohup'd server's tag
     /// among 860 processes' markers. Never from the queue itself; nil when
-    /// the table can't be read.
+    /// the table can't be read. `paced` false: its ticks' cost is left out
+    /// of the cadence (`ActivityCadence`) — a window off screen's, whose
+    /// app may be napped: slow ticks then say nothing of the Mac, and would
+    /// keep its window's cadence stretched a minute after it shows.
     func lookup(
-        within: UInt64, demand: ActivityDemand, context: ActivityContext, rounds: Int = 8, answers: (ActivitySnapshot) -> Bool
+        within: UInt64, demand: ActivityDemand, context: ActivityContext, rounds: Int = 8, paced: Bool = true,
+        answers: (ActivitySnapshot) -> Bool
     ) -> ActivitySnapshot? {
         dispatchPrecondition(condition: .notOnQueue(queue))
         if let latest, isFresh(latest, within: within), answers(latest) { return latest }
         return queue.sync {
             // A tick that landed while this one waited may answer it.
             if let latest, isFresh(latest, within: within), answers(latest) { return latest }
-            guard var snapshot = sample(demand, context: context) else { return nil }
+            guard var snapshot = sample(demand, context: context, paced: paced) else { return nil }
             for _ in 1..<max(rounds, 1) where snapshot.unread > 0 {
-                guard let next = sample(demand, context: context) else { break }
+                guard let next = sample(demand, context: context, paced: paced) else { break }
                 snapshot = next
             }
             return snapshot
@@ -261,8 +267,9 @@ final class ActivitySampler: @unchecked Sendable {
 
     /// One tick, on the queue: the table, what `demand`'s levels read, the
     /// rates, the panes' slices; nil when the table can't be read — the
-    /// caches are left as they were.
-    func sample(_ demand: ActivityDemand, context: ActivityContext) -> ActivitySnapshot? {
+    /// caches are left as they were. `paced`: its cost counts toward the
+    /// cadence (`lookup`'s).
+    func sample(_ demand: ActivityDemand, context: ActivityContext, paced: Bool = true) -> ActivitySnapshot? {
         dispatchPrecondition(condition: .onQueue(queue))
         let cpuStart = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
         let started = kernel.uptime()
@@ -437,7 +444,7 @@ final class ActivitySampler: @unchecked Sendable {
         let ended = kernel.uptime()
         cost.wall = ended >= started ? ended - started : 0
         cost.cpu = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) &- cpuStart
-        cadence.record(cost: cost.wall, full: demand.full, at: now)
+        if paced { cadence.record(cost: cost.wall, full: demand.full, members: cost.usageRead, at: now) }
         let snapshot = ActivitySnapshot(
             tick: tick, demand: demand, time: now, date: date, uid: uid, table: table, facts: facts, panes: slices, helpers: helpers,
             appChildren: appChildren, unclaimedLogins: unclaimed, unread: unread.count, cost: cost, isStretched: cadence.isStretched)
@@ -606,14 +613,31 @@ final class ActivitySampler: @unchecked Sendable {
 
 /// How often the census reads on a busy Mac (7.3): when three ticks in a
 /// row cost more than four times their level's budget — a light tick over
-/// 8 ms, a full one over 48 ms — the cadence stretches to 5 s, and the page
-/// says so; a minute of normal ticks brings it back. A tick's cost is its
-/// wall time on the kernel's clock: what a busy Mac makes longer. A value
-/// on the sampler's queue.
+/// 16 ms and its members' allowance, a full one over 48 ms — the cadence
+/// stretches to 5 s, and the page says so; a minute of normal ticks brings
+/// it back. A tick's cost is its wall time on the kernel's clock: what a
+/// busy Mac makes longer. A value on the sampler's queue.
 struct ActivityCadence: Hashable, Sendable {
-    /// A tick's budget at each level (7.3).
-    static let lightBudget: UInt64 = 2_000_000
+    /// A tick's budget at each level (7.3). The light one is what it costs
+    /// in the app, 2 s apart (docs/design/activity/analysis.md, 15): the
+    /// core wakes for each tick, 4.6 ms median for a window of shells,
+    /// where 7.3's 2 ms was the work alone, back to back — so a tick over
+    /// 8 ms was "slow" at under twice its idle cost, and the cadence
+    /// stretched on a Mac that wasn't busy.
+    static let lightBudget: UInt64 = 4_000_000
     static let fullBudget: UInt64 = 12_000_000
+    /// What a light tick's budget grows by for each process whose usage
+    /// and sockets it read (15: a member is 7–9 µs of work back to back,
+    /// about 6.5 µs more of a tick 2 s apart): a window of agents' tabs
+    /// with their MCP servers, 300 members, is no busier a Mac than one of
+    /// shells, and its ticks keep their cadence. The full level reads every
+    /// process of the user's: its budget is for all of them.
+    static let lightMemberBudget: UInt64 = 10_000
+
+    /// A tick's budget at its level, the light one's with `members`.
+    static func budget(full: Bool, members: Int) -> UInt64 {
+        full ? fullBudget : lightBudget + UInt64(max(members, 0)) * lightMemberBudget
+    }
     /// Over this many times its budget, a tick is slow.
     static let slowFactor: UInt64 = 4
     /// Slow ticks in a row that stretch it.
@@ -627,9 +651,10 @@ struct ActivityCadence: Hashable, Sendable {
     private var slowInARow = 0
     private var lastSlow: UInt64 = 0
 
-    /// A tick at `time` that cost `cost` at its level.
-    mutating func record(cost: UInt64, full: Bool, at time: UInt64) {
-        let budget = full ? Self.fullBudget : Self.lightBudget
+    /// A tick at `time` that cost `cost` at its level, having read
+    /// `members` processes' usage and sockets.
+    mutating func record(cost: UInt64, full: Bool, members: Int = 0, at time: UInt64) {
+        let budget = Self.budget(full: full, members: members)
         if cost > budget * Self.slowFactor {
             slowInARow += 1
             lastSlow = time

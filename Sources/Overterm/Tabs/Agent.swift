@@ -33,7 +33,7 @@ enum Agent: String, CaseIterable, Identifiable, Codable {
 
     /// The agent a process is, by its name or its command's first word's
     /// file (`claude`, `/opt/homebrew/bin/codex`); nil for anything else.
-    /// The window's poll and the census's light tick both ask this.
+    /// The census's light tick and every reader of a tab's tree ask this.
     static func of(name: String, command: String) -> Agent? {
         if let agent = Agent(rawValue: name) { return agent }
         guard let first = command.split(separator: " ").first else { return nil }

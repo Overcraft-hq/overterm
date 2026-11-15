@@ -9,7 +9,7 @@ version is tagged `v<version>`.
 ## 1.7.0 — 2026-11-14
 
 - Activity (⌥⌘A): every process and every open port on this Mac, by checkout, tab and agent
-- tabs: a pane's port pill opens where its server listens — 127.0.0.1, [::1] or the one address it is bound to — and localhost only where both IPv4 and IPv6 do
+- tabs: every visible tab's port pills stay current — a server started in a tab you aren't looking at shows on its pill — and a pill opens where its server listens: 127.0.0.1, [::1] or the one address it is bound to, localhost only where both IPv4 and IPv6 do
 - info: Tab Info shows a split tab as a group a pane, what left a pane's terminal under it, and its memory as Activity Monitor's, real memory in the tooltip
 
 ## 1.6.0 — 2026-11-13

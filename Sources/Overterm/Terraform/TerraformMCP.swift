@@ -43,8 +43,10 @@ enum TerraformMCP {
     static var startPlan: ((TerraformRootCard, URL, String) async -> Result<TerraformPlanRun, TerraformReadFailure>)?
 
     /// The checkout a pane's tab works in — the window answers (nil
-    /// outside any window's tabs, and in tests that set none).
-    static var paneCheckout: ((String) -> URL?)?
+    /// outside any window's tabs, and in tests that set none), its agent's
+    /// folder read again first while its window is off screen
+    /// (`TerminalWindowController.paneCheckout`).
+    static var paneCheckout: ((String) async -> URL?)?
 
     /// A plan's JSON is read up to this (`terraform.maxPlanBytes`, 4.1), the plan file too.
     static let maxPlanBytes = 64 << 20
@@ -116,7 +118,7 @@ enum TerraformMCP {
             throw BrowserMCP.ToolError(message: "Unknown tool: \(name). Agents read Terraform here; nothing here applies, destroys or changes state.")
         }
         guard Settings.shared.terraformEnabled else { return BrowserMCP.errorResult("Terraform is off in Overterm's settings (Settings ▸ Terraform).") }
-        guard let pane, let checkout = paneCheckout?(pane) else {
+        guard let pane, let checkout = await paneCheckout?(pane) else {
             return BrowserMCP.errorResult("The tf_ tools work on the checkout of the pane you run in, and this call came from none Overterm knows.")
         }
         let text: String

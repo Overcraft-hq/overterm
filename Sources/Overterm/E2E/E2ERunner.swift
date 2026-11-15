@@ -3260,8 +3260,8 @@ final class E2ERunner {
         if let port {
             let shown = await eventually(8) { model.ports.contains { $0.port == port } }
             check("its listening port is shown", shown, "ports \(model.ports.map(\.port)) want \(port)")
-            // And the pane header's pills, which come from the same scan
-            // (every third tick of the poll that walks the selected tab).
+            // And the pane header's pills, which come from the same census
+            // (the light tick, every tab of a window on screen).
             let onTheTab = await eventually(12) { first.ports.contains { $0.port == port } }
             check("and so is the tab's, for the pane header", onTheTab, "\(first.ports.map(\.port))")
             check(
@@ -3303,7 +3303,78 @@ final class E2ERunner {
         await eventually(2) { self.app.infoPopover == nil }
         check("closing it stops the refresh", app.infoModel == nil)
         await backgroundTabCPU(first: first)
-        check("and the census's ticks, Tab Info's reader gone", await eventually(5) { !ActivityMonitor.shared.isTicking })
+        // Its 1 s gone: the window's light tick at the interval — or at the
+        // 5 s a busy Mac stretches it to (7.3), which says nothing of Tab Info.
+        let monitor = ActivityMonitor.shared
+        check(
+            "and its reads, the census back to the window's light tick",
+            await eventually(5) { monitor.cadence >= monitor.interval && monitor.demand.focus.isEmpty && !monitor.demand.full && monitor.isTicking },
+            "every \(monitor.cadence), \(monitor.demand.focus.count) in focus")
+
+        // A tab that isn't selected: a server started in it shows on its
+        // pill without visiting it (2.4 item 7) — the light tick reads every
+        // tab of a window on screen, where the poll read the selected one.
+        if let second = app.store.tabs.first(where: { $0 !== first }) {
+            func server(_ name: String) -> (script: URL, port: () -> Int?) {
+                let file = out("\(name).port")
+                let script = out("\(name).py")
+                try? """
+                import socket, time
+                s = socket.socket()
+                s.bind(("127.0.0.1", 0))
+                s.listen()
+                open("\(file.path)", "w").write(str(s.getsockname()[1]))
+                time.sleep(60)
+                """.write(to: script, atomically: true, encoding: .utf8)
+                return (script, { (try? String(contentsOf: file, encoding: .utf8)).flatMap { Int($0) } })
+            }
+            let background = server("background")
+            second.terminal.insertText("python3 \(background.script.path) &")
+            second.terminal.pressReturn()
+            let started = await eventually(10) { background.port() != nil }
+            let backgroundPort = background.port() ?? -1
+            let shown = await eventually(10) { second.ports(of: second.terminal).contains { $0.port == backgroundPort } }
+            check(
+                "a server started in a tab that isn't selected shows on its pill", started && shown,
+                "\(second.ports.map(\.port)) want \(backgroundPort)")
+            check(
+                "which makes that tab a server, never selected", second.kind == .server && app.store.selected === first, "\(second.kind.rawValue)")
+            check(
+                "opened where it listens", second.ports.first { $0.port == backgroundPort }?.url?.absoluteString == "http://127.0.0.1:\(backgroundPort)",
+                second.ports.first { $0.port == backgroundPort }?.url?.absoluteString ?? "no URL")
+
+            // A window off screen gives the light tick back; its tabs are
+            // read again as it shows (7.9) — minimized here, so the window's
+            // own notifications give the want back and take it again (an
+            // isolated run's window ignores its occlusion). Nothing ticks
+            // meanwhile, so nothing of it can change: no moment is sampled.
+            window.miniaturize(nil)
+            check(
+                "a minimized window wants no light tick",
+                await eventually(5) { self.window.isMiniaturized && !self.app.lightTickWanted && !monitor.isTicking && !monitor.isSampling },
+                "minimized \(window.isMiniaturized), wanted \(app.lightTickWanted), ticking \(monitor.isTicking)")
+            let ticks = monitor.snapshot?.tick
+            let hidden = server("hidden")
+            second.terminal.insertText("python3 \(hidden.script.path) &")
+            second.terminal.pressReturn()
+            let hiddenUp = await eventually(10) { hidden.port() != nil }
+            let hiddenPort = hidden.port() ?? -1
+            check(
+                "its tabs aren't read while it is minimized",
+                hiddenUp && !monitor.isTicking && monitor.snapshot?.tick == ticks && !second.ports.contains { $0.port == hiddenPort },
+                "\(second.ports.map(\.port))")
+            window.deminiaturize(nil)
+            check(
+                "and are read again as it comes back",
+                await eventually(5) { !self.window.isMiniaturized && self.app.lightTickWanted && second.ports.contains { $0.port == hiddenPort } },
+                "\(second.ports.map(\.port)) want \(hiddenPort)")
+            // Its servers, by their identities as the census named them.
+            for port in second.ports where [backgroundPort, hiddenPort].contains(port.port) {
+                if let identity = port.identity, ProcessInspector.kinfo(identity.pid)?.start == identity.start { kill(identity.pid, SIGTERM) }
+            }
+        } else {
+            check("a second tab", false)
+        }
 
         // A split tab: a group a pane, each pane's busy child reading its
         // CPU — read pane by pane, each pane evicted the other's baselines,
@@ -3544,6 +3615,29 @@ final class E2ERunner {
         tab.terminal.insertText("kill %1")
         tab.terminal.pressReturn()
         check("when the agent is gone, back to the shell's checkout", await eventually(10) { self.app.diff.root?.resolvingSymlinksInPath() == main })
+
+        // Off screen no light tick reads the tab (docs/design/activity/
+        // analysis.md, 7.9), and agents ask exactly then (7.1): an agent's
+        // MCP call reads its agent's folder again first and waits for it, so
+        // the worktree it moved into is its tools' scope at its first ask.
+        app.lightTickVisibility = false
+        app.updateLightTick()
+        let login = SurfaceProcesses.shared.loginPID(of: tab.terminal) ?? 0
+        func agentRuns() -> Bool { TerraformProcesses.descendants(of: login).contains { TerraformProcesses.name(of: $0) == "sleep" } }
+        let started = await run("bash \(script.path) &", timeout: 10) { agentRuns() }
+        let tag = tab.terminal.processTag
+        let asked = await TerraformMCP.paneCheckout?(tag)
+        check(
+            "off screen, an agent's tf_ call is scoped to the worktree it moved to, at its first ask",
+            started && asked?.resolvingSymlinksInPath() == feat, asked?.lastPathComponent ?? "none")
+        await KubeMCP.paneFollow?(tag)
+        check("and its k8s_ calls", KubeMCP.paneCheckout?(tag)?.resolvingSymlinksInPath() == feat)
+        check("its tab follows it there", await eventually(2) { self.app.diff.root?.resolvingSymlinksInPath() == feat })
+        tab.terminal.insertText("kill %1")
+        tab.terminal.pressReturn()
+        app.lightTickVisibility = nil
+        app.updateLightTick()
+        check("on screen again, back to the shell's checkout", await eventually(10) { self.app.diff.root?.resolvingSymlinksInPath() == main })
         check(
             "session keeps an attachment",
             {

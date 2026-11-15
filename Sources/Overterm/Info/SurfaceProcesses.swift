@@ -116,8 +116,8 @@ final class SurfaceProcesses {
     /// by its pid still finds it, alive. A list a tick old names the
     /// `login` of a pane closed since, reaped as its surface was freed, its
     /// pairing dropped: a new pane paired with it read empty to every
-    /// reader — Tab Info, the poll's agent folder and pills, Suspend Tab, a
-    /// drop, an MCP confirmation — until another surface was made.
+    /// reader — Tab Info, the light tick's agent folder and pills, Suspend
+    /// Tab, a drop, an MCP confirmation — until another surface was made.
     ///
     /// A pairing is over when its `login` has ended (the tab's shell
     /// exited): one `children` doesn't list is read again by its pid, so a

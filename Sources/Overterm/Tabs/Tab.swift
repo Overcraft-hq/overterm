@@ -26,7 +26,8 @@ final class Tab: ObservableObject, Identifiable {
 
     /// Where the tab's agent (claude, codex) is working, when that differs
     /// from the shell — Claude Code chdirs into a worktree on EnterWorktree.
-    /// Polled by the window for the selected tab.
+    /// The census's light tick reads it for every tab of a window on screen
+    /// (`TerminalWindowController.takeLightTick`).
     @Published var agentDirectory: String?
 
     /// A checkout the user attached to this tab: tree, diff and worktree
@@ -86,15 +87,10 @@ final class Tab: ObservableObject, Identifiable {
         self.shellTitle = terminal.workingDirectory.map { ($0 as NSString).lastPathComponent } ?? "Terminal"
     }
 
-    /// What the strip shows: the name you gave it, else the shell's title
-    /// shortened to the folder itself. Shells (and themes) set the title to
-    /// the whole path, which fills a tab with `~/Documents/opensource/`
-    /// and hides the part that tells them apart.
-    /// What this tab's processes listen on, filled by the window's poll
-    /// (`pollAgentDirectory`, for the selected tab). A tab is only scanned
-    /// once you have been in it — so a server you have never opened shows
-    /// as a shell until you do, which is the cheap half of the trade: the
-    /// scan is an `lsof`.
+    /// What this tab's processes listen on, from the census's light tick
+    /// (`TerminalWindowController.takeLightTick`, docs/design/activity/
+    /// analysis.md 7.3): every tab of a window on screen, a tab never
+    /// selected too, every 2 s; a hidden window's catch up as it shows.
     @Published var ports: [ListeningPort] = []
     /// `ports` by the pane whose tree listens on each: a pane's header says
     /// its own, never its neighbour's server.
@@ -122,6 +118,10 @@ final class Tab: ObservableObject, Identifiable {
     /// What the strip says of the panes' contexts: one, `mixed`, or a lost pin.
     var kubeBadge: KubeTabBadge? { KubeTabBadge.of(terminals.map { KubeTabBadge.Pane(pin: $0.kubePin, lost: $0.kubePinLost) }) }
 
+    /// What the strip shows: the name you gave it, else the shell's title
+    /// shortened to the folder itself. Shells (and themes) set the title to
+    /// the whole path, which fills a tab with `~/Documents/opensource/`
+    /// and hides the part that tells them apart.
     var title: String { customTitle ?? Self.shortened(shellTitle) }
 
     /// The last component of a title that is nothing but a path; anything
