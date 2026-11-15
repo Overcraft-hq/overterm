@@ -3,7 +3,7 @@ APP := Overterm.app
 # This Mac's own settings, untracked (see .gitignore): SIGN_IDENTITY.
 -include local.mk
 
-.PHONY: ghosttykit treesitter icon themes build test e2e app dmg run install clean hooks
+.PHONY: ghosttykit treesitter icon themes build test e2e app dmg run install signed-spike clean hooks
 
 ## ghosttykit: build Frameworks/GhosttyKit.xcframework from the pinned Ghostty
 ghosttykit:
@@ -60,6 +60,27 @@ endif
 	/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f /Applications/$(APP)
 	/System/Library/CoreServices/pbs -update
 	@echo "==> installed /Applications/$(APP)"
+
+## signed-spike: a copy of $(APP) signed as a release would be — hardened
+## runtime, $SIGN_IDENTITY — in dist/signed-spike, for the checks of
+## docs/design/activity/analysis.md 3.11 (D-4): audit tokens and
+## task_name_for_pid, nettop and netstat under that signing. make install's
+## re-sign has no hardened runtime and make app signs ad hoc, so neither
+## tests it. No entitlements file: the release has none. No timestamp: no
+## network.
+ifeq ($(strip $(SIGN_IDENTITY)),)
+signed-spike:
+	@echo "signed-spike: set SIGN_IDENTITY (environment or local.mk) to a signing identity" >&2
+	@exit 1
+else
+signed-spike: app
+	rm -rf dist/signed-spike
+	mkdir -p dist/signed-spike
+	cp -R $(APP) dist/signed-spike/
+	codesign --force --deep --options runtime --timestamp=none --sign "$(SIGN_IDENTITY)" dist/signed-spike/$(APP)
+	codesign --verify --deep --strict dist/signed-spike/$(APP)
+	@echo "==> dist/signed-spike/$(APP): its splits and suspend scenarios check it (docs/testing.md, Activity)"
+endif
 
 ## hooks: use the repository's git hooks (once per clone): pre-commit refuses an
 ## app change unless VERSION is past the last release, with a CHANGELOG entry

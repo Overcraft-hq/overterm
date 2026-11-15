@@ -595,6 +595,19 @@ A tick's cost includes reading the processes that started since the last
 one: a build running beside it shows in the numbers, and the sampler's
 probe prints how many identities each tick read.
 
+**A build signed as a release would be** (3.11, D-4): `make signed-spike`
+signs a copy of `Overterm.app` in `dist/signed-spike` with hardened
+runtime and `SIGN_IDENTITY` (environment or `local.mk`; it refuses
+without one), the line a release would use — `make install`'s re-sign has
+no hardened runtime and `make app` signs ad hoc, so neither tests it.
+Then the copy's own scenarios check it, run as the harness runs them
+(credential variables and `GIT_*` left out of the environment):
+`OVERTERM_E2E=suspend dist/signed-spike/Overterm.app/Contents/MacOS/Overterm`
+— Suspend Tab stops and resumes through `ProcessSignals`, so audit tokens
+and `task_name_for_pid` answer under that signing — and `OVERTERM_E2E=
+splits`, whose `E2E INFO` line counts netstat's rows in a pane, 0 under ad
+hoc signing.
+
 ## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one
