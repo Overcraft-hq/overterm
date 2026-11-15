@@ -165,15 +165,29 @@ final class KubeMCPMetricsTests: XCTestCase {
         page.visible = true
         try await until(5, "listed") { model.rows.count == 1 && model.discovery != nil }
         page.selection = ["shop/api-1"]
+        // The pods list samples api-1 too, and a list's rows go when the list
+        // is no longer read (metrics.md, open decision 1): only the detail's
+        // samples outlive the page. Its first read held back, as a slow
+        // runner's was, the list has two samples before the detail has one —
+        // a wait on the pod's points, whichever population, passed on the
+        // list's, and the agent found nothing kept once the page hid.
+        let key = KubeUsageKey.pod(namespace: "shop", name: "api-1")
+        let detailRead = "/apis/metrics.k8s.io/v1beta1/namespaces/shop/pods/api-1"
+        api.answerSlowly(detailRead, milliseconds: 1_500)
         XCTAssertTrue(page.press("m"))
-        try await until(5, "sampled twice") { model.metrics.ring.points(.pod(namespace: "shop", name: "api-1")).count >= 2 }
+        try await until(5, "the list sampled twice") { model.metrics.ring.points(key, .list).count >= 2 }
+        api.answerSlowly(detailRead, milliseconds: nil)
+        try await until(8, "the detail sampled twice") { model.metrics.ring.points(key, .detail).count >= 2 }
         page.closeDetail()
         model.hide()
-        api.forgetRequests()
+        XCTAssertTrue(model.metrics.ring.points(key, .list).isEmpty, "the list's rows went with the list")
         let text = try await call(model, ["kind": "pod", "name": "api-1", "range": "15m"])
         XCTAssertTrue(text.contains("pod shop/api-1, 15m: Sampled from metrics-server while shown since"), text)
         XCTAssertTrue(text.contains("app · Memory: last 100Mi at"), text)
-        XCTAssertFalse(api.requests.contains { $0.path.hasPrefix("/apis/metrics.k8s.io") }, "nothing read now: \(api.requests.map(\.path))")
+        // Nothing read now: "now only" heads the one answer that reads
+        // metrics.k8s.io. (Not the fake's requests: a poll's read already
+        // written as the page hid may reach the fake after the hide.)
+        XCTAssertFalse(text.contains("now only"), text)
     }
 
     func testSizingOnRequest() async throws {
