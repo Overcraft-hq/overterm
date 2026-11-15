@@ -12,6 +12,7 @@ version is tagged `v<version>`.
 - docker: a container that couldn't start names the tab whose server holds its port — any tab, not only one you had looked at since it started; Up on Free Ports also counts a port held on one of this Mac's own addresses (a LAN or VPN one) as taken
 - tabs: every visible tab's port pills stay current — a server started in a tab you aren't looking at shows on its pill — and a pill opens where its server listens: 127.0.0.1, [::1] or the one address it is bound to, localhost only where both IPv4 and IPv6 do
 - info: Tab Info shows a split tab as a group a pane, what left a pane's terminal under it, and its memory as Activity Monitor's, real memory in the tooltip
+- tabs: a port pill's Open follows Settings ▸ Browser, as a link in the terminal does
 - tabs: Suspend Tab stops only the tab's own processes — never a tmux server and its sessions, an ssh-agent, an app started with `code .`, a nohup'd job or anything on another terminal that carries its tag — and Resume continues only what it stopped, never a pid another process holds since
 
 ## 1.6.0 — 2026-11-13

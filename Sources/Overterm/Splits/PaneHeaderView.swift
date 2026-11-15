@@ -16,6 +16,8 @@ struct PaneHeaderActions {
     var splitDown: (TerminalView) -> Void
     var zoom: (TerminalView) -> Void
     var close: (TerminalView) -> Void
+    /// Opens its URL where Settings ▸ Browser says (`openLink`): the
+    /// browser column, or the default browser.
     var openPort: (ListeningPort) -> Void
     /// A Kubernetes forward's: the page's Forwards section.
     var showForwards: () -> Void = {}
@@ -268,7 +270,9 @@ private struct PortPill: View {
                     if port.url != nil {
                         action("Open", filled: true) {
                             showing = false
-                            port.url.map { NSWorkspace.shared.open($0) }
+                            // Settings ▸ Browser decides where: the window's
+                            // `openLink`, as Tab Info's links go.
+                            actions.openPort(port)
                         }
                     }
                     action(port.url == nil ? "Copy Address" : "Copy URL") {

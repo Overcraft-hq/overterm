@@ -198,6 +198,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// A scenario's: a Docker link (a port pill's) handed here instead of
     /// the browser.
     var dockerLinkRecorder: ((URL) -> Void)?
+    /// A scenario's: a link `openLink` would open — a pane pill's, Tab
+    /// Info's — handed here with whether Settings ▸ Browser opens it in
+    /// the browser column, instead of either browser.
+    var linkRecorder: ((URL, _ inside: Bool) -> Void)?
     /// Ask Why on a tab's mark, in a scenario: the brief handed here
     /// instead of the sheet.
     var kubernetesBriefRecorder: ((KubeAgentBrief, Tab) -> Void)?
@@ -986,41 +990,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             return NSHostingView(
                 rootView: PaneHeaderView(
                     tab: tab, pane: pane, store: self.store, blocks: self.blocks(of: pane), theme: theme,
-                    actions: PaneHeaderActions(
-                        copyOutput: { [weak self] in self?.copyOutput(of: $0) },
-                        killPort: { [weak self] port in
-                            // A Kubernetes forward's: stopped, its kubectl closed by its pid.
-                            if let forward = port.forward {
-                                KubeForwards.shared.stop(forward.id)
-                                return
-                            }
-                            // A container's: stopped through the engine.
-                            if let container = port.container {
-                                self?.dockerPage.act(.stop, on: DockerModel.shared.container(container).map { [$0] } ?? [])
-                                return
-                            }
-                            // The exact process the census named, read again —
-                            // its pid and start — and only while it runs as
-                            // you alone (ListeningPort.killable). Never a
-                            // pattern: `pkill -f` once killed the shell
-                            // running the tests (CLAUDE.md).
-                            let now = port.identity.flatMap { LiveActivityKernel().process($0.pid) }
-                            guard let pid = port.killable(now: now, uid: getuid()) else { return NSSound.beep() }
-                            kill(pid, SIGTERM)
-                        },
-                        rerun: { [weak self] in self?.rerun(in: $0) },
-                        splitRight: { [weak self] in self?.split($0, .right) },
-                        splitDown: { [weak self] in self?.split($0, .down) },
-                        zoom: { [weak self] in self?.toggleSplitZoom($0) },
-                        close: { [weak self] pane in
-                            guard let self, let tab = self.tab(containing: pane) else { return }
-                            self.closePane(pane, in: tab)
-                        },
-                        openPort: { [weak self, weak tab] port in
-                            guard let url = port.url else { return }
-                            self?.openLink(url, for: tab)
-                        },
-                        showForwards: { [weak self] in self?.showKubernetesForwards() })))
+                    actions: self.paneHeaderActions(for: tab)))
         }
         host.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(host)
@@ -1232,6 +1202,46 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             guard response == .alertFirstButtonReturn, let self, let tab, let pane else { return }
             self.removePane(pane, from: tab)
         }
+    }
+
+    /// What a pane's header does, for `tab`'s panes: each action names its
+    /// own pane or port.
+    func paneHeaderActions(for tab: Tab) -> PaneHeaderActions {
+        PaneHeaderActions(
+            copyOutput: { [weak self] in self?.copyOutput(of: $0) },
+            killPort: { [weak self] port in
+                // A Kubernetes forward's: stopped, its kubectl closed by its pid.
+                if let forward = port.forward {
+                    KubeForwards.shared.stop(forward.id)
+                    return
+                }
+                // A container's: stopped through the engine.
+                if let container = port.container {
+                    self?.dockerPage.act(.stop, on: DockerModel.shared.container(container).map { [$0] } ?? [])
+                    return
+                }
+                // The exact process the census named, read again —
+                // its pid and start — and only while it runs as
+                // you alone (ListeningPort.killable). Never a
+                // pattern: `pkill -f` once killed the shell
+                // running the tests (CLAUDE.md).
+                let now = port.identity.flatMap { LiveActivityKernel().process($0.pid) }
+                guard let pid = port.killable(now: now, uid: getuid()) else { return NSSound.beep() }
+                kill(pid, SIGTERM)
+            },
+            rerun: { [weak self] in self?.rerun(in: $0) },
+            splitRight: { [weak self] in self?.split($0, .right) },
+            splitDown: { [weak self] in self?.split($0, .down) },
+            zoom: { [weak self] in self?.toggleSplitZoom($0) },
+            close: { [weak self] pane in
+                guard let self, let tab = self.tab(containing: pane) else { return }
+                self.closePane(pane, in: tab)
+            },
+            openPort: { [weak self, weak tab] port in
+                guard let url = port.url else { return }
+                self?.openLink(url, for: tab)
+            },
+            showForwards: { [weak self] in self?.showKubernetesForwards() })
     }
 
     /// Takes `pane` out of `tab` — the tab itself when it was its last pane.

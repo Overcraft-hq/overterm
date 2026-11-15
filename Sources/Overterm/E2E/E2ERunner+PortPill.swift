@@ -8,6 +8,33 @@ import SwiftUI
 /// said; confirmed, the server stops and its pill goes. Only processes of
 /// the scenario's own are signalled, each by its pid and start time.
 extension E2ERunner {
+    /// Open goes where Settings ▸ Browser says (`openLink`): recorded, so
+    /// neither the browser column nor a real browser opens.
+    func pillOpenChecks(_ port: ListeningPort, in tab: Tab) async {
+        var opened: [(URL, Bool)] = []
+        app.linkRecorder = { opened.append(($0, $1)) }
+        defer {
+            app.linkRecorder = nil
+            Settings.shared.set("browser.openLinks", nil)
+            Settings.shared.set("browser.enabled", nil)
+        }
+        let actions = app.paneHeaderActions(for: tab)
+        Settings.shared.set("browser.openLinks", .string("none"))
+        actions.openPort(port)
+        check(
+            "a pill's Open goes through openLink: the default browser, as Settings ▸ Browser says",
+            opened.count == 1 && opened.first?.0 == port.url && opened.first?.1 == false, "\(opened.map { "\($0.0) \($0.1)" })")
+        opened = []
+        // The browser on, its default, whatever the run set: off, every
+        // policy is "none", and this check would say nothing the first didn't.
+        Settings.shared.set("browser.enabled", .bool(true))
+        Settings.shared.set("browser.openLinks", .string("local"))
+        actions.openPort(port)
+        check(
+            "and the browser column when it says local links open here",
+            opened.count == 1 && opened.first?.0 == port.url && opened.first?.1 == true, "\(opened.map { "\($0.0) \($0.1)" })")
+    }
+
     /// One of the scenario's own listeners (`pillListener`).
     struct PillListener {
         let process: Process

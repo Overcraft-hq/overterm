@@ -3352,6 +3352,9 @@ final class E2ERunner {
             check(
                 "opened where it listens", second.ports.first { $0.port == backgroundPort }?.url?.absoluteString == "http://127.0.0.1:\(backgroundPort)",
                 second.ports.first { $0.port == backgroundPort }?.url?.absoluteString ?? "no URL")
+            if let pill = second.ports.first(where: { $0.port == backgroundPort }) {
+                await pillOpenChecks(pill, in: second)
+            }
 
             // A window off screen gives the light tick back; its tabs are
             // read again as it shows (7.9) — minimized here, so the window's
