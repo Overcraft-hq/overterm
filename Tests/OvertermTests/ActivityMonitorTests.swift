@@ -323,6 +323,20 @@ final class ActivityMonitorTests: XCTestCase {
         XCTAssertEqual(snapshot?.panes.map(\.tag), ["pane-a"])
     }
 
+    /// The context goes to the sampler too, whole, as it changes: a lookup
+    /// between the monitor's ticks reads the app's panes with it (7.8).
+    func testTheSamplerHasTheContextForLookups() {
+        XCTAssertEqual(monitor.sampler.appContext, monitor.context)
+        monitor.setContext(ActivityContext(panes: [paneB], appPID: app))
+        XCTAssertEqual(monitor.sampler.appContext.panes.map(\.tag), ["pane-b"])
+        let pane = paneA!
+        let app = self.app
+        monitor.contextSource = { ActivityContext(panes: [pane], appPID: app) }
+        monitor.contextChanged()
+        monitor.flushContext()
+        XCTAssertEqual(monitor.sampler.appContext.panes.map(\.tag), ["pane-a"], "rebuilt, shared")
+    }
+
     /// A tab opened and wanted in the same turn: the early tick its want
     /// makes takes the context with the tab's panes — a waiting rebuild is
     /// made at the start of every tick, not left to its timer, or the tick

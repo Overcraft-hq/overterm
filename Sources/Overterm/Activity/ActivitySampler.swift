@@ -83,11 +83,67 @@ final class ActivitySampler: @unchecked Sendable {
     /// A tick is submitted and not yet done: under `flight`.
     private var inFlight = false
 
+    /// The app's census: what `ActivityMonitor.shared` ticks, and what the
+    /// old API's lookups read between its ticks (`ProcessInspector`, 7.8).
+    /// It reads nothing until asked.
+    static let app = ActivitySampler()
+
+    private let shared = NSLock()
+    // Under `shared`.
+    private var lastSnapshot: ActivitySnapshot?
+    private var lastContext = ActivityContext()
+
     init(kernel: any ActivityKernel = LiveActivityKernel(), limits: Limits = Limits()) {
         self.kernel = kernel
         self.limits = limits
         self.folders = ProcessFolders(kernel: kernel)
         self.baselines = UsageBaselines(maximumAge: limits.baselineAge)
+    }
+
+    // MARK: Lookups
+
+    /// The latest snapshot any tick made, whoever asked for it.
+    var latest: ActivitySnapshot? { shared.withLock { lastSnapshot } }
+
+    /// The context the app's monitor last built (`ActivityMonitor.context`):
+    /// a lookup's tick reads the app's panes with it, so one tick answers
+    /// every pane's lookups until it is a tick old.
+    var appContext: ActivityContext {
+        get { shared.withLock { lastContext } }
+        set { shared.withLock { lastContext = newValue } }
+    }
+
+    /// Whether `snapshot` is younger than `within`, on the kernel's clock.
+    func isFresh(_ snapshot: ActivitySnapshot, within: UInt64) -> Bool {
+        let now = kernel.uptime()
+        return now < snapshot.time || now - snapshot.time < within
+    }
+
+    /// A lookup for a caller that answers at once (7.8: the old API,
+    /// `ProcessInspector`): the latest snapshot while it is younger than
+    /// `within` — a tick — and `answers` the question; no new scan then.
+    /// Else a tick now, waited for on the calling thread: after the tick in
+    /// flight, whose snapshot may answer, `demand` over `context`, and again
+    /// back to back while the churn budget left reads for a later tick
+    /// (`ActivitySnapshot.unread`) — `rounds` ticks at most — so a cold
+    /// census reads what a lookup asks in one call: a nohup'd server's tag
+    /// among 860 processes' markers. Never from the queue itself; nil when
+    /// the table can't be read.
+    func lookup(
+        within: UInt64, demand: ActivityDemand, context: ActivityContext, rounds: Int = 8, answers: (ActivitySnapshot) -> Bool
+    ) -> ActivitySnapshot? {
+        dispatchPrecondition(condition: .notOnQueue(queue))
+        if let latest, isFresh(latest, within: within), answers(latest) { return latest }
+        return queue.sync {
+            // A tick that landed while this one waited may answer it.
+            if let latest, isFresh(latest, within: within), answers(latest) { return latest }
+            guard var snapshot = sample(demand, context: context) else { return nil }
+            for _ in 1..<max(rounds, 1) where snapshot.unread > 0 {
+                guard let next = sample(demand, context: context) else { break }
+                snapshot = next
+            }
+            return snapshot
+        }
     }
 
     // MARK: Ticks
@@ -378,9 +434,11 @@ final class ActivitySampler: @unchecked Sendable {
         cost.wall = ended >= started ? ended - started : 0
         cost.cpu = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) &- cpuStart
         cadence.record(cost: cost.wall, full: demand.full, at: now)
-        return ActivitySnapshot(
+        let snapshot = ActivitySnapshot(
             tick: tick, demand: demand, time: now, date: date, uid: uid, table: table, facts: facts, panes: slices, helpers: helpers,
             unread: unread.count, cost: cost, isStretched: cadence.isStretched)
+        shared.withLock { lastSnapshot = snapshot }
+        return snapshot
     }
 
     /// The identities whose markers carry one of `tags`, by tag: what left

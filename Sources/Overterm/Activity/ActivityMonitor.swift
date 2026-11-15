@@ -21,7 +21,9 @@ import Foundation
 /// rebuild waiting — and goes to each tick whole.
 @MainActor
 final class ActivityMonitor: ObservableObject {
-    static let shared = ActivityMonitor()
+    /// The app's: over the app's census, which the old API's lookups read
+    /// too (`ActivitySampler.app`).
+    static let shared = ActivityMonitor(sampler: .app)
 
     /// One reader's want: its owner held weakly, so a reader that goes
     /// without saying so stops wanting.
@@ -66,8 +68,11 @@ final class ActivityMonitor: ObservableObject {
     private var flights = 0
     /// When the last tick began.
     private var lastTick: ContinuousClock.Instant?
-    /// What each tick is given.
-    private(set) var context = ActivityContext()
+    /// What each tick is given — and the sampler's lookups between ticks,
+    /// which read the app's panes with it (`ActivitySampler.appContext`).
+    private(set) var context = ActivityContext() {
+        didSet { sampler.appContext = context }
+    }
     /// Builds the context from the app as it stands: set by the app.
     var contextSource: (@MainActor () -> ActivityContext)?
     private var rebuild: Task<Void, Never>?

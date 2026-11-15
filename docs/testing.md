@@ -420,8 +420,10 @@ value, a path or an address of a process that isn't the test's.
   from a failed one, the cache's bound (ended identities first), the
   in-flight guard, the stretched cadence, a folder on a mount that
   doesn't answer, at most 200 folders asked a tick, the app's children
-  for the pairing (a zombie `login` left out); then a busy child of the
-  test's through the real
+  for the pairing (a zombie `login` left out); a lookup answered from the
+  latest snapshot while it is a tick old at most, else a tick, a cold one
+  reading what the budget left in the same call, one waiting for the tick
+  in flight; then a busy child of the test's through the real
   kernel. The fake's clock moves only when told — a call made to cost
   time or held (`FakeActivityKernel.onCall`, `CallGate`) — so nothing
   waits on a moment.

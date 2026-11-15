@@ -589,6 +589,89 @@ final class ActivitySamplerTests: XCTestCase {
         XCTAssertEqual(ActivitySampler.name(comm: "acmed", procName: nil, path: nil), "acmed")
     }
 
+    // MARK: Lookups
+
+    /// A lookup between ticks (7.8, the old API's): the latest snapshot
+    /// while it is younger than a tick and answers the question — no new
+    /// scan, whoever's tick made it — else a tick now; once that tick is a
+    /// tick old, another.
+    func testALookupIsAnsweredFromTheLatestWhileItIsFresh() throws {
+        appAndLaunchd()
+        let tab = UUID()
+        let left = pane("pane-a", login: 1100, tab: tab)
+        let context = ActivityContext(panes: [left], appPID: app)
+        let sampler = sampler()
+        let ticked = try tick(sampler, ActivityDemand(.light(tabs: [tab])), context)
+        XCTAssertEqual(sampler.latest?.tick, ticked.tick)
+        kernel.resetCounts()
+        let tickWide = 2 * second
+        func hasPane(_ snapshot: ActivitySnapshot) -> Bool { snapshot.pane("pane-a") != nil }
+        let answered = sampler.lookup(within: tickWide, demand: ActivityDemand(.light(tabs: nil)), context: context, answers: hasPane)
+        XCTAssertEqual(answered?.tick, ticked.tick, "the latest answers")
+        XCTAssertEqual(kernel.count("processes"), 0, "no new scan")
+
+        let asked = sampler.lookup(within: tickWide, demand: ActivityDemand(.light(tabs: nil)), context: context) { $0.pane("pane-b") != nil }
+        XCTAssertEqual(asked?.tick, ticked.tick + 1, "one that doesn't answer: a tick now")
+        XCTAssertEqual(kernel.count("processes"), 1)
+
+        kernel.advance(tickWide)
+        let later = sampler.lookup(within: tickWide, demand: ActivityDemand(.light(tabs: nil)), context: context, answers: hasPane)
+        XCTAssertEqual(later?.tick, ticked.tick + 2, "a tick old: read again")
+        XCTAssertEqual(kernel.count("processes"), 2)
+        XCTAssertEqual(sampler.latest?.tick, later?.tick)
+    }
+
+    /// A lookup on a cold census reads what the churn budget left for
+    /// later in the same call, back to back: a tagged process among a
+    /// crowd of strangers, whose markers alone say whose it is.
+    func testALookupReadsWhatTheBudgetLeft() throws {
+        appAndLaunchd()
+        let tab = UUID()
+        let left = pane("pane-a", login: 1100, tab: tab)
+        for index in 0..<9 { add(pid_t(5000 + index), parent: 1, name: "job\(index)") }
+        let nohup = add(6000, parent: 1, name: "acme-server", environment: ["OVERTERM_TAB_ID=pane-a"])
+        var limits = ActivitySampler.Limits()
+        limits.identitiesPerTick = 4
+        let sampler = sampler(limits)
+        let context = ActivityContext(panes: [left], appPID: app)
+        let found = try XCTUnwrap(
+            sampler.lookup(within: 2 * second, demand: ActivityDemand(.light(tabs: nil)), context: context) { $0.pane("pane-a") != nil })
+        XCTAssertEqual(found.unread, 0)
+        XCTAssertEqual(found.pane("pane-a")?.tagged, [nohup], "found in the one call")
+        XCTAssertGreaterThan(found.tick, 1, "over several ticks")
+        let bounded = self.sampler(limits)
+        let short = bounded.lookup(within: 2 * second, demand: ActivityDemand(.light(tabs: nil)), context: context, rounds: 1) { _ in true }
+        XCTAssertEqual(short?.tick, 1, "at most so many ticks")
+        XCTAssertGreaterThan(short?.unread ?? 0, 0)
+    }
+
+    /// A lookup made while a tick is in flight waits for it, and takes its
+    /// snapshot when it answers: the two never read at once.
+    func testALookupWaitsForTheTickInFlight() throws {
+        appAndLaunchd()
+        let tab = UUID()
+        let left = pane("pane-a", login: 1100, tab: tab)
+        let context = ActivityContext(panes: [left], appPID: app)
+        let gate = CallGate()
+        defer { gate.open() }
+        kernel.onCall { call in if call == "processes" { gate.hold() } }
+        let sampler = sampler()
+        let first = DispatchSemaphore(value: 0)
+        XCTAssertTrue(sampler.submit(ActivityDemand(.light(tabs: [tab])), context: context) { _ in first.signal() })
+        XCTAssertTrue(TestChild.eventually { gate.held == 1 }, "the tick is in")
+        let answer = SnapshotBox()
+        let done = DispatchSemaphore(value: 0)
+        DispatchQueue.global().async {
+            answer.set(sampler.lookup(within: 2 * self.second, demand: ActivityDemand(.light(tabs: nil)), context: context) { $0.pane("pane-a") != nil })
+            done.signal()
+        }
+        gate.open()
+        XCTAssertEqual(first.wait(timeout: .now() + 10), .success)
+        XCTAssertEqual(done.wait(timeout: .now() + 10), .success)
+        XCTAssertEqual(answer.value?.tick, 1, "the tick in flight answered it")
+        XCTAssertEqual(kernel.count("processes"), 1)
+    }
+
     // MARK: The pairing
 
     /// What the main actor pairs surfaces with (7.7): the app's children,
