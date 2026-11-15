@@ -39,8 +39,8 @@ import Foundation
 ///
 /// Every call is a plain synchronous one on the queue; the levels' later
 /// reads join `sample` where its comments say: the meters at the full
-/// level (stage 1), nettop's listeners every 5th tick while Listening shows
-/// (stage 4), other users' coalitions (stage 5).
+/// level, nettop's listeners every 5th tick while Listening shows (stage
+/// 4), other users' coalitions (stage 5).
 final class ActivitySampler: @unchecked Sendable {
     /// What a tick may read.
     struct Limits: Sendable {
@@ -81,6 +81,10 @@ final class ActivitySampler: @unchecked Sendable {
     private var socketScan = SocketScan()
     private var cadence = ActivityCadence()
     private var ticks = 0
+    /// The meters' counters at the last full tick, and when: CPU a core is
+    /// the difference (`SystemMeters.from`) — none after a gap longer than
+    /// `Limits.baselineAge`, as for a process's rates (6.11).
+    private var lastMeters: (counters: SystemMeterCounters, time: UInt64)?
 
     private let flight = NSLock()
     /// A tick is submitted and not yet done: under `flight`.
@@ -432,8 +436,14 @@ final class ActivitySampler: @unchecked Sendable {
         asked += focus.filter { $0.isOwn(by: uid) }.map { ProcessFolders.Request(identity: $0.identity) }
         let folders = asked.isEmpty ? [:] : self.folders.folders(asked, now: kernel.uptime(), limit: limits.foldersPerTick)
 
-        // The meters join here at the full level (stage 1), nettop's
-        // listeners every 5th tick while Listening shows (stage 4).
+        // The meters at the full level (6.4); nettop's listeners every 5th
+        // tick while Listening shows (stage 4).
+        var meters: SystemMeters?
+        if demand.full, let counters = kernel.meterCounters() {
+            let previous = lastMeters.flatMap { now >= $0.time && now - $0.time <= limits.baselineAge ? $0.counters : nil }
+            meters = SystemMeters.from(counters, previous: previous)
+            lastMeters = (counters, now)
+        }
 
         var facts: [ActivityProcessID: ActivityFacts] = [:]
         let described = demand.full ? table.processes : wanted
@@ -456,7 +466,8 @@ final class ActivitySampler: @unchecked Sendable {
         if paced { cadence.record(cost: cost.wall, full: demand.full, members: cost.usageRead, at: now) }
         let snapshot = ActivitySnapshot(
             tick: tick, demand: demand, time: now, date: date, uid: uid, table: table, facts: facts, panes: slices, helpers: helpers,
-            appChildren: appChildren, unclaimedLogins: unclaimed, unread: unread.count, cost: cost, isStretched: cadence.isStretched)
+            appChildren: appChildren, unclaimedLogins: unclaimed, unread: unread.count, cost: cost, isStretched: cadence.isStretched,
+            meters: meters)
         shared.withLock { lastSnapshot = snapshot }
         return snapshot
     }

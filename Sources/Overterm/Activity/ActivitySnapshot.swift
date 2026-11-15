@@ -211,6 +211,9 @@ struct ActivitySnapshot: Sendable {
     let cost: ActivityTickCost
     /// The cadence is stretched to 5 s: a busy Mac (7.3).
     let isStretched: Bool
+    /// The system's meters, read at the full level (6.4); nil at the others
+    /// and where they can't be read.
+    var meters: SystemMeters? = nil
 
     /// Whether this reads everything `demand` asks.
     func covers(_ demand: ActivityDemand) -> Bool { self.demand.covers(demand) }

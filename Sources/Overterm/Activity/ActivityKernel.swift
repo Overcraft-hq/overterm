@@ -91,6 +91,9 @@ protocol ActivityKernel: Sendable {
     /// checks every member just before. Never a group ≤ 1 nor this
     /// process's own.
     func signal(_ signal: Int32, group: pid_t) -> Int32
+    /// The system's own counters for the meters (`SystemMeterCounters`):
+    /// read in the full tick; nil when they can't be read.
+    func meterCounters() -> SystemMeterCounters?
 }
 
 /// A process's audit token (`TASK_AUDIT_TOKEN`, 3.9): it names one
@@ -138,6 +141,8 @@ enum CodeSigningAnswer: Hashable, Sendable {
 }
 
 extension ActivityKernel {
+    func meterCounters() -> SystemMeterCounters? { nil }
+
     /// `pid`'s code signing: `csops`, else Security.framework's answer
     /// while `fallbacks` lasts (each over a millisecond); nil is unknown — never
     /// "macOS" (3.3).
@@ -158,6 +163,8 @@ struct LiveActivityKernel: ActivityKernel {
     let uid = getuid()
 
     func uptime() -> UInt64 { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) }
+
+    func meterCounters() -> SystemMeterCounters? { readMeterCounters() }
 
     func processes() -> [ActivityProcess]? {
         func call(_ buffer: UnsafeMutableRawPointer?, _ size: inout Int) -> Int32 {
@@ -450,6 +457,7 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     private var tokenCall = true
     private var sends: [Sent] = []
     private var lastImage: UInt32 = 0
+    private var meters: SystemMeterCounters?
 
     init(uid: uid_t = 501) { self.uid = uid }
 
@@ -650,6 +658,11 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     // MARK: ActivityKernel
 
     func uptime() -> UInt64 { lock.withLock { clock } }
+
+    func meterCounters() -> SystemMeterCounters? { asked("meters") { meters } }
+
+    /// What the meters read next (nil: unreadable).
+    func setMeters(_ counters: SystemMeterCounters?) { lock.withLock { meters = counters } }
 
     func processes() -> [ActivityProcess]? {
         asked("processes") { tableRefused ? nil : table.values.map(\.record).sorted { $0.pid < $1.pid } }
