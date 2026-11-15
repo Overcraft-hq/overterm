@@ -1222,6 +1222,10 @@ final class ComposeProjectsTests: XCTestCase {
         XCTAssertEqual(ports.map(\.container), ["a-web-1", "a-db-1"])
         XCTAssertEqual(ports.first?.id, "a-web-1:8080", "not a pid's: there is none")
         XCTAssertEqual(ports.map(\.movedFrom), [nil, nil])
+        // Reached where published, as Docker's own pills are: localhost on
+        // every address, db's 127.0.0.1 — localhost may try ::1 first.
+        XCTAssertEqual(ports.map(\.url?.absoluteString), ["http://localhost:8080", "http://127.0.0.1:55432"])
+        XCTAssertEqual(ports.map(\.scope), [.network, .thisMac])
         // Up on Free Ports moved web's: its pill says where from.
         let moved = ComposePortOverride(
             folder: "/w/a", project: "a", fileName: "a", baseFiles: ["/w/a/compose.yaml"],

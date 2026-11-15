@@ -12,6 +12,89 @@ final class ListeningPortsTests: XCTestCase {
         XCTAssertEqual(ports.first?.url?.absoluteString, "http://localhost:5173")
     }
 
+    // MARK: Where a listener is reached (docs/design/activity/analysis.md, 6.8)
+
+    /// A fixture's socket as the census decodes it.
+    private func records(_ sockets: [socket_fdinfo]) -> [SocketRecord] {
+        sockets.enumerated().compactMap { SocketRecord.classify($1, descriptor: Int32($0 + 3)) }
+    }
+
+    /// One process's sockets on one port, as `ListeningPorts.of` makes them
+    /// one entry.
+    private func listener(_ sockets: socket_fdinfo...) throws -> ListeningPort {
+        try XCTUnwrap(ListeningPorts.port(records(sockets), holder: ActivityProcessID(pid: 4242, start: 1_000_007), name: "acme-dev"))
+    }
+
+    /// The URL follows the bound address and its families: `localhost`
+    /// only where both families listen on loopback — a client may try ::1
+    /// first and get ECONNREFUSED from a v4-only server —, one address
+    /// it is bound to as that address, a link-local one Copy only (it
+    /// needs a zone id). Addresses are the documentation ranges'.
+    func testTheURLFollowsTheBoundAddressAndFamilies() throws {
+        typealias K = FakeActivityKernel
+        func url(_ sockets: socket_fdinfo...) throws -> String? {
+            try XCTUnwrap(ListeningPorts.port(records(sockets), holder: ActivityProcessID(pid: 4242, start: 7), name: "acme-dev")).url?.absoluteString
+        }
+        XCTAssertEqual(try url(K.tcp(local: "::", port: 3000, dualStack: true)), "http://localhost:3000", "a dual-stack wildcard")
+        XCTAssertEqual(try url(K.tcp(local: "0.0.0.0", port: 3000)), "http://127.0.0.1:3000", "0.0.0.0 alone: IPv4 only")
+        XCTAssertEqual(try url(K.tcp(local: "::", port: 3000)), "http://[::1]:3000", ":: alone: IPv6 only")
+        XCTAssertEqual(try url(K.tcp(local: "127.0.0.1", port: 3000)), "http://127.0.0.1:3000", "the ::1 trap avoided")
+        XCTAssertEqual(try url(K.tcp(local: "::ffff:127.0.0.1", port: 3000)), "http://127.0.0.1:3000", "a v4-mapped loopback is IPv4's")
+        // A loopback alias (`ifconfig lo0 alias`): 127.0.0.1 doesn't reach
+        // it, and may reach another checkout's server on the same port.
+        XCTAssertEqual(try url(K.tcp(local: "127.0.0.2", port: 3000)), "http://127.0.0.2:3000", "another 127/8 address is its own host")
+        XCTAssertEqual(try url(K.tcp(local: "::ffff:127.0.0.2", port: 3000)), "http://127.0.0.2:3000", "v4-mapped too")
+        let alias = try listener(K.tcp(local: "127.0.0.2", port: 3000))
+        XCTAssertEqual(alias.scope, .thisMac, "still this Mac's only")
+        XCTAssertEqual(alias.endpoint, "127.0.0.2:3000")
+        XCTAssertEqual(try url(K.tcp(local: "127.0.0.2", port: 3000), K.tcp(local: "::1", port: 3000, handle: 2)), "http://[::1]:3000")
+        XCTAssertEqual(try url(K.tcp(local: "::1", port: 3000)), "http://[::1]:3000")
+        XCTAssertEqual(
+            try url(K.tcp(local: "127.0.0.1", port: 5173), K.tcp(local: "::1", port: 5173, handle: 2)), "http://localhost:5173",
+            "both families, one socket each")
+        XCTAssertEqual(try url(K.tcp(local: "0.0.0.0", port: 8000), K.tcp(local: "::", port: 8000, handle: 2)), "http://localhost:8000")
+        XCTAssertEqual(try url(K.tcp(local: "192.0.2.10", port: 3000)), "http://192.0.2.10:3000", "one LAN address isn't localhost")
+        XCTAssertEqual(try url(K.tcp(local: "2001:db8::5", port: 3000)), "http://[2001:db8::5]:3000")
+        XCTAssertNil(try url(K.tcp(local: "fe80::1", port: 3000)), "link-local: nothing to open")
+    }
+
+    /// A process's v4 and v6 sockets on one port are one entry, with both
+    /// families, the widest scope and its holder's identity.
+    func testAProcesssSocketsOnOnePortAreOneEntry() throws {
+        typealias K = FakeActivityKernel
+        let both = try listener(K.tcp(local: "127.0.0.1", port: 5173), K.tcp(local: "::1", port: 5173, handle: 2))
+        XCTAssertEqual(both.families, [.v4, .v6])
+        XCTAssertEqual(both.scope, .thisMac)
+        XCTAssertEqual(both.reach, "This Mac")
+        XCTAssertEqual(both.endpoint, "localhost:5173")
+        XCTAssertEqual(both.identity, ActivityProcessID(pid: 4242, start: 1_000_007))
+        XCTAssertEqual(both.proto, "tcp")
+        let wide = try listener(K.tcp(local: "127.0.0.1", port: 8080), K.tcp(local: "0.0.0.0", port: 8080, handle: 2))
+        XCTAssertEqual(wide.scope, .network, "a wildcard beside loopback reaches the network")
+        XCTAssertEqual(wide.address, "*")
+        XCTAssertEqual(wide.reach, "Network")
+        let one = try listener(K.tcp(local: "192.0.2.10", port: 8080))
+        XCTAssertEqual(one.scope, .oneAddress)
+        XCTAssertEqual(one.reach, "Network · 192.0.2.10")
+        XCTAssertEqual(one.endpoint, "192.0.2.10:8080")
+        let linkLocal = try listener(K.tcp(local: "fe80::1", port: 3000))
+        XCTAssertNil(linkLocal.url)
+        XCTAssertEqual(linkLocal.endpoint, "[fe80::1]:3000", "what Copy gives")
+        let udp = try listener(K.udp(local: "127.0.0.1", port: 5353))
+        XCTAssertEqual(udp.proto, "udp")
+    }
+
+    /// A container's published port is reached where it is published, as
+    /// Docker's own pills are.
+    func testAPublishedPortIsReachedWhereItIsPublished() {
+        XCTAssertEqual(ListeningPorts.published(hostIP: nil).host, "localhost")
+        XCTAssertEqual(ListeningPorts.published(hostIP: nil).scope, .network)
+        XCTAssertEqual(ListeningPorts.published(hostIP: "127.0.0.1").host, "127.0.0.1")
+        XCTAssertEqual(ListeningPorts.published(hostIP: "127.0.0.1").scope, .thisMac)
+        XCTAssertEqual(ListeningPorts.published(hostIP: "::1").host, "[::1]")
+        XCTAssertEqual(ListeningPorts.published(hostIP: "192.0.2.10").scope, .oneAddress)
+    }
+
     /// What Docker's own bind would run into: a listener on loopback (no
     /// firewall prompt), and nothing once it has closed — TIME_WAIT aside.
     /// A port the system gave, listened on and closed again: free.

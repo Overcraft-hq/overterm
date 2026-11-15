@@ -93,7 +93,8 @@ struct KubeForward: Identifiable, Equatable, Sendable {
             pid: pid ?? 0, process: "kubectl", port: spec.localPort, address: spec.address,
             forward: KubeForwardPill(
                 id: id, context: spec.context, namespace: spec.namespace, target: spec.target.description, pod: pod, https: spec.https,
-                forwarding: isForwarding, production: production, state: state.text))
+                forwarding: isForwarding, production: production, state: state.text),
+            scope: KubeForwardAddress.scope(spec.address))
     }
 }
 

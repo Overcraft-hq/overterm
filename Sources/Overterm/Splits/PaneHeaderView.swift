@@ -247,7 +247,9 @@ private struct PortPill: View {
         .popover(isPresented: $showing, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 6) {
-                    Text(verbatim: port.forward == nil ? "localhost:\(port.port)" : "\(KubeForwardAddress.host(for: port.address)):\(port.port)")
+                    // Where it listens: 127.0.0.1, [::1] or the one address
+                    // it is bound to, localhost only where both families do.
+                    Text(verbatim: port.endpoint)
                         .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
                         .foregroundStyle(theme.text)
                     Text(verbatim: origin)
@@ -261,15 +263,18 @@ private struct PortPill: View {
                         .fixedSize(horizontal: false, vertical: true)
                 }
                 HStack(spacing: 6) {
-                    action("Open", filled: true) {
-                        showing = false
-                        port.url.map { NSWorkspace.shared.open($0) }
+                    // A link-local address has no URL to open (it needs a
+                    // zone id): its address is copied only.
+                    if port.url != nil {
+                        action("Open", filled: true) {
+                            showing = false
+                            port.url.map { NSWorkspace.shared.open($0) }
+                        }
                     }
-                    action("Copy URL") {
+                    action(port.url == nil ? "Copy Address" : "Copy URL") {
                         showing = false
-                        guard let url = port.url else { return }
                         NSPasteboard.general.clearContents()
-                        NSPasteboard.general.setString(url.absoluteString, forType: .string)
+                        NSPasteboard.general.setString(port.url?.absoluteString ?? port.endpoint, forType: .string)
                     }
                     if port.forward != nil {
                         action("Kubernetes") {
@@ -319,7 +324,7 @@ private struct PortPill: View {
         if let forward = port.forward {
             return "kubectl port-forward \(forward.target) → pod \(forward.pod ?? "…") in \(forward.context)/\(forward.namespace): \(forward.state)"
         }
-        return "\(port.process) is listening on \(port.port)"
+        return "\(port.process) is listening on \(port.endpoint) · \(port.reach)"
     }
 
     /// Stop…'s: its start time unread, nothing tells it from a later process of its pid.

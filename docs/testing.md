@@ -455,6 +455,16 @@ value, a path or an address of a process that isn't the test's.
   terminal under its pane, both panes' busy children's CPU, the
   footprint, the ports from the census's sockets (no lsof), a snapshot of
   another tab left alone.
+- `ListeningPortsTests`: where a listener is opened — its URL from its
+  sockets' bound addresses and families (6.8's table, on documentation
+  addresses: a dual-stack wildcard or both families on loopback
+  `localhost`, IPv4 alone `127.0.0.1`, IPv6 alone `[::1]`, one address
+  that address, a loopback alias such as 127.0.0.2 too, a link-local one
+  nothing to open) —, a process's v4 and v6 sockets on one port one entry
+  with the widest scope and its holder's identity, a published port
+  reached where it is published; the bind probe on a real listener. A
+  forward's scope is where kubectl listens, and Tab Info says the address
+  of one that isn't this Mac's alone (`KubePortForwardTests`).
 - `ActivityMonitorTests`: one tick for every reader at the fastest
   cadence, the ticks stopped at the last `unwant` and when a reader goes
   away, an early tick only for a wider want and once for a burst, one-off

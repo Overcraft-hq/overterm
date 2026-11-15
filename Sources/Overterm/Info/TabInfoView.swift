@@ -154,8 +154,8 @@ struct TabInfoView: View {
                         } else {
                             Text(port.process).foregroundStyle(theme.dimText)
                         }
-                        if port.address != "*" && port.address != "127.0.0.1" && port.address != "[::1]" {
-                            Text(port.address).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText)
+                        if let address = Self.address(of: port) {
+                            Text(verbatim: address).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText)
                         }
                         Spacer()
                         if let url = port.url {
@@ -266,6 +266,16 @@ struct TabInfoView: View {
 
     /// "—" for none yet: a first sample has no rate, never 0 (7.5).
     nonisolated static func cpu(_ percent: Double?) -> String { percent.map { String(format: "%.0f%%", $0) } ?? "—" }
+
+    /// The address said beside a listening port (docs/design/activity/
+    /// analysis.md, 6.8): a process's when it is bound to one address that
+    /// isn't loopback, a forward's wherever it isn't this Mac's alone — a
+    /// pod forwarded to the whole network (`0.0.0.0`, `::`) or to one LAN
+    /// address must never look like a loopback one. Pure.
+    nonisolated static func address(of port: ListeningPort) -> String? {
+        if port.forward != nil { return port.scope == .thisMac ? nil : port.address }
+        return port.scope == .oneAddress ? port.address : nil
+    }
 
     /// "0 KB", never "Zero KB" (the formatter's default for 0).
     nonisolated static func memory(_ bytes: UInt64) -> String {

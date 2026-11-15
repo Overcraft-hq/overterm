@@ -101,6 +101,28 @@ final class KubePortForwardTests: XCTestCase {
         XCTAssertEqual(spec.url?.absoluteString, "https://127.0.0.1:31443")
     }
 
+    /// Who can reach a forward is where kubectl listens (docs/design/
+    /// activity/analysis.md, 6.8's Scope), and Tab Info says the address of
+    /// one that isn't this Mac's alone: a pod forwarded to the whole network
+    /// or to one LAN address never looks like a loopback one.
+    func testAForwardsScopeIsWhereItListens() {
+        func port(_ address: String) -> ListeningPort? {
+            var spec = KubeForwardSpec(context: "fake-dev", namespace: "shop", target: .pod("web-1"), remotePort: 80, localPort: 31234)
+            spec.address = address
+            return KubeForward(spec: spec).listeningPort
+        }
+        let scopes: [(String, ListeningPort.Scope)] = [
+            ("127.0.0.1", .thisMac), ("localhost", .thisMac), ("::1", .thisMac), ("0.0.0.0", .network), ("::", .network), ("192.0.2.10", .oneAddress),
+        ]
+        for (address, scope) in scopes { XCTAssertEqual(port(address)?.scope, scope, address) }
+        XCTAssertEqual(port("0.0.0.0")?.reach, "Network")
+        XCTAssertNil(port("127.0.0.1").flatMap(TabInfoView.address(of:)), "loopback: nothing more to say")
+        XCTAssertNil(port("localhost").flatMap(TabInfoView.address(of:)))
+        XCTAssertEqual(port("0.0.0.0").flatMap(TabInfoView.address(of:)), "0.0.0.0", "the whole network, said")
+        XCTAssertEqual(port("::").flatMap(TabInfoView.address(of:)), "::")
+        XCTAssertEqual(port("192.0.2.10").flatMap(TabInfoView.address(of:)), "192.0.2.10")
+    }
+
     // MARK: Resolution
 
     func testAPodTargetIsItselfWhileItRuns() {

@@ -543,6 +543,18 @@ forward's Stop is `KubeForwards`'; a checkout's containers have no pill.
 A tab that listens is a server, which is what its icon then says
 (`TabKind`).
 
+A port is opened where it listens (`ListeningPort.url`, docs/design/
+activity/analysis.md 6.8), from its sockets' bound addresses and families
+(`insi_vflag`): `localhost` only where both families listen on loopback —
+a dual-stack wildcard, or a socket each —, since `localhost` resolves to
+::1 first and a client without a fallback (Node 17–19's `fetch`) gets
+ECONNREFUSED from a v4-only server; `127.0.0.1` where only IPv4 does,
+`[::1]` where only IPv6 does, the one address a socket is bound to as
+that address (a LAN one isn't localhost, and a loopback alias such as
+127.0.0.2 isn't 127.0.0.1), and nothing to open for a link-local one,
+which needs a zone id: its address is copied. A container's is reached
+where it is published, as Docker's own pills are.
+
 No preview of the page, which the design draws: that is a WebView per
 pill for a thumbnail, and the process name answers the question the
 thumbnail was asking ("which of my two servers is this").
@@ -791,7 +803,7 @@ A popover per tab, live while open (`TabInfoModel`, `Sources/Overterm/Info/`):
 |---|---|
 | Location | tab cwd → checkout, branch, worktree-of, changed files (git) |
 | Running | The census's light slice for its tab (`ActivityMonitor`, docs/design/activity/analysis.md 6.12), every second while it is open — no scan of its own: each pane's tree under its `login` (paired to its surface by `SurfaceProcesses`, since libghostty doesn't expose the pid), and what carries the pane's `OVERTERM_TAB_ID` outside it. A split tab is a group a pane, labelled by what the pane runs (`CommandLedger.running`), else its title, masked; the shell its group's dimmed root; what left its terminal (nohup, disown) under its pane, marked ↗. CPU% since the census's last sample ("—" for a first one), a pane's baselines kept while its processes live, so a split tab reads every pane's; Memory the footprint, Activity Monitor's, real memory (RSS) in the tooltip. A row's tooltip: the command masked as it was read, its folder, its start. |
-| Listening | The census's socket walk of the tab's processes (`ListeningPorts.of(_:in:)`), no lsof; then its checkout's containers' and its forwards' ports; Open → localhost |
+| Listening | The census's socket walk of the tab's processes (`ListeningPorts.of(_:in:)`), no lsof — a process's sockets on one port one entry, with their families, scope and the holder's start; then its checkout's containers' and its forwards' ports, a forward's scope from the address kubectl listens on; the address said beside a port bound to one address that isn't loopback, and beside a forward that isn't this Mac's alone (`TabInfoView.address(of:)`: one to the whole network never looks like a loopback one); Open → where it listens (`ListeningPort.url`, Live ports and links) |
 | Claude session | `ClaudeUsageReader` on `~/.claude/projects/<cwd as ->/<session>.jsonl`: streamed, incremental, ends-of-line byte search, replies de-duplicated by id |
 | Disk | `DiskUsage` of the checkout only, cancellable, cached 60 s |
 

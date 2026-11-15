@@ -156,6 +156,13 @@ final class TabInfoModelTests: XCTestCase {
         let ports = ListeningPorts.of([identity], in: snapshot)
         XCTAssertEqual(ports.map(\.port), [5173, 8080, 9229])
         XCTAssertEqual(ports.map(\.address), ["127.0.0.1", "*", "[::1]"])
+        // Opened where they listen (6.8): both families on loopback or a
+        // dual-stack wildcard as localhost, ::1 alone in brackets.
+        XCTAssertEqual(ports.map(\.url?.absoluteString), ["http://localhost:5173", "http://localhost:8080", "http://[::1]:9229"])
+        XCTAssertEqual(ports.map(\.families), [[.v4, .v6], [.v4, .v6], [.v6]])
+        XCTAssertEqual(ports.map(\.scope), [.thisMac, .network, .thisMac])
+        XCTAssertEqual(ports.map(\.proto), ["tcp", "tcp", "tcp"])
+        XCTAssertTrue(ports.allSatisfy { $0.identity == identity }, "the holder's identity, for a pill's verb")
         XCTAssertTrue(ListeningPorts.of([], in: snapshot).isEmpty)
     }
 }

@@ -308,7 +308,7 @@ final class BrowserViewController: NSViewController, NSTextFieldDelegate {
         empty.addArrangedSubview(title)
         for port in ports.prefix(6) {
             guard let url = port.url else { continue }
-            let open = NSButton(title: "localhost:\(port.port)  ·  \(port.process)", target: self, action: #selector(openPort(_:)))
+            let open = NSButton(title: "\(port.endpoint)  ·  \(port.process)", target: self, action: #selector(openPort(_:)))
             open.bezelStyle = .rounded
             open.identifier = NSUserInterfaceItemIdentifier("browserPort-\(port.port)")
             open.toolTip = url.absoluteString
@@ -404,8 +404,10 @@ final class BrowserViewController: NSViewController, NSTextFieldDelegate {
         return false
     }
 
+    /// Where the port listens (`ListeningPort.url`): 127.0.0.1 for a v4-only
+    /// server, which localhost may miss trying ::1 first.
     @objc private func openPort(_ sender: NSButton) {
-        guard let url = URL(string: "http://localhost:\(sender.tag)") else { return }
+        guard let url = ports.first(where: { $0.port == sender.tag && $0.url != nil })?.url else { return }
         open(url)
     }
 
