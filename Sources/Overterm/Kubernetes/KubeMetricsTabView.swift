@@ -357,16 +357,37 @@ struct KubeObjectChartsList: View {
     /// A chart's "Ask Agent About This Chart" (M11).
     var ask: ((KubePodCharts.Chart) -> Void)? = nil
 
+    private static let space = "kubernetes.metrics.charts"
+
+    /// The groups read while shown that the list last said are on screen.
+    @State private var reported: Set<String> = []
+
+    /// Whether a group's row (its header, a chart), at `frame` in the
+    /// scroll view's space, is inside what it shows (`viewport` high).
+    /// Built isn't shown: the lazy stack builds rows below the fold ahead
+    /// of a scroll — a workload's saved queries were asked with their
+    /// header 350 pt under it.
+    static func onScreen(_ frame: CGRect, viewport: CGFloat) -> Bool {
+        viewport > 0 && frame.maxY > 0 && frame.minY < viewport
+    }
+
     var body: some View {
+        // Its height read around it: what a header is on screen in.
+        GeometryReader { outer in
+            list(viewport: outer.size.height)
+        }
+    }
+
+    private func list(viewport: CGFloat) -> some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 14) {
                 ForEach(charts.groups) { group in
                     Text(verbatim: group.title).font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
-                        .onAppear { if group.readsWhenShown { groupShown?(group.title, true) } }
-                        .onDisappear { if group.readsWhenShown { groupShown?(group.title, false) } }
+                        .modifier(KubeShownGroupRow(group: group, viewport: viewport, space: Self.space))
                     if group.pending, group.charts.isEmpty {
                         Text(verbatim: "Asked of Prometheus while shown").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                             .accessibilityIdentifier("kubernetes.metrics.pending")
+                            .modifier(KubeShownGroupRow(group: group, viewport: viewport, space: Self.space))
                     }
                     ForEach(group.charts) { chart in
                         KubeChartView(
@@ -375,6 +396,7 @@ struct KubeObjectChartsList: View {
                             expand: expand.map { expand in { expand(chart) } }, ask: ask.map { ask in { ask(chart) } }, theme: theme
                         )
                         .frame(maxWidth: .infinity)
+                        .modifier(KubeShownGroupRow(group: group, viewport: viewport, space: Self.space))
                     }
                 }
                 ForEach(charts.notes, id: \.self) { note in
@@ -383,6 +405,49 @@ struct KubeObjectChartsList: View {
                 }
             }
             .padding(14)
+        }
+        .coordinateSpace(name: Self.space)
+        // A group is on screen while any of its rows is — its header, or a
+        // chart with the header scrolled off above —, and said so as that
+        // changes; a row the lazy stack let go of says nothing more.
+        .onPreferenceChange(KubeShownGroupsKey.self) { shown in
+            MainActor.assumeIsolated { report(shown) }
+        }
+        .onDisappear { report([]) }
+    }
+
+    private func report(_ shown: Set<String>) {
+        guard shown != reported else { return }
+        let was = reported
+        reported = shown
+        for title in shown.subtracting(was).sorted() { groupShown?(title, true) }
+        for title in was.subtracting(shown).sorted() { groupShown?(title, false) }
+    }
+}
+
+/// The groups read while shown with a row on screen.
+private struct KubeShownGroupsKey: PreferenceKey {
+    static let defaultValue: Set<String> = []
+    static func reduce(value: inout Set<String>, nextValue: () -> Set<String>) { value.formUnion(nextValue()) }
+}
+
+/// A row of a group read while shown says whether it is on screen.
+private struct KubeShownGroupRow: ViewModifier {
+    let group: KubeObjectCharts.Group
+    let viewport: CGFloat
+    let space: String
+
+    func body(content: Content) -> some View {
+        if group.readsWhenShown {
+            content.background {
+                GeometryReader { proxy in
+                    Color.clear.preference(
+                        key: KubeShownGroupsKey.self,
+                        value: KubeObjectChartsList.onScreen(proxy.frame(in: .named(space)), viewport: viewport) ? [group.title] : [])
+                }
+            }
+        } else {
+            content
         }
     }
 }
