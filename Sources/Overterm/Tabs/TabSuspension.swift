@@ -129,20 +129,25 @@ final class SuspendedCover: NSView {
 
 extension TerminalWindowController {
     /// Stops each of the tab's panes' sets, read at the press
-    /// (`TabSuspension.targets`). The lookup runs off the main thread; a
-    /// Resume in between wins.
+    /// (`TabSuspension.targets`). A pane not paired yet is paired first,
+    /// from a list of the app's children read off the main thread
+    /// (`pairWaiting`); the lookup runs off it too; a Resume in between
+    /// wins.
     func suspendTab(_ tab: Tab) {
         let panes = tab.terminals.filter { !$0.isSuspended }
         guard !panes.isEmpty else { return }
-        let roots = panes.map { (SurfaceProcesses.shared.loginPID(of: $0), $0.processTag) }
         // A `.app` inside one of these stays the pane's: a dev build.
         let checkouts = Array(Set(store.tabs.compactMap { $0.checkoutSource?.root.path }))
-        DispatchQueue.global(qos: .userInitiated).async {
-            let sets = roots.map { TabSuspension.targets(login: $0.0, tag: $0.1, checkouts: checkouts) }
-            Task { @MainActor in
-                tab.objectWillChange.send()
-                self.store.objectWillChange.send()
-                for (pane, targets) in zip(panes, sets) { pane.suspend(targets) }
+        Task { @MainActor in
+            await SurfaceProcesses.shared.pairWaiting()
+            let roots = panes.map { (SurfaceProcesses.shared.pairedLoginPID(of: $0), $0.processTag) }
+            DispatchQueue.global(qos: .userInitiated).async { @Sendable in
+                let sets = roots.map { TabSuspension.targets(login: $0.0, tag: $0.1, checkouts: checkouts) }
+                Task { @MainActor in
+                    tab.objectWillChange.send()
+                    self.store.objectWillChange.send()
+                    for (pane, targets) in zip(panes, sets) { pane.suspend(targets) }
+                }
             }
         }
     }
