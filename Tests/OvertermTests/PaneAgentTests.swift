@@ -110,4 +110,24 @@ final class PaneAgentTests: XCTestCase {
         XCTAssertFalse(idle.agentRunning)
         XCTAssertEqual(idle.directory, "/tmp/fake-elsewhere")
     }
+
+    /// Sessions' Claude: the first Claude, past a Codex in an earlier pane,
+    /// with its masked command — what says which session it resumed — and
+    /// its folder; a tab running only Codex runs no Claude session.
+    func testSessionsTakeTheTabsClaude() {
+        let panes = [
+            pane("pane-a1", login: 1100, tab: tab), pane("pane-a2", login: 1200, tab: tab), pane("pane-b1", login: 1300, tab: other),
+        ]
+        add(1102, parent: 1101, name: "codex", folder: "/tmp/acme-codex")
+        add(1202, parent: 1201, name: "node", words: ["claude", "--resume", "acme-session"], folder: "/tmp/acme-checkout")
+        add(1302, parent: 1301, name: "codex", folder: "/tmp/acme-other")
+        let sampler = census(panes)
+        let tabs = [(id: tab, tags: ["pane-a1", "pane-a2"]), (id: other, tags: ["pane-b1"])]
+        let agents = PaneAgent.lookup(tabs, census: sampler, only: .claude, folders: true)
+        let claudes = SessionsModel.claudes([tab, other], agents)
+        XCTAssertEqual(claudes.map(\.tab), [tab], "only Codex runs in the other")
+        XCTAssertEqual(claudes.first?.directory, "/tmp/acme-checkout")
+        XCTAssertEqual(claudes.first?.command, "claude --resume acme-session")
+        XCTAssertEqual(PaneAgent.lookup(tabs, census: sampler, folders: false)[tab]?.kind, .codex, "the first agent, of any kind")
+    }
 }

@@ -1443,7 +1443,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     func refreshSessions() {
         guard Settings.shared.sessionsEnabled else { return }
         let directories = worktrees.worktrees.isEmpty ? [tree.root?.path].compactMap { $0 } : worktrees.worktrees.map(\.path.path)
-        Task { await sessions.refresh(directories: directories, tabs: store.tabs, inspector: inspector) }
+        Task { await sessions.refresh(directories: directories, tabs: store.tabs) }
     }
 
     /// The tab a session runs in, or — `inNewTab`, or not running — a new

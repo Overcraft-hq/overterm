@@ -18,12 +18,15 @@ struct PaneAgent: Equatable, Sendable {
     /// its context was built) isn't this tab's; an agent that has ended (a
     /// zombie) or doesn't run as the user alone isn't running
     /// (`ProcessInspector.running`). Its folder is the snapshot's, else
-    /// `folder`'s answer. Pure.
+    /// `folder`'s answer. `only`: that kind's alone — Sessions' Claude in
+    /// a tab whose first pane runs Codex. Pure.
     static func first(
-        _ tags: [String], tab: UUID, in snapshot: ActivitySnapshot, folder: (ActivityProcessID) -> String? = { _ in nil }
+        _ tags: [String], tab: UUID, in snapshot: ActivitySnapshot, only: Agent? = nil,
+        folder: (ActivityProcessID) -> String? = { _ in nil }
     ) -> PaneAgent? {
         for tag in tags {
             guard let slice = snapshot.pane(tag), slice.tab == tab, let identity = slice.agent, let kind = slice.agentKind,
+                only == nil || kind == only,
                 !ProcessInspector.running([identity], in: snapshot).isEmpty
             else { continue }
             let facts = snapshot.facts[identity]
@@ -45,7 +48,7 @@ struct PaneAgent: Equatable, Sendable {
     /// last built: a caller on the main actor flushes a rebuild waiting
     /// first (`ActivityMonitor.flushContext`).
     static func lookup(
-        _ tabs: [(id: UUID, tags: [String])], census: ActivitySampler = .app, folders: Bool,
+        _ tabs: [(id: UUID, tags: [String])], census: ActivitySampler = .app, only: Agent? = nil, folders: Bool,
         within: UInt64 = ProcessInspector.freshness
     ) -> [UUID: PaneAgent] {
         guard !tabs.isEmpty else { return [:] }
@@ -54,7 +57,7 @@ struct PaneAgent: Equatable, Sendable {
         else { return [:] }
         var found: [UUID: PaneAgent] = [:]
         for tab in tabs {
-            found[tab.id] = first(tab.tags, tab: tab.id, in: snapshot) { identity in
+            found[tab.id] = first(tab.tags, tab: tab.id, in: snapshot, only: only) { identity in
                 guard folders, case .path(let path)? = census.folders.folder(waitingFor: identity, now: census.kernel.uptime()) else { return nil }
                 return path
             }
