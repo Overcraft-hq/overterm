@@ -290,9 +290,14 @@ private struct ProcessRow: View {
         }
         .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
         .frame(height: ChromeMetrics.row(20))
-        .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("tabInfo.process")
-        // Its argv masked as it was read (`ProcessNode.command`).
-        .help(node.command.isEmpty ? node.name : node.command)
+        .help(TabInfoView.help(for: node))
+    }
+}
+
+extension TabInfoView {
+    /// A row's tooltip: its command as it was masked when read (9.3) — a
+    /// password on a command line is never a hover away on a screen share.
+    nonisolated static func help(for node: ProcessNode) -> String {
+        node.maskedCommand.isEmpty ? node.name : node.maskedCommand
     }
 }

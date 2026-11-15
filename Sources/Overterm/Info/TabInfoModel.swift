@@ -102,10 +102,9 @@ final class TabInfoModel: ObservableObject {
         let roots = tab.terminals.map { (SurfaceProcesses.shared.loginPID(of: $0), $0.processTag) }
         let inspector = self.inspector
         // Scanning every process takes a few ms: off the main thread, on GCD.
-        // Its commands masked: a row's tooltip shows them.
         let tree = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(returning: roots.flatMap { inspector.tree(root: $0.0, tag: $0.1, commands: true) })
+                continuation.resume(returning: roots.flatMap { inspector.tree(root: $0.0, tag: $0.1) })
             }
         }
         processes = tree
@@ -137,14 +136,11 @@ final class TabInfoModel: ObservableObject {
     /// Where Claude Code runs in this tab: a running `claude`'s directory,
     /// else — for a Claude tab — the tab's.
     var claudeDirectory: String? {
-        if let cwd = Self.runningClaude(in: processes)?.workingDirectory { return cwd }
+        let running = processes.flatMap(\.flattened).first { node in
+            node.name == "claude" || (node.maskedCommand.split(separator: " ").first.map { $0 == "claude" || $0.hasSuffix("/claude") } ?? false)
+        }
+        if let cwd = running?.workingDirectory { return cwd }
         return tab.agent == .claude ? (tab.workingDirectory ?? tab.terminal.workingDirectory) : nil
-    }
-
-    /// A Claude Code process in the tree, by name or argv[0] as the agent
-    /// overview finds one (`argvAgent`: `command` is masked).
-    nonisolated static func runningClaude(in processes: [ProcessNode]) -> ProcessNode? {
-        processes.flatMap(\.flattened).first { AgentOverviewModel.agent(of: $0) == .claude }
     }
 
     func refreshClaude() async {

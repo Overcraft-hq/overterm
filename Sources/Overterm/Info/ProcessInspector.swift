@@ -10,11 +10,18 @@ struct ProcessNode: Identifiable, Equatable {
     let identity: ActivityProcessID
     let parent: pid_t
     let name: String
-    /// argv, space-joined.
-    let command: String
+    /// argv as every screen sees it, masked as it was read (9.3,
+    /// `ActivityText.command`): secret flags, `KEY=value`, the passwords
+    /// programs take in places of their own, URLs' passwords, tokens. The
+    /// raw words are never kept: a tooltip over a screen share showed them.
+    let maskedCommand: String
     /// Share of one core over the last sampling interval (100 = one full core).
     var cpuPercent: Double
-    /// Resident memory in bytes.
+    /// What Activity Monitor calls Memory: the footprint
+    /// (`ri_phys_footprint`), what the process costs the Mac — compressed
+    /// and swapped pages counted, shared ones not.
+    var footprint: UInt64 = 0
+    /// Real memory, resident in RAM (RSS).
     let memory: UInt64
     /// Where it runs.
     let workingDirectory: String?
@@ -27,6 +34,7 @@ struct ProcessNode: Identifiable, Equatable {
 
     var totalCPU: Double { cpuPercent + children.reduce(0) { $0 + $1.totalCPU } }
     var totalMemory: UInt64 { memory + children.reduce(0) { $0 + $1.totalMemory } }
+    var totalFootprint: UInt64 { footprint + children.reduce(0) { $0 + $1.totalFootprint } }
 
     /// This node and every descendant, depth-first.
     var flattened: [ProcessNode] { [self] + children.flatMap(\.flattened) }
@@ -95,10 +103,12 @@ final class ProcessInspector: @unchecked Sendable {
         }
 
         var nodes: [pid_t: ProcessNode] = [:]
+        let kernel = LiveActivityKernel()
         for pid in members {
             guard let bsd = infos[pid] else { continue }
-            let task = Self.taskInfo(pid)
-            let cpuNS = task.map { Self.nanoseconds($0.pti_total_user + $0.pti_total_system) } ?? 0
+            // The task's times, its footprint and its real memory, read together.
+            let usage = kernel.usage(of: pid)
+            let cpuNS = usage?.cpuTime ?? 0
             var percent = 0.0
             if let last = lastCPU[pid], now > last.at, cpuNS >= last.ns {
                 percent = Double(cpuNS - last.ns) / Double(now - last.at) * 100
@@ -107,8 +117,8 @@ final class ProcessInspector: @unchecked Sendable {
             let start = UInt64(bsd.pbi_start_tvsec) * 1_000_000 + UInt64(bsd.pbi_start_tvusec)
             nodes[pid] = ProcessNode(
                 identity: ActivityProcessID(pid: pid, start: start), parent: pid_t(bsd.pbi_ppid), name: Self.name(pid, fallback: bsd),
-                command: Self.arguments(of: pid).joined(separator: " "),
-                cpuPercent: percent, memory: task?.pti_resident_size ?? 0, workingDirectory: Self.workingDirectory(of: pid))
+                maskedCommand: ActivityText.command(Self.arguments(of: pid)), cpuPercent: percent, footprint: usage?.footprint ?? 0,
+                memory: usage?.residentSize ?? 0, workingDirectory: Self.workingDirectory(of: pid))
         }
         // Forget processes that are gone (pids get reused).
         tags = tags.filter { infos[$0.key] != nil }

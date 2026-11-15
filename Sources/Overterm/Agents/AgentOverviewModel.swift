@@ -71,9 +71,9 @@ final class AgentOverviewModel: ObservableObject {
             claude: claude, panes: snapshot.panes)
     }
 
-    /// By process name or argv[0] (`argvAgent`: `command` is masked).
     nonisolated static func agent(of node: ProcessNode) -> Agent? {
-        for agent in Agent.allCases where node.name == agent.rawValue || node.argvAgent == agent { return agent }
+        let base = node.maskedCommand.split(separator: " ").first.map { (String($0) as NSString).lastPathComponent }
+        for agent in Agent.allCases where node.name == agent.rawValue || base == agent.rawValue { return agent }
         return nil
     }
 

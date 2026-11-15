@@ -4,7 +4,7 @@ import XCTest
 
 final class TabSuspensionTests: XCTestCase {
     private func node(_ pid: pid_t, _ parent: pid_t, _ children: [ProcessNode] = []) -> ProcessNode {
-        ProcessNode(identity: ActivityProcessID(pid: pid, start: UInt64(pid)), parent: parent, name: "p\(pid)", command: "", cpuPercent: 0, memory: 0, workingDirectory: nil, children: children)
+        ProcessNode(identity: ActivityProcessID(pid: pid, start: UInt64(pid)), parent: parent, name: "p\(pid)", maskedCommand: "", cpuPercent: 0, memory: 0, workingDirectory: nil, children: children)
     }
 
     /// The shell before what it runs: stopped the other way round, it

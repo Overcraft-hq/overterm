@@ -231,7 +231,7 @@ final class CheckoutSourceTests: XCTestCase {
 
     func testAgentProcessesAreRecognized() {
         func node(_ name: String, _ command: String) -> ProcessNode {
-            ProcessNode(identity: ActivityProcessID(pid: 1, start: 1), parent: 0, name: name, command: command, cpuPercent: 0, memory: 0, workingDirectory: nil)
+            ProcessNode(identity: ActivityProcessID(pid: 1, start: 1), parent: 0, name: name, maskedCommand: command, cpuPercent: 0, memory: 0, workingDirectory: nil)
         }
         XCTAssertTrue(TerminalWindowController.isAgent(node("claude", "claude --continue")))
         XCTAssertTrue(TerminalWindowController.isAgent(node("node", "/Users/b/.local/bin/codex resume --last")))

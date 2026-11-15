@@ -9,12 +9,11 @@ final class SessionsModel: ObservableObject {
     @Published private(set) var running: [String: Tab.ID] = [:]
     @Published private(set) var loading = false
 
-    /// A tab's Claude process: where it runs and the session it resumed.
+    /// A tab's Claude process: where it runs and how it was started.
     struct RunningClaude: Sendable {
         let tab: Tab.ID
         let directory: String
-        /// The id its `--resume` or `-r` names (`ProcessNode.resumes`).
-        let resumes: String?
+        let command: String
     }
 
     func refresh(directories: [String], tabs: [Tab], inspector: ProcessInspector) async {
@@ -28,7 +27,7 @@ final class SessionsModel: ObservableObject {
                         if let node = inspector.tree(root: root, tag: tag).flatMap(\.flattened).first(where: {
                             AgentOverviewModel.agent(of: $0) == .claude
                         }), let directory = node.workingDirectory {
-                            return RunningClaude(tab: tab, directory: directory, resumes: node.resumes)
+                            return RunningClaude(tab: tab, directory: directory, command: node.maskedCommand)
                         }
                     }
                     return nil
@@ -45,8 +44,11 @@ final class SessionsModel: ObservableObject {
     nonisolated static func running(_ sessions: [ClaudeSession], _ claudes: [RunningClaude]) -> [String: Tab.ID] {
         var result: [String: Tab.ID] = [:]
         for claude in claudes {
-            if let id = claude.resumes, sessions.contains(where: { $0.id == id }) {
-                result[id] = claude.tab
+            let words = claude.command.split(separator: " ").map(String.init)
+            if let flag = words.firstIndex(where: { $0 == "--resume" || $0 == "-r" }), flag + 1 < words.count,
+                sessions.contains(where: { $0.id == words[flag + 1] })
+            {
+                result[words[flag + 1]] = claude.tab
                 continue
             }
             let directory = URL(fileURLWithPath: claude.directory).standardizedFileURL.path

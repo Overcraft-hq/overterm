@@ -58,7 +58,7 @@ final class ProcessInspectorTests: XCTestCase {
             found.forEach { kill($0.pid, SIGTERM) }
             [mine, other].forEach { $0.terminate() }
         }
-        XCTAssertTrue(found.contains { $0.command.contains("time.sleep(20)") }, found.map(\.command).joined(separator: " | "))
+        XCTAssertTrue(found.contains { $0.maskedCommand.contains("time.sleep(20)") }, found.map(\.maskedCommand).joined(separator: " | "))
         XCTAssertFalse(found.contains { $0.pid == other.processIdentifier }, "untagged processes are not the tab's")
         XCTAssertGreaterThan(found.first?.totalMemory ?? 0, 0)
     }
@@ -93,7 +93,7 @@ final class ProcessInspectorTests: XCTestCase {
 
     func testAssembleNestsChildren() {
         func node(_ pid: pid_t, _ parent: pid_t) -> ProcessNode {
-            ProcessNode(identity: ActivityProcessID(pid: pid, start: UInt64(pid)), parent: parent, name: "p\(pid)", command: "", cpuPercent: 1, memory: 10, workingDirectory: nil)
+            ProcessNode(identity: ActivityProcessID(pid: pid, start: UInt64(pid)), parent: parent, name: "p\(pid)", maskedCommand: "", cpuPercent: 1, memory: 10, workingDirectory: nil)
         }
         let roots = ProcessInspector.assemble([10: node(10, 1), 11: node(11, 10), 12: node(12, 11), 20: node(20, 99)])
         XCTAssertEqual(roots.map(\.pid), [10, 20])
@@ -110,7 +110,7 @@ final class ProcessInspectorTests: XCTestCase {
     func testAReusedPidInheritsNothing() {
         func node(_ pid: pid_t, start: UInt64, parent: pid_t) -> ProcessNode {
             ProcessNode(
-                identity: ActivityProcessID(pid: pid, start: start), parent: parent, name: "p\(pid)", command: "", cpuPercent: 0, memory: 0,
+                identity: ActivityProcessID(pid: pid, start: start), parent: parent, name: "p\(pid)", maskedCommand: "", cpuPercent: 0, memory: 0,
                 workingDirectory: nil)
         }
         let earlier = node(40, start: 100, parent: 1)
@@ -121,5 +121,34 @@ final class ProcessInspectorTests: XCTestCase {
         let roots = ProcessInspector.assemble([40: later, 41: node(41, start: 500, parent: 40), 42: node(42, start: 950, parent: 40)])
         XCTAssertEqual(roots.map(\.id), ["41:500", "40:900"], "the old holder's child is a root, oldest first")
         XCTAssertEqual(roots.first { $0.pid == 40 }?.children.map(\.id), ["42:950"])
+    }
+
+    /// A command is masked as it is read (2.4 item 8, 9.3): Tab Info's
+    /// tooltip showed the raw argv, a password on the command line among
+    /// it. A child of the test's carries an invented one in a secret flag;
+    /// its node and its tooltip say the flag, never the value, and the
+    /// rest of the line stays as it was. Its footprint, what Activity
+    /// Monitor calls Memory, is measured.
+    func testACommandIsMaskedAsItIsReadAndItsFootprintMeasured() throws {
+        // Invented, and made at run time: no token-shaped string in the source.
+        let planted = ["acme", "sentinel", String(4_242)].joined(separator: "-")
+        let child = try TestChild("/bin/sh", ["-c", "sleep 30; true", "acme-worker", "--password=\(planted)"], environment: TestChild.cleanEnvironment)
+        defer { child.stop() }
+        let inspector = ProcessInspector()
+        var node: ProcessNode?
+        XCTAssertTrue(
+            TestChild.eventually {
+                node = inspector.tree(root: getpid(), tag: nil).flatMap(\.flattened).first { $0.identity == child.identity }
+                return node?.maskedCommand.contains("acme-worker") == true
+            }, "the child is read")
+        let found = try XCTUnwrap(node)
+        XCTAssertTrue(found.maskedCommand.contains("--password=\(Secrets.credentialMask)"), "the flag is said, its value masked")
+        XCTAssertFalse(found.maskedCommand.contains(planted), "never the value")
+        XCTAssertTrue(found.maskedCommand.hasPrefix("/bin/sh -c sleep 30; true acme-worker"), "the rest as it was")
+        let help = TabInfoView.help(for: found)
+        XCTAssertFalse(help.contains(planted), "nor in the tooltip")
+        XCTAssertTrue(help.contains("acme-worker"))
+        XCTAssertGreaterThan(found.footprint, 0, "its footprint is measured")
+        XCTAssertGreaterThan(found.memory, 0, "and its real memory")
     }
 }

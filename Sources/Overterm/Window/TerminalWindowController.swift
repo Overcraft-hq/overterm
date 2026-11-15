@@ -1917,7 +1917,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// Claude Code or Codex, by process name or argv[0] (`Agent.of`, the
     /// census's rule too).
     nonisolated static func isAgent(_ node: ProcessNode) -> Bool {
-        Agent.of(name: node.name, command: node.command) != nil
+        Agent.of(name: node.name, command: node.maskedCommand) != nil
     }
 
     /// Pins the selected tab's sidebar and diff to `worktree`.

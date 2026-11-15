@@ -136,7 +136,7 @@ final class TerminalDropTests: XCTestCase {
 
     func testClaudeCountsWhenItHasTheTerminal() {
         func node(_ pid: pid_t, _ name: String, _ command: String, _ cwd: String? = nil) -> ProcessNode {
-            ProcessNode(identity: ActivityProcessID(pid: pid, start: UInt64(pid)), parent: 1, name: name, command: command, cpuPercent: 0, memory: 0, workingDirectory: cwd)
+            ProcessNode(identity: ActivityProcessID(pid: pid, start: UInt64(pid)), parent: 1, name: name, maskedCommand: command, cpuPercent: 0, memory: 0, workingDirectory: cwd)
         }
         let shell = node(10, "zsh", "-zsh")
         let claude = node(20, "claude.exe", "claude --continue", "/repo/.worktrees/feat")

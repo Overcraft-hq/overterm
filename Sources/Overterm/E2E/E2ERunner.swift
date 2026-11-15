@@ -3233,17 +3233,17 @@ final class E2ERunner {
         app.showInfo(for: first)
         check("the popover opens", await eventually(2) { self.app.infoPopover?.isShown == true })
         guard let model = app.infoModel else { return check("a model", false) }
-        let listed = await eventually { model.processes.flatMap(\.flattened).contains { $0.command.hasPrefix("sleep 61") } }
+        let listed = await eventually { model.processes.flatMap(\.flattened).contains { $0.maskedCommand.hasPrefix("sleep 61") } }
         let all = model.processes.flatMap(\.flattened)
         // Its own sleep's pid and start time, read while it is still its
         // shell's child: signalled at the end only while it is that process.
-        let sleeper = all.first { $0.command.hasPrefix("sleep 61") }.flatMap { node in
+        let sleeper = all.first { $0.maskedCommand.hasPrefix("sleep 61") }.flatMap { node in
             ProcessInspector.kinfo(node.pid).flatMap { $0.parent == node.parent ? (pid: node.pid, start: $0.start) : nil }
         }
         // Counts only: the tab runs what the user's shell config starts too.
         check("its background job is listed", listed, "\(all.count) processes, \(all.filter { $0.name == "sleep" }.count) sleeps")
-        check("under its shell", model.processes.contains { ["zsh", "bash", "fish", "sh"].contains($0.name) && $0.flattened.contains { $0.command.hasPrefix("sleep 61") } })
-        check("the other tab's job is not", !all.contains { $0.command.hasPrefix("sleep 62") })
+        check("under its shell", model.processes.contains { ["zsh", "bash", "fish", "sh"].contains($0.name) && $0.flattened.contains { $0.maskedCommand.hasPrefix("sleep 61") } })
+        check("the other tab's job is not", !all.contains { $0.maskedCommand.hasPrefix("sleep 62") })
         check("memory is measured", model.totalMemory > 0)
         check("the location is the tab's directory", await eventually { model.location?.directory == first.workingDirectory })
         if let port {
@@ -3821,7 +3821,7 @@ final class E2ERunner {
         app.showInfo(for: tab)
         if let model = app.infoModel {
             let both = await eventually(8) {
-                let commands = model.processes.flatMap(\.flattened).map(\.command)
+                let commands = model.processes.flatMap(\.flattened).map(\.maskedCommand)
                 return commands.contains { $0.hasPrefix("sleep 71") } && commands.contains { $0.hasPrefix("sleep 72") }
             }
             // A count: the panes run what the user's shell config starts too.
@@ -4343,8 +4343,8 @@ final class E2ERunner {
         app.newTab(in: worktree)
         guard let claudeTab = app.store.selected else { return check("a tab", false) }
         await run("bash \(script.path) &", timeout: 6) {
-            ProcessInspector().tree(root: SurfaceProcesses.shared.loginPID(of: claudeTab.terminal), tag: claudeTab.terminal.processTag, commands: true)
-                .flatMap(\.flattened).contains { $0.command.contains("--resume") }
+            ProcessInspector().tree(root: SurfaceProcesses.shared.loginPID(of: claudeTab.terminal), tag: claudeTab.terminal.processTag)
+                .flatMap(\.flattened).contains { $0.maskedCommand.contains("--resume") }
         }
         app.refreshSessions()
         check("the running one is known, by its --resume id", await eventually(5) { self.app.sessions.running[ids.feature] == claudeTab.id })
