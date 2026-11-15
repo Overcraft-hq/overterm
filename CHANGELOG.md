@@ -6,7 +6,7 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
-## 1.7.0 — 2026-11-14
+## 1.6.1 — 2026-11-14
 
 - Activity (⌥⌘A): every process and every open port on this Mac, by checkout, tab and agent
 - docker: a container that couldn't start names the tab whose server holds its port — any tab, not only one you had looked at since it started; Up on Free Ports also counts a port held on one of this Mac's own addresses (a LAN or VPN one) as taken
