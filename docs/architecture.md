@@ -836,7 +836,7 @@ Everything GitHub goes through the user's own `gh` (`Sources/Overterm/GitHub/`;
 Without a checkout only the terminal row is shown. Esc (or a click outside)
 ends the terminal search too; only choosing the terminal row keeps it.
 
-## Tab Info (⌘I, or Show Info… on a tab)
+## Tab Info (⌃⌘I, or Show Info… on a tab)
 
 A popover per tab, live while open (`TabInfoModel`, `Sources/Overterm/Info/`):
 
@@ -850,6 +850,55 @@ A popover per tab, live while open (`TabInfoModel`, `Sources/Overterm/Info/`):
 
 macOS hides the environment of Apple-signed binaries (zsh, sleep, git) from
 other processes, so the env tag alone can't find a shell — hence the tree.
+
+## Activity
+
+What runs and what listens, one census for the app (`Sources/Overterm/
+Activity/`; the design is docs/design/activity/analysis.md, what was
+built its Section 15). Stage 0 has no page of its own: Tab Info, the
+pane pills, the agent overview, Sessions, an MCP confirmation, a drop, a
+paste and Suspend Tab read it. Terraform's close guard doesn't yet: it
+walks the closing panes' trees itself, on the main thread, at the close
+(an exception CLAUDE.md names; Section 15 says why it is still open).
+
+- **The census.** `ActivitySampler` ticks on one serial queue,
+  `Overterm.activity` at `.userInitiated` (D-8, measured: at `.utility` a
+  light tick cost about a quarter more energy and a full tick the same,
+  the thread's CPU time the same at both): one
+  `KERN_PROC_ALL` (`ProcessTable`, parents by start time), then for the
+  processes a level wants their usage (`ProcessUsage`, `rusage_info_v6`,
+  rates by the measured interval), their argv masked as it is read and
+  their environment scanned in place for four names only
+  (`ProcessArguments`), their sockets (`SocketScan`, bounded a process).
+  Everything is keyed by identity, pid and start (`ActivityProcessID`), so
+  a reused pid is a new process. `ActivityMonitor` (main actor, one for the
+  app) takes readers' wants — a level, its tabs, a cadence — and ticks once
+  for all of them at the fastest; nothing wanted, no tick. A one-off
+  `census(within:)`, at most one every 2 s, serves a read at a moment:
+  a port's holder (`ListeningPorts`), Docker's "held in a tab"
+  (`tabHolding`) and a pill's Free…. The close sheets and agents' calls
+  (`forAgents()`, with no caller yet) come with the later stages.
+- **Which pane is whose.** `ActivityContext`, rebuilt on the main actor
+  when panes, tabs or pairings change: each pane's tag, tab, window, its
+  `login` (paired by `SurfaceProcesses` from the census's list of the
+  app's children) and its pty's device (`TerminalView.terminalDevice`,
+  `ghostty_surface_tty_name`'s `st_rdev`, read once the `login` is paired:
+  right after `ghostty_surface_new` the IO thread hasn't opened the pty
+  yet). A pane's members through its pty are the same as through its
+  paired `login`'s tree; a process that left its session (`setsid`) is
+  found by the tree, or by the tag.
+- **The light tick** (D-5): while a window is on screen it wants the light
+  level for its own tabs, every 2 s — the process table, those tabs' own
+  processes and their listeners — and gives each tab its ports and its
+  agent's folder (Live ports and links). It replaced the window's agent
+  poll and its lsof.
+- **Signals** go through `ProcessSignals` alone (CLAUDE.md): one process by
+  the identity it was listed with, its audit token taken first and the
+  identity checked through it, the structural refusals (not the user's
+  alone, launchd, Overterm and its helpers, pid ≤ 1) before any call;
+  what to send is `ActivitySignalCheck`'s. In an isolated run or a unit
+  test the gate (`ActivitySignalGate`) refuses anything the run didn't
+  register or its panes didn't start (docs/testing.md, Activity).
 
 ## Agents
 

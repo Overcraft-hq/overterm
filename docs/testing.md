@@ -555,8 +555,10 @@ value, a path or an address of a process that isn't the test's.
   refused — and every Free asked, the owners' own verbs too.
 
 **The isolated-run gate.** A unit test or an isolated run is guarded
-(`AppEnvironment.guardsSignals`): Activity changes only what the run
-registered as its own (`ActivitySignalGate.register`, a child's pid and
+(`AppEnvironment.guardsSignals`), over every change Overterm makes to a
+process it didn't spawn — every signal today, a priority and a quit when
+stage 2 brings their verbs, each through the same gate: Activity changes
+only what the run registered as its own (`ActivitySignalGate.register`, a child's pid and
 start read at spawn) and what runs under a `login` its own panes spawned.
 `ProcessSignals` refuses anything else before a token is taken, and the
 real kernel's sends refuse it again before their call, by the app's gate
@@ -568,14 +570,22 @@ isn't the test's — the runner's parent — is only ever asked about through
 children, so not even a broken gate could signal it.
 
 `ActivityProbeTests` is opt-in, run on each new macOS and on the oldest
-supported one: the structures' sizes, who answers each call and what it
-costs — `csops` against Security.framework's fallback among them — and
-the sampler's whole light and full ticks, cold and steady, and the light
+supported one (the support matrix of docs/design/activity/analysis.md,
+12): the structures' sizes, who answers each call and what it costs —
+`csops` against Security.framework's fallback among them — and the
+sampler's whole light and full ticks, cold and steady, and the light
 tick's cost a member over 8, 100 and 300 of its own children holding
 sockets; whether `proc_signal_with_audittoken` is there, and what a token
-and a whole send cost, a CONT to its own running child. It reads the
-whole table, read only, and prints counts, errnos and timings, never a
-name or an argv:
+and a whole send cost, a CONT to its own running child
+(`testTheSignalPath`, which answers the macOS 13 spike when run there);
+`testTheSupportMatrix` — `rusage_info_v6` and its energy for the user's
+processes, `csops`, the token call and the responsibility call (stage 1's
+grouping, D-31) present or not, and netstat's rows run by the probe and
+by an ad hoc-signed copy of `sh` against libproc's count of listeners,
+blind when the second is 0 (3.5); `testTheTicksEnergyAtEachQoS` — this
+process's `ri_energy_nj` a light and a full tick costs at `.userInitiated`
+and at `.utility` (D-8). It reads the whole table, read only, and prints
+counts, errnos and timings, never a name or an argv:
 
 ```
 OVERTERM_ACTIVITY_PROBES=1 swift test --filter ActivityProbeTests
