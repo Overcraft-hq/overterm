@@ -130,4 +130,41 @@ final class PaneAgentTests: XCTestCase {
         XCTAssertEqual(claudes.first?.command, "claude --resume acme-session")
         XCTAssertEqual(PaneAgent.lookup(tabs, census: sampler, folders: false)[tab]?.kind, .codex, "the first agent, of any kind")
     }
+
+    /// An MCP confirmation from an agent typed into a plain tab names it
+    /// from the census: its pane's slice, read off the main thread — the
+    /// table read on a GCD thread, never the main one — and once fresh,
+    /// from that snapshot with nothing read again. No environment is read
+    /// for it beyond the markers the census reads once per process.
+    @MainActor
+    func testAnMCPConfirmationNamesItsAgentFromTheCensusOffMain() async throws {
+        let panes = [pane("pane-a1", login: 1100, tab: tab), pane("pane-b1", login: 1300, tab: other)]
+        add(1102, parent: 1101, name: "codex")
+        let sampler = census(panes)
+        let onMain = ThreadRecord()
+        kernel.onCall { call in if call == "processes" { onMain.add(Thread.isMainThread) } }
+        let named = await MCPAsker.agent(tab: tab, pane: "pane-a1", census: sampler)
+        XCTAssertEqual(named, "Codex")
+        XCTAssertFalse(onMain.values.isEmpty, "the table was read for it")
+        XCTAssertFalse(onMain.values.contains(true), "never on the main thread")
+        let tables = kernel.count("processes")
+        let arguments = kernel.count("arguments")
+        let again = await MCPAsker.agent(tab: tab, pane: "pane-a1", census: sampler)
+        XCTAssertEqual(again, "Codex")
+        XCTAssertEqual(kernel.count("processes"), tables, "the fresh snapshot answered")
+        XCTAssertEqual(kernel.count("arguments"), arguments, "no argv or environment read again")
+        let none = await MCPAsker.agent(tab: other, pane: "pane-b1", census: sampler)
+        XCTAssertNil(none, "a shell: no agent")
+        let elsewhere = await MCPAsker.agent(tab: other, pane: "pane-a1", census: sampler)
+        XCTAssertNil(elsewhere, "the pane isn't that tab's")
+        kernel.onCall(nil)
+    }
+}
+
+/// Values recorded from any thread.
+private final class ThreadRecord: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [Bool] = []
+    func add(_ value: Bool) { lock.withLock { recorded.append(value) } }
+    var values: [Bool] { lock.withLock { recorded } }
 }
