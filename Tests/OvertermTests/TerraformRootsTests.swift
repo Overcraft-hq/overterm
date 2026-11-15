@@ -487,15 +487,72 @@ final class TerraformPaneWarningTests: XCTestCase {
         XCTAssertTrue(inherited.label.hasPrefix("⛰ probably envs/dev"))
     }
 
-    /// Only the names the header shows are kept from a process's environment.
+    /// Only the names the header shows are read from a process's
+    /// environment; an empty one is none.
     func testOnlyTheNamesAreRead() {
-        let names = TerraformProcess.environmentNames([
-            "TF_WORKSPACE": "acme-ws", "AWS_PROFILE": "acme-dev", "AWS_SECRET_ACCESS_KEY": "acme-hunter2-SECRET", "TF_DATA_DIR": "",
-        ])
+        XCTAssertEqual(TerraformProcess.environmentNames.map(\.rawValue), ["TF_WORKSPACE", "TF_DATA_DIR", "AWS_PROFILE"])
+        let names = TerraformProcess.environment(["acme-ws", "", "acme-dev"])
         XCTAssertEqual(names.workspace, "acme-ws")
         XCTAssertEqual(names.profile, "acme-dev")
         XCTAssertNil(names.dataDir)
-        XCTAssertFalse(String(reflecting: names).contains("acme-hunter2-SECRET"))
+        XCTAssertNil(TerraformProcess.environment([]).workspace, "none read")
+    }
+
+    /// `inspect` reads a terraform from one read of its area, in place
+    /// (docs/design/activity/analysis.md, 2.4 item 9): the command line
+    /// parsed inside the read and the three names alone of its environment
+    /// — an AWS key, a pane's MCP token, another value naming one of the
+    /// three — never in what it gives back. Its folder and start from the
+    /// kernel too.
+    func testInspectReadsItsThreeNamesInPlace() throws {
+        let kernel = FakeActivityKernel(uid: 501)
+        var process = FakeActivityKernel.Process(
+            record: FakeActivityKernel.record(pid: 4242, start: 1_700_000_000_000_000, parent: 1, name: "terraform"))
+        process.name = "terraform"
+        process.folder = "/work/acme-infra/envs/prod"
+        let sentinels = ["SENTINEL-AWS-2b71", "SENTINEL-MCP-90ce", "SENTINEL-VAR-5d1a", "SENTINEL-NOTE-e4f0"]
+        process.arguments = FakeActivityKernel.arguments(
+            executable: "/opt/acme/bin/terraform",
+            ["terraform", "-chdir=envs/prod", "apply", "-var-file=prod.tfvars", "-var", "db_password=SENTINEL-VAR-5d1a"],
+            environment: [
+                "AWS_SECRET_ACCESS_KEY=SENTINEL-AWS-2b71", "OVERTERM_MCP_TOKEN=SENTINEL-MCP-90ce", "ACME_NOTE=TF_DATA_DIR=SENTINEL-NOTE-e4f0",
+                "TF_WORKSPACE=acme-prod", "AWS_PROFILE=acme-admin",
+            ])
+        kernel.add(process)
+        let found = try XCTUnwrap(TerraformProcesses.inspect(4242, name: "terraform", children: [], kernel: kernel))
+        XCTAssertEqual(found.line.operation, "apply")
+        XCTAssertEqual(found.line.chdir, "envs/prod")
+        XCTAssertEqual(found.line.varFiles, ["prod.tfvars"])
+        XCTAssertEqual(found.workspaceVariable, "acme-prod")
+        XCTAssertNil(found.dataDirVariable, "a value naming it is no entry of it")
+        XCTAssertEqual(found.awsProfile, "acme-admin")
+        XCTAssertEqual(found.cwd, "/work/acme-infra/envs/prod")
+        XCTAssertEqual(found.started, 1_700_000_000_000_000)
+        let text = String(reflecting: found)
+        for sentinel in sentinels { XCTAssertFalse(text.contains(sentinel), "a secret in what inspect gives back") }
+        XCTAssertNil(TerraformProcesses.inspect(4242, name: "node", children: [], kernel: kernel), "not a terraform: not read")
+    }
+
+    /// The same read of a real child of the test's: a script named
+    /// terraform that sh runs, as the recording wrapper is — its command
+    /// line parsed from the kernel's bytes, its start the kernel's.
+    func testInspectReadsARealChildsCommandLine() throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("acme-tf-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let script = folder.appendingPathComponent("terraform")
+        try "sleep 30\n".write(to: script, atomically: true, encoding: .utf8)
+        let child = try TestChild("/bin/sh", [script.path, "plan", "-var-file=acme.tfvars"], environment: TestChild.cleanEnvironment)
+        defer { child.stop() }
+        var found: TerraformProcess?
+        XCTAssertTrue(
+            TestChild.eventually {
+                found = TerraformProcesses.inspect(child.pid, name: "sh", children: []); return found != nil
+            })
+        XCTAssertEqual(found?.line.tool, "terraform")
+        XCTAssertEqual(found?.line.operation, "plan")
+        XCTAssertEqual(found?.line.varFiles, ["acme.tfvars"])
+        XCTAssertEqual(found?.started, child.identity.start)
     }
 
     /// terraform changes its own folder to `-chdir`'s: a running one's cwd is the root already.

@@ -397,6 +397,8 @@ value, a path or an address of a process that isn't the test's.
 - `ProcessArgumentsTests`: argv masked at the read and cut at 64 KB, the
   environment scanned in place for four names only — a sentinel planted
   in a python child's environment never in any string the read makes —,
+  a reader's own names alone (Terraform's three, a closed set no
+  secret's name is in), argv's words handed to it inside the read,
   the region cleared, a `CS_RESTRICT` child's environment hidden; a full
   region never parsed (an area an `exec` grew read again, one past
   `kern.argmax` refused); a title written over argv read alone, a

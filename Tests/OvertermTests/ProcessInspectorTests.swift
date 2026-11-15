@@ -78,19 +78,6 @@ final class ProcessInspectorTests: XCTestCase {
         XCTAssertGreaterThan(cpu, 10, "a busy loop's CPU shows between two samples")
     }
 
-    func testParseProcArgs() {
-        var bytes: [UInt8] = []
-        var argc = Int32(2)
-        withUnsafeBytes(of: &argc) { bytes += $0 }
-        for part in ["/bin/zsh", "", "", "-zsh", "-l", "HOME=/Users/b", "OVERTERM_TAB_ID=abc", "", "ptr_munge="] {
-            bytes += Array(part.utf8) + [0]
-        }
-        let parsed = ProcessInspector.parseProcArgs(bytes)
-        XCTAssertEqual(parsed?.arguments, ["-zsh", "-l"])
-        XCTAssertEqual(parsed?.environment["OVERTERM_TAB_ID"], "abc")
-        XCTAssertNil(parsed?.environment["ptr_munge"], "apple strings after the environment are not env")
-    }
-
     func testAssembleNestsChildren() {
         func node(_ pid: pid_t, _ parent: pid_t) -> ProcessNode {
             ProcessNode(identity: ActivityProcessID(pid: pid, start: UInt64(pid)), parent: parent, name: "p\(pid)", maskedCommand: "", cpuPercent: 1, memory: 10, workingDirectory: nil)

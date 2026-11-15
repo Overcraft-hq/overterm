@@ -86,11 +86,14 @@ final class ProcessInspector: @unchecked Sendable {
                 if members.insert(pid).inserted { stack += children[pid] ?? [] }
             }
         }
+        let kernel = LiveActivityKernel()
         if let tag {
             for (pid, bsd) in infos where bsd.pbi_uid == uid && !members.contains(pid) {
                 let start = UInt64(bsd.pbi_start_tvsec) * 1_000_000 + UInt64(bsd.pbi_start_tvusec)
                 if tags[pid]?.start != start {
-                    tags[pid] = (start, Self.environment(of: pid)?[Self.tagVariable])
+                    // The four markers alone, scanned in place (9.2): no
+                    // other entry of the environment becomes a String.
+                    tags[pid] = (start, ProcessArguments.markers(pid, kernel: kernel, codeSigning: nil)?.tab)
                 }
                 if tags[pid]?.tag == tag {
                     // It and everything under it.
@@ -103,7 +106,6 @@ final class ProcessInspector: @unchecked Sendable {
         }
 
         var nodes: [pid_t: ProcessNode] = [:]
-        let kernel = LiveActivityKernel()
         for pid in members {
             guard let bsd = infos[pid] else { continue }
             // The task's times, its footprint and its real memory, read together.
@@ -117,7 +119,10 @@ final class ProcessInspector: @unchecked Sendable {
             let start = UInt64(bsd.pbi_start_tvsec) * 1_000_000 + UInt64(bsd.pbi_start_tvusec)
             nodes[pid] = ProcessNode(
                 identity: ActivityProcessID(pid: pid, start: start), parent: pid_t(bsd.pbi_ppid), name: Self.name(pid, fallback: bsd),
-                maskedCommand: ActivityText.command(Self.arguments(of: pid)), cpuPercent: percent, footprint: usage?.footprint ?? 0,
+                // argv masked inside the read (ProcessArguments): the raw
+                // words never leave it.
+                maskedCommand: ProcessArguments.read(pid, kernel: kernel, markers: false, codeSigning: nil)?.command ?? "", cpuPercent: percent,
+                footprint: usage?.footprint ?? 0,
                 memory: usage?.residentSize ?? 0, workingDirectory: Self.workingDirectory(of: pid))
         }
         // Forget processes that are gone (pids get reused).
@@ -238,44 +243,4 @@ final class ProcessInspector: @unchecked Sendable {
     static func nanoseconds(_ ticks: UInt64) -> UInt64 {
         ticks * UInt64(timebase.numer) / UInt64(max(timebase.denom, 1))
     }
-
-    /// KERN_PROCARGS2: argc, the exec path, padding, argv[argc], then the
-    /// environment, each NUL-terminated.
-    static func procArgs(_ pid: pid_t) -> (arguments: [String], environment: [String: String])? {
-        var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, pid]
-        var size = 0
-        guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > MemoryLayout<Int32>.size else { return nil }
-        var buffer = [UInt8](repeating: 0, count: size)
-        guard sysctl(&mib, 3, &buffer, &size, nil, 0) == 0 else { return nil }
-        return parseProcArgs(Array(buffer.prefix(size)))
-    }
-
-    static func parseProcArgs(_ bytes: [UInt8]) -> (arguments: [String], environment: [String: String])? {
-        guard bytes.count > 4 else { return nil }
-        let argc = Int(bytes.withUnsafeBytes { $0.load(as: Int32.self) })
-        var i = 4
-        // Exec path, then NUL padding.
-        while i < bytes.count, bytes[i] != 0 { i += 1 }
-        while i < bytes.count, bytes[i] == 0 { i += 1 }
-        var strings: [String] = []
-        var start = i
-        while i < bytes.count {
-            if bytes[i] == 0 {
-                if i > start { strings.append(String(decoding: bytes[start..<i], as: UTF8.self)) }
-                if i == start, strings.count >= argc { break }  // the empty string ending the environment
-                start = i + 1
-            }
-            i += 1
-        }
-        let arguments = Array(strings.prefix(argc))
-        var environment: [String: String] = [:]
-        for entry in strings.dropFirst(argc) {
-            guard let eq = entry.firstIndex(of: "=") else { continue }
-            environment[String(entry[..<eq])] = String(entry[entry.index(after: eq)...])
-        }
-        return (arguments, environment)
-    }
-
-    static func environment(of pid: pid_t) -> [String: String]? { procArgs(pid)?.environment }
-    static func arguments(of pid: pid_t) -> [String] { procArgs(pid)?.arguments ?? [] }
 }

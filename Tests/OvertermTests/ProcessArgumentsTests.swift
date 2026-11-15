@@ -207,6 +207,58 @@ final class ProcessArgumentsTests: XCTestCase {
         XCTAssertNotNil(ProcessArguments.read(4242, kernel: kernel, markers: true, codeSigning: restricted)?.command, "argv is still read")
     }
 
+    /// A reader's own names (Terraform's header: `TF_WORKSPACE`,
+    /// `TF_DATA_DIR`, `AWS_PROFILE`), read as the markers are: argv's words
+    /// handed in inside the read, as the kernel gave them, and of the
+    /// environment only those names' values — at an entry's start,
+    /// exactly, not in argv, not in another value, not a longer name —
+    /// nothing else in what comes back; a `CS_RESTRICT` target's
+    /// environment unscanned, its argv still read.
+    func testAReadersOwnNamesAloneAreRead() throws {
+        let kernel = FakeActivityKernel()
+        var process = FakeActivityKernel.Process(record: FakeActivityKernel.record(pid: 4242, start: 1, parent: 1))
+        process.arguments = FakeActivityKernel.arguments(
+            executable: "/opt/acme/bin/terraform", ["terraform", "plan", "TF_WORKSPACE=in-an-argv-word", "--token=SENTINEL-ARGV-c3e1"],
+            environment: [
+                "AWS_SECRET_ACCESS_KEY=SENTINEL-AWS-9f2c", "OVERTERM_MCP_TOKEN=SENTINEL-MCP-41ab", "ACME_NOTE=AWS_PROFILE=SENTINEL-NOTE-5b6a",
+                "TF_WORKSPACEX=not-it", "TF_WORKSPACE=acme-staging", "AWS_PROFILE=acme-dev", "OVERTERM_SSH_SECRET=SENTINEL-SSH-77d0",
+            ])
+        kernel.add(process)
+        let names: [ProcessArguments.ReaderName] = [.terraformWorkspace, .terraformDataFolder, .awsProfile]
+        var seen: [String] = []
+        let values = try XCTUnwrap(
+            ProcessArguments.facts(of: 4242, kernel: kernel, names: names, codeSigning: nil) { words, values in
+                seen = words.map { $0.contains("SENTINEL-ARGV") ? "the token" : $0 }
+                return values
+            })
+        XCTAssertEqual(seen, ["terraform", "plan", "TF_WORKSPACE=in-an-argv-word", "the token"], "argv's words as given, inside the read")
+        XCTAssertEqual(values, ["acme-staging", nil, "acme-dev"])
+        for string in strings(in: values) {
+            for secret in secrets { XCTAssertFalse(string.contains(secret), "a secret in the read's \(string.count)-character string") }
+        }
+        let restricted = ActivityCodeSigning(flags: ActivityCodeSigning.restrict | ActivityCodeSigning.platformBinary)
+        let hidden = ProcessArguments.facts(of: 4242, kernel: kernel, names: names, codeSigning: restricted) { words, values in (words.count, values) }
+        XCTAssertEqual(hidden?.0, 4, "its argv is read")
+        XCTAssertEqual(hidden?.1, [nil, nil, nil], "the kernel hides its environment: not scanned")
+        XCTAssertNil(ProcessArguments.facts(of: 9999, kernel: kernel, names: names, codeSigning: nil) { _, values in values }, "gone")
+    }
+
+    /// A reader's names are a closed set (9.2): what it may ask for is in
+    /// the type, not left to each caller. None of them is a secret's — not
+    /// `Secrets.isSecret`, no `OVERTERM_` name (a pane's MCP token, the
+    /// tunnel's password) — and a secret's name, or a marker's, is no name
+    /// a reader can ask for: there is no way to spell the read.
+    func testAReaderCanAskForNoSecret() {
+        XCTAssertEqual(ProcessArguments.ReaderName.allCases.map(\.rawValue), ["TF_WORKSPACE", "TF_DATA_DIR", "AWS_PROFILE"])
+        for name in ProcessArguments.ReaderName.allCases {
+            XCTAssertFalse(Secrets.isSecret(name.rawValue), "\(name.rawValue) reads as a secret's name")
+            XCTAssertFalse(name.rawValue.hasPrefix("OVERTERM_"), "\(name.rawValue) is one of Overterm's")
+        }
+        for refused in ["AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN", "OVERTERM_MCP_TOKEN", "OVERTERM_SSH_SECRET", "OVERTERM_TAB_ID", "GITHUB_TOKEN"] {
+            XCTAssertNil(ProcessArguments.ReaderName(rawValue: refused), "\(refused) can be asked for")
+        }
+    }
+
     /// The markers alone (7.3), what the light level reads of a process no
     /// tree places: argv walked past, never a word of it made — nothing
     /// masked, no string of it at all — the environment found past a

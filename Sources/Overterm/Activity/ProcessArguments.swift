@@ -107,6 +107,13 @@ struct ProcessArguments: Hashable, Sendable {
     }
 
     private static func read(_ pid: pid_t, kernel: some ActivityKernel, markers scan: Bool, words: Bool) -> ProcessArguments? {
+        read(pid, kernel: kernel) { parse($0, markers: scan, words: words) }
+    }
+
+    /// `body` over `pid`'s whole area, read into a region of its own that
+    /// is cleared before this returns; nil when the kernel refuses (another
+    /// user's: EINVAL) or it is gone, or the area can't be read whole.
+    private static func read<T>(_ pid: pid_t, kernel: some ActivityKernel, _ body: (UnsafeRawBufferPointer) -> T?) -> T? {
         guard let length = kernel.argumentsLength(of: pid), length > 0 else { return nil }
         // A region the kernel filled was too small: read once more, at the
         // most it gives (an exec between the calls changed the area).
@@ -114,8 +121,8 @@ struct ProcessArguments: Hashable, Sendable {
         for size in first < argumentMaximum ? [first, argumentMaximum] : [first] {
             let region = UnsafeMutableRawBufferPointer.allocate(byteCount: size, alignment: 8)
             defer { region.deallocate() }
-            switch read(pid, kernel: kernel, markers: scan, words: words, filling: region) {
-            case .whole(let arguments): return arguments
+            switch read(pid, kernel: kernel, filling: region, body) {
+            case .whole(let found): return found
             case .full: continue
             case .refused: return nil
             }
@@ -128,28 +135,73 @@ struct ProcessArguments: Hashable, Sendable {
     /// full — the kernel fills a region too small for the area with the
     /// area's tail, or zeros, and says nothing.
     static func read(_ pid: pid_t, kernel: some ActivityKernel, markers: Bool, in region: UnsafeMutableRawBufferPointer) -> ProcessArguments? {
-        guard case .whole(let arguments) = read(pid, kernel: kernel, markers: markers, words: true, filling: region) else { return nil }
+        guard case .whole(let arguments) = read(pid, kernel: kernel, filling: region, { parse($0, markers: markers) }) else { return nil }
         return arguments
     }
 
     /// What one read into a region gave.
-    private enum RegionRead {
+    private enum RegionRead<T> {
         /// Less than the region holds: the whole area, parsed — nil when
         /// it isn't `KERN_PROCARGS2`'s layout.
-        case whole(ProcessArguments?)
+        case whole(T?)
         /// The region came back full: whatever it holds isn't the area's head.
         case full
         /// Refused, or gone.
         case refused
     }
 
-    private static func read(
-        _ pid: pid_t, kernel: some ActivityKernel, markers: Bool, words: Bool, filling region: UnsafeMutableRawBufferPointer
-    ) -> RegionRead {
+    private static func read<T>(
+        _ pid: pid_t, kernel: some ActivityKernel, filling region: UnsafeMutableRawBufferPointer, _ body: (UnsafeRawBufferPointer) -> T?
+    ) -> RegionRead<T> {
         defer { clear(region) }
         guard let written = kernel.readArguments(of: pid, into: region), written > 0 else { return .refused }
         guard written < region.count else { return .full }
-        return .whole(parse(UnsafeRawBufferPointer(rebasing: region.prefix(written)), markers: markers, words: words))
+        return .whole(body(UnsafeRawBufferPointer(rebasing: region.prefix(written))))
+    }
+
+    // MARK: A reader's own names
+
+    /// The names a reader may ask of an environment besides the markers
+    /// (9.2, 7.8): Terraform's header's three — the workspace a run
+    /// selects, its data folder, its AWS profile —, none a secret. A closed
+    /// set, so 9.2's promise is the type's, as `ProcessMarkers` keeps the
+    /// markers', and not each caller's: a name not here can't be asked for,
+    /// and no later reader turns an AWS key or a pane's MCP token into a
+    /// `String` by naming it. A new name is a case here, which
+    /// `ProcessArgumentsTests` holds to 9.2's rule: not `Secrets.isSecret`,
+    /// no `OVERTERM_` name.
+    enum ReaderName: String, CaseIterable, Sendable {
+        case terraformWorkspace = "TF_WORKSPACE"
+        case terraformDataFolder = "TF_DATA_DIR"
+        case awsProfile = "AWS_PROFILE"
+    }
+
+    /// What a reader of one of the user's processes takes from one read of
+    /// its area (9.2, 9.3) — Terraform's header, its three names: argv's
+    /// words as the kernel gave them, handed to `facts` inside the read and
+    /// dropped with the region, so only what `facts` makes of them is kept
+    /// (a parsed command line, never the words); and the values of `names`
+    /// in its environment, in `names`' order, matched exactly at entry
+    /// starts as the markers are — no other entry ever becomes a `String`,
+    /// and a value longer than `valueLimit` is none. A `CS_RESTRICT`
+    /// target's environment is the kernel's to hide (`codeSigning`): its
+    /// values nil, unscanned; unknown flags are scanned. Nil when refused or
+    /// gone, or the area can't be read whole.
+    static func facts<Facts>(
+        of pid: pid_t, kernel: some ActivityKernel, names: [ReaderName], codeSigning: ActivityCodeSigning?, valueLimit: Int = 1_024,
+        _ facts: ([String], [String?]) -> Facts
+    ) -> Facts? {
+        let scan = codeSigning?.isRestricted != true
+        let names = names.map(\.rawValue)
+        return read(pid, kernel: kernel) { bytes -> Facts? in
+            guard let layout = layout(of: bytes) else { return nil }
+            var words: [String] = []
+            for range in layout.words { words.append(String(decoding: UnsafeRawBufferPointer(rebasing: bytes[range]), as: UTF8.self)) }
+            let values = scan ? self.scan(bytes, from: layout.environment, names: names, valueLimit: valueLimit) : names.map { _ in nil }
+            let made = facts(words, values)
+            words.removeAll()
+            return made
+        }
     }
 
     /// `kern.argmax`: the largest region a read uses — the kernel gives no
@@ -172,6 +224,33 @@ struct ProcessArguments: Hashable, Sendable {
     /// that isn't that. `words` false walks past argv without making a
     /// word of it: `command` is empty, no label, nothing masked.
     static func parse(_ bytes: UnsafeRawBufferPointer, markers scanEnvironment: Bool, words decode: Bool = true) -> ProcessArguments? {
+        guard let layout = layout(of: bytes) else { return nil }
+        let markers = scanEnvironment ? scan(bytes, from: layout.environment) : nil
+        guard decode else { return ProcessArguments(command: "", label: nil, isCut: layout.isCut, isTitle: layout.isTitle, markers: markers) }
+        var words = layout.words.map { String(decoding: UnsafeRawBufferPointer(rebasing: bytes[$0]), as: UTF8.self) }
+        let masked = Secrets.maskArguments(words)
+        words.removeAll()
+        let command = ActivityText.command(masked: masked) + (layout.isCut ? (masked.isEmpty ? "" : " ") + cutMark : "")
+        let label = ActivityText.label(masked)
+        return ProcessArguments(command: command, label: label, isCut: layout.isCut, isTitle: layout.isTitle, markers: markers)
+    }
+
+    /// Where the layout's parts lie, found in place — no byte of it made a
+    /// word yet: argv's words over `argumentLimit` (one, a title; a word
+    /// cut there dropped whole: half a password no mask recognises), and
+    /// where the environment's first entry starts.
+    struct Layout {
+        var words: [Range<Int>]
+        /// argv ran past `argumentLimit`.
+        var isCut: Bool
+        var isTitle: Bool
+        /// The environment's first entry: past argv's words and the NULs a
+        /// title shorter than the words' area left.
+        var environment: Int
+    }
+
+    /// `bytes` read as the layout; nil for a buffer that isn't it.
+    static func layout(of bytes: UnsafeRawBufferPointer) -> Layout? {
         guard bytes.count >= 4 else { return nil }
         let argc = Int(bytes.loadUnaligned(as: Int32.self))
         guard argc >= 0, argc <= bytes.count else { return nil }
@@ -188,7 +267,7 @@ struct ProcessArguments: Hashable, Sendable {
         // Decided on the bytes, before any word becomes a String: a title
         // leaves the environment where argc counts arguments.
         let title = argc > 1 && isTitle(bytes, at: position, count: argc, path: 4..<pathEnd)
-        var words: [String] = []
+        var words: [Range<Int>] = []
         var cut = false
         let argumentsEnd = min(bytes.count, position + argumentLimit)
         for _ in 0..<(title ? 1 : argc) {
@@ -196,25 +275,15 @@ struct ProcessArguments: Hashable, Sendable {
             let end = index(of: 0, in: bytes, from: position) ?? bytes.count
             if end >= argumentsEnd {
                 cut = true
-            } else if !cut, decode {
-                words.append(String(decoding: UnsafeRawBufferPointer(rebasing: bytes[position..<end]), as: UTF8.self))
+            } else if !cut {
+                words.append(position..<end)
             }
             position = end + 1
         }
-        guard decode else {
-            while position < bytes.count, bytes[position] == 0 { position += 1 }
-            let markers = scanEnvironment ? scan(bytes, from: position) : nil
-            return ProcessArguments(command: "", label: nil, isCut: cut, isTitle: title, markers: markers)
-        }
-        let masked = Secrets.maskArguments(words)
-        words.removeAll()
-        let command = ActivityText.command(masked: masked) + (cut ? (masked.isEmpty ? "" : " ") + cutMark : "")
-        let label = ActivityText.label(masked)
         // The environment starts at the next entry: past the NULs a title
         // shorter than the words' area left.
         while position < bytes.count, bytes[position] == 0 { position += 1 }
-        let markers = scanEnvironment ? scan(bytes, from: position) : nil
-        return ProcessArguments(command: command, label: label, isCut: cut, isTitle: title, markers: markers)
+        return Layout(words: words, isCut: cut, isTitle: title, environment: position)
     }
 
     /// Whether argv[0], at `start`, is a title written over argv's words in
@@ -278,21 +347,34 @@ struct ProcessArguments: Hashable, Sendable {
     /// and only a match's value is copied out.
     static func scan(_ bytes: UnsafeRawBufferPointer, from start: Int) -> ProcessMarkers {
         var markers = ProcessMarkers()
+        for (index, value) in scan(bytes, from: start, names: ProcessMarkers.names, valueLimit: ProcessMarkers.valueLimit).enumerated() {
+            markers[name: index] = value
+        }
+        return markers
+    }
+
+    /// The values of `names` in the environment from `start`, in `names`'
+    /// order: each entry compared with them at its start only, exactly
+    /// (`NAME=`), and only a match's value copied out — at most
+    /// `valueLimit` bytes, a longer one none. Private: the names come from
+    /// the closed sets only, the markers' and `ReaderName`'s.
+    private static func scan(_ bytes: UnsafeRawBufferPointer, from start: Int, names: [String], valueLimit: Int) -> [String?] {
+        var values = [String?](repeating: nil, count: names.count)
         var position = start
         while position < bytes.count, bytes[position] != 0 {
             let end = index(of: 0, in: bytes, from: position) ?? bytes.count
-            for (index, name) in ProcessMarkers.names.enumerated() where markers[name: index] == nil {
+            for (index, name) in names.enumerated() where values[index] == nil {
                 let prefix = name.utf8.count
                 guard end - position > prefix, bytes[position + prefix] == UInt8(ascii: "="),
                     name.utf8.elementsEqual(UnsafeRawBufferPointer(rebasing: bytes[position..<(position + prefix)]))
                 else { continue }
                 let value = UnsafeRawBufferPointer(rebasing: bytes[(position + prefix + 1)..<end])
-                if value.count <= ProcessMarkers.valueLimit { markers[name: index] = String(decoding: value, as: UTF8.self) }
+                if value.count <= valueLimit { values[index] = String(decoding: value, as: UTF8.self) }
                 break
             }
             position = end + 1
         }
-        return markers
+        return values
     }
 
     /// The first `byte` at or after `start`.

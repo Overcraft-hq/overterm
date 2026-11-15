@@ -33,10 +33,15 @@ struct TerraformProcess: Equatable, Sendable {
             .standardizedFileURL
     }
 
-    /// The names read from a process's environment: nothing else is kept.
-    static func environmentNames(_ environment: [String: String]) -> (workspace: String?, dataDir: String?, profile: String?) {
-        func value(_ name: String) -> String? { environment[name].flatMap { $0.isEmpty ? nil : $0 } }
-        return (value("TF_WORKSPACE"), value("TF_DATA_DIR"), value("AWS_PROFILE"))
+    /// The names read from a process's environment, scanned for in place
+    /// (`ProcessArguments.facts`): no other entry becomes a `String`, and
+    /// only `ProcessArguments.ReaderName`'s may be asked for.
+    static let environmentNames: [ProcessArguments.ReaderName] = [.terraformWorkspace, .terraformDataFolder, .awsProfile]
+
+    /// Their values, in `environmentNames`' order: an empty one is none.
+    static func environment(_ values: [String?]) -> (workspace: String?, dataDir: String?, profile: String?) {
+        func value(_ index: Int) -> String? { values.indices.contains(index) ? values[index].flatMap { $0.isEmpty ? nil : $0 } : nil }
+        return (value(0), value(1), value(2))
     }
 }
 
@@ -83,15 +88,24 @@ enum TerraformProcesses {
         return String(decoding: buffer.prefix(Int(length)), as: UTF8.self)
     }
 
-    /// `pid` as a terraform process, or nil when it is none.
-    static func inspect(_ pid: pid_t, name: String? = nil, children: [pid_t]? = nil) -> TerraformProcess? {
+    /// `pid` as a terraform process, or nil when it is none. Its argv and
+    /// its environment come from one read of its area, in place
+    /// (`ProcessArguments.facts`): the words parsed into its command line
+    /// inside the read, and of the environment `TF_WORKSPACE`, `TF_DATA_DIR`
+    /// and `AWS_PROFILE` alone — an AWS key or a pane's MCP token beside
+    /// them never becomes a `String`.
+    static func inspect(
+        _ pid: pid_t, name: String? = nil, children: [pid_t]? = nil, kernel: some ActivityKernel = LiveActivityKernel()
+    ) -> TerraformProcess? {
         let name = name ?? self.name(of: pid) ?? ""
         guard TerraformCommandLine.tools.contains(name) || scriptShells.contains(name) else { return nil }
-        guard let args = ProcessInspector.procArgs(pid), let line = TerraformCommandLine.parse(arguments: args.arguments) else { return nil }
-        let names = TerraformProcess.environmentNames(args.environment)
+        let read = ProcessArguments.facts(of: pid, kernel: kernel, names: TerraformProcess.environmentNames, codeSigning: nil) { words, values in
+            TerraformCommandLine.parse(arguments: words).map { (line: $0, names: TerraformProcess.environment(values)) }
+        }
+        guard let read = read ?? nil else { return nil }
         var process = TerraformProcess(
-            pid: pid, line: line, cwd: ProcessInspector.workingDirectory(of: pid), workspaceVariable: names.workspace, dataDirVariable: names.dataDir,
-            awsProfile: names.profile, started: ProcessInspector.kinfo(pid)?.start)
+            pid: pid, line: read.line, cwd: kernel.workingDirectory(of: pid), workspaceVariable: read.names.workspace,
+            dataDirVariable: read.names.dataDir, awsProfile: read.names.profile, started: kernel.process(pid)?.identity.start)
         let below = children ?? descendants(of: pid, limit: 64)
         process.providers = below.filter { (self.name(of: $0) ?? "").hasPrefix("terraform-provider-") }.count
         return process
