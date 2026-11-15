@@ -743,10 +743,26 @@ final class KubeForwardsTests: XCTestCase {
             said.hasPrefix(kubeconfig.path + "|port-forward pod/web-a \(local):8080 --context fake-dev --namespace shop --address 127.0.0.1 --cache-dir "),
             said)
         XCTAssertTrue(ListeningPorts.isBound(local), "it listens")
+        // Watched with the census's socket walk, never by binding it (6.8):
+        // a census of the test's own children — the forward's kubectl, and
+        // any one started again, is one — never of the Mac's every process
+        // (docs/design/activity/analysis.md, 10.1, 10.2).
+        let census = ActivitySampler()
+        func held() -> Bool {
+            let children = Set(ProcessInspector.children(of: getpid()).map { ActivityProcessID(pid: $0.pid, start: $0.start) })
+            guard let snapshot = census.tickNow(ActivityDemand(.focus(children)), context: ActivityContext()) else { return true }
+            return ListeningPorts.holder(of: local, in: snapshot) != nil
+        }
+        XCTAssertTrue(held(), "its kubectl holds it, one of the test's children")
         let pid = process.pid
         process.close()
         try await until("ended") { kill(pid, 0) != 0 }
-        try await until("not listening") { !ListeningPorts.isBound(local) }
+        var listening = true
+        for _ in 0..<50 where listening {
+            listening = held()
+            if listening { try await Task.sleep(for: .milliseconds(200)) }
+        }
+        XCTAssertFalse(listening, "not listening")
 
         // One that can't listen: kubectl's error, said.
         let blocker = Darwin.socket(AF_INET, SOCK_STREAM, 0)

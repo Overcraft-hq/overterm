@@ -134,45 +134,118 @@ enum ListeningPorts {
     }
 
     /// Whether something on this Mac holds `port` — what Docker's own bind
-    /// for a published port would run into. A bind with SO_REUSEADDR on
-    /// 0.0.0.0, 127.0.0.1, :: and ::1, each closed at once: a listener on
-    /// one address is only met binding that one, TIME_WAIT doesn't count,
-    /// and nothing listens, so no firewall asks. Any user's socket counts,
-    /// unlike lsof's. A family this Mac can't make counts as free.
-    static func isBound(_ port: Int, proto: String = "tcp") -> Bool {
+    /// for a published port would run into, whoever holds it. A bind with
+    /// SO_REUSEADDR on 0.0.0.0, 127.0.0.1, :: and ::1, then on each address
+    /// of this Mac's interfaces (docs/design/activity/analysis.md, 6.8): a
+    /// listener on one address is only met binding that one — a LAN, utun
+    /// or Tailscale address, an IPv6 ULA, global or link-local one, which
+    /// the four alone answered "free" for. Each is closed at once:
+    /// TIME_WAIT doesn't count, and nothing listens, so no firewall asks. A
+    /// family this Mac can't make counts as free.
+    ///
+    /// A probe at a decision, never a watch: it binds the very port, and a
+    /// bind made while a supervisor or a KeepAlive job rebinds it makes
+    /// that restart fail (EADDRINUSE), after which "free" would be said of
+    /// a server the check broke. A port is watched with the census's
+    /// socket walk (`holder(of:)`).
+    static func isBound(_ port: Int, proto: String = "tcp", probing addresses: [ProbeAddress] = probeAddresses()) -> Bool {
         guard (1...65535).contains(port) else { return false }
         let type = proto == "udp" ? SOCK_DGRAM : SOCK_STREAM
-        for (family, address) in [(AF_INET, "0.0.0.0"), (AF_INET, "127.0.0.1"), (AF_INET6, "::"), (AF_INET6, "::1")] {
-            let fd = socket(family, type, 0)
-            guard fd >= 0 else { continue }
-            defer { close(fd) }
-            var on: Int32 = 1
-            let size = socklen_t(MemoryLayout<Int32>.size)
-            setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, size)
-            let result: Int32
-            if family == AF_INET {
-                var socketAddress = sockaddr_in()
-                socketAddress.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
-                socketAddress.sin_family = sa_family_t(AF_INET)
-                socketAddress.sin_port = in_port_t(UInt16(port)).bigEndian
-                inet_pton(AF_INET, address, &socketAddress.sin_addr)
-                result = withUnsafePointer(to: &socketAddress) {
-                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+        return addresses.contains { refusesBind($0, port: port, type: type) }
+    }
+
+    /// One address a bind probe tries: its family, its text, and the
+    /// interface a link-local one is scoped to.
+    struct ProbeAddress: Hashable, Sendable {
+        let family: Int32
+        let address: String
+        var scope: UInt32 = 0
+    }
+
+    /// The wildcard and loopback addresses of both families, then every
+    /// other address of this Mac's interfaces (`getifaddrs`), each once.
+    static func probeAddresses() -> [ProbeAddress] {
+        var found = [
+            ProbeAddress(family: AF_INET, address: "0.0.0.0"), ProbeAddress(family: AF_INET, address: "127.0.0.1"),
+            ProbeAddress(family: AF_INET6, address: "::"), ProbeAddress(family: AF_INET6, address: "::1"),
+        ]
+        for address in interfaceAddresses() where !found.contains(address) { found.append(address) }
+        return found
+    }
+
+    /// This Mac's interfaces' IPv4 and IPv6 addresses, loopback's left out.
+    static func interfaceAddresses() -> [ProbeAddress] {
+        var head: UnsafeMutablePointer<ifaddrs>?
+        guard getifaddrs(&head) == 0, let first = head else { return [] }
+        defer { freeifaddrs(head) }
+        var found: [ProbeAddress] = []
+        var text = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
+        for entry in sequence(first: first, next: { $0.pointee.ifa_next }) {
+            guard let raw = entry.pointee.ifa_addr else { continue }
+            switch Int32(raw.pointee.sa_family) {
+            case AF_INET:
+                var address = raw.withMemoryRebound(to: sockaddr_in.self, capacity: 1) { $0.pointee.sin_addr }
+                guard inet_ntop(AF_INET, &address, &text, socklen_t(text.count)) != nil else { continue }
+                let value = String(decoding: text.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+                if !value.hasPrefix("127.") { found.append(ProbeAddress(family: AF_INET, address: value)) }
+            case AF_INET6:
+                let socketAddress = raw.withMemoryRebound(to: sockaddr_in6.self, capacity: 1) { $0.pointee }
+                var address = socketAddress.sin6_addr
+                var scope: UInt32 = 0
+                // A link-local address is bound on its interface: the kernel
+                // hands it with the interface's index in its third and
+                // fourth bytes (KAME's way), which a bind wants in the scope.
+                if ActivityAddress(v6: address).isLinkLocal {
+                    scope = socketAddress.sin6_scope_id
+                    withUnsafeMutableBytes(of: &address) { bytes in
+                        if scope == 0 { scope = UInt32(bytes[2]) << 8 | UInt32(bytes[3]) }
+                        bytes[2] = 0
+                        bytes[3] = 0
+                    }
+                    if scope == 0 { scope = if_nametoindex(entry.pointee.ifa_name) }
                 }
-            } else {
-                setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &on, size)
-                var socketAddress = sockaddr_in6()
-                socketAddress.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
-                socketAddress.sin6_family = sa_family_t(AF_INET6)
-                socketAddress.sin6_port = in_port_t(UInt16(port)).bigEndian
-                inet_pton(AF_INET6, address, &socketAddress.sin6_addr)
-                result = withUnsafePointer(to: &socketAddress) {
-                    $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in6>.size)) }
-                }
+                guard inet_ntop(AF_INET6, &address, &text, socklen_t(text.count)) != nil else { continue }
+                let value = String(decoding: text.prefix { $0 != 0 }.map { UInt8(bitPattern: $0) }, as: UTF8.self)
+                guard value != "::1" else { continue }
+                found.append(ProbeAddress(family: AF_INET6, address: value, scope: scope))
+            default:
+                continue
             }
-            if result != 0, errno == EADDRINUSE { return true }
         }
-        return false
+        return found
+    }
+
+    /// Whether binding `port` on `probe` is refused as in use.
+    private static func refusesBind(_ probe: ProbeAddress, port: Int, type: Int32) -> Bool {
+        let fd = socket(probe.family, type, 0)
+        guard fd >= 0 else { return false }
+        defer { close(fd) }
+        var on: Int32 = 1
+        let size = socklen_t(MemoryLayout<Int32>.size)
+        setsockopt(fd, SOL_SOCKET, SO_REUSEADDR, &on, size)
+        let result: Int32
+        if probe.family == AF_INET {
+            var socketAddress = sockaddr_in()
+            socketAddress.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+            socketAddress.sin_family = sa_family_t(AF_INET)
+            socketAddress.sin_port = in_port_t(UInt16(port)).bigEndian
+            guard inet_pton(AF_INET, probe.address, &socketAddress.sin_addr) == 1 else { return false }
+            result = withUnsafePointer(to: &socketAddress) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in>.size)) }
+            }
+        } else {
+            setsockopt(fd, IPPROTO_IPV6, IPV6_V6ONLY, &on, size)
+            var socketAddress = sockaddr_in6()
+            socketAddress.sin6_len = UInt8(MemoryLayout<sockaddr_in6>.size)
+            socketAddress.sin6_family = sa_family_t(AF_INET6)
+            socketAddress.sin6_port = in_port_t(UInt16(port)).bigEndian
+            socketAddress.sin6_scope_id = probe.scope
+            guard inet_pton(AF_INET6, probe.address, &socketAddress.sin6_addr) == 1 else { return false }
+            result = withUnsafePointer(to: &socketAddress) {
+                $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { bind(fd, $0, socklen_t(MemoryLayout<sockaddr_in6>.size)) }
+            }
+        }
+        return result != 0 && errno == EADDRINUSE
     }
 
     /// The listening TCP sockets of `members` — and their bound UDP ones,

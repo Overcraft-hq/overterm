@@ -473,7 +473,11 @@ value, a path or an address of a process that isn't the test's.
   port, the census's (the oldest of the user's listeners, a UDP socket
   or a connection from the number none, another user's never named) and
   a real child's listener named by the walk; the bind probe on a real
-  listener. A forward's scope is where kubectl listens, and
+  listener, and on a socket bound to one of this Mac's own addresses —
+  bound, never listening, so no firewall asks — which the wildcard and
+  loopback probes alone never met. A port is watched with the census
+  (`KubePortForwardTests`' and the `kubernetes` scenario's forward gone),
+  never by binding it. A forward's scope is where kubectl listens, and
   Tab Info says the address of one that isn't this Mac's alone
   (`KubePortForwardTests`).
 - `TabLightReadTests`: the light tick's consumers from a fake census —

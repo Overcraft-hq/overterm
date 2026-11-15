@@ -224,6 +224,16 @@ final class E2ERunner {
         return true
     }
 
+    /// `eventually`, for a condition that asks an actor.
+    func eventuallyAsync(_ timeout: TimeInterval, _ condition: () async -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while await !condition() {
+            if Date() > deadline { return false }
+            await pause(0.05)
+        }
+        return true
+    }
+
     func pause(_ seconds: Double) async {
         try? await Task.sleep(nanoseconds: UInt64(seconds * 1_000_000_000))
     }

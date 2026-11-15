@@ -1004,7 +1004,8 @@ extension E2ERunner {
             "and forwards on the new local port", await eventually(15) { forwards.forward(id)?.isForwarding == true && forwards.forward(id)?.spec.localPort == moved },
             forwards.forward(id)?.state.text ?? "gone")
         check("which answers", await answer(moved) == "web-8k2")
-        check("the old one no longer listens", await eventually(5) { !ListeningPorts.isBound(local) })
+        // Watched with the census's socket walk, never by binding it (6.8).
+        check("the old one no longer listens", await eventuallyAsync(8) { await ListeningPorts.holder(of: local) == nil })
 
         // kubectl exits with the pod still there: started again on it.
         let third = forwards.forward(id)?.pid ?? 0

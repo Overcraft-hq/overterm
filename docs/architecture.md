@@ -1999,9 +1999,14 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   `compose.override.yaml`. Given `-f`, Compose discovers nothing itself.
   Each port is looked for among the other stacks' containers (their own
   containers' ports are theirs: Docker binds them), then on this Mac: a
-  bind with SO_REUSEADDR on 0.0.0.0, 127.0.0.1, :: and ::1
-  (`ListeningPorts.isBound`) meets what Docker's own bind would, TIME_WAIT
-  aside, and never listens, so no firewall asks; the census names the
+  bind with SO_REUSEADDR on 0.0.0.0, 127.0.0.1, :: and ::1, then on each
+  of this Mac's own addresses (a listener bound to one LAN, VPN or
+  link-local address alone is met only binding that one) —
+  `ListeningPorts.isBound` — meets what Docker's own bind would, TIME_WAIT
+  aside, and never listens, so no firewall asks. It is a probe at a
+  decision, never a watch: it binds the very port, and a bind during a
+  supervisor's rebind fails the restart (a port is watched with the
+  census's socket walk, `ListeningPorts.holder`); the census names the
   holder for the question (`ListeningPorts.holder`, a one-off census). A remote engine's are its containers only. A taken port of
   a service that starts, or a name another checkout's stack has, asks
   first: Up on Free Ports, Up as Written, Cancel. Free Ports writes an

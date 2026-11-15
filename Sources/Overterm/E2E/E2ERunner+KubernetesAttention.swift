@@ -208,16 +208,6 @@ extension E2ERunner {
         app.hideOverlay(focus: false)
     }
 
-    /// `eventually`, for a condition that asks an actor.
-    private func eventuallyAsync(_ timeout: TimeInterval, _ condition: () async -> Bool) async -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while await !condition() {
-            if Date() > deadline { return false }
-            await pause(0.05)
-        }
-        return true
-    }
-
     /// The bound release against the checkout's chart, and its upgrade.
     private func kubernetesHelmUpgrade(
         _ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, tab: Tab, repo: URL, recorded: () -> [(command: String, tab: Tab)]

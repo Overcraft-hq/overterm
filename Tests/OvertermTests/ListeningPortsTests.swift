@@ -125,6 +125,33 @@ final class ListeningPortsTests: XCTestCase {
         return !ListeningPorts.isBound(Int(UInt16(bigEndian: address.sin_port)))
     }
 
+    /// A socket bound to one of this Mac's own addresses, not loopback: met
+    /// only by binding that address (6.8) — the wildcard and loopback
+    /// probes alone answered "free". It is bound and never listens, so no
+    /// firewall asks; the address goes into no message.
+    func testASocketOnOneOfThisMacsAddressesIsMet() throws {
+        guard let own = ListeningPorts.interfaceAddresses().first(where: { $0.family == AF_INET }) else {
+            throw XCTSkip("no IPv4 address but loopback on this Mac")
+        }
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        XCTAssertGreaterThanOrEqual(fd, 0)
+        defer { close(fd) }
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        XCTAssertEqual(inet_pton(AF_INET, own.address, &address.sin_addr), 1)
+        let size = socklen_t(MemoryLayout<sockaddr_in>.size)
+        XCTAssertEqual(withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(fd, $0, size) } }, 0)
+        var length = size
+        _ = withUnsafeMutablePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) } }
+        let port = Int(UInt16(bigEndian: address.sin_port))
+        XCTAssertTrue(ListeningPorts.isBound(port), "met binding that address")
+        XCTAssertFalse(
+            ListeningPorts.isBound(port, probing: Array(ListeningPorts.probeAddresses().prefix(4))), "the wildcard and loopback alone never met it")
+        XCTAssertTrue(ListeningPorts.probeAddresses().prefix(4).map(\.address) == ["0.0.0.0", "127.0.0.1", "::", "::1"])
+        XCTAssertEqual(Set(ListeningPorts.probeAddresses()).count, ListeningPorts.probeAddresses().count, "each address once")
+    }
+
     func testAPortInUseIsBound() throws {
         let fd = socket(AF_INET, SOCK_STREAM, 0)
         XCTAssertGreaterThanOrEqual(fd, 0)
