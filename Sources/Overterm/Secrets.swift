@@ -28,6 +28,9 @@ enum Secrets {
     /// Secret names none of the words find: `sshpass -e` reads the password
     /// from `SSHPASS`.
     static let secretNames: Set<String> = ["SSHPASS"]
+    /// Names that hold a password and nothing else though none of their
+    /// words says so (`namesPassword`): `SSHPASS`, redis-cli's `REDISCLI_AUTH`.
+    static let passwordNames: Set<String> = secretNames.union(["REDISCLI_AUTH"])
 
     static func isSecret(_ key: String) -> Bool {
         let upper = key.uppercased()
@@ -118,58 +121,141 @@ enum Secrets {
     /// colon; the passwords programs take in flags and places of their own
     /// (`maskProgramPasswords`); `//user:password@server`, whatever the
     /// program (`maskNetworkPath`). A shell script's words (`sh -c '…'`,
-    /// `CMD-SHELL`) the same. Compose has put `.env`'s values into a
-    /// command already, so the container's env can't name them all. A
-    /// `${VAR}` stays as written.
-    static func maskArguments(_ words: [String]) -> [String] {
+    /// `CMD-SHELL`, `eval '…'`) the same, split as the shell splits them —
+    /// but a value with a space in it is one word, masked whole: a flag's
+    /// (`--password='a b'`, mysql's `-p'a b'`, curl's `-u'user:a b'`) or
+    /// an assignment's (`env PGPASSWORD='a b'`). Compose has put `.env`'s
+    /// values into a command already, so the container's env can't name
+    /// them all. A `${VAR}` stays as written.
+    static func maskArguments(_ words: [String]) -> [String] { maskArguments(words, among: [], depth: 0) }
+
+    /// `outer`: the programs of the command a script's words are a word of
+    /// (`maskScript`), whose flags they may be; `depth`: how many scripts
+    /// the words are inside — 0, an argv's.
+    private static func maskArguments(_ words: [String], among outer: Set<String>, depth: Int) -> [String] {
         let words = maskProgramPasswords(words)
-        enum Pending { case secret, userinfo }
-        let programs = Set(words.map { ($0 as NSString).lastPathComponent })
+        enum Pending {
+            /// `password`: the flag's name says a password or a token (`namesPassword`).
+            case secret(password: Bool)
+            case userinfo
+        }
+        let programs = outer.union(words.map { ($0 as NSString).lastPathComponent })
         let redis = programs.contains("redis-cli")
         let curl = programs.contains("curl")
         let mongo = !programs.isDisjoint(with: ["mongosh", "mongo"])
         let mysql = !programs.isDisjoint(with: ["mysql", "mysqladmin", "mysqldump", "mysqlshow", "mysqlcheck", "mariadb", "mariadb-admin", "mariadb-dump"])
         var pending: Pending?
-        let masked = words.map { word -> String in
+        let masked = words.indices.map { index -> String in
+            let word = words[index]
+            // A word with a space in it taken as one value is masked whole;
+            // where its value is kept (a path, a `${VAR}`), its words are
+            // read as a script's, so nothing after its space goes unread.
+            func whole(_ shown: String) -> String {
+                shown == word && hasBlank(word) ? maskScript(word, among: programs, depth: depth) : shown
+            }
             // A flag after a flag: the first one took no value.
             if let wanted = pending, !word.hasPrefix("--") {
                 pending = nil
-                return wanted == .userinfo ? maskUserinfo(word) : maskValue(word)
+                switch wanted {
+                case .userinfo: return whole(maskUserinfo(word))
+                case .secret(let password): return whole(password ? maskPassword(word) : maskValue(word))
+                }
             }
             pending = nil
-            if word.contains(where: \.isWhitespace) { return maskScript(word) }
+            // A word with a space in it is a script's, unless a rule below
+            // takes it as one value: split, what follows its space was shown.
+            let spaced = hasBlank(word)
             if word.hasPrefix("-"), word.count > 1 {
                 let flag = String(word.drop { $0 == "-" })
                 let dashes = String(word.prefix(word.count - flag.count))
                 if let equals = flag.firstIndex(of: "=") {
                     let name = String(flag[..<equals])
                     let value = String(flag[flag.index(after: equals)...])
-                    if curl && name == "user" { return dashes + name + "=" + maskUserinfo(value) }
-                    return isSecretFlag(name) ? dashes + name + "=" + maskValue(value) : word
+                    if curl && name == "user" { return whole(dashes + name + "=" + maskUserinfo(value)) }
+                    if isSecretFlag(name) { return whole(dashes + name + "=" + (namesPassword(name) ? maskPassword(value) : maskValue(value))) }
+                    return spaced ? maskScript(word, among: programs, depth: depth) : word
                 }
                 let long = dashes.count > 1
-                if isSecretFlag(flag) || (redis && word == "-a") || (mongo && word == "-p") {
-                    pending = .secret
+                if spaced {
+                    // Glued, the rest of the word is the value, its spaces too.
+                    if curl && !long && flag.hasPrefix("u") { return whole("-u" + maskUserinfo(String(flag.dropFirst()))) }
+                    if mysql && !long && flag.hasPrefix("p") { return "-p" + maskPassword(String(flag.dropFirst())) }
+                    return maskScript(word, among: programs, depth: depth)
+                }
+                if isSecretFlag(flag) {
+                    pending = .secret(password: namesPassword(flag))
+                } else if (redis && word == "-a") || (mongo && word == "-p") {
+                    pending = .secret(password: true)
                 } else if curl && (word == "-u" || word == "--user") {
                     pending = .userinfo
                 } else if curl && !long && flag.hasPrefix("u") {
                     return "-u" + maskUserinfo(String(flag.dropFirst()))
                 } else if mysql && !long && flag.hasPrefix("p") && flag.count > 1 {
-                    return "-p" + maskValue(String(flag.dropFirst()))
+                    return "-p" + maskPassword(String(flag.dropFirst()))
                 }
                 return word
             }
-            if let equals = word.firstIndex(of: "=") {
+            // In a script the value ends at its first space, as the shell
+            // reads it (`sh -c 'PGPASSWORD=x psql …'`): its words masked in place.
+            if let equals = word.firstIndex(of: "="), !(spaced && isScript(index, in: words, depth: depth)) {
                 let name = String(word[..<equals])
                 if name.range(of: #"^[A-Za-z_][A-Za-z0-9_]*$"#, options: .regularExpression) != nil, isSecret(name) {
                     let value = String(word[word.index(after: equals)...])
-                    // `SSHPASS` holds a password and nothing else: a `/` starts one, no path.
-                    return name + "=" + (secretNames.contains(name.uppercased()) ? maskPassword(value) : maskValue(value))
+                    // A password's or a token's, `SSHPASS`'s too: a `/` starts one, no path.
+                    let password = passwordNames.contains(name.uppercased()) || namesPassword(name)
+                    return whole(name + "=" + (password ? maskPassword(value) : maskValue(value)))
                 }
             }
-            return word
+            return spaced ? maskScript(word, among: programs, depth: depth) : word
         }
         return masked.map(maskNetworkPath)
+    }
+
+    /// Whether `words[index]` is where a shell reads a script: an argv's
+    /// first word (a command line handed over whole — a script's first word
+    /// with a blank in it was quoted: `'a b'`, one word), after `CMD-SHELL`
+    /// or `eval` (Claude Code runs `zsh -c -l "… eval '<command>' …"`), or
+    /// after a shell's options one of which is `c` (`sh -c`, `bash -lc`,
+    /// `zsh -c -l`) — an option's value stepped over as the shell reads it
+    /// (`bash -o pipefail -c`, `-euo pipefail`, `+O extglob`: hadolint's
+    /// `SHELL`, make's `.SHELLFLAGS`).
+    private static func isScript(_ index: Int, in words: [String], depth: Int) -> Bool {
+        guard index > 0 else { return depth == 0 }
+        if words[index - 1] == "CMD-SHELL" || words[index - 1] == "eval" { return true }
+        var before = index - 1
+        var command = false
+        while before >= 0 {
+            // An option, or an option's value with the option before it —
+            // never the shell itself.
+            let option: Int
+            if isShellOption(words[before]) {
+                option = before
+            } else if before > 0, takesValue(words[before - 1]), !scriptShells.contains((words[before] as NSString).lastPathComponent) {
+                option = before - 1
+            } else {
+                break
+            }
+            if words[option].hasPrefix("-"), !words[option].hasPrefix("--"), words[option].dropFirst().contains("c") { command = true }
+            before = option - 1
+        }
+        return command && before >= 0 && scriptShells.contains((words[before] as NSString).lastPathComponent)
+    }
+
+    /// The shells whose `-c` takes a script.
+    private static let scriptShells: Set<String> = ["sh", "bash", "zsh", "dash", "ksh", "mksh", "ash", "fish"]
+
+    /// A shell's option: `-l`, `+x`, `--login`.
+    private static func isShellOption(_ word: String) -> Bool {
+        word.count > 1 && (word.hasPrefix("-") || word.hasPrefix("+"))
+    }
+
+    /// A shell's option that takes the next word as its value: `-o`, `+o`,
+    /// `-O`, `+O`, a cluster ending in one (`-euo pipefail`), bash's
+    /// `--rcfile` and `--init-file`.
+    private static func takesValue(_ word: String) -> Bool {
+        if word == "--rcfile" || word == "--init-file" { return true }
+        guard isShellOption(word), !word.hasPrefix("--"), let last = word.last else { return false }
+        return last == "o" || last == "O"
     }
 
     /// A flag's name that says a secret follows: the env's words, and a
@@ -179,22 +265,214 @@ enum Secrets {
         return isSecret(name.replacingOccurrences(of: "-", with: "_")) || lower.hasSuffix("pass") || lower.contains("passphrase")
     }
 
-    /// A shell script's words masked in place, its spacing kept: the words
-    /// masking changed put back in one pass. An agent's command is one such
-    /// script, a heredoc in it 15,000 words — each word put back into a new
-    /// copy of the whole script took the square of its length.
-    private static func maskScript(_ script: String) -> String {
-        let string = script as NSString
-        guard let scriptWords else { return script }
-        let ranges = scriptWords.matches(in: script, range: NSRange(location: 0, length: string.length)).map(\.range)
-        let words = ranges.map { string.substring(with: $0) }
-        var changed: [(range: NSRange, text: String)] = []
-        for (index, word) in maskArguments(words).enumerated() where word != words[index] { changed.append((ranges[index], word)) }
-        return changed.isEmpty ? script : replacing(changed, in: string)
+    /// A secret's name that says its value is a password or a token itself —
+    /// PASSWORD, PASSWD, PASSPHRASE, API_KEY, or PASS, PWD, TOKEN as a word
+    /// or its end (`--requirepass`, `MYSQL_PWD`, `ghToken`) — and not where
+    /// one is kept (a FILE, PATH or DIR word): a `/` starts such a value,
+    /// one generated in 64, so only a `${VAR}` stays as written
+    /// (`maskPassword`). A key's, a certificate's or a secret's value may
+    /// name a file (`--key /certs/key.pem`): its path stays (`maskValue`).
+    static func namesPassword(_ name: String) -> Bool {
+        let words = tokens(name)
+        let lower = name.lowercased()
+        guard Set(["FILE", "PATH", "DIR"]).isDisjoint(with: words), !["file", "path", "dir"].contains(where: { lower.hasSuffix($0) }) else { return false }
+        let joined = words.joined()
+        return ["PASSWORD", "PASSWD", "PASSPHRASE", "APIKEY"].contains { joined.contains($0) } || !Set(["PASS", "PWD", "TOKEN"]).isDisjoint(with: words)
+            || lower.hasSuffix("pass") || lower.hasSuffix("token")
     }
 
-    /// A script's words: what isn't whitespace.
-    private static let scriptWords = try? NSRegularExpression(pattern: #"\S+"#)
+    /// A shell script's words masked in place, its spacing kept. Its words
+    /// are read as the shell splits them (`shellWords`): a quoted value
+    /// with a space in it is one word, and a word's quotes hide no name or
+    /// program from the rules (`eval 'PGPASSWORD=…'`, `'mysql`). Of a word
+    /// masking changed, only what changed goes back, at the places it came
+    /// from, inside the word's own quotes (`eval 'PGPASSWORD=•••••• psql'`),
+    /// in one pass: an agent's command is one such script, a heredoc in it
+    /// 15,000 words — each word put back into a new copy of the whole
+    /// script took the square of its length. `programs`: the command's it
+    /// is a word of, whose flags its words may be; `depth`: how many
+    /// scripts it is inside.
+    private static func maskScript(_ script: String, among programs: Set<String>, depth: Int) -> String {
+        // Quotes inside quotes past any real command's: masked whole.
+        guard depth < scriptDepth else { return mask(script) }
+        let units = Array(script.utf16)
+        let words = shellWords(units)
+        let texts = words.map(\.text)
+        var changed: [(range: NSRange, text: String)] = []
+        for (index, word) in maskArguments(texts, among: programs, depth: depth + 1).enumerated() where word != texts[index] {
+            changed.append(edit(of: words[index].start, to: word, in: units))
+        }
+        return changed.isEmpty ? script : replacing(changed, in: script as NSString)
+    }
+
+    /// How many scripts deep a script is read (`zsh -c "… eval '…'"`).
+    private static let scriptDepth = 8
+
+    /// Whether `word` has a blank in it — a space, a tab, a newline —, where
+    /// a shell splits a script's words.
+    private static func hasBlank(_ word: String) -> Bool { word.utf16.contains(where: isBlank) }
+
+    private static func isBlank(_ unit: UInt16) -> Bool { unit == 0x20 || (0x09...0x0D).contains(unit) }
+
+    /// A script's words, as the shell splits them at blanks: `'…'`, `"…"`
+    /// (where `\` escapes `"`, `\`, `$`, `` ` `` and a newline), `$'…'`
+    /// (where it escapes anything) and `\` elsewhere keep a blank in a word
+    /// and are taken off; `''` is an empty word, `\` before a newline none;
+    /// unclosed, a quote runs to the end. Each word's text, and where it
+    /// starts in `units`, the script's UTF-16.
+    private static func shellWords(_ units: [UInt16]) -> [(text: String, start: Int)] {
+        var words: [(text: String, start: Int)] = []
+        var text: [UInt16] = []
+        var origins: [Origin] = []
+        var stretches: [Stretch] = []
+        var index = 0
+        while index < units.count {
+            guard !isBlank(units[index]) else {
+                index += 1
+                continue
+            }
+            text.removeAll(keepingCapacity: true)
+            let (end, quoted) = readWord(units, from: index, into: &text, origins: &origins, stretches: &stretches, keeping: false)
+            if quoted || !text.isEmpty { words.append((String(decoding: text, as: UTF16.self), index)) }
+            index = end
+        }
+        return words
+    }
+
+    /// Where a unit of a word's text came from (`readWord`): its place in
+    /// the script, whether a `\` came before it, and the quoted stretch it
+    /// is in — an index into the word's stretches, -1 for none.
+    private struct Origin {
+        var place: Int
+        var escaped: Bool
+        var stretch: Int
+    }
+
+    /// A quoted stretch of a word: where its quote opens (the `$` of
+    /// `$'…'`), where it closes (nil: unclosed), and its units of the text.
+    private struct Stretch {
+        var open: Int
+        var close: Int?
+        var units: Range<Int>
+    }
+
+    /// The word of `units` from `start`, as `shellWords` reads it: its text
+    /// into `text` — with `keeping`, each unit's origin and the word's
+    /// quoted stretches too —; where it ends, and whether it had quotes.
+    private static func readWord(
+        _ units: [UInt16], from start: Int, into text: inout [UInt16], origins: inout [Origin], stretches: inout [Stretch], keeping: Bool
+    ) -> (end: Int, quoted: Bool) {
+        let single: UInt16 = 0x27, double: UInt16 = 0x22, backslash: UInt16 = 0x5C, dollar: UInt16 = 0x24, newline: UInt16 = 0x0A
+        // The quote open: `'`, `"`, `$` for `$'…'`, or 0.
+        var quote: UInt16 = 0
+        var quoted = false
+        func take(_ at: Int, escaped: Bool = false) {
+            text.append(units[at])
+            if keeping { origins.append(Origin(place: at, escaped: escaped, stretch: quote == 0 ? -1 : stretches.count - 1)) }
+        }
+        func open(_ kind: UInt16, at place: Int) {
+            quote = kind
+            quoted = true
+            if keeping { stretches.append(Stretch(open: place, close: nil, units: text.count..<text.count)) }
+        }
+        func close(at place: Int) {
+            quote = 0
+            if keeping, let last = stretches.indices.last {
+                stretches[last].close = place
+                stretches[last].units = stretches[last].units.lowerBound..<text.count
+            }
+        }
+        var index = start
+        while index < units.count {
+            let unit = units[index]
+            let next: UInt16? = index + 1 < units.count ? units[index + 1] : nil
+            switch quote {
+            case single:
+                if unit == single { close(at: index) } else { take(index) }
+                index += 1
+            case double:
+                if unit == double {
+                    close(at: index)
+                    index += 1
+                } else if unit == backslash, let next, [double, backslash, dollar, 0x60, newline].contains(next) {
+                    if next != newline { take(index + 1, escaped: true) }
+                    index += 2
+                } else {
+                    take(index)
+                    index += 1
+                }
+            case dollar:
+                if unit == single {
+                    close(at: index)
+                    index += 1
+                } else if unit == backslash, next != nil {
+                    take(index + 1, escaped: true)
+                    index += 2
+                } else {
+                    take(index)
+                    index += 1
+                }
+            default:
+                if isBlank(unit) { return (index, quoted) }
+                if unit == single || unit == double {
+                    open(unit, at: index)
+                    index += 1
+                } else if unit == dollar, next == single || next == double {
+                    // `$'…'`, ANSI-C's; `$"…"`, a translated "…".
+                    open(next == single ? dollar : double, at: index)
+                    index += 2
+                } else if unit == backslash, let next {
+                    if next != newline { take(index + 1, escaped: true) }
+                    index += 2
+                } else {
+                    take(index)
+                    index += 1
+                }
+            }
+        }
+        // Unclosed: its stretch runs to the end.
+        if keeping, quote != 0, let last = stretches.indices.last { stretches[last].units = stretches[last].units.lowerBound..<text.count }
+        return (index, quoted)
+    }
+
+    /// What a word's masking puts back into its script: the part of its
+    /// text that changed, over the places that part came from — the word's
+    /// quotes kept around it (`'PGPASSWORD=••••••'`, `"••••••"`). A part
+    /// whose ends lie in two stretches of quoting (`PGPASSWORD="$X";`,
+    /// `-p'a b'"c"`) takes those stretches whole, so no quote is left open.
+    private static func edit(of start: Int, to masked: String, in units: [UInt16]) -> (range: NSRange, text: String) {
+        var text: [UInt16] = []
+        var origins: [Origin] = []
+        var stretches: [Stretch] = []
+        let end = readWord(units, from: start, into: &text, origins: &origins, stretches: &stretches, keeping: true).end
+        let new = Array(masked.utf16)
+        // What is alike at either end, never half a surrogate pair.
+        var head = 0
+        while head < text.count, head < new.count, text[head] == new[head] { head += 1 }
+        if head > 0, head < text.count, UTF16.isTrailSurrogate(text[head]) { head -= 1 }
+        var tail = 0
+        while tail < text.count - head, tail < new.count - head, text[text.count - 1 - tail] == new[new.count - 1 - tail] { tail += 1 }
+        if tail > 0, UTF16.isTrailSurrogate(text[text.count - tail]) { tail -= 1 }
+        var from = head
+        var upTo = text.count - tail
+        // Nothing of its text changed, only added to (never seen): the word whole.
+        guard from < upTo else { return (NSRange(location: start, length: end - start), masked) }
+        let first = origins[from]
+        let last = origins[upTo - 1]
+        var place = first.escaped ? first.place - 1 : first.place
+        var after = last.place + 1
+        if first.stretch != last.stretch {
+            if first.stretch >= 0 {
+                place = stretches[first.stretch].open
+                from = stretches[first.stretch].units.lowerBound
+            }
+            if last.stretch >= 0 {
+                after = stretches[last.stretch].close.map { $0 + 1 } ?? end
+                upTo = stretches[last.stretch].units.upperBound
+            }
+        }
+        return (NSRange(location: place, length: after - place), String(decoding: new[from..<(new.count - (text.count - upTo))], as: UTF16.self))
+    }
 
     /// `string` with each range given its text — the ranges in order, apart
     /// —, built in one pass however many there are.
@@ -211,25 +489,58 @@ enum Secrets {
     }
 
     /// A flag's value: a `${VAR}` kept as written, a path too (`--key
-    /// /certs/key.pem` names a file, not the key).
+    /// /certs/key.pem` names a file, not the key) — not base64 that a `/`
+    /// starts (`isPath`). A password's or a token's (`namesPassword`) is
+    /// `maskPassword`'s.
     private static func maskValue(_ value: String) -> String {
         let bare = value.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))
-        return isReference(bare) || bare.hasPrefix("/") ? value : mask(value)
+        return isReference(bare) || isPath(bare) ? value : mask(value)
+    }
+
+    /// A value that names a file: a `/` first, and after it no base64 blob
+    /// — base64's alphabet has `/`, so one AWS secret access key in 64
+    /// starts with it (`--s3-secret-access-key /…`, `--client-secret /…`).
+    private static func isPath(_ value: String) -> Bool {
+        value.hasPrefix("/") && !isWholeBlob(value.dropFirst())
+    }
+
+    /// Whether `run` is a base64 blob whole: `blobLength` characters or
+    /// more of base64's alphabet (standard or URL-safe), `=` only at its
+    /// end, an upper- and a lowercase letter and a digit among them:
+    /// `/certs/acme.pem` and `/run/secrets/acme` stay paths.
+    private static func isWholeBlob(_ run: Substring) -> Bool {
+        var upper = false
+        var lower = false
+        var digit = false
+        var padding = 0
+        for scalar in run.unicodeScalars {
+            switch scalar.value {
+            case 0x3D: padding += 1
+            case _ where padding > 0: return false
+            case 0x41...0x5A: upper = true
+            case 0x61...0x7A: lower = true
+            case 0x30...0x39: digit = true
+            case 0x2B, 0x2F, 0x5F, 0x2D: break
+            default: return false
+            }
+        }
+        return padding <= 2 && run.unicodeScalars.count - padding >= blobLength && upper && lower && digit
     }
 
     /// A value in a place that only ever holds a password — a registry
     /// login's `-p`, sshpass's, the LDAP tools' `-w`, Samba's `%…`,
-    /// htpasswd's, openssl's `pass:`, `SSHPASS` —: only a `${VAR}` kept as
-    /// written. No path: one generated password in 64 starts with `/`, and
+    /// htpasswd's, openssl's `pass:`, `SSHPASS`, a password's or a token's
+    /// flag or variable (`namesPassword`), mysql's and mongosh's `-p`,
+    /// redis-cli's `-a`, curl's `user:…` —: only a `${VAR}` kept as written. No path: one generated password in 64 starts with `/`, and
     /// `maskValue` would have shown it whole.
     private static func maskPassword(_ value: String) -> String {
         isReference(value.trimmingCharacters(in: CharacterSet(charactersIn: "\"'"))) ? value : mask(value)
     }
 
-    /// `user:password`: the user kept.
+    /// `user:password`: the user kept, the password only ever one (`maskPassword`).
     private static func maskUserinfo(_ value: String) -> String {
         guard let colon = value.firstIndex(of: ":") else { return value }
-        return String(value[...colon]) + maskValue(String(value[value.index(after: colon)...]))
+        return String(value[...colon]) + maskPassword(String(value[value.index(after: colon)...]))
     }
 }
 

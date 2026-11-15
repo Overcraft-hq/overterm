@@ -19,6 +19,14 @@ final class ProcessCommandTests: XCTestCase {
         return (0...(secret.count - 4)).contains { text.contains(String(secret[$0..<($0 + 4)])) }
     }
 
+    /// `command` as Claude Code runs it: `zsh -c -l "… eval '<command>' …"`.
+    private func claude(_ command: String) -> [String] {
+        [
+            "/bin/zsh", "-c", "-l",
+            "source /Users/acme/.claude/shell-snapshots/snapshot-zsh-1731650000000-acme01.sh && eval '\(command)' \\< /dev/null && pwd -P >| /var/folders/ac/T/claude-acme-cwd",
+        ]
+    }
+
     private func node(_ arguments: [String], name: String = "acme-tool", pid: pid_t = 20) -> ProcessNode {
         ProcessNode(pid: pid, parent: 1, name: name, arguments: arguments, cpuPercent: 0, memory: 0, workingDirectory: "/work/acme")
     }
@@ -31,6 +39,17 @@ final class ProcessCommandTests: XCTestCase {
             ("a URL's userinfo", ["acme-tool", "--db", "postgres://acme:\(sentinel)@db.globex.invalid:5432/app"]),
             ("a bearer header", ["curl", "-H", "Authorization: Bearer \(sentinel)", "https://api.globex.invalid/v1"]),
             ("a password with a space in it", ["acme-tool", "--password", spaced]),
+            ("a flag's value with a space in it", ["acme-tool", "--password=\(spaced)"]),
+            ("mysql's -p with a space in it", ["mysql", "-u", "acme", "-p\(spaced)", "globex"]),
+            ("curl's password with a space in it", ["curl", "-uacme:\(spaced)", "https://api.globex.invalid/v1"]),
+            ("an assignment with a space in it", ["env", "PGPASSWORD=\(spaced)", "psql"]),
+            ("a password that starts with /", ["acme-tool", "--password", "/" + sentinel]),
+            ("a token that starts with /, assigned", ["env", "ACME_TOKEN=/\(sentinel)", "acme-tool"]),
+            ("a secret key that starts with /, base64", ["rclone", "lsd", "s3:", "--s3-secret-access-key", "/" + [sentinel, "Qx7AcmeGlobexKey", "Rt5Wy9"].joined(separator: "/")]),
+            ("Claude Code's command, eval'd", claude("PGPASSWORD=\(sentinel) psql -h db")),
+            ("Claude Code's mysql, eval'd", claude("mysql -uroot -p\(sentinel) app")),
+            ("Claude Code's redis-cli, eval'd", claude("redis-cli -a \(sentinel) ping")),
+            ("a quoted value with a space in it, in a script", ["bash", "-lc", "PGPASSWORD='\(spaced)' psql"]),
         ]
         for (form, arguments) in forms {
             let shown = node(arguments).command

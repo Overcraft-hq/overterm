@@ -220,6 +220,110 @@ final class SecretsTests: XCTestCase {
         XCTAssertEqual(masked.count, words.count)
     }
 
+    /// A password with a space in it is one word of argv, its value masked
+    /// whole — a flag's, glued or after `=`, an assignment's —: read as a
+    /// script's words, what followed the space was shown. A script stays
+    /// one: its assignment's value ends at the first space, as the shell
+    /// reads it, and the command after it is kept.
+    func testAPasswordWithASpaceInItIsMaskedWhole() {
+        let parts = ["Zq8", "vX2", "mN7", "pL4"]
+        let password = parts.joined()
+        let spaced = parts[0] + parts[1] + " " + parts[2] + parts[3]
+        let cases: [([String], [String])] = [
+            (["acme-cli", "--password=\(spaced)", "serve"], ["acme-cli", "--password=••••••", "serve"]),
+            (["acme-cli", "--db-pass=\(spaced)"], ["acme-cli", "--db-pass=••••••"]),
+            (["acme-cli", "--password", spaced], ["acme-cli", "--password", "••••••"]),
+            (["mysql", "-u", "acme", "-p\(spaced)", "globex"], ["mysql", "-u", "acme", "-p••••••", "globex"]),
+            (["curl", "-uacme:\(spaced)", "https://api.globex.invalid"], ["curl", "-uacme:••••••", "https://api.globex.invalid"]),
+            (["curl", "--user=acme:\(spaced)", "https://api.globex.invalid"], ["curl", "--user=acme:••••••", "https://api.globex.invalid"]),
+            (["env", "PGPASSWORD=\(spaced)", "psql", "-h", "db"], ["env", "PGPASSWORD=••••••", "psql", "-h", "db"]),
+            (["docker", "run", "-e", "API_TOKEN=\(spaced)", "acme/web"], ["docker", "run", "-e", "API_TOKEN=••••••", "acme/web"]),
+            // Its pieces read with the command's flags: redis-cli's `-a`.
+            (["redis-cli", "-a \(password)", "ping"], ["redis-cli", "-a ••••••", "ping"]),
+            (["sh", "-c", "PGPASSWORD=\(password) psql -h db"], ["sh", "-c", "PGPASSWORD=•••••• psql -h db"]),
+            (["/bin/zsh", "-c", "-l", "API_TOKEN=\(password) acme deploy"], ["/bin/zsh", "-c", "-l", "API_TOKEN=•••••• acme deploy"]),
+            (["bash", "-lc", "REDIS_PASSWORD=\(password) redis-cli ping"], ["bash", "-lc", "REDIS_PASSWORD=•••••• redis-cli ping"]),
+            (["CMD-SHELL", "MYSQL_PWD=\(password) mysqladmin ping"], ["CMD-SHELL", "MYSQL_PWD=•••••• mysqladmin ping"]),
+            // A shell's option with a value before its `-c` — hadolint's
+            // `SHELL`, make's `.SHELLFLAGS` —: its script all the same.
+            (["/bin/bash", "-o", "pipefail", "-c", "PGPASSWORD=\(password) psql -h db"], ["/bin/bash", "-o", "pipefail", "-c", "PGPASSWORD=•••••• psql -h db"]),
+            (["bash", "-euo", "pipefail", "-c", "REDIS_PASSWORD=\(password) redis-cli ping"], ["bash", "-euo", "pipefail", "-c", "REDIS_PASSWORD=•••••• redis-cli ping"]),
+            (["zsh", "-o", "extglob", "-c", "API_TOKEN=\(password) acme deploy"], ["zsh", "-o", "extglob", "-c", "API_TOKEN=•••••• acme deploy"]),
+            (
+                ["/bin/bash", "-o", "pipefail", "-c", "GOOGLE_APPLICATION_CREDENTIALS=/var/secrets/acme.json ./run --db-password \(password)"],
+                ["/bin/bash", "-o", "pipefail", "-c", "GOOGLE_APPLICATION_CREDENTIALS=/var/secrets/acme.json ./run --db-password ••••••"]
+            ),
+            // Taken as one value and kept — a path —, a word's pieces are
+            // still read: what follows its space is never shown unread.
+            (
+                ["su", "-c", "GOOGLE_APPLICATION_CREDENTIALS=/var/secrets/acme.json ./run --db-password \(password)"],
+                ["su", "-c", "GOOGLE_APPLICATION_CREDENTIALS=/var/secrets/acme.json ./run --db-password ••••••"]
+            ),
+            (["acme-cli", "--tls-key=/certs/acme.pem --password \(password)"], ["acme-cli", "--tls-key=/certs/acme.pem --password ••••••"]),
+            (["curl", "-uacme --pass \(password)", "https://api.globex.invalid"], ["curl", "-uacme --pass ••••••", "https://api.globex.invalid"]),
+        ]
+        let letters = Array(password)
+        for (words, masked) in cases {
+            let shown = Secrets.maskArguments(words)
+            XCTAssertEqual(shown, masked)
+            let text = shown.joined(separator: " ")
+            XCTAssertFalse((0...(letters.count - 4)).contains { text.contains(String(letters[$0..<($0 + 4)])) }, "no run of the password: \(text)")
+        }
+    }
+
+    /// After a flag, or in a variable, whose name says password or token —
+    /// PASSWORD, PASSWD, PASS, PWD, PASSPHRASE, TOKEN, API_KEY —, a `/`
+    /// starts the password, not a path: one generated in 64 starts so, and
+    /// it was shown whole. Where a file may be named — a key's, a
+    /// certificate's, a secret's, a FILE, PATH or DIR name —, a path stays.
+    func testAPasswordOrATokenStartingWithASlashIsMasked() {
+        let password = "/" + ["Zq8", "vX2", "mN7", "pL4"].joined()
+        // 36 characters of base64 after the `/`: an AWS secret access key's shape.
+        let blob = "/" + ["Qx7AcmeGlobexKey", "Zq8vX2mN7pL4", "Rt5Wy9"].joined(separator: "/")
+        let cases: [([String], [String])] = [
+            (["acme-cli", "--password", password], ["acme-cli", "--password", "••••••"]),
+            (["acme-cli", "--password=\(password)"], ["acme-cli", "--password=••••••"]),
+            (["acme-cli", "--db-pass", password], ["acme-cli", "--db-pass", "••••••"]),
+            (["redis-server", "--requirepass", password], ["redis-server", "--requirepass", "••••••"]),
+            (["acme-cli", "--passphrase", password], ["acme-cli", "--passphrase", "••••••"]),
+            (["acme-cli", "--api-key", password], ["acme-cli", "--api-key", "••••••"]),
+            (["acme-cli", "--auth-token=\(password)"], ["acme-cli", "--auth-token=••••••"]),
+            (["env", "PGPASSWORD=\(password)", "psql"], ["env", "PGPASSWORD=••••••", "psql"]),
+            (["env", "MYSQL_PWD=\(password)", "mysql"], ["env", "MYSQL_PWD=••••••", "mysql"]),
+            (["env", "GITHUB_TOKEN=\(password)", "gh"], ["env", "GITHUB_TOKEN=••••••", "gh"]),
+            (["env", "OPENAI_API_KEY=\(password)", "acme"], ["env", "OPENAI_API_KEY=••••••", "acme"]),
+            (["mysql", "-u", "acme", "-p\(password)"], ["mysql", "-u", "acme", "-p••••••"]),
+            (["curl", "-u", "acme:\(password)", "https://api.globex.invalid"], ["curl", "-u", "acme:••••••", "https://api.globex.invalid"]),
+            (["redis-cli", "-a", password, "ping"], ["redis-cli", "-a", "••••••", "ping"]),
+            (["mongosh", "-u", "acme", "-p", password], ["mongosh", "-u", "acme", "-p", "••••••"]),
+            // redis-cli reads only a password from it, though no word says so.
+            (["env", "REDISCLI_AUTH=\(password)", "redis-cli"], ["env", "REDISCLI_AUTH=••••••", "redis-cli"]),
+            // Base64 that a `/` starts, under a key's or a secret's name: no path.
+            (["rclone", "lsd", "s3:", "--s3-secret-access-key", blob], ["rclone", "lsd", "s3:", "--s3-secret-access-key", "••••••"]),
+            (["acme-cli", "--client-secret=\(blob)"], ["acme-cli", "--client-secret=••••••"]),
+            (["acme-cli", "--secret-key", blob], ["acme-cli", "--secret-key", "••••••"]),
+            (["env", "AWS_SECRET_ACCESS_KEY=\(blob)", "acme"], ["env", "AWS_SECRET_ACCESS_KEY=••••••", "acme"]),
+            (["env", "REDISCLI_AUTH=\(blob)", "redis-cli"], ["env", "REDISCLI_AUTH=••••••", "redis-cli"]),
+        ]
+        for (words, masked) in cases {
+            XCTAssertEqual(Secrets.maskArguments(words), masked)
+        }
+        let kept: [[String]] = [
+            ["acme-server", "--key", "/certs/acme.pem"],
+            ["acme-server", "--tls-key=/certs/acme.pem"],
+            ["acme-cli", "--secret", "/run/secrets/acme"],
+            ["acme-cli", "--password-file", "/run/secrets/acme"],
+            ["acme-cli", "--token-path=/var/run/acme/token"],
+            ["env", "DB_PASSWORD_FILE=/run/secrets/acme", "acme"],
+            ["env", "SSH_AUTH_SOCK=/tmp/acme.sock", "ssh"],
+            ["acme-cli", "--token", "${ACME_TOKEN}"],
+            ["acme-cli", "--secret", "/var/run/secrets/acme.globex/serviceaccount/token"],
+            ["env", "AWS_SHARED_CREDENTIALS_FILE=/Users/acme/.aws/credentials", "acme"],
+            ["env", "PGSSLKEY=/etc/acme/globex-client.key", "psql"],
+        ]
+        for words in kept { XCTAssertEqual(Secrets.maskArguments(words), words) }
+    }
+
     /// A script's words are masked in place and put back in one pass, its
     /// spacing as it was — runs of spaces, a tab, new lines —: an agent's
     /// command is one script, a heredoc in it thousands of words, and a
@@ -235,6 +339,71 @@ final class SecretsTests: XCTestCase {
         let blob = ["QWNtZUdsb2Jl", "eEZha2VEYXRh", "MDEyMzQ1Njc4"].joined()
         let blobs = Array(repeating: blob, count: 2_000).joined(separator: "\n")
         XCTAssertEqual(Secrets.maskBase64Blobs(in: blobs), Array(repeating: Secrets.credentialMask, count: 2_000).joined(separator: "\n"))
+    }
+
+    /// A script's words as the shell splits them: a word's quotes hid its
+    /// name and its program from the rules — the first word of what Claude
+    /// Code `eval`s is `'PGPASSWORD=…`, `'mysql`, `'redis-cli` —, and a
+    /// quoted value with a space in it was cut at the space. Eval's argument
+    /// is a script too; only what masking changes goes back, inside the
+    /// word's own quotes.
+    func testAScriptIsReadAsTheShellSplitsIt() {
+        let parts = ["Zq8", "vX2", "mN7", "pL4"]
+        let password = parts.joined()
+        let spaced = parts[0] + parts[1] + " " + parts[2] + parts[3]
+        // Claude Code's command line, as it runs one.
+        func claude(_ command: String) -> [String] {
+            [
+                "/bin/zsh", "-c", "-l",
+                "source /Users/acme/.claude/shell-snapshots/snapshot-zsh-1731650000000-acme01.sh && eval '\(command)' \\< /dev/null && pwd -P >| /var/folders/ac/T/claude-acme-cwd",
+            ]
+        }
+        let commands: [(String, String)] = [
+            ("PGPASSWORD=\(password) psql -h db", "PGPASSWORD=•••••• psql -h db"),
+            ("mysql -uroot -p\(password) app", "mysql -uroot -p•••••• app"),
+            ("redis-cli -a \(password) ping", "redis-cli -a •••••• ping"),
+            ("curl -u acme:\(password) https://api.globex.invalid", "curl -u acme:•••••• https://api.globex.invalid"),
+            ("docker login -u acme -p \(password) ghcr.io", "docker login -u acme -p •••••• ghcr.io"),
+            ("sshpass -p \(password) ssh acme@globex.test", "sshpass -p •••••• ssh acme@globex.test"),
+            // A quote in the command, as Claude Code writes one: `'\''`.
+            ("PGPASSWORD=\(password) psql -c '\\''select 1'\\''", "PGPASSWORD=•••••• psql -c '\\''select 1'\\''"),
+            ("PGPASSWORD='\\''\(spaced)'\\'' psql", "PGPASSWORD='\\''••••••'\\'' psql"),
+        ]
+        var cases = commands.map { (claude($0.0), claude($0.1)) }
+        // Its newer line: options set and an alias unset first, a quote in
+        // the command written `'"'"'`, stdin without the `\`.
+        func newer(_ command: String) -> [String] {
+            [
+                "/bin/zsh", "-c",
+                "source /Users/acme/.claude/shell-snapshots/snapshot-zsh-1731650000000-acme01.sh 2>/dev/null || true && setopt NO_EXTENDED_GLOB 2>/dev/null || true && { \\builtin unalias -- 'which'; } >/dev/null 2>&1 || true && eval '\(command)' < /dev/null && pwd -P >| /tmp/claude-acme-cwd",
+            ]
+        }
+        cases.append((newer("mysql -uroot -p\(password) -e '\"'\"'select 1'\"'\"'"), newer("mysql -uroot -p•••••• -e '\"'\"'select 1'\"'\"'")))
+        cases.append((newer("PGPASSWORD=\(password) psql -h db"), newer("PGPASSWORD=•••••• psql -h db")))
+        cases += [
+            // Codex's, a quoted value with a space in it.
+            (["bash", "-lc", "PGPASSWORD='\(spaced)' psql"], ["bash", "-lc", "PGPASSWORD='••••••' psql"]),
+            (["sh", "-c", "acme-cli --password \"\(spaced)\" serve"], ["sh", "-c", "acme-cli --password \"••••••\" serve"]),
+            (["sh", "-c", "acme-cli --password \(parts[0] + parts[1])\\ \(parts[2] + parts[3]) serve"], ["sh", "-c", "acme-cli --password •••••• serve"]),
+            (["sh", "-c", "PGPASSWORD=$'\(parts[0])\\'\(parts[1]) \(parts[2])' psql"], ["sh", "-c", "PGPASSWORD=$'••••••' psql"]),
+            // `$"…"` is a string, no `$NAME`.
+            (["sh", "-c", "acme-cli --password $\"\(password)\""], ["sh", "-c", "acme-cli --password $\"••••••\""]),
+            // What changed across two stretches of quoting takes them whole: no quote left open.
+            (["sh", "-c", "mysql -uroot -p'\(parts[0]) \(parts[1])'\"\(parts[2])\" app"], ["sh", "-c", "mysql -uroot -p•••••• app"]),
+            (["sh", "-c", "PGPASSWORD='\(spaced)'\(parts[0]) psql"], ["sh", "-c", "PGPASSWORD=•••••• psql"]),
+            // An apostrophe in a heredoc opens a quote to the end: its words still read.
+            (["sh", "-c", "cat <<EOF\nit's acme\nEOF\nredis-cli -a \(password) ping"], ["sh", "-c", "cat <<EOF\nit's acme\nEOF\nredis-cli -a •••••• ping"]),
+        ]
+        let letters = Array(password)
+        for (words, masked) in cases {
+            let shown = Secrets.maskArguments(words)
+            XCTAssertEqual(shown, masked)
+            let text = shown.joined(separator: " ")
+            XCTAssertFalse((0...(letters.count - 4)).contains { text.contains(String(letters[$0..<($0 + 4)])) }, "no run of the password: \(text)")
+        }
+        // What isn't masked is kept as written, its quotes and escapes too.
+        let plain = ["sh", "-c", "echo 'a  b' \"c\\\"d\" e\\ f $'g\\'h' && acme-cli --port 8080"]
+        XCTAssertEqual(Secrets.maskArguments(plain), plain)
     }
 }
 

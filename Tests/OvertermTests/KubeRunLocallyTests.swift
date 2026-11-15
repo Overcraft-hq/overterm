@@ -242,6 +242,13 @@ final class KubeRunLocallyTests: XCTestCase {
         let mysql = try command(["mysql", "-uroot", "-phunter2"])
         XCTAssertEqual(mysql.command, #"-uroot -p"$OVERTERM_ARG_1""#)
         XCTAssertEqual(mysql.asked.map(\.from), ["-p in its command — not copied"])
+        // A shell's option with a value before its `-c` (hadolint's
+        // `SHELL`): its script read as one, only the password asked.
+        let password = ["Zq8", "vX2", "mN7"].joined()
+        let piped = try command(["/bin/bash", "-o", "pipefail", "-c", "PGPASSWORD=\(password) psql -h db"])
+        XCTAssertEqual(piped.asked.map(\.from), ["PGPASSWORD in its command — not copied"])
+        XCTAssertTrue(piped.command.contains("psql -h db"), "the command kept: \(piped.command)")
+        XCTAssertFalse(piped.line().contains(password))
         let script = try command(["sh", "-c", "app --password a1 --token b2"])
         XCTAssertEqual(script.command, "")
         XCTAssertEqual(script.entrypoint, "")

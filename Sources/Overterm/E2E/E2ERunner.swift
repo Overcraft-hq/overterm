@@ -3216,10 +3216,15 @@ final class E2ERunner {
         check("a dev server starts in the tab", port != nil)
         // A command line with a fake password in it, never typed: a script
         // of the scenario's own writes its pid, then execs a sleeping perl
-        // (60 s at most) with the password as later words, a flag's and a URL's.
-        let password = ["Zq8", "vX2", "mN7", "pL4"].joined()
+        // (60 s at most) with the password as later words, a flag's, a
+        // URL's and a token's starting with `/`, and with a space in it as
+        // one word, a flag's value.
+        let parts = ["Zq8", "vX2", "mN7", "pL4"]
+        let password = parts.joined()
+        let spaced = parts[0] + parts[1] + " " + parts[2] + parts[3]
         let secret = out("secret.sh")
-        try? "echo $$ > \"$0.pid\"\nexec /usr/bin/perl -e 'sleep 60' -- acme-cli --password \(password) postgres://acme:\(password)@db.globex.invalid/app\n"
+        try?
+            "echo $$ > \"$0.pid\"\nexec /usr/bin/perl -e 'sleep 60' -- acme-cli --password \(password) postgres://acme:\(password)@db.globex.invalid/app --api-token /\(password) '--db-password=\(spaced)'\n"
             .write(to: secret, atomically: true, encoding: .utf8)
         let secretPID = URL(fileURLWithPath: secret.path + ".pid")
         await runAndExpect("sh \(secret.path) &", file: secretPID, content: nil, "a command with a password in it runs in the tab")
@@ -3270,6 +3275,7 @@ final class E2ERunner {
                 "its row's tooltip shows it masked", drawn && perlTooltips().contains { $0.contains(Secrets.credentialMask) },
                 "\(tooltips.count) tooltips; the perl's: " + perlTooltips().map { $0.replacingOccurrences(of: password, with: "<password>") }.joined(separator: " | "))
             check("and no tooltip holds the password", drawn && !tooltips.contains { $0.contains(password) })
+            check("nor a part of the one with a space in it", drawn && !perlTooltips().contains { tooltip in parts.contains { tooltip.contains($0) } })
         } else {
             check("the perl's pid", false)
         }
