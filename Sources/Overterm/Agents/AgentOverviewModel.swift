@@ -34,34 +34,41 @@ final class AgentOverviewModel: ObservableObject {
         let agent: Agent?
         let activity: TabActivity
         let directory: String?
-        let roots: [(pid_t?, String)]
+        /// Its panes' tags, in the tab's order.
+        let tags: [String]
         let panes: Int
     }
 
-    func refresh(_ tabs: [Tab], inspector: ProcessInspector) async {
+    /// Every card again: each tab's agent a lookup in the app's census
+    /// (docs/design/activity/analysis.md, 7.8) — the light tick this
+    /// window already has while it shows, one tick for every tab when it
+    /// is older —, where each refresh walked every pane of every tab with a
+    /// scan of its own (2.4 item 2: tabs × panes × 7 ms every 2 s). The
+    /// lookup, the transcripts and the branches are read off the main
+    /// thread, on a GCD thread.
+    func refresh(_ tabs: [Tab], census: ActivitySampler = .app) async {
         guard !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
         let snapshots = tabs.map { tab in
             Snapshot(
                 id: tab.id, title: tab.title, color: tab.color, agent: tab.agent, activity: tab.activity,
-                directory: tab.agentDirectory ?? tab.workingDirectory,
-                roots: tab.terminals.map { (SurfaceProcesses.shared.loginPID(of: $0), $0.processTag) }, panes: tab.terminals.count)
+                directory: tab.agentDirectory ?? tab.workingDirectory, tags: tab.terminals.map(\.processTag), panes: tab.terminals.count)
         }
-        // Process scans and transcript tails: off the main thread.
+        if census === ActivitySampler.app { ActivityMonitor.shared.flushContext() }
         let cards = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(returning: snapshots.map { Self.card(for: $0, inspector: inspector) })
+                let agents = PaneAgent.lookup(snapshots.map { ($0.id, $0.tags) }, census: census, folders: true)
+                continuation.resume(returning: snapshots.map { Self.card(for: $0, agent: agents[$0.id]) })
             }
         }
         self.cards = Self.ordered(cards)
     }
 
-    nonisolated private static func card(for snapshot: Snapshot, inspector: ProcessInspector) -> Card {
-        let process = TerminalWindowController.firstAgent(in: snapshot.roots) { inspector.tree(root: $0, tag: $1) }
-        let running = process.flatMap(Self.agent(of:))
-        let agent = running ?? snapshot.agent
-        let directory = process?.workingDirectory ?? snapshot.directory
+    /// A tab's card, with the agent the census found running in it.
+    nonisolated static func card(for snapshot: Snapshot, agent running: PaneAgent?) -> Card {
+        let agent = running?.kind ?? snapshot.agent
+        let directory = running?.folder ?? snapshot.directory
         let claude =
             agent == .claude
             ? directory.flatMap(ClaudeUsageReader.latestSession(for:)).flatMap { ClaudeActivity.read($0) } : nil

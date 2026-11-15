@@ -3135,7 +3135,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     @objc func showAgentOverview(_ sender: Any?) {
         guard let overviewView else { return }
         if !overviewView.isHidden { return hideAgentOverview() }
-        Task { await overview.refresh(store.tabs, inspector: inspector) }
+        Task { await overview.refresh(store.tabs) }
         overviewView.isHidden = false
         window?.makeFirstResponder(overviewView)
         overviewEscape = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -3146,7 +3146,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         overviewPoll = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                Task { await self.overview.refresh(self.store.tabs, inspector: self.inspector) }
+                Task { await self.overview.refresh(self.store.tabs) }
             }
         }
     }
