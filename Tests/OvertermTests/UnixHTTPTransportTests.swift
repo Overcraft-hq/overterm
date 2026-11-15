@@ -114,6 +114,39 @@ final class UnixHTTPTransportTests: XCTestCase {
         }
     }
 
+    /// A request whose task was cancelled before it went never reaches the
+    /// server: one cancelled before it asked for a connection, and one
+    /// cancelled while the connection was being made — a usage poll
+    /// stopped as its page hid, whose read then still arrived after it.
+    func testACancelledRequestNeverLeaves() async throws {
+        let socket = server.socket
+        let direct = transport()
+        let before = Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            return try await direct.send(.GET, "/chunked", body: nil, headers: [])
+        }
+        let connecting = Task {
+            let found = UnixHTTPTransport(
+                address: .socket {
+                    // Cancelled now, as the connection is made: the connect itself doesn't stop for it.
+                    withUnsafeCurrentTask { $0?.cancel() }
+                    return socket
+                }, host: "localhost", readinessPath: "/readyz", service: "The proxy")
+            return try await found.send(.GET, "/chunked", body: nil, headers: [])
+        }
+        for task in [before, connecting] {
+            do {
+                _ = try await task.value
+                XCTFail("a cancelled request isn't answered")
+            } catch {
+                XCTAssertTrue(error is CancellationError, "\(error)")
+            }
+        }
+        // Anything written would have reached the server by now.
+        try await Task.sleep(for: .milliseconds(300))
+        XCTAssertEqual(server.requests, [], "nothing was sent")
+    }
+
     /// Docker's: Host `docker`, `/_ping`, its errors in its name.
     func testDockersTransport() async throws {
         let docker = UnixHTTPTransport.docker(.unix(server.socket))

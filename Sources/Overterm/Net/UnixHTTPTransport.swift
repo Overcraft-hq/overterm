@@ -122,6 +122,19 @@ struct UnixHTTPTransport: HTTPTransport {
         }
     }
 
+    /// A connection for a request not yet written — none for a task
+    /// cancelled before it, or while it was made (NIO's connect doesn't
+    /// stop for it): a poll stopped as its page hid sends nothing more.
+    private func connectUncancelled(_ handler: ChannelHandler & Sendable) async throws -> Channel {
+        try Task.checkCancellation()
+        let channel = try await connect(handler)
+        guard !Task.isCancelled else {
+            channel.close(promise: nil)
+            throw CancellationError()
+        }
+        return channel
+    }
+
     /// A connection to the server, its pipeline made by `initializer`.
     private func connect<Output: Sendable>(_ initializer: @escaping @Sendable (Channel) -> EventLoopFuture<Output>) async throws -> Output {
         let bootstrap = ClientBootstrap(group: MultiThreadedEventLoopGroup.singleton).connectTimeout(.seconds(3))
@@ -163,7 +176,7 @@ struct UnixHTTPTransport: HTTPTransport {
 
     func send(_ method: HTTPMethod, _ path: String, body: Data?, headers: [(String, String)]) async throws -> HTTPResponse {
         let collector = ResponseCollector(service: service)
-        let channel = try await connect(collector)
+        let channel = try await connectUncancelled(collector)
         write(channel, method, path, body: body, headers: headers)
         return try await withTaskCancellationHandler {
             try await collector.response.futureResult(on: channel.eventLoop).get()
@@ -181,7 +194,7 @@ struct UnixHTTPTransport: HTTPTransport {
         sent: @escaping @Sendable (Int) -> Void
     ) async throws -> HTTPResponse {
         let collector = ResponseCollector(service: service)
-        let channel = try await connect(collector)
+        let channel = try await connectUncancelled(collector)
         return try await withTaskCancellationHandler {
             var head = requestHead(method, path, headers)
             head.headers.add(name: "Content-Length", value: "\(length)")
