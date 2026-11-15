@@ -46,9 +46,9 @@ final class TerminalView: NSView {
     /// them (ProcessInspector).
     let processTag = UUID().uuidString
 
-    /// What Suspend Tab stopped in this pane, parents first (TabSuspension);
-    /// nil while it runs.
-    var suspendedPIDs: [pid_t]?
+    /// What Suspend Tab stopped in this pane, parents first, each by the
+    /// identity it was listed with (TabSuspension); nil while it runs.
+    var suspended: [ActivitySignalTarget]?
 
     /// Last directory the shell reported (OSC 7 via shell integration);
     /// the starting directory until it reports one.

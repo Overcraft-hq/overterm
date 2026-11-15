@@ -90,7 +90,15 @@ final class ProcessInspector: @unchecked Sendable {
     /// is `tag`; any other (a root no pane has, a tag alone) is read as a
     /// pane of its own beside the app's, by the same tick.
     func tree(root: pid_t?, tag: String?) -> [ProcessNode] {
-        guard root != nil || tag != nil else { return [] }
+        guard let (pane, snapshot) = slice(root: root, tag: tag) else { return [] }
+        return nodes(Self.running(tag == nil ? pane.tree : pane.placed, in: snapshot), in: snapshot)
+    }
+
+    /// The pane whose `login` is `root` and whose tag is `tag`, as `tree`
+    /// looks it up, with the snapshot it was read in; nil when neither is
+    /// given, or the lookup answers nothing. Blocking, as `tree`.
+    func slice(root: pid_t?, tag: String?) -> (slice: ActivityPaneSlice, snapshot: ActivitySnapshot)? {
+        guard root != nil || tag != nil else { return nil }
         func matches(_ login: ActivityProcessID?, _ paneTag: String) -> Bool {
             (root == nil || login?.pid == root) && (tag == nil || paneTag == tag)
         }
@@ -99,29 +107,29 @@ final class ProcessInspector: @unchecked Sendable {
             var login: ActivityProcessID?
             if let root {
                 // Its start: what the census names it by.
-                guard let process = census.kernel.process(root), !process.isZombie else { return [] }
+                guard let process = census.kernel.process(root), !process.isZombie else { return nil }
                 login = process.identity
             }
             // A tag no process carries, when none is asked for.
             context.panes.append(ActivityContext.Pane(tag: tag ?? "lookup-\(UUID().uuidString)", tab: UUID(), login: login))
         }
-        func slice(in snapshot: ActivitySnapshot) -> ActivityPaneSlice? { snapshot.panes.first { matches($0.login, $0.tag) } }
-        guard let snapshot = census.lookup(within: freshness, demand: ActivityDemand(.light(tabs: nil)), context: context, answers: { slice(in: $0) != nil }),
-            let pane = slice(in: snapshot)
-        else { return [] }
-        return nodes(Self.running(tag == nil ? pane.tree : pane.placed, in: snapshot), in: snapshot)
+        func paneSlice(in snapshot: ActivitySnapshot) -> ActivityPaneSlice? { snapshot.panes.first { matches($0.login, $0.tag) } }
+        guard let snapshot = census.lookup(within: freshness, demand: ActivityDemand(.light(tabs: nil)), context: context, answers: { paneSlice(in: $0) != nil }),
+            let pane = paneSlice(in: snapshot)
+        else { return nil }
+        return (pane, snapshot)
     }
 
     /// Of `members`, what the old scan made a node of — the user's
     /// processes, never a zombie: `PROC_PIDTBSDINFO` refused the rest —
     /// and of the user's only what runs as the user alone, its effective,
     /// real and saved uids all theirs, as `ProcessSignals` asks (6.10).
-    /// What `tree` gives is what Suspend Tab stops, by pid until its own
-    /// step (7.8), and what the agent readers look in: a setuid program the
-    /// pane runs (sudo, top, su) is root's, though `kill(2)` would let a
-    /// SIGSTOP through by its real uid (3.2), and a zombie has ended — an
-    /// agent's isn't running, and a pid recorded as stopped would wait for
-    /// a bare SIGCONT. What a setuid program started as the user stays.
+    /// What the agent readers look in, and of a pane's set what Suspend Tab
+    /// stops (`TabSuspension.targets`): a setuid program the pane runs
+    /// (sudo, top, su) is root's, though `kill(2)` would let a SIGSTOP
+    /// through by its real uid (3.2), and a zombie has ended — an agent's
+    /// isn't running, and one recorded as stopped would wait for a
+    /// SIGCONT. What a setuid program started as the user stays.
     /// Tab Info, which signals nothing, calls `nodes` itself and names the
     /// others too.
     static func running(_ members: [ActivityProcessID], in snapshot: ActivitySnapshot) -> [ActivityProcessID] {

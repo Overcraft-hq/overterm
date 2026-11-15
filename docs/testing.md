@@ -454,9 +454,17 @@ value, a path or an address of a process that isn't the test's.
   from a census that landed — a zombie `login` never paired, one taken
   since never offered twice; the app's children from one read of the
   table, a zombie `login` left out.
-- `TabSuspensionTests`: parents stopped before their children, and what
-  Suspend Tab stops read at the press — a lookup that always ticks,
-  where the census's other readers answer from a snapshot a tick old.
+- `TabSuspensionTests`: the sends through `ProcessSignals` over a fake
+  Mac, the shell stopped first and continued last; what Suspend Tab stops
+  read at the press — a lookup that always ticks, where the census's
+  other readers answer from a snapshot a tick old; the pane's set
+  (`ActivityPaneSet`) — a tagged daemon whose child sits on a pty of its
+  own, a tmux by name, an app and its helper, a nohup'd job and a tree
+  member on another terminal left out, what left the terminal and a dev
+  build's `.app` inside a checkout kept; the pane's own jobs on its
+  terminal kept whatever their path — Xcode's toolchain, a framework's
+  `Python.app`, a CLI in an app's `Contents/Resources`; a reused pid
+  never resumed.
 - `TabInfoModelTests`: Tab Info over its tab's slice — a split tab a group
   a pane, each labelled (masked), the shell its dimmed root, what left a
   terminal under its pane, both panes' busy children's CPU, the

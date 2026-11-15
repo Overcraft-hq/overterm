@@ -1,33 +1,70 @@
 import AppKit
 import SwiftUI
 
-/// Suspend Tab: every process in a tab's panes stopped (SIGSTOP) — no CPU,
-/// nothing lost — until Resume Tab continues them (SIGCONT) where they were.
+/// Suspend Tab: every process of a tab's panes stopped (SIGSTOP) — no
+/// CPU, nothing lost — until Resume Tab continues them (SIGCONT) where they
+/// were.
+///
+/// What a pane stops is its set (docs/design/activity/analysis.md, 6.5,
+/// `ActivityPaneSet`): its `login`'s descendants and what left its terminal
+/// carrying its tag — never a tmux server and its sessions' shells, an
+/// ssh-agent, a colima daemon, an app started with `code .`, a nohup'd job,
+/// anything on another terminal, which a tag reaches too (2.4, item 14).
+/// Of the set, only what runs as the user alone, and no zombie.
 ///
 /// The shell is stopped with what it runs, and first: a shell that saw its
 /// job stop would take the terminal back for its prompt, and the job,
 /// continued, would be in the background. Continued in the opposite order,
 /// children before their shell, the shell never sees a thing.
+///
+/// Every send goes through `ProcessSignals` (6.10, the one signal path): by
+/// the identity each process was listed with, so a Resume hours later
+/// continues only what is still that process — never a pid someone else
+/// holds now, perhaps a job they stopped with ⌃Z elsewhere.
 enum TabSuspension {
-    /// What a press stops, read at the press, as the scan this lookup
-    /// replaced read it (docs/design/activity/analysis.md, 7.8): a lookup in
-    /// the app's census that always ticks. The window's readers' lookups
-    /// answer from a snapshot up to a tick old, and a tab suspended from one
-    /// would keep running what started since — the command just typed, an
-    /// agent's new shell, a server's new worker — while its shell sat
-    /// stopped under the cover. Until Suspend Tab's own step moves it onto
-    /// the pane's set.
-    static func inspector(census: ActivitySampler = .app) -> ProcessInspector { ProcessInspector(census: census, freshness: 0) }
+    /// What a press stops in one pane, read at the press, as the scan this
+    /// lookup replaced read it (7.8): a lookup in the app's census that
+    /// always ticks. The window's readers' lookups answer from a snapshot up
+    /// to a tick old, and a tab suspended from one would keep running what
+    /// started since — the command just typed, an agent's new shell, a
+    /// server's new worker — while its shell sat stopped under the cover.
+    /// Blocking: off the main thread.
+    static func targets(login: pid_t?, tag: String, checkouts: [String], census: ActivitySampler = .app) -> [ActivitySignalTarget] {
+        guard let (slice, snapshot) = ProcessInspector(census: census, freshness: 0).slice(root: login, tag: tag) else { return [] }
+        let terminal = census.appContext.panes.first { $0.tag == tag }?.terminal
+        return targets(of: slice, in: snapshot, terminal: terminal, checkouts: checkouts)
+    }
 
-    /// Parents before their children — the order to stop in.
-    static func order(_ roots: [ProcessNode]) -> [pid_t] { roots.flatMap(\.flattened).map(\.pid) }
+    /// The pane's set itself, read now as `targets` reads it: what it
+    /// leaves out and why (`ActivityPaneSet.leftOut`). Blocking.
+    static func paneSet(login: pid_t?, tag: String, checkouts: [String], census: ActivitySampler = .app) -> ActivityPaneSet? {
+        guard let (slice, snapshot) = ProcessInspector(census: census, freshness: 0).slice(root: login, tag: tag) else { return nil }
+        let terminal = census.appContext.panes.first { $0.tag == tag }?.terminal
+        return ActivityPaneSet(slice, in: snapshot, terminal: terminal, checkouts: checkouts)
+    }
 
-    /// Stops `pids` in order; the ones that stopped.
-    static func stop(_ pids: [pid_t]) -> [pid_t] { pids.filter { kill($0, SIGSTOP) == 0 } }
+    /// Of `slice`'s set (`ActivityPaneSet`), what runs as the user alone
+    /// and hasn't ended, parents first — the order to stop in — each with
+    /// the executable the census read. Pure.
+    static func targets(of slice: ActivityPaneSlice, in snapshot: ActivitySnapshot, terminal: dev_t? = nil, checkouts: [String] = [])
+        -> [ActivitySignalTarget]
+    {
+        let set = ActivityPaneSet(slice, in: snapshot, terminal: terminal, checkouts: checkouts)
+        return ProcessInspector.running(set.members, in: snapshot).map { ActivitySignalTarget($0, path: snapshot.facts[$0]?.path) }
+    }
 
-    /// Continues what `stop` stopped, children first.
-    static func resume(_ pids: [pid_t]) {
-        for pid in pids.reversed() { kill(pid, SIGCONT) }
+    /// Stops `targets` in order; the ones that stopped.
+    static func stop(_ targets: [ActivitySignalTarget], signals: ProcessSignals = ProcessSignals()) -> [ActivitySignalTarget] {
+        targets.filter { target in
+            if case .sent = signals.send(.stop, to: target, alone: false) { return true }
+            return false
+        }
+    }
+
+    /// Continues what `stop` stopped, children first: each only while it
+    /// is still the process it stopped.
+    static func resume(_ targets: [ActivitySignalTarget], signals: ProcessSignals = ProcessSignals()) {
+        for target in targets.reversed() { _ = signals.send(.cont, to: target, alone: false) }
     }
 }
 
@@ -37,21 +74,21 @@ extension Tab {
 }
 
 extension TerminalView {
-    var isSuspended: Bool { suspendedPIDs != nil }
+    var isSuspended: Bool { suspended != nil }
 
-    /// Stops `pids` (this pane's, parents first) and covers the pane.
-    func suspend(_ pids: [pid_t]) {
+    /// Stops `targets` (this pane's set, parents first) and covers the pane.
+    func suspend(_ targets: [ActivitySignalTarget]) {
         guard !isSuspended, surface != nil else { return }
-        suspendedPIDs = TabSuspension.stop(pids)
+        suspended = TabSuspension.stop(targets)
         let cover = SuspendedCover(frame: bounds)
         cover.autoresizingMask = [.width, .height]
         addSubview(cover)
     }
 
     func resume() {
-        guard let pids = suspendedPIDs else { return }
-        suspendedPIDs = nil
-        TabSuspension.resume(pids)
+        guard let targets = suspended else { return }
+        suspended = nil
+        TabSuspension.resume(targets)
         subviews.filter { $0 is SuspendedCover }.forEach { $0.removeFromSuperview() }
     }
 }
@@ -91,20 +128,21 @@ final class SuspendedCover: NSView {
 }
 
 extension TerminalWindowController {
-    /// Stops every process in the tab's panes, read at the press
-    /// (`TabSuspension.inspector`). The process scan runs off the main
-    /// thread; a Resume in between wins.
+    /// Stops each of the tab's panes' sets, read at the press
+    /// (`TabSuspension.targets`). The lookup runs off the main thread; a
+    /// Resume in between wins.
     func suspendTab(_ tab: Tab) {
         let panes = tab.terminals.filter { !$0.isSuspended }
         guard !panes.isEmpty else { return }
         let roots = panes.map { (SurfaceProcesses.shared.loginPID(of: $0), $0.processTag) }
-        let inspector = TabSuspension.inspector()
+        // A `.app` inside one of these stays the pane's: a dev build.
+        let checkouts = Array(Set(store.tabs.compactMap { $0.checkoutSource?.root.path }))
         DispatchQueue.global(qos: .userInitiated).async {
-            let orders = roots.map { TabSuspension.order(inspector.tree(root: $0.0, tag: $0.1)) }
+            let sets = roots.map { TabSuspension.targets(login: $0.0, tag: $0.1, checkouts: checkouts) }
             Task { @MainActor in
                 tab.objectWillChange.send()
                 self.store.objectWillChange.send()
-                for (pane, pids) in zip(panes, orders) { pane.suspend(pids) }
+                for (pane, targets) in zip(panes, sets) { pane.suspend(targets) }
             }
         }
     }
