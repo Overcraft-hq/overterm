@@ -84,6 +84,9 @@ final class ActivityMonitor: ObservableObject {
     private(set) var skippedTicks = 0
     /// Times the context was rebuilt from `contextSource`.
     private(set) var contextBuilds = 0
+    /// Full ticks that landed, a one-off's too: what the page's "reads
+    /// nothing while hidden" is checked by (10.3, check 10).
+    private(set) var fullTicks = 0
 
     init(sampler: ActivitySampler = ActivitySampler()) {
         self.sampler = sampler
@@ -286,7 +289,10 @@ final class ActivityMonitor: ObservableObject {
         if let snapshot {
             // Never an older tick's over a newer one's.
             if snapshot.tick > self.snapshot?.tick ?? 0 { self.snapshot = snapshot }
-            if snapshot.demand.full, snapshot.tick > lastFull?.tick ?? 0 { lastFull = snapshot }
+            if snapshot.demand.full, snapshot.tick > lastFull?.tick ?? 0 {
+                lastFull = snapshot
+                fullTicks += 1
+            }
         }
         return snapshot
     }

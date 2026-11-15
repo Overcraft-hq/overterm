@@ -109,6 +109,9 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
     /// A plain click on a row (no ⌘ or ⇧), once it is selected: what the
     /// page opens for it (Kubernetes' detail). Nil: a click only selects.
     var pressed: ((String) -> Void)? = nil
+    /// What VoiceOver says of a row, set on its row view: nil leaves the
+    /// cells to speak for themselves.
+    var accessibilityLabel: ((Row) -> String)? = nil
 
     /// A list of one column, its rows drawing everything (Docker's).
     init(
@@ -127,7 +130,7 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
     init(
         rows: [Row], selection: Binding<Set<String>>, columns: [ResourceColumn], sort: Binding<ResourceSort?>,
         cell: @escaping (Row, ResourceColumn?) -> AnyView, verbs: @escaping (Set<String>) -> [ResourceVerb], copy: @escaping () -> Void,
-        accessibilityIdentifier: String = "resource.list", pressed: ((String) -> Void)? = nil
+        accessibilityIdentifier: String = "resource.list", pressed: ((String) -> Void)? = nil, accessibilityLabel: ((Row) -> String)? = nil
     ) {
         self.rows = rows
         self._selection = selection
@@ -138,6 +141,7 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
         self.copy = copy
         self.accessibilityIdentifier = accessibilityIdentifier
         self.pressed = pressed
+        self.accessibilityLabel = accessibilityLabel
     }
 
     /// A header only for more than one column.
@@ -261,6 +265,10 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
         private func showVisible(_ view: ResourceTable, in table: NSTableView) {
             let visible = table.rows(in: table.visibleRect)
             for index in visible.location..<min(visible.location + visible.length, rows.count) {
+                if let label = view.accessibilityLabel, let rowView = table.rowView(atRow: index, makeIfNecessary: false) {
+                    let said = label(rows[index])
+                    if rowView.accessibilityLabel() != said { rowView.setAccessibilityLabel(said) }
+                }
                 if spans(rows[index]) {
                     (table.view(atColumn: 0, row: index, makeIfNecessary: false) as? ResourceHostingCell)?.show(view.cell(rows[index], nil))
                     continue
@@ -291,6 +299,12 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
             cell.show(view.cell(rows[row], shown))
             cell.setAccessibilityIdentifier(rows[row].id)
             return cell
+        }
+
+        /// A row's view as it comes on screen: what VoiceOver says of it.
+        func tableView(_ tableView: NSTableView, didAdd rowView: NSTableRowView, forRow row: Int) {
+            guard let label = view?.accessibilityLabel, rows.indices.contains(row) else { return }
+            rowView.setAccessibilityLabel(label(rows[row]))
         }
 
         func tableViewSelectionDidChange(_ notification: Notification) {

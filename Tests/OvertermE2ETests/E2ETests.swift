@@ -349,6 +349,7 @@ final class E2ETests: XCTestCase {
     func testPalette() throws { try run("palette") }
     func testReorder() throws { try run("reorder") }
     func testInfo() throws { try run("info") }
+    func testActivity() throws { try run("activity") }
     func testClaudeInfo() throws { try run("claude") }
     func testDiskInfo() throws { try run("disk") }
     func testFollow() throws { try run("follow") }

@@ -104,7 +104,7 @@ final class WorkspacePagesTests: XCTestCase {
     }
 
     func testEveryOverlayIsListed() {
-        XCTAssertEqual(WorkspaceOverlay.allCases, [.settings, .docker, .kubernetes])
+        XCTAssertEqual(WorkspaceOverlay.allCases, [.settings, .docker, .kubernetes, .activity])
     }
 }
 

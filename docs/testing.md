@@ -560,6 +560,18 @@ value, a path or an address of a process that isn't the test's.
   the agent's critical Stop, a helm or pulumi write's critical sheet and
   its reading from a masked argv, what outlives its terminal and apps
   refused — and every Free asked, the owners' own verbs too.
+- `SystemMetersTests`: the meters' arithmetic — CPU a core between two
+  reads, none for a first one, the counters' wrap at 2³², a changed core
+  count without a rate; memory in Activity Monitor's terms; the pressure
+  and thermal words; the full tick carrying them and the light one never
+  asking; the real kernel's counters, counts only.
+- `ActivityRowsTests`: the page's rows over a fake Mac — everyone's
+  processes, other users' without numbers, a first sample "—", CPU first
+  once rated, the busiest five, only yours without `activity.everyone`, a
+  test run's own tabs' alone with the Mac counted, the user's listeners
+  by number with their tab and reach, what each row says to VoiceOver,
+  numbers written the same in every locale; the page's want — the full
+  level only while it is shown in a window on screen with Activity on.
 
 **The isolated-run gate.** A unit test or an isolated run is guarded
 (`AppEnvironment.guardsSignals`), over every change Overterm makes to a
@@ -659,7 +671,7 @@ What makes it end-to-end without being dangerous:
 
 Scenarios: `terminal`, `tabs`, `rename`, `pin`, `close`, `editor`, `diff`,
 `branchDiff`, `why`, `diffStyle`, `layout`, `session`, `task`, `snippets`, `attention`,
-`marks`, `palette`, `reorder`, `info`, `claude`, `disk`, `clipboard`,
+`marks`, `palette`, `reorder`, `info`, `activity`, `claude`, `disk`, `clipboard`,
 `openWith`, `dropFiles`, `peek`, `groups`, `blocks`, `inbox`, `askAgent`,
 `dropSplit`, `settings`, `themes`, `browser` (the browser column, its tabs, a page's console,
 and the MCP server over real HTTP as an agent would use it), `fileActions` (the file tree's New File…, Rename…,
@@ -683,6 +695,13 @@ carries a fake password, made at run time and never typed — a script it
 writes execs it —, once after a token's flag with a `/` in front, once with
 a space in it as one word, and reads its row's tooltip from the popover's
 accessibility tree: masked, the password and every part of it nowhere.
+`activity` opens the Activity page from View ▸ Activity: it lists the
+run's own sleep and python server in their tab and nothing outside the
+run's tabs, the meters a core each, the server's port in Listening, each
+row's VoiceOver label; hidden, before and after, the census's full level
+doesn't tick for 3 s while the light tick goes on; with Activity off, ⌥⌘A
+opens Settings ▸ Activity. Its checks print counts, its own pids and port
+numbers only.
 `marks` leaves one tab in each activity state; with `OVERTERM_DUMP_PNG=<png>`
 it captures the window, for judging the look. Run one by hand while working
 on it:

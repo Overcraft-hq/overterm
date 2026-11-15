@@ -130,6 +130,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     let terraformPlanPane = TerraformPlanPaneModel()
     /// Whether this window holds `KubernetesModel.show()` for its page.
     var kubernetesPageHeld = false
+    /// The Activity page's own state; its view is made the first time it opens.
+    let activityPage = ActivityPageModel()
     /// What an isolated run would have opened in the default browser (an Ingress).
     var kubernetesOpenedExternally: [URL] = []
     /// …and for the ⌃⌘J switcher, while the palette shows it.
@@ -756,6 +758,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         declarePage(settingsWorkspacePage())
         wireDockerPage()
         wireKubernetesPage()
+        wireActivityPage()
         wireDockerPanel()
         wireKubernetesPanel()
         wireTerraformPanel()
@@ -3641,6 +3644,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 }
                 if keys.contains(where: { $0.hasPrefix("terraform.") }) { self.terraformPanelSettingsChanged() }
                 if keys.contains("activity.interval") { self.activityIntervalChanged() }
+                if keys.contains(where: { $0.hasPrefix("activity.") }) { self.activitySettingsChanged() }
                 if !keys.isDisjoint(with: Self.sidebarPanelKeys) { self.sidebarPanelsChanged() }
                 if keys.contains("general.sidebarRail") { self.sizeSidebarColumn() }
                 let editorKeys = keys.filter { $0.hasPrefix("editor.") }

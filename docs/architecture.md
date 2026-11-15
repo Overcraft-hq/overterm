@@ -856,9 +856,9 @@ other processes, so the env tag alone can't find a shell — hence the tree.
 
 What runs and what listens, one census for the app (`Sources/Overterm/
 Activity/`; the design is docs/design/activity/analysis.md, what was
-built its Section 15). Stage 0 has no page of its own: Tab Info, the
+built its Section 15). Its page is Activity (⌥⌘A); Tab Info, the
 pane pills, the agent overview, Sessions, an MCP confirmation, a drop, a
-paste and Suspend Tab read it. Terraform's close guard doesn't yet: it
+paste and Suspend Tab read it too. Terraform's close guard doesn't yet: it
 walks the closing panes' trees itself, on the main thread, at the close
 (an exception CLAUDE.md names; Section 15 says why it is still open).
 
@@ -900,6 +900,21 @@ walks the closing panes' trees itself, on the main thread, at the close
   what to send is `ActivitySignalCheck`'s. In an isolated run or a unit
   test the gate (`ActivitySignalGate`) refuses anything the run didn't
   register or its panes didn't start (docs/testing.md, Activity).
+- **The page** (`WorkspaceOverlay.activity`, View ▸ Activity, ⌥⌘A;
+  `ActivityPageModel`/`ActivityPageView`, wired by
+  `TerminalWindowController+ActivityPage`): Processes and Listening
+  (`1`, `2`) in one `ResourceTable`, so the list keeps its place as the
+  section changes, and the meters down the left (`SystemMeters`, read in
+  the full tick: CPU a core between two reads, memory in Activity
+  Monitor's terms). It wants the full level only while it is the page on
+  screen in a window that shows, and gives it back when hidden: then it
+  reads nothing and builds no rows. Its rows are made off the main thread
+  (`ActivityRows`, pure) from each full snapshot; a first sample's CPU is
+  "—". In an isolated run it lists only the run's own tabs' processes, the
+  Mac as counts (design 9.9). Each row says its name, pid, CPU and tab to
+  VoiceOver (`ResourceTable`'s `accessibilityLabel`). Settings ▸ Activity
+  holds `activity.enabled`, `interval` (the census's cadence, the light
+  tick's too), `everyone` and `appServices`.
 
 ## Agents
 
