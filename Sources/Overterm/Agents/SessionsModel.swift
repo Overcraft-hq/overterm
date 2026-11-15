@@ -13,7 +13,9 @@ final class SessionsModel: ObservableObject {
     struct RunningClaude: Sendable {
         let tab: Tab.ID
         let directory: String
-        let command: String
+        /// The session its `--resume`/`-r` picks back up, off argv's raw
+        /// words (`PaneAgent.resumes`).
+        let resumes: String?
     }
 
     /// The sessions again, and which tab runs each: every tab's Claude a
@@ -41,7 +43,7 @@ final class SessionsModel: ObservableObject {
     nonisolated static func claudes(_ tabs: [Tab.ID], _ agents: [Tab.ID: PaneAgent]) -> [RunningClaude] {
         tabs.compactMap { tab in
             guard let agent = agents[tab], agent.kind == .claude, let folder = agent.folder else { return nil }
-            return RunningClaude(tab: tab, directory: folder, command: agent.command)
+            return RunningClaude(tab: tab, directory: folder, resumes: agent.resumes)
         }
     }
 
@@ -50,11 +52,8 @@ final class SessionsModel: ObservableObject {
     nonisolated static func running(_ sessions: [ClaudeSession], _ claudes: [RunningClaude]) -> [String: Tab.ID] {
         var result: [String: Tab.ID] = [:]
         for claude in claudes {
-            let words = claude.command.split(separator: " ").map(String.init)
-            if let flag = words.firstIndex(where: { $0 == "--resume" || $0 == "-r" }), flag + 1 < words.count,
-                sessions.contains(where: { $0.id == words[flag + 1] })
-            {
-                result[words[flag + 1]] = claude.tab
+            if let id = claude.resumes, sessions.contains(where: { $0.id == id }) {
+                result[id] = claude.tab
                 continue
             }
             let directory = URL(fileURLWithPath: claude.directory).standardizedFileURL.path

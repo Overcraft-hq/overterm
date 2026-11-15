@@ -27,6 +27,12 @@ struct ProcessNode: Identifiable, Equatable {
     /// Where it runs.
     let workingDirectory: String?
     var children: [ProcessNode] = []
+    /// The agent argv[0]'s raw word names (`ProcessArguments.agent`): with
+    /// `name`, which agent this is, where the masked first word may hide it.
+    var argvAgent: Agent? = nil
+    /// The session a Claude's `--resume`/`-r` picks back up, off the raw
+    /// words (`ProcessArguments.resumes`); nil for anything not a Claude.
+    var resumes: String? = nil
 
     var pid: pid_t { identity.pid }
 
@@ -162,15 +168,17 @@ final class ProcessInspector: @unchecked Sendable {
             let facts = snapshot.facts[identity]
             let name = snapshot.name(of: identity) ?? process.shortName
             let command = facts?.command ?? ""
+            let agent = Agent.of(name: name, argv: facts?.argvAgent, command: command)
             var directory: String?
             if case .path(let path)? = facts?.folder {
                 directory = path
             } else {
-                directory = folder(identity, Agent.of(name: name, command: command) != nil)
+                directory = folder(identity, agent != nil)
             }
             nodes[identity.pid] = ProcessNode(
                 identity: identity, parent: process.parentPID, name: name, maskedCommand: command, cpuPercent: facts?.rates?.cpuPercent,
-                footprint: facts?.usage?.footprint ?? 0, memory: facts?.usage?.residentSize ?? 0, workingDirectory: directory)
+                footprint: facts?.usage?.footprint ?? 0, memory: facts?.usage?.residentSize ?? 0, workingDirectory: directory,
+                argvAgent: facts?.argvAgent, resumes: agent == .claude ? facts?.resumes : nil)
         }
         return assemble(nodes)
     }

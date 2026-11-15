@@ -162,7 +162,7 @@ enum ActivityPortFree {
         for member in slice.placed + [slice.agent].compactMap({ $0 }) where !groupHoldsAgent {
             guard let other = table.process(member), other.group == group else { continue }
             let facts = snapshot.facts[member]
-            if member == slice.agent || Agent.of(name: facts?.name ?? other.shortName, command: facts?.command ?? "") != nil { groupHoldsAgent = true }
+            if member == slice.agent || Agent.of(name: facts?.name ?? other.shortName, argv: facts?.argvAgent, command: facts?.command ?? "") != nil { groupHoldsAgent = true }
         }
         let target = ActivityTarget(
             kind, pid: process.pid, effectiveUID: process.effectiveUID, realUID: process.realUID, savedUID: process.savedUID,

@@ -106,6 +106,10 @@ struct ActivityFacts: Hashable, Sendable {
     var isCut = false
     /// argv[0] is a title the process wrote over its argv.
     var isTitle = false
+    /// The agent argv[0]'s file names, and the session id its `--resume`
+    /// or `-r` gives, read off the raw words (`ProcessArguments`).
+    var argvAgent: Agent?
+    var resumes: String?
     /// The four names of its environment (9.2): nil for a process a pane's
     /// tree places (never read), a `CS_RESTRICT` one (hidden by the
     /// kernel), another user's, or one not read yet.

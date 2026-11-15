@@ -1,4 +1,5 @@
 import Darwin
+import Foundation
 
 /// The four environment names the census reads (docs/design/activity/
 /// analysis.md, 9.2) — Overterm's three markers and launchd's job label,
@@ -74,6 +75,15 @@ struct ProcessArguments: Hashable, Sendable {
     /// argv[0] is a title the process wrote over its argv: `command` is
     /// that title, its arguments gone.
     let isTitle: Bool
+    /// The agent argv[0]'s file names (`claude`, `/opt/homebrew/bin/codex`),
+    /// taken off the raw word before masking: masked, a long relative
+    /// path reads as a base64 blob and the agent would be missed.
+    var agent: Agent? = nil
+    /// The session id after argv's first `--resume` or `-r`, hex and dashes
+    /// only (`ClaudeSession.isValidID`), taken off the raw words: masked,
+    /// the `-r` of `--fork-session -r <id>` goes — a session flag's value
+    /// looks secret. Whose it is, a Claude's, its reader decides.
+    var resumes: String? = nil
     /// The markers, when the environment was scanned.
     let markers: ProcessMarkers?
 
@@ -247,11 +257,23 @@ struct ProcessArguments: Hashable, Sendable {
         let markers = scanEnvironment ? scan(bytes, from: layout.environment) : nil
         guard decode else { return ProcessArguments(command: "", label: nil, isCut: layout.isCut, isTitle: layout.isTitle, markers: markers) }
         var words = layout.words.map { String(decoding: UnsafeRawBufferPointer(rebasing: bytes[$0]), as: UTF8.self) }
+        let agent = words.first.flatMap { Agent(rawValue: ($0 as NSString).lastPathComponent) }
+        let resumes = resumedSession(in: words)
         let masked = Secrets.maskArguments(words)
         words.removeAll()
         let command = ActivityText.command(masked: masked) + (layout.isCut ? (masked.isEmpty ? "" : " ") + cutMark : "")
         let label = ActivityText.label(masked)
-        return ProcessArguments(command: command, label: label, isCut: layout.isCut, isTitle: layout.isTitle, markers: markers)
+        return ProcessArguments(
+            command: command, label: label, isCut: layout.isCut, isTitle: layout.isTitle, agent: agent, resumes: resumes, markers: markers)
+    }
+
+    /// The word after the first `--resume` or `-r` of `words` — argv's, or
+    /// a command line's split at spaces —, when it is a session id
+    /// (`ClaudeSession.isValidID`); every session Sessions lists is. Pure.
+    static func resumedSession(in words: [String]) -> String? {
+        guard let flag = words.firstIndex(where: { $0 == "--resume" || $0 == "-r" }), flag + 1 < words.count else { return nil }
+        let id = words[flag + 1]
+        return ClaudeSession.isValidID(id) ? id : nil
     }
 
     /// Where the layout's parts lie, found in place — no byte of it made a

@@ -78,9 +78,7 @@ final class AgentOverviewModel: ObservableObject {
     }
 
     nonisolated static func agent(of node: ProcessNode) -> Agent? {
-        let base = node.maskedCommand.split(separator: " ").first.map { (String($0) as NSString).lastPathComponent }
-        for agent in Agent.allCases where node.name == agent.rawValue || base == agent.rawValue { return agent }
-        return nil
+        Agent.of(name: node.name, argv: node.argvAgent, command: node.maskedCommand)
     }
 
     /// The checked-out branch, read from .git/HEAD (no git process per card

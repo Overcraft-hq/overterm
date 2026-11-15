@@ -409,6 +409,13 @@ value, a path or an address of a process that isn't the test's.
   region never parsed (an area an `exec` grew read again, one past
   `kern.argmax` refused); a title written over argv read alone, a
   python child's that writes one too.
+- `ProcessCommandTests`: a command line as Tab Info's tooltip shows it,
+  read as the census reads argv — a fake password, made at run time,
+  masked in every form (a flag's, mysql's `-p`, a URL's, a bearer's, with
+  a space in it, starting with `/`, inside Claude Code's `eval`) —, while
+  which agent runs (argv[0] a long relative path that masking hides) and
+  the session a Claude resumed (`--fork-session -r <id>`) are taken off
+  the raw words inside the read.
 - `SocketScanTests`: the classification from fixtures; a child handed
   listeners on 127.0.0.1 and ::1 and a bound UDP socket; a child holding
   3,000 sockets read 2,000 a tick, rotating.

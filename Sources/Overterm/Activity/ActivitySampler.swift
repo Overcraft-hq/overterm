@@ -565,6 +565,8 @@ final class ActivitySampler: @unchecked Sendable {
                 facts.label = arguments.label
                 facts.isCut = arguments.isCut
                 facts.isTitle = arguments.isTitle
+                facts.argvAgent = arguments.agent
+                facts.resumes = arguments.resumes
             }
             if case .read(let markers) = entry.markers { facts.markers = markers }
         }
@@ -587,12 +589,16 @@ final class ActivitySampler: @unchecked Sendable {
         return file ?? comm
     }
 
-    /// The agent `process` is, by its name or its masked argv's first word.
+    /// The agent `process` is, by its name or argv[0]'s file.
     private static func agent(_ process: ActivityProcess, _ entry: Known?) -> Agent? {
         let name = entry.map { name(comm: process.shortName, procName: $0.procName, path: $0.path) } ?? process.shortName
         var command = ""
-        if case .read(let arguments)? = entry?.arguments { command = arguments.command }
-        return Agent.of(name: name, command: command)
+        var argv: Agent?
+        if case .read(let arguments)? = entry?.arguments {
+            command = arguments.command
+            argv = arguments.agent
+        }
+        return Agent.of(name: name, argv: argv, command: command)
     }
 
     /// `root`'s descendants, depth first, oldest child first; at most `limit`.

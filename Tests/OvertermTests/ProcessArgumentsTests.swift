@@ -44,12 +44,14 @@ final class ProcessArgumentsTests: XCTestCase {
         XCTAssertNil(try XCTUnwrap(parse(bytes, markers: false)).markers, "not asked, not scanned")
     }
 
-    /// The result types hold the four values and the masked command —
-    /// nothing a later field could carry an environment entry in.
+    /// The result types hold the four values, the masked command and what
+    /// argv's raw words say of an agent — an agent's kind, a session id of
+    /// hex and dashes — nothing a later field could carry an environment
+    /// entry in.
     func testTheTypesHoldNothingElse() {
         XCTAssertEqual(Mirror(reflecting: ProcessMarkers()).children.map(\.label), ["tab", "run", "helper", "service"])
         let read = ProcessArguments(command: "", label: nil, isCut: false, isTitle: false, markers: nil)
-        XCTAssertEqual(Mirror(reflecting: read).children.map(\.label), ["command", "label", "isCut", "isTitle", "markers"])
+        XCTAssertEqual(Mirror(reflecting: read).children.map(\.label), ["command", "label", "isCut", "isTitle", "agent", "resumes", "markers"])
         XCTAssertEqual(ProcessMarkers.names, ["OVERTERM_TAB_ID", "OVERTERM_RUN", "OVERTERM_HELPER", "XPC_SERVICE_NAME"])
     }
 

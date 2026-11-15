@@ -10,6 +10,10 @@ struct PaneAgent: Equatable, Sendable {
     let kind: Agent
     /// Its argv, masked as the census read it (9.3); "" when not read.
     let command: String
+    /// The session a Claude's `--resume <id>` or `-r <id>` picks back up,
+    /// read off argv's raw words (`ProcessArguments.resumes`): Sessions'
+    /// match, which the masked command can lose.
+    var resumes: String? = nil
     /// Where it works, when known.
     let folder: String?
 
@@ -36,12 +40,12 @@ struct PaneAgent: Equatable, Sendable {
                 guard let process = snapshot.table.process(identity) else { continue }
                 let facts = snapshot.facts[identity]
                 let command = facts?.command ?? ""
-                guard let kind = Agent.of(name: snapshot.name(of: identity) ?? process.shortName, command: command),
+                guard let kind = Agent.of(name: snapshot.name(of: identity) ?? process.shortName, argv: facts?.argvAgent, command: command),
                     only == nil || kind == only
                 else { continue }
                 let known: String?
                 if case .path(let path)? = facts?.folder { known = path } else { known = folder(identity) }
-                return PaneAgent(identity: identity, kind: kind, command: command, folder: known)
+                return PaneAgent(identity: identity, kind: kind, command: command, resumes: kind == .claude ? facts?.resumes : nil, folder: known)
             }
         }
         return nil

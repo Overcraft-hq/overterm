@@ -35,7 +35,16 @@ enum Agent: String, CaseIterable, Identifiable, Codable {
     /// file (`claude`, `/opt/homebrew/bin/codex`); nil for anything else.
     /// The census's light tick and every reader of a tab's tree ask this.
     static func of(name: String, command: String) -> Agent? {
+        of(name: name, argv: nil, command: command)
+    }
+
+    /// The same, with the agent argv[0]'s raw word names, as the census
+    /// read it (`ProcessArguments.agent`) — a masked first word may hide it
+    /// (a long relative path reads as a base64 blob) —, else the masked
+    /// command's first word.
+    static func of(name: String, argv: Agent?, command: String) -> Agent? {
         if let agent = Agent(rawValue: name) { return agent }
+        if let argv { return argv }
         guard let first = command.split(separator: " ").first else { return nil }
         return Agent(rawValue: (String(first) as NSString).lastPathComponent)
     }

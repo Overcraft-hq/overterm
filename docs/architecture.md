@@ -745,9 +745,10 @@ folder names (every non-alphanumeric is `-`), so a folder is a candidate by
 prefix and kept only if the transcript's `cwd` is really inside a worktree —
 `repo-other` is not `repo`. Only the newest 60 are read, 128 KB of each end
 (`ClaudeActivity`). `SessionsModel.running` pairs tabs' Claude processes with
-sessions: the id its `--resume` or `-r` names (`ProcessNode.resumes`, taken
-off the raw argv as it is read — a valid id only; the masked `command` can
-lose it, `--fork-session -r <id>` masking the `-r`), else the newest session
+sessions: the id its `--resume` or `-r` names (`PaneAgent.resumes`, taken
+off the raw argv inside the census's read, `ProcessArguments.resumes` — a
+valid id only; the masked command can lose it, `--fork-session -r <id>`
+masking the `-r`), else the newest session
 in its directory. A click selects that tab, else opens one with
 `claude --resume <id>` (`Agent.claudeResume`, UUIDs only — it is typed into
 a shell).
