@@ -574,6 +574,16 @@ listed there, and says it is free, came back as a pid started since,
 or is still held (`PortFreeing`). A tab that
 listens is a server, which is what its icon then says (`TabKind`).
 
+**netstat is no source here, nor a check in a pane.** Run under an ad
+hoc-signed parent — which `make app`'s Overterm is, and so every shell
+in its panes and everything they start — `netstat` prints no rows at all
+and exits 0, as if nothing listened (docs/design/activity/analysis.md
+3.5; the `splits` scenario counts 0 rows of `netstat -an -p tcp` in a
+pane, where Terminal's shell gets the Mac's). lsof and `nettop` are not
+affected. The ports above are libproc's, which sees every socket of the
+user's own processes; to ask from a pane who holds a port, `lsof -nP
+-iTCP:<port> -sTCP:LISTEN` answers, netstat doesn't.
+
 A port is opened where it listens (`ListeningPort.url`, docs/design/
 activity/analysis.md 6.8), from its sockets' bound addresses and families
 (`insi_vflag`): `localhost` only where both families listen on loopback —

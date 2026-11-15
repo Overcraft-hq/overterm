@@ -4014,9 +4014,10 @@ final class E2ERunner {
         check("not the left one's", !tab.ports(of: first).contains { $0.port == 47819 }, "\(tab.ports(of: first).map(\.port))")
 
         // Stage 0's spikes (3.11): the pane's pty against the pairing, the
-        // bridge in the socket walk.
+        // bridge in the socket walk, netstat in a pane.
         await paneTTYChecks(tab)
         await bridgeInSocketWalkCheck()
+        await paneNetstatNote()
         window.makeFirstResponder(right)
         await eventually(2) { tab.terminal === right }
 

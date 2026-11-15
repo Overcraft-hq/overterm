@@ -3,7 +3,7 @@ import Darwin
 
 /// Stage 0's spikes in the app (docs/design/activity/analysis.md, 3.11,
 /// 7.10): each pane's pty named by libghostty against what the census
-/// reads, and the bridge's listener in the socket walk.
+/// reads, the bridge's listener in the socket walk, and netstat in a pane.
 /// Read only: the real process table, the run's own panes and processes
 /// alone named, counts and devices printed — nothing else of the Mac's.
 extension E2ERunner {
@@ -81,6 +81,15 @@ extension E2ERunner {
         check("a process that called setsid drops off the tty and is found by the tree (7.10, 4)", leftItsTTY)
         // It ends itself: no signal from here.
         FileManager.default.createFile(atPath: stop.path, contents: Data())
+    }
+
+    /// 3.5's prediction (D-3): netstat run in a pane of this ad hoc-signed
+    /// app, its rows counted — a measurement, said either way.
+    func paneNetstatNote() async {
+        let file = out("netstat-rows")
+        await runAndExpect("/usr/sbin/netstat -an -p tcp | wc -l | tr -d ' ' > \(file.path)", file: file, content: nil, "netstat runs in a pane")
+        let rows = (try? String(contentsOf: file, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) ?? "?"
+        note("netstat -an -p tcp in a pane of the ad hoc-signed app: \(rows) rows")
     }
 
     /// 3.5's sentinel (3.11): the bridge's `NWListener` is found by the
