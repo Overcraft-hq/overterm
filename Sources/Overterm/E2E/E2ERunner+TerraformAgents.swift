@@ -111,8 +111,20 @@ extension E2ERunner {
         check("nor is it offered as Ask Why's target", app.terraformAsking(agentTab))
         app.toggleInbox(nil)
         check("the mark goes with the prompt", await eventually(20) { agentTab.terraformAsk == nil && agentTab.activity.mark == .none }, "\(agentTab.activity.mark)")
-        if let sleeper = TerraformProcesses.descendants(of: SurfaceProcesses.shared.loginPID(of: pane) ?? 0).first(where: { TerraformProcesses.name(of: $0) == "sleep" }) {
-            kill(sleeper, SIGTERM)
+        // The stand-in agent's `sleep`, only under this pane's own `login`
+        // — never a walk from pid 0, which reaches every process on the Mac
+        // — by the identity read here, through ProcessSignals: the run's
+        // gate refuses whatever isn't the run's own.
+        await SurfaceProcesses.shared.pairWaiting()
+        guard let login = SurfaceProcesses.shared.pairedLoginPID(of: pane) else { return check("the agent's pane is paired", false) }
+        let kernel = LiveActivityKernel()
+        if let sleeper = TerraformProcesses.descendants(of: login).first(where: { TerraformProcesses.name(of: $0) == "sleep" }),
+            let identity = kernel.process(sleeper)?.identity
+        {
+            let answer = ProcessSignals(kernel: kernel).send(.term, to: ActivitySignalTarget(identity, path: nil), alone: true)
+            var sent = false
+            if case .sent = answer { sent = true }
+            check("its stand-in agent ended through ProcessSignals", sent)
         }
         await offScreenAgentChecks(checkout: checkout, plain: plain, sentinel: sentinel)
 
