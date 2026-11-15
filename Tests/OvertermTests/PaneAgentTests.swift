@@ -16,7 +16,8 @@ final class PaneAgentTests: XCTestCase {
 
     @discardableResult
     private func add(
-        _ pid: pid_t, parent: pid_t, uid: uid_t = 501, status: Int32 = SRUN, name: String, words: [String]? = nil, folder: String? = nil
+        _ pid: pid_t, parent: pid_t, uid: uid_t = 501, status: Int32 = SRUN, name: String, words: [String]? = nil, folder: String? = nil,
+        environment: [String] = []
     ) -> ActivityProcessID {
         let start = UInt64(pid) * 1_000
         let path = "/opt/acme/bin/\(name)"
@@ -27,7 +28,7 @@ final class PaneAgentTests: XCTestCase {
         process.path = path
         process.codeSigning = ActivityCodeSigning(flags: ActivityCodeSigning.valid)
         process.usage = FakeActivityKernel.usage()
-        process.arguments = FakeActivityKernel.arguments(executable: path, words ?? [name])
+        process.arguments = FakeActivityKernel.arguments(executable: path, words ?? [name], environment: environment)
         process.folder = folder
         kernel.add(process)
         return ActivityProcessID(pid: pid, start: start)
@@ -88,6 +89,39 @@ final class PaneAgentTests: XCTestCase {
         XCTAssertEqual(PaneAgent.first(["pane-a2"], tab: tab, in: snapshot)?.kind, .codex)
         XCTAssertNil(PaneAgent.first(["pane-a2"], tab: other, in: snapshot), "another tab's pane")
         XCTAssertNil(PaneAgent.first(["pane-a1"], tab: tab, in: snapshot))
+    }
+
+    /// An agent carrying the pane's tag outside its tree — a `claude` in a
+    /// tmux session started there, one nohup'd or setsid'd out — is the
+    /// pane's agent for these readers, as the scans they made found one by
+    /// tag: they only display it (6.5's `placed`).
+    func testAnAgentTaggedOutsideTheTreeIsFound() throws {
+        let panes = [pane("pane-a1", login: 1100, tab: tab)]
+        let tmux = add(4000, parent: 1, name: "tmux", words: ["tmux", "new"], environment: ["OVERTERM_TAB_ID=pane-a1"])
+        let claude = add(4001, parent: 4000, name: "claude", folder: "/tmp/acme-tmux", environment: ["OVERTERM_TAB_ID=pane-a1"])
+        let sampler = census(panes)
+        let found = PaneAgent.lookup([(id: tab, tags: ["pane-a1"])], census: sampler, folders: true)
+        XCTAssertEqual(found[tab]?.identity, claude, "found by its tag")
+        XCTAssertEqual(found[tab]?.folder, "/tmp/acme-tmux")
+        let snapshot = try XCTUnwrap(sampler.latest)
+        XCTAssertEqual(snapshot.pane("pane-a1")?.tagged.first, tmux, "outside the tree")
+        XCTAssertNil(snapshot.pane("pane-a1")?.agent, "the light tick's agent is its tree's alone")
+    }
+
+    /// Codex and Claude in one pane: the first agent is the one that comes
+    /// first; Sessions' Claude is found past it, in the same pane. A zombie
+    /// first agent hides no live one after it.
+    func testCodexAndClaudeInOnePane() throws {
+        let panes = [pane("pane-a1", login: 1100, tab: tab)]
+        add(1102, parent: 1101, status: SZOMB, name: "claude")
+        let codex = add(1103, parent: 1101, name: "codex")
+        let claude = add(1104, parent: 1101, name: "node", words: ["claude", "--resume", "acme-session"], folder: "/tmp/acme-checkout")
+        let sampler = census(panes)
+        let tabs = [(id: tab, tags: ["pane-a1"])]
+        XCTAssertEqual(PaneAgent.lookup(tabs, census: sampler, folders: false)[tab]?.identity, codex, "the zombie has ended")
+        let claudes = PaneAgent.lookup(tabs, census: sampler, only: .claude, folders: true)
+        XCTAssertEqual(claudes[tab]?.identity, claude, "past the Codex before it")
+        XCTAssertEqual(SessionsModel.claudes([tab], claudes).first?.directory, "/tmp/acme-checkout")
     }
 
     /// A card says the agent the census found, where it works, and that it
@@ -159,6 +193,48 @@ final class PaneAgentTests: XCTestCase {
         XCTAssertNil(elsewhere, "the pane isn't that tab's")
         kernel.onCall(nil)
     }
+
+    /// A pane whose `login` isn't paired yet — a pane made while no window
+    /// showed, no light tick to pair it — reads empty; an MCP confirmation
+    /// from it pairs its surface from the lookup's own snapshot (the app's
+    /// children and the `login`s no pane claimed), on the main actor, and
+    /// looks again: it names its agent, and the snapshot made before the
+    /// pairing is no answer once it is made.
+    @MainActor
+    func testAPaneNotPairedYetIsPairedFromTheLookupsSnapshot() async throws {
+        add(1, parent: 0, uid: 0, name: "launchd")
+        add(app, parent: 1, name: "Overterm")
+        let login = add(1100, parent: app, uid: 0, name: "login")
+        add(1101, parent: 1100, name: "zsh")
+        add(1102, parent: 1101, name: "codex")
+        let sampler = ActivitySampler(kernel: kernel)
+        let monitor = ActivityMonitor(sampler: sampler)
+        let surfaces = SurfaceProcesses(monitor: monitor)
+        let surface = StandIn()
+        surfaces.register(surface, at: 0)
+        let tab = self.tab
+        let app = self.app
+        monitor.contextSource = {
+            ActivityContext(panes: [ActivityContext.Pane(tag: "pane-a1", tab: tab, login: surfaces.login(of: surface))], appPID: app)
+        }
+        monitor.contextChanged()
+        monitor.flushContext()
+        XCTAssertNil(sampler.appContext.panes.first?.login, "waiting for its login")
+        XCTAssertNil(PaneAgent.lookup([(id: tab, tags: ["pane-a1"])], census: sampler, folders: false)[tab], "no login, no tree")
+        let tables = kernel.count("processes")
+        let named = await MCPAsker.agent(tab: tab, pane: "pane-a1", census: sampler, surfaces: surfaces, monitor: monitor)
+        XCTAssertEqual(named, "Codex")
+        XCTAssertEqual(surfaces.login(of: surface), login, "paired from the snapshot")
+        XCTAssertEqual(sampler.appContext.panes.first?.login, login, "the context rebuilt")
+        XCTAssertEqual(kernel.count("processes"), tables + 1, "the fresh snapshot paired it; one tick read the pane again")
+        XCTAssertEqual(
+            PaneAgent.lookup([(id: tab, tags: ["pane-a1"])], census: sampler, folders: false)[tab]?.kind, .codex, "and the next lookup sees it")
+    }
+}
+
+/// A surface a unit test has: alive, never ghostty's.
+@MainActor private final class StandIn: PairedSurface {
+    var hasSurface: Bool { true }
 }
 
 /// Values recorded from any thread.

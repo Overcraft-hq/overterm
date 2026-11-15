@@ -112,9 +112,6 @@ final class TerminalView: NSView {
     /// The modifier keys, read when a drag moves and at the drop (⌥: plain
     /// paths). An E2E run stands in for the keyboard.
     static var dropModifierFlags: () -> NSEvent.ModifierFlags = { NSEvent.modifierFlags }
-    /// Where panes look at what runs in them: one scan at a time, so the
-    /// answers come back in the order asked.
-    private static let programQueue = DispatchQueue(label: "\(AppEnvironment.bundleIdentifier).pane-program", qos: .userInitiated)
 
     /// - Parameters:
     ///   - workingDirectory: where the shell starts; home when nil.
@@ -1003,11 +1000,14 @@ extension TerminalView {
     func lookAtProgram(_ done: @escaping @MainActor (TerminalDrop.Program) -> Void) {
         let pane = processTag
         let foreground = surface.flatMap { ImagePaste.foregroundGroup(of: $0) }
-        // A pane just made is in the context the lookup reads.
-        ActivityMonitor.shared.flushContext()
-        Self.programQueue.async {
-            let program = TerminalDrop.program(pane: pane, foreground: foreground)
-            DispatchQueue.main.async { MainActor.assumeIsolated { done(program) } }
+        // A pane just made is in the context the lookup reads, and one not
+        // paired yet is paired from the lookup's snapshot and looked at
+        // again (`PaneAgent.pairing`).
+        Task { @MainActor in
+            done(
+                await PaneAgent.pairing(census: .app) {
+                    TerminalDrop.programAndSnapshot(pane: pane, foreground: foreground)
+                })
         }
     }
 

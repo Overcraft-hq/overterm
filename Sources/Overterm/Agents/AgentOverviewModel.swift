@@ -55,12 +55,11 @@ final class AgentOverviewModel: ObservableObject {
                 id: tab.id, title: tab.title, color: tab.color, agent: tab.agent, activity: tab.activity,
                 directory: tab.agentDirectory ?? tab.workingDirectory, tags: tab.terminals.map(\.processTag), panes: tab.terminals.count)
         }
-        if census === ActivitySampler.app { ActivityMonitor.shared.flushContext() }
-        let cards = await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let agents = PaneAgent.lookup(snapshots.map { ($0.id, $0.tags) }, census: census, folders: true)
-                continuation.resume(returning: snapshots.map { Self.card(for: $0, agent: agents[$0.id]) })
-            }
+        // A pane not paired yet is paired from the lookup's snapshot and
+        // read again (`PaneAgent.pairing`).
+        let cards = await PaneAgent.pairing(census: census) {
+            let (agents, snapshot) = PaneAgent.lookupAndSnapshot(snapshots.map { ($0.id, $0.tags) }, census: census, folders: true)
+            return (snapshots.map { Self.card(for: $0, agent: agents[$0.id]) }, snapshot)
         }
         self.cards = Self.ordered(cards)
     }

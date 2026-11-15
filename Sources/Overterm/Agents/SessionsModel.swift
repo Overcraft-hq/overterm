@@ -25,13 +25,13 @@ final class SessionsModel: ObservableObject {
         let asked = tabs.map { tab in (id: tab.id, tags: tab.terminals.map(\.processTag)) }
         loading = true
         defer { loading = false }
-        if census === ActivitySampler.app { ActivityMonitor.shared.flushContext() }
-        let (sessions, claudes) = await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let agents = PaneAgent.lookup(asked, census: census, only: .claude, folders: true)
-                continuation.resume(returning: (ClaudeSessions.list(in: directories), Self.claudes(asked.map(\.id), agents)))
-            }
+        // A pane not paired yet is paired from the lookup's snapshot and
+        // read again (`PaneAgent.pairing`); the session files once.
+        let claudes = await PaneAgent.pairing(census: census) {
+            let (agents, snapshot) = PaneAgent.lookupAndSnapshot(asked, census: census, only: .claude, folders: true)
+            return (Self.claudes(asked.map(\.id), agents), snapshot)
         }
+        let sessions = await PaneAgent.offMain { ClaudeSessions.list(in: directories) }
         self.sessions = sessions
         self.running = Self.running(sessions, claudes)
     }

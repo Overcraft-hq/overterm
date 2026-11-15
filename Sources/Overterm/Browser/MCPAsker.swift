@@ -33,7 +33,6 @@ enum MCPAsker {
         var agent = tab.agent?.name
         if agent == nil {
             // An agent typed into a plain tab: the census says which.
-            ActivityMonitor.shared.flushContext()
             agent = await Self.agent(tab: tab.id, pane: terminal.processTag)
         }
         // Where its agent works now, read again first while its window is off screen.
@@ -74,10 +73,13 @@ enum MCPAsker {
     /// tick of that tab else — on a GCD thread. The pane's `login` was
     /// paired on the main actor by a scan of the app's children when it
     /// wasn't yet, and a fresh inspector read every process's environment
-    /// again, ≈21 ms a confirmation: the census pairs as its snapshots land,
-    /// and reads an environment once per process, for its markers alone.
-    nonisolated static func agent(tab: UUID, pane: String, census: ActivitySampler = .app) async -> String? {
-        await PaneAgent.read([(id: tab, tags: [pane])], census: census, folders: false)[tab]?.kind.name
+    /// again, ≈21 ms a confirmation: a pane not paired yet is paired from
+    /// the lookup's own snapshot (`PaneAgent.pairing`), and the census
+    /// reads an environment once per process, for its markers alone.
+    @MainActor static func agent(
+        tab: UUID, pane: String, census: ActivitySampler = .app, surfaces: SurfaceProcesses = .shared, monitor: ActivityMonitor = .shared
+    ) async -> String? {
+        await PaneAgent.read([(id: tab, tags: [pane])], census: census, folders: false, surfaces: surfaces, monitor: monitor)[tab]?.kind.name
     }
 
 }
