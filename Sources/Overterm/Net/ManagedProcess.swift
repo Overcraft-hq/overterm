@@ -77,37 +77,64 @@ final class ManagedProcess: @unchecked Sendable {
     /// once kubectl exited, and one started a moment before the signal;
     /// its children are found before it is signalled, each by pid and
     /// start time: never a pid reused.
+    ///
+    /// It is no longer open once this returns (its files gone, out of
+    /// `openGroups`); the finding and the signals follow on a queue of
+    /// their own, in the order closes came (`closing`): finding its family
+    /// reads the process table, and `KubeForwards.end` closes a forward on
+    /// the main thread (docs/design/activity/analysis.md, 2.4 item 3).
+    /// `closeAll` waits for them.
     func close() { close(grace: 2) }
 
-    func close(grace: TimeInterval) {
-        let group = process.pid
-        let leader = started.map { [(pid: group, start: $0)] } ?? []
-        let family = leader + Self.descendants(of: group)
-        // Its group even once it exited: what it started may still be there.
-        if Self.groupIsOurs(process) { killpg(group, SIGTERM) }
-        for child in family.dropFirst(leader.count) { kill(child.pid, SIGTERM) }
-        if grace > 0 {
-            DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + grace, execute: Self.killing(process, family))
-        }
+    /// `table`: how the family's table is read — on `closing`, never the
+    /// caller's thread; the tests' records where it ran.
+    func close(grace: TimeInterval, table: @escaping @Sendable () -> ProcessTable? = { ProcessTable.read(LiveActivityKernel()) }) {
+        let process = self.process
+        let started = self.started
+        Self.closing.async(execute: Self.ending(process, started: started, grace: grace, table: table))
         removing.forEach { unlink($0) }
         Self.lock.withLock { Self.live.removeAll { $0 === self } }
     }
 
-    /// Every process under `pid` — its children and theirs, bounded —
-    /// each with its start time (µs).
-    static func descendants(of pid: pid_t, limit: Int = 64) -> [(pid: pid_t, start: UInt64)] {
-        var found: [(pid: pid_t, start: UInt64)] = []
-        var queue = [pid]
-        var seen: Set<pid_t> = [pid]
-        while let parent = queue.first, found.count < limit {
-            queue.removeFirst()
-            for child in ProcessInspector.children(of: parent) where seen.insert(child.pid).inserted {
-                found.append((child.pid, child.start))
-                queue.append(child.pid)
-                if found.count >= limit { break }
+    /// Where closes find their families and signal them, one after another
+    /// (a test holds it to see a close return before its work runs).
+    static let closing = DispatchQueue(label: "\(AppEnvironment.bundleIdentifier).managed-process-close", qos: .userInitiated)
+
+    /// The close's work, for `closing`: the family found — its group's
+    /// leader by its start, what it started from one read of the process
+    /// table — then SIGTERM, and SIGKILL after `grace`.
+    private nonisolated static func ending(
+        _ process: ProcessGroup.Child, started: UInt64?, grace: TimeInterval, table: @escaping @Sendable () -> ProcessTable?
+    ) -> @Sendable () -> Void {
+        {
+            let group = process.pid
+            let leader = started.map { [(pid: group, start: $0)] } ?? []
+            let family = leader + (table().map { descendants(of: group, in: $0) } ?? [])
+            // Its group even once it exited: what it started may still be there.
+            if groupIsOurs(process) { killpg(group, SIGTERM) }
+            for child in family.dropFirst(leader.count) { kill(child.pid, SIGTERM) }
+            if grace > 0 {
+                DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + grace, execute: killing(process, family))
             }
         }
-        return found
+    }
+
+    /// Every process under `pid` — its children and theirs, bounded —
+    /// each with its start time (µs): the census's child map (7.8), of one
+    /// table read now, where each node was a read of its own (16 ms a node
+    /// as a walk of every pid). Now, not a tick old: a close counts on what
+    /// has just started. Blocking: never the main thread.
+    static func descendants(of pid: pid_t, limit: Int = 64) -> [(pid: pid_t, start: UInt64)] {
+        guard let table = ProcessTable.read(LiveActivityKernel()) else { return [] }
+        return descendants(of: pid, limit: limit, in: table)
+    }
+
+    /// The same, from `table`: whatever holds `pid` there, then everything
+    /// below it, parents linked by start time; a zombie left out. Pure.
+    static func descendants(of pid: pid_t, limit: Int = 64, in table: ProcessTable) -> [(pid: pid_t, start: UInt64)] {
+        guard let root = table.process(pid: pid) else { return [] }
+        let live = table.descendants(of: root.identity).filter { !$0.isZombie }.prefix(max(limit, 0))
+        return live.map { (pid: $0.pid, start: $0.identity.start) }
     }
 
     /// Whether its group's id is still its group's: the leader not yet
@@ -243,8 +270,10 @@ final class ManagedProcess: @unchecked Sendable {
             defer { live = [] }
             return live
         }
-        // At quit nothing waits for a grace: SIGTERM to each and its children.
+        // At quit nothing waits for a grace: SIGTERM to each and its
+        // children — sent before this returns, every close before them too.
         all.forEach { $0.close(grace: 0) }
+        closing.sync {}
     }
 
     /// The pids of those running, for tests.
