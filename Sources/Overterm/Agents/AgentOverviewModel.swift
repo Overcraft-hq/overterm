@@ -67,7 +67,7 @@ final class AgentOverviewModel: ObservableObject {
             ? directory.flatMap(ClaudeUsageReader.latestSession(for:)).flatMap { ClaudeActivity.read($0) } : nil
         return Card(
             id: snapshot.id, title: snapshot.title, color: snapshot.color, agent: agent, agentRunning: running != nil,
-            activity: snapshot.activity, directory: directory, branch: claude?.branch ?? directory.flatMap(Self.branch(in:)),
+            activity: snapshot.activity, directory: directory, branch: claude?.branch ?? directory.flatMap { Self.branch(in: $0) },
             claude: claude, panes: snapshot.panes)
     }
 
@@ -79,9 +79,16 @@ final class AgentOverviewModel: ObservableObject {
 
     /// The checked-out branch, read from .git/HEAD (no git process per card
     /// every 2 s). A linked worktree's .git is a file pointing at its gitdir.
-    nonisolated static func branch(in directory: String) -> String? {
-        var url = URL(fileURLWithPath: directory)
-        while url.path != "/" {
+    ///
+    /// The walk up is bounded, as CLAUDE.md asks of every one (docs/design/
+    /// activity/analysis.md, 2.4 item 11): it stops at the top
+    /// (`pathComponents.count <= 1`) and after `limit` steps. It compared
+    /// with "/", and `/`'s parent is `/..`, so a folder with a `..` in it
+    /// never got there — one such walk took 51 GB and the machine down.
+    /// The path is standardized first, its `..`s gone.
+    nonisolated static func branch(in directory: String, limit: Int = 64) -> String? {
+        var url = URL(fileURLWithPath: directory).standardizedFileURL
+        for _ in 0..<max(limit, 0) where url.pathComponents.count > 1 {
             let git = url.appendingPathComponent(".git")
             var isDirectory: ObjCBool = false
             if FileManager.default.fileExists(atPath: git.path, isDirectory: &isDirectory) {
@@ -95,7 +102,7 @@ final class AgentOverviewModel: ObservableObject {
                 let prefix = "ref: refs/heads/"
                 return head.hasPrefix(prefix) ? head.dropFirst(prefix.count).trimmingCharacters(in: .whitespacesAndNewlines) : nil
             }
-            url.deleteLastPathComponent()
+            url = url.deletingLastPathComponent().standardizedFileURL
         }
         return nil
     }

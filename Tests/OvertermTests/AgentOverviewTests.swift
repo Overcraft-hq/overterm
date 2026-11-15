@@ -75,6 +75,25 @@ final class AgentOverviewTests: XCTestCase {
         XCTAssertEqual(AgentOverviewModel.branch(in: repo.appendingPathComponent("src").path), "main", "from a subdirectory")
         XCTAssertEqual(AgentOverviewModel.branch(in: worktree.path), "feat/x", "through the .git file")
         XCTAssertNil(AgentOverviewModel.branch(in: base.path), "not in a repository")
+        XCTAssertEqual(AgentOverviewModel.branch(in: repo.path + "/src/../src/.."), "main", "its ..s resolved first")
+    }
+
+    /// The walk up stops (2.4 item 11, CLAUDE.md's "/" rule): at the top,
+    /// from "/" itself and from a folder whose `..`s climb past it, and
+    /// after its bound from a deep folder — a repository further up than
+    /// that isn't looked for.
+    func testTheWalkUpIsBounded() throws {
+        XCTAssertNil(AgentOverviewModel.branch(in: "/"))
+        XCTAssertNil(AgentOverviewModel.branch(in: "/.."))
+        XCTAssertNil(AgentOverviewModel.branch(in: "/fake-acme/../../../.."))
+        let base = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-deep-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: base) }
+        try FileManager.default.createDirectory(at: base.appendingPathComponent(".git"), withIntermediateDirectories: true)
+        try Data("ref: refs/heads/acme\n".utf8).write(to: base.appendingPathComponent(".git/HEAD"))
+        let deep = (0..<80).reduce(base) { url, _ in url.appendingPathComponent("d") }
+        XCTAssertNil(AgentOverviewModel.branch(in: deep.path), "80 levels down: past the bound, the folder needn't exist")
+        XCTAssertEqual(AgentOverviewModel.branch(in: deep.path, limit: 81), "acme", "within it")
+        XCTAssertNil(AgentOverviewModel.branch(in: (0..<5_000).map { _ in "d" }.joined(separator: "/")), "a relative path thousands deep")
     }
 
     /// The overview polls every 2 s; a refresh slower than that must not
