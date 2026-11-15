@@ -222,12 +222,35 @@ enum TerminalDrop {
 
     // MARK: What runs in the pane
 
-    /// What has the keyboard of the pane whose `login` this is. Blocking
-    /// (a scan of the pane's processes): call off the main thread.
-    nonisolated static func program(login: pid_t?) -> Program {
-        guard let login else { return .other }
-        let nodes = ProcessInspector().tree(root: login, tag: nil).flatMap(\.flattened)
-        return program(among: nodes, foreground: ProcessInspector.foregroundGroup(of: login), groupOf: ProcessInspector.processGroup(of:))
+    /// What has the keyboard of pane `pane`, its terminal's foreground
+    /// process group `foreground` (the surface's own, read on the main
+    /// thread): a lookup in the census (docs/design/activity/analysis.md,
+    /// 7.8) — the pane's slice of the light tick's snapshot of its tab while
+    /// it is fresh and has a member of that group; else one tick, as for a
+    /// Claude started a moment before the drop. Where the pane's `login` was
+    /// paired by a scan of the app's children first, and the foreground
+    /// group read from it. Blocking: call off the main thread. The pane is
+    /// the app context's (`ActivityMonitor.context`): one it doesn't have
+    /// yet is `.other`.
+    nonisolated static func program(pane: String, foreground: pid_t?, census: ActivitySampler = .app) -> Program {
+        guard let tab = census.appContext.panes.first(where: { $0.tag == pane })?.tab else { return .other }
+        let demand = ActivityDemand(.light(tabs: [tab]))
+        func answers(_ snapshot: ActivitySnapshot) -> Bool {
+            guard snapshot.covers(demand), let slice = snapshot.pane(pane), slice.tab == tab else { return false }
+            guard let foreground else { return true }
+            return slice.tree.contains { snapshot.table.process($0)?.group == foreground }
+        }
+        guard
+            let snapshot = census.lookup(
+                within: ProcessInspector.freshness, demand: demand, context: census.appContext, answers: answers),
+            let slice = snapshot.pane(pane), slice.tab == tab
+        else { return .other }
+        let members = ProcessInspector.running(slice.tree, in: snapshot)
+        let nodes = ProcessInspector.nodes(members, in: snapshot) { identity, isAgent in
+            guard isAgent, case .path(let path)? = census.folders.folder(waitingFor: identity, now: census.kernel.uptime()) else { return nil }
+            return path
+        }
+        return program(among: nodes.flatMap(\.flattened), foreground: foreground) { pid in snapshot.table.process(pid: pid)?.group }
     }
 
     /// Claude Code has the pane when a Claude process (by name or argv[0],

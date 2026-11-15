@@ -149,4 +149,46 @@ final class TerminalDropTests: XCTestCase {
         XCTAssertEqual(TerminalDrop.program(among: [shell, node(30, "codex", "codex")], foreground: 30, groupOf: { groups[$0] }), .other)
         XCTAssertEqual(TerminalDrop.program(among: [shell], foreground: 10, groupOf: { groups[$0] }), .other)
     }
+
+    /// The pane's processes from a fake census, its foreground group the
+    /// surface's: Claude in the foreground, where it works; the shell's
+    /// group, the shell's. A fresh snapshot answers with no tick; a Claude
+    /// started since — its group in the foreground, no member of it in the
+    /// snapshot — gets one. A pane the census's context doesn't have is
+    /// `.other`, nothing read.
+    func testWhatRunsInThePaneFromTheCensus() throws {
+        let kernel = FakeActivityKernel(uid: 501)
+        func add(_ pid: pid_t, parent: pid_t, uid: uid_t = 501, group: pid_t? = nil, name: String, words: [String]? = nil, folder: String? = nil)
+            -> ActivityProcessID
+        {
+            let start = UInt64(pid) * 1_000
+            var process = FakeActivityKernel.Process(
+                record: FakeActivityKernel.record(pid: pid, start: start, parent: parent, uid: uid, realUID: uid == 0 ? 501 : nil, group: group, name: name))
+            process.name = name
+            process.path = "/opt/acme/bin/\(name)"
+            process.codeSigning = ActivityCodeSigning(flags: ActivityCodeSigning.valid)
+            process.usage = FakeActivityKernel.usage()
+            process.arguments = FakeActivityKernel.arguments(executable: "/opt/acme/bin/\(name)", words ?? [name])
+            process.folder = folder
+            kernel.add(process)
+            return ActivityProcessID(pid: pid, start: start)
+        }
+        _ = add(1, parent: 0, uid: 0, name: "launchd")
+        _ = add(1000, parent: 1, name: "Overterm")
+        let login = add(1100, parent: 1000, uid: 0, name: "login")
+        _ = add(1101, parent: 1100, name: "zsh")
+        _ = add(1102, parent: 1101, name: "node", words: ["claude", "--continue"], folder: "/tmp/acme-checkout/.worktrees/feat")
+        let tab = UUID()
+        let census = ActivitySampler(kernel: kernel)
+        census.appContext = ActivityContext(panes: [ActivityContext.Pane(tag: "pane-a", tab: tab, login: login)], appPID: 1000)
+        XCTAssertEqual(TerminalDrop.program(pane: "pane-a", foreground: 1102, census: census), .claude(directory: "/tmp/acme-checkout/.worktrees/feat"))
+        let tables = kernel.count("processes")
+        XCTAssertEqual(TerminalDrop.program(pane: "pane-a", foreground: 1101, census: census), .other, "the shell has it")
+        XCTAssertEqual(kernel.count("processes"), tables, "the fresh snapshot answered")
+        _ = add(1103, parent: 1101, name: "claude", folder: "/tmp/acme-checkout")
+        XCTAssertEqual(TerminalDrop.program(pane: "pane-a", foreground: 1103, census: census), .claude(directory: "/tmp/acme-checkout"), "started since")
+        XCTAssertEqual(kernel.count("processes"), tables + 1, "one tick")
+        XCTAssertEqual(TerminalDrop.program(pane: "pane-b", foreground: 1103, census: census), .other)
+        XCTAssertEqual(kernel.count("processes"), tables + 1, "nothing read for a pane it doesn't have")
+    }
 }

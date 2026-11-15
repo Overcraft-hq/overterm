@@ -997,27 +997,16 @@ extension TerminalView {
         endDropHover()
     }
 
-    /// What runs in the pane now: a scan of its processes off the main
-    /// thread, the answer back on it.
+    /// What runs in the pane now: its terminal's foreground group read
+    /// here, from the surface; its processes looked up in the census off
+    /// the main thread (`TerminalDrop.program`), the answer back on it.
     func lookAtProgram(_ done: @escaping @MainActor (TerminalDrop.Program) -> Void) {
-        if let login = SurfaceProcesses.shared.pairedLoginPID(of: self) { return Self.scanProgram(login: login, done) }
-        // Not paired with its login yet: that lists the app's children, a
-        // scan too — made here, off the main thread; the pairing is quick.
-        Self.programQueue.async { [weak self] in
-            let listedAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
-            let children = ProcessInspector.children(of: getpid())
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    Self.scanProgram(login: SurfaceProcesses.shared.loginPID(of: self, children: children, listedAt: listedAt), done)
-                }
-            }
-        }
-    }
-
-    private static func scanProgram(login: pid_t?, _ done: @escaping @MainActor (TerminalDrop.Program) -> Void) {
-        programQueue.async {
-            let program = TerminalDrop.program(login: login)
+        let pane = processTag
+        let foreground = surface.flatMap { ImagePaste.foregroundGroup(of: $0) }
+        // A pane just made is in the context the lookup reads.
+        ActivityMonitor.shared.flushContext()
+        Self.programQueue.async {
+            let program = TerminalDrop.program(pane: pane, foreground: foreground)
             DispatchQueue.main.async { MainActor.assumeIsolated { done(program) } }
         }
     }

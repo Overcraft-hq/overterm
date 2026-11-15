@@ -947,12 +947,13 @@ with a trailing space; the pane gets the keyboard.
   `(^|\s)@"([^"]+)"` and `(^|\s)@([^\s]+)\b`, cutting a `#L…` range off;
   its own completion quotes a path with a space.
 - **What runs in a pane** (`TerminalDrop.program`): the pane's process tree
-  (`ProcessInspector.tree` under its login) holds a Claude process — by name
-  or argv[0], as the agent overview finds one — in the tty's foreground
-  process group (the login's `e_tpgid`); one left running in the background
+  (its slice of the census, docs/design/activity/analysis.md, 7.8) holds a
+  Claude process — by name or argv[0], as the agent overview finds one — in
+  the tty's foreground process group (the surface's own,
+  `ghostty_surface_foreground_pid`); one left running in the background
   doesn't count. Per pane, looked at afresh at each drop and on entering, on
-  a serial queue: pairing a new pane with its login lists the app's children
-  off the main thread too. Drops are typed in the order they came
+  a serial queue: the light tick's snapshot of its tab while it is fresh and
+  has a member of that group, else one tick. Drops are typed in the order they came
   (`pendingDrops`), whatever each waited for.
 - **While dragging**: `DropHighlightView`, over the pane's frame in its
   superview, above a split's dims — an accent border and a label, "Drop to
