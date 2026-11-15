@@ -3900,6 +3900,9 @@ extension E2ERunner {
             let info = TabInfoModel(tab: tab, claudeReader: ClaudeUsageReader())
             await info.refreshPorts()
             check("Tab Info lists them", info.ports.contains { $0.port == 58080 && $0.container == "ot-shop-web-1" }, "\(info.ports)")
+            if let published = tab.containerPorts.first(where: { $0.port == 58080 }) {
+                await containerFreeChecks(published, in: tab, web: web, fake: fake)
+            }
             check("and the API client looks for an OpenAPI document on them", app.apiWorkspace.ports().contains(58080))
         }
 

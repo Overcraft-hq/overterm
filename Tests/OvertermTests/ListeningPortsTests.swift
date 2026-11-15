@@ -75,25 +75,16 @@ final class ListeningPortsTests: XCTestCase {
         XCTAssertEqual(udp.proto, "udp")
     }
 
-    /// A pill's Kill reaches only the process the census named, read again:
-    /// the same pid and start, running as the user alone — never one whose
-    /// pid was taken since, a setuid program the user started (as root, or
-    /// as the user for now with root kept as its saved uid), a zombie, or
-    /// a container's or a forward's port, whose owners stop them.
-    func testAPillsKillReachesOnlyTheProcessItNamed() throws {
+    /// A pill's Free… names the process the census listed by its pid and
+    /// start (`identity`, checked again by `ProcessSignals` at the button);
+    /// a container's port has none — its owner stops it.
+    func testAPillsPortCarriesItsHoldersIdentity() throws {
         typealias K = FakeActivityKernel
         let port = try listener(K.tcp(local: "127.0.0.1", port: 3000))
-        func now(start: UInt64 = 1_000_007, uid: uid_t = 501, realUID: uid_t? = nil, savedUID: uid_t? = nil, status: Int32 = SRUN) -> ActivityProcess {
-            K.record(pid: 4242, start: start, parent: 1, uid: uid, realUID: realUID, savedUID: savedUID, status: status, name: "acme-dev")
-        }
-        XCTAssertEqual(port.killable(now: now(), uid: 501), 4242)
-        XCTAssertNil(port.killable(now: nil, uid: 501), "ended")
-        XCTAssertNil(port.killable(now: now(start: 9_000_000), uid: 501), "its pid another process's now")
-        XCTAssertNil(port.killable(now: now(uid: 0, realUID: 501), uid: 501), "a setuid program, root's now")
-        XCTAssertNil(port.killable(now: now(savedUID: 0), uid: 501), "running as the user for now, root kept as its saved uid")
-        XCTAssertNil(port.killable(now: now(status: SZOMB), uid: 501), "a zombie")
+        XCTAssertEqual(port.identity?.pid, 4242)
+        XCTAssertNotNil(port.identity?.start)
         let container = ListeningPort(pid: 0, process: "web", port: 8080, address: "*", container: "acme-web-1")
-        XCTAssertNil(container.killable(now: now(), uid: 501), "a container's is its owner's to stop")
+        XCTAssertNil(container.identity, "a container's is its owner's to stop")
     }
 
     /// A container's published port is reached where it is published, as

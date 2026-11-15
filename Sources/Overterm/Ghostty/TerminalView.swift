@@ -305,6 +305,28 @@ final class TerminalView: NSView {
         _ = ghostty_surface_key(surface, ev)
     }
 
+    /// ⌃C as a key event to the surface, as a person presses it — what an
+    /// Interrupt sends (docs/design/activity/analysis.md, 6.10): the
+    /// terminal makes it SIGINT for the foreground job, and a full-screen
+    /// program that reads ⌃C as a byte gets the byte. Never a SIGINT to
+    /// the group from here.
+    func pressControlC() {
+        guard let surface else { return }
+        var ev = ghostty_input_key_s()
+        ev.keycode = 0x08  // kVK_ANSI_C
+        ev.mods = GHOSTTY_MODS_CTRL
+        ev.consumed_mods = GHOSTTY_MODS_NONE
+        ev.unshifted_codepoint = 0x63
+        ev.action = GHOSTTY_ACTION_PRESS
+        _ = ghostty_surface_key(surface, ev)
+        ev.action = GHOSTTY_ACTION_RELEASE
+        _ = ghostty_surface_key(surface, ev)
+    }
+
+    /// The pane's foreground process group (`tcgetpgrp` of its pty, through
+    /// libghostty); nil when it has none or no surface.
+    var foregroundGroup: pid_t? { surface.flatMap { ImagePaste.foregroundGroup(of: $0) } }
+
     /// Hidden tabs stop rendering; libghostty keeps the pty running.
     /// Becoming visible draws a frame at once, so nothing stale is shown.
     func setVisible(_ visible: Bool) {

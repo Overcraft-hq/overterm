@@ -951,6 +951,12 @@ extension E2ERunner {
             let info = TabInfoModel(tab: tab, claudeReader: ClaudeUsageReader())
             await info.refreshPorts()
             check("Tab Info lists it", info.ports.contains { $0.port == local && $0.forward?.pod == "web-8k2" }, "\(info.ports)")
+            // Its pill's Stop… asks (6.12): Cancel here, the button on the Quick Forward below.
+            if let pill = tab.forwardPorts.first(where: { $0.forward?.id == id }) {
+                await forwardFreeChecks(pill, in: tab, confirm: false)
+            } else {
+                check("the forward's pill, to free", false, "\(tab.forwardPorts.map(\.port))")
+            }
             // Closing the tab asks, even when Settings says only when something runs.
             check(
                 "closing its tab asks for its forward alone",
@@ -1061,6 +1067,12 @@ extension E2ERunner {
         check("nothing of it reached the API but GETs", fake.writes.isEmpty && !fake.requests.contains { $0.path.contains("portforward") })
         await kubernetesDatabaseAndIngress(model, page, fake, forwards: log)
         check("nor of d and o", fake.writes.isEmpty && !fake.requests.contains { $0.path.contains("portforward") })
+        // The Quick Forward's pill: Stop… asked, then confirmed.
+        if let tab, let quick, let pill = tab.forwardPorts.first(where: { $0.forward?.id == quick.id }) {
+            await forwardFreeChecks(pill, in: tab, confirm: true)
+        } else {
+            check("the Quick Forward's pill, to free", false, "\(tab?.forwardPorts.map(\.port) ?? [])")
+        }
         app.toggleKubernetesPage(nil)
         return forwards.forwards.compactMap(\.pid)
     }

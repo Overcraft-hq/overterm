@@ -1209,26 +1209,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     func paneHeaderActions(for tab: Tab) -> PaneHeaderActions {
         PaneHeaderActions(
             copyOutput: { [weak self] in self?.copyOutput(of: $0) },
-            killPort: { [weak self] port in
-                // A Kubernetes forward's: stopped, its kubectl closed by its pid.
-                if let forward = port.forward {
-                    KubeForwards.shared.stop(forward.id)
-                    return
-                }
-                // A container's: stopped through the engine.
-                if let container = port.container {
-                    self?.dockerPage.act(.stop, on: DockerModel.shared.container(container).map { [$0] } ?? [])
-                    return
-                }
-                // The exact process the census named, read again —
-                // its pid and start — and only while it runs as
-                // you alone (ListeningPort.killable). Never a
-                // pattern: `pkill -f` once killed the shell
-                // running the tests (CLAUDE.md).
-                let now = port.identity.flatMap { LiveActivityKernel().process($0.pid) }
-                guard let pid = port.killable(now: now, uid: getuid()) else { return NSSound.beep() }
-                kill(pid, SIGTERM)
-            },
+            freePort: { [weak self] port, pane in self?.freePort(port, in: pane) },
             rerun: { [weak self] in self?.rerun(in: $0) },
             splitRight: { [weak self] in self?.split($0, .right) },
             splitDown: { [weak self] in self?.split($0, .down) },

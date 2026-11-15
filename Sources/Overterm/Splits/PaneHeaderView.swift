@@ -6,11 +6,10 @@ import SwiftUI
 /// happens to have the keyboard.
 struct PaneHeaderActions {
     var copyOutput: (TerminalView) -> Void
-    /// Stop whatever is listening: a forward or a container by its owner,
-    /// a process asked first, then sent SIGTERM only while it is still the
-    /// one listed, holding the port (`PortStop`) — the exact pid, never a
-    /// pattern.
-    var killPort: (ListeningPort) -> Void
+    /// Free… a pill's port, in its pane (docs/design/activity/analysis.md,
+    /// 6.12): asked, and checked against the process the census listed —
+    /// its owner's Stop for a container's or a forward's.
+    var freePort: (ListeningPort, TerminalView) -> Void
     var rerun: (TerminalView) -> Void
     var splitRight: (TerminalView) -> Void
     var splitDown: (TerminalView) -> Void
@@ -88,8 +87,16 @@ struct PaneHeaderView: View {
             // a pane listened where nothing in it did (Tab Info, the Docker
             // page and the browser still list them). A Kubernetes forward
             // is the tab's, asked from it: its pill stays.
-            ForEach(tab.ports(of: pane) + tab.forwardPorts) { port in
-                PortPill(port: port, theme: theme, actions: actions)
+            let pills = tab.ports(of: pane) + tab.forwardPorts
+            let freeing = tab.portFreeing(of: pane)
+            ForEach(pills) { port in
+                PortPill(
+                    port: port, pane: pane, freeing: freeing.first { $0.port == port.port && $0.proto == port.proto }, theme: theme,
+                    actions: actions)
+            }
+            // A port freed from here whose pill has gone: said, then gone.
+            ForEach(freeing.filter { freed in !pills.contains { $0.port == freed.port && $0.proto == freed.proto } }, id: \.self) { freed in
+                FreedPortLabel(freeing: freed, theme: theme)
             }
             HStack(spacing: 0) {
                 button("rectangle.split.2x1", "Split Right (⌘D)") { actions.splitRight(pane) }
@@ -213,6 +220,9 @@ private struct GroupLabel: View {
 /// answering.
 private struct PortPill: View {
     let port: ListeningPort
+    let pane: TerminalView
+    /// Freed from here, and watched (`PortFreeing`).
+    let freeing: PortFreeing?
     @ObservedObject var theme: ChromeTheme
     let actions: PaneHeaderActions
     @State private var hovering = false
@@ -285,22 +295,23 @@ private struct PortPill: View {
                             showing = false
                             actions.showForwards()
                         }
-                        action("Stop") {
-                            showing = false
-                            actions.killPort(port)
-                        }
-                    } else {
-                        // SIGTERM asks a process to stop: Stop, as the
-                        // forward's beside it and a container's; the
-                        // ellipsis, that it asks first (`PortStop`).
                         action("Stop…") {
                             showing = false
-                            actions.killPort(port)
+                            actions.freePort(port, pane)
                         }
-                        .disabled(port.start == nil)
-                        .opacity(port.start == nil ? 0.45 : 1)
-                        .help(stopHelp)
+                    } else {
+                        // Asked, and checked: Interrupt, Stop or the
+                        // owner's own verb, as the class table says.
+                        action("Free…") {
+                            showing = false
+                            actions.freePort(port, pane)
+                        }
                     }
+                }
+                if let freeing {
+                    Text(verbatim: freeing.label)
+                        .font(.system(size: ChromeMetrics.text(11.5)))
+                        .foregroundStyle(theme.orangeText)
                 }
             }
             .padding(12)
@@ -310,6 +321,7 @@ private struct PortPill: View {
     }
 
     private var tint: Color {
+        if freeing != nil { return theme.orangeText }
         guard let forward = port.forward else { return theme.greenText }
         return forward.forwarding ? theme.accentText : theme.orangeText
     }
@@ -325,16 +337,11 @@ private struct PortPill: View {
     }
 
     private var help: String {
+        if let freeing { return freeing.label }
         if let forward = port.forward {
             return "kubectl port-forward \(forward.target) → pod \(forward.pod ?? "…") in \(forward.context)/\(forward.namespace): \(forward.state)"
         }
         return "\(port.process) is listening on \(port.endpoint) · \(port.reach)"
-    }
-
-    /// Stop…'s: its start time unread, nothing tells it from a later process of its pid.
-    private var stopHelp: String {
-        guard port.start != nil else { return "Overterm can't tell which process this is: stop it in its terminal." }
-        return "Asks first, then sends pid \(port.pid) SIGTERM if it still holds :\(port.port)"
     }
 
     private func action(_ title: String, filled: Bool = false, _ run: @escaping () -> Void) -> some View {
@@ -348,6 +355,27 @@ private struct PortPill: View {
         }
         .buttonStyle(.plain)
         .foregroundStyle(filled ? Color.white : theme.text)
+    }
+}
+
+/// A port this pane's pill freed, after its pill has gone: ":3000 is
+/// free", for a few seconds (`PortFreeing`).
+private struct FreedPortLabel: View {
+    let freeing: PortFreeing
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View {
+        HStack(spacing: 5) {
+            Image(systemName: freeing.state == .free ? "checkmark" : "exclamationmark.triangle")
+                .font(.system(size: ChromeMetrics.text(9), weight: .semibold))
+            Text(verbatim: freeing.label).font(.system(size: ChromeMetrics.text(11), weight: .semibold, design: .monospaced))
+        }
+        .foregroundStyle(freeing.state == .free ? theme.greenText : theme.orangeText)
+        .padding(.horizontal, 9)
+        .frame(height: ChromeMetrics.row(24))
+        .background(Capsule().fill(theme.iconBg))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("pane.portFreed")
     }
 }
 

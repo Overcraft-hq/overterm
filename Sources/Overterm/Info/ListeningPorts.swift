@@ -5,12 +5,6 @@ import Foundation
 /// process holds those, so the socket walk never finds them under the tab).
 struct ListeningPort: Identifiable, Hashable {
     let pid: pid_t
-    /// When `pid`'s process started (µs), read with the listing
-    /// (`ListeningPorts.of`): with the pid, which process held the port —
-    /// a pid is reused, the pair never. A pill's Stop… signals only that
-    /// process (`PortStop`), and nothing when this couldn't be read. A
-    /// container's and a forward's have none: their owners stop them.
-    var start: UInt64? = nil
     let process: String
     let port: Int
     /// The bound address as lsof prints it (`*`, `127.0.0.1`, `[::1]`): of
@@ -92,18 +86,6 @@ struct ListeningPort: Identifiable, Hashable {
         case .oneAddress: "Network · \(address)"
         }
     }
-
-    /// The pid a pill's Kill may signal (docs/design/activity/analysis.md,
-    /// 6.12): its holder as the census named it, read again — `now`, what
-    /// holds that pid now — only while it is the same process, its start
-    /// the same, and runs as the user alone, its effective, real and saved
-    /// uids `uid`: `kill(2)` would let a setuid program the user started
-    /// through by its real uid (6.10's never-list). Nil otherwise, and for
-    /// a container's or a forward's, whose owners stop them. Pure.
-    func killable(now: ActivityProcess?, uid: uid_t) -> pid_t? {
-        guard let identity, let now, now.identity == identity, now.isWhollyOwn(by: uid), !now.isZombie else { return nil }
-        return identity.pid
-    }
 }
 
 /// What listens, as the census's socket walk reads it (docs/design/
@@ -131,6 +113,15 @@ enum ListeningPorts {
             if !held.isEmpty { return self.port(held, holder: identity, name: facts.name) }
         }
         return nil
+    }
+
+    /// Of what `snapshot` read, every process holding `port`: a pre-fork
+    /// server's workers share its listener, a child inherits it. Pure.
+    static func holders(of port: Int, proto: String = "tcp", in snapshot: ActivitySnapshot) -> [ActivityProcessID] {
+        let udp = proto == "udp"
+        return snapshot.facts.keys.sorted().filter { identity in
+            snapshot.facts[identity]?.sockets?.records.contains { Int($0.localPort) == port && (udp ? $0.isBoundUDP : $0.isListening) } == true
+        }
     }
 
     /// Whether something on this Mac holds `port` — what Docker's own bind

@@ -103,6 +103,11 @@ final class Tab: ObservableObject, Identifiable {
     /// The Kubernetes port-forwards started from this tab (`KubeForwards`):
     /// pills naming the pod each is pinned to. Apart from `ports` too.
     @Published var forwardPorts: [ListeningPort] = []
+    /// The ports a pane's pill freed, watched until they are
+    /// (`TerminalWindowController.watchFreed`): the header says when.
+    @Published var portFreeing: [PortFreeing] = []
+
+    func portFreeing(of pane: TerminalView) -> [PortFreeing] { portFreeing.filter { $0.pane == ObjectIdentifier(pane) } }
 
     /// What this tab is, for the glyph in its icon tile.
     var kind: TabKind {

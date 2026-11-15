@@ -547,12 +547,32 @@ walk (`ListeningPorts.of(_:in:)`). It replaced the agent poll, which
 walked the selected tab every 2 s at `.utility` and ran lsof every 6 s —
 about 1 s of CPU a minute a window, the light tick's being about 0.1 s
 (D-5's measure, docs/design/activity/analysis.md 15). A pill opens a popover with the
-process, its pid, and Open / Copy URL / Kill — the process the census
-named, its pid and start read again and only while it runs as you alone
-(`ListeningPort.killable`: a setuid program, which `kill(2)` would let
-through by its real uid, holds no pill and is never signalled), never a
-pattern. A tab that listens is a server, which is what its icon then says
-(`TabKind`).
+process, its pid, and Open / Copy URL / Free…. Open goes through the
+window's `openLink`, so Settings ▸ Browser decides where (2.4 item 4).
+Free… (`TerminalWindowController+PortFree`, docs/design/activity/
+analysis.md 6.12) always asks — a `WriteConfirmation`, no setting skips
+it — and reads what holds the port again at the press, off the main
+thread: `ActivityPortFree.read` classes it as the policy sees it (the
+pane's `login` and shell, its agent and the agent's children, its jobs,
+what left its terminal, what chose to outlive it, an app, Overterm's
+helpers; a terraform write it runs under, whose plugin may hold the
+port, is the one interrupted) and `ActivitySignalCheck` decides: the
+pane's foreground job is interrupted — ⌃C typed into the pane as a key
+event (`TerminalView.pressControlC`), only while the surface's
+foreground group, read again at the button, is still the target's —,
+another job or an agent's child is stopped through `ProcessSignals` by
+the identity the census listed, the agent is Stop Agent (critical), a
+terraform write is interrupted only, the shell is the pane's own close,
+and what ignores SIGHUP, was detached on purpose or is an app is refused
+with why; Overterm's helpers are refused too, their routes on their own
+pages. The button reads the holder again and asks the policy again of
+it (`changedAtButton`): what changed while asked is sent nothing. A
+container's port is Stop Container and a forward's Stop Forward, each
+asked first now. After any Free the pill watches the port (`watchFreed`:
+the one-off census at its 2 s spacing, 10 s) by the process the pill
+listed there, and says it is free, came back as a pid started since,
+or is still held (`PortFreeing`). A tab that
+listens is a server, which is what its icon then says (`TabKind`).
 
 A port is opened where it listens (`ListeningPort.url`, docs/design/
 activity/analysis.md 6.8), from its sockets' bound addresses and families

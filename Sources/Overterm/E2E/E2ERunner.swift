@@ -3354,6 +3354,7 @@ final class E2ERunner {
                 second.ports.first { $0.port == backgroundPort }?.url?.absoluteString ?? "no URL")
             if let pill = second.ports.first(where: { $0.port == backgroundPort }) {
                 await pillOpenChecks(pill, in: second)
+                await pillFreeChecks(pill, in: second)
             }
 
             // A window off screen gives the light tick back; its tabs are
@@ -3436,9 +3437,6 @@ final class E2ERunner {
             tab.terminal.insertText("kill %1 2>/dev/null")
             tab.terminal.pressReturn()
         }
-        // Last, the server's pill: Stop… asked, checked, then sent
-        // (E2ERunner+PortPill).
-        if let port { await portPillStop(in: first, port: port) }
     }
 
     /// Tab Info on a tab that isn't selected, while the window's agent poll
