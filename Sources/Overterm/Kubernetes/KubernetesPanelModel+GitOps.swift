@@ -357,6 +357,9 @@ final class KubePanelGitOps: ObservableObject {
     struct MarksSaid: Equatable {
         /// More than three by name or image.
         var tooMany: String?
+        /// Those by name or image outside the binding's namespace, beside
+        /// those in it: counted, never listed.
+        var elsewhere: String?
         /// Nothing matched, B having compared: what was, never "not deployed".
         var nothing: String?
         /// What B's compare couldn't do.
@@ -1656,7 +1659,7 @@ final class KubePanelGitOps: ObservableObject {
         }
         let fromMarks = answered.found.map(derived).sorted(by: Self.rankedMarks)
         let probably = answered.probably.map(derived).sorted(by: Self.rankedMarks)
-        let marksSaid = MarksSaid(tooMany: answered.tooMany, nothing: answered.nothing, caveats: answered.caveats)
+        let marksSaid = MarksSaid(tooMany: answered.tooMany, elsewhere: answered.elsewhere, nothing: answered.nothing, caveats: answered.caveats)
         if marksSaid != self.marksSaid { self.marksSaid = marksSaid }
 
         let plain = found.map { found in

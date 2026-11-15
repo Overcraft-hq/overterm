@@ -402,7 +402,9 @@ extension E2ERunner {
     /// fake-dev classed production, a config repository whose committed
     /// manifest names team-5's acme-search is matched by option B only once
     /// Find What Deploys This was pressed — "describes", never "owns" — and
-    /// nothing is listed across the cluster before. Each part's reads
+    /// nothing is listed across the cluster before; and the checkout of a
+    /// service deployed into three namespaces, bound in one, says that
+    /// one's app "probably" and only counts the other two. Each part's reads
     /// checked against the fake's log, and nothing the rail keeps or draws
     /// holds the sentinel its objects carry; nothing written.
     func kubernetesCheckoutGitOpsMarks(_ model: KubernetesModel, _ page: KubernetesPageModel, _ spoke: FakeKubeAPI, made: FakeKubeAPI.Spoke) async {
@@ -587,6 +589,43 @@ extension E2ERunner {
         check("nothing drawn of them holds it", await railNeverShows { $0.contains(FakeKubeAPI.gitOpsSentinel) })
         checkReads("the config checkout", bound: "team-0")
         check("nothing written", spoke.writes.isEmpty, "\(spoke.writes.map(\.description))")
+
+        // A service deployed into three namespaces and named after its checkout (option C; gitops.md
+        // 14.9.4: a name shared across namespaces, never within one): bound in one, its app said
+        // "probably", the two elsewhere only counted — never listed, never "too many to tell".
+        let relaySpaces = ["team-0", "team-1", "team-2"]
+        for namespace in relaySpaces {
+            spoke.addMarkedDeployment("acme-relay", namespace: namespace, app: "prod-\(namespace)-acme-relay-service", padding: 0, now: Date(), replicaSet: false)
+        }
+        defer { for namespace in relaySpaces { spoke.delete("deployments.apps", "acme-relay", namespace: namespace) } }
+        guard let relay = await E2EKubeCheckoutFixture.make(in: scratch, name: "ot-kube-spoke-relay") else { return check("the relay checkout is made", false) }
+        _ = try? await relay.git(["remote", "add", "origin", "git@git.acme.example:acme/acme-relay.git"])
+        app.newTab(in: relay.repo)
+        guard let relayTab = app.store.selected else { return check("the relay checkout's tab opens", false) }
+        defer { app.closeTabsWithoutAsking([relayTab]) }
+        let relayReal = FileTreeModel.realPath(relay.repo)
+        check("the panel follows the relay checkout", await eventually(10) { panel.checkout.map(FileTreeModel.realPath) == relayReal })
+        app.showKubernetesPanel(nil)
+        spoke.forgetRequests()
+        check(
+            "the relay checkout bound to fake-dev/team-0, its Helm-installed agent",
+            panel.bind(KubeBinding(checkout: relayReal, context: "fake-dev", namespace: "team-0", selector: "app=fake-metrics-agent")))
+        check("Find What Deploys This offered for it", await eventually(20) { if case .waiting = gitOps.state { true } else { false } }, "\(gitOps.state)")
+        gitOps.find()
+        let relayed = "prod-team-0-acme-relay-service"
+        check(
+            "by name: the bound namespace's app, probably", await eventually(20) { marked(relayed)?.marked?.probable == true && gitOps.marksSaid.elsewhere != nil },
+            "\(gitOps.state) \(gitOps.matches.map(\.said))")
+        check(
+            "the two elsewhere never listed", marked("prod-team-1-acme-relay-service") == nil && marked("prod-team-2-acme-relay-service") == nil,
+            "\(gitOps.matches.map(\.said))")
+        check(
+            "only counted, never too many to tell",
+            gitOps.marksSaid.elsewhere == "2 more by name or image in other namespaces: team-1, team-2" && gitOps.marksSaid.tooMany == nil,
+            gitOps.marksSaid.elsewhere ?? "none")
+        check("its app drawn, probably", await railShowsPhrase("May deploy this checkout (by name)"))
+        check("the count drawn", await railShowsPhrase("2 more by name or image in other namespaces"))
+        checkReads("the relay checkout", bound: "team-0")
         railScroll(to: 0)
     }
 

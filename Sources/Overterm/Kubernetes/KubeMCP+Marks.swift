@@ -383,6 +383,8 @@ extension KubeMCP {
         var found: [Match] = []
         var probably: [Match] = []
         var tooMany: String?
+        /// Those by name or image outside the binding's namespace, beside those in it: counted.
+        var elsewhere: String?
         var nothing: String?
         var caveats: [String] = []
         var notes: [String] = []
@@ -404,8 +406,9 @@ extension KubeMCP {
     /// present here — each settled by one GET within what the owners' GETs
     /// left of the read's 8, the bound apps' Argo Rollouts first (the
     /// binding namespace's Rollouts listed once where a bound Deployment is
-    /// scaled to 0); **C** and **D** "probably". An app the section ranked
-    /// in the last five minutes is said with its verdict. Its counts plain.
+    /// scaled to 0); **C** and **D** "probably", the binding namespace's
+    /// first and those elsewhere counted. An app the section ranked in the
+    /// last five minutes is said with its verdict. Its counts plain.
     static func gitOpsCheckoutMarks(
         _ workloads: [KubePanelGitOps.Bound], owners: KubePanelGitOps.OwnersRead, held: Bool, binding: KubeBinding, context: KubeContext, client: KubeClient,
         discovery: KubeDiscovery, facts: KubeGitOpsMatch.Checkout, key: KubeGitOpsMatchCache.Key, kubernetes: KubernetesModel, now: Date
@@ -584,6 +587,7 @@ extension KubeMCP {
         out.found = answered.found.map(match)
         out.probably = answered.probably.map(match)
         out.tooMany = answered.tooMany
+        out.elsewhere = answered.elsewhere
         out.nothing = answered.nothing
         out.caveats = answered.caveats
         out.replaced = Set(ownerOf.values.map { KubeGitOpsMatch.key(of: $0) })
@@ -719,8 +723,9 @@ enum KubeMCPMarksText {
     /// The checkout's matches among the apps read from marks (14.2.5): each
     /// with its state and sentence, why it matched — B "describes N of its
     /// objects", never that it deploys the checkout —, whose health, where
-    /// its Application stands; apart, "probably (by name)"; what B couldn't
-    /// compare. Problems only with `failing`.
+    /// its Application stands; apart, "probably (by name)" — the binding
+    /// namespace's, those elsewhere counted —; what B couldn't compare.
+    /// Problems only with `failing`.
     static func checkout(_ marked: KubeMCP.CheckoutMarks, failing: Bool, limit: Int, context: String, now: Date) -> [String] {
         let found = failing ? marked.found.filter { $0.health.state.isProblem } : marked.found
         let probably = failing ? marked.probably.filter { $0.health.state.isProblem } : marked.probably
@@ -741,6 +746,7 @@ enum KubeMCPMarksText {
             for match in probably.prefix(limit) { lines += said(match) }
         }
         if let tooMany = marked.tooMany { lines.append(tooMany + ".") }
+        if let elsewhere = marked.elsewhere { lines.append(elsewhere.hasSuffix("…") ? elsewhere : elsewhere + ".") }
         if let nothing = marked.nothing { lines.append(nothing + ".") }
         if !marked.caveats.isEmpty, marked.nothing == nil { lines.append("Not compared: " + marked.caveats.joined(separator: "; ") + ".") }
         return lines

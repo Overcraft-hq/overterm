@@ -378,6 +378,104 @@ extension KubeGitOpsMatchTests {
         XCTAssertEqual(KubeGitOpsMatch.marked(bound: [], listing: three).probably.count, 3)
     }
 
+    // MARK: C and D: the bound namespace first (gitops.md 14.9.4)
+
+    /// One service deployed into several namespaces, as the surveyed
+    /// spokes share a name — `checkout` in each, never two within one.
+    private func shared(_ namespaces: [String]) -> [KubeMarkedApp] {
+        apps(namespaces.map { member($0, "checkout-api", app: "prod-\($0)-checkout-service") })
+    }
+
+    /// C, D and B with no namespace against `apps`, bound in `namespace`,
+    /// the checkout `acme/checkout`.
+    private func matched(_ apps: [KubeMarkedApp], manifests read: KubeCheckoutManifests.Read = KubeCheckoutManifests.Read(), bound namespace: String)
+        -> KubeGitOpsMatch.MarkedAnswer
+    {
+        let listing = KubeGitOpsMatch.markedListing(apps, manifests: read, checkout: checkout(repo: "checkout"), namespace: namespace, reason: .notServed)
+        return KubeGitOpsMatch.marked(bound: [], listing: listing)
+    }
+
+    /// (a) Bound in acme-food: its app said alone, the two elsewhere only counted.
+    func testByNameTheBoundNamespacesAppIsSaidAloneTheOthersCounted() {
+        let answer = matched(shared(["acme-food", "acme-market", "acme-water"]), bound: "acme-food")
+        XCTAssertTrue(answer.found.isEmpty)
+        XCTAssertEqual(answer.probably.map(\.app.key.instance), ["prod-acme-food-checkout-service"])
+        XCTAssertEqual(answer.probably.first?.whys, [.probably("its name, read as checkout, is the repository's")])
+        XCTAssertTrue(answer.probably.allSatisfy(\.probable))
+        XCTAssertEqual(answer.elsewhere, "2 more by name or image in other namespaces: acme-market, acme-water")
+        XCTAssertNil(answer.tooMany)
+        XCTAssertNil(answer.nothing, "something said: never nothing found")
+    }
+
+    /// (b) Five of one name, bound in one of their namespaces: one said,
+    /// four counted — never "too many to tell", which counts only those
+    /// said. Past five namespaces named, "…"; one, "another namespace".
+    func testByNameElsewhereIsCountedNeverTooManyToTell() {
+        let five = ["acme-books", "acme-food", "acme-games", "acme-market", "acme-water"]
+        let answer = matched(shared(five), bound: "acme-food")
+        XCTAssertEqual(answer.probably.map(\.app.key.instance), ["prod-acme-food-checkout-service"])
+        XCTAssertNil(answer.tooMany, "the four elsewhere are counted, never too many")
+        XCTAssertEqual(answer.elsewhere, "4 more by name or image in other namespaces: acme-books, acme-games, acme-market, acme-water")
+        XCTAssertEqual(
+            matched(shared(five + ["acme-pets", "acme-tools", "acme-toys"]), bound: "acme-food").elsewhere,
+            "7 more by name or image in other namespaces: acme-books, acme-games, acme-market, acme-pets, acme-tools, …")
+        XCTAssertEqual(matched(shared(["acme-food", "acme-market"]), bound: "acme-food").elsewhere, "1 more by name or image in another namespace: acme-market")
+    }
+
+    /// (c) Bound in none of their namespaces: all said as before — three
+    /// listed, four too many to tell —, nothing counted apart.
+    func testByNameWithNoneInTheBoundNamespaceAllAreSaid() {
+        let three = matched(shared(["acme-food", "acme-market", "acme-water"]), bound: "acme-shop")
+        XCTAssertEqual(
+            three.probably.map(\.app.key.instance), ["prod-acme-food-checkout-service", "prod-acme-market-checkout-service", "prod-acme-water-checkout-service"])
+        XCTAssertNil(three.tooMany)
+        XCTAssertNil(three.elsewhere)
+        let four = matched(shared(["acme-food", "acme-games", "acme-market", "acme-water"]), bound: "acme-shop")
+        XCTAssertEqual(four.tooMany, "4 apps by name or image: too many to tell")
+        XCTAssertTrue(four.probably.isEmpty, "none listed")
+        XCTAssertNil(four.elsewhere)
+    }
+
+    /// (d) Two apps of one stem in the bound namespace are both said; four
+    /// there are too many to tell, the one elsewhere still counted.
+    func testByNameSeveralInTheBoundNamespaceAreSaidThenTooMany() {
+        let two = matched(
+            apps([member("acme-food", "checkout-web", app: "prod-acme-food-checkout"), member("acme-food", "checkout-api", app: "prod-acme-food-checkout-service")]),
+            bound: "acme-food")
+        XCTAssertEqual(two.probably.map(\.app.key.instance), ["prod-acme-food-checkout", "prod-acme-food-checkout-service"])
+        XCTAssertEqual(two.probably.map { $0.whys.first?.said }, Array(repeating: "probably: its name, read as checkout, is the repository's", count: 2))
+        XCTAssertNil(two.tooMany)
+        XCTAssertNil(two.elsewhere)
+        let four = matched(
+            apps([
+                member("acme-food", "checkout-web", app: "prod-acme-food-checkout"), member("acme-food", "checkout-api", app: "prod-acme-food-checkout-service"),
+                member("acme-food", "checkout-worker", app: "stage-acme-food-checkout-service"),
+                member("acme-food", "checkout-cron", app: "acme-food_prod-acme-food-checkout"),
+                member("acme-market", "checkout-api", app: "prod-acme-market-checkout-service"),
+            ]), bound: "acme-food")
+        XCTAssertEqual(four.tooMany, "4 apps by name or image: too many to tell")
+        XCTAssertTrue(four.probably.isEmpty, "none listed")
+        XCTAssertEqual(four.elsewhere, "1 more by name or image in another namespace: acme-market")
+    }
+
+    /// (e) A or B found an app: C and D aren't said — neither listed nor counted.
+    func testByNameIsUnsaidOnceAOrBFound() {
+        let all = shared(["acme-food", "acme-market", "acme-water"])
+        let listing = KubeGitOpsMatch.markedListing(all, manifests: KubeCheckoutManifests.Read(), checkout: checkout(repo: "checkout"), namespace: "acme-food", reason: .notServed)
+        let bound = apps([member("acme-food", "checkout-api", app: "prod-acme-food-checkout-service")])
+        let byA = KubeGitOpsMatch.marked(bound: [(bound[0], [KubeWorkloadRef(kind: .deployment, name: "checkout-api")])], listing: listing)
+        XCTAssertEqual(byA.found.map(\.app.key.instance), ["prod-acme-food-checkout-service"])
+        XCTAssertTrue(byA.probably.isEmpty)
+        XCTAssertNil(byA.tooMany)
+        XCTAssertNil(byA.elsewhere)
+        let byB = matched(all, manifests: manifests([deployment("checkout-api", in: "acme-market")]), bound: "acme-food")
+        XCTAssertEqual(byB.found.map(\.app.key.instance), ["prod-acme-market-checkout-service"])
+        XCTAssertEqual(byB.found.first?.whys, [.describes(1, of: 1)])
+        XCTAssertTrue(byB.probably.isEmpty)
+        XCTAssertNil(byB.tooMany)
+        XCTAssertNil(byB.elsewhere)
+    }
+
     /// Nothing found says what was compared, and what couldn't be — never
     /// that nothing deploys the checkout.
     func testNothingFoundSaysWhatWasCompared() {

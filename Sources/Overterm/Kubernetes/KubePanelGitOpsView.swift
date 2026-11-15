@@ -10,8 +10,9 @@ import SwiftUI
 /// from marks (14.2.5): its state by Argo CD's built-in rules and why,
 /// whose health that is, where its Application stands, why it matched —
 /// Open shows its detail on the page, and no GitOps verb is offered; those
-/// matched only by name or image apart, muted, as "probably"; nothing
-/// matched said by what was compared.
+/// matched only by name or image apart, muted, as "probably" — the bound
+/// namespace's, those elsewhere counted —; nothing matched said by what
+/// was compared.
 struct KubePanelGitOpsView: View {
     @ObservedObject var gitOps: KubePanelGitOps
     @ObservedObject var theme: ChromeTheme
@@ -79,7 +80,8 @@ struct KubePanelGitOpsView: View {
     }
 
     /// The apps matched by name, image or a manifest with no namespace:
-    /// apart, muted, never as found — or, past three, how many.
+    /// apart, muted, never as found — or, past three, how many; the bound
+    /// namespace's, and beneath them those elsewhere counted.
     @ViewBuilder private var probablyPart: some View {
         let probable = gitOps.matches.filter { $0.marked?.probable == true }
         if !probable.isEmpty || gitOps.marksSaid.tooMany != nil {
@@ -89,6 +91,9 @@ struct KubePanelGitOpsView: View {
                 if let tooMany = gitOps.marksSaid.tooMany { line(tooMany, failed: false) }
                 ForEach(probable) { match in
                     if let marked = match.marked { markedRow(match, marked) }
+                }
+                if let elsewhere = gitOps.marksSaid.elsewhere {
+                    line(elsewhere, failed: false).accessibilityIdentifier("kubernetes.panel.gitops.probably.elsewhere")
                 }
             }
             .opacity(0.85)

@@ -46,7 +46,8 @@ import SwiftUI
 ///    7, `kubernetesCheckoutGitOpsMarks`): its app read from the bound
 ///    workload's marks, by its object's GET, "another cluster", its Ask Why
 ///    with the rail's words (D6); option B on production only once Find
-///    What Deploys This was pressed.
+///    What Deploys This was pressed; a name shared by three namespaces'
+///    apps, the bound one's said "probably", the other two counted.
 ///
 /// Reads only: every request a GET; never a Secret or a ConfigMap; on the
 /// spoke no Application and nothing of Flux's; every part's requests —

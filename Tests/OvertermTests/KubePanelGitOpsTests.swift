@@ -506,6 +506,31 @@ final class KubePanelGitOpsTests: XCTestCase {
         panel.panelVisible = false
     }
 
+    /// The checkout named as a service deployed into three namespaces,
+    /// bound in one of them (option C; gitops.md 14.9.4: a name the
+    /// surveyed spokes share across namespaces, never within one): the
+    /// bound namespace's app said "probably", the two elsewhere only
+    /// counted — never listed, never "too many to tell".
+    func testUnservedByNameTheBoundNamespaceComesFirstTheOthersCounted() async throws {
+        for namespace in ["acme-market", "acme-water"] { api.addNamespace(namespace) }
+        for namespace in ["shop", "acme-market", "acme-water"] { addMarked("acme-storefront", namespace: namespace, app: "prod-\(namespace)-shop-service", bound: false) }
+        let panel = bound("fake-dev", show: false)
+        // A list's rows on the page showed a mark: option B lists the cluster's.
+        panel.kubernetes.sawMarks(in: "fake-dev")
+        panel.panelVisible = true
+        try await until(15, "the others counted") { panel.gitOps.marksSaid.elsewhere != nil }
+        XCTAssertEqual(panel.gitOps.matches.compactMap(\.marked?.app.key.instance), ["prod-shop-shop-service"], "the two elsewhere never listed")
+        let shop = try XCTUnwrap(marked(panel, "prod-shop-shop-service"))
+        XCTAssertEqual(shop.marked?.probable, true)
+        XCTAssertEqual(shop.why, "probably: its name, read as shop, is the repository's")
+        XCTAssertEqual(panel.gitOps.marksSaid.elsewhere, "2 more by name or image in other namespaces: acme-market, acme-water")
+        XCTAssertNil(panel.gitOps.marksSaid.tooMany)
+        XCTAssertNil(panel.gitOps.marksSaid.nothing)
+        XCTAssertEqual(panel.gitOps.marksLine, "Argo CD isn't in fake-dev; read from the marks on the cluster's workloads")
+        assertNoSentinel(panel)
+        panel.panelVisible = false
+    }
+
     /// On production the cluster's workloads are listed for option B only
     /// once Find What Deploys This was pressed; the bound workloads' own
     /// app is said at once. A config repository's committed manifest then

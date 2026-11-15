@@ -24,10 +24,14 @@ import Foundation
 ///   `org/repo`, or its last part the repository's — "probably".
 ///
 /// C and D (and B with no namespace) are said only when A and B found
-/// nothing, and none of them past three apps: "too many to tell". A Helm
-/// chart's name is never used. Nothing found is never "not deployed": what
-/// was compared, and what couldn't be, is said. A mark's text is compared
-/// as a string in memory, never handed to git, a shell or a URL. Pure.
+/// nothing, and the bound namespace comes first: the apps in it are said
+/// alone, those elsewhere only counted — on the surveyed spokes a name
+/// several apps share is one service deployed into several namespaces,
+/// never two within one (14.9.4). With none in the bound namespace, all of
+/// them are said. Past three apps said: "too many to tell". A Helm chart's
+/// name is never used. Nothing found is never "not deployed": what was
+/// compared, and what couldn't be, is said. A mark's text is compared as a
+/// string in memory, never handed to git, a shell or a URL. Pure.
 extension KubeGitOpsMatch {
     typealias AppKey = KubeTrackingID.AppKey
 
@@ -38,6 +42,9 @@ extension KubeGitOpsMatch {
     struct MarkedListing: Equatable, Sendable {
         /// Why the rail reads from marks there.
         var reason: KubeMarkedAppsMode.Reason
+        /// The binding's namespace: the only one B compares a manifest
+        /// without a namespace in, and the one whose apps C and D say first.
+        var namespace = ""
         /// Each app's members listed: what A's "more elsewhere" counts.
         var members: [AppKey: [KubeMarkedMember.ID]] = [:]
         /// The apps B, C or D matched, as listed: their health from their rows.
@@ -61,12 +68,13 @@ extension KubeGitOpsMatch {
 
     /// B, C and D against `apps`, the cluster's marked apps as listed.
     /// `namespace`: the binding's, the only one a manifest without a
-    /// namespace is compared in.
+    /// namespace is compared in, and the one C and D say first (`marked`).
     static func markedListing(
         _ apps: [KubeMarkedApp], manifests: KubeCheckoutManifests.Read, checkout: Checkout, namespace: String, reason: KubeMarkedAppsMode.Reason,
         notes: [KubeCountedText] = [], whole: Bool = true, rollouts: RolloutsRead = .notServed, fromSection: Date? = nil
     ) -> MarkedListing {
-        var listing = MarkedListing(reason: reason, manifests: manifests, notes: notes, whole: whole, rollouts: rollouts, fromSection: fromSection)
+        var listing = MarkedListing(
+            reason: reason, namespace: namespace, manifests: manifests, notes: notes, whole: whole, rollouts: rollouts, fromSection: fromSection)
         // Each member by the object its own tracking id names.
         var byObject: [KubeCheckoutManifests.Identity: (key: AppKey, id: KubeMarkedMember.ID)] = [:]
         var byKey: [AppKey: KubeMarkedApp] = [:]
@@ -193,10 +201,14 @@ extension KubeGitOpsMatch {
     struct MarkedAnswer: Equatable, Sendable {
         /// A and B.
         var found: [MarkedFound] = []
-        /// C, D and B with no namespace, when A and B found nothing.
+        /// C, D and B with no namespace, when A and B found nothing: those
+        /// in the binding's namespace, else all.
         var probably: [MarkedFound] = []
         /// More than three of those: none listed.
         var tooMany: String?
+        /// Beside those in the binding's namespace, the others counted,
+        /// never listed: "2 more by name or image in other namespaces: …".
+        var elsewhere: String?
         /// A to D found nothing, B having compared: what was, and what couldn't be.
         var nothing: String?
         /// What B's compare couldn't do, said under what it found.
@@ -205,7 +217,10 @@ extension KubeGitOpsMatch {
 
     /// A — `bound`, each app the bound workloads' own marks name, with
     /// those workloads — beside what the listing found (nil: B not run).
-    /// `plain`: what was compared said with an agent's plain counts.
+    /// C and D (and B with no namespace) only when A and B found nothing:
+    /// those in the listing's namespace, the binding's, said alone and the
+    /// others counted; with none there, all said. `plain`: what was
+    /// compared, and the others' count, said with an agent's plain counts.
     static func marked(bound: [(app: KubeMarkedApp, workloads: [KubeWorkloadRef])], listing: MarkedListing?, plain: Bool = false) -> MarkedAnswer {
         var answer = MarkedAnswer()
         var order: [AppKey] = []
@@ -235,10 +250,15 @@ extension KubeGitOpsMatch {
                 guard let app = listing.apps[key], let words = listing.probably[key], !words.isEmpty else { return nil }
                 return MarkedFound(app: app, whys: words.map(Why.probably), probable: true, bound: false)
             }
-            if probable.count > maxProbable {
-                answer.tooMany = "\(probable.count) apps by name or image: too many to tell"
+            // A name several apps share is one service in several namespaces (14.9.4):
+            // the binding's namespace's said alone, the others counted.
+            let here = probable.filter { $0.app.namespaces.contains(listing.namespace) }
+            let said = here.isEmpty ? probable : here
+            if !here.isEmpty { answer.elsewhere = elsewhere(probable.filter { !$0.app.namespaces.contains(listing.namespace) }, plain: plain) }
+            if said.count > maxProbable {
+                answer.tooMany = "\(said.count) apps by name or image: too many to tell"
             } else {
-                answer.probably = probable
+                answer.probably = said
             }
         }
         if answer.found.isEmpty, answer.probably.isEmpty, answer.tooMany == nil {
@@ -251,6 +271,21 @@ extension KubeGitOpsMatch {
 
     /// More than this many apps by name or image: too many to tell.
     static let maxProbable = 3
+
+    /// At most this many namespaces named where the apps elsewhere are counted.
+    static let maxNamespacesNamed = 5
+
+    /// The apps by name or image outside the binding's namespace, counted:
+    /// "2 more by name or image in other namespaces: acme-market,
+    /// acme-water" — five namespaces named at most, then "…" —; nil for
+    /// none (`plain`: an agent's count).
+    static func elsewhere(_ apps: [MarkedFound], plain: Bool = false) -> String? {
+        guard !apps.isEmpty else { return nil }
+        let namespaces = Set(apps.flatMap(\.app.namespaces)).sorted()
+        let place = namespaces.count == 1 ? "in another namespace" : "in other namespaces"
+        let listed = namespaces.prefix(maxNamespacesNamed).joined(separator: ", ") + (namespaces.count > maxNamespacesNamed ? ", …" : "")
+        return "\(KubeCountedText.number(apps.count, plain: plain)) more by name or image \(place)" + (namespaces.isEmpty ? "" : ": " + listed)
+    }
 
     /// "No marked app matched: 412 manifests compared, 37 Helm templates
     /// not rendered, …" — never that nothing deploys it (`plain`: an

@@ -593,6 +593,44 @@ final class KubeMCPGitOpsMarksTests: XCTestCase {
         XCTAssertTrue(api.requests.contains { $0.path == "/apis/apps/v1/deployments" && $0.query["includeObject"] == "Metadata" && !$0.isWatch }, "the marks listed across the cluster")
     }
 
+    /// The checkout of a service deployed into three namespaces, bound in
+    /// one of them (gitops.md 14.9.4: a name the surveyed spokes share
+    /// across namespaces, never within one): its app said "probably" by its
+    /// name and image, the two elsewhere counted on a line of their own —
+    /// never listed, never "too many to tell" —, as the rail says it.
+    func testCheckoutByNameSaysTheBoundNamespacesAppAndCountsTheRest() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("kube-mcp-marks-\(UUID().uuidString)", isDirectory: true)
+        self.folder = folder
+        let repo = folder.appendingPathComponent("acme-relay", isDirectory: true)
+        try FileManager.default.createDirectory(at: repo, withIntermediateDirectories: true)
+        try "# acme-relay\n".write(to: repo.appendingPathComponent("README.md"), atomically: true, encoding: .utf8)
+        let env = ["GIT_CONFIG_GLOBAL=/dev/null", "GIT_CONFIG_NOSYSTEM=1"]
+        let identity = ["-c", "user.email=t@overterm", "-c", "user.name=t", "-c", "commit.gpgsign=false"]
+        for arguments in [["init", "-q", "-b", "main"], ["add", "."], ["commit", "-q", "-m", "relay"], ["remote", "add", "origin", "git@git.acme.example:acme/acme-relay.git"]] {
+            _ = try await Git.run(URL(fileURLWithPath: "/usr/bin/env"), env + ["/usr/bin/git"] + identity + arguments, in: repo)
+        }
+        for namespace in ["team-0", "team-1", "team-2"] {
+            api.addMarkedDeployment("acme-relay", namespace: namespace, app: "prod-\(namespace)-acme-relay-service", padding: 0, now: Date(), replicaSet: false)
+        }
+        let store = KubeBindingStore(file: folder.appendingPathComponent("bindings.json"))
+        KubeMCP.bindings = store
+        KubeMCP.paneCheckout = { $0 == "pane-relay" ? repo : nil }
+        // Bound to Helm's own agent: no Argo CD mark of its own, so A finds nothing.
+        XCTAssertTrue(store.set(KubeBinding(checkout: repo.path, context: "fake-dev", namespace: "team-0", selector: "app=fake-metrics-agent")))
+        // Something here carries a mark (a list's rows showed one): B lists.
+        model.sawMarks(in: "fake-dev")
+        let said = await text(["checkout": true], pane: "pane-relay")
+        let lines = said.components(separatedBy: "\n")
+        XCTAssertTrue(lines.contains("May deploy this checkout, probably (by name or image) — never said found:"), said)
+        XCTAssertEqual(apps(said).filter { $0.contains("acme-relay-service") }.count, 1, said)
+        XCTAssertTrue(apps(said).contains { $0.contains("prod-team-0-acme-relay-service") }, said)
+        XCTAssertTrue(said.contains("  matched: probably: its name, read as acme-relay, is the repository's"), said)
+        XCTAssertTrue(lines.contains("2 more by name or image in other namespaces: team-1, team-2."), said)
+        XCTAssertFalse(said.contains("prod-team-1-acme-relay-service") || said.contains("prod-team-2-acme-relay-service"), "counted, never listed: \(said)")
+        XCTAssertFalse(said.contains("too many to tell"), said)
+        XCTAssertTrue(said.contains("Argo CD isn't in fake-dev; read from the marks on the cluster's workloads."), said)
+    }
+
     /// A GET of several objects keeps to its bytes in all, whatever comes:
     /// each one in flight counts the most it may read, so no more start
     /// than the bound holds; once it is spent, the rest are skipped.
@@ -663,6 +701,41 @@ final class KubeMCPGitOpsMarksTests: XCTestCase {
             KubeGitOpsMatch.marked(bound: [], listing: listing).nothing,
             "No marked app matched: \(1412.formatted()) manifests compared, \(1024.formatted()) Helm templates not rendered, \(2000.formatted()) of \(2480.formatted()) manifest files read, StatefulSets not read: \(5000.formatted()) rows or 30 MB read already",
             "the rail's, as the locale writes it")
+    }
+
+    /// The apps by name outside the bound namespace, as an agent is told
+    /// them: a plain count — 1001 beside the bound one's app, which `1.001`
+    /// would make one to an agent reading English —, the rail's grouped as
+    /// the person's locale writes it; the line as it is in the agent's text.
+    func testTheAppsByNameElsewhereAreCountedPlainForAnAgent() throws {
+        func member(_ namespace: String) throws -> KubeMarkedMember {
+            let id = try XCTUnwrap(KubeTrackingID.parse("prod-\(namespace)-acme-relay-service:apps/Deployment:\(namespace)/acme-relay"))
+            return KubeMarkedMember(
+                id: .init(kind: .deployment, namespace: namespace, name: "acme-relay"), marks: KubeMarkWire(tracking: .own(id)),
+                health: KubeMarkedHealth.Verdict(status: .healthy, sentence: "2/2 ready", fromRow: true), images: ["registry.acme.example/acme/relay:4.12.0"])
+        }
+        let namespaces = (0...1001).map { String(format: "acme-team-%04d", $0) }
+        let apps = KubeMarkedApps.group(try namespaces.map(member)).apps
+        let checkout = KubeGitOpsMatch.Checkout(
+            root: URL(fileURLWithPath: "/tmp/acme-relay"), remotes: [KubeGitOpsMatch.Remote(name: "origin", repo: GitRemoteURL("git@git.acme.example:acme/acme-relay.git")!)])
+        let listing = KubeGitOpsMatch.markedListing(apps, manifests: KubeCheckoutManifests.Read(), checkout: checkout, namespace: "acme-team-0000", reason: .notServed)
+        let plain = KubeGitOpsMatch.marked(bound: [], listing: listing, plain: true)
+        let named = "in other namespaces: acme-team-0001, acme-team-0002, acme-team-0003, acme-team-0004, acme-team-0005, …"
+        XCTAssertEqual(plain.elsewhere, "1001 more by name or image \(named)")
+        XCTAssertEqual(plain.probably.map(\.app.key.instance), ["prod-acme-team-0000-acme-relay-service"])
+        XCTAssertNil(plain.tooMany, "those elsewhere are counted, never too many")
+        XCTAssertEqual(
+            KubeGitOpsMatch.marked(bound: [], listing: listing).elsewhere, "\(1001.formatted()) more by name or image \(named)", "the rail's, as the locale writes it")
+
+        var marks = KubeMCP.CheckoutMarks()
+        marks.probably = plain.probably.map { KubeMCP.CheckoutMarks.Match(entry: $0, health: $0.app.health, scope: .listed(1), place: .reason(.notServed)) }
+        marks.elsewhere = plain.elsewhere
+        let lines = KubeMCPMarksText.checkout(marks, failing: false, limit: 100, context: "fake-dev", now: Date())
+        let text = lines.joined(separator: "\n")
+        XCTAssertTrue(lines.contains("May deploy this checkout, probably (by name or image) — never said found:"), text)
+        XCTAssertTrue(lines.contains { $0.hasPrefix("marks  Ready (from rows)  prod-acme-team-0000-acme-relay-service") }, text)
+        XCTAssertTrue(lines.contains("1001 more by name or image \(named)"), text)
+        XCTAssertFalse(text.contains("1,001") || text.contains("1.001"), text)
     }
 
     func testALinesWordsAndTheCountsLine() {
