@@ -427,6 +427,12 @@ value, a path or an address of a process that isn't the test's.
   kernel. The fake's clock moves only when told — a call made to cost
   time or held (`FakeActivityKernel.onCall`, `CallGate`) — so nothing
   waits on a moment.
+- `SurfaceProcessesTests`: which `login` is whose, stand-in surfaces over
+  a fake Mac — a list a tick old never pairs a new pane with a closed
+  pane's `login` (ended, a zombie, its pid another's since), a surface
+  made after a list takes nothing from it, the oldest surface the oldest
+  `login`, a pairing over only with its `login`; the app's children from
+  one read of the table, a zombie `login` left out.
 - `ActivityMonitorTests`: one tick for every reader at the fastest
   cadence, the ticks stopped at the last `unwant` and when a reader goes
   away, an early tick only for a wider want and once for a burst, one-off

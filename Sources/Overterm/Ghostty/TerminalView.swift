@@ -272,6 +272,7 @@ final class TerminalView: NSView {
         guard let surface else { return }
         self.surface = nil
         ghostty_surface_free(surface)
+        SurfaceProcesses.shared.closed(self)
     }
 
     /// What a new tab opened from this one should start with: the shell's
@@ -1003,11 +1004,12 @@ extension TerminalView {
         // Not paired with its login yet: that lists the app's children, a
         // scan too — made here, off the main thread; the pairing is quick.
         Self.programQueue.async { [weak self] in
+            let listedAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
             let children = ProcessInspector.children(of: getpid())
             DispatchQueue.main.async {
                 MainActor.assumeIsolated {
                     guard let self else { return }
-                    Self.scanProgram(login: SurfaceProcesses.shared.loginPID(of: self, children: children), done)
+                    Self.scanProgram(login: SurfaceProcesses.shared.loginPID(of: self, children: children, listedAt: listedAt), done)
                 }
             }
         }

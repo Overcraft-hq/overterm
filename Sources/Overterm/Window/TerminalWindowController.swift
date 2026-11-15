@@ -770,6 +770,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         installTabRightClick()
         installTabDragging()
         startAgentPoll()
+        watchActivityContext()
 
         let content = NSView()
         let body = split.view

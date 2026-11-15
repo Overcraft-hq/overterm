@@ -1,9 +1,12 @@
 import AppKit
+import Combine
 import UserNotifications
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var windowController: TerminalWindowController?
+    /// The census's context from the app's windows (`wireActivityCensus`).
+    private var activityCensus: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // A scenario whose environment carries a credential variable stops
@@ -25,6 +28,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         try? FileManager.default.removeItem(at: APIWorkspace.draftsDirectory)
         // Before any pane: a pane learns the browser's MCP address as it is made.
         BrowserBridge.shared.start()
+        // Before any pane too: each one made is the census's context's.
+        activityCensus = TerminalWindowController.wireActivityCensus()
         // A drawing an agent made (notes_draw) opens in the front window's editor.
         DrawingConverter.open = { url in
             for window in NSApp.orderedWindows {
