@@ -3640,6 +3640,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     self.kubernetesPanelSettingsChanged()
                 }
                 if keys.contains(where: { $0.hasPrefix("terraform.") }) { self.terraformPanelSettingsChanged() }
+                if keys.contains("activity.interval") { self.activityIntervalChanged() }
                 if !keys.isDisjoint(with: Self.sidebarPanelKeys) { self.sidebarPanelsChanged() }
                 if keys.contains("general.sidebarRail") { self.sizeSidebarColumn() }
                 let editorKeys = keys.filter { $0.hasPrefix("editor.") }

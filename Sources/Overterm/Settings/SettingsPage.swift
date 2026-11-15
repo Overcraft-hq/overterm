@@ -5,7 +5,7 @@ import UniformTypeIdentifiers
 
 /// Settings' sections, as in the list on the page's left.
 enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
-    case general, appearance, themes, terminal, agents, editor, browser, api, notes, database, docker, kubernetes, terraform, notifications, shortcuts, about
+    case general, appearance, themes, terminal, agents, editor, browser, api, notes, database, docker, kubernetes, terraform, activity, notifications, shortcuts, about
 
     var id: String { rawValue }
 
@@ -24,6 +24,7 @@ enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
         case .docker: "Docker"
         case .kubernetes: "Kubernetes"
         case .terraform: "Terraform"
+        case .activity: "Activity"
         case .notifications: "Notifications"
         case .shortcuts: "Keyboard Shortcuts"
         case .about: "About"
@@ -45,6 +46,7 @@ enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
         case .docker: "shippingbox"
         case .kubernetes: "steeringwheel"
         case .terraform: "square.stack.3d.up"
+        case .activity: "cpu"
         case .notifications: "bell"
         case .shortcuts: "keyboard"
         case .about: "info.circle"

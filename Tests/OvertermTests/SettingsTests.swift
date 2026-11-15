@@ -27,6 +27,25 @@ final class SettingsTests: XCTestCase {
         try text.write(to: url, atomically: true, encoding: .utf8)
     }
 
+    /// Settings ▸ Activity (docs/design/activity/analysis.md, 6.13): its
+    /// four entries, on by default, the census every 2 s; the interval's
+    /// choices, an unknown one 2 s; everyone's and the apps' services off
+    /// with the page.
+    func testActivitysSettings() {
+        let settings = Settings(url: url, watch: false)
+        XCTAssertEqual(
+            SettingsSchema.specs(in: .activity).map(\.key), ["activity.enabled", "activity.interval", "activity.everyone", "activity.appServices"])
+        XCTAssertTrue(settings.activityEnabled && settings.activityEveryone && settings.activityAppServices)
+        XCTAssertEqual(settings.activityInterval, .seconds(2))
+        settings.set("activity.interval", .string("1"))
+        XCTAssertEqual(settings.activityInterval, .seconds(1))
+        settings.set("activity.interval", .string("5"))
+        XCTAssertEqual(settings.activityInterval, .seconds(5))
+        settings.set("activity.enabled", .bool(false))
+        XCTAssertFalse(settings.activityEveryone || settings.activityAppServices)
+        XCTAssertTrue(SettingsSection.activity.matches("activity.interval"))
+    }
+
     func testDefaultsKeepTodaysBehaviour() {
         let settings = Settings(url: url, watch: false)
         XCTAssertTrue(settings.restoreTabs)

@@ -314,7 +314,7 @@ struct SettingSpec: Identifiable, Sendable {
 /// Every setting, in the order Settings shows them.
 enum SettingsSchema {
     static let all: [SettingSpec] =
-        general + appearance + terminal + agents + editor + browser + api + notes + database + docker + kubernetes + terraform + notifications
+        general + appearance + terminal + agents + editor + browser + api + notes + database + docker + kubernetes + terraform + activity + notifications
         + updates
 
     static let byKey: [String: SettingSpec] = Dictionary(uniqueKeysWithValues: all.map { ($0.key, $0) })
@@ -860,6 +860,30 @@ enum SettingsSchema {
             help:
                 "What E runs beside a pod's container (kubectl debug --target) or on a node, in a tab — unless the context's own debugImage (a node: its nodeShellImage, then debugImage) says another. Only on writable contexts.",
             kind: .text(placeholder: "busybox:1.36", monospaced: true), defaultValue: .string("busybox:1.36"), requires: "kubernetes.enabled"),
+    ]
+
+    /// Activity (docs/design/activity/analysis.md, 6.13).
+    private static let activity: [SettingSpec] = [
+        SettingSpec(
+            key: "activity.enabled", section: .activity, group: "Activity", title: "Activity in Overterm",
+            help:
+                "Every process and port on this Mac, on a page of its own (⌥⌘A), read only while it shows. Off: no page, no switcher, no ⌘K items, no agents' reads. What keeps reading: Tab Info, the pane pills and the left-behind notes read your tabs' own processes while a window is visible, and briefly when a tab closes or an agent finishes; the Terraform header walks a pane where terraform runs; and a port's Free…, Docker's port check and a port's holder read the Mac once when you use them.",
+            kind: .toggle, defaultValue: .bool(true)),
+        SettingSpec(
+            key: "activity.interval", section: .activity, group: "Activity", title: "Read every",
+            help:
+                "How often the page reads the Mac while it shows, and the tabs' own processes are read. Faster costs more: about 1% of one core at 2 s while the page shows, about twice that at 1 s (measured on an M1 Max).",
+            kind: .choice([.init(value: "1", label: "1 second"), .init(value: "2", label: "2 seconds"), .init(value: "5", label: "5 seconds")]),
+            defaultValue: .string("2")),
+        SettingSpec(
+            key: "activity.everyone", section: .activity, group: "Activity", title: "Other users' processes too",
+            help: "Other users' and macOS's processes, names only: their numbers are theirs.", kind: .toggle, defaultValue: .bool(true),
+            requires: "activity.enabled"),
+        SettingSpec(
+            key: "activity.appServices", section: .activity, group: "Activity", title: "Count apps' helper services under the app",
+            help:
+                "Count apps' helper services and virtual machines (WebKit content, Docker's VM) under the app responsible for them — a private interface; turns itself off if it fails.",
+            kind: .toggle, defaultValue: .bool(true), requires: "activity.enabled"),
     ]
 
     private static let terraform: [SettingSpec] = [

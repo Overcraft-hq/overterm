@@ -53,6 +53,9 @@ extension TerminalWindowController {
     static func wireActivityCensus() -> AnyCancellable {
         let monitor = ActivityMonitor.shared
         monitor.contextSource = { activityContext() }
+        // `activity.interval`; a change is taken by each window
+        // (`activityIntervalChanged`).
+        monitor.interval = Settings.shared.activityInterval
         // @Published emits before it changes: the emitted value.
         return monitor.$snapshot.compactMap { $0 }
             .sink { snapshot in
@@ -165,6 +168,13 @@ extension TerminalWindowController {
         }
         lightTickWanted = true
         ActivityMonitor.shared.want(self, .light(tabs: Set((tabs ?? store.tabs).map(\.id))))
+    }
+
+    /// `activity.interval` changed: the census's cadence, and this
+    /// window's want again at it — a want keeps the interval it was made at.
+    func activityIntervalChanged() {
+        ActivityMonitor.shared.interval = Settings.shared.activityInterval
+        if lightTickWanted { updateLightTick() }
     }
 
     /// The window going: its want given back.
