@@ -380,8 +380,9 @@ extension KubeGitOpsMatchTests {
 
     // MARK: C and D: the bound namespace first (gitops.md 14.9.4)
 
-    /// One service deployed into several namespaces, as the surveyed
-    /// spokes share a name — `checkout` in each, never two within one.
+    /// One service deployed into several namespaces — `checkout` in each,
+    /// never two within one —, as the surveyed spokes' apps with a
+    /// Deployment share a name.
     private func shared(_ namespaces: [String]) -> [KubeMarkedApp] {
         apps(namespaces.map { member($0, "checkout-api", app: "prod-\($0)-checkout-service") })
     }

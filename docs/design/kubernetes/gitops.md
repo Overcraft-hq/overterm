@@ -1205,7 +1205,7 @@ Every word goes through `Secrets`, as `KubeAgentBriefing` does today. A single f
   - A cut or refused read never makes the answer "no marked apps". It says what was read.
   - Ready apps are only counted unless `kind: "marks"` with `state: "all"` is asked.
 - **`kind: "marks"`** is a new filter value; `kind: "application"` doesn't include derived apps.
-- **With `checkout: true`,** the matches gain the state and sentence. B is said as "describes N of its objects", never "deploys this checkout"; C and D as "probably (by name)", the bound namespace's first and those elsewhere counted (§14.2.5). B's list across a production cluster comes only from the cache of a person's press, as P3/P4 do today.
+- **With `checkout: true`,** the matches gain the state and sentence. B is said as "describes N of its objects", never "deploys this checkout"; C and D as "probably (by name)", the bound namespace's first and those elsewhere counted (§14.2.5); with `failing_only`, only the failing ones, those elsewhere too — counted on a line of their own where none is listed above them, "1 failing app by name or image in another namespace: team-1". B's list across a production cluster comes only from the cache of a person's press, as P3/P4 do today.
 
 No new tool, and no write. `KubeAgentWrites` is unchanged.
 

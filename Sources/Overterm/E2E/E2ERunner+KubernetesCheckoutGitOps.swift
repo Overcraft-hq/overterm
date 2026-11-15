@@ -591,8 +591,8 @@ extension E2ERunner {
         check("nothing written", spoke.writes.isEmpty, "\(spoke.writes.map(\.description))")
 
         // A service deployed into three namespaces and named after its checkout (option C; gitops.md
-        // 14.9.4: a name shared across namespaces, never within one): bound in one, its app said
-        // "probably", the two elsewhere only counted — never listed, never "too many to tell".
+        // 14.9.4: apps with a Deployment sharing a name, never two in one namespace): bound in one, its
+        // app said "probably", the two elsewhere only counted — never listed, never "too many to tell".
         let relaySpaces = ["team-0", "team-1", "team-2"]
         for namespace in relaySpaces {
             spoke.addMarkedDeployment("acme-relay", namespace: namespace, app: "prod-\(namespace)-acme-relay-service", padding: 0, now: Date(), replicaSet: false)

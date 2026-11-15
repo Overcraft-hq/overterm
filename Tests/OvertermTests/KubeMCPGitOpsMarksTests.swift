@@ -594,10 +594,11 @@ final class KubeMCPGitOpsMarksTests: XCTestCase {
     }
 
     /// The checkout of a service deployed into three namespaces, bound in
-    /// one of them (gitops.md 14.9.4: a name the surveyed spokes share
-    /// across namespaces, never within one): its app said "probably" by its
-    /// name and image, the two elsewhere counted on a line of their own —
-    /// never listed, never "too many to tell" —, as the rail says it.
+    /// one of them (gitops.md 14.9.4: on the surveyed spokes, apps with a
+    /// Deployment that share a name were never in one namespace): its app
+    /// said "probably" by its name and image, the two elsewhere counted on
+    /// a line of their own — never listed, never "too many to tell" —, as
+    /// the rail says it; with failing_only, the healthy ones neither.
     func testCheckoutByNameSaysTheBoundNamespacesAppAndCountsTheRest() async throws {
         let folder = FileManager.default.temporaryDirectory.appendingPathComponent("kube-mcp-marks-\(UUID().uuidString)", isDirectory: true)
         self.folder = folder
@@ -629,6 +630,15 @@ final class KubeMCPGitOpsMarksTests: XCTestCase {
         XCTAssertFalse(said.contains("prod-team-1-acme-relay-service") || said.contains("prod-team-2-acme-relay-service"), "counted, never listed: \(said)")
         XCTAssertFalse(said.contains("too many to tell"), said)
         XCTAssertTrue(said.contains("Argo CD isn't in fake-dev; read from the marks on the cluster's workloads."), said)
+
+        // Problems only: the three are Ready by their rows, so none is listed and none counted —
+        // never "2 more" after nothing, never the namespaces of apps the filter left out.
+        let failing = await text(["checkout": true, "failing_only": true], pane: "pane-relay")
+        XCTAssertFalse(failing.contains("May deploy this checkout"), failing)
+        XCTAssertTrue(apps(failing).isEmpty, failing)
+        XCTAssertFalse(failing.contains("by name or image"), "nothing healthy counted: \(failing)")
+        XCTAssertFalse(failing.contains("team-1") || failing.contains("team-2"), failing)
+        XCTAssertTrue(failing.contains("Argo CD isn't in fake-dev; read from the marks on the cluster's workloads."), failing)
     }
 
     /// A GET of several objects keeps to its bytes in all, whatever comes:
@@ -727,15 +737,81 @@ final class KubeMCPGitOpsMarksTests: XCTestCase {
         XCTAssertEqual(
             KubeGitOpsMatch.marked(bound: [], listing: listing).elsewhere, "\(1001.formatted()) more by name or image \(named)", "the rail's, as the locale writes it")
 
+        XCTAssertEqual(plain.others.count, 1001, "the apps elsewhere kept, for an agent's answer to count")
+
         var marks = KubeMCP.CheckoutMarks()
         marks.probably = plain.probably.map { KubeMCP.CheckoutMarks.Match(entry: $0, health: $0.app.health, scope: .listed(1), place: .reason(.notServed)) }
-        marks.elsewhere = plain.elsewhere
+        marks.elsewhere = plain.others.map { KubeMCP.CheckoutMarks.Match(entry: $0, health: $0.app.health, scope: .listed(1), place: .reason(.notServed)) }
         let lines = KubeMCPMarksText.checkout(marks, failing: false, limit: 100, context: "fake-dev", now: Date())
         let text = lines.joined(separator: "\n")
         XCTAssertTrue(lines.contains("May deploy this checkout, probably (by name or image) — never said found:"), text)
         XCTAssertTrue(lines.contains { $0.hasPrefix("marks  Ready (from rows)  prod-acme-team-0000-acme-relay-service") }, text)
         XCTAssertTrue(lines.contains("1001 more by name or image \(named)"), text)
         XCTAssertFalse(text.contains("1,001") || text.contains("1.001"), text)
+    }
+
+    /// With failing_only the apps by name elsewhere are filtered as the
+    /// rest are: only the failing ones counted and their namespaces named —
+    /// on a line of their own where the bound namespace's app is healthy,
+    /// never "more" after nothing —, nothing at all where none fails.
+    func testWithFailingOnlyOnlyTheFailingAppsElsewhereAreCounted() throws {
+        func member(_ namespace: String, failing: Bool) throws -> KubeMarkedMember {
+            let id = try XCTUnwrap(KubeTrackingID.parse("prod-\(namespace)-acme-relay-service:apps/Deployment:\(namespace)/acme-relay"))
+            let health =
+                failing
+                ? KubeMarkedHealth.Verdict(status: .degraded, sentence: "rollout stalled (ProgressDeadlineExceeded)")
+                : KubeMarkedHealth.Verdict(status: .healthy, sentence: "2/2 ready", fromRow: true)
+            return KubeMarkedMember(
+                id: .init(kind: .deployment, namespace: namespace, name: "acme-relay"), marks: KubeMarkWire(tracking: .own(id)), health: health,
+                images: ["registry.acme.example/acme/relay:4.12.0"])
+        }
+        let checkout = KubeGitOpsMatch.Checkout(
+            root: URL(fileURLWithPath: "/tmp/acme-relay"), remotes: [KubeGitOpsMatch.Remote(name: "origin", repo: GitRemoteURL("git@git.acme.example:acme/acme-relay.git")!)])
+        // acme-relay in three namespaces, bound in team-0; `failing`: whose app is Degraded.
+        func said(failing: Set<String>, only: Bool) throws -> [String] {
+            let members = try ["team-0", "team-1", "team-2"].map { try member($0, failing: failing.contains($0)) }
+            let listing = KubeGitOpsMatch.markedListing(
+                KubeMarkedApps.group(members).apps, manifests: KubeCheckoutManifests.Read(), checkout: checkout, namespace: "team-0", reason: .notServed)
+            let answer = KubeGitOpsMatch.marked(bound: [], listing: listing, plain: true)
+            XCTAssertEqual(answer.probably.map(\.app.key.instance), ["prod-team-0-acme-relay-service"])
+            XCTAssertEqual(answer.others.map(\.app.key.instance), ["prod-team-1-acme-relay-service", "prod-team-2-acme-relay-service"])
+            func match(_ entry: KubeGitOpsMatch.MarkedFound) -> KubeMCP.CheckoutMarks.Match {
+                KubeMCP.CheckoutMarks.Match(entry: entry, health: entry.app.health, scope: .listed(1), place: .reason(.notServed))
+            }
+            var marks = KubeMCP.CheckoutMarks()
+            marks.probably = answer.probably.map(match)
+            marks.elsewhere = answer.others.map(match)
+            return KubeMCPMarksText.checkout(marks, failing: only, limit: 100, context: "fake-dev", now: Date())
+        }
+        let header = "May deploy this checkout, probably (by name or image) — never said found:"
+
+        // The bound namespace's app healthy, team-1's failing: team-1's counted on its own, team-2 never named.
+        let alone = try said(failing: ["team-1"], only: true)
+        XCTAssertEqual(alone, ["1 failing app by name or image in another namespace: team-1."], alone.joined(separator: "\n"))
+        XCTAssertEqual(
+            try said(failing: ["team-1", "team-2"], only: true), ["2 failing apps by name or image in other namespaces: team-1, team-2."])
+
+        // The bound namespace's failing too: listed, then the failing one elsewhere counted after it.
+        let both = try said(failing: ["team-0", "team-1"], only: true)
+        let text = both.joined(separator: "\n")
+        XCTAssertTrue(both.contains(header), text)
+        XCTAssertTrue(both.contains { $0.hasPrefix("marks  Failed  prod-team-0-acme-relay-service") }, text)
+        XCTAssertEqual(both.last, "1 more failing app by name or image in another namespace: team-1.", text)
+        XCTAssertFalse(text.contains("team-2"), text)
+
+        // None failing: nothing listed, nothing counted, no namespace named.
+        XCTAssertEqual(try said(failing: [], only: true), [])
+        // Only the bound namespace's failing: it alone, the healthy two elsewhere not counted.
+        let bound = try said(failing: ["team-0"], only: true)
+        let boundText = bound.joined(separator: "\n")
+        XCTAssertTrue(bound.contains(header), boundText)
+        XCTAssertTrue(bound.contains { $0.hasPrefix("marks  Failed  prod-team-0-acme-relay-service") }, boundText)
+        XCTAssertFalse(boundText.contains("by name or image in") || boundText.contains("team-1") || boundText.contains("team-2"), boundText)
+
+        // Every state asked: the rail's count, whatever their health.
+        let every = try said(failing: ["team-1"], only: false)
+        XCTAssertTrue(every.contains(header), every.joined(separator: "\n"))
+        XCTAssertEqual(every.last, "2 more by name or image in other namespaces: team-1, team-2.", every.joined(separator: "\n"))
     }
 
     func testALinesWordsAndTheCountsLine() {

@@ -383,8 +383,10 @@ extension KubeMCP {
         var found: [Match] = []
         var probably: [Match] = []
         var tooMany: String?
-        /// Those by name or image outside the binding's namespace, beside those in it: counted.
-        var elsewhere: String?
+        /// Those by name or image outside the binding's namespace, beside
+        /// those in it: never listed, only counted — the failing ones alone
+        /// when only those are asked for.
+        var elsewhere: [Match] = []
         var nothing: String?
         var caveats: [String] = []
         var notes: [String] = []
@@ -587,7 +589,7 @@ extension KubeMCP {
         out.found = answered.found.map(match)
         out.probably = answered.probably.map(match)
         out.tooMany = answered.tooMany
-        out.elsewhere = answered.elsewhere
+        out.elsewhere = answered.others.map(match)
         out.nothing = answered.nothing
         out.caveats = answered.caveats
         out.replaced = Set(ownerOf.values.map { KubeGitOpsMatch.key(of: $0) })
@@ -725,10 +727,12 @@ enum KubeMCPMarksText {
     /// objects", never that it deploys the checkout —, whose health, where
     /// its Application stands; apart, "probably (by name)" — the binding
     /// namespace's, those elsewhere counted —; what B couldn't compare.
-    /// Problems only with `failing`.
+    /// Problems only with `failing`: those elsewhere too, counted on their
+    /// own where none was said above them.
     static func checkout(_ marked: KubeMCP.CheckoutMarks, failing: Bool, limit: Int, context: String, now: Date) -> [String] {
         let found = failing ? marked.found.filter { $0.health.state.isProblem } : marked.found
         let probably = failing ? marked.probably.filter { $0.health.state.isProblem } : marked.probably
+        let elsewhere = failing ? marked.elsewhere.filter { $0.health.state.isProblem } : marked.elsewhere
         var lines: [String] = []
         if let line = marked.line { lines.append(line + ".") }
         func said(_ match: KubeMCP.CheckoutMarks.Match) -> [String] {
@@ -746,7 +750,10 @@ enum KubeMCPMarksText {
             for match in probably.prefix(limit) { lines += said(match) }
         }
         if let tooMany = marked.tooMany { lines.append(tooMany + ".") }
-        if let elsewhere = marked.elsewhere { lines.append(elsewhere.hasSuffix("…") ? elsewhere : elsewhere + ".") }
+        let more = !probably.isEmpty || marked.tooMany != nil
+        if let counted = KubeGitOpsMatch.elsewhere(elsewhere.map(\.entry), plain: true, failing: failing, more: more) {
+            lines.append(counted.hasSuffix("…") ? counted : counted + ".")
+        }
         if let nothing = marked.nothing { lines.append(nothing + ".") }
         if !marked.caveats.isEmpty, marked.nothing == nil { lines.append("Not compared: " + marked.caveats.joined(separator: "; ") + ".") }
         return lines

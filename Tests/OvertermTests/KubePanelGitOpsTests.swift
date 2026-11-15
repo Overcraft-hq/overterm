@@ -507,10 +507,10 @@ final class KubePanelGitOpsTests: XCTestCase {
     }
 
     /// The checkout named as a service deployed into three namespaces,
-    /// bound in one of them (option C; gitops.md 14.9.4: a name the
-    /// surveyed spokes share across namespaces, never within one): the
-    /// bound namespace's app said "probably", the two elsewhere only
-    /// counted — never listed, never "too many to tell".
+    /// bound in one of them (option C; gitops.md 14.9.4: on the surveyed
+    /// spokes, apps with a Deployment that share a name were never in one
+    /// namespace): the bound namespace's app said "probably", the two
+    /// elsewhere only counted — never listed, never "too many to tell".
     func testUnservedByNameTheBoundNamespaceComesFirstTheOthersCounted() async throws {
         for namespace in ["acme-market", "acme-water"] { api.addNamespace(namespace) }
         for namespace in ["shop", "acme-market", "acme-water"] { addMarked("acme-storefront", namespace: namespace, app: "prod-\(namespace)-shop-service", bound: false) }

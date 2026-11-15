@@ -6970,7 +6970,12 @@ person's press's), else off production at the agent's bound, one row of
 Applications asked first where they are served and none is held, as the
 rail asks it —, then each bound workload's GET within the 8), each
 with its health, whose and where its Application stands, in place of the
-owner's "not in"; `kind: application` reads nothing from marks and keeps
+owner's "not in"; C and D's apps outside the binding's namespace counted
+as the rail counts them (`CheckoutMarks.elsewhere`), with `failing_only`
+only the failing ones — on a line of their own where none is listed
+above them, "1 failing app by name or image in another namespace: …",
+never "more" after nothing (`KubeMCPMarksText.checkout`);
+`kind: application` reads nothing from marks and keeps
 the owners' own lines. Ask Why (`KubeAgentBrief+Marks.swift`) is offered on
 every app read from marks that isn't Ready — `a` and ⌘L in the section, the
 row's menu, the detail's button, the rail's (`gitOpsAskWhyMarked`, its own
