@@ -419,7 +419,8 @@ value, a path or an address of a process that isn't the test's.
   oldest, and the time the reads may take), a read still to come told
   from a failed one, the cache's bound (ended identities first), the
   in-flight guard, the stretched cadence, a folder on a mount that
-  doesn't answer, at most 200 folders asked a tick, the app's children
+  doesn't answer, one waited for bounded by its deadline, at most 200
+  folders asked a tick, the app's children
   for the pairing (a zombie `login` left out); a lookup answered from the
   latest snapshot while it is a tick old at most, else a tick, a cold one
   reading what the budget left in the same call, one waiting for the tick

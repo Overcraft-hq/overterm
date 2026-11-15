@@ -549,6 +549,25 @@ final class ActivitySamplerTests: XCTestCase {
         XCTAssertEqual(try tick(sampler, demand, context).facts[worker]?.folder, .path("/Volumes/acme-share/work"))
     }
 
+    /// A folder waited for (the old API's lookups, an agent's): the one
+    /// known at once, else its read waited for — and a read that hangs
+    /// given up after the folders' deadline, nil, never the caller held
+    /// for the mount's timeout.
+    func testAFolderWaitedForIsBoundedByItsDeadline() throws {
+        appAndLaunchd()
+        let agent = add(2400, parent: 1, name: "claude", folder: "/work/acme")
+        let stuck = add(2401, parent: 1, name: "codex", folder: "/Volumes/acme-share/work")
+        let sampler = sampler()
+        XCTAssertEqual(sampler.folders.folder(waitingFor: agent, now: kernel.uptime()), .path("/work/acme"), "read, and waited for")
+        XCTAssertEqual(sampler.folders.folder(waitingFor: agent, now: kernel.uptime()), .path("/work/acme"), "known: at once")
+        XCTAssertEqual(kernel.count("folder"), 1)
+        let gate = CallGate()
+        defer { gate.open() }
+        kernel.onCall { call in if call == "folder" { gate.hold() } }
+        XCTAssertNil(sampler.folders.folder(waitingFor: stuck, now: kernel.uptime()), "a read that hangs: given up")
+        XCTAssertEqual(gate.held, 1)
+    }
+
     /// Working folders are asked at most `foldersPerTick` a tick (7.2), the
     /// panes' agents' first, the rest at a later tick — each answered from
     /// what is known meanwhile.
