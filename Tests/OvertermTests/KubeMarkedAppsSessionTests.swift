@@ -181,6 +181,53 @@ final class KubeMarkedAppsSessionTests: XCTestCase {
         session.drop()
     }
 
+    /// A copied Argo CD mark on a workload (14.1): the surveyed production
+    /// spoke has a Deployment an operator made whose tracking id names
+    /// another app's Deployment, and copies on Services. Counted, never a
+    /// member, shown under the app the mark names — and never read by GET:
+    /// the settle reads members' objects, a copy is only listed.
+    func testACopiedMarkOnAWorkloadIsNeverReadAndNeverAMember() async throws {
+        let (api, client, spoke) = try startFake()
+        let discovery = try await client.discover()
+        // The spoke's own copies (on HPAs), counted first.
+        let plain = session()
+        plain.show(context: "fake-prod", scope: .all, discovery: discovery, client: client)
+        let plainRead = await settled(plain)
+        XCTAssertTrue(plainRead, "\(plain.reading)")
+        let spokeCopies = plain.tally.copied
+        plain.drop()
+
+        // An operator's Deployment and its Service, each carrying team-0's acme-svc-000's own tracking id.
+        let (namespace, deployment) = spoke.deployments[0]
+        let owner = spoke.apps[0]
+        api.addCopiedMark("deployments.apps", "acme-operand", namespace: namespace, app: owner, of: deployment, now: now)
+        api.addCopiedMark("services", "acme-operand-metrics", namespace: namespace, app: owner, of: deployment, now: now)
+        let copies: Set<KubeMarkedMember.ID> = [
+            .init(kind: .deployment, namespace: namespace, name: "acme-operand"), .init(kind: .service, namespace: namespace, name: "acme-operand-metrics"),
+        ]
+        api.forgetRequests()
+        let session = session()
+        session.show(context: "fake-prod", scope: .all, discovery: discovery, client: client)
+        let read = await settled(session)
+        XCTAssertTrue(read, "\(session.state) \(session.reading) \(session.store?.done ?? [])")
+        XCTAssertEqual(session.tally.copied, spokeCopies + 2, "both counted")
+        XCTAssertFalse(session.apps.contains { $0.app.members.contains { copies.contains($0.id) } }, "neither is anybody's member")
+        let named = try XCTUnwrap(app(session, owner), "the app their marks name")
+        XCTAssertEqual(Set(named.app.copies.map(\.id)).intersection(copies), copies, "shown under the app their marks name")
+        XCTAssertEqual(
+            named.app.members.filter { $0.id.kind == .deployment }.map(\.id), [.init(kind: .deployment, namespace: namespace, name: deployment)],
+            "its own Deployment its only one")
+        // Listed as rows (M1's watch, M3's list), never asked for by name.
+        XCTAssertTrue(api.requests.contains { $0.path == "/apis/apps/v1/deployments" && $0.query["includeObject"] == "Metadata" })
+        XCTAssertTrue(api.requests.contains { $0.path == "/api/v1/services" && $0.query["includeObject"] == "Metadata" })
+        XCTAssertFalse(api.requests.contains { $0.path == "/apis/apps/v1/namespaces/\(namespace)/deployments/acme-operand" }, "never read by GET")
+        XCTAssertFalse(api.requests.contains { $0.path == "/api/v1/namespaces/\(namespace)/services/acme-operand-metrics" })
+        XCTAssertTrue(
+            objectGETs(api).contains { $0.path == "/apis/apps/v1/namespaces/\(namespace)/deployments/\(deployment)" }, "the settle read the member it names")
+        assertNoSentinel(session)
+        session.drop()
+    }
+
     func testArgoRolloutsAreReadForTheirAppsHealthOnly() async throws {
         var options = FakeKubeAPI.SpokeOptions()
         options.apps = 4
