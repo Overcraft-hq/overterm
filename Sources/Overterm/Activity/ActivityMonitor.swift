@@ -331,6 +331,18 @@ final class ActivityMonitor: ObservableObject {
         return min(lastChange + debounce, limit) - .now
     }
 
+    /// A snapshot that landed paired a surface with its `login` (7.7): the
+    /// context is rebuilt, and while readers want ticks the next comes
+    /// early — `earliest` after the last one began — so a new pane's tree,
+    /// its ports and its agent are read then, not a cadence later.
+    func surfacesPaired() {
+        contextChanged()
+        guard loop != nil else { return }
+        stopTicks()
+        start(after: soonest)
+        earlyTicks += 1
+    }
+
     /// A rebuild waiting is made now: every tick's first step.
     func flushContext() {
         guard rebuild != nil else { return }

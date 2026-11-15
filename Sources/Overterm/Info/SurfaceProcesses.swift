@@ -126,6 +126,24 @@ final class SurfaceProcesses {
     func pair(
         _ children: [(pid: pid_t, start: UInt64, name: String)], listedAt: UInt64, kernel: some ActivityKernel = LiveActivityKernel()
     ) -> Bool {
+        pair(children, unclaimed: Self.unclaimedLogins(children, claimed: []), listedAt: listedAt, kernel: kernel)
+    }
+
+    /// The same from a census that landed (7.7): the app's children and the
+    /// `login`s its context had no pane for, both listed on the sampler's
+    /// queue (`ActivitySnapshot.appChildren`, `unclaimedLogins`) — the main
+    /// actor only hands them out, in microseconds, by the rules above. A
+    /// zombie `login` is in neither: it never pairs (7.10).
+    @discardableResult
+    func pair(_ snapshot: ActivitySnapshot, kernel: some ActivityKernel = LiveActivityKernel()) -> Bool {
+        pair(snapshot.appChildren, unclaimed: snapshot.unclaimedLogins, listedAt: snapshot.time, kernel: kernel)
+    }
+
+    /// `children`'s pairing, `unclaimed` the logins among them a surface may
+    /// take, oldest first — less those paired since they were listed.
+    private func pair(
+        _ children: [(pid: pid_t, start: UInt64, name: String)], unclaimed: [ActivityProcessID], listedAt: UInt64, kernel: some ActivityKernel
+    ) -> Bool {
         /// A read by its pid finds it, alive.
         func holds(_ login: ActivityProcessID) -> Bool {
             guard let now = kernel.process(login.pid) else { return false }
@@ -138,7 +156,8 @@ final class SurfaceProcesses {
             entry.login = nil
             changed = true
         }
-        var free = Self.unclaimedLogins(children, claimed: Set(entries.compactMap(\.login)))[...]
+        let claimed = Set(entries.compactMap(\.login))
+        var free = unclaimed.filter { !claimed.contains($0) }[...]
         let waiting = entries.filter { $0.login == nil && $0.terminal?.hasSurface == true && $0.created <= listedAt }
             .sorted { $0.created < $1.created }
         for entry in waiting {

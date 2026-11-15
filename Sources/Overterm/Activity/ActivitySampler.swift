@@ -429,6 +429,10 @@ final class ActivitySampler: @unchecked Sendable {
                 folder: folders[process.identity])
         }
         cost.own = table.processes.lazy.filter { $0.isOwn(by: uid) }.count
+        // The pairing's list (7.7): the app's children, and the logins no
+        // pane of this context has — the main actor only hands them out.
+        let appChildren = table.liveChildren(of: context.appPID)
+        let unclaimed = SurfaceProcesses.unclaimedLogins(appChildren, claimed: Set(context.panes.compactMap(\.login)))
         bound(tick: tick, wanted: wantedIDs)
         let ended = kernel.uptime()
         cost.wall = ended >= started ? ended - started : 0
@@ -436,7 +440,7 @@ final class ActivitySampler: @unchecked Sendable {
         cadence.record(cost: cost.wall, full: demand.full, at: now)
         let snapshot = ActivitySnapshot(
             tick: tick, demand: demand, time: now, date: date, uid: uid, table: table, facts: facts, panes: slices, helpers: helpers,
-            unread: unread.count, cost: cost, isStretched: cadence.isStretched)
+            appChildren: appChildren, unclaimedLogins: unclaimed, unread: unread.count, cost: cost, isStretched: cadence.isStretched)
         shared.withLock { lastSnapshot = snapshot }
         return snapshot
     }

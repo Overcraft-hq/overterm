@@ -190,6 +190,17 @@ struct ActivitySnapshot: Sendable {
     /// Overterm's helpers: the app's children that aren't panes' `login`s,
     /// and their descendants.
     let helpers: [ActivityProcessID]
+    /// The app's live children, oldest first, with `p_comm`, listed on the
+    /// sampler's queue: what the main actor pairs each surface's `login`
+    /// with when the snapshot lands (`SurfaceProcesses.pair`, 7.7). A
+    /// zombie is left out: a `login` that ended before it was paired never
+    /// pairs (7.10) — listed, the next surface's `login` shifted onto it.
+    let appChildren: [(pid: pid_t, start: UInt64, name: String)]
+    /// Of those, the `login`s no pane of the tick's context was paired
+    /// with, oldest first (`SurfaceProcesses.unclaimedLogins`, pure, run on
+    /// the sampler's queue): the main actor only hands them to the
+    /// surfaces waiting, in microseconds.
+    let unclaimedLogins: [ActivityProcessID]
     /// New identities its level wanted read and the churn budget left for
     /// a later tick: named from `p_comm` until then (7.3).
     let unread: Int
@@ -208,10 +219,4 @@ struct ActivitySnapshot: Sendable {
     func name(of identity: ActivityProcessID) -> String? {
         facts[identity]?.name ?? table.process(identity)?.shortName
     }
-
-    /// The app's live children, oldest first, with `p_comm`: what the main
-    /// actor pairs each surface's `login` with (`SurfaceProcesses`, 7.7). A
-    /// zombie is left out: a `login` that ended before it was paired never
-    /// pairs (7.10) — listed, the next surface's `login` shifted onto it.
-    func children(ofApp pid: pid_t) -> [(pid: pid_t, start: UInt64, name: String)] { table.liveChildren(of: pid) }
 }

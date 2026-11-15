@@ -421,7 +421,8 @@ value, a path or an address of a process that isn't the test's.
   in-flight guard, the stretched cadence, a folder on a mount that
   doesn't answer, one waited for bounded by its deadline, at most 200
   folders asked a tick, the app's children
-  for the pairing (a zombie `login` left out); a lookup answered from the
+  for the pairing and the logins no pane has, listed on its queue (a
+  zombie `login` left out); a lookup answered from the
   latest snapshot while it is a tick old at most, else a tick, a cold one
   reading what the budget left in the same call, one waiting for the tick
   in flight; then a busy child of the test's through the real
@@ -442,8 +443,10 @@ value, a path or an address of a process that isn't the test's.
   pane's `login` (ended, a zombie, its pid another's since), a surface
   made after a list takes nothing from it, the oldest surface the oldest
   `login`, a pairing over only with its `login`, waiting surfaces paired
-  from a list read off the main thread (Tab Info's, as it opens); the
-  app's children from one read of the table, a zombie `login` left out.
+  from a list read off the main thread (Tab Info's, as it opens), and
+  from a census that landed — a zombie `login` never paired, one taken
+  since never offered twice; the app's children from one read of the
+  table, a zombie `login` left out.
 - `TabSuspensionTests`: parents stopped before their children, and what
   Suspend Tab stops read at the press — a lookup that always ticks,
   where the census's other readers answer from a snapshot a tick old.
@@ -459,7 +462,8 @@ value, a path or an address of a process that isn't the test's.
   from a snapshot at most one interval old (at 1 s too), a tick in flight
   never doubled, the context rebuilt once for a burst of changes, at its
   limit for one that never quiets, and by the early tick a tab opened and
-  wanted in the same turn makes; a busy Mac's 5 s.
+  wanted in the same turn makes; a pairing a snapshot brought bringing
+  the next tick early; a busy Mac's 5 s.
 - `ProcessSignalsTests`: the one signal path over a fake Mac — the refusals
   made before any call that touches a process (pid ≤ 1, this process, what
   doesn't run as the user alone: a setuid program's, root's, another

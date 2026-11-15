@@ -127,6 +127,32 @@ final class ActivityMonitorTests: XCTestCase {
         XCTAssertEqual(monitor.snapshot?.demand.focus, [shell], "the focus read with it")
     }
 
+    /// A pairing a snapshot brought (7.7) brings the next tick early, with
+    /// the context rebuilt: a new pane's tree is read a quarter of a second
+    /// after its `login` was first listed, not a cadence later. With
+    /// nothing wanting ticks, it only rebuilds the context.
+    func testAPairingBringsTheNextTickEarly() async throws {
+        let window = Owner()
+        let source = PaneSource([ActivityContext.Pane(tag: "pane-a", tab: tabA)])
+        let app = self.app
+        monitor.contextSource = { ActivityContext(panes: source.panes, appPID: app) }
+        monitor.contextChanged()
+        monitor.flushContext()
+        monitor.want(window, .light(tabs: [tabA]), every: .seconds(3600))
+        await eventually("the first tick, the pane not paired yet") { monitor.snapshot != nil && !monitor.isSampling }
+        XCTAssertEqual(monitor.snapshot?.pane("pane-a")?.tree, [], "no login, no tree")
+        source.panes = [paneA]
+        monitor.surfacesPaired()
+        XCTAssertEqual(monitor.earlyTicks, 1)
+        await eventually("its tree read early") { monitor.snapshot?.pane("pane-a")?.tree.isEmpty == false && !monitor.isSampling }
+        XCTAssertEqual(kernel.count("processes"), 2)
+        monitor.unwant(window)
+        await eventually("stopped") { !monitor.isTicking && !monitor.isSampling }
+        monitor.surfacesPaired()
+        XCTAssertFalse(monitor.isTicking, "nothing wants ticks: none early")
+        XCTAssertTrue(monitor.hasPendingContext, "the context rebuilt still")
+    }
+
     /// A wider want while a tick is in flight: the restarted loop's round
     /// waits for that tick, sees it read less, and ticks for the wider
     /// want once — it never waits on the landed tick again and again,

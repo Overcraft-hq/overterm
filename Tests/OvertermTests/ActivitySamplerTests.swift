@@ -693,20 +693,23 @@ final class ActivitySamplerTests: XCTestCase {
 
     // MARK: The pairing
 
-    /// What the main actor pairs surfaces with (7.7): the app's children,
-    /// oldest first — a `login` that ended before it was paired left out,
-    /// or the next surface's would shift onto it (7.10).
+    /// What the main actor pairs surfaces with (7.7), listed on the
+    /// sampler's queue: the app's children, oldest first — a `login` that
+    /// ended before it was paired left out, or the next surface's would
+    /// shift onto it (7.10) — and of them the logins no pane of the tick's
+    /// context has, git and the rest never among them.
     func testTheAppsChildrenLeaveOutAZombie() throws {
         appAndLaunchd()
-        _ = pane("pane-a", login: 1100)
+        let paired = pane("pane-a", login: 1100)
         kernel.add(
             FakeActivityKernel.Process(
                 record: FakeActivityKernel.record(pid: 1200, start: 1_200_000, parent: app, uid: 0, status: SZOMB, name: "login")))
         _ = pane("pane-c", login: 1300)
         let helper = add(1400, parent: app, name: "git")
-        let snapshot = try tick(sampler(), ActivityDemand(.light(tabs: nil)), ActivityContext(appPID: app))
-        XCTAssertEqual(snapshot.children(ofApp: app).map(\.pid), [1100, 1300, helper.pid])
-        XCTAssertEqual(snapshot.children(ofApp: app).map(\.name), ["login", "login", "git"])
+        let snapshot = try tick(sampler(), ActivityDemand(.light(tabs: nil)), ActivityContext(panes: [paired], appPID: app))
+        XCTAssertEqual(snapshot.appChildren.map(\.pid), [1100, 1300, helper.pid])
+        XCTAssertEqual(snapshot.appChildren.map(\.name), ["login", "login", "git"])
+        XCTAssertEqual(snapshot.unclaimedLogins, [ActivityProcessID(pid: 1300, start: 1_300_000)], "neither the paired one, the zombie nor git")
     }
 
     // MARK: The real kernel

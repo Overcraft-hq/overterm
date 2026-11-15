@@ -146,6 +146,40 @@ final class SurfaceProcessesTests: XCTestCase {
         XCTAssertNil(surfaces.login(of: surface))
     }
 
+    /// From a census that landed (7.7): the app's children and the logins
+    /// no pane has are listed on the sampler's queue, the main actor only
+    /// hands them out. A `login` that exited before it was paired is a
+    /// zombie until its surface is freed and it is reaped: it never pairs
+    /// (7.10) — listed, the next surface took it and its own `login`
+    /// shifted onto the one after. Nor does a `login` another surface has
+    /// taken since the tick listed it.
+    @MainActor func testAZombieLoginNeverPairsFromACensus() throws {
+        let kernel = FakeActivityKernel(uid: 501)
+        kernel.add(FakeActivityKernel.Process(record: FakeActivityKernel.record(pid: 1, start: 1, parent: 0, uid: 0, name: "launchd")))
+        kernel.add(FakeActivityKernel.Process(record: FakeActivityKernel.record(pid: 1000, start: 500, parent: 1, name: "Overterm")))
+        // Its pane closed before its pairing: the surface freed, the login
+        // not reaped yet.
+        let ended = login(1100, start: 1_000, status: SZOMB, in: kernel)
+        let own = login(1200, start: 2_000, in: kernel)
+        let next = login(1300, start: 3_000, in: kernel)
+        let sampler = ActivitySampler(kernel: kernel)
+        let snapshot = try XCTUnwrap(sampler.tickNow(ActivityDemand(.light(tabs: nil)), context: ActivityContext(appPID: 1000)))
+        XCTAssertFalse(snapshot.appChildren.contains { $0.pid == ended.pid }, "a zombie isn't the app's child to pair")
+        XCTAssertEqual(snapshot.unclaimedLogins, [ActivityProcessID(pid: 1200, start: 2_000), ActivityProcessID(pid: 1300, start: 3_000)])
+
+        let surfaces = SurfaceProcesses()
+        let surface = StandIn()
+        surfaces.register(surface, at: 0)
+        XCTAssertTrue(surfaces.pair(snapshot, kernel: kernel))
+        XCTAssertEqual(surfaces.login(of: surface), ActivityProcessID(pid: own.pid, start: own.start), "its own, not the dead pane's")
+        // The same snapshot again: the login taken since isn't offered twice.
+        let later = StandIn()
+        surfaces.register(later, at: 0)
+        XCTAssertTrue(surfaces.pair(snapshot, kernel: kernel))
+        XCTAssertEqual(surfaces.login(of: later), ActivityProcessID(pid: next.pid, start: next.start))
+        XCTAssertFalse(surfaces.pair(snapshot, kernel: kernel), "nothing waits: nothing changes")
+    }
+
     /// Which threads read the fake's table, in order: true for the main one.
     private final class TableReads: @unchecked Sendable {
         private let lock = NSLock()

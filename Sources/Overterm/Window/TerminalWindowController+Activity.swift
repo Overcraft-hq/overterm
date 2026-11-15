@@ -15,9 +15,7 @@ extension TerminalWindowController {
     /// changes.
     static func activityContext(windows: [NSWindow] = NSApp.windows) -> ActivityContext {
         let surfaces = SurfaceProcesses.shared
-        if surfaces.hasWaiting, let snapshot = ActivityMonitor.shared.sampler.latest {
-            surfaces.pair(snapshot.children(ofApp: getpid()), listedAt: snapshot.time)
-        }
+        if surfaces.hasWaiting, let snapshot = ActivityMonitor.shared.sampler.latest { surfaces.pair(snapshot) }
         var context = ActivityContext()
         for controller in windows.compactMap({ $0.windowController as? TerminalWindowController }) {
             let window = controller.window?.windowNumber
@@ -44,8 +42,10 @@ extension TerminalWindowController {
 
     /// The app's census, wired once at launch: its context from every
     /// window, and each snapshot that lands pairs the surfaces still
-    /// waiting for their `login` — the census lists the app's children, the
-    /// main actor pairs them (7.7).
+    /// waiting for their `login` — the census lists the app's children and
+    /// the logins no pane has on its queue, the main actor pairs them
+    /// (7.7) — and a pairing made brings the next tick early, so a new
+    /// pane's processes are read a quarter of a second later.
     static func wireActivityCensus() -> AnyCancellable {
         let monitor = ActivityMonitor.shared
         monitor.contextSource = { activityContext() }
@@ -53,8 +53,8 @@ extension TerminalWindowController {
         return monitor.$snapshot.compactMap { $0 }
             .sink { snapshot in
                 let surfaces = SurfaceProcesses.shared
-                guard surfaces.hasWaiting, surfaces.pair(snapshot.children(ofApp: getpid()), listedAt: snapshot.time) else { return }
-                ActivityMonitor.shared.contextChanged()
+                guard surfaces.hasWaiting, surfaces.pair(snapshot) else { return }
+                ActivityMonitor.shared.surfacesPaired()
             }
     }
 }
