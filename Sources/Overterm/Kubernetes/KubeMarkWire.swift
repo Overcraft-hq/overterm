@@ -85,10 +85,15 @@ struct KubeMarkWire: Equatable, Hashable, Sendable {
     static let linkPrefix = "link.argocd.argoproj.io/"
 
     /// The field managers that are Argo CD's applies from git: server-side
-    /// apply's `argocd-controller` (gitops-engine's `ArgoCDSSAManager`).
-    /// The client-side apply's name is unverified (gitops.md, 14.11), and
-    /// `argocd-server` writes on a person's action in Argo CD's UI or API
-    /// (an edit, a patch, a restart) — never taken for Argo CD's change.
+    /// apply's `argocd-controller` (gitops-engine's `ArgoCDSSAManager`,
+    /// operation Apply) — and, as the survey found (gitops.md, 14.9.4), its
+    /// client-side apply writes as `argocd-controller` too (operation
+    /// Update): the manager is on 962 of the 979 own-marked Deployments of
+    /// the surveyed production spoke. An older version's
+    /// `argocd-application-controller` is never the newer entry there.
+    /// `kubectl-client-side-apply` (a person, or an older Argo CD) and
+    /// `argocd-server` (a person's action in Argo CD's UI or API: an edit,
+    /// a patch, a restart) stay out — never taken for Argo CD's change.
     static let argoManagers: Set<String> = ["argocd-controller"]
 
     /// Argo CD's hook types (gitops-engine's `HookType`).
