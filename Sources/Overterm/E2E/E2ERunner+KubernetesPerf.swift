@@ -12,7 +12,10 @@ import Foundation
 /// Then ten namespaces of 500 pods each at once: ten watches, merged, the
 /// same budgets for the first list and a burst; their Overview a watch a
 /// part, not a part a namespace, and cheap while quiet. Then GitOps' leg
-/// (`kubernetesGitOpsPerf`): 1,000 Argo CD Applications.
+/// (`kubernetesGitOpsPerf`): 1,000 Argo CD Applications; and the leg of
+/// Argo CD's apps read from their marks (`kubernetesGitOpsMarksPerf`) on a
+/// spoke at the surveyed production cluster's size, a fake of its own
+/// that `fake-prod` reaches.
 extension E2ERunner {
     func kubernetesPerfScenario() async {
         await settledPrompt()
@@ -24,16 +27,24 @@ extension E2ERunner {
             return check("OVERTERM_KUBECONFIG isn't under ~/.kube", false, path)
         }
         check("the run guards the user's kubeconfig", AppEnvironment.guardsKubeconfig)
-        let socket = "/tmp/ot-e2e-kperf-\(UUID().uuidString.prefix(6)).sock"
+        let id = UUID().uuidString.prefix(6)
+        let socket = "/tmp/ot-e2e-kperf-\(id).sock"
         let fake = FakeKubeAPI(socket: socket)
+        // The spoke of the marks' leg: fake-prod's alone.
+        let spokeSocket = "/tmp/ot-e2e-kperf-s-\(id).sock"
+        let spoke = FakeKubeAPI(socket: spokeSocket)
         let port: Int
         do {
             try fake.start()
+            try spoke.start()
             port = try fake.listenTCP()
         } catch {
             return check("the fake API server starts", false, "\(error)")
         }
-        defer { fake.stop() }
+        defer {
+            fake.stop()
+            spoke.stop()
+        }
         fake.addNamespace("shop")
         fake.addNamespace("payments")
         let count = 5000
@@ -49,14 +60,13 @@ extension E2ERunner {
         }
         defer { try? FileManager.default.removeItem(at: kubeconfig) }
         let model = KubernetesModel.shared
-        model.connectOverride = { context in KubeSocketConnection(socket: socket, context: context.name) }
+        model.connectOverride = { context in KubeSocketConnection(socket: context.name == "fake-prod" ? spokeSocket : socket, context: context.name) }
         model.statusOverride = { _ in .open }
         defer {
             model.connectOverride = nil
             model.statusOverride = nil
         }
         let page = app.kubernetesPage
-
         // The first draw: opened until the table holds every row.
         let opened = CACurrentMediaTime()
         app.toggleKubernetesPage(nil)
@@ -156,21 +166,24 @@ extension E2ERunner {
 
         await kubernetesChartPerf()
 
-        await tenNamespaces(model, page, fake)
+        let podsOverview = await tenNamespaces(model, page, fake)
 
         await kubernetesGitOpsPerf(model, page, fake)
 
+        await kubernetesGitOpsMarksPerf(model, page, spoke: spoke, podsOverview: podsOverview)
+
         app.closeOverlay(.kubernetes)
-        check("closed, its watch ends", await eventually(5) { fake.openWatches == 0 }, "\(fake.openWatches)")
+        check("closed, its watch ends", await eventually(5) { fake.openWatches == 0 && spoke.openWatches == 0 }, "\(fake.openWatches) \(spoke.openWatches)")
         check("and no usage is polled", await eventually(5) { !model.metrics.isPolling })
-        check("it wrote nothing", fake.writes.isEmpty)
+        check("it wrote nothing", fake.writes.isEmpty && spoke.writes.isEmpty)
         KubeSocketFolder.app.remove()
     }
 
     /// Ten namespaces of 500 pods each picked at once (the cap): a watch
     /// each, merged into one list in under 5 s, a burst of 500 events
-    /// across them applied in under 3 s; then back to shop.
-    private func tenNamespaces(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async {
+    /// across them applied in under 3 s; then back to shop. Its Overview's
+    /// first read, in ms.
+    private func tenNamespaces(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI) async -> Double {
         let names = (0..<KubeScope.watchCap).map { "team-\($0)" }
         let each = 500
         for name in names {
@@ -208,21 +221,26 @@ extension E2ERunner {
         note("kubernetes burst of \(burst.count) events over ten namespaces applied in \(Int(burstTime)) ms")
         check("in under 3 s", burstTime < 3000, "\(Int(burstTime)) ms")
 
-        await tenNamespacesOverview(model, page, fake, names)
+        let overview = await tenNamespacesOverview(model, page, fake, names)
 
         model.setScope(.namespace("shop"))
         check("back to shop: one watch", await eventually(10) { model.rows.count == 5000 && fake.openWatches <= 2 }, "\(model.rows.count) \(fake.openWatches)")
+        return overview
     }
 
     /// The Overview of the ten: its parts share the page's watch budget —
     /// each one watch across the cluster kept to them, not ten a part (a
-    /// hundred) — and a quiet cluster costs little CPU while it shows.
-    private func tenNamespacesOverview(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, _ names: [String]) async {
+    /// hundred) — and a quiet cluster costs little CPU while it shows. Its
+    /// first read, in ms: what the marks' leg weighs `marksSeen` against.
+    private func tenNamespacesOverview(_ model: KubernetesModel, _ page: KubernetesPageModel, _ fake: FakeKubeAPI, _ names: [String]) async -> Double {
         let before = fake.openWatches
         fake.forgetRequests()
+        let pressed = CACurrentMediaTime()
         check("1 is the Overview of the ten", page.press("1") && page.section == .overview)
         let overview = page.clusterOverview
         check("it reads them", await eventually(20) { overview.state == .live && overview.overview.pods >= names.count * 500 }, "\(overview.state) \(overview.overview.pods)")
+        let read = (CACurrentMediaTime() - pressed) * 1000
+        note("kubernetes Overview of ten namespaces read in \(Int(read)) ms")
         let parts = KubeClusterOverviewSession.parts(model.discovery).count
         _ = await eventually(10) { fake.openWatches - before >= parts }
         let opened = fake.openWatches - before
@@ -246,5 +264,6 @@ extension E2ERunner {
         check("quiet, it costs little CPU", cpu < 10, String(format: "%.2f%%", cpu))
         page.showKind(.pods)
         check("the Overview's watches end", await eventually(10) { fake.openWatches <= before }, "\(fake.openWatches) open, \(before) before")
+        return read
     }
 }

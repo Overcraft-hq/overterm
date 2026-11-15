@@ -75,16 +75,19 @@ extension KubernetesPageModel {
     }
 
     /// Shown: read (the summaries kept five minutes on the page); another
-    /// section: its follows end, the summaries stay; the page or its window
-    /// hidden: everything goes.
+    /// section, or its window covered: its follows end, the summaries and
+    /// what the marks settled stay (shown again within five minutes, the
+    /// settle goes on from where it was: gitops.md 14.4.2); the page
+    /// hidden: everything goes — but each context's minute of GETs
+    /// (`KubernetesModel.markedMinutes`).
     func updateGitOpsReading() {
-        guard visible, windowVisible, model.enabled else {
+        guard visible, model.enabled else {
             closeMarkedApp()
             markedRead.drop()
             model.forgetMarkedApps(by: self)
             return gitOps.drop()
         }
-        guard section == .gitops, let context = model.selectedName else {
+        guard windowVisible, section == .gitops, let context = model.selectedName else {
             closeMarkedApp()
             // Another context while another section shows: the summaries are
             // that context's no longer (gitops.md 3.1) — dropped, not kept.

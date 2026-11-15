@@ -86,7 +86,7 @@ extension E2ERunner {
         check("nothing read again yet", fake.requests.filter { Self.isApplicationGet($0) }.isEmpty, "\(fake.requests.filter { Self.isApplicationGet($0) }.count) GETs")
 
         await gitOpsBurst(page, fake, made, count: count)
-        await gitOpsScroll()
+        await gitOpsScroll(rows: count)
 
         // Another section: every follow ends; back to g within five minutes reads no summary again.
         let watches = fake.openWatches
@@ -171,15 +171,15 @@ extension E2ERunner {
         check("still by the one follow", !fake.requests.contains { $0.isWatch && $0.path.contains("argoproj.io") }, "\(fake.requests.filter(\.isWatch).map(\.path))")
     }
 
-    /// The section's table scrolled top to bottom with Ready shown: 1,000 rows.
-    private func gitOpsScroll() async {
+    /// The section's table scrolled top to bottom with Ready shown: its `rows`.
+    func gitOpsScroll(rows: Int, label: String = "kubernetes GitOps") async {
         let page = app.kubernetesPage
         page.gitOpsView.hideReady = false
         defer { page.gitOpsView.hideReady = nil }
         var table: NSTableView?
         _ = await eventually(10) {
             table = self.gitOpsTable()
-            return table?.numberOfRows == page.gitOpsVisibleRows.count && page.gitOpsVisibleRows.count >= 1000
+            return table?.numberOfRows == page.gitOpsVisibleRows.count && page.gitOpsVisibleRows.count >= rows
         }
         guard let table, let scroll = table.enclosingScrollView, let view = app.kubernetesView else { return check("the section's table", false) }
         var samples: [Double] = []
@@ -198,11 +198,11 @@ extension E2ERunner {
             await Task.yield()
         }
         let scrolled = Self.summary(samples)
-        note("kubernetes GitOps scrolled: \(table.numberOfRows) rows, \(samples.count) steps, \(scrolled)")
+        note("\(label) scrolled: \(table.numberOfRows) rows, \(samples.count) steps, \(scrolled)")
         check("scrolls in under 35 ms a step (p95)", samples.count > 5 && scrolled.p95 < 35, "\(scrolled)")
     }
 
-    private func gitOpsTable() -> NSTableView? {
+    func gitOpsTable() -> NSTableView? {
         guard let view = app.kubernetesView else { return nil }
         var found: NSTableView?
         func walk(_ view: NSView) {
@@ -220,16 +220,26 @@ extension E2ERunner {
 
 /// How long the main thread was held at most while it ran: a timer on the
 /// main run loop every 10 ms, the longest gap between its firings taken
-/// (the scenario's own awaits yield, so a gap is work that didn't).
+/// (the scenario's own awaits yield, so a gap is work that didn't) — and
+/// how much of that gap was the main thread's own CPU time (`longestBusy`:
+/// about the gap when it worked through it, little when it waited on a
+/// lock or wasn't run) and when it ended (`longestEnded`).
 @MainActor
 final class MainThreadStall {
     private var timer: Timer?
     private var last = CACurrentMediaTime()
+    private var lastBusy: Double = 0
     private var longest: Double = 0
+    private(set) var longestBusy: Double = 0
+    private(set) var longestEnded: Double = 0
+    private let thread = pthread_mach_thread_np(pthread_self())
 
     func start() {
         last = CACurrentMediaTime()
+        lastBusy = busy()
         longest = 0
+        longestBusy = 0
+        longestEnded = last
         let timer = Timer(timeInterval: 0.01, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated { self?.fired() }
         }
@@ -239,8 +249,27 @@ final class MainThreadStall {
 
     private func fired() {
         let now = CACurrentMediaTime()
-        longest = max(longest, (now - last) * 1000)
+        let cpu = busy()
+        let gap = (now - last) * 1000
+        if gap > longest {
+            longest = gap
+            longestBusy = cpu - lastBusy
+            longestEnded = now
+        }
         last = now
+        lastBusy = cpu
+    }
+
+    /// The main thread's user and system time, in ms.
+    private func busy() -> Double {
+        var info = thread_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<thread_basic_info_data_t>.size / MemoryLayout<integer_t>.size)
+        let result = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) { thread_info(thread, thread_flavor_t(THREAD_BASIC_INFO), $0, &count) }
+        }
+        guard result == KERN_SUCCESS else { return 0 }
+        func ms(_ time: time_value_t) -> Double { Double(time.seconds) * 1000 + Double(time.microseconds) / 1000 }
+        return ms(info.user_time) + ms(info.system_time)
     }
 
     /// The longest gap, in ms.

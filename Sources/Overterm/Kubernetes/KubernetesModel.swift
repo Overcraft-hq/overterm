@@ -198,6 +198,13 @@ final class KubernetesModel: ObservableObject {
     private var markedKept: [String: [ObjectIdentifier: MarkedAppsKept]] = [:]
     nonisolated static let markedAppsLife: TimeInterval = 300
 
+    /// Every context's minute of the GETs its GitOps sections read Argo
+    /// CD's marked objects by (gitops.md 14.4.1: 60 a minute, each place
+    /// held until a minute after its answer): every window's section
+    /// shares it, and it outlives a section's drop — the page hidden or
+    /// closed, another context and back give no new 60. In memory only.
+    let markedMinutes = KubeMarkedLedger()
+
     /// A section's apps, as it ranked them again — nil: forgotten (its
     /// page hidden, another context, a credential failure).
     func keepMarkedApps(_ kept: MarkedAppsKept?, context: String, by owner: AnyObject) {

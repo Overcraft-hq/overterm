@@ -6627,7 +6627,10 @@ derived apps' objects read (`settling`); before R1's first list, nothing.
 `marksMode` is `KubeMarkedAppsMode` over what it found, made again once a
 flush re-ranked the apps or R1 saw an Application come or go (once a
 flush), never on a marked row's event. No discovery (a sign-in
-still waiting) makes no request at all. Rows only, never a list of whole
+still waiting) makes no request at all; discovery coming once the section
+shows (another context picked before its discovery was read) starts the
+marks then, though the kinds the section reads — none, on a spoke — are
+the same (`KubeGitOpsSession.show`). Rows only, never a list of whole
 objects (14.12's fifth consequence). M1 follows Deployments, StatefulSets,
 DaemonSets and, where served, Argo Rollouts (read for their app's health
 only) as rows with `KubeListOptions.marks`, a watch a kind in that order
@@ -6637,12 +6640,24 @@ namespace only while that fits, else one across the cluster filtered;
 refused across the cluster, paged lists in `accessibleNamespaces` else the
 scope's, said. Every object is read by a GET of one, decoded off the main
 thread by `KubeMarkedWorkloadWire`, within one budget (`KubeMarkedRefetch`,
-pure: 15 s an object, 20 a flush, 60 a minute — kept across a hide and a
-show of the context —, 4 in flight): M2 first, a moved generation or a
-workload new while shown, never readiness alone; then the tick's, in
-progress every 60 s, Degraded every 5 min; then M1b's settle, each marked
-workload not yet settled, the most recently changed by Argo CD first
-("checking rollouts N of M"; "from its row" until then); and M3b, a
+pure: 15 s an object, never one being read, 20 a flush, 4 in flight, 60 a
+minute in the context's minute — `KubeMarkedMinute`, pure: a GET's place
+held from its take until a minute after its answer, never freed while
+unanswered, given back if it was never sent, so a server slower than four
+in flight builds no backlog to go out at once; `KubeMarkedLedger`, the
+app's `KubernetesModel.markedMinutes`, keeps each context's across a hide,
+a drop, another context and back, every window's section sharing it): M2
+first, a moved generation or a workload new while shown, never readiness
+alone; then the tick's, in progress every 60 s, Degraded every 5 min; then
+M1b's settle, each marked workload not yet settled, once every first list
+it orders across is in (the workloads', the CronJobs', the HPAs':
+`firstListsIn`) — what may be a problem first (`doubtful`: not Healthy by
+its cells; what no cell says — a Rollout's phase, a CronJob's last run, an
+`<unknown>` HPA —; or a workload Argo CD changed, else made, in the last
+hour, whose single replica may be stuck behind its old pod or paused under
+cells that read ready), then the rest, each the most recently changed by
+Argo CD first ("checking rollouts N of M"; "from its row" until then); and
+M3b, a
 marked CronJob, or an HPA whose Targets read `<unknown>`, once and when
 its row moves. `KubeMarkedSettled` stands for its row while the generation
 agrees and the row hasn't turned not ready since (an HPA's while a target
@@ -6655,13 +6670,17 @@ Each flush hands the changed rows and settled objects to `KubeMarkedBook`
 verdicts and section rows (`KubeMarkedSection.base`) made again, all
 ranked problems first — and swaps the result.
 What is settled and what M3 read stay five minutes while the page shows
-(`Store`); `hide` ends every read, `drop` forgets. `KubeMarkedReading`
+(`Store`); `hide` ends every read (the section left, its window covered —
+`updateGitOpsReading`: shown again, the settle goes on from where it was),
+`drop` forgets what was read (the page hidden, another context, a
+credential failure), never the context's minute. `KubeMarkedReading`
 says what was read: the count exact only from a whole read, else "At least
 N apps, from what could be read: …", and "carries no marks" only then,
 naming every kind read. `KubeMarkedHealth.member` says a Deployment its
 Rollout scales to 0 "scaled by its Rollout".
 `KubernetesModel.marksSeen` is the contexts whose rows have shown a mark
-(`KubeRow.argoMarked`, a key looked up on every row with metadata: the
+(`KubeRow.argoMarked`, `KubeTableReader.argoMarked`: two keys looked up in
+JSONSerialization's own dictionaries on every row with metadata: the
 Overview's workload follows, the page's workload lists) — for D3's section
 row. A context whose browser sign-in hasn't answered after
 `KubeProxies.signInPatience` (8 s) — the first, or a signed-in one with a
@@ -6966,6 +6985,54 @@ events as chips — every word scrubbed. No new tool, no write. `KubeMCPGitOpsMa
 `KubeGitOpsMarksPageTests`, `KubePanelGitOpsTests` and the
 `kubernetesGitOpsMarks` scenario's part 5 (and its rail part's Ask Why)
 check it.
+
+**At a spoke's size** (gitops.md 14.9.3, 14.12, D7). `kubernetesPerf`'s
+last leg, `kubernetesGitOpsMarksPerf`, reads Argo CD's apps from marks on
+a fake shaped as the surveyed production spoke (`FakeKubeAPI+MarksSurvey`:
+1,161 Deployments, 980 marked and 207 at 0 — 115 run by Argo Rollouts —,
+906 apps, 1,006 Services, 893 marked HPAs, a few copied marks, 70
+namespaces, rows of about 15 KB with managedFields), reached by
+`fake-prod`: the Overview's `marksSeen` (0.3% of reading the rows it looks
+in, against the pods leg's Overview at most 5%), what the switch and the
+Overview read a closed set; `g`'s first draw (1.5–2.5 s for 906 apps), M1's
+first lists (15.3 MB of the 30 kept, D-6), M3 never watched (the Services'
+1.8 MB of the 16 MB cut), the six copied marks on HPAs counted and nobody's
+member; the settle's first minute (only GETs of one object, 60 at most,
+once every first list is in, what may be a problem first — the five
+single replicas past their deadline, the two stuck and the paused one,
+all just synced under cells that read ready, said by Argo CD's rule in
+that minute —, 1,151 to settle — twenty minutes of the section showing);
+the sentinel in nothing the section keeps or draws; a burst of 500
+Deployment events ranked in ~0.5 s; 2,000 readiness-only events, on what
+the first minute settled too, asking nothing; the 906 rows scrolled; the
+next minute M2's moves first, the only moves taken; the page closed and
+opened again within the minute taking only the places freed since, never
+a fresh 60; back to `g` with no M3 list again, and on a server refusing a
+streaming list the rows in pages of 500; never more than 60 GETs in any
+minute at the server from `g` on (`FakeKubeAPI.timedRequests`, its own
+times); an agent's `k8s_gitops` with no section's apps kept, its
+Deployments' rows against its 16 MB cut (recorded: 14.6 MB, 91% of it,
+whole), at most 20 GETs — every part's reads a closed set, nothing
+forgotten from the fake's log, GETs only,
+every list of a marks kind rows with their metadata, nothing of Argo CD's
+own kinds or Flux's, never a Secret or ConfigMap, the main thread never
+held 500 ms (`MainThreadStall`, which says how much of its longest gap was
+the main thread's own work). What it found: the settle's newest-first
+order left the Rollouts' apps Unknown and the stalled rollouts Progressing
+behind ~900 ready-looking workloads for up to twenty minutes (now
+`KubeMarkedRefetch.doubtful` first), the minute counted from the take let
+66 GETs through at the server (now held until a minute after the answer),
+and the look-up bridged each row's annotations whole (now `argoMarked`).
+Its fix pass: a place lapsed a minute after its take, answered or not, so
+a slow server's queue grew past 60 and went out at once when it sped up
+(`FakeKubeAPI.answerObjectsSlowly`: never past 60 now); a drop or another
+context gave a fresh 60 — every return to a covered window, a closed page
+or another context a minute's GETs more at a production API server (the
+ledger); the doubtful-first order left a just-synced single replica stuck
+behind its old pod Ready until every doubtful row was read (recently
+changed is doubtful); the settle took whichever kinds' lists came first
+(it waits for them); and the section shown before a context's discovery
+was read never started the marks.
 
 **The GitOps section** (`g`; gitops.md 2–3, G2): Argo CD's and Flux's
 objects that live in or deploy into the scope on one screen, between Helm

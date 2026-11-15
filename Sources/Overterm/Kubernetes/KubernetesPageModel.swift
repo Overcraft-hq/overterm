@@ -509,6 +509,8 @@ final class KubernetesPageModel: ObservableObject {
         self.model = model
         self.forwards = forwards
         helm = KubeHelmSession(consent: model.secretConsent)
+        // The marks' GETs within each context's minute, the app's: every window's section shares it.
+        gitOps.marked.ledger = model.markedMinutes
         // A picker that shows follows what comes in: the namespaces listed
         // after it opened, the kubeconfig read again. The emitted values:
         // the model's properties aren't set yet.

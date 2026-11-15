@@ -304,8 +304,17 @@ final class KubeGitOpsSession: ObservableObject {
         if let store, store.context != context { drop() }
         let same = self.context == context && served.map(\.fullName) == kinds.map(\.fullName) && state != .idle && self.accessible == accessible
         if same {
+            let discovered = self.discovery != discovery
             self.discovery = discovery
-            scopeChanged(scope)
+            if scope != self.scope {
+                scopeChanged(scope)
+            } else if discovered {
+                // Discovery came (another context shown before it was
+                // read, a sign-in): where Argo CD and Flux aren't served
+                // the kinds read are the same none, and the marks start
+                // only now (gitops.md 14.4.8: "the reads start once").
+                updateMarks()
+            }
             return
         }
         hide()

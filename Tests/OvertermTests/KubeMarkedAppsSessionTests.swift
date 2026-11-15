@@ -10,8 +10,10 @@ import XCTest
 /// sampled: nothing of Argo CD's or Flux's is asked where they aren't
 /// served; three watches, and three still for six namespaces; a kind left
 /// without a watch listed every 5 min; the settle (M1b) a GET of one
-/// object each, after M2's moves, within the minute's 60 — kept across a
-/// hide — never a list of whole objects; a stuck single-replica rollout
+/// object each, after M2's moves, once every first list is in, what may be
+/// a problem first — just synced too —, within the context's 60 a minute —
+/// kept across a hide, a drop and another context, never more at a slow
+/// server — never a list of whole objects; a stuck single-replica rollout
 /// whose cells say `1/1` Progressing once settled; M2 only for a moved
 /// generation, none under 2,000 readiness-only row events; M3 never
 /// watched, M3b a GET only of a CronJob or an `<unknown>` HPA; a refusal
@@ -360,6 +362,177 @@ final class KubeMarkedAppsSessionTests: XCTestCase {
         session.drop()
     }
 
+    /// More to settle than the minute's 60 (D7, gitops.md 14.9.3: ≈1,150 on
+    /// the surveyed spoke): what may be a problem — the rollout past its
+    /// deadline, the StatefulSet 0/3, the Argo Rollouts whose phase no cell
+    /// says, the CronJob, the `<unknown>` HPA — is taken first, ahead of a
+    /// hundred ready-looking Deployments a name before them: across every
+    /// kind, the settle waiting until every first list it orders by is in
+    /// (the workloads', the CronJobs', the HPAs'), whichever came last. The
+    /// session's own order, never the server's arrivals.
+    func testWhatMayBeAProblemIsSettledFirst() async throws {
+        var options = FakeKubeAPI.SpokeOptions()
+        options.apps = 100
+        options.padding = 500
+        options.rollouts = true
+        let (api, client, _) = try startFake(options)
+        let discovery = try await client.discover()
+        // The HPAs' list comes last, well after every other: the settle waits for it.
+        api.answerSlowly("/apis/autoscaling/v2/horizontalpodautoscalers", milliseconds: 300)
+        api.forgetRequests()
+        let session = session()
+        session.show(context: "fake-prod", scope: .all, discovery: discovery, client: client)
+        let first = await eventually { session.state == .live && session.takenLastMinute == KubeMarkedRefetch.perMinute && session.getsQueued == 0 }
+        XCTAssertTrue(first, "\(session.takenLastMinute)")
+        let gets = objectGETs(api).map(\.path)
+        XCTAssertEqual(gets.count, KubeMarkedRefetch.perMinute)
+        XCTAssertGreaterThan(session.reading.checking ?? 0, 100, "more to settle than a minute's")
+        let doubtful: [KubeMarkedMember.ID] = [
+            .init(kind: .deployment, namespace: "team-2", name: "acme-cart"), .init(kind: .statefulSet, namespace: "team-4", name: "acme-ledger-db"),
+            .init(kind: .rollout, namespace: "team-0", name: "acme-canary"), .init(kind: .rollout, namespace: "team-1", name: "acme-blue"),
+            .init(kind: .cronJob, namespace: "team-8", name: "acme-reindex"), .init(kind: .horizontalPodAutoscaler, namespace: "team-5", name: "acme-search"),
+        ]
+        // The first flush that took any: twenty, those six before every other.
+        XCTAssertEqual(session.firstTaken.count, KubeMarkedRefetch.perFlush)
+        XCTAssertEqual(Set(session.firstTaken.prefix(doubtful.count)), Set(doubtful), "\(session.firstTaken)")
+        XCTAssertTrue(gets.contains("/apis/autoscaling/v2/namespaces/team-5/horizontalpodautoscalers/acme-search"), "read in that minute")
+        // Their apps said by Argo CD's rule already, the Rollouts' too.
+        let settledFirst = await eventually { session.isMerged && session.apps.first { $0.app.key.instance.hasSuffix("acme-blue-service") }?.health.state == .failed }
+        XCTAssertTrue(settledFirst, "\(session.apps.map { "\($0.app.key.instance) \($0.health.state)" }.prefix(5))")
+        session.drop()
+    }
+
+    /// More not ready by their rows than the minute's 60 — seventy
+    /// Deployments — and a single replica stuck behind its old pod and a
+    /// paused rollout whose cells read ready, both synced by Argo CD
+    /// minutes ago: the two are said by Argo CD's rule in the first minute,
+    /// the newest change first, not after the seventy (D-4, gitops.md
+    /// 14.10: what cells hide, where M1b's settle exists for).
+    func testJustSyncedUnderReadyCellsIsSettledInTheFirstMinute() async throws {
+        var options = FakeKubeAPI.SpokeOptions()
+        options.apps = 80
+        options.notReady = 70
+        options.padding = 500
+        let (api, client, spoke) = try startFake(options)
+        // Argo CD's server-side apply minutes ago on the two, its time on every row with managedFields.
+        api.setManagedFields("deployments.apps", "acme-pay", namespace: "team-1", FakeKubeAPI.surveyManagedFields(desired: 1, argoChanged: now.addingTimeInterval(-180), now: now))
+        api.setManagedFields("deployments.apps", "acme-batch", namespace: "team-3", FakeKubeAPI.surveyManagedFields(desired: 2, argoChanged: now.addingTimeInterval(-600), now: now))
+        api.tableManagedFields = true
+        let discovery = try await client.discover()
+        let session = session()
+        session.show(context: "fake-prod", scope: .all, discovery: discovery, client: client)
+        // The session's clock stands: one minute's 60.
+        let first = await eventually { session.state == .live && session.takenLastMinute == KubeMarkedRefetch.perMinute && session.getsQueued == 0 && session.isMerged }
+        XCTAssertTrue(first, "\(session.takenLastMinute)")
+        XCTAssertEqual(
+            Array(session.firstTaken.prefix(2)), [.init(kind: .deployment, namespace: "team-1", name: "acme-pay"), .init(kind: .deployment, namespace: "team-3", name: "acme-batch")],
+            "the newest changes first: \(session.firstTaken.prefix(4))")
+        let stuck = await eventually { self.app(session, spoke.stuck)?.health.fromRows == false && self.app(session, spoke.paused)?.health.fromRows == false }
+        XCTAssertTrue(stuck, "\(String(describing: app(session, spoke.stuck)?.health)) \(String(describing: app(session, spoke.paused)?.health))")
+        XCTAssertEqual(app(session, spoke.stuck)?.health.state, .progressing, "its cells read 1/1: its object says the new pod never came up")
+        XCTAssertEqual(app(session, spoke.paused)?.health.state, .paused, "its cells read 2/2: its object is paused")
+        // While some of the seventy still wait their minute, from their rows.
+        let waiting = spoke.apps.suffix(options.notReady).filter { app(session, $0)?.health.fromRows == true }
+        XCTAssertGreaterThan(waiting.count, 0, "more not ready than the minute's 60")
+        XCTAssertTrue(waiting.allSatisfy { app(session, $0)?.health.state == .progressing }, "said from their rows meanwhile")
+        session.drop()
+    }
+
+    /// A server slower than four in flight can keep up with: a GET's place
+    /// is held until a minute after its answer, never freed unanswered —
+    /// the minute's 60 taken while it is slow, the clock moved a minute on
+    /// twice, the server fast again: no backlog goes out at once, never
+    /// more than 60 GETs at the server in any minute of the session's clock
+    /// (gitops.md 14.4.1; D7's fix pass: freed a minute after the take, a
+    /// slow minute queued its next 60 behind the last's).
+    func testASlowServerNeverSeesMoreThanSixtyAMinute() async throws {
+        var options = FakeKubeAPI.SpokeOptions()
+        options.apps = 200
+        options.padding = 500
+        let (api, client, _) = try startFake(options)
+        let discovery = try await client.discover()
+        api.answerObjectsSlowly(["deployments", "statefulsets", "daemonsets", "cronjobs", "horizontalpodautoscalers"], milliseconds: 150)
+        api.forgetRequests()
+        let session = session()
+        session.show(context: "fake-prod", scope: .all, discovery: discovery, client: client)
+        // The minute's 60 taken; a few answered, most still waiting their turn.
+        let slow = await eventually { session.state == .live && session.takenLastMinute == KubeMarkedRefetch.perMinute && self.objectGETs(api).count >= 8 }
+        XCTAssertTrue(slow, "\(session.takenLastMinute) held, \(objectGETs(api).count) GETs")
+        // What the fake saw while the session's clock read each minute: counted and moved on together, nothing awaited between.
+        var seen = [objectGETs(api).count]
+        now = now.addingTimeInterval(61)
+        let refilled = await eventually { session.takenLastMinute == KubeMarkedRefetch.perMinute }
+        XCTAssertTrue(refilled, "only the places answered free")
+        seen.append(objectGETs(api).count)
+        now = now.addingTimeInterval(61)
+        // The server fast again: what waits goes out, within the minute's places alone.
+        api.answerObjectsSlowly([], milliseconds: nil)
+        let quiet = await eventually { session.getsQueued == 0 && session.takenLastMinute == KubeMarkedRefetch.perMinute }
+        XCTAssertTrue(quiet, "\(session.getsQueued) waiting")
+        seen.append(objectGETs(api).count)
+        let minutes = [seen[0], seen[1] - seen[0], seen[2] - seen[1]]
+        XCTAssertTrue(minutes.allSatisfy { $0 <= KubeMarkedRefetch.perMinute }, "GETs at the server in each minute: \(minutes)")
+        XCTAssertGreaterThan(minutes[1] + minutes[2], 0, "the settle went on")
+        session.drop()
+    }
+
+    /// The minute is the context's (gitops.md 14.4.1; D7's fix pass): the
+    /// page hidden and shown again (`drop`: what was read goes), another
+    /// context and back — within the minute no object of it read again;
+    /// another context's minute is its own; a minute on, its 60 again.
+    func testTheMinuteStandsAcrossADropAndAnotherContext() async throws {
+        var options = FakeKubeAPI.SpokeOptions()
+        options.apps = 80
+        options.padding = 500
+        let (api, client, _) = try startFake(options)
+        let discovery = try await client.discover()
+        let gitOps = makeGitOps()
+        let marked = gitOps.marked
+        marked.clock = { [unowned self] in self.now }
+        marked.tickInterval = .seconds(3600)
+        func spent(_ context: String) async -> Bool {
+            await eventually { marked.context == context && marked.state == .live && marked.isMerged && marked.takenLastMinute == KubeMarkedRefetch.perMinute && marked.getsQueued == 0 }
+        }
+        /// Shown, every first list in, its settle waiting its turn: nothing it could take.
+        func waiting(_ context: String) async -> Bool {
+            await eventually {
+                marked.context == context && marked.state == .live && marked.isMerged && marked.store?.done.contains("rows:horizontalpodautoscalers.autoscaling") == true
+                    && !marked.refetchIdle && marked.getsQueued == 0
+            }
+        }
+        api.forgetRequests()
+        gitOps.show(context: "fake-prod", scope: .all, discovery: discovery, client: client)
+        let first = await spent("fake-prod")
+        XCTAssertTrue(first)
+        XCTAssertEqual(objectGETs(api).count, KubeMarkedRefetch.perMinute)
+        // The page hidden and shown again: what was read goes, the minute doesn't.
+        gitOps.drop()
+        XCTAssertNil(marked.store)
+        api.forgetRequests()
+        gitOps.show(context: "fake-prod", scope: .all, discovery: discovery, client: client)
+        let shown = await waiting("fake-prod")
+        XCTAssertTrue(shown, "\(marked.state) \(marked.refetchIdle)")
+        XCTAssertEqual(objectGETs(api).map(\.path), [], "dropped and shown again within the minute: no GET")
+        XCTAssertEqual(marked.takenLastMinute, KubeMarkedRefetch.perMinute)
+        // Another context: a minute of its own.
+        gitOps.show(context: "fake-dev", scope: .all, discovery: discovery, client: client)
+        let other = await spent("fake-dev")
+        XCTAssertTrue(other)
+        XCTAssertEqual(objectGETs(api).count, KubeMarkedRefetch.perMinute, "fake-dev's own 60")
+        // And back within the minute: none again.
+        api.forgetRequests()
+        gitOps.show(context: "fake-prod", scope: .all, discovery: discovery, client: client)
+        let back = await waiting("fake-prod")
+        XCTAssertTrue(back)
+        XCTAssertEqual(objectGETs(api).map(\.path), [], "fake-prod, fake-dev and fake-prod again within the minute: no GET")
+        // A minute on: its 60 again, and no more.
+        now = now.addingTimeInterval(61)
+        let again = await spent("fake-prod")
+        XCTAssertTrue(again)
+        XCTAssertEqual(objectGETs(api).count, KubeMarkedRefetch.perMinute)
+        gitOps.drop()
+    }
+
     /// Hidden and shown again — another scope, the section left and
     /// back — the minute's 60 aren't given again; another context's are its own.
     func testTheMinutesSixtyStandAcrossAHide() async throws {
@@ -566,6 +739,28 @@ final class KubeMarkedAppsSessionTests: XCTestCase {
         // Nothing was started that could ask later: no task holds a read.
         await Task.yield()
         XCTAssertEqual(api.requests.map(\.path), [], "a sign-in still waiting: nothing asked")
+    }
+
+    /// The section shown before the context's discovery was read (another
+    /// context picked, a sign-in still waiting): nothing asked; discovery
+    /// comes, the same none of Argo CD's or Flux's kinds served — the marks
+    /// start then, once (gitops.md 14.4.8: "the reads start once … when
+    /// discovery comes back"; before D7's fix pass they never did).
+    func testDiscoveryComingAfterTheSectionShowsStartsTheMarks() async throws {
+        let (api, client, spoke) = try startFake(FakeKubeAPI.SpokeOptions(apps: 6, states: false))
+        let discovery = try await client.discover()
+        api.forgetRequests()
+        let gitOps = makeGitOps()
+        gitOps.show(context: "fake-prod", scope: .all, discovery: nil, client: client)
+        await Task.yield()
+        XCTAssertEqual(gitOps.marksMode, .off)
+        XCTAssertEqual(api.requests.map(\.path), [], "no discovery: nothing asked")
+        gitOps.show(context: "fake-prod", scope: .all, discovery: discovery, client: client)
+        let read = await eventually { gitOps.marksMode == .only(.notServed) && gitOps.marked.state == .live && !gitOps.marked.apps.isEmpty }
+        XCTAssertTrue(read, "\(gitOps.marksMode) \(gitOps.marked.state)")
+        XCTAssertTrue(Set(gitOps.marked.apps.map(\.app.key.instance)).isSuperset(of: spoke.apps))
+        XCTAssertEqual(api.requests.filter { $0.isWatch && $0.path == "/apis/apps/v1/deployments" }.count, 1, "followed once")
+        gitOps.drop()
     }
 
     func testHiddenEveryReadEndsAndDropForgets() async throws {

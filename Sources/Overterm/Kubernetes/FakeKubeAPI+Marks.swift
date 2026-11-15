@@ -33,6 +33,10 @@ extension FakeKubeAPI {
         /// (`argocd.argoproj.io/installation-id: hub-b`) on every member:
         /// two Argo CDs marking objects here, never merged.
         var otherInstallation = 0
+        /// The last this many plain apps' Deployments not every replica
+        /// available (`1/2`, by their rows and their objects): more to
+        /// settle first than a minute's GETs.
+        var notReady = 0
     }
 
     /// The second installation's id `otherInstallation` puts on its apps.
@@ -97,7 +101,8 @@ extension FakeKubeAPI {
             spoke.deployments.append((namespace, name))
             let installation = index < options.otherInstallation ? Self.spokeInstallation : nil
             let marked = installation.map { [KubeTrackingID.installationAnnotation: $0] } ?? [:]
-            addMarkedDeployment(name, namespace: namespace, app: instance, annotations: marked, padding: options.padding, now: now)
+            let available = index >= options.apps - options.notReady ? 1 : 2
+            addMarkedDeployment(name, namespace: namespace, app: instance, ready: available, available: available, annotations: marked, padding: options.padding, now: now)
             addMarkedService(name, namespace: namespace, app: instance, installation: installation, now: now)
             if index % 3 == 0 { addMarkedHPA(name, namespace: namespace, app: instance, installation: installation, now: now) }
             // A copy on a few HPAs and PDBs: their Deployment's own mark.
@@ -249,12 +254,13 @@ extension FakeKubeAPI {
     /// A Deployment, its cells and its object agreeing unless `status`,
     /// `progressing` or `paused` say otherwise; `app` its tracking id's
     /// (nil: only the labels and annotations given). Its ReplicaSet carries
-    /// its mark, copied.
+    /// its mark, copied — unless `replicaSet` is off (the survey's spoke:
+    /// nothing there lists them).
     func addMarkedDeployment(
         _ name: String, namespace: String, app: String?, ready: Int = 2, desired: Int = 2, updated: Int? = nil, available: Int? = nil,
         labels: [String: String] = [:], annotations extra: [String: String] = [:], padding: Int, now: Date, status: [String: Any]? = nil,
         progressing: (status: String, reason: String) = ("True", "NewReplicaSetAvailable"), paused: Bool = false, generation: Int = 4,
-        image: String? = nil
+        image: String? = nil, replicaSet: Bool = true
     ) {
         let image = image ?? "registry.acme.example/\(name):4.12.0"
         var annotations = extra
@@ -288,7 +294,7 @@ extension FakeKubeAPI {
                 ],
                 "status": state,
             ])
-        if app != nil {
+        if app != nil, replicaSet {
             // The Deployment controller copies every annotation onto its ReplicaSets, and owns them.
             addOwnedReplicaSet(
                 "\(name)-7d4b9c", of: ("Deployment", name), namespace: namespace, desired: desired, ready: ready, annotations: annotations,

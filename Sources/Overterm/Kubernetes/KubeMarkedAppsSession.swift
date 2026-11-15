@@ -20,16 +20,22 @@ import Foundation
 ///   Applications that are read (`.periodic`, decision D-1) they are such
 ///   lists always, never watched.
 /// - **M1b**, the settle: a GET of each marked workload not yet settled by
-///   Argo CD's rule, the most recently changed first, with what M2 leaves
-///   of the minute's 60 — which cells can't say (a paused Deployment, a
-///   stale generation, a stuck single-replica rollout whose old pod
-///   serves); until then "from its row". Beside Applications only the
+///   Argo CD's rule, with what M2 leaves of the minute's 60 — which cells
+///   can't say (a paused Deployment, a stale generation, a stuck
+///   single-replica rollout whose old pod serves); until then "from its
+///   row". Once every first list it is ordered across is in (the
+///   workloads', the CronJobs', the HPAs': `firstListsIn`): what may be a
+///   problem first (not ready by its cells, a Rollout's phase, what Argo
+///   CD changed in the last hour), then the rest, each the most recently
+///   changed first (`KubeMarkedRefetch`). Beside Applications only the
 ///   derived apps' members (`settling`).
 /// - **M2**, a GET of one workload whose generation moved, or new while
 ///   shown (`KubeMarkedRefetch`): first, 20 a flush, 4 in flight, 60 a
-///   minute for the section — kept across a hide and a show of the same
-///   context; never for readiness alone. What is in progress again every
-///   60 s, a Degraded one every 5 min (`tick`).
+///   minute for the context — each GET's place held until a minute after
+///   its answer, never freed unanswered, in the context's minute
+///   (`ledger`: the app's, so a hide, a drop, another context and back
+///   give none again); never for readiness alone. What is in progress
+///   again every 60 s, a Degraded one every 5 min (`tick`).
 /// - **M3**, Services, Ingresses, PVCs, Jobs (a hook Job is under its app,
 ///   never in its health), CronJobs and HPAs (at `autoscaling/v2`): one
 ///   paged rows-with-metadata list a kind, no watch — on show, Refresh and
@@ -40,8 +46,9 @@ import Foundation
 /// off the main thread once a flush (`KubeMarkedBook`); the main thread
 /// swaps the ranked list. What M1b, M2, M3 and M3b read is kept five
 /// minutes while the page shows (`Store`), in memory only; `hide` ends
-/// every read, `drop` forgets it (the page hidden, another context, a
-/// credential failure). Never a Secret or a ConfigMap, never a ReplicaSet
+/// every read (the section left, its window covered), `drop` forgets it
+/// (the page hidden, another context, a credential failure) — never the
+/// context's minute. Never a Secret or a ConfigMap, never a ReplicaSet
 /// or a pod across the cluster, never a list or a watch of whole objects,
 /// never a write.
 @MainActor
@@ -136,6 +143,10 @@ final class KubeMarkedAppsSession: ObservableObject {
     var flushInterval: Duration = .milliseconds(250)
     var tickInterval: Duration = .seconds(30)
     var clock: () -> Date = { Date() }
+    /// Every context's minute of GETs: the app's (`KubernetesModel.
+    /// markedMinutes`, every window's section sharing it) on a page; a
+    /// session's own otherwise.
+    var ledger = KubeMarkedLedger()
 
     /// Every row read with marks, by kind (M1's, M3's).
     private var rows: [String: KubeRows] = [:]
@@ -143,9 +154,12 @@ final class KubeMarkedAppsSession: ObservableObject {
     private var follows: [String: Task<Void, Never>] = [:]
     private var lists: [String: Task<Void, Never>] = [:]
     private var gets: [KubeMarkedMember.ID: Task<Void, Never>] = [:]
+    /// What waits for a GET; the minute it is taken within is the
+    /// context's, in `ledger`.
     private var refetch = KubeMarkedRefetch()
-    /// The context `refetch`'s minute is for: another starts its own.
-    private var refetchContext: String?
+    /// The kinds read as paged rows (M3's) whose list came since shown, or
+    /// couldn't be read: what the settle waits for (`firstListsIn`).
+    private var listsAnswered: Set<String> = []
     /// M1b's settle and M3b since shown: what was asked, and what couldn't be read.
     private var settleAsked: Set<KubeMarkedMember.ID> = []
     private var unreadable: Set<KubeMarkedMember.ID> = []
@@ -177,11 +191,6 @@ final class KubeMarkedAppsSession: ObservableObject {
         guard let discovery, let client else { return hide() }
         let kinds = Self.kinds(discovery)
         if let store, store.context != context { drop() }
-        if refetchContext != context {
-            // Another context's minute is its own.
-            refetch = KubeMarkedRefetch()
-            refetchContext = context
-        }
         let same =
             self.context == context && state != .idle && self.reads == reads && self.accessible == accessible
             && Self.allot(watches, reads: reads, kinds: kinds.workloads.count) == Self.allot(self.watches, reads: self.reads, kinds: workloads.count)
@@ -206,6 +215,8 @@ final class KubeMarkedAppsSession: ObservableObject {
         fetched = kinds.workloads + kinds.rows.filter { [.cronJob, .horizontalPodAutoscaler].contains(KubeMarkedKind($0)) }
         state = .loading
         let now = clock()
+        // Every context's spent places forgotten; this one's minute stands.
+        ledger.prune(now: now)
         var reading = KubeMarkedReading()
         reading.kinds = workloads.map(KubeKindCatalog.title(of:))
         reading.rolloutsServed = workloads.contains { $0.fullName == Self.rollouts }
@@ -224,7 +235,9 @@ final class KubeMarkedAppsSession: ObservableObject {
         }
         rereadAt = store?.readAt
         startWorkloads(client: client)
-        for kind in rowKinds where store?.done.contains("rows:\(kind.fullName)") != true { listRows(kind, client: client) }
+        for kind in rowKinds {
+            if store?.done.contains("rows:\(kind.fullName)") == true { listsAnswered.insert(kind.fullName) } else { listRows(kind, client: client) }
+        }
         startTick()
         publishNotes()
         scheduleFlush(now: false)
@@ -240,13 +253,21 @@ final class KubeMarkedAppsSession: ObservableObject {
     }
 
     /// Off screen: every read ends; what M1b, M2, M3 and M3b read stays,
-    /// and so does the minute's count of GETs.
+    /// and so does the context's minute of GETs.
     func hide() {
         generation += 1
         for task in follows.values { task.cancel() }
         follows = [:]
         for task in lists.values { task.cancel() }
         lists = [:]
+        if let context {
+            // A GET given up in flight may have reached the server: its
+            // place a minute more from now. One that waited its turn was
+            // never sent: its place given back. Nothing else frees one.
+            let now = clock()
+            for id in gets.keys { ledger[context].answered(id, at: now) }
+            for id in queue { ledger[context].unsent(id) }
+        }
         for task in gets.values { task.cancel() }
         gets = [:]
         flushing?.cancel()
@@ -256,6 +277,7 @@ final class KubeMarkedAppsSession: ObservableObject {
         queue = []
         // The minute's 60 are the context's: a hide and a show don't give them again.
         refetch.forgetPending()
+        listsAnswered = []
         settleAsked = []
         unreadable = []
         changes = [:]
@@ -268,6 +290,7 @@ final class KubeMarkedAppsSession: ObservableObject {
         context = nil
         mostInFlight = 0
         mostTaken = 0
+        firstTaken = []
         if state != .idle { state = .idle }
         if !apps.isEmpty { apps = [] }
         sectionRows = []
@@ -277,13 +300,13 @@ final class KubeMarkedAppsSession: ObservableObject {
         if reading != KubeMarkedReading() { reading = KubeMarkedReading() }
     }
 
-    /// The page hidden, another context, a credential failure: what was read goes too.
+    /// The page hidden, another context, a credential failure: what was
+    /// read goes too — the context's minute stays (`ledger`): shown again
+    /// within it, its 60 aren't given again.
     func drop() {
         hide()
         store = nil
         readAt = nil
-        refetch = KubeMarkedRefetch()
-        refetchContext = nil
     }
 
     /// A credential failure here: dropped, and the owner told (no flush will).
@@ -457,7 +480,10 @@ final class KubeMarkedAppsSession: ObservableObject {
             let priority = KubeMarkedRefetch.reason(old: old, new: row, kind: id.kind, columns: columns, settled: settled, listing: listing, now: now)
         else { return }
         if priority == .settle { settleAsked.insert(id) }
-        refetch.ask(id, priority, changed: row.marks?.argoChanged ?? row.created)
+        // What may be a problem is settled first (`KubeMarkedRefetch.doubtful`): just synced too.
+        let changed = row.marks?.argoChanged ?? row.created
+        let doubtful = KubeMarkedRefetch.doubtful(row, kind: id.kind, columns: columns, changed: changed, now: now)
+        refetch.ask(id, priority, changed: changed, doubtful: doubtful)
     }
 
     /// Whether a row's object is read by GET: its own Argo CD mark names
@@ -572,6 +598,8 @@ final class KubeMarkedAppsSession: ObservableObject {
         let name = kind.fullName
         let title = KubeKindCatalog.title(of: kind)
         let workload = workloads.contains { $0.fullName == name }
+        // Read, refused or not: the settle doesn't wait for it.
+        listsAnswered.insert(name)
         switch read {
         case .read(let kept, let refused, let cut, _):
             took(kept, kind: kind)
@@ -608,10 +636,14 @@ final class KubeMarkedAppsSession: ObservableObject {
     // MARK: M1b, M2, M3b: one object's GET
 
     private func pump() {
-        guard let client else { return }
+        guard let client, let context else { return }
         while gets.count < Self.inFlight, !queue.isEmpty {
             let id = queue.removeFirst()
-            guard let kind = fetched.first(where: { KubeMarkedKind($0) == id.kind }) else { continue }
+            guard let kind = fetched.first(where: { KubeMarkedKind($0) == id.kind }) else {
+                // Not sent: its place given back.
+                ledger[context].unsent(id)
+                continue
+            }
             let generation = self.generation
             let path = kind.path(namespace: id.namespace, name: id.name)
             let readAt = clock()
@@ -626,6 +658,8 @@ final class KubeMarkedAppsSession: ObservableObject {
                 }
                 guard let self, self.generation == generation, !Task.isCancelled else { return }
                 self.gets[id] = nil
+                // Its place held a minute more from now: what the server saw.
+                self.ledger[context].answered(id, at: self.clock())
                 self.got(id, kind: kind, result, at: readAt)
                 self.pump()
             }
@@ -662,9 +696,13 @@ final class KubeMarkedAppsSession: ObservableObject {
     /// waiting or taken for it forgotten (one already sent answers as it
     /// would). Nothing while hidden, or for a kind not read here by GET.
     func settled(byDetail id: KubeMarkedMember.ID, _ wire: KubeMarkedWorkloadWire, at readAt: Date) {
-        guard state != .idle, let kind = fetched.first(where: { KubeMarkedKind($0) == id.kind }) else { return }
+        guard state != .idle, let context, let kind = fetched.first(where: { KubeMarkedKind($0) == id.kind }) else { return }
         refetch.forget(id)
-        queue.removeAll { $0 == id }
+        if let waiting = queue.firstIndex(of: id) {
+            // Taken, never sent: its place given back.
+            queue.remove(at: waiting)
+            ledger[context].unsent(id)
+        }
         got(id, kind: kind, .success(wire), at: readAt)
     }
 
@@ -686,11 +724,23 @@ final class KubeMarkedAppsSession: ObservableObject {
         }
     }
 
-    /// M2's GETs taken; what changed made into apps off the main thread.
+    /// Whether every first list the settle is ordered across came, or
+    /// couldn't be read: the workloads' (M1) and the CronJobs' and HPAs'
+    /// (M3b) — so what may be a problem goes first among all of them, not
+    /// among the kinds whose list happened to come first.
+    private var firstListsIn: Bool {
+        guard !reading.isReading else { return false }
+        return fetched.allSatisfy { kind in workloads.contains { $0.fullName == kind.fullName } || listsAnswered.contains(kind.fullName) }
+    }
+
+    /// M2's GETs taken — the settle's once its first lists are in —, in the
+    /// context's minute; what changed made into apps off the main thread.
     private func flush() {
-        guard state != .idle else { return }
-        let taken = refetch.take(now: clock()).filter { !queue.contains($0) && gets[$0] == nil }
+        guard state != .idle, let context else { return }
+        let busy = Set(queue).union(gets.keys)
+        let taken = refetch.take(now: clock(), busy: busy, through: firstListsIn ? .settle : .periodic, minute: &ledger[context])
         mostTaken = max(mostTaken, taken.count)
+        if firstTaken.isEmpty { firstTaken = taken }
         queue += taken
         pump()
         if !refetch.isEmpty { scheduleFlush(now: false) }
@@ -806,6 +856,11 @@ final class KubeMarkedAppsSession: ObservableObject {
     /// The most GETs in flight at once, and taken in one flush, since shown.
     private(set) var mostInFlight = 0
     private(set) var mostTaken = 0
+    /// The first flush's GETs since shown that took any, in the order taken:
+    /// what may be a problem first, across every kind.
+    private(set) var firstTaken: [KubeMarkedMember.ID] = []
+    /// How many GETs were taken as `priority` since made (M2's moves: `.moved`).
+    func taken(as priority: KubeMarkedRefetch.Priority) -> Int { refetch.takenBy[priority] ?? 0 }
     /// Every GET asked since made.
     private(set) var getsAsked = 0
     /// Every row change a follow brought since made.
@@ -814,10 +869,36 @@ final class KubeMarkedAppsSession: ObservableObject {
     var refetchIdle: Bool { refetch.isEmpty && queue.isEmpty && gets.isEmpty }
     /// Whether a GET of `id` waits, is taken or is in flight.
     func isAsking(_ id: KubeMarkedMember.ID) -> Bool { refetch.pending[id] != nil || queue.contains(id) || gets[id] != nil }
+    /// Why a GET of `id` waits — M2's move, the tick's, the settle's —, if one does.
+    func waiting(_ id: KubeMarkedMember.ID) -> KubeMarkedRefetch.Priority? { refetch.pending[id] }
     /// Every change made into the apps: none waiting, none being made.
     var isMerged: Bool { box != nil && changes.isEmpty && removed.isEmpty }
     /// M2's GETs taken and not yet answered.
     var getsQueued: Int { queue.count + gets.count }
-    /// M2's GETs taken in the minute before the session's clock.
-    var takenLastMinute: Int { refetch.takenInLastMinute(now: clock()) }
+    /// The places the context's minute holds at the session's clock: every
+    /// GET taken and unanswered, each answered in the minute before.
+    var takenLastMinute: Int { context.map { ledger[$0].held(at: clock()) } ?? 0 }
+}
+
+/// Every context's minute of the marks' GETs (`KubeMarkedMinute`): the
+/// app's (`KubernetesModel.markedMinutes`), so every window's section on a
+/// context shares one — what a hide, a drop (the page hidden or closed),
+/// another context and back can't give again; a test's session its own.
+/// In memory only, spent minutes forgotten.
+@MainActor
+final class KubeMarkedLedger {
+    private var minutes: [String: KubeMarkedMinute] = [:]
+
+    subscript(context: String) -> KubeMarkedMinute {
+        get { minutes[context] ?? KubeMarkedMinute() }
+        set { minutes[context] = newValue.isEmpty ? nil : newValue }
+    }
+
+    /// Every context's spent places and old asks forgotten.
+    func prune(now: Date) {
+        for (context, var minute) in minutes {
+            minute.prune(now: now)
+            minutes[context] = minute.isEmpty ? nil : minute
+        }
+    }
 }

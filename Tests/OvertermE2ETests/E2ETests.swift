@@ -276,12 +276,15 @@ final class E2ETests: XCTestCase {
         _ = try run("kubernetesCharts", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 300)
     }
     /// 5,000 pods on the fake API server: the first draw, a burst of 500
-    /// events, the scroll. Its kubeconfig is this temporary file alone.
+    /// events, the scroll; then GitOps' 1,000 Applications, and Argo CD's
+    /// apps read from their marks on a spoke at the surveyed production
+    /// cluster's size (its settle waits out a minute of GETs). Its
+    /// kubeconfig is this temporary file alone.
     func testKubernetesPerf() throws {
         let dir = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-e2e-kperf-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         defer { try? FileManager.default.removeItem(at: dir) }
-        _ = try run("kubernetesPerf", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 300)
+        _ = try run("kubernetesPerf", env: ["OVERTERM_KUBECONFIG": dir.appendingPathComponent("fake.kubeconfig").path], timeout: 480)
     }
     /// The Overview as cards, in a dark theme, a light one and a narrow
     /// window, against the fake: OVERTERM_DUMP_PNG captures each.

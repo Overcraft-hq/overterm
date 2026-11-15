@@ -302,11 +302,15 @@ final class FakeKubeAPI: @unchecked Sendable {
     private var generation = 0
     private var watchers: [ObjectIdentifier: Watcher] = [:]
     private var asked: [Request] = []
+    /// When each of `asked` came, in its order.
+    private var askedAt: [Date] = []
     private var channels: [Channel] = []
     private var credentialFailure: String?
     private var throttled = 0
     /// Paths whose answers are held this many milliseconds (`answerSlowly`).
     private var slowPaths: [String: Int] = [:]
+    /// Every GET of one object of these resources held this long (`answerObjectsSlowly`).
+    private var slowObjects: (resources: Set<String>, milliseconds: Int)?
     private var heldNow = 0
     private var heldPeak = 0
     private var dropped: [String] = []
@@ -672,9 +676,14 @@ final class FakeKubeAPI: @unchecked Sendable {
     var openWatches: Int { locked { watchers.count } }
     /// The kinds watched now, by full name, one entry a watch.
     var watched: [String] { locked { watchers.values.map(\.resource).sorted() } }
+    /// Every request since `forgetRequests` with when it came: what a
+    /// rate is counted from (the most GETs in any minute), never a moment
+    /// sampled.
+    var timedRequests: [(request: Request, at: Date)] { locked { zip(asked, askedAt).map { ($0, $1) } } }
     func forgetRequests() {
         locked {
             asked = []
+            askedAt = []
             heldPeak = heldNow
         }
     }
@@ -1114,6 +1123,13 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// `milliseconds` after it is asked — recorded when it arrives, as any
     /// request; nil answers it at once again.
     func answerSlowly(_ path: String, milliseconds: Int?) { locked { slowPaths[path] = milliseconds } }
+    /// Every answer to a GET of one object by name of these resources
+    /// (`deployments`, `cronjobs`… — never a list, a watch or a
+    /// subresource) held `milliseconds`, as `answerSlowly` holds a path: a
+    /// server slower than its readers; nil answers them at once again.
+    func answerObjectsSlowly(_ resources: Set<String>, milliseconds: Int?) {
+        locked { slowObjects = milliseconds.map { (resources, $0) } }
+    }
     /// Answers held now.
     var heldAnswers: Int { locked { heldNow } }
     /// The most answers held at once since the last `forgetRequests` — what
@@ -1122,7 +1138,15 @@ final class FakeKubeAPI: @unchecked Sendable {
     /// The paths of held answers whose client closed before they went.
     var droppedAnswers: [String] { locked { dropped } }
 
-    fileprivate func slowness(_ path: String) -> Int? { locked { slowPaths[path] } }
+    fileprivate func slowness(_ path: String) -> Int? {
+        locked {
+            if let held = slowPaths[path] { return held }
+            guard let slowObjects, let route = Self.route(path), route.name != nil, route.subresource == nil, let resource = route.resource,
+                slowObjects.resources.contains(resource)
+            else { return nil }
+            return slowObjects.milliseconds
+        }
+    }
     fileprivate func holding(_ change: Int, dropped path: String? = nil) {
         locked {
             heldNow += change
@@ -1294,6 +1318,7 @@ final class FakeKubeAPI: @unchecked Sendable {
         let isWatch = query["watch"] == "1" || query["watch"] == "true"
         let (failure, throttle, failedWatch, settings) = locked { () -> (String?, Int?, (status: Int, retryAfter: Int?)?, Settings) in
             asked.append(Request(method: method.rawValue, path: path, query: query, accept: accept, body: body, contentType: contentType))
+            askedAt.append(Date())
             var failedWatch: (status: Int, retryAfter: Int?)?
             if isWatch && failedWatches.count > 0 {
                 failedWatches.count -= 1

@@ -286,11 +286,7 @@ enum KubeTableReader {
         let labels = (metadata?["labels"] as? [String: Any] ?? [:]).compactMapValues { $0 as? String }.filter { $0.key.hasPrefix(KubeApplications.prefix) }
         let conditions = KubeRowCondition.read((object?["status"] as? [String: Any])?["conditions"])
         var row = KubeRow(id: KubeRowID(namespace: rowNamespace, name: name), cells: cells, created: created, labels: labels, conditions: conditions)
-        if let metadata {
-            row.argoMarked =
-                (metadata["annotations"] as? [String: Any])?[KubeGitOpsOwner.trackingAnnotation] != nil
-                || (metadata["labels"] as? [String: Any])?[KubeGitOpsOwner.argoInstanceLabel] != nil
-        }
+        if let metadata { row.argoMarked = argoMarked(metadata) }
         if owners || marks {
             guard let kind else { preconditionFailure("a row's marks are read only against the kind listed") }
             let identity = KubeTrackingID.Identity(group: kind.group, kind: kind.kind, namespace: kind.namespaced ? rowNamespace : nil, name: name)
@@ -298,6 +294,26 @@ enum KubeTableReader {
             if marks { row.marks = KubeMarkWire.read(metadata: metadata, self: identity) }
         }
         return row
+    }
+
+    /// Whether a row's metadata carries one of Argo CD's own marks — the
+    /// tracking annotation or `argocd.argoproj.io/instance`
+    /// (`KubeRow.argoMarked`): two key look-ups on what was decoded
+    /// anyway, nothing kept — all `marksSeen` costs a list (gitops.md
+    /// 14.2.1; the D7 leg times it against the pods leg's Overview).
+    static func argoMarked(_ metadata: [String: Any]) -> Bool {
+        holds(metadata["annotations"], KubeGitOpsOwner.trackingAnnotation) || holds(metadata["labels"], KubeGitOpsOwner.argoInstanceLabel)
+    }
+
+    /// Whether a decoded object holds `key`, looked up where it lies: a
+    /// JSONSerialization dictionary is asked as one, never bridged whole to
+    /// a Swift dictionary first — that copied every annotation of every
+    /// row, kubectl's last-applied copy among them, for one look-up (D7's
+    /// leg, 15 KB rows: 6.5% of reading the rows it looked in, 0.3% asked
+    /// as one).
+    private static func holds(_ object: Any?, _ key: String) -> Bool {
+        if let dictionary = object as? NSDictionary { return dictionary.object(forKey: key) != nil }
+        return (object as? [String: Any])?[key] != nil
     }
 
     /// Every text cell without a URL's userinfo: the URL column read as

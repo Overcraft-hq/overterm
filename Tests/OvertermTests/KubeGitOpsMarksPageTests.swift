@@ -544,6 +544,65 @@ final class KubeGitOpsMarksPageTests: XCTestCase {
         XCTAssertEqual(api.writes, [])
     }
 
+    /// A GET of one object in a namespace: the section's M1b, M2 and M3b.
+    private func objectGETs() -> [FakeKubeAPI.Request] {
+        api.requests.filter { request in
+            let parts = request.path.split(separator: "/").count
+            return !request.isWatch && !request.isDiscovery && request.path.contains("/namespaces/")
+                && ((request.path.hasPrefix("/apis/") && parts == 7) || (request.path.hasPrefix("/api/") && parts == 6))
+        }
+    }
+
+    /// Its window covered and uncovered: every read ends, what the section
+    /// read stays — shown again, nothing is settled again (gitops.md
+    /// 14.4.2). The page hidden and shown, another context and back,
+    /// within the minute (the section's clock held): what it read goes,
+    /// the context's minute doesn't (`KubernetesModel.markedMinutes`, the
+    /// app's) — no object of it read again; another context's its own.
+    func testACoveredWindowKeepsWhatWasReadAndNoHideGivesTheMinuteAgain() async throws {
+        let (page, _) = try await page(current: "kind-fake")
+        defer { page.model.hide() }
+        let marked = page.gitOps.marked
+        let start = Date()
+        marked.clock = { start }
+        XCTAssertTrue(marked.ledger === page.model.markedMinutes, "the app's minutes")
+        try await section(page)
+        try await until("the marks settled") { marked.isMerged && marked.refetchIdle && marked.reading.checking == nil }
+        let read = objectGETs()
+        XCTAssertFalse(read.isEmpty)
+        // Covered: every read ends, what was read stays.
+        page.windowVisible = false
+        XCTAssertEqual(marked.state, .idle)
+        XCTAssertNotNil(marked.store, "kept, as when the section is left")
+        XCTAssertNotNil(page.gitOps.store)
+        api.forgetRequests()
+        page.windowVisible = true
+        try await until("uncovered: shown again") { marked.state == .live && marked.isMerged && marked.refetchIdle && marked.reading.checking == nil }
+        XCTAssertEqual(objectGETs().map(\.path), [], "uncovered: nothing settled again")
+        // The page hidden and shown: what was read goes, the minute doesn't.
+        page.visible = false
+        XCTAssertNil(marked.store)
+        page.visible = true
+        try await until("shown again, its settle waiting") { marked.state == .live && marked.isMerged && !marked.refetchIdle && marked.getsQueued == 0 }
+        XCTAssertEqual(objectGETs().map(\.path), [], "hidden and shown again within the minute: no GET")
+        // Another context, its discovery not read yet: the marks start once
+        // it comes, a minute of its own; then back — none again.
+        page.model.select("fake-dev")
+        page.model.setScope(.all)
+        try await until("fake-dev's settled") {
+            marked.context == "fake-dev" && page.gitOps.marksMode == .only(.notServed) && marked.state == .live && marked.isMerged && marked.refetchIdle
+                && marked.reading.checking == nil
+        }
+        XCTAssertFalse(objectGETs().isEmpty, "fake-dev's own minute")
+        api.forgetRequests()
+        page.model.select("kind-fake")
+        try await until("back, its settle waiting") {
+            marked.context == "kind-fake" && marked.state == .live && marked.isMerged && !marked.refetchIdle && marked.getsQueued == 0
+        }
+        XCTAssertEqual(objectGETs().map(\.path), [], "kind-fake, fake-dev and kind-fake again within the minute: no GET")
+        XCTAssertEqual(api.writes, [])
+    }
+
     // MARK: Beside Applications read
 
     /// A hub of 1,000 Applications that is also a destination: R2's

@@ -4,9 +4,9 @@ import Foundation
 // kubernetes/gitops.md, 14.4): what one object's GET settled, when an
 // object is read (M1b's settle, M2's moves, M3b's CronJobs and `<unknown>`
 // HPAs — one GET each, never a list of whole objects, 14.12's fifth
-// consequence), the members and apps kept as rows come and go
-// (`KubeMarkedBook`), and what the reads could say (`KubeMarkedReading`).
-// `KubeMarkedAppsSession` reads.
+// consequence) within a context's minute (`KubeMarkedMinute`), the members
+// and apps kept as rows come and go (`KubeMarkedBook`), and what the reads
+// could say (`KubeMarkedReading`). `KubeMarkedAppsSession` reads.
 
 /// What one object's read by Argo CD's rule said (a GET: M1b, M2, M3b):
 /// the allow-listed object, its generation then, when it was read.
@@ -37,29 +37,108 @@ struct KubeMarkedSettled: Equatable, Sendable {
     }
 }
 
+/// A context's GETs of the last minute, as its API server saw the marks'
+/// (gitops.md 14.4.1, M2's bound): each GET's place held from when it was
+/// taken until a minute after its answer — never freed while unanswered, so
+/// a server slower than four in flight can keep up with builds no backlog
+/// that goes out at once when it speeds up —, and when each object was
+/// last asked for (15 s an object). The context's, not a section's:
+/// `KubeMarkedLedger` keeps it across a hide, a drop (the page hidden or
+/// closed), another context and back — none of them gives the minute's 60
+/// again. Pure.
+struct KubeMarkedMinute: Equatable, Sendable {
+    struct Place: Equatable, Sendable {
+        var id: KubeMarkedMember.ID
+        /// When it was taken; once answered, when the answer came (or the
+        /// GET was given up).
+        var at: Date
+        var answered = false
+    }
+
+    private(set) var places: [Place] = []
+    private(set) var lastAsked: [KubeMarkedMember.ID: Date] = [:]
+
+    /// Nothing held, nothing asked lately: forgotten.
+    var isEmpty: Bool { places.isEmpty && lastAsked.isEmpty }
+
+    /// The places held at `now`: every GET unanswered, and each answered in
+    /// the minute before.
+    func held(at now: Date) -> Int { places.count { !$0.answered || now.timeIntervalSince($0.at) < 60 } }
+
+    /// What is spent forgotten: a place a minute past its answer, an object
+    /// last asked for a minute ago or more.
+    mutating func prune(now: Date) {
+        places.removeAll { $0.answered && now.timeIntervalSince($0.at) >= 60 }
+        lastAsked = lastAsked.filter { now.timeIntervalSince($0.value) < 60 }
+    }
+
+    /// Whether `id` may be asked for again: 15 s since it last was.
+    func due(_ id: KubeMarkedMember.ID, now: Date) -> Bool {
+        lastAsked[id].map { now.timeIntervalSince($0) >= KubeMarkedRefetch.perObject } ?? true
+    }
+
+    /// A GET of `id` taken at `now`: a place held.
+    mutating func took(_ id: KubeMarkedMember.ID, at now: Date) {
+        places.append(Place(id: id, at: now))
+        lastAsked[id] = now
+    }
+
+    /// A GET of `id` answered at `at` — or given up then (hidden while in
+    /// flight: it may have reached the server): its place a minute more
+    /// from then, never earlier than its take.
+    mutating func answered(_ id: KubeMarkedMember.ID, at: Date) {
+        guard let index = places.firstIndex(where: { $0.id == id && !$0.answered }) else { return }
+        places[index].answered = true
+        places[index].at = max(places[index].at, at)
+    }
+
+    /// A GET of `id` taken and never sent (hidden while it waited its
+    /// turn): its place given back.
+    mutating func unsent(_ id: KubeMarkedMember.ID) {
+        guard let index = places.lastIndex(where: { $0.id == id && !$0.answered }) else { return }
+        places.remove(at: index)
+    }
+}
+
 /// When a marked object is read by a GET (gitops.md 14.4.1), every one
-/// within the section's 60 a minute:
+/// within the context's 60 a minute (`KubeMarkedMinute`):
 ///
 /// - **M2**, a moved generation (a spec change: a rollout, a pause, a
 ///   scale) of a workload settled before, or a workload new since shown —
 ///   first;
-/// - **M1b's settle**, a workload not yet settled by Argo CD's rule, the
-///   most recently changed by Argo CD first; and **M3b**, a CronJob (its
-///   last run no cell shows) or an HPA whose Targets read `<unknown>`, not
-///   yet read or whose row moved — with what is left of the minute;
+/// - **M1b's settle**, a workload not yet settled by Argo CD's rule; and
+///   **M3b**, a CronJob (its last run no cell shows) or an HPA whose
+///   Targets read `<unknown>`, not yet read or whose row moved — with what
+///   is left of the minute, once every first list they are ordered across
+///   has come (`through`, the session's): what may be a problem first
+///   (`doubtful`: not Healthy by its cells; what no cell says — a
+///   Rollout's phase, a CronJob's last run, an `<unknown>` HPA's metrics —;
+///   or a workload Argo CD changed in the last hour, whose rollout may be
+///   stuck behind its old pod or paused under cells that read ready), then
+///   the rest; each the most recently changed by Argo CD first. On the
+///   surveyed spoke ≈1,150 wait at 60 a minute (gitops.md 14.9.3): what was
+///   just synced, its ≈45 Deployments not ready by their rows and the
+///   Rollouts whose apps say Unknown come in the first minutes, not after
+///   twenty;
 /// - what is in progress again every 60 s at most, a Degraded one every
 ///   5 min (the session's tick) — never on a row event.
 ///
 /// Never for readiness alone: a row whose cells move with its generation
 /// unchanged — a pod restarting, a node drained — is said from its cells
 /// (14.9.3: 2,000 readiness-only row events cause no GET). Each object at
-/// most once every 15 s, at most 20 a flush and 60 a minute. Pure.
+/// most once every 15 s, never twice at once (`busy`), at most 20 a flush
+/// and 60 a minute — a GET's place held until a minute after its answer.
+/// Pure.
 struct KubeMarkedRefetch: Equatable, Sendable {
     static let perObject: TimeInterval = 15
     static let perFlush = 20
     static let perMinute = 60
     static let inProgressEvery: TimeInterval = 60
     static let degradedEvery: TimeInterval = 300
+    /// A workload Argo CD changed (else made) this recently may hide what
+    /// its cells can't say: a sync's rollout stuck behind its old pod, or
+    /// paused (D-4).
+    static let recentlyChanged: TimeInterval = 3_600
 
     enum Priority: Int, Comparable, Sendable {
         /// Its generation moved, or it is new since shown (M2).
@@ -67,7 +146,8 @@ struct KubeMarkedRefetch: Equatable, Sendable {
         /// In progress (60 s) or Degraded (5 min): the tick's look.
         case periodic
         /// Not yet settled by its object, or a CronJob's or an `<unknown>`
-        /// HPA's row moved (M1b, M3b): the most recently changed first.
+        /// HPA's row moved (M1b, M3b): what may be a problem first, each
+        /// the most recently changed first.
         case settle
 
         static func < (lhs: Priority, rhs: Priority) -> Bool { lhs.rawValue < rhs.rawValue }
@@ -76,54 +156,81 @@ struct KubeMarkedRefetch: Equatable, Sendable {
     private(set) var pending: [KubeMarkedMember.ID: Priority] = [:]
     /// A settle's order: when Argo CD last changed it (else its creation).
     private(set) var changed: [KubeMarkedMember.ID: Date] = [:]
-    private(set) var lastAsked: [KubeMarkedMember.ID: Date] = [:]
-    /// When each GET of the last minute was taken.
-    private(set) var taken: [Date] = []
+    /// Those waiting whose rows may hide a problem (`doubtful(_:kind:…)`):
+    /// taken before the rest of their priority.
+    private(set) var doubts: Set<KubeMarkedMember.ID> = []
+    /// How many of each priority were taken since made: the tests' count
+    /// (M2's moves among them), never a clock's.
+    private(set) var takenBy: [Priority: Int] = [:]
 
     var isEmpty: Bool { pending.isEmpty }
 
-    mutating func ask(_ id: KubeMarkedMember.ID, _ priority: Priority, changed at: Date? = nil) {
+    /// `doubtful`: what its row says now (`doubtful(_:kind:columns:changed:now:)`)
+    /// — asked again, the newest row decides.
+    mutating func ask(_ id: KubeMarkedMember.ID, _ priority: Priority, changed at: Date? = nil, doubtful: Bool = false) {
         pending[id] = min(pending[id] ?? priority, priority)
         if let at { changed[id] = at }
+        if doubtful { doubts.insert(id) } else { doubts.remove(id) }
     }
 
-    /// How many were taken in the minute before `now`.
-    func takenInLastMinute(now: Date) -> Int { taken.filter { now.timeIntervalSince($0) < 60 }.count }
+    /// Whether a row may hide a problem its object would say: not Healthy
+    /// by its cells — in progress, or what no cell says (a Rollout's phase,
+    /// a CronJob's last run, an `<unknown>` HPA's metrics) —, or a workload
+    /// Argo CD changed (else made: `changed`) in the last hour — a single
+    /// replica stuck behind its old pod reads `1/1`, a paused rollout its
+    /// last counts. A Deployment scaled to 0 long ago is Healthy by its
+    /// cells: never one.
+    static func doubtful(_ row: KubeRow, kind: KubeMarkedKind, columns: [KubeColumn], changed: Date?, now: Date) -> Bool {
+        if KubeMarkedHealth.row(kind, row, columns: columns, marks: row.marks, now: now)?.status != .healthy { return true }
+        guard kind.cellsMayHide, let changed else { return false }
+        return now.timeIntervalSince(changed) < recentlyChanged
+    }
 
-    /// Up to 20 whose last GET is 15 s behind, M2 first, then the tick's,
-    /// then the settle by its order — within the minute's 60.
-    mutating func take(now: Date, limit: Int = perFlush) -> [KubeMarkedMember.ID] {
-        taken.removeAll { now.timeIntervalSince($0) >= 60 }
-        let room = min(limit, Self.perMinute - taken.count)
+    /// Up to 20 whose last GET is 15 s behind and that aren't being read
+    /// (`busy`: taken, waiting their turn or in flight), M2 first, then the
+    /// tick's, then — `through` the settle — the settle by its order (what
+    /// may be a problem before the rest, each the most recently changed
+    /// first), within the places the context's minute has free.
+    mutating func take(
+        now: Date, limit: Int = perFlush, busy: Set<KubeMarkedMember.ID> = [], through: Priority = .settle, minute: inout KubeMarkedMinute
+    ) -> [KubeMarkedMember.ID] {
+        minute.prune(now: now)
+        let room = min(limit, Self.perMinute - minute.held(at: now))
         guard room > 0 else { return [] }
-        let due = pending.filter { id, _ in lastAsked[id].map { now.timeIntervalSince($0) >= Self.perObject } ?? true }
+        let due = pending.filter { id, priority in priority <= through && !busy.contains(id) && minute.due(id, now: now) }
         let chosen = due.sorted { a, b in
             if a.value != b.value { return a.value < b.value }
+            let doubted = doubts.contains(a.key)
+            if doubted != doubts.contains(b.key) { return doubted }
             let first = changed[a.key] ?? .distantPast
             let second = changed[b.key] ?? .distantPast
             return first != second ? first > second : a.key < b.key
         }
-        .prefix(room).map(\.key)
-        for id in chosen {
+        .prefix(room)
+        for (id, priority) in chosen {
+            takenBy[priority, default: 0] += 1
             pending[id] = nil
             changed[id] = nil
-            lastAsked[id] = now
-            taken.append(now)
+            doubts.remove(id)
+            minute.took(id, at: now)
         }
-        return chosen
+        return chosen.map(\.key)
     }
 
     mutating func forget(_ id: KubeMarkedMember.ID) {
         pending[id] = nil
         changed[id] = nil
+        doubts.remove(id)
     }
 
-    /// Nothing waiting; what was taken in the last minute and when each
-    /// object was last read still count (the section hidden and shown
-    /// again, another scope: the minute's 60 aren't given again).
+    /// Nothing waiting; the minute is the context's (`KubeMarkedMinute`):
+    /// what was taken in it and when each object was last read still count
+    /// (the section hidden and shown again, another scope: its 60 aren't
+    /// given again).
     mutating func forgetPending() {
         pending = [:]
         changed = [:]
+        doubts = []
     }
 
     /// Why a marked object is read by a GET now; nil when it isn't. `old`:
