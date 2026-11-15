@@ -38,12 +38,33 @@ extension TerminalWindowController {
         applyTabThemes()
     }
 
-    /// When the tabs, the selection, a group's theme or the rules change.
+    /// When the tabs, the selection, a group's theme or the rules change —
+    /// and a tab's folder: its shell's, its agent's or the one attached
+    /// (a folder rule follows where it works), or its panes (a split's new
+    /// pane takes its tab's theme). The poll that walked the selected tab
+    /// every 2 s did both of the last, only for that tab.
     func wireTabThemes() {
         store.$tabs
             .combineLatest(store.$selectedID)
             .receive(on: DispatchQueue.main)
             .sink { [weak self] _ in self?.applyTabThemes() }
+            .store(in: &cancellables)
+        store.$tabs
+            .map { tabs in
+                Publishers.MergeMany(
+                    tabs.map { tab in
+                        tab.$workingDirectory.map { _ in () }.merge(
+                            with: tab.$agentDirectory.map { _ in () }, tab.$attachedCheckout.map { _ in () }, tab.$splits.map { _ in () })
+                    }
+                )
+                // Each says its value as it is subscribed to: the tabs'
+                // change itself is the sink above's.
+                .dropFirst(tabs.count * 4)
+            }
+            .switchToLatest()
+            // @Published says before it changes: read after.
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] in self?.applyTabThemes() }
             .store(in: &cancellables)
         store.$groups
             .map { groups in Publishers.MergeMany(groups.map { $0.$theme.map { _ in () } }).prepend(()) }

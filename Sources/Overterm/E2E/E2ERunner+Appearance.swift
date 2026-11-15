@@ -257,6 +257,18 @@ extension E2ERunner {
         await waitForPrompt()
         if let tab = app.store.selected {
             check("a tab in a folder a rule names takes its theme", await eventually(5) { tab.terminal.themeName == "Nord" }, tab.terminal.themeName ?? "none")
+            // A split's new pane takes it as it is made, and the rule
+            // follows the shell out of the folder — as they change, where a
+            // poll walked the selected tab every 2 s.
+            app.splitRight(nil)
+            check(
+                "a split's new pane takes it too", await eventually(3) { tab.terminals.count == 2 && tab.terminals.allSatisfy { $0.themeName == "Nord" } },
+                tab.terminals.map { $0.themeName ?? "none" }.joined(separator: ", "))
+            await runAndExpect(
+                "cd \(scratch.path) && echo out > \(out("left-staging").path)", file: out("left-staging"), content: "out", "its shell leaves the folder")
+            check(
+                "and the folder's theme goes with it", await eventually(3) { tab.terminals.allSatisfy { $0.themeName == nil } },
+                tab.terminals.map { $0.themeName ?? "none" }.joined(separator: ", "))
         }
         settings.set("appearance.folderThemes", nil)
         check("a rule gone, so is the theme", await eventually(5) { self.app.store.selected?.terminal.themeName == nil })

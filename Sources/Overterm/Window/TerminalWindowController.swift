@@ -1877,9 +1877,6 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 let shell = tab.workingDirectory.map { FileTreeModel.treeRoot(for: $0) }
                 let following = directory.flatMap { FileTreeModel.treeRoot(for: $0) == shell ? nil : $0 }
                 if tab.agentDirectory != following { tab.agentDirectory = following }
-                // A folder rule follows where the tab works, and a split's
-                // new pane takes its tab's theme.
-                self.applyTabThemes()
                 guard readPorts else { return }
                 let ports = await ListeningPorts.of(pids)
                 if tab.ports != ports { tab.ports = ports }
