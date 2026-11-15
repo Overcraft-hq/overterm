@@ -2720,6 +2720,23 @@ extension E2ERunner {
 }
 
 extension E2ERunner {
+    /// Waits until the fake has recorded nothing `matching` for `quiet`
+    /// seconds, `within` at most: what was written before a reading stopped
+    /// lands first (kubectl proxy passes it on after the stop), so a check
+    /// that nothing more is asked counts only what comes after. Whether it
+    /// went quiet.
+    @discardableResult
+    func quietFake(_ fake: FakeKubeAPI, for quiet: TimeInterval, within: TimeInterval, _ matching: (FakeKubeAPI.Request) -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(within)
+        while Date() < deadline {
+            let last = fake.timedRequests.last { matching($0.request) }?.at ?? .distantPast
+            let since = Date().timeIntervalSince(last)
+            if since >= quiet { return true }
+            await pause(quiet - since)
+        }
+        return false
+    }
+
     /// A container port's button as read off the window: "8080 (http)" on
     /// one line, or the number and its name side by side on one row (OCR
     /// splits them at times, at the label's spacing). What was seen of

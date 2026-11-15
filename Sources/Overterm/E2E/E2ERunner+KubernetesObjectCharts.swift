@@ -294,10 +294,15 @@ extension E2ERunner {
         // Hidden: nothing read.
         app.toggleKubernetesPage(nil)
         check("hidden, no usage polled", await eventually(5) { !model.metrics.isPolling })
+        // A read written just before the page hid still crosses kubectl
+        // proxy after it: forgotten only once nothing of the tab's has
+        // come for 300 ms, less than the 500 ms poll — a poll still
+        // running is still caught below.
+        let tabs: (FakeKubeAPI.Request) -> Bool = { $0.path.contains("metrics.k8s.io") || $0.path.contains("/pods") }
+        await quietFake(fake, for: 0.3, within: 5, tabs)
         fake.forgetRequests()
         await pause(1.5)
-        check(
-            "and nothing of the tab's asked", !fake.requests.contains { $0.path.contains("metrics.k8s.io") || $0.path.contains("/pods") }, "\(fake.requests.map(\.path))")
+        check("and nothing of the tab's asked", !fake.requests.contains(where: tabs), "\(fake.requests.map(\.path))")
         app.toggleKubernetesPage(nil)
         page.showTab(.overview)
         page.closeDetail()
