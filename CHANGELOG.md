@@ -9,6 +9,7 @@ version is tagged `v<version>`.
 ## 1.7.0 — 2026-11-14
 
 - Activity (⌥⌘A): every process and every open port on this Mac, by checkout, tab and agent
+- info: Tab Info shows a split tab as a group a pane, what left a pane's terminal under it, and its memory as Activity Monitor's, real memory in the tooltip
 
 ## 1.6.0 — 2026-11-13
 

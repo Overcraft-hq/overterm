@@ -67,14 +67,26 @@ struct TabInfoView: View {
                 Text("Running").font(.system(size: ChromeMetrics.text(11), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.dimText)
                 Spacer()
                 Text("CPU").frame(width: 60, alignment: .trailing)
+                    .help("Share of one core since the last sample: 100% is a whole core, as htop counts")
                 Text("Memory").frame(width: 80, alignment: .trailing)
+                    .help("What Activity Monitor calls Memory: the footprint. Real memory (RSS) is in each row's tooltip")
             }
             .font(.system(size: ChromeMetrics.text(11)))
             .foregroundStyle(theme.dimText)
+            let rows = model.rows
             ScrollView {
                 VStack(spacing: 0) {
-                    ForEach(rows, id: \.node.id) { row in
-                        ProcessRow(node: row.node, depth: row.depth, theme: theme)
+                    if rows.isEmpty {
+                        Text(model.hasRead ? "Nothing runs here" : "Reading…").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.dimText)
+                            .frame(maxWidth: .infinity, alignment: .leading).frame(height: ChromeMetrics.row(20))
+                    }
+                    ForEach(rows) { row in
+                        switch row.kind {
+                        case .pane(let label):
+                            PaneLabelRow(label: label, theme: theme)
+                        case .process(let node, let depth, let isShell, let leftTerminal):
+                            ProcessRow(node: node, depth: depth, isShell: isShell, leftTerminal: leftTerminal, theme: theme)
+                        }
                     }
                 }
             }
@@ -84,8 +96,9 @@ struct TabInfoView: View {
             HStack {
                 Text("Total").font(.system(size: ChromeMetrics.text(12), weight: .semibold))
                 Spacer()
-                Text(Self.cpu(model.totalCPU)).frame(width: 60, alignment: .trailing)
-                Text(Self.memory(model.totalMemory)).frame(width: 80, alignment: .trailing)
+                Text(verbatim: Self.cpu(model.totalCPU)).frame(width: 60, alignment: .trailing)
+                Text(verbatim: Self.memory(model.totalFootprint)).frame(width: 80, alignment: .trailing)
+                    .help("Real memory (RSS): \(Self.memory(model.totalMemory))")
             }
             .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
         }
@@ -251,15 +264,8 @@ struct TabInfoView: View {
         return formatter.string(from: seconds) ?? ""
     }
 
-    /// The tree flattened with depths, for an indented list.
-    private var rows: [(node: ProcessNode, depth: Int)] {
-        func walk(_ nodes: [ProcessNode], _ depth: Int) -> [(ProcessNode, Int)] {
-            nodes.flatMap { [($0, depth)] + walk($0.children, depth + 1) }
-        }
-        return walk(model.processes, 0)
-    }
-
-    nonisolated static func cpu(_ percent: Double) -> String { String(format: "%.0f%%", percent) }
+    /// "—" for none yet: a first sample has no rate, never 0 (7.5).
+    nonisolated static func cpu(_ percent: Double?) -> String { percent.map { String(format: "%.0f%%", $0) } ?? "—" }
 
     /// "0 KB", never "Zero KB" (the formatter's default for 0).
     nonisolated static func memory(_ bytes: UInt64) -> String {
@@ -273,31 +279,72 @@ struct TabInfoView: View {
 private struct ProcessRow: View {
     let node: ProcessNode
     let depth: Int
+    /// The pane's shell: its group's root, dimmed.
+    let isShell: Bool
+    /// It carries the pane's tag outside its tree: it left its terminal.
+    let leftTerminal: Bool
     @ObservedObject var theme: ChromeTheme
 
     var body: some View {
         HStack(spacing: 4) {
-            if depth > 0 {
-                Text("└").foregroundStyle(theme.dimText).padding(.leading, CGFloat(depth - 1) * 14)
+            if depth > 0, leftTerminal {
+                Text(verbatim: "↗").foregroundStyle(theme.dimText).padding(.leading, CGFloat(depth - 1) * 14)
+                    .help("Left its terminal: it carries the pane's tag outside its tree (nohup, disown)")
+            } else if depth > 0 {
+                Text(verbatim: "└").foregroundStyle(theme.dimText).padding(.leading, CGFloat(depth - 1) * 14)
             }
-            Text(node.name).lineLimit(1)
-            Text(String(node.pid)).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText)
+            Text(verbatim: node.name).lineLimit(1).foregroundStyle(isShell ? theme.dimText : theme.text)
+            Text(verbatim: String(node.pid)).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText)
             Spacer(minLength: 8)
-            Text(TabInfoView.cpu(node.cpuPercent))
-                .foregroundStyle(node.cpuPercent >= 50 ? TabStatusStyle.signal : theme.text)
+            Text(verbatim: TabInfoView.cpu(node.cpuPercent))
+                .foregroundStyle((node.cpuPercent ?? 0) >= 50 ? TabStatusStyle.signal : (isShell ? theme.dimText : theme.text))
                 .frame(width: 60, alignment: .trailing)
-            Text(TabInfoView.memory(node.memory)).frame(width: 80, alignment: .trailing)
+            Text(verbatim: TabInfoView.memory(node.footprint)).frame(width: 80, alignment: .trailing)
+                .foregroundStyle(isShell ? theme.dimText : theme.text)
+                .help(TabInfoView.memoryHelp(for: node))
         }
         .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
         .frame(height: ChromeMetrics.row(20))
         .help(TabInfoView.help(for: node))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("tabInfo.process")
+    }
+}
+
+/// A split tab's pane, over its group: what it runs, else its title.
+private struct PaneLabelRow: View {
+    let label: String
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "rectangle.split.2x1").font(.system(size: ChromeMetrics.text(10)))
+            Text(verbatim: label).lineLimit(1).truncationMode(.middle)
+            Spacer()
+        }
+        .font(.system(size: ChromeMetrics.text(11), weight: .semibold))
+        .foregroundStyle(theme.dimText)
+        .frame(height: ChromeMetrics.row(20))
+        .accessibilityIdentifier("tabInfo.pane")
     }
 }
 
 extension TabInfoView {
-    /// A row's tooltip: its command as it was masked when read (9.3) — a
-    /// password on a command line is never a hover away on a screen share.
+    /// A row's tooltip (6.12): its command as it was masked when read
+    /// (9.3) — a password on a command line is never a hover away on a
+    /// screen share — then where it works, when the census read it, and
+    /// when it started.
     nonisolated static func help(for node: ProcessNode) -> String {
-        node.maskedCommand.isEmpty ? node.name : node.maskedCommand
+        var lines = [node.maskedCommand.isEmpty ? node.name : node.maskedCommand]
+        if let folder = node.workingDirectory { lines.append((folder as NSString).abbreviatingWithTildeInPath) }
+        let started = Date(timeIntervalSince1970: Double(node.identity.start) / 1_000_000)
+        lines.append("Started " + DateFormatter.localizedString(from: started, dateStyle: .short, timeStyle: .medium))
+        return lines.joined(separator: "\n")
+    }
+
+    /// The memory cell's: the footprint shown is Activity Monitor's Memory;
+    /// real memory, resident, beside it.
+    nonisolated static func memoryHelp(for node: ProcessNode) -> String {
+        "Memory (footprint): \(memory(node.footprint)) · real memory (RSS): \(memory(node.memory))"
     }
 }

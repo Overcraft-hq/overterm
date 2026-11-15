@@ -2697,7 +2697,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     func showInfo(for tab: Tab) {
         infoPopover?.close()
         guard let strip = tabBarView, let theme, let frame = store.tabFrames[tab.id] else { return }
-        let model = TabInfoModel(tab: tab, inspector: inspector, claudeReader: claudeReader)
+        // A split tab's groups are labelled by what each pane runs.
+        let model = TabInfoModel(tab: tab, claudeReader: claudeReader) { [weak self] pane in self?.blocks(of: pane).ledger.running?.command }
         let popover = NSPopover()
         popover.behavior = .transient
         // Its contents are painted in the terminal's colours; its controls

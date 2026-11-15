@@ -948,7 +948,7 @@ extension E2ERunner {
         check("drawn in the tab's pane header", await shownText(15) { $0.contains(":\(local)") && $0.contains("web-8k2") } != nil)
         app.showKubernetesPage()
         if let tab {
-            let info = TabInfoModel(tab: tab, inspector: ProcessInspector(), claudeReader: ClaudeUsageReader())
+            let info = TabInfoModel(tab: tab, claudeReader: ClaudeUsageReader())
             await info.refreshPorts()
             check("Tab Info lists it", info.ports.contains { $0.port == local && $0.forward?.pod == "web-8k2" }, "\(info.ports)")
             // Closing the tab asks, even when Settings says only when something runs.

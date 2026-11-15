@@ -202,6 +202,42 @@ final class ActivityProbeTests: XCTestCase {
         XCTAssertFalse(fullSteady.isEmpty)
     }
 
+    /// The old API on the census (7.8): a tab's tree answered from a
+    /// snapshot a tick old at most — what the poll's panes, the overview's
+    /// tabs × panes and Tab Info's ask between ticks, where each call
+    /// rescanned every process (6.3–8.9 ms, 21–22 ms the first time with
+    /// a tag, 2.2) — one that ticks, cold and steady, and the children of
+    /// a process from one `KERN_PROC_ALL`, where the walk took a sysctl a
+    /// pid (16–27 ms). The test stands for a pane's `login`, eight sleeping
+    /// children of its own its processes; counts and times only.
+    func testTheInspectorsLookups() throws {
+        var children: [TestChild] = []
+        defer { children.forEach { $0.stop() } }
+        for _ in 0..<8 { children.append(try TestChild("/bin/sleep", ["120"])) }
+        let census = ActivitySampler(kernel: kernel)
+        let inspector = ProcessInspector(census: census)
+        let (cold, coldTime) = timed { inspector.tree(root: getpid(), tag: nil) }
+        let ticks = census.latest?.tick ?? 0
+        var answered: [UInt64] = []
+        for _ in 0..<200 { answered.append(timed { inspector.tree(root: getpid(), tag: nil) }.1) }
+        XCTAssertEqual(census.latest?.tick, ticks, "answered with no new scan")
+        let ticking = ProcessInspector(census: census, freshness: 0)
+        var steady: [UInt64] = []
+        for _ in 0..<10 {
+            Thread.sleep(forTimeInterval: 0.5)
+            steady.append(timed { ticking.tree(root: getpid(), tag: nil) }.1)
+        }
+        var walks: [UInt64] = []
+        for _ in 0..<20 { walks.append(timed { ProcessInspector.children(of: getpid()) }.1) }
+        report(
+            String(
+                format: "inspector: cold %.2f ms (%d ticks, %d nodes); answered from a fresh snapshot median %.1f µs, max %.1f µs; "
+                    + "a lookup that ticks, steady, median %.2f ms, max %.2f ms; children of a process median %.2f ms",
+                Double(coldTime) / 1e6, ticks, cold.flatMap(\.flattened).count, Double(median(answered)) / 1e3, Double(answered.max() ?? 0) / 1e3,
+                Double(median(steady)) / 1e6, Double(steady.max() ?? 0) / 1e6, Double(median(walks)) / 1e6))
+        XCTAssertEqual(cold.flatMap(\.flattened).filter { node in children.contains { $0.identity == node.identity } }.count, 8)
+    }
+
     /// The light tick's term a member (7.3: "≈5 µs a member", which D-5's
     /// comparison relies on): one pane whose tree is the test's own
     /// children, each holding what an MCP server or a dev server holds — a

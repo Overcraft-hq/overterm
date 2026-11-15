@@ -15,8 +15,9 @@ struct ProcessNode: Identifiable, Equatable {
     /// programs take in places of their own, URLs' passwords, tokens. The
     /// raw words are never kept: a tooltip over a screen share showed them.
     let maskedCommand: String
-    /// Share of one core over the last sampling interval (100 = one full core).
-    var cpuPercent: Double
+    /// Share of one core over the last sampling interval (100 = one full
+    /// core); nil for a first sample: "—", never 0 (7.5).
+    var cpuPercent: Double?
     /// What Activity Monitor calls Memory: the footprint
     /// (`ri_phys_footprint`), what the process costs the Mac — compressed
     /// and swapped pages counted, shared ones not.
@@ -32,7 +33,11 @@ struct ProcessNode: Identifiable, Equatable {
     /// "pid:start": a reused pid is another process, another row.
     var id: String { identity.id }
 
-    var totalCPU: Double { cpuPercent + children.reduce(0) { $0 + $1.totalCPU } }
+    /// The CPU of it and every descendant that has a rate; nil when none has.
+    var totalCPU: Double? {
+        let rates = flattened.compactMap(\.cpuPercent)
+        return rates.isEmpty ? nil : rates.reduce(0, +)
+    }
     var totalMemory: UInt64 { memory + children.reduce(0) { $0 + $1.totalMemory } }
     var totalFootprint: UInt64 { footprint + children.reduce(0) { $0 + $1.totalFootprint } }
 
@@ -55,8 +60,8 @@ struct ProcessNode: Identifiable, Equatable {
 /// tick old, where each call rescanned all 1,300 processes, and every
 /// pane's CPU baselines live with their processes, where each call kept
 /// only its own tree's — a split tab read pane by pane read 0% (2.4 item
-/// 1). Its numbers are the census's: CPU since the last sample (a first
-/// one 0 here), the footprint, real memory; argv masked as it was read.
+/// 1). Its numbers are the census's: CPU since the last sample (none for
+/// a first one), the footprint, real memory; argv masked as it was read.
 final class ProcessInspector: @unchecked Sendable {
     static let tagVariable = "OVERTERM_TAB_ID"
 
@@ -130,25 +135,35 @@ final class ProcessInspector: @unchecked Sendable {
     /// waited for when the census hasn't read it yet: the poll, Sessions and
     /// a drop read it at once (`ProcessFolders.folder(waitingFor:now:)`).
     func nodes(_ members: [ActivityProcessID], in snapshot: ActivitySnapshot) -> [ProcessNode] {
+        Self.nodes(members, in: snapshot) { identity, isAgent in
+            guard isAgent, case .path(let path)? = census.folders.folder(waitingFor: identity, now: census.kernel.uptime()) else { return nil }
+            return path
+        }
+    }
+
+    /// `members` as nodes from what `snapshot` read of them, assembled: a
+    /// folder the snapshot didn't read asked of `folder` (with whether the
+    /// process is an agent), never waited for by default. Pure.
+    nonisolated static func nodes(
+        _ members: [ActivityProcessID], in snapshot: ActivitySnapshot, folder: (ActivityProcessID, Bool) -> String? = { _, _ in nil }
+    ) -> [ProcessNode] {
         var nodes: [pid_t: ProcessNode] = [:]
         for identity in members {
             guard let process = snapshot.table.process(identity) else { continue }
             let facts = snapshot.facts[identity]
             let name = snapshot.name(of: identity) ?? process.shortName
             let command = facts?.command ?? ""
-            var folder: String?
+            var directory: String?
             if case .path(let path)? = facts?.folder {
-                folder = path
-            } else if Agent.of(name: name, command: command) != nil,
-                case .path(let path)? = census.folders.folder(waitingFor: identity, now: census.kernel.uptime())
-            {
-                folder = path
+                directory = path
+            } else {
+                directory = folder(identity, Agent.of(name: name, command: command) != nil)
             }
             nodes[identity.pid] = ProcessNode(
-                identity: identity, parent: process.parentPID, name: name, maskedCommand: command, cpuPercent: facts?.rates?.cpuPercent ?? 0,
-                footprint: facts?.usage?.footprint ?? 0, memory: facts?.usage?.residentSize ?? 0, workingDirectory: folder)
+                identity: identity, parent: process.parentPID, name: name, maskedCommand: command, cpuPercent: facts?.rates?.cpuPercent,
+                footprint: facts?.usage?.footprint ?? 0, memory: facts?.usage?.residentSize ?? 0, workingDirectory: directory)
         }
-        return Self.assemble(nodes)
+        return assemble(nodes)
     }
 
     /// `parent`'s direct children with their start times (µs) and command

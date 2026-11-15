@@ -90,6 +90,23 @@ final class SurfaceProcesses {
     /// Whether a surface waits for its `login`.
     var hasWaiting: Bool { entries.contains { $0.login == nil && $0.terminal?.hasSurface == true } }
 
+    /// Pairs the surfaces still waiting from the app's children listed now
+    /// — off the main thread: a read of the whole table never runs on it
+    /// (docs/design/activity/analysis.md, 7.7) — the main actor pairing
+    /// what was listed, as `TerminalView.lookAtProgram` does; the census is
+    /// told when a pairing changed. Nothing is read while none waits.
+    func pairWaiting(kernel: some ActivityKernel = LiveActivityKernel()) async {
+        guard hasWaiting else { return }
+        let app = getpid()
+        let (listedAt, children) = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async { @Sendable in
+                let listedAt = kernel.uptime()
+                continuation.resume(returning: (listedAt, ProcessInspector.children(of: app, kernel: kernel)))
+            }
+        }
+        if pair(children, listedAt: listedAt, kernel: kernel) { monitor?.contextChanged() }
+    }
+
     /// Pairs the surfaces still waiting with `children` — the app's, oldest
     /// first, listed at `listedAt` (`CLOCK_UPTIME_RAW`, ns): a census's,
     /// perhaps a tick old; whether a pairing changed. A pairing is made

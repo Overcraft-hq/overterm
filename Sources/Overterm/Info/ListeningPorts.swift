@@ -90,6 +90,31 @@ enum ListeningPorts {
         return false
     }
 
+    /// The listening TCP sockets of `members`, as the census's socket walk
+    /// read them for `snapshot` (docs/design/activity/analysis.md, 7.6): a
+    /// filter over the scan, no lsof. A process's v4 and v6 sockets on one
+    /// port are one entry, as `parse` makes them; the bound address as lsof
+    /// prints it (`*`, `127.0.0.1`, `[::1]`).
+    static func of(_ members: [ActivityProcessID], in snapshot: ActivitySnapshot) -> [ListeningPort] {
+        var result: [ListeningPort] = []
+        var seen = Set<String>()
+        for identity in members {
+            guard let facts = snapshot.facts[identity], let sockets = facts.sockets else { continue }
+            for record in sockets.records where record.isListening {
+                guard seen.insert("\(identity.pid):\(record.localPort)").inserted else { continue }
+                result.append(ListeningPort(pid: identity.pid, process: facts.name, port: Int(record.localPort), address: address(of: record)))
+            }
+        }
+        return result.sorted { ($0.port, $0.pid) < ($1.port, $1.pid) }
+    }
+
+    /// A socket's bound address as lsof prints it.
+    static func address(of record: SocketRecord) -> String {
+        guard let local = record.localAddress, !local.isWildcard else { return "*" }
+        if case .v6 = local { return "[\(local.description)]" }
+        return local.description
+    }
+
     /// The listening TCP sockets of `pids`, each with its process's start
     /// time read right after the listing, off the main thread as it is.
     static func of(_ pids: [pid_t]) async -> [ListeningPort] {

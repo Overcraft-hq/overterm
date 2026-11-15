@@ -3211,7 +3211,11 @@ final class E2ERunner {
         time.sleep(60)
         """.write(to: server, atomically: true, encoding: .utf8)
         func readPort() -> Int? { (try? String(contentsOf: portFile, encoding: .utf8)).flatMap { Int($0) } }
-        await run("python3 \(server.path) &", timeout: 10) { readPort() != nil }
+        // Its command line carries a password, invented and made here, never
+        // one contiguous string in the source: Tab Info's tooltip must not
+        // show it (2.4 item 8).
+        let planted = ["acme", "info", "sentinel", String(97_531)].joined(separator: "-")
+        await run("python3 \(server.path) --token=\(planted) &", timeout: 10) { readPort() != nil }
         let port = readPort()
         check("a dev server starts in the tab", port != nil)
         // A command line with a fake password in it, never typed: a script
@@ -3235,16 +3239,23 @@ final class E2ERunner {
         guard let model = app.infoModel else { return check("a model", false) }
         let listed = await eventually { model.processes.flatMap(\.flattened).contains { $0.maskedCommand.hasPrefix("sleep 61") } }
         let all = model.processes.flatMap(\.flattened)
-        // Its own sleep's pid and start time, read while it is still its
-        // shell's child: signalled at the end only while it is that process.
-        let sleeper = all.first { $0.maskedCommand.hasPrefix("sleep 61") }.flatMap { node in
-            ProcessInspector.kinfo(node.pid).flatMap { $0.parent == node.parent ? (pid: node.pid, start: $0.start) : nil }
-        }
         // Counts only: the tab runs what the user's shell config starts too.
         check("its background job is listed", listed, "\(all.count) processes, \(all.filter { $0.name == "sleep" }.count) sleeps")
         check("under its shell", model.processes.contains { ["zsh", "bash", "fish", "sh"].contains($0.name) && $0.flattened.contains { $0.maskedCommand.hasPrefix("sleep 61") } })
         check("the other tab's job is not", !all.contains { $0.maskedCommand.hasPrefix("sleep 62") })
-        check("memory is measured", model.totalMemory > 0)
+        // Memory is the footprint, what Activity Monitor shows; real memory
+        // is in the tooltip.
+        check(
+            "memory is shown, as Activity Monitor counts it",
+            model.totalFootprint > 0 && all.contains { $0.maskedCommand.hasPrefix("sleep 61") && $0.footprint > 0 },
+            "footprint \(model.totalFootprint)")
+        let servers = await eventually(8) { model.processes.flatMap(\.flattened).contains { $0.maskedCommand.contains("server.py") } }
+        let serverNodes = model.processes.flatMap(\.flattened).filter { $0.maskedCommand.contains("server.py") }
+        check(
+            "the server's tooltip masks the password on its command line",
+            servers && serverNodes.allSatisfy { TabInfoView.help(for: $0).contains("--token=\(Secrets.credentialMask)") }
+                && !serverNodes.contains { TabInfoView.help(for: $0).contains(planted) || $0.maskedCommand.contains(planted) },
+            "\(serverNodes.count) server processes")
         check("the location is the tab's directory", await eventually { model.location?.directory == first.workingDirectory })
         if let port {
             let shown = await eventually(8) { model.ports.contains { $0.port == port } }
@@ -3292,10 +3303,50 @@ final class E2ERunner {
         await eventually(2) { self.app.infoPopover == nil }
         check("closing it stops the refresh", app.infoModel == nil)
         await backgroundTabCPU(first: first)
-        // Leave nothing of its own behind, each by its pid while that is
-        // still its process — never another sleep the tab runs; the typed
-        // `kill %1` is its shell's own.
-        if let sleeper, ProcessInspector.kinfo(sleeper.pid)?.start == sleeper.start { kill(sleeper.pid, SIGTERM) }
+        check("and the census's ticks, Tab Info's reader gone", await eventually(5) { !ActivityMonitor.shared.isTicking })
+
+        // A split tab: a group a pane, each pane's busy child reading its
+        // CPU — read pane by pane, each pane evicted the other's baselines,
+        // and both read 0% (2.4 item 1).
+        let busy = out("busy.sh")
+        // It ends itself after 15 s of CPU, whatever happens to the run.
+        try? "ulimit -c 0; ulimit -t 15; while :; do :; done\n".write(to: busy, atomically: true, encoding: .utf8)
+        func busyIn(_ pane: TerminalView) -> Bool {
+            ProcessInspector().tree(root: SurfaceProcesses.shared.loginPID(of: pane), tag: nil).flatMap(\.flattened).contains {
+                $0.maskedCommand.contains("busy.sh")
+            }
+        }
+        let leftPane = first.terminal
+        check("a busy loop in the first pane", await run("sh \(busy.path) &", timeout: 10) { busyIn(leftPane) })
+        app.splitRight(nil)
+        let rightPane = first.terminals.count == 2 ? first.terminals[1] : nil
+        if let rightPane {
+            await eventually(2) { self.window.firstResponder === rightPane }
+            check("and one in its neighbour", await run("sh \(busy.path) &", timeout: 10) { busyIn(rightPane) })
+        } else {
+            check("Split Right makes a second pane", false)
+        }
+        app.showInfo(for: first)
+        guard let split = app.infoModel else { return check("Tab Info on the split tab", false) }
+        func busyNodes(_ group: TabInfoModel.PaneGroup) -> [ProcessNode] {
+            group.processes.flatMap(\.flattened).filter { $0.maskedCommand.contains("busy.sh") }
+        }
+        let grouped = await eventually(10) { split.panes.count == 2 && split.panes.allSatisfy { !busyNodes($0).isEmpty } }
+        check(
+            "a group a pane, each with its own busy loop", grouped && split.rows.filter { if case .pane = $0.kind { true } else { false } }.count == 2,
+            "\(split.panes.count) groups")
+        let measured = await eventually(15) { split.panes.count == 2 && split.panes.allSatisfy { busyNodes($0).contains { ($0.cpuPercent ?? 0) > 0 } } }
+        check(
+            "both panes' busy loops read their CPU", measured,
+            split.panes.map { group in busyNodes(group).map { TabInfoView.cpu($0.cpuPercent) }.joined(separator: ",") }.joined(separator: " | "))
+        let busyIdentities = split.panes.flatMap(busyNodes).map(\.identity)
+        app.showSelectedTabInfo(nil)
+        await eventually(2) { self.app.infoPopover == nil }
+
+        // Leave nothing behind: what this scenario started, each found in its
+        // own panes and its identity read again before the signal.
+        let started = all.filter { $0.maskedCommand.hasPrefix("sleep 61") || $0.maskedCommand.contains("server.py") }.map(\.identity) + busyIdentities
+        for identity in started where ProcessInspector.kinfo(identity.pid)?.start == identity.start { kill(identity.pid, SIGTERM) }
         if let perl, ProcessInspector.kinfo(perl.pid)?.start == perl.start { kill(perl.pid, SIGTERM) }
         for tab in app.store.tabs {
             tab.terminal.insertText("kill %1 2>/dev/null")
@@ -3826,6 +3877,13 @@ final class E2ERunner {
             }
             // A count: the panes run what the user's shell config starts too.
             check("Tab Info lists every pane's processes", both, "\(model.processes.flatMap(\.flattened).count) processes")
+            // A group a pane: each pane's job under its own.
+            func job(_ index: Int, _ command: String) -> Bool {
+                model.panes.indices.contains(index) && model.panes[index].processes.flatMap(\.flattened).contains { $0.maskedCommand.hasPrefix(command) }
+            }
+            check(
+                "a group a pane, each pane's job in its own", model.panes.map(\.id) == tab.terminals.map(\.processTag) && job(0, "sleep 71") && job(1, "sleep 72"),
+                model.panes.map { "\($0.processes.flatMap(\.flattened).count)" }.joined(separator: " | "))
             // And measures them, though it reads the panes one after the
             // other: a read once kept only its own pane's CPU baselines, and
             // every pane's processes read 0%.

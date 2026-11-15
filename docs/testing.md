@@ -428,15 +428,30 @@ value, a path or an address of a process that isn't the test's.
   kernel. The fake's clock moves only when told — a call made to cost
   time or held (`FakeActivityKernel.onCall`, `CallGate`) — so nothing
   waits on a moment.
+- `ProcessInspectorTests`: a tab's tree a lookup in the census — a split
+  tab's two panes asked for in turn both reading their CPU, no new scan
+  while a snapshot is a tick old, a tag alone or a root no pane has, a
+  setuid child, one running as the user only for now and a zombie left
+  out of a tree (Tab Info's own nodes name them), an agent's folder at
+  once, a reused pid inheriting nothing, a command and
+  its tooltip masked as it is read —, then the test's own children: a
+  tree, a nohup'd python found by its tag among every process's markers,
+  two busy roots read in turn.
 - `SurfaceProcessesTests`: which `login` is whose, stand-in surfaces over
   a fake Mac — a list a tick old never pairs a new pane with a closed
   pane's `login` (ended, a zombie, its pid another's since), a surface
   made after a list takes nothing from it, the oldest surface the oldest
-  `login`, a pairing over only with its `login`; the app's children from
-  one read of the table, a zombie `login` left out.
+  `login`, a pairing over only with its `login`, waiting surfaces paired
+  from a list read off the main thread (Tab Info's, as it opens); the
+  app's children from one read of the table, a zombie `login` left out.
 - `TabSuspensionTests`: parents stopped before their children, and what
   Suspend Tab stops read at the press — a lookup that always ticks,
   where the census's other readers answer from a snapshot a tick old.
+- `TabInfoModelTests`: Tab Info over its tab's slice — a split tab a group
+  a pane, each labelled (masked), the shell its dimmed root, what left a
+  terminal under its pane, both panes' busy children's CPU, the
+  footprint, the ports from the census's sockets (no lsof), a snapshot of
+  another tab left alone.
 - `ActivityMonitorTests`: one tick for every reader at the fastest
   cadence, the ticks stopped at the last `unwant` and when a reader goes
   away, an early tick only for a wider want and once for a burst, one-off

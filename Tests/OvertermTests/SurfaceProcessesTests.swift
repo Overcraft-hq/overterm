@@ -58,8 +58,10 @@ final class SurfaceProcessesTests: XCTestCase {
 
     /// A fake Mac's `login`: root's to the kernel's reads, the user's to its
     /// real uid, a child of the fake app.
-    private func login(_ pid: pid_t, start: UInt64, status: Int32 = SRUN, in kernel: FakeActivityKernel) -> (pid: pid_t, start: UInt64, name: String) {
-        let record = FakeActivityKernel.record(pid: pid, start: start, parent: 1000, uid: 0, realUID: 501, status: status, name: "login")
+    private func login(
+        _ pid: pid_t, start: UInt64, status: Int32 = SRUN, parent: pid_t = 1000, in kernel: FakeActivityKernel
+    ) -> (pid: pid_t, start: UInt64, name: String) {
+        let record = FakeActivityKernel.record(pid: pid, start: start, parent: parent, uid: 0, realUID: 501, status: status, name: "login")
         kernel.add(FakeActivityKernel.Process(record: record))
         return (pid: pid, start: start, name: "login")
     }
@@ -142,6 +144,37 @@ final class SurfaceProcessesTests: XCTestCase {
         kernel.remove(1100)
         XCTAssertTrue(surfaces.pair([], listedAt: 300, kernel: kernel), "its login ended: the pairing is over")
         XCTAssertNil(surfaces.login(of: surface))
+    }
+
+    /// Which threads read the fake's table, in order: true for the main one.
+    private final class TableReads: @unchecked Sendable {
+        private let lock = NSLock()
+        private var threads: [Bool] = []
+        func add(onMain: Bool) { lock.withLock { threads.append(onMain) } }
+        var all: [Bool] { lock.withLock { threads } }
+    }
+
+    /// Tab Info pairs its panes as it opens, before its first want, and
+    /// never reads the table on the main thread for it (7.7): the app's
+    /// children are listed off it, the main actor pairing what was listed.
+    /// With nothing waiting, nothing is read.
+    @MainActor func testWaitingSurfacesArePairedFromAListReadOffTheMainThread() async {
+        let kernel = FakeActivityKernel(uid: 501)
+        let app = getpid()
+        kernel.add(FakeActivityKernel.Process(record: FakeActivityKernel.record(pid: app, start: 500, parent: 1, name: "Overterm")))
+        _ = login(1100, start: 1_000, parent: app, in: kernel)
+        let reads = TableReads()
+        kernel.onCall { call in
+            if call == "processes" { reads.add(onMain: Thread.isMainThread) }
+        }
+        let surfaces = SurfaceProcesses()
+        let surface = StandIn()
+        surfaces.register(surface, at: 0)
+        await surfaces.pairWaiting(kernel: kernel)
+        XCTAssertEqual(surfaces.login(of: surface), ActivityProcessID(pid: 1100, start: 1_000))
+        XCTAssertEqual(reads.all, [false], "one read of the table, off the main thread")
+        await surfaces.pairWaiting(kernel: kernel)
+        XCTAssertEqual(reads.all, [false], "none waits: nothing read")
     }
 
     /// The real listing names libghostty's children as sysctl does.
