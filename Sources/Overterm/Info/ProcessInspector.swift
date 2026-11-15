@@ -151,18 +151,17 @@ final class ProcessInspector: @unchecked Sendable {
         return Self.assemble(nodes)
     }
 
-    /// This process's direct children with their start times (µs) and
-    /// command names, oldest first — libghostty's `login` per surface, and
-    /// whatever else the app runs (git, gh).
-    static func children(of parent: pid_t) -> [(pid: pid_t, start: UInt64, name: String)] {
-        allPIDs().compactMap { pid -> (pid_t, UInt64, String)? in
-            guard let proc = kinfoProc(pid), proc.kp_eproc.e_ppid == parent else { return nil }
-            let start = proc.kp_proc.p_starttime
-            // p_comm, from sysctl: readable for root's processes too (login).
-            let name = withUnsafeBytes(of: proc.kp_proc.p_comm) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) }
-            return (pid, UInt64(start.tv_sec) * 1_000_000 + UInt64(start.tv_usec), name)
-        }
-        .sorted { $0.1 < $1.1 }
+    /// `parent`'s direct children with their start times (µs) and command
+    /// names (`p_comm`), oldest first — libghostty's `login` per surface,
+    /// and whatever else the app runs (git, gh). The census's child map
+    /// (7.8, `ProcessTable`), of a table read now: one `KERN_PROC_ALL`
+    /// (0.2–0.3 ms), where this walked every pid with a sysctl each, 16–27
+    /// ms. Now, not a tick old: the pairing and a helper's close count on
+    /// what has just started. A child is one whose parent started no later
+    /// (6.5); a zombie is left out, so a `login` that ended before it was
+    /// paired never pairs (7.10).
+    static func children(of parent: pid_t, kernel: some ActivityKernel = LiveActivityKernel()) -> [(pid: pid_t, start: UInt64, name: String)] {
+        ProcessTable.read(kernel)?.liveChildren(of: parent) ?? []
     }
 
     /// Parent and start time (µs) of any process, root-owned ones included —

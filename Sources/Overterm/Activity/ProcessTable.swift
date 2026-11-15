@@ -55,6 +55,13 @@ struct ProcessTable: Sendable {
         return (childIndexes[identity.pid] ?? []).map { processes[$0] }.sorted { $0.identity < $1.identity }
     }
 
+    /// The children of whatever holds `pid` now, oldest first, as the
+    /// pairing reads them (7.7): pid, start and `p_comm`, a zombie left out.
+    func liveChildren(of pid: pid_t) -> [(pid: pid_t, start: UInt64, name: String)] {
+        guard let parent = process(pid: pid) else { return [] }
+        return children(of: parent.identity).filter { !$0.isZombie }.map { ($0.pid, $0.identity.start, $0.shortName) }
+    }
+
     /// Everything below it, breadth first, at most `limit`.
     func descendants(of identity: ActivityProcessID, limit: Int = 10_000) -> [ActivityProcess] {
         guard process(identity) != nil else { return [] }

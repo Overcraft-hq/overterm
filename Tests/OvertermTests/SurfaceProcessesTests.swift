@@ -22,6 +22,32 @@ final class SurfaceProcessesTests: XCTestCase {
             [ActivityProcessID(pid: 10, start: 9)])
     }
 
+    /// The app's children are the census's child map (docs/design/activity/
+    /// analysis.md, 7.8): one read of the table, oldest first — a zombie
+    /// `login` left out, so the next surface's never shifts onto it (7.10),
+    /// and a process that started before the app did isn't its child, its
+    /// parent's pid taken by the app since.
+    func testTheChildrenAreTheCensussChildMap() {
+        let kernel = FakeActivityKernel(uid: 501)
+        func add(_ pid: pid_t, start: UInt64, parent: pid_t, uid: uid_t = 501, status: Int32 = SRUN, name: String) {
+            kernel.add(
+                FakeActivityKernel.Process(record: FakeActivityKernel.record(pid: pid, start: start, parent: parent, uid: uid, status: status, name: name)))
+        }
+        add(1, start: 1, parent: 0, uid: 0, name: "launchd")
+        add(1000, start: 1_000, parent: 1, name: "Overterm")
+        add(1300, start: 3_000, parent: 1000, uid: 0, name: "login")
+        add(1100, start: 2_000, parent: 1000, uid: 0, name: "login")
+        add(1200, start: 2_500, parent: 1000, uid: 0, status: SZOMB, name: "login")
+        add(1400, start: 3_500, parent: 1000, name: "git")
+        add(900, start: 500, parent: 1000, name: "acme-orphan")
+        let children = ProcessInspector.children(of: 1000, kernel: kernel)
+        XCTAssertEqual(children.map(\.pid), [1100, 1300, 1400])
+        XCTAssertEqual(children.map(\.name), ["login", "login", "git"])
+        XCTAssertEqual(children.map(\.start), [2_000, 3_000, 3_500])
+        XCTAssertEqual(kernel.count("processes"), 1, "one read of the table")
+        XCTAssertEqual(ProcessInspector.children(of: 4242, kernel: kernel).count, 0, "nobody holds the pid")
+    }
+
     // MARK: The pairing
 
     /// A terminal as the pairing sees one: a surface, or none — a unit test

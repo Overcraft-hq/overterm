@@ -213,8 +213,5 @@ struct ActivitySnapshot: Sendable {
     /// actor pairs each surface's `login` with (`SurfaceProcesses`, 7.7). A
     /// zombie is left out: a `login` that ended before it was paired never
     /// pairs (7.10) — listed, the next surface's `login` shifted onto it.
-    func children(ofApp pid: pid_t) -> [(pid: pid_t, start: UInt64, name: String)] {
-        guard let app = table.process(pid: pid) else { return [] }
-        return table.children(of: app.identity).filter { !$0.isZombie }.map { ($0.pid, $0.identity.start, $0.shortName) }
-    }
+    func children(ofApp pid: pid_t) -> [(pid: pid_t, start: UInt64, name: String)] { table.liveChildren(of: pid) }
 }
