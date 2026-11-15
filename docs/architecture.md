@@ -6889,9 +6889,13 @@ naming none only in the binding's namespace, and only "probably". **C**
 `KubeGitOpsMatch.stem` —, against the repository's name, a folder under
 `apps/`, `deploy/`, `k8s/`, `charts/` or `manifests/`, a manifest's name in
 its namespace) and **D** (an image's `org/repo` or last part against the
-remote) are "probably", apart and muted, only when A and B found nothing,
-none past three ("too many to tell"). B lists only where something here
-carries a mark (a bound workload, `KubernetesModel.marksSeen`, the
+remote) are "probably", apart and muted, only when A and B found nothing:
+the apps in the binding's namespace said alone (past three, "too many to
+tell"), the others only counted on a line of their own
+(`MarkedAnswer.elsewhere`: "2 more by name or image in other namespaces:
+…", five namespaces named at most, never listed and never too many to
+tell); with none in the binding's namespace, all said, none past three.
+B lists only where something here carries a mark (a bound workload, `KubernetesModel.marksSeen`, the
 section's apps); on production only once Find What Deploys This is
 pressed; kept five minutes with the cache, whose key now holds what
 discovery said of each tool apart (`KubePanelGitOps.mode(of:)`:
