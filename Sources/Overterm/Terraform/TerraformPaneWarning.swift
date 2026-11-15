@@ -347,6 +347,9 @@ final class TerraformPaneMonitor: ObservableObject {
             processes = [:]
             return
         }
+        // A pane not paired yet is paired from a list read off the main
+        // thread; none is read while every pane is paired.
+        await SurfaceProcesses.shared.pairWaiting()
         var panes: [String: TerminalView] = [:]
         var candidates: [Candidate] = []
         var finished: [FinishedWrite] = []
@@ -354,10 +357,10 @@ final class TerraformPaneMonitor: ObservableObject {
             for tab in controller.store.tabs {
                 guard let checkout = tab.checkoutSource?.root, TerraformCheckouts.shared.hasRoots(checkout) != false else { continue }
                 finished += finishedWrites(in: tab, controller: controller, checkout: checkout)
-                // Paired once (a scan of the app's children), then kept.
+                // Paired above (or by the census), then kept: no scan here.
                 let running = tab.terminals.compactMap { pane -> (TerminalView, CommandBlock?, pid_t)? in
                     let command = controller.blocks(of: pane).ledger.running
-                    guard command != nil || tab.agent != nil, let login = SurfaceProcesses.shared.loginPID(of: pane) else { return nil }
+                    guard command != nil || tab.agent != nil, let login = SurfaceProcesses.shared.pairedLoginPID(of: pane) else { return nil }
                     return (pane, command, login)
                 }
                 guard !running.isEmpty else { continue }

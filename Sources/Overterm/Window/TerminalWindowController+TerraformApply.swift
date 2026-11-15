@@ -261,12 +261,20 @@ extension TerminalWindowController {
         return alert
     }
 
-    /// The terraform writes in these tabs' panes, found now by pid.
+    /// The terraform writes in these tabs' panes, found now by pid — on the
+    /// main thread, since the close is answered now: a deliberate fresh
+    /// read at a decision point (CLAUDE.md, One census per tick), the
+    /// closing panes' trees alone. A pane not paired yet is paired from the
+    /// latest census first (microseconds); only one younger than that
+    /// census lists the app's children here, so that the guard fails
+    /// closed rather than miss a write.
     func terraformWrites(tabs: [Tab], panes: [TerminalView]? = nil, path: TerraformCloseGuard.Path) -> [TerraformCloseGuard.Running] {
+        let surfaces = SurfaceProcesses.shared
+        if surfaces.hasWaiting, let snapshot = ActivityMonitor.shared.sampler.latest, surfaces.pair(snapshot) { ActivityMonitor.shared.contextChanged() }
         var walked: [(login: pid_t, place: String, checkout: URL?, tag: String?)] = []
         for tab in tabs {
             for pane in tab.terminals where panes.map({ $0.contains { $0 === pane } }) ?? true {
-                guard let login = SurfaceProcesses.shared.loginPID(of: pane) else { continue }
+                guard let login = surfaces.pairedLoginPID(of: pane) ?? surfaces.loginPID(of: pane) else { continue }
                 let place = path == .pane ? "this pane" : "“\(tab.title)”"
                 walked.append((login, place, tab.checkoutSource?.root, pane.processTag))
             }

@@ -61,7 +61,11 @@ final class SurfaceProcesses {
     }
 
     /// The terminal's `login` pid, pairing any unpaired ones first — which
-    /// lists the app's children, the census's child map.
+    /// lists the app's children, a whole `KERN_PROC_ALL`, here on the
+    /// caller's thread: the main thread's. In the app only Terraform's close guard
+    /// asks it, for a pane younger than the latest census, at a close it
+    /// must answer now; everything else asks `pairedLoginPID` after
+    /// `pairWaiting` or the census paired it.
     func loginPID(of terminal: some PairedSurface) -> pid_t? {
         if let pid = pairedLoginPID(of: terminal) { return pid }
         let listedAt = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
