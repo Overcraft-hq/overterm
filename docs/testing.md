@@ -462,9 +462,13 @@ value, a path or an address of a process that isn't the test's.
   that address, a loopback alias such as 127.0.0.2 too, a link-local one
   nothing to open) —, a process's v4 and v6 sockets on one port one entry
   with the widest scope and its holder's identity, a published port
-  reached where it is published; the bind probe on a real listener. A
-  forward's scope is where kubectl listens, and Tab Info says the address
-  of one that isn't this Mac's alone (`KubePortForwardTests`).
+  reached where it is published; who holds a
+  port, the census's (the oldest of the user's listeners, a UDP socket
+  or a connection from the number none, another user's never named) and
+  a real child's listener named by the walk; the bind probe on a real
+  listener. A forward's scope is where kubectl listens, and
+  Tab Info says the address of one that isn't this Mac's alone
+  (`KubePortForwardTests`).
 - `ActivityMonitorTests`: one tick for every reader at the fastest
   cadence, the ticks stopped at the last `unwant` and when a reader goes
   away, an early tick only for a wider want and once for a burst, one-off

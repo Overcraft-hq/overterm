@@ -1965,7 +1965,8 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   Docker saying only "port is already allocated" (or, for a process,
   "address already in use"). The detail says who holds the port — another
   container (its project and folder, usually another worktree's), a
-  process in one of the windows' tabs, or one outside them (lsof) — and
+  process in one of the windows' tabs, or one outside them (the census's
+  socket walk, `ListeningPorts.holder`: any process of the user's) — and
   offers the way out: stop that one and start this one, or show the tab.
   A compose container's detail also offers Up on Free Ports for its stack.
 - **A worktree's stack on its own ports** (`ComposePorts`, pure;
@@ -1985,8 +1986,8 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   containers' ports are theirs: Docker binds them), then on this Mac: a
   bind with SO_REUSEADDR on 0.0.0.0, 127.0.0.1, :: and ::1
   (`ListeningPorts.isBound`) meets what Docker's own bind would, TIME_WAIT
-  aside, and never listens, so no firewall asks; lsof names the holder for
-  the question. A remote engine's are its containers only. A taken port of
+  aside, and never listens, so no firewall asks; the census names the
+  holder for the question (`ListeningPorts.holder`, a one-off census). A remote engine's are its containers only. A taken port of
   a service that starts, or a name another checkout's stack has, asks
   first: Up on Free Ports, Up as Written, Cancel. Free Ports writes an
   override into Overterm's folder (`Compose/Ports`, never the repository),

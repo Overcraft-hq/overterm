@@ -97,12 +97,28 @@ struct ListeningPort: Identifiable, Hashable {
 enum ListeningPorts {
     static let lsof = URL(fileURLWithPath: "/usr/sbin/lsof")
 
-    /// Whoever on this Mac listens on `port`, if anything does.
-    static func holder(of port: Int) async -> ListeningPort? {
-        let output =
-            (try? await Git.run(
-                lsof, ["-nP", "-iTCP:\(port)", "-sTCP:LISTEN", "-F", "pcn"], in: URL(fileURLWithPath: "/"), success: [0, 1])) ?? ""
-        return parse(output).first { $0.port == port }
+    /// Whoever of the user's listens on `port` — a TCP listener, or a bound
+    /// UDP socket for `udp` — as a one-off census reads it
+    /// (docs/design/activity/analysis.md, 7.6: `ActivityMonitor.census`, at
+    /// most one every 2 s, a younger one answering), no lsof. It sees what
+    /// lsof saw: every process of the user's, and nobody else's — root's
+    /// and other users' listeners come from nettop (stage 4). Nil when
+    /// nothing of the user's holds it, or the table can't be read.
+    static func holder(of port: Int, proto: String = "tcp") async -> ListeningPort? {
+        guard let snapshot = await ActivityMonitor.shared.census() else { return nil }
+        return holder(of: port, proto: proto, in: snapshot)
+    }
+
+    /// Of what `snapshot` read, the oldest process holding `port` — every
+    /// socket it holds there as one entry, as `of` makes them. Pure.
+    static func holder(of port: Int, proto: String = "tcp", in snapshot: ActivitySnapshot) -> ListeningPort? {
+        let udp = proto == "udp"
+        for identity in snapshot.facts.keys.sorted() {
+            guard let facts = snapshot.facts[identity], let sockets = facts.sockets else { continue }
+            let held = sockets.records.filter { Int($0.localPort) == port && (udp ? $0.isBoundUDP : $0.isListening) }
+            if !held.isEmpty { return self.port(held, holder: identity, name: facts.name) }
+        }
+        return nil
     }
 
     /// Whether something on this Mac holds `port` — what Docker's own bind

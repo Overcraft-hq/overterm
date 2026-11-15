@@ -137,21 +137,76 @@ final class ListeningPortsTests: XCTestCase {
         XCTAssertFalse(ListeningPorts.isBound(0))
     }
 
-    func testFindsARealListener() async throws {
-        // A server on an OS-chosen port; it prints the port, then waits.
-        let server = Process()
-        server.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-        server.arguments = ["-c", "import socket,time\ns=socket.socket();s.bind(('127.0.0.1',0));s.listen();print(s.getsockname()[1],flush=True);time.sleep(20)"]
-        let out = Pipe()
-        server.standardOutput = out
-        try server.run()
-        defer { server.terminate() }
-        let line = String(decoding: out.fileHandleForReading.availableData, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
-        let port = try XCTUnwrap(Int(line), "server printed \(line)")
+    // MARK: Who holds a port (7.6)
 
-        // /usr/bin/python3 is a shim; the listener is its child. Ask for both.
-        let pids = ProcessInspector().tree(root: server.processIdentifier, tag: nil).flatMap(\.flattened).map(\.pid) + [server.processIdentifier]
-        let ports = await ListeningPorts.of(pids)
-        XCTAssertTrue(ports.contains { $0.port == port }, "found \(ports.map(\.port))")
+    /// A fake Mac's census, read in full: the user's processes with their
+    /// sockets, another user's named only.
+    private func census(_ kernel: FakeActivityKernel) throws -> ActivitySnapshot {
+        try XCTUnwrap(ActivitySampler(kernel: kernel).tickNow(ActivityDemand(.full), context: ActivityContext(appPID: 1000)))
+    }
+
+    private func add(_ pid: pid_t, uid: uid_t = 501, name: String, sockets: [socket_fdinfo], to kernel: FakeActivityKernel) {
+        var process = FakeActivityKernel.Process(record: FakeActivityKernel.record(pid: pid, start: UInt64(pid) * 1_000, parent: 1, uid: uid, name: name))
+        process.name = name
+        process.path = "/opt/acme/bin/\(name)"
+        process.usage = FakeActivityKernel.usage()
+        process.arguments = FakeActivityKernel.arguments(executable: "/opt/acme/bin/\(name)", [name])
+        process.descriptors = sockets.indices.map { FakeActivityKernel.descriptor(Int32($0 + 3)) }
+        process.sockets = Dictionary(uniqueKeysWithValues: sockets.enumerated().map { (Int32($0 + 3), $1) })
+        kernel.add(process)
+    }
+
+    /// Who holds a port is the census's, no lsof: the oldest of the user's
+    /// processes listening there, its sockets on it one entry; a UDP socket
+    /// on the number isn't a TCP holder, nor a connection from that port;
+    /// another user's is never named — its sockets aren't the user's to read.
+    func testTheHolderOfAPortIsTheCensuss() throws {
+        typealias K = FakeActivityKernel
+        let kernel = FakeActivityKernel(uid: 501)
+        add(1, uid: 0, name: "launchd", sockets: [], to: kernel)
+        add(1000, name: "Overterm", sockets: [], to: kernel)
+        add(2000, name: "acme-dns", sockets: [K.udp(local: "127.0.0.1", port: 3000)], to: kernel)
+        add(2100, name: "acme-client", sockets: [K.tcp(local: "127.0.0.1", port: 3000, remote: "127.0.0.1", remotePort: 49_200, state: .established)], to: kernel)
+        add(2200, name: "acme-web", sockets: [K.tcp(local: "127.0.0.1", port: 3000), K.tcp(local: "::1", port: 3000, handle: 2)], to: kernel)
+        add(2300, name: "acme-web-2", sockets: [K.tcp(local: "0.0.0.0", port: 3000, handle: 3)], to: kernel)
+        add(400, uid: 0, name: "acme-daemon", sockets: [K.tcp(local: "0.0.0.0", port: 8021)], to: kernel)
+        let snapshot = try census(kernel)
+        let holder = try XCTUnwrap(ListeningPorts.holder(of: 3000, in: snapshot))
+        XCTAssertEqual(holder.identity, ActivityProcessID(pid: 2200, start: 2_200_000), "the oldest listener")
+        XCTAssertEqual(holder.process, "acme-web")
+        XCTAssertEqual(holder.families, [.v4, .v6])
+        XCTAssertEqual(holder.url?.absoluteString, "http://localhost:3000")
+        XCTAssertEqual(ListeningPorts.holder(of: 3000, proto: "udp", in: snapshot)?.identity, ActivityProcessID(pid: 2000, start: 2_000_000))
+        XCTAssertNil(ListeningPorts.holder(of: 8021, in: snapshot), "root's: nettop's to say (stage 4)")
+        XCTAssertNil(ListeningPorts.holder(of: 3001, in: snapshot))
+    }
+
+    /// A TCP listener on 127.0.0.1 handed to a child of the test's: the
+    /// census's socket walk names the child, with its identity, as the
+    /// holder — and its URL avoids the ::1 trap. Only the child is read
+    /// (in focus), and nothing of any other process goes into an assertion.
+    func testARealChildIsItsListenersHolder() throws {
+        let fd = socket(AF_INET, SOCK_STREAM, 0)
+        XCTAssertGreaterThanOrEqual(fd, 0)
+        var address = sockaddr_in()
+        address.sin_len = UInt8(MemoryLayout<sockaddr_in>.size)
+        address.sin_family = sa_family_t(AF_INET)
+        address.sin_addr.s_addr = inet_addr("127.0.0.1")
+        let size = socklen_t(MemoryLayout<sockaddr_in>.size)
+        XCTAssertEqual(withUnsafePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { Darwin.bind(fd, $0, size) } }, 0)
+        XCTAssertEqual(listen(fd, 4), 0)
+        var length = size
+        _ = withUnsafeMutablePointer(to: &address) { $0.withMemoryRebound(to: sockaddr.self, capacity: 1) { getsockname(fd, $0, &length) } }
+        let port = Int(UInt16(bigEndian: address.sin_port))
+        let child = try TestChild("/bin/sleep", ["60"], descriptors: [fd: fd])
+        defer { child.stop() }
+        close(fd)
+        let snapshot = try XCTUnwrap(ActivitySampler().tickNow(ActivityDemand(.focus([child.identity])), context: ActivityContext()))
+        let holder = try XCTUnwrap(ListeningPorts.holder(of: port, in: snapshot), "found by the walk")
+        XCTAssertEqual(holder.identity, child.identity)
+        XCTAssertEqual(holder.families, .v4)
+        XCTAssertEqual(holder.scope, .thisMac)
+        XCTAssertEqual(holder.url?.absoluteString, "http://127.0.0.1:\(port)")
+        XCTAssertEqual(ListeningPorts.of([child.identity], in: snapshot).map(\.port), [port])
     }
 }
