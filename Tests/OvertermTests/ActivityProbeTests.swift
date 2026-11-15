@@ -325,6 +325,101 @@ final class ActivityProbeTests: XCTestCase {
         XCTAssertEqual(answers[.sent(pinned: true)], 500)
     }
 
+    /// What the census relies on that a macOS may lack or change (12's
+    /// support matrix), each said present or not, with counts: `rusage_info_v6`
+    /// and its energy for the user's processes, `csops`, the token call,
+    /// the responsibility call stage 1 groups by (D-31), and netstat's
+    /// blindness under an ad hoc-signed parent (3.5) — the probe's own rows
+    /// counted, never printed.
+    func testTheSupportMatrix() throws {
+        let own = try XCTUnwrap(ProcessTable.read(kernel)).processes.filter { $0.isOwn(by: kernel.uid) && !$0.isZombie }
+        var v6 = 0
+        var energy = 0
+        for process in own {
+            var info = rusage_info_v6()
+            let answer = withUnsafeMutablePointer(to: &info) { pointer in
+                pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(process.pid, RUSAGE_INFO_V6, $0) }
+            }
+            guard answer == 0 else { continue }
+            v6 += 1
+            if info.ri_energy_nj > 0 { energy += 1 }
+        }
+        report("rusage_info_v6: \(v6) of \(own.count) own answer, \(energy) with energy")
+        XCTAssertGreaterThan(v6, 0)
+
+        let csops = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "csops") != nil
+        report("csops \(csops ? "there" : "missing"); proc_signal_with_audittoken \(kernel.signalsByToken ? "there" : "missing")")
+
+        typealias Responsible = @convention(c) (pid_t) -> pid_t
+        if let symbol = dlsym(UnsafeMutableRawPointer(bitPattern: -2), "responsibility_get_pid_responsible_for_pid") {
+            let responsible = unsafeBitCast(symbol, to: Responsible.self)
+            var answered = 0
+            var other = 0
+            let (_, time) = timed {
+                for process in own {
+                    let pid = responsible(process.pid)
+                    guard pid > 0 else { continue }
+                    answered += 1
+                    if pid != process.pid { other += 1 }
+                }
+            }
+            report("responsibility: there; \(answered) of \(own.count) own answer, \(other) another process, \(micros(time, own.count)) a pid")
+        } else {
+            report("responsibility: missing (stage 1 groups by its fallback, D-31)")
+        }
+
+        let listeners = own.reduce(0) { count, process in
+            var scan = SocketScan()
+            scan.advance(keeping: [process.identity])
+            return count + (scan.read(process.identity, kernel: kernel)?.listeners.filter(\.isListening).count ?? 0)
+        }
+        let plain = try netstatRows(parent: nil)
+        let adHoc = try netstatRows(parent: adHocShell())
+        report(
+            "netstat -an -p tcp: \(plain) rows run from the probe, \(adHoc) from an ad hoc-signed sh; libproc finds \(listeners) TCP listeners of the user's"
+                + (adHoc == 0 && listeners > 0 ? " — blind under ad hoc signing (3.5)" : "")
+                + (plain == 0 && listeners > 0 ? "; the probe's own process blind too (its test bundle is signed ad hoc)" : ""))
+    }
+
+    /// Rows `netstat -an -p tcp` prints, run by `parent` (`sh -c`) or by the
+    /// probe itself: a count — the rows are dropped unread.
+    private func netstatRows(parent: URL?) throws -> Int {
+        let process = Process()
+        if let parent {
+            process.executableURL = parent
+            process.arguments = ["-c", "/usr/sbin/netstat -an -p tcp"]
+        } else {
+            process.executableURL = URL(fileURLWithPath: "/usr/sbin/netstat")
+            process.arguments = ["-an", "-p", "tcp"]
+        }
+        let out = Pipe()
+        process.standardOutput = out
+        process.standardError = FileHandle.nullDevice
+        try process.run()
+        let data = out.fileHandleForReading.readDataToEndOfFile()
+        process.waitUntilExit()
+        return data.reduce(0) { $0 + ($1 == UInt8(ascii: "\n") ? 1 : 0) }
+    }
+
+    /// A copy of `/bin/sh` signed ad hoc, as `make app` signs Overterm:
+    /// what 3.5 found leaves netstat blind in every descendant.
+    private func adHocShell() throws -> URL {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("activity-probe-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
+        let shell = folder.appendingPathComponent("sh")
+        try FileManager.default.copyItem(at: URL(fileURLWithPath: "/bin/sh"), to: shell)
+        let sign = Process()
+        sign.executableURL = URL(fileURLWithPath: "/usr/bin/codesign")
+        sign.arguments = ["--force", "--sign", "-", shell.path]
+        sign.standardOutput = FileHandle.nullDevice
+        sign.standardError = FileHandle.nullDevice
+        try sign.run()
+        sign.waitUntilExit()
+        XCTAssertEqual(sign.terminationStatus, 0, "codesign -s -")
+        return shell
+    }
+
     /// D-8: Overterm's own energy (`ri_energy_nj`, this process's — the
     /// test stands for the app) a light and a full tick costs on a sampler
     /// at `.userInitiated` and at `.utility`. Each set of ticks 250 ms apart,
