@@ -84,6 +84,13 @@ protocol ActivityKernel: Sendable {
     /// identity-checked fallback's one call (6.10 step 6), for a single
     /// Stop; never a pid ≤ 1 — no group, no `kill(-1)` — nor this process.
     func signal(_ signal: Int32, pid: pid_t) -> Int32
+    /// `getsid`: the session `pid` is in; nil when it can't be read.
+    func session(of pid: pid_t) -> pid_t?
+    /// `killpg(group, signal)`: 0 when sent, else the errno. A group has no
+    /// token form (6.10 step 9): `ProcessSignals.sendToGroup` lists and
+    /// checks every member just before. Never a group ≤ 1 nor this
+    /// process's own.
+    func signal(_ signal: Int32, group: pid_t) -> Int32
 }
 
 /// A process's audit token (`TASK_AUDIT_TOKEN`, 3.9): it names one
@@ -367,6 +374,24 @@ struct LiveActivityKernel: ActivityKernel {
         if let refused = ActivitySignalGate.shared.refusal(of: pid, kernel: self) { return refused }
         return kill(pid, signal) == 0 ? 0 : errno
     }
+
+    func session(of pid: pid_t) -> pid_t? {
+        guard pid > 0 else { return nil }
+        let session = getsid(pid)
+        return session > 0 ? session : nil
+    }
+
+    func signal(_ signal: Int32, group: pid_t) -> Int32 {
+        guard group > 1, group != getpgrp(), group != getpid() else { return EPERM }
+        // The isolated-run gate, for every member the group has now.
+        if ActivitySignalGate.shared.guards {
+            guard let members = groupMembers(group, limit: ProcessSignals.groupLimit), !members.isEmpty else { return ESRCH }
+            for member in members {
+                if let refused = ActivitySignalGate.shared.refusal(of: member, kernel: self), refused != ESRCH { return refused }
+            }
+        }
+        return killpg(group, signal) == 0 ? 0 : errno
+    }
 }
 
 /// A Mac a test makes (10.1): processes of any user — another user's,
@@ -399,6 +424,8 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
         /// The pid's version, as an audit token carries it: each image's own,
         /// as the kernel's are — `add` gives a process one, `exec` the next.
         var image: UInt32 = 0
+        /// Its session (`getsid`); nil: unreadable.
+        var session: pid_t?
     }
 
     /// A signal the fake was asked to send.
@@ -407,6 +434,8 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
         let signal: Int32
         /// By an audit token; false for the fallback's `kill(pid, …)`.
         let pinned: Bool
+        /// To the process group `pid` names (`killpg`).
+        var group = false
     }
 
     let uid: uid_t
@@ -726,6 +755,25 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
         asked("kill") {
             guard pid > 1, let process = table[pid] else { return ESRCH }
             deliver(signal, to: process, pinned: false)
+            return 0
+        }
+    }
+
+    func session(of pid: pid_t) -> pid_t? { asked("session") { table[pid]?.session } }
+
+    /// As `killpg` answers: every member of the group takes it, recorded
+    /// once, as the group's.
+    func signal(_ signal: Int32, group: pid_t) -> Int32 {
+        asked("killpg") {
+            guard group > 1 else { return EPERM }
+            let members = table.values.filter { $0.record.group == group }
+            guard !members.isEmpty else { return ESRCH }
+            sends.append(Sent(pid: group, signal: signal, pinned: false, group: true))
+            for member in members where !member.record.isZombie && (signal == SIGSTOP || signal == SIGCONT) {
+                var changed = member
+                changed.record = Self.record(member.record, status: signal == SIGSTOP ? SSTOP : SRUN)
+                table[member.record.pid] = changed
+            }
             return 0
         }
     }

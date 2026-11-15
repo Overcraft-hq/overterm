@@ -76,6 +76,75 @@ final class ProcessSignalsTests: XCTestCase {
         addTeardownBlock { ActivitySignalGate.shared.unregister(identity) }
     }
 
+    // MARK: A group (6.10 step 9)
+
+    /// A pane's job leading its group, with a child of its own in it: the
+    /// leader pinned, every member checked, then one `killpg`.
+    private func groupMac() -> ActivitySignalTarget {
+        mac()
+        let leader = add(600, parent: 300, group: 600, name: "acme-job")
+        add(601, parent: 600, group: 600, name: "acme-plugin")
+        for pid: pid_t in [300, 600, 601] { kernel.update(pid) { $0.session = 200 } }
+        return leader
+    }
+
+    func testAGroupIsSignalledOnceEveryMemberIsChecked() {
+        let leader = groupMac()
+        XCTAssertEqual(sender().sendToGroup(.int, leader: leader), .sent(pinned: true))
+        XCTAssertEqual(kernel.sent, [FakeActivityKernel.Sent(pid: 600, signal: SIGINT, pinned: false, group: true)])
+        XCTAssertEqual(kernel.count("groupMembers"), 1, "its members listed again just before")
+    }
+
+    func testAGroupWithAMemberThatIsntTheLeadersIsRefused() {
+        let leader = groupMac()
+        let signals = sender()
+        // Started before the leader: a group id taken again.
+        add(602, start: 1, parent: 1, group: 600, name: "acme-older")
+        XCTAssertEqual(signals.sendToGroup(.int, leader: leader), .refused(.group))
+        kernel.remove(602)
+        // Another session's.
+        add(603, parent: 600, group: 600, name: "acme-elsewhere")
+        kernel.update(603) { $0.session = 999 }
+        XCTAssertEqual(signals.sendToGroup(.int, leader: leader), .refused(.group))
+        kernel.remove(603)
+        // Not the user's alone: a setuid program started in it.
+        add(604, parent: 600, uid: 0, realUID: 501, group: 600, name: "acme-setuid")
+        XCTAssertEqual(signals.sendToGroup(.int, leader: leader), .refused(.group))
+        kernel.remove(604)
+        // One of Overterm's helpers' groups' members.
+        XCTAssertEqual(sender(helperGroups: [600]).sendToGroup(.int, leader: leader), .refused(.helper))
+        XCTAssertTrue(kernel.sent.isEmpty, "nothing sent")
+        XCTAssertEqual(sender().sendToGroup(.int, leader: leader), .sent(pinned: true), "the group its own again")
+    }
+
+    func testAGroupItsLeaderDoesntLeadOrThatEndedIsntSignalled() {
+        mac()
+        // In the shell's group: the shell's job control's, not its own.
+        let member = add(600, parent: 300, group: 300, name: "acme-job")
+        XCTAssertEqual(sender().sendToGroup(.int, leader: member), .refused(.group))
+        // Ended, its pid another's now.
+        let leader = add(700, parent: 300, group: 700, name: "acme-ended")
+        kernel.remove(700)
+        add(700, start: 9_999_999, parent: 1, group: 700, name: "globex-other")
+        XCTAssertEqual(sender().sendToGroup(.int, leader: leader), .ended(now: "globex-other"))
+        // This process's own group.
+        XCTAssertEqual(sender().sendToGroup(.int, leader: ActivitySignalTarget(app, path: nil)), .refused(.overterm))
+        XCTAssertTrue(kernel.sent.isEmpty)
+        XCTAssertEqual(kernel.count("killpg"), 0)
+    }
+
+    func testAGroupInAnIsolatedRunIsTheRunsOwnOnly() {
+        mac()
+        // launchd's child: not under a pane's `login`, not registered.
+        let leader = add(800, parent: 1, group: 800, name: "globex-job")
+        XCTAssertEqual(sender(guards: true).sendToGroup(.int, leader: leader), .refused(.gate))
+        // Under the pane, but a member elsewhere isn't the run's.
+        let job = add(600, parent: 300, group: 600, name: "acme-job")
+        add(801, parent: 1, group: 600, name: "globex-member")
+        XCTAssertEqual(sender(guards: true).sendToGroup(.int, leader: job), .refused(.group))
+        XCTAssertTrue(kernel.sent.isEmpty)
+    }
+
     // MARK: Refused before anything is read
 
     /// launchd, the kernel, `kill(0)`'s and `kill(-1)`'s pids, a group's
@@ -289,9 +358,10 @@ final class ProcessSignalsTests: XCTestCase {
 
     // MARK: No token
 
-    /// No token to be had: a single Stop falls back to its pid, its path
-    /// and start read once more just before; a Force Quit, a member of a
-    /// tree, a group or a bulk, any other signal: refused, saying why.
+    /// No token to be had: a single Stop — or a single Interrupt, the
+    /// terraform close guard's — falls back to its pid, its path and start
+    /// read once more just before; a Force Quit, a member of a tree, a
+    /// group or a bulk, any other signal: refused, saying why.
     func testWithoutATokenOnlyASingleStopFallsBack() {
         mac()
         kernel.refuseTokens(true)
@@ -304,11 +374,15 @@ final class ProcessSignalsTests: XCTestCase {
         XCTAssertEqual(kernel.count("signal"), 0)
         XCTAssertGreaterThanOrEqual(kernel.count("path"), 1, "its path read again just before")
 
-        for signal in ActivitySignal.allCases where signal != .term {
+        for signal in ActivitySignal.allCases where signal != .term && signal != .int {
             XCTAssertEqual(signals.send(signal, to: job, alone: true), .refused(.unpinned), "\(signal)")
         }
         XCTAssertEqual(signals.send(.term, to: job, alone: false), .refused(.unpinned), "a member of a tree, a group or a bulk")
+        XCTAssertEqual(signals.send(.int, to: job, alone: false), .refused(.unpinned), "a member of a tree, a group or a bulk")
         XCTAssertEqual(kernel.count("kill"), 1)
+        XCTAssertEqual(signals.send(.int, to: job, alone: true), .sent(pinned: false), "a single Interrupt")
+        XCTAssertEqual(kernel.sent.last, FakeActivityKernel.Sent(pid: 400, signal: SIGINT, pinned: false))
+        XCTAssertEqual(kernel.count("kill"), 2)
 
         // Changed just before: never sent by its pid.
         let launcher = add(760, parent: 300, name: "acme-launcher")
@@ -820,6 +894,19 @@ private final class RecordingKernel: ActivityKernel, @unchecked Sendable {
         record("kill")
         guard isOwn(pid) else { return EPERM }
         let answer = real.signal(signal, pid: pid)
+        lock.withLock { results.append(answer) }
+        return answer
+    }
+
+    func session(of pid: pid_t) -> pid_t? { real.session(of: pid) }
+
+    /// Passed on only when every member the group has now is the test's own.
+    func signal(_ signal: Int32, group: pid_t) -> Int32 {
+        record("killpg")
+        guard let members = real.groupMembers(group, limit: ProcessSignals.groupLimit), !members.isEmpty, members.allSatisfy(isOwn) else {
+            return EPERM
+        }
+        let answer = real.signal(signal, group: group)
         lock.withLock { results.append(answer) }
         return answer
     }

@@ -94,9 +94,14 @@ enum ActivitySignalRefusal: Hashable, Sendable {
     /// The isolated-run gate: not this run's own (`ActivitySignalGate`).
     case gate
     /// No audit token to be had, or no call to send by one, and not a
-    /// single Stop: a tree, a group, a Force Quit or a bulk needs every
-    /// member pinned.
+    /// single Stop or Interrupt: a tree, a group, a Force Quit or a bulk
+    /// needs every member pinned.
     case unpinned
+    /// A group's send (6.10 step 9): the process doesn't lead its group,
+    /// or a member of the group isn't the leader's — not the user's alone,
+    /// started before it, in another session, a pane's `login`, one of
+    /// Overterm's helpers or, in an isolated run, not the run's own.
+    case group
 
     var reason: String {
         switch self {
@@ -107,7 +112,8 @@ enum ActivitySignalRefusal: Hashable, Sendable {
             "It doesn't run as you alone — root's, another user's, or a setuid program's, even one running as you for now: "
                 + "Overterm signals only what runs as you."
         case .gate: "This run is isolated (a scenario or a test): it changes only its own processes."
-        case .unpinned: "It can't be pinned to this process: macOS gave no audit token for it, and without one Overterm sends only a single Stop."
+        case .unpinned: "It can't be pinned to this process: macOS gave no audit token for it, and without one Overterm sends only a single Stop or Interrupt."
+        case .group: "Its process group isn't its own alone: something in it didn't start under it, or isn't yours."
         }
     }
 }
@@ -239,8 +245,9 @@ enum ActivityHelperGroups {
 ///
 /// No token (a setuid process gives none, refused at step 2 anyway; a
 /// same-uid one rarely fails), or no `proc_signal_with_audittoken` on this
-/// macOS: only a single Stop falls back to `kill(pid, SIGTERM)`, after one
-/// more read of its start and path (6.10 step 6).
+/// macOS: only a single Stop — `kill(pid, SIGTERM)` — or a single Interrupt
+/// — SIGINT, the terraform close guard's to terraform alone — falls back
+/// to the pid, after one more read of its start and path (6.10 step 6).
 ///
 /// The kernel is `ActivityKernel`: a test's fake records every call, so a
 /// refusal can say it made none. Its reads are the deliberate fresh ones
@@ -266,9 +273,9 @@ struct ProcessSignals: Sendable {
     }
 
     /// Sends `signal` to `target`. `alone`: the person asked about this one
-    /// process by itself — a single Stop may then fall back to its pid
-    /// when no token can be had; a member of a tree, a group or a bulk
-    /// never does.
+    /// process by itself — a single Stop or Interrupt may then fall back to
+    /// its pid when no token can be had; a member of a tree, a group or a
+    /// bulk never does.
     func send(_ signal: ActivitySignal, to target: ActivitySignalTarget, alone: Bool) -> ActivitySignalAnswer {
         let identity = target.identity
         if let refusal = Self.refusal(before: identity, app: app) { return .refused(refusal) }
@@ -300,6 +307,57 @@ struct ProcessSignals: Sendable {
             return .failed(answer)
         }
         if Self.continues(after: signal, checked) { _ = kernel.signal(SIGCONT, by: token) }
+        return .sent(pinned: true)
+    }
+
+    /// How many members a group's send lists: process groups aren't this
+    /// big, and one that is is refused rather than half checked.
+    static let groupLimit = 256
+
+    /// Sends `signal` to the process group `leader` leads (6.10 step 9):
+    /// a shell's job, as ⌃C would reach it. Groups have no token form, so
+    /// the leader is pinned and checked as `send` checks a process, then
+    /// every member is listed again (`proc_listpids(PROC_PGRP_ONLY)`) and
+    /// checked right before the `killpg`: each runs as the user alone,
+    /// started no earlier than the leader and in its session — what a
+    /// reused group id fails —, isn't a pane's `login` nor one of
+    /// Overterm's helpers, and passes the isolated-run gate. Any that
+    /// doesn't refuses the whole send (`.refused(.group)`), nothing sent.
+    func sendToGroup(_ signal: ActivitySignal, leader target: ActivitySignalTarget) -> ActivitySignalAnswer {
+        let identity = target.identity
+        if let refusal = Self.refusal(before: identity, app: app) { return .refused(refusal) }
+        let leader: ActivityProcess
+        switch read(identity) {
+        case .ended(let now): return .ended(now: now)
+        case .live(let process): leader = process
+        }
+        guard leader.isWhollyOwn(by: kernel.uid) else { return .refused(.notYours) }
+        if let refusal = refusal(for: leader) { return .refused(refusal) }
+        let group = leader.group
+        guard group == leader.pid else { return .refused(.group) }
+        if group == getpgrp() || kernel.process(app.pid)?.group == group { return .refused(.overterm) }
+        // The leader pinned, its identity checked through its token.
+        guard kernel.signalsByToken, let token = kernel.auditToken(of: identity.pid) else { return .refused(.unpinned) }
+        guard token.pid == identity.pid, token.effectiveUID == kernel.uid, token.realUID == kernel.uid else { return .refused(.notYours) }
+        switch read(identity) {
+        case .ended(let now): return .ended(now: now)
+        case .live(let process): guard process.isWhollyOwn(by: kernel.uid), process.group == group else { return .refused(.group) }
+        }
+        if let changed = changedImage(target, token: token) { return changed }
+        // Every member, listed again now.
+        guard let members = kernel.groupMembers(group, limit: Self.groupLimit + 1) else { return .failed(EAGAIN) }
+        guard members.count <= Self.groupLimit else { return .refused(.group) }
+        let session = kernel.session(of: identity.pid)
+        for pid in members where pid != identity.pid {
+            // Gone since the list: nothing of it to signal.
+            guard let member = kernel.process(pid), !member.isZombie else { continue }
+            guard member.group == group, member.isWhollyOwn(by: kernel.uid), member.identity.start >= identity.start,
+                !Self.isPaneLogin(member, uid: kernel.uid), refusal(for: member) == nil
+            else { return .refused(.group) }
+            if let session, let theirs = kernel.session(of: pid), theirs != session { return .refused(.group) }
+        }
+        let answer = kernel.signal(signal.number, group: group)
+        guard answer == 0 else { return answer == ESRCH ? .ended(now: nil) : .failed(answer) }
         return .sent(pinned: true)
     }
 
@@ -396,8 +454,9 @@ struct ProcessSignals: Sendable {
     }
 
     /// No token to be had, or no call to send by one (step 6). Only a
-    /// single Stop goes, by its pid, after one more read of its path and
-    /// start just before; the rest is refused, saying why.
+    /// single Stop (TERM) or Interrupt (INT) goes, by its pid, after one
+    /// more read of its path and start just before; the rest is refused,
+    /// saying why.
     private func unpinned(_ signal: ActivitySignal, to target: ActivitySignalTarget, alone: Bool) -> ActivitySignalAnswer {
         let identity = target.identity
         // Why there was none: it ended, or isn't the user's now.
@@ -405,7 +464,7 @@ struct ProcessSignals: Sendable {
         case .ended(let now): return .ended(now: now)
         case .live(let process): guard process.isWhollyOwn(by: kernel.uid) else { return .refused(.notYours) }
         }
-        guard alone, signal == .term else { return .refused(.unpinned) }
+        guard alone, signal == .term || signal == .int else { return .refused(.unpinned) }
         if let listed = target.path, let path = kernel.path(of: identity.pid), path != listed { return .ranAnotherProgram(path: path) }
         // Its start once more, after the path: a pid taken again since is
         // another process's, never sent a kill(2) meant for this one.

@@ -521,7 +521,8 @@ value, a path or an address of a process that isn't the test's.
   before the kill, an exec since it was listed or between the token and the
   send told apart from an end (its own binary again too), a deleted
   executable, a stopped target continued after TERM and INT but never a
-  traced one, no token or no token call (only a single TERM falls back),
+  traced one, no token or no token call (only a single TERM or INT falls
+  back),
   Overterm's helpers by where they sit and by their group (an apply found
   again, a plugin reparented), the gate and the real kernel's own check of
   it; then the test's own children through the real kernel: a setuid `top`,
@@ -534,7 +535,18 @@ value, a path or an address of a process that isn't the test's.
   a `ProcessSignals` was handed a gate that registered it; a
   `ManagedProcess`'s member let go to launchd, a helper's by its group; an
   apply's group while a run has it; a sleep
-  stopped, continued and ended by its token.
+  stopped, continued and ended by its token. A group's send (6.10 step 9)
+  over the fake Mac: one `killpg` once the leader is pinned and every
+  member checked; refused for a member that started before the leader, is
+  in another session, isn't the user's alone or is a helper's, for a
+  leader that doesn't lead its group, and for a member not the run's own
+  in an isolated run; an ended leader's pid another's says so. In
+  `TerraformApplyTests`, the close guard's Interrupt over the fake Mac: its
+  targets kept (terraform's own group, terraform alone in an agent's); a
+  group refused — a member older than the leader, a helper's in it — sends
+  nothing and is said, never terraform alone instead; no start read by
+  `find` reaches nobody; with no token call terraform alone still goes by
+  its pid and its own group is refused and said.
 - `ActivitySignalCheckTests`: the pane pill's Free… over every class a pill
   can name — the owners' own verbs, the never-list (what runs as the user
   only for now among it), a terraform write interrupted wherever it runs,

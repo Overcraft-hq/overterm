@@ -99,13 +99,20 @@ enum TerraformProcesses {
     ) -> TerraformProcess? {
         let name = name ?? self.name(of: pid) ?? ""
         guard TerraformCommandLine.tools.contains(name) || scriptShells.contains(name) else { return nil }
+        // Its start before its argv, and again after: a pid taken by
+        // another process between the two is no answer — `started` is the
+        // process whose words were read, who the close guard's Interrupt
+        // may reach.
+        let started = kernel.process(pid)?.identity.start
         let read = ProcessArguments.facts(of: pid, kernel: kernel, names: TerraformProcess.environmentNames, codeSigning: nil) { words, values in
             TerraformCommandLine.parse(arguments: words).map { (line: $0, names: TerraformProcess.environment(values)) }
         }
         guard let read = read ?? nil else { return nil }
+        let cwd = kernel.workingDirectory(of: pid)
+        guard kernel.process(pid)?.identity.start == started else { return nil }
         var process = TerraformProcess(
-            pid: pid, line: read.line, cwd: kernel.workingDirectory(of: pid), workspaceVariable: read.names.workspace,
-            dataDirVariable: read.names.dataDir, awsProfile: read.names.profile, started: kernel.process(pid)?.identity.start)
+            pid: pid, line: read.line, cwd: cwd, workspaceVariable: read.names.workspace, dataDirVariable: read.names.dataDir,
+            awsProfile: read.names.profile, started: started)
         let below = children ?? descendants(of: pid, limit: 64)
         process.providers = below.filter { (self.name(of: $0) ?? "").hasPrefix("terraform-provider-") }.count
         return process

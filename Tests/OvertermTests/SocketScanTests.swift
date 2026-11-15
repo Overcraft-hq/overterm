@@ -335,4 +335,6 @@ private final class CountingKernel: ActivityKernel, @unchecked Sendable {
     // A socket test signals nothing: these never reach the kernel.
     func signal(_ signal: Int32, by token: ActivityAuditToken) -> Int32 { EPERM }
     func signal(_ signal: Int32, pid: pid_t) -> Int32 { EPERM }
+    func session(of pid: pid_t) -> pid_t? { base.session(of: pid) }
+    func signal(_ signal: Int32, group: pid_t) -> Int32 { EPERM }
 }

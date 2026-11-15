@@ -686,6 +686,146 @@ final class TerraformCloseGuardTests: XCTestCase {
         XCTAssertEqual(TerraformCloseGuard.interruptTarget(child), 4_243, "an agent's child: terraform alone")
     }
 
+    /// Interrupt goes through the one signal path (docs/design/activity/
+    /// analysis.md, 6.10), its target rule kept: terraform's own group as
+    /// Ctrl-C, terraform alone in an agent's group, by the identity `find`
+    /// read — a terraform that ended since leaves its pid's next holder
+    /// alone. Over a fake Mac: nothing real is signalled.
+    func testInterruptGoesThroughProcessSignals() {
+        let kernel = FakeActivityKernel(uid: 501)
+        func add(_ pid: pid_t, parent: pid_t, uid: uid_t = 501, group: pid_t? = nil, start: UInt64? = nil, name: String) {
+            var process = FakeActivityKernel.Process(
+                record: FakeActivityKernel.record(
+                    pid: pid, start: start ?? UInt64(pid) * 1_000, parent: parent, uid: uid, realUID: uid == 0 ? 501 : nil, group: group, name: name))
+            process.path = "/opt/acme/bin/\(name)"
+            process.session = 4_000
+            kernel.add(process)
+        }
+        add(1, parent: 0, uid: 0, name: "launchd")
+        add(3_000, parent: 1, name: "Overterm")
+        add(4_000, parent: 3_000, uid: 0, name: "login")
+        add(4_001, parent: 4_000, name: "zsh")
+        add(4_242, parent: 4_001, group: 4_242, name: "terraform")
+        add(4_250, parent: 4_242, group: 4_242, name: "terraform-provider-acme")
+        add(4_100, parent: 4_001, group: 4_100, name: "claude")
+        add(4_243, parent: 4_100, group: 4_100, name: "terraform")
+        let signals = ProcessSignals(
+            kernel: kernel, gate: ActivitySignalGate(guards: false), app: ActivityProcessID(pid: 3_000, start: 3_000_000), helperGroups: { [] })
+        func running(_ pid: pid_t, group: pid_t, start: UInt64? = nil) -> TerraformCloseGuard.Running {
+            TerraformCloseGuard.Running(
+                pid: pid, group: group, operation: "apply", tool: "terraform", root: ".", place: "", started: start ?? UInt64(pid) * 1_000,
+                path: "/opt/acme/bin/terraform")
+        }
+        let own = running(4_242, group: 4_242)
+        let child = running(4_243, group: 4_100)
+        XCTAssertEqual(TerraformCloseGuard.interrupt([own, child], signals: signals), [.sent(pinned: true), .sent(pinned: true)])
+        XCTAssertEqual(
+            kernel.sent,
+            [
+                FakeActivityKernel.Sent(pid: 4_242, signal: SIGINT, pinned: false, group: true),
+                FakeActivityKernel.Sent(pid: 4_243, signal: SIGINT, pinned: true),
+            ], "its own group as Ctrl-C; terraform alone, never the agent")
+
+        // A group that isn't terraform's alone: refused, nothing sent —
+        // the rule kept, never terraform alone instead — and said.
+        add(4_260, parent: 1, group: 4_242, start: 1, name: "globex-older")
+        let sends = kernel.sent.count
+        let refused = TerraformCloseGuard.interrupt([own], signals: signals)
+        XCTAssertEqual(refused, [.refused(.group)])
+        XCTAssertEqual(kernel.sent.count, sends)
+        XCTAssertFalse(TerraformCloseGuard.reached(refused[0]))
+        let said = TerraformCloseGuard.notInterrupted([own], answers: refused)
+        XCTAssertEqual(said?.title, "Interrupt didn't reach terraform apply in . ().")
+        XCTAssertTrue(said?.detail.hasPrefix(ActivitySignalRefusal.group.reason) == true)
+        XCTAssertNil(TerraformCloseGuard.notInterrupted([own], answers: [.sent(pinned: true)]))
+        XCTAssertNil(TerraformCloseGuard.notInterrupted([own], answers: [.ended(now: nil)]), "ended: nothing to interrupt")
+
+        // Ended since `find` read it, its pid another's: nothing sent.
+        let ended = running(4_243, group: 4_100, start: 1)
+        let before = kernel.sent.count
+        XCTAssertEqual(TerraformCloseGuard.interrupt([ended], signals: signals), [.ended(now: "terraform")])
+        XCTAssertEqual(kernel.sent.count, before)
+
+        // No start read by `find` — it had ended as it looked: whatever
+        // holds the pid at the press is never read as the target.
+        var unread = running(4_243, group: 4_100)
+        unread.started = nil
+        XCTAssertNil(TerraformCloseGuard.target(unread))
+        XCTAssertEqual(TerraformCloseGuard.interrupt([unread], signals: signals), [.ended(now: nil)])
+        XCTAssertEqual(kernel.sent.count, before)
+    }
+
+    /// A group refused never falls back to a send: its leader gone, or a
+    /// member one of Overterm's helpers.
+    func testARefusedGroupNeverFallsBack() {
+        let kernel = FakeActivityKernel(uid: 501)
+        func add(_ pid: pid_t, parent: pid_t, uid: uid_t = 501, group: pid_t? = nil, name: String) {
+            var process = FakeActivityKernel.Process(
+                record: FakeActivityKernel.record(
+                    pid: pid, start: UInt64(pid) * 1_000, parent: parent, uid: uid, realUID: uid == 0 ? 501 : nil, group: group, name: name))
+            process.path = "/opt/acme/bin/\(name)"
+            process.session = 4_000
+            kernel.add(process)
+        }
+        add(1, parent: 0, uid: 0, name: "launchd")
+        add(3_000, parent: 1, name: "Overterm")
+        add(4_000, parent: 3_000, uid: 0, name: "login")
+        add(4_001, parent: 4_000, name: "zsh")
+        add(4_242, parent: 4_001, group: 4_242, name: "terraform")
+        // One of Overterm's helpers in terraform's group.
+        add(4_300, parent: 3_000, group: 4_300, name: "acme-helper")
+        add(4_301, parent: 4_300, group: 4_242, name: "acme-helper-child")
+        let signals = ProcessSignals(
+            kernel: kernel, gate: ActivitySignalGate(guards: false), app: ActivityProcessID(pid: 3_000, start: 3_000_000), helperGroups: { [] })
+        let own = TerraformCloseGuard.Running(
+            pid: 4_242, group: 4_242, operation: "apply", tool: "terraform", root: ".", place: "", started: 4_242_000, path: "/opt/acme/bin/terraform")
+        XCTAssertEqual(TerraformCloseGuard.interrupt([own], signals: signals), [.refused(.group)], "a helper in the group")
+        XCTAssertTrue(kernel.sent.isEmpty)
+
+        // Its leader gone: ended, nothing sent.
+        kernel.remove(4_301)
+        kernel.remove(4_242)
+        XCTAssertEqual(TerraformCloseGuard.interrupt([own], signals: signals), [.ended(now: nil)])
+        XCTAssertTrue(kernel.sent.isEmpty)
+    }
+
+    /// No token to be had (6.10 step 6, macOS without
+    /// `proc_signal_with_audittoken`): terraform alone is still
+    /// interrupted, by its pid after one more read; its own group, which
+    /// needs its leader pinned, is refused and said — never marked
+    /// interrupted.
+    func testInterruptWithoutTokens() {
+        let kernel = FakeActivityKernel(uid: 501)
+        func add(_ pid: pid_t, parent: pid_t, uid: uid_t = 501, group: pid_t? = nil, name: String) {
+            var process = FakeActivityKernel.Process(
+                record: FakeActivityKernel.record(
+                    pid: pid, start: UInt64(pid) * 1_000, parent: parent, uid: uid, realUID: uid == 0 ? 501 : nil, group: group, name: name))
+            process.path = "/opt/acme/bin/\(name)"
+            process.session = 4_000
+            kernel.add(process)
+        }
+        add(1, parent: 0, uid: 0, name: "launchd")
+        add(3_000, parent: 1, name: "Overterm")
+        add(4_000, parent: 3_000, uid: 0, name: "login")
+        add(4_001, parent: 4_000, name: "zsh")
+        add(4_242, parent: 4_001, group: 4_242, name: "terraform")
+        add(4_100, parent: 4_001, group: 4_100, name: "claude")
+        add(4_243, parent: 4_100, group: 4_100, name: "terraform")
+        kernel.dropTokenSignal()
+        XCTAssertFalse(kernel.signalsByToken)
+        let signals = ProcessSignals(
+            kernel: kernel, gate: ActivitySignalGate(guards: false), app: ActivityProcessID(pid: 3_000, start: 3_000_000), helperGroups: { [] })
+        func running(_ pid: pid_t, group: pid_t) -> TerraformCloseGuard.Running {
+            TerraformCloseGuard.Running(
+                pid: pid, group: group, operation: "apply", tool: "terraform", root: ".", place: "", started: UInt64(pid) * 1_000,
+                path: "/opt/acme/bin/terraform")
+        }
+        let answers = TerraformCloseGuard.interrupt([running(4_243, group: 4_100), running(4_242, group: 4_242)], signals: signals)
+        XCTAssertEqual(answers, [.sent(pinned: false), .refused(.unpinned)])
+        XCTAssertEqual(kernel.sent, [FakeActivityKernel.Sent(pid: 4_243, signal: SIGINT, pinned: false)], "terraform alone, never the agent")
+        XCTAssertNotNil(TerraformCloseGuard.notInterrupted([running(4_243, group: 4_100), running(4_242, group: 4_242)], answers: answers))
+    }
+
     /// 4.8: once interrupted writes stop, the notice offers Close Now —
     /// the close Interrupt held back — or keeps the pane; the header says
     /// "shutting down" meanwhile.
