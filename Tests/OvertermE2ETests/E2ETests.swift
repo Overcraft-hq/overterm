@@ -56,6 +56,11 @@ final class E2ETests: XCTestCase {
         // scenario's shells and its own git worked in this checkout's .git
         // (GIT_DIR) — once setting core.bare there.
         for name in env.keys where name.hasPrefix("GIT_") { env.removeValue(forKey: name) }
+        // Nor oh-my-zsh's update question: once its interval passes, every new
+        // shell asks "Would you like to update? [Y/n]" and waits, so a
+        // scenario's first typed key answered it — lost, or, were it Return,
+        // a yes that updated the person's ~/.oh-my-zsh.
+        env["DISABLE_AUTO_UPDATE"] = "true"
         extra.forEach { env[$0.key] = $0.value }
         process.environment = env
         let out = Pipe()
