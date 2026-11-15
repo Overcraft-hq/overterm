@@ -54,11 +54,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private(set) var spotlightView: NSView?
     /// Polls where the selected tab's agent works (see Tab.agentDirectory).
     private var agentPoll: Timer?
-    /// Shared across Tab Info popovers so CPU deltas and env reads carry over.
+    /// This window's readers' lookups in the app's census (`ProcessInspector`,
+    /// docs/design/activity/analysis.md 7.8). It keeps nothing of its own:
+    /// the CPU baselines and what was read of each process live with the
+    /// census, every reader's.
     private let inspector = ProcessInspector()
     /// The strip's width in the toolbar (`sizeStrip`).
     var stripWidth: NSLayoutConstraint?
-    var processInspector: ProcessInspector { inspector }
     /// Kept across popovers: transcripts are re-read only where they grew.
     private let claudeReader = ClaudeUsageReader()
     private(set) var infoPopover: NSPopover?
@@ -1895,10 +1897,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     /// The first agent process under a tab's panes (`roots`: each pane's
     /// login and tag, in order). `tree` is ProcessInspector.tree, read once
-    /// per pane: it answers from the live process table, differently from
-    /// one read to the next. (`lazy.compactMap(…).first` read the pane it
-    /// returned twice and force-unwrapped the second answer — an agent
-    /// exiting in between crashed the app.)
+    /// per pane: a lookup in the census, whose answer changes from one tick
+    /// to the next, and a second read may come after a tick.
+    /// (`lazy.compactMap(…).first` read the pane it returned twice and
+    /// force-unwrapped the second answer — an agent exiting in between
+    /// crashed the app.)
     nonisolated static func firstAgent(in roots: [(pid_t?, String)], tree: (pid_t?, String) -> [ProcessNode]) -> ProcessNode? {
         for (root, tag) in roots {
             if let agent = tree(root, tag).flatMap(\.flattened).first(where: isAgent) { return agent }

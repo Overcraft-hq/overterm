@@ -9,6 +9,16 @@ import SwiftUI
 /// continued, would be in the background. Continued in the opposite order,
 /// children before their shell, the shell never sees a thing.
 enum TabSuspension {
+    /// What a press stops, read at the press, as the scan this lookup
+    /// replaced read it (docs/design/activity/analysis.md, 7.8): a lookup in
+    /// the app's census that always ticks. The window's readers' lookups
+    /// answer from a snapshot up to a tick old, and a tab suspended from one
+    /// would keep running what started since — the command just typed, an
+    /// agent's new shell, a server's new worker — while its shell sat
+    /// stopped under the cover. Until Suspend Tab's own step moves it onto
+    /// the pane's set.
+    static func inspector(census: ActivitySampler = .app) -> ProcessInspector { ProcessInspector(census: census, freshness: 0) }
+
     /// Parents before their children — the order to stop in.
     static func order(_ roots: [ProcessNode]) -> [pid_t] { roots.flatMap(\.flattened).map(\.pid) }
 
@@ -81,13 +91,14 @@ final class SuspendedCover: NSView {
 }
 
 extension TerminalWindowController {
-    /// Stops every process in the tab's panes. The process scan runs off
-    /// the main thread; a Resume in between wins.
+    /// Stops every process in the tab's panes, read at the press
+    /// (`TabSuspension.inspector`). The process scan runs off the main
+    /// thread; a Resume in between wins.
     func suspendTab(_ tab: Tab) {
         let panes = tab.terminals.filter { !$0.isSuspended }
         guard !panes.isEmpty else { return }
         let roots = panes.map { (SurfaceProcesses.shared.loginPID(of: $0), $0.processTag) }
-        let inspector = processInspector
+        let inspector = TabSuspension.inspector()
         DispatchQueue.global(qos: .userInitiated).async {
             let orders = roots.map { TabSuspension.order(inspector.tree(root: $0.0, tag: $0.1)) }
             Task { @MainActor in

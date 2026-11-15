@@ -44,7 +44,9 @@ final class ProcessFolders: @unchecked Sendable {
 
     private let kernel: any ActivityKernel
     private let queue = DispatchQueue(label: "Overterm.activity.folders", qos: .userInitiated)
-    private let lock = NSLock()
+    /// A lock, and what a caller waiting for a read waits on
+    /// (`folder(waitingFor:now:)`): a read ending wakes it.
+    private let lock = NSCondition()
     // Under `lock`.
     private var known: [ActivityProcessID: (folder: Folder, at: UInt64)] = [:]
     private var waiting: [ActivityProcessID] = []
@@ -108,6 +110,25 @@ final class ProcessFolders: @unchecked Sendable {
         }
     }
 
+    /// `identity`'s folder for a caller that answers at once — the old
+    /// API's lookups (`ProcessInspector`): an agent's folder is what the
+    /// poll, Sessions and a drop ask of a tree — where a tick never waits.
+    /// The one known, of any age; else its read is asked, and waited for
+    /// `deadline` at most: one that doesn't come by then is nil, its
+    /// process marked as not answering by the next ask, as a tick's would
+    /// be. Never from this queue.
+    func folder(waitingFor identity: ActivityProcessID, now: UInt64) -> Folder? {
+        dispatchPrecondition(condition: .notOnQueue(queue))
+        if let known = folders([Request(identity: identity)], now: now)[identity] { return known }
+        let until = Date().addingTimeInterval(Double(Self.deadline) / 1e9)
+        lock.lock()
+        defer { lock.unlock() }
+        while known[identity] == nil, skipped[identity] == nil, reading?.identity == identity || waiting.contains(identity) {
+            guard lock.wait(until: until) else { break }
+        }
+        return known[identity]?.folder
+    }
+
     /// Whether a read is going or waiting: the tests wait for it.
     var isBusy: Bool { lock.withLock { draining } }
 
@@ -131,6 +152,7 @@ final class ProcessFolders: @unchecked Sendable {
                 // skip stands its minute.
                 if skipped[next] == nil { known[next] = (path.map(Folder.path) ?? .unknown, at) }
                 reading = nil
+                lock.broadcast()
             }
         }
     }

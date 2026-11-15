@@ -433,6 +433,9 @@ value, a path or an address of a process that isn't the test's.
   made after a list takes nothing from it, the oldest surface the oldest
   `login`, a pairing over only with its `login`; the app's children from
   one read of the table, a zombie `login` left out.
+- `TabSuspensionTests`: parents stopped before their children, and what
+  Suspend Tab stops read at the press — a lookup that always ticks,
+  where the census's other readers answer from a snapshot a tick old.
 - `ActivityMonitorTests`: one tick for every reader at the fastest
   cadence, the ticks stopped at the last `unwant` and when a reader goes
   away, an early tick only for a wider want and once for a burst, one-off

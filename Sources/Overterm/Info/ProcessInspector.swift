@@ -40,7 +40,9 @@ struct ProcessNode: Identifiable, Equatable {
     var flattened: [ProcessNode] { [self] + children.flatMap(\.flattened) }
 }
 
-/// Finds the processes belonging to a tab and measures them.
+/// Finds the processes belonging to a tab and measures them — a lookup in
+/// the app's census (docs/design/activity/analysis.md, 7.8), the API its
+/// callers had kept.
 ///
 /// A tab's processes are everything under the `login` libghostty spawned for
 /// its surface (see SurfaceProcesses for the pairing), plus anything carrying
@@ -48,86 +50,104 @@ struct ProcessNode: Identifiable, Equatable {
 /// nohup/disown). The tag alone isn't enough: macOS hides the environment of
 /// Apple-signed binaries (zsh, sh, sleep, git…) from other processes, so the
 /// shell itself never shows it; node, python, claude, go builds do.
+///
+/// The census reads them: one tick answers every pane's tree until it is a
+/// tick old, where each call rescanned all 1,300 processes, and every
+/// pane's CPU baselines live with their processes, where each call kept
+/// only its own tree's — a split tab read pane by pane read 0% (2.4 item
+/// 1). Its numbers are the census's: CPU since the last sample (a first
+/// one 0 here), the footprint, real memory; argv masked as it was read.
 final class ProcessInspector: @unchecked Sendable {
     static let tagVariable = "OVERTERM_TAB_ID"
 
-    private let lock = NSLock()
-    /// pid → (start time, tag or nil): the environment read once per process.
-    private var tags: [pid_t: (start: UInt64, tag: String?)] = [:]
-    /// pid → (cpu nanoseconds, when) for the CPU% delta.
-    private var lastCPU: [pid_t: (ns: UInt64, at: UInt64)] = [:]
+    /// A tick at the census's default cadence: a snapshot younger than
+    /// this answers a lookup with no new scan.
+    static let freshness: UInt64 = 2_000_000_000
+
+    /// The census it looks in: the app's.
+    let census: ActivitySampler
+    /// How old a snapshot may answer: one tick.
+    let freshness: UInt64
+
+    init(census: ActivitySampler = .app, freshness: UInt64 = ProcessInspector.freshness) {
+        self.census = census
+        self.freshness = freshness
+    }
 
     /// The measured tree of a tab: the descendants of `root` (not `root`
     /// itself — for a tab that is the root-owned `login`), plus processes
-    /// tagged `tag`. Blocking (a few ms, more the first time); call off the
-    /// main thread.
+    /// tagged `tag` and what they started — of those, what runs as the
+    /// user and hasn't ended (`running`). Blocking — a lookup, a tick when
+    /// the latest snapshot is older than `freshness` or doesn't have this
+    /// pane: call off the main thread.
+    ///
+    /// The pane is the app context's whose `login` is `root` and whose tag
+    /// is `tag`; any other (a root no pane has, a tag alone) is read as a
+    /// pane of its own beside the app's, by the same tick.
     func tree(root: pid_t?, tag: String?) -> [ProcessNode] {
-        lock.lock()
-        defer { lock.unlock() }
-        let now = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
-        let uid = getuid()
-
-        var infos: [pid_t: proc_bsdinfo] = [:]
-        var children: [pid_t: [pid_t]] = [:]
-        for pid in Self.allPIDs() where pid > 0 {
-            if let bsd = Self.bsdInfo(pid) {
-                infos[pid] = bsd
-                children[pid_t(bsd.pbi_ppid), default: []].append(pid)
-            } else if let link = Self.kinfo(pid) {
-                // Another user's process (root's login): only its link is needed.
-                children[link.parent, default: []].append(pid)
-            }
+        guard root != nil || tag != nil else { return [] }
+        func matches(_ login: ActivityProcessID?, _ paneTag: String) -> Bool {
+            (root == nil || login?.pid == root) && (tag == nil || paneTag == tag)
         }
-
-        var members = Set<pid_t>()
-        if let root {
-            var stack = children[root] ?? []
-            while let pid = stack.popLast() {
-                if members.insert(pid).inserted { stack += children[pid] ?? [] }
+        var context = census.appContext
+        if !context.panes.contains(where: { matches($0.login, $0.tag) }) {
+            var login: ActivityProcessID?
+            if let root {
+                // Its start: what the census names it by.
+                guard let process = census.kernel.process(root), !process.isZombie else { return [] }
+                login = process.identity
             }
+            // A tag no process carries, when none is asked for.
+            context.panes.append(ActivityContext.Pane(tag: tag ?? "lookup-\(UUID().uuidString)", tab: UUID(), login: login))
         }
-        let kernel = LiveActivityKernel()
-        if let tag {
-            for (pid, bsd) in infos where bsd.pbi_uid == uid && !members.contains(pid) {
-                let start = UInt64(bsd.pbi_start_tvsec) * 1_000_000 + UInt64(bsd.pbi_start_tvusec)
-                if tags[pid]?.start != start {
-                    // The four markers alone, scanned in place (9.2): no
-                    // other entry of the environment becomes a String.
-                    tags[pid] = (start, ProcessArguments.markers(pid, kernel: kernel, codeSigning: nil)?.tab)
-                }
-                if tags[pid]?.tag == tag {
-                    // It and everything under it.
-                    var stack = [pid]
-                    while let next = stack.popLast() {
-                        if members.insert(next).inserted { stack += children[next] ?? [] }
-                    }
-                }
-            }
-        }
+        func slice(in snapshot: ActivitySnapshot) -> ActivityPaneSlice? { snapshot.panes.first { matches($0.login, $0.tag) } }
+        guard let snapshot = census.lookup(within: freshness, demand: ActivityDemand(.light(tabs: nil)), context: context, answers: { slice(in: $0) != nil }),
+            let pane = slice(in: snapshot)
+        else { return [] }
+        return nodes(Self.running(tag == nil ? pane.tree : pane.placed, in: snapshot), in: snapshot)
+    }
 
+    /// Of `members`, what the old scan made a node of — the user's
+    /// processes, never a zombie: `PROC_PIDTBSDINFO` refused the rest —
+    /// and of the user's only what runs as the user alone, its effective,
+    /// real and saved uids all theirs, as `ProcessSignals` asks (6.10).
+    /// What `tree` gives is what Suspend Tab stops, by pid until its own
+    /// step (7.8), and what the agent readers look in: a setuid program the
+    /// pane runs (sudo, top, su) is root's, though `kill(2)` would let a
+    /// SIGSTOP through by its real uid (3.2), and a zombie has ended — an
+    /// agent's isn't running, and a pid recorded as stopped would wait for
+    /// a bare SIGCONT. What a setuid program started as the user stays.
+    /// Tab Info, which signals nothing, calls `nodes` itself and names the
+    /// others too.
+    static func running(_ members: [ActivityProcessID], in snapshot: ActivitySnapshot) -> [ActivityProcessID] {
+        members.filter { identity in
+            guard let process = snapshot.table.process(identity) else { return false }
+            return process.isWhollyOwn(by: snapshot.uid) && !process.isZombie
+        }
+    }
+
+    /// `members` as nodes from `snapshot`, assembled. An agent's folder is
+    /// waited for when the census hasn't read it yet: the poll, Sessions and
+    /// a drop read it at once (`ProcessFolders.folder(waitingFor:now:)`).
+    func nodes(_ members: [ActivityProcessID], in snapshot: ActivitySnapshot) -> [ProcessNode] {
         var nodes: [pid_t: ProcessNode] = [:]
-        for pid in members {
-            guard let bsd = infos[pid] else { continue }
-            // The task's times, its footprint and its real memory, read together.
-            let usage = kernel.usage(of: pid)
-            let cpuNS = usage?.cpuTime ?? 0
-            var percent = 0.0
-            if let last = lastCPU[pid], now > last.at, cpuNS >= last.ns {
-                percent = Double(cpuNS - last.ns) / Double(now - last.at) * 100
+        for identity in members {
+            guard let process = snapshot.table.process(identity) else { continue }
+            let facts = snapshot.facts[identity]
+            let name = snapshot.name(of: identity) ?? process.shortName
+            let command = facts?.command ?? ""
+            var folder: String?
+            if case .path(let path)? = facts?.folder {
+                folder = path
+            } else if Agent.of(name: name, command: command) != nil,
+                case .path(let path)? = census.folders.folder(waitingFor: identity, now: census.kernel.uptime())
+            {
+                folder = path
             }
-            lastCPU[pid] = (cpuNS, now)
-            let start = UInt64(bsd.pbi_start_tvsec) * 1_000_000 + UInt64(bsd.pbi_start_tvusec)
-            nodes[pid] = ProcessNode(
-                identity: ActivityProcessID(pid: pid, start: start), parent: pid_t(bsd.pbi_ppid), name: Self.name(pid, fallback: bsd),
-                // argv masked inside the read (ProcessArguments): the raw
-                // words never leave it.
-                maskedCommand: ProcessArguments.read(pid, kernel: kernel, markers: false, codeSigning: nil)?.command ?? "", cpuPercent: percent,
-                footprint: usage?.footprint ?? 0,
-                memory: usage?.residentSize ?? 0, workingDirectory: Self.workingDirectory(of: pid))
+            nodes[identity.pid] = ProcessNode(
+                identity: identity, parent: process.parentPID, name: name, maskedCommand: command, cpuPercent: facts?.rates?.cpuPercent ?? 0,
+                footprint: facts?.usage?.footprint ?? 0, memory: facts?.usage?.residentSize ?? 0, workingDirectory: folder)
         }
-        // Forget processes that are gone (pids get reused).
-        tags = tags.filter { infos[$0.key] != nil }
-        lastCPU = lastCPU.filter { nodes[$0.key] != nil }
         return Self.assemble(nodes)
     }
 
@@ -210,37 +230,5 @@ final class ProcessInspector: @unchecked Sendable {
         var info = proc_bsdinfo()
         let size = Int32(MemoryLayout<proc_bsdinfo>.size)
         return proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size ? info : nil
-    }
-
-    static func taskInfo(_ pid: pid_t) -> proc_taskinfo? {
-        var info = proc_taskinfo()
-        let size = Int32(MemoryLayout<proc_taskinfo>.size)
-        return proc_pidinfo(pid, PROC_PIDTASKINFO, 0, &info, size) == size ? info : nil
-    }
-
-    static func workingDirectory(of pid: pid_t) -> String? {
-        var info = proc_vnodepathinfo()
-        let size = Int32(MemoryLayout<proc_vnodepathinfo>.size)
-        guard proc_pidinfo(pid, PROC_PIDVNODEPATHINFO, 0, &info, size) == size else { return nil }
-        return withUnsafeBytes(of: info.pvi_cdir.vip_path) { raw in
-            String(cString: raw.bindMemory(to: CChar.self).baseAddress!)
-        }
-    }
-
-    private static func name(_ pid: pid_t, fallback bsd: proc_bsdinfo) -> String {
-        var buffer = [CChar](repeating: 0, count: 256)
-        if proc_name(pid, &buffer, UInt32(buffer.count)) > 0 { return String(cString: buffer) }
-        return withUnsafeBytes(of: bsd.pbi_comm) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) }
-    }
-
-    /// Task times are Mach absolute ticks on Apple Silicon (1 ns on Intel).
-    private static let timebase: mach_timebase_info_data_t = {
-        var info = mach_timebase_info_data_t()
-        mach_timebase_info(&info)
-        return info
-    }()
-
-    static func nanoseconds(_ ticks: UInt64) -> UInt64 {
-        ticks * UInt64(timebase.numer) / UInt64(max(timebase.denom, 1))
     }
 }
