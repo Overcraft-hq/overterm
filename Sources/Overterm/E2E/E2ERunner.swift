@@ -3291,6 +3291,7 @@ final class E2ERunner {
         app.showSelectedTabInfo(nil)
         await eventually(2) { self.app.infoPopover == nil }
         check("closing it stops the refresh", app.infoModel == nil)
+        await backgroundTabCPU(first: first)
         // Leave nothing of its own behind, each by its pid while that is
         // still its process — never another sleep the tab runs; the typed
         // `kill %1` is its shell's own.
@@ -3303,6 +3304,51 @@ final class E2ERunner {
         // Last, the server's pill: Stop… asked, checked, then sent
         // (E2ERunner+PortPill).
         if let port { await portPillStop(in: first, port: port) }
+    }
+
+    /// Tab Info on a tab that isn't selected, while the window's agent poll
+    /// reads the selected one, `first`, with the same inspector: a busy
+    /// loop of the scenario's own in the other tab (stopped by a file, 60 s
+    /// at most) reads above 10% at every refresh for 4.5 s, over two of the
+    /// poll's 2 s ticks. The poll's reads once dropped the other tab's
+    /// baselines, and every reading after one was 0%.
+    private func backgroundTabCPU(first: Tab) async {
+        guard let second = app.store.tabs.first(where: { $0 !== first }) else { return check("the other tab", false) }
+        app.store.select(second)
+        await eventually(2) { self.window.firstResponder === second.terminal }
+        let busy = out("busy.sh")
+        try? "echo $$ > \"$0.pid\"\nwhile [ ! -e \"$0.stop\" ] && [ \"$SECONDS\" -lt 60 ]; do :; done\n".write(to: busy, atomically: true, encoding: .utf8)
+        let busyPID = URL(fileURLWithPath: busy.path + ".pid")
+        await runAndExpect("/bin/bash \(busy.path) &", file: busyPID, content: nil, "a busy loop runs in the other tab")
+        let loop = contents(busyPID).flatMap { pid_t($0) }.flatMap { pid in ProcessInspector.kinfo(pid).map { (pid: pid, start: $0.start) } }
+        app.store.select(first)
+        await eventually(2) { self.window.firstResponder === first.terminal }
+        app.showInfo(for: second)
+        if let model = app.infoModel, model.tab === second, let loop {
+            func reading() -> Double? { model.processes.flatMap(\.flattened).first { $0.pid == loop.pid }?.cpuPercent }
+            // From its first reading above 10%, every one after it.
+            var since: Date?
+            var drops = 0
+            let held = await eventually(15) {
+                guard let cpu = reading(), cpu > 10 else {
+                    if since != nil { drops += 1 }
+                    since = nil
+                    return false
+                }
+                let start = since ?? Date()
+                since = start
+                return Date().timeIntervalSince(start) >= 4.5
+            }
+            check(
+                "a tab that isn't selected has its CPU measured at every refresh", held,
+                drops > 0 ? "\(drops) readings at 10% or less after one above" : "never read above 10%")
+        } else {
+            check("Tab Info opens on the other tab, with its busy loop", false)
+        }
+        app.infoPopover?.performClose(nil)
+        await eventually(2) { self.app.infoPopover?.isShown != true }
+        try? Data().write(to: URL(fileURLWithPath: busy.path + ".stop"))
+        check("the busy loop stops when told", await eventually(5) { loop.map { ProcessInspector.kinfo($0.pid)?.start != $0.start } ?? false })
     }
 
     /// The help — the tooltip `.help` gives — of every element `identifier`

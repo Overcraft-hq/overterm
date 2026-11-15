@@ -418,6 +418,11 @@ through its menu item, without bringing the app forward.
 `splits` also reads Tab Info's CPU in a split tab: a busy loop of its own in
 each pane (stopped by a file it writes, 60 s at most), each above 0% — a
 pane's read once forgot the other's baselines, and every pane read 0%.
+`info` reads it in a tab that isn't selected: Tab Info on its second tab,
+a busy loop of its own there, while the first is selected and the window's
+agent poll reads that one with the same inspector — above 10% at every
+refresh for 4.5 s, over two of the poll's ticks; the poll's reads once
+dropped the other tab's baselines, and every reading after one was 0%.
 `info` also runs a sleeping perl of its own (60 s at most) whose argv
 carries a fake password, made at run time and never typed — a script it
 writes execs it —, once after a token's flag with a `/` in front, once with
