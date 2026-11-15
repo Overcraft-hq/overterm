@@ -69,8 +69,9 @@ final class ActivitySampler: @unchecked Sendable {
 
     let kernel: any ActivityKernel
     let limits: Limits
-    /// Where every tick runs and the caches live (D-8).
-    let queue = DispatchQueue(label: "Overterm.activity", qos: .userInitiated)
+    /// Where every tick runs and the caches live, at `ActivitySampler.qos`
+    /// (D-8); another only for the probe that compares them.
+    let queue: DispatchQueue
     /// The working folders, on a queue of their own (7.7).
     let folders: ProcessFolders
 
@@ -95,9 +96,17 @@ final class ActivitySampler: @unchecked Sendable {
     private var lastSnapshot: ActivitySnapshot?
     private var lastContext = ActivityContext()
 
-    init(kernel: any ActivityKernel = LiveActivityKernel(), limits: Limits = Limits()) {
+    /// The sampler's QoS (D-8): `.userInitiated`. Measured in this process's
+    /// `ri_energy_nj` (`ActivityProbeTests.testTheTicksEnergyAtEachQoS`), a
+    /// light tick cost about 1.0 mJ there against 1.2–1.3 mJ at `.utility`,
+    /// and a full tick the same at both (about 15 mJ): `.utility` saves
+    /// nothing.
+    static let qos = DispatchQoS.userInitiated
+
+    init(kernel: any ActivityKernel = LiveActivityKernel(), limits: Limits = Limits(), qos: DispatchQoS = ActivitySampler.qos) {
         self.kernel = kernel
         self.limits = limits
+        self.queue = DispatchQueue(label: "Overterm.activity", qos: qos)
         self.folders = ProcessFolders(kernel: kernel)
         self.baselines = UsageBaselines(maximumAge: limits.baselineAge)
     }

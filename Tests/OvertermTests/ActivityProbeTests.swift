@@ -325,6 +325,80 @@ final class ActivityProbeTests: XCTestCase {
         XCTAssertEqual(answers[.sent(pinned: true)], 500)
     }
 
+    /// D-8: Overterm's own energy (`ri_energy_nj`, this process's — the
+    /// test stands for the app) a light and a full tick costs on a sampler
+    /// at `.userInitiated` and at `.utility`. Each set of ticks 250 ms apart,
+    /// the core asleep between them as at the app's cadence, less the same
+    /// span idle measured beside it; then back to back, the core awake.
+    /// Three rounds, the order turned each round; the medians.
+    func testTheTicksEnergyAtEachQoS() throws {
+        var children: [TestChild] = []
+        defer { children.forEach { $0.stop() } }
+        for _ in 0..<8 { children.append(try TestChild("/bin/sleep", ["300"])) }
+        let start = try XCTUnwrap(ProcessInspector.kinfo(getpid())?.start)
+        let tab = UUID()
+        let pane = ActivityContext.Pane(tag: "probe", tab: tab, login: ActivityProcessID(pid: getpid(), start: start))
+        let context = ActivityContext(panes: [pane], appPID: -1)
+        let ticks = 20
+        let spacing = 0.25
+        func energy() -> UInt64 {
+            var info = rusage_info_v6()
+            _ = withUnsafeMutablePointer(to: &info) { pointer in
+                pointer.withMemoryRebound(to: rusage_info_t?.self, capacity: 1) { proc_pid_rusage(getpid(), RUSAGE_INFO_V6, $0) }
+            }
+            return info.ri_energy_nj
+        }
+        func idle() -> Double {
+            let before = energy()
+            for _ in 0..<ticks { Thread.sleep(forTimeInterval: spacing) }
+            return Double(energy() &- before)
+        }
+        struct Config {
+            let name: String
+            let qos: DispatchQoS
+            let demand: ActivityDemand
+        }
+        let configs = [
+            Config(name: "light .userInitiated", qos: .userInitiated, demand: ActivityDemand(.light(tabs: [tab]))),
+            Config(name: "light .utility", qos: .utility, demand: ActivityDemand(.light(tabs: [tab]))),
+            Config(name: "full .userInitiated", qos: .userInitiated, demand: ActivityDemand(.full)),
+            Config(name: "full .utility", qos: .utility, demand: ActivityDemand(.full)),
+        ]
+        let samplers = configs.map { config in
+            let sampler = ActivitySampler(kernel: kernel, qos: config.qos)
+            _ = cold(sampler, config.demand, context)
+            return sampler
+        }
+        var spaced: [String: [Double]] = [:]
+        var awake: [String: [Double]] = [:]
+        var cpu: [String: [UInt64]] = [:]
+        for round in 0..<3 {
+            let order = round % 2 == 0 ? Array(configs.indices) : configs.indices.reversed()
+            for index in order {
+                let config = configs[index]
+                let baseline = idle()
+                let before = energy()
+                for _ in 0..<ticks {
+                    if let cost = samplers[index].tickNow(config.demand, context: context)?.cost { cpu[config.name, default: []].append(cost.cpu) }
+                    Thread.sleep(forTimeInterval: spacing)
+                }
+                spaced[config.name, default: []].append((Double(energy() &- before) - baseline) / Double(ticks))
+                let awakeBefore = energy()
+                for _ in 0..<30 { _ = samplers[index].tickNow(config.demand, context: context) }
+                awake[config.name, default: []].append(Double(energy() &- awakeBefore) / 30)
+            }
+        }
+        func middle(_ values: [Double]) -> Double { values.sorted()[values.count / 2] }
+        for config in configs {
+            report(
+                String(
+                    format: "energy, %@: %.1f µJ a tick 250 ms apart (rounds %@), %.1f µJ back to back; CPU median %.2f ms", config.name,
+                    middle(spaced[config.name] ?? [0]) / 1e3, (spaced[config.name] ?? []).map { String(format: "%.1f", $0 / 1e3) }.joined(separator: ", "),
+                    middle(awake[config.name] ?? [0]) / 1e3, Double(median(cpu[config.name] ?? [])) / 1e6))
+        }
+        XCTAssertGreaterThan(energy(), 0, "rusage_info_v6 carries energy here")
+    }
+
     /// What each child of `testTheLightTickAMember` is handed: a TCP
     /// listener and a bound UDP socket on 127.0.0.1, and a unix pair.
     private func heldSockets() throws -> [Int32] {
