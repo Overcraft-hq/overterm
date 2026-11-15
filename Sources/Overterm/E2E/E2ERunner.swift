@@ -3283,7 +3283,7 @@ final class E2ERunner {
         if let perl {
             func node() -> ProcessNode? { model.processes.flatMap(\.flattened).first { $0.pid == perl.pid && $0.name == "perl" } }
             let listed = await eventually { node() != nil }
-            let command = node()?.command ?? ""
+            let command = node()?.maskedCommand ?? ""
             check(
                 "a command with a password in it is listed masked", listed && command.contains(Secrets.credentialMask) && !command.contains(password),
                 command.replacingOccurrences(of: password, with: "<password>"))
