@@ -94,7 +94,7 @@ enum DockerHelpers {
     }
 
     /// At quit: what is left removed, waiting at most `seconds` — a remote
-    /// engine's forward is still open (`DockerSSHForwards.closeAll` comes
+    /// engine's forward is still open (`ManagedProcess.closeAll` comes
     /// after). Blocks the caller, the main thread at quit; the removal
     /// runs elsewhere, never on the main actor, so it can't wait on itself.
     static func removeAll(waiting seconds: Double = 2) {

@@ -368,6 +368,14 @@
   "file": "licenses/tree-sitter-diff.txt"
  },
  {
+  "group": "Editor",
+  "name": "tree-sitter-hcl",
+  "version": "9e3ec9848f28",
+  "license": "Apache-2.0",
+  "url": "https://github.com/tree-sitter-grammars/tree-sitter-hcl",
+  "file": "licenses/tree-sitter-hcl.txt"
+ },
+ {
   "group": "Swift packages",
   "name": "mysql-nio",
   "version": "1.9.2",

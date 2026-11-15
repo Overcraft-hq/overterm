@@ -144,6 +144,37 @@ final class CommandLedgerTests: XCTestCase {
         XCTAssertTrue(CommandLedger.isPrompt("   ", cwd: nil))
     }
 
+    /// Ghostty's zsh integration titles a prompt four folders deep or more
+    /// `…/` and the last three (`%(4~|…/%3~|%~)`): every scenario's pane,
+    /// in `$TMPDIR`, is one. Taken for a command, the prompt opened a block
+    /// that took the rows of the command before it whenever that command's
+    /// scroll arrived after the title.
+    func testGhosttysShortenedDirectoryTitleIsThePrompt() {
+        let deep = "/var/folders/3s/abc/T/overterm-isolated-1/start"
+        XCTAssertTrue(CommandLedger.isPrompt("…/T/overterm-isolated-1/start", cwd: deep))
+        XCTAssertTrue(CommandLedger.isPrompt("…/src/app/My Folder", cwd: NSHomeDirectory() + "/work/src/app/My Folder"))
+        XCTAssertTrue(CommandLedger.isPrompt("…/a/b/c", cwd: nil))
+        XCTAssertFalse(CommandLedger.isPrompt("…/x y", cwd: deep))
+    }
+
+    /// The ledger itself, fed in the order that broke it: the prompt's title
+    /// before the scroll of the command it follows. The command keeps its rows.
+    func testAShortenedPromptTitleBeforeTheScrollLeavesTheRowsToTheCommand() {
+        let cwd = "/var/folders/3s/abc/T/overterm-isolated-1/start"
+        var ledger = CommandLedger()
+        at(&ledger, rows: 46)
+        let title = "…/T/overterm-isolated-1/start"
+        for event in ["for i in $(seq 1 120); do echo filler $i; done", title] {
+            if CommandLedger.isPrompt(event, cwd: cwd) { ledger.prompted() } else { ledger.began(command: event) }
+        }
+        ledger.finished(exitCode: 0, seconds: 0.1)
+        at(&ledger, rows: 167)
+        XCTAssertEqual(ledger.blocks.count, 1)
+        XCTAssertEqual(ledger.blocks[0].startRow, 46)
+        XCTAssertEqual(ledger.blocks[0].endRow, 166)
+        XCTAssertTrue(ledger.blocks[0].isLocated)
+    }
+
     /// oh-my-zsh's title at every prompt: `user@host:path`. Taken for a
     /// command, each prompt opened a block and took the exit code and the
     /// rows of the command before it (blocks, ⇧⌘C, ⌥⌘↓ all broke).

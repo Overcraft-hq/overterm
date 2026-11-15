@@ -141,7 +141,7 @@ enum ModelRunner {
     private static func client(_ place: Place, engine: DockerEngine) -> (DockerTransport, String)? {
         switch place {
         case .desktop: (engine.transport, desktopPrefix)
-        case .container(_, let port): (NIODockerTransport(address: .tcp(host: "127.0.0.1", port: port)), "")
+        case .container(_, let port): (UnixHTTPTransport.docker(.tcp(host: "127.0.0.1", port: port)), "")
         default: nil
         }
     }

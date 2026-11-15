@@ -37,6 +37,17 @@ enum LineDiff {
         }
     }
 
+    /// The changed stretches between `base` and `current`, by line, in
+    /// order — what a unified diff is cut from (a Kubernetes manifest's
+    /// diff with the cluster).
+    static func blocks(base: String, current: String) -> [Block] {
+        let a = lineHashes(base)
+        let b = lineHashes(current)
+        var differ = Differ(a: a, b: b)
+        differ.diff(aLow: 0, aHigh: a.count, bLow: 0, bHigh: b.count)
+        return differ.blocks
+    }
+
     /// FNV-1a of each line's bytes, its newline left out; a trailing newline
     /// ends the last line rather than starting an empty one.
     static func lineHashes(_ text: String) -> [UInt64] {

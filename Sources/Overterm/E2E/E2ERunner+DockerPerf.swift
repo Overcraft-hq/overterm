@@ -42,6 +42,14 @@ extension E2ERunner {
         if let scroll = scrollViews.max(by: { $0.frame.height < $1.frame.height }) {
             var samples: [Double] = []
             var y: CGFloat = 0
+            // The core woken first: after the pause above, the first step
+            // ran on a core the OS had let idle down — 25 to 45 ms where
+            // the next took 9, and 20 M rounds of arithmetic, nothing of
+            // the app's, took 40 to 60 ms there against 37 a moment later.
+            // 50 ms of that arithmetic first brought the step to 13–20 ms.
+            // Its 16 steps' p95 is their slowest: measured cold, it was the
+            // clock's ramp it timed, not the list's.
+            Self.wakeCore(milliseconds: 50)
             for _ in 0..<200 {
                 let height = scroll.documentView?.frame.height ?? 0
                 let visible = scroll.contentView.bounds.height
@@ -56,11 +64,13 @@ extension E2ERunner {
                 await Task.yield()
             }
             let scrolled = Self.summary(samples)
-            note("docker list scrolled: \(samples.count) steps, \(scrolled)")
+            note("docker list scrolled: \(samples.count) steps, \(scrolled), each \(samples.map { Int($0.rounded()) })")
             // A third of a screen a step — seven rows new at once, where a
             // trackpad brings one or two a frame. As a SwiftUI List: 39 ms
             // (30 with its menus off the rows); as a table of the same
-            // SwiftUI rows, reused: ~22.
+            // SwiftUI rows, reused: ~22, then 18.5 on macOS 27; its port
+            // pills tapped rather than Buttons, by place rather than by
+            // port, and a cell reused only for its kind of row: ~10.
             check("the list scrolls in under 35 ms a step (p95)", scrolled.p95 < 35, "\(scrolled)")
         } else {
             check("the list's table", false)
@@ -105,6 +115,19 @@ extension E2ERunner {
             check("the list has a right-click menu", table.menu != nil)
         }
         app.closeOverlay(.docker)
+    }
+
+    /// Arithmetic on this thread for `milliseconds`, touching nothing of
+    /// the app's: the core it runs on at full clock before a timing.
+    static func wakeCore(milliseconds: Double) {
+        let until = CACurrentMediaTime() + milliseconds / 1000
+        var x = UInt64(until * 1000) | 1
+        while CACurrentMediaTime() < until {
+            x ^= x << 13
+            x ^= x >> 7
+            x ^= x << 17
+        }
+        withExtendedLifetime(x) {}
     }
 
     /// A press and its release on `view`, in this window's own queue: the

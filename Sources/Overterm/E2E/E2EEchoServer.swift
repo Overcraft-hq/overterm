@@ -13,6 +13,10 @@ final class E2EEchoServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "overterm.e2e-echo")
     private var listener: NWListener?
     private(set) var port: UInt16 = 0
+    private let lock = NSLock()
+    private var connected = 0
+    /// How many connections it has taken: a test's "nothing was asked".
+    var connections: Int { lock.withLock { connected } }
 
     /// Starts listening and waits until it does.
     func start() throws {
@@ -40,6 +44,7 @@ final class E2EEchoServer: @unchecked Sendable {
     var baseURL: String { "http://127.0.0.1:\(port)" }
 
     private func accept(_ connection: NWConnection) {
+        lock.withLock { connected += 1 }
         connection.start(queue: queue)
         receive(connection, buffer: Data())
     }

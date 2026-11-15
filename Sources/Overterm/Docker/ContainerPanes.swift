@@ -9,154 +9,6 @@ enum ContainerTab: String, CaseIterable, Identifiable {
     var title: String { rawValue.capitalized }
 }
 
-/// What the log shows: a word in it, how bad a line must be, and — for a
-/// compose project's — whose. Pure.
-struct DockerLogFilter: Equatable {
-    enum Level: String, CaseIterable, Identifiable {
-        case all, warnings, errors
-
-        var id: String { rawValue }
-        var title: String {
-            switch self {
-            case .all: "All levels"
-            case .warnings: "Warnings+"
-            case .errors: "Errors"
-            }
-        }
-    }
-
-    var text = ""
-    var level = Level.all
-    /// One service's lines; nil, every service's.
-    var service: String?
-
-    var isEmpty: Bool { text.isEmpty && level == .all && service == nil }
-
-    func matches(_ line: DockerLogLine) -> Bool {
-        if let service, line.service != service { return false }
-        switch level {
-        case .all: break
-        // A line nobody levelled isn't taken for a warning, but stderr's
-        // unlevelled lines are kept: that is where most errors go.
-        case .warnings: guard (line.level ?? (line.stream == .stderr ? .warning : .info)) >= .warning else { return false }
-        case .errors: guard (line.level ?? .info) >= .error else { return false }
-        }
-        guard !text.isEmpty else { return true }
-        return line.message.localizedCaseInsensitiveContains(text) || line.fields.contains { $0.1.localizedCaseInsensitiveContains(text) }
-    }
-}
-
-/// The Logs tab: followed, filtered, coloured by level — a container's,
-/// or a compose project's services' merged.
-struct DockerLogsPane: View {
-    @ObservedObject var feed: DockerLogFeed
-    @ObservedObject var theme: ChromeTheme
-    let actions: DockerActions
-    /// A compose project's services, for the picker; with `service`, the
-    /// one shown (the project's session keeps it).
-    var services: [String] = []
-    var service: Binding<String?>? = nil
-    /// Lines picked out of it, to an agent (`DockerLogTextView`).
-    var ask: ((String) -> Void)? = nil
-    @State private var filter = DockerLogFilter()
-    @State private var wrap = true
-    @State private var timestamps = true
-
-    /// The field's and the level's filter, narrowed to the service picked.
-    private var effective: DockerLogFilter {
-        var filter = filter
-        filter.service = service?.wrappedValue
-        return filter
-    }
-
-    var body: some View {
-        VStack(spacing: 0) {
-            toolbar
-            Rectangle().fill(theme.border).frame(height: 1)
-            let filter = effective
-            let shown = filter.isEmpty ? feed.lines : feed.lines.filter(filter.matches)
-            if let note = Self.note(lines: feed.lines.count, shown: shown.count, filter: filter, following: feed.following) {
-                Text(verbatim: note).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else {
-                let text = theme.textNS
-                let stamps = timestamps
-                DockerTextView(
-                    count: shown.count,
-                    // Filtered, it is another text: drawn again, not added to.
-                    revision: feed.revision
-                        &+ (filter.isEmpty ? 0 : filter.text.hashValue &+ filter.level.hashValue &+ (filter.service?.hashValue ?? 0) &+ 1)
-                        &+ (timestamps ? 0 : 7),
-                    render: { range in
-                        shown[range].map { DockerLogStyle.line($0, text: text, dim: text.withAlphaComponent(0.45), timestamps: stamps) }
-                    },
-                    wrap: wrap, follow: true, ask: ask)
-            }
-        }
-    }
-
-    /// What the pane says in place of its lines: none at all, or none
-    /// from the service picked — a filter over the project's feed, said
-    /// rather than left blank. Each service keeps its last lines there
-    /// (`DockerLogFeed.keepEach`), so none is none. Nil: the lines. Pure.
-    nonisolated static func note(lines: Int, shown: Int, filter: DockerLogFilter, following: Bool) -> String? {
-        if lines == 0 { return following ? "Nothing written yet." : "No logs." }
-        guard shown == 0, let service = filter.service else { return nil }
-        return filter.text.isEmpty && filter.level == .all ? "Nothing from \(service) yet." : "Nothing from \(service) matches."
-    }
-
-    private var toolbar: some View {
-        HStack(spacing: 8) {
-            HStack(spacing: 4) {
-                Image(systemName: "magnifyingglass").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
-                TextField("Filter the log", text: $filter.text).textFieldStyle(.plain).font(.system(size: ChromeMetrics.text(12)))
-                    .accessibilityIdentifier("docker.logs.filter")
-            }
-            .padding(.horizontal, 7)
-            .frame(minWidth: 100, maxWidth: .infinity)
-            .frame(height: ChromeMetrics.row(24))
-            .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover.opacity(0.7)))
-            Picker("", selection: $filter.level) {
-                ForEach(DockerLogFilter.Level.allCases) { Text($0.title).tag($0) }
-            }
-            .labelsHidden()
-            .controlSize(.small)
-            .fixedSize()
-            .help("Lines shown: all, warnings and errors (stderr's unlevelled lines too), or errors")
-            if let service, services.count > 1 {
-                Picker("", selection: service) {
-                    Text("All services").tag(String?.none)
-                    ForEach(services, id: \.self) { Text(verbatim: $0).tag(Optional($0)) }
-                }
-                .labelsHidden()
-                .controlSize(.small)
-                .fixedSize()
-                .help("One service's lines, or all of them merged")
-                .accessibilityIdentifier("docker.logs.service")
-            }
-            HStack(spacing: 4) {
-                DockerStatusDot(color: feed.following ? TabStatusStyle.done : theme.text3)
-                Text(feed.following ? "Following" : "Stopped").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
-            }
-            .help(feed.following ? "New lines appear as they are written" : "Nothing runs: its log is followed again when it starts")
-            Menu {
-                Toggle("Wrap Lines", isOn: $wrap)
-                Toggle("Timestamps", isOn: $timestamps)
-                Divider()
-                Button("Clear") { feed.clear() }
-                if let command = feed.terminalCommand { Button("Follow in a Terminal Tab") { actions.run(command, nil) } }
-            } label: {
-                Image(systemName: "ellipsis.circle").font(.system(size: ChromeMetrics.text(12)))
-            }
-            .menuStyle(.borderlessButton)
-            .menuIndicator(.hidden)
-            .fixedSize()
-        }
-        .padding(.horizontal, 12)
-        .padding(.vertical, 6)
-    }
-}
-
 /// The Files tab: a folder at a time, a file to the editor (saved back
 /// into the container), or to the Mac (`DockerFolderList`); or what
 /// changed since it started.
@@ -251,9 +103,9 @@ struct DockerInspectPane: View {
             Rectangle().fill(theme.border).frame(height: 1)
             if let json = session.json {
                 let lines = json.split(separator: "\n", omittingEmptySubsequences: false)
-                DockerTextView(
+                LogTextView(
                     count: lines.count, revision: json.hashValue, render: { range in lines[range].map { Self.line(String($0), theme: theme) } },
-                    wrap: false, follow: false)
+                    wrap: false, follow: false, identifier: "docker.text")
             } else {
                 ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
             }
@@ -263,7 +115,7 @@ struct DockerInspectPane: View {
 
     /// A key in the text colour, its value dimmer.
     static func line(_ text: String, theme: ChromeTheme) -> NSAttributedString {
-        let out = NSMutableAttributedString(string: text, attributes: [.font: DockerLogStyle.font, .foregroundColor: theme.textNS.withAlphaComponent(0.7)])
+        let out = NSMutableAttributedString(string: text, attributes: [.font: LogStyle.font, .foregroundColor: theme.textNS.withAlphaComponent(0.7)])
         if let range = text.range(of: #"^\s*"[^"]+"(?= :)"#, options: .regularExpression) {
             out.addAttribute(.foregroundColor, value: theme.textNS, range: NSRange(range, in: text))
         }

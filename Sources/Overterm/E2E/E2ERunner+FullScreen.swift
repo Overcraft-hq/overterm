@@ -7,6 +7,16 @@ import AppKit
 extension E2ERunner {
     func fullScreenScenario() async {
         guard let strip = app.tabBarView else { return check("a strip", false) }
+        // An isolated run's window is its own: never the frame macOS saved
+        // for the user's (the standard defaults), never one saved back there
+        // — this scenario's 1000×640 opened every scenario after it, until
+        // the page's text read off the window no longer fit.
+        let savedKey = "NSWindow Frame OvertermMainWindow"
+        let saved = UserDefaults.standard.string(forKey: savedKey)
+        let area = (window.screen ?? NSScreen.main)?.visibleFrame ?? .zero
+        let expected = CGSize(width: min(1_400, area.width), height: min(880, area.height))
+        check("an isolated run's window keeps no frame", window.frameAutosaveName.isEmpty, window.frameAutosaveName)
+        check("and opens at its own, whatever the user's says", window.frame.size == expected, "\(window.frame) not \(expected); saved \(saved ?? "none")")
         // A screen with a camera housing when there is one: there the band
         // over the menu bar is the screen's, and the strip went under it.
         if let notched = NSScreen.screens.first(where: { $0.safeAreaInsets.top > 0 }) {
@@ -46,6 +56,14 @@ extension E2ERunner {
         check("the strip is on screen, under the menu bar's band", onScreen.height > 40 && onScreen.maxY <= top + 1 && onScreen.minY >= screen.minY, report)
         check("and the tabs in it", app.store.tabFrames.values.contains { $0.width > 0 })
         check("the strip is the toolbar's one item", window.toolbar?.items.first?.view === strip && window.toolbar?.items.count == 1)
+        let backdrops = Self.stripBackdrops(strip)
+        check("nothing is drawn behind it in full screen either", backdrops.isEmpty, backdrops.joined(separator: ", "))
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty {
+            let base = (png as NSString).deletingPathExtension
+            app.captureWindow(to: base + "-fullscreen.png")
+            // The bar comes down in a window of its own in full screen.
+            if let bar = strip.window, bar !== window { app.captureWindow(to: base + "-fullscreen-bar.png", window: bar) }
+        }
         // No traffic lights: the strip starts near the screen's edge.
         check("the strip takes the traffic lights' room", onScreen.minX - screen.minX < 30, "\(onScreen) on \(screen)")
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty { app.captureWindow(to: png) }
@@ -54,5 +72,6 @@ extension E2ERunner {
         let back = strip.convert(strip.bounds, to: nil)
         check("and the strip is after the traffic lights again", await eventually(3) { strip.convert(strip.bounds, to: nil).minX > 80 }, "\(back)")
         await pause(1)
+        check("the user's window frame untouched", UserDefaults.standard.string(forKey: savedKey) == saved, "\(saved ?? "none") → \(UserDefaults.standard.string(forKey: savedKey) ?? "none")")
     }
 }

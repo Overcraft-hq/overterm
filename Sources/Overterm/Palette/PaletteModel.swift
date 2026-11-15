@@ -9,9 +9,13 @@ struct PaletteItem: Identifiable {
         case worktree = "Worktree"
         /// Containers and compose projects (⇧⌥⌘P scopes the palette to them).
         case container = "Docker"
+        /// Contexts, namespaces and pods (⌃⌘J scopes the palette to them).
+        case kubernetes = "Kubernetes"
+        /// Roots and their workspaces (⌃⌘E scopes the palette to them).
+        case terraform = "Terraform"
 
         /// The scopes the field offers, in the order the designs have them.
-        static let scopes: [Group] = [.history, .snippet, .action, .container]
+        static let scopes: [Group] = [.history, .snippet, .action, .container, .kubernetes, .terraform]
     }
 
     let id: String
@@ -109,6 +113,7 @@ final class PaletteModel: ObservableObject {
         [nil]
             + PaletteItem.Group.scopes.filter {
                 ($0 != .snippet || Settings.shared.snippetsEnabled) && ($0 != .container || Settings.shared.dockerEnabled)
+                    && ($0 != .kubernetes || Settings.shared.kubernetesEnabled) && ($0 != .terraform || Settings.shared.terraformEnabled)
             }
     }
 

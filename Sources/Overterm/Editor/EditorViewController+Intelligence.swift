@@ -12,7 +12,8 @@ extension EditorViewController {
     /// The language server for the buffer's file — nil when Settings turns
     /// them off, or the language has none on this machine.
     func server(for buffer: EditorBuffer) -> LanguageServer? {
-        guard Settings.shared.editorLanguageServers, let url = buffer.url, buffer.document.unavailable == nil else { return nil }
+        // A cluster object's YAML is no file: no server hears of it.
+        guard Settings.shared.editorLanguageServers, let url = buffer.url, buffer.document.unavailable == nil, !buffer.document.isVirtual else { return nil }
         if let cached = buffer.server, cached.state == .running || cached.state == .starting { return cached }
         // None yet, or it died: the registry restarts it (once) or gives up.
         Self.routeDiagnostics()
@@ -101,6 +102,8 @@ extension EditorViewController {
 
     /// An edit: the server hears it once typing pauses (or before any request).
     func bufferDidChange(_ buffer: EditorBuffer) {
+        if buffer.kubeManifest != nil { scheduleKubeFieldMarks(buffer) }
+        if !buffer.terraformDiagnostics.isEmpty { dropTerraformDiagnostics(buffer) }
         guard buffer.serverOpen else { return }
         pendingServerChange?.cancel()
         let work = DispatchWorkItem { [weak self, weak buffer] in
@@ -132,6 +135,7 @@ extension EditorViewController {
     }
 
     func bufferDidSave(_ buffer: EditorBuffer) {
+        terraformSaved(buffer)
         guard buffer.serverOpen, let url = buffer.url else { return }
         flushServerChange(buffer)
         server(for: buffer)?.didSave(url, text: buffer.storage.string)

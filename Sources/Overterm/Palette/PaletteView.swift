@@ -85,6 +85,8 @@ struct PaletteView: View {
         case .worktree: "Worktrees"
         case .history: "History"
         case .container: "Docker"
+        case .kubernetes: "Kubernetes"
+        case .terraform: "Terraform"
         }
     }
 
@@ -112,6 +114,7 @@ struct PaletteView: View {
         HStack(spacing: 16) {
             hint("↩", model.selected.map(Self.verb) ?? "open")
             if let group = model.selected?.group, group == .history || group == .snippet { hint("⌥↩", "type without running") }
+            if model.selected?.group == .terraform { hint("⌥↩", "terminal in this root") }
             hint("⇥", "next tab")
             Spacer()
             hint("esc", "close")
@@ -128,6 +131,8 @@ struct PaletteView: View {
         case .tab: "go to the tab"
         case .worktree: "open the worktree"
         case .container: "show it on the Docker page"
+        case .kubernetes: "show it on the Kubernetes page"
+        case .terraform: "show it in the Terraform panel"
         }
     }
 
@@ -232,25 +237,47 @@ struct PaletteField: NSViewRepresentable {
     let onMove: (Int) -> Void
     let onSubmit: (_ run: Bool) -> Void
     let onCancel: () -> Void
-    /// ⇥ (1) and ⇧⇥ (-1), where a list has tabs to step through.
+    /// ⇥ (1) and ⇧⇥ (-1), where a list has tabs to step through — or
+    /// completes (the Kubernetes `:` bar); nil, ⇥ moves the keyboard on.
     var onTab: ((Int) -> Void)? = nil
+    /// Whether ⇧⇥ goes to `onTab` too (-1). A field whose ⇥ only completes
+    /// (the `:` bar) leaves ⇧⇥ to move the keyboard back, as usual.
+    var backtabSteps = true
     var placeholder = "Search tabs, worktrees, snippets, actions…"
     /// The chrome is dark whatever the system appearance; the field's default
     /// label colour would follow the system and go dark-on-dark.
     var textColor: NSColor = .white
+    /// Takes the keyboard once it is in a window (a picker over a page);
+    /// the palette's is given it by the window.
+    var focusesOnAppear = false
+    var fontSize: CGFloat = 16
 
     func makeNSView(context: Context) -> NSTextField {
         let field = NSTextField()
         field.isBordered = false
         field.drawsBackground = false
         field.focusRingType = .none
-        field.font = .systemFont(ofSize: ChromeMetrics.text(16))
+        field.font = .systemFont(ofSize: ChromeMetrics.text(fontSize))
         field.textColor = textColor
         field.placeholderAttributedString = NSAttributedString(
             string: placeholder,
-            attributes: [.foregroundColor: textColor.withAlphaComponent(0.4), .font: NSFont.systemFont(ofSize: ChromeMetrics.text(16))])
+            attributes: [.foregroundColor: textColor.withAlphaComponent(0.4), .font: NSFont.systemFont(ofSize: ChromeMetrics.text(fontSize))])
         field.delegate = context.coordinator
+        if focusesOnAppear { Self.focus(field) }
         return field
+    }
+
+    /// The keyboard to the field once it is in a window — SwiftUI puts it
+    /// there after making it; tried again shortly.
+    static func focus(_ field: NSTextField, attempts: Int = 10) {
+        DispatchQueue.main.asyncAfter(deadline: .now() + (attempts == 10 ? 0 : 0.05)) { [weak field] in
+            guard let field else { return }
+            if let window = field.window {
+                window.makeFirstResponder(field)
+            } else if attempts > 0 {
+                focus(field, attempts: attempts - 1)
+            }
+        }
     }
 
     func updateNSView(_ field: NSTextField, context: Context) {
@@ -259,6 +286,16 @@ struct PaletteField: NSViewRepresentable {
     }
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    /// What ⇥ or ⇧⇥ gives `onTab`: 1, -1, or nil to let the key move the
+    /// keyboard as usual.
+    static func tabStep(_ selector: Selector, backtabSteps: Bool) -> Int? {
+        switch selector {
+        case #selector(NSResponder.insertTab(_:)): 1
+        case #selector(NSResponder.insertBacktab(_:)): backtabSteps ? -1 : nil
+        default: nil
+        }
+    }
 
     final class Coordinator: NSObject, NSTextFieldDelegate {
         var parent: PaletteField
@@ -283,10 +320,11 @@ struct PaletteField: NSViewRepresentable {
                 parent.onSubmit(false)
             case #selector(NSResponder.cancelOperation(_:)):
                 parent.onCancel()
-            case #selector(NSResponder.insertTab(_:)) where parent.onTab != nil:
-                parent.onTab?(1)
-            case #selector(NSResponder.insertBacktab(_:)) where parent.onTab != nil:
-                parent.onTab?(-1)
+            case #selector(NSResponder.insertTab(_:)), #selector(NSResponder.insertBacktab(_:)):
+                guard let onTab = parent.onTab,
+                    let step = PaletteField.tabStep(selector, backtabSteps: parent.backtabSteps)
+                else { return false }
+                onTab(step)
             default:
                 return false
             }

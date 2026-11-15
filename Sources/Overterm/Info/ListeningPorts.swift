@@ -5,6 +5,12 @@ import Foundation
 /// process holds those, so lsof never finds them under the tab).
 struct ListeningPort: Identifiable, Hashable {
     let pid: pid_t
+    /// When `pid`'s process started (µs), read with the listing
+    /// (`ListeningPorts.of`): with the pid, which process held the port —
+    /// a pid is reused, the pair never. A pill's Stop… signals only that
+    /// process (`PortStop`), and nothing when this couldn't be read. A
+    /// container's and a forward's have none: their owners stop them.
+    var start: UInt64? = nil
     let process: String
     let port: Int
     /// The bound address as lsof prints it (`*`, `127.0.0.1`, `[::1]`).
@@ -14,11 +20,21 @@ struct ListeningPort: Identifiable, Hashable {
     /// The port the compose file asks for, when Up on Free Ports moved it
     /// here for this checkout (`ComposePorts`).
     var movedFrom: Int? = nil
+    /// A Kubernetes port-forward's (`KubeForwards`): kubectl is Overterm's
+    /// child, not the tab's, so lsof never finds it under the tab. Its pid
+    /// is kubectl's while it forwards, 0 while it restarts.
+    var forward: KubeForwardPill? = nil
 
-    var id: String { container.map { "\($0):\(port)" } ?? "\(pid):\(port)" }
+    var id: String {
+        if let forward { return "forward:\(forward.id)" }
+        return container.map { "\($0):\(port)" } ?? "\(pid):\(port)"
+    }
 
-    /// Loopback or wildcard: reachable as localhost.
-    var url: URL? { URL(string: "http://localhost:\(port)") }
+    /// Loopback or wildcard: reachable as localhost (a forward's, https when it says so).
+    var url: URL? {
+        if let forward { return URL(string: "\(forward.https ? "https" : "http")://\(KubeForwardAddress.host(for: address)):\(port)") }
+        return URL(string: "http://localhost:\(port)")
+    }
 }
 
 enum ListeningPorts {
@@ -74,7 +90,8 @@ enum ListeningPorts {
         return false
     }
 
-    /// The listening TCP sockets of `pids`.
+    /// The listening TCP sockets of `pids`, each with its process's start
+    /// time read right after the listing, off the main thread as it is.
     static func of(_ pids: [pid_t]) async -> [ListeningPort] {
         guard !pids.isEmpty else { return [] }
         let list = pids.map(String.init).joined(separator: ",")
@@ -84,7 +101,17 @@ enum ListeningPorts {
             (try? await Git.run(
                 lsof, ["-nP", "-a", "-iTCP", "-sTCP:LISTEN", "-p", list, "-F", "pcn"],
                 in: URL(fileURLWithPath: "/"), success: [0, 1])) ?? ""
-        return parse(output)
+        return parse(output).map { port in
+            var port = port
+            port.start = start(of: port.pid)
+            return port
+        }
+    }
+
+    /// When `pid`'s process started (µs), if it runs and is the user's:
+    /// proc_pidinfo answers for no one else's.
+    static func start(of pid: pid_t) -> UInt64? {
+        ProcessInspector.bsdInfo(pid).map(ProcessInspector.startTime)
     }
 
     /// Parses `lsof -F pcn`: `p<pid>` and `c<command>` start a process, each

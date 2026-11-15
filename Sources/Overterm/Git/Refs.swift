@@ -32,9 +32,18 @@ struct TagRef: Identifiable, Equatable {
 
 struct Remote: Identifiable, Equatable {
     let name: String
+    /// As git says it, without the userinfo a URL can carry
+    /// (`url.*.insteadOf` may add a token): the raw output is never kept.
     let url: String
 
+    init(name: String, url: String) {
+        self.name = name
+        self.url = GitRemoteURL.withoutUserinfo(url)
+    }
+
     var id: String { name }
+    /// The repository it names, normalised (`GitRemoteURL`); nil for one that names none.
+    var repo: GitRemoteURL? { GitRemoteURL(url) }
 
     /// The host, for the row's subtitle: `github.com` out of either an
     /// https URL or `git@github.com:owner/repo.git`.
@@ -109,6 +118,8 @@ enum Refs {
 
     /// Parses `git remote -v`: `origin\t<url>\t(fetch)`, twice per remote.
     /// The fetch URL is the one worth showing; a push-only remote keeps its.
+    /// Each URL goes straight to `Remote`, which keeps it without its
+    /// userinfo — nothing raw leaves the parser.
     static func parse(remotes output: String) -> [Remote] {
         var urls: [String: String] = [:]
         var order: [String] = []

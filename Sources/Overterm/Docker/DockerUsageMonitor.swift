@@ -146,7 +146,7 @@ final class DockerUsageMonitor: ObservableObject {
     }
 
     /// What `work` gives within `timeout`, else nil, and `work` cancelled:
-    /// a read's connection closes then (`NIODockerTransport.send`), so the
+    /// a read's connection closes then (`UnixHTTPTransport.send`), so the
     /// group isn't kept waiting for it.
     nonisolated static func within<Value: Sendable>(_ timeout: Duration, _ work: @escaping @Sendable () async -> Value?) async -> Value? {
         await withTaskGroup(of: Value?.self) { group in

@@ -85,6 +85,12 @@ final class ChromeTheme: ObservableObject {
     private(set) var greenText: Color = Color.clear
     private(set) var accentText: Color = Color.clear
 
+    // MARK: Charts
+
+    /// The charts' ten categorical colours, the appearance's
+    /// (`KubeChartPalette`: each 3:1 at least against its card).
+    var chartPalette: [Color] { (isDark ? KubeChartPalette.dark : KubeChartPalette.light).map(\.color) }
+
     // MARK: Compatibility
     //
     // The names the chrome used before it had a vocabulary. Each is one of

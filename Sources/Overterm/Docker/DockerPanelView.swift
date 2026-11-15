@@ -20,8 +20,8 @@ final class DockerPanelModel: ObservableObject {
     /// What can be done to a container or a project here: the page's verbs,
     /// with the panel starting and stopping (its errors are its own). The
     /// window sets them.
-    var verbs: (ContainerSummary) -> [DockerVerb] = { _ in [] }
-    var projectVerbs: (ComposeProject) -> [DockerVerb] = { _ in [] }
+    var verbs: (ContainerSummary) -> [ResourceVerb] = { _ in [] }
+    var projectVerbs: (ComposeProject) -> [ResourceVerb] = { _ in [] }
     /// A test run on the page, by its session (the window sets it).
     var showRun: (String) -> Void = { _ in }
 
@@ -162,7 +162,7 @@ struct DockerPanelView: View {
                         fold: { toggle(group.id) }, act: { _ in }, compact: true, updates: updates.summary(of: project).available.count
                     )
                     .padding(.horizontal, 8)
-                    .contextMenu { DockerVerbMenu(verbs: panel.projectVerbs(project)) }
+                    .contextMenu { ResourceVerbMenu(verbs: panel.projectVerbs(project)) }
                     if !panel.collapsed.contains(group.id) {
                         ForEach(project.containers) { container in row(container, inProject: true) }
                     }
@@ -193,12 +193,12 @@ struct DockerPanelView: View {
             compact: true, updates: updates.summary(of: plan).available.count
         )
         .padding(.horizontal, 8)
-        .contextMenu { DockerVerbMenu(verbs: verbs) }
+        .contextMenu { ResourceVerbMenu(verbs: verbs) }
         if !panel.collapsed.contains(group.id) {
             ForEach(plan.services) { service in
                 DockerPlannedServiceRow(service: service, theme: theme, compact: true, folder: plan.workingDir)
                     .padding(.horizontal, 12)
-                    .contextMenu { DockerVerbMenu(verbs: verbs) }
+                    .contextMenu { ResourceVerbMenu(verbs: verbs) }
             }
         }
         VStack(alignment: .leading, spacing: 5) {
@@ -297,7 +297,7 @@ struct DockerPanelView: View {
                 .padding(.horizontal, 4)
         }
         .buttonStyle(.plain)
-        .contextMenu { DockerVerbMenu(verbs: panel.verbs(container)) }
+        .contextMenu { ResourceVerbMenu(verbs: panel.verbs(container)) }
     }
 
     private func toggle(_ id: String) {

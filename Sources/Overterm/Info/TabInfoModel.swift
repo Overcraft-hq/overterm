@@ -14,6 +14,8 @@ final class TabInfoModel: ObservableObject {
     }
 
     @Published private(set) var processes: [ProcessNode] = []
+    /// The terraform processes in the tab (analysis 8): what each does, where, for how long.
+    @Published private(set) var terraform: [TerraformInfoRow] = []
     @Published private(set) var ports: [ListeningPort] = []
     /// The Claude Code session in this tab, if there is one.
     @Published private(set) var claude: ClaudeUsage?
@@ -100,27 +102,49 @@ final class TabInfoModel: ObservableObject {
         let roots = tab.terminals.map { (SurfaceProcesses.shared.loginPID(of: $0), $0.processTag) }
         let inspector = self.inspector
         // Scanning every process takes a few ms: off the main thread, on GCD.
+        // Its commands masked: a row's tooltip shows them.
         let tree = await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
-                continuation.resume(returning: roots.flatMap { inspector.tree(root: $0.0, tag: $0.1) })
+                continuation.resume(returning: roots.flatMap { inspector.tree(root: $0.0, tag: $0.1, commands: true) })
             }
         }
         processes = tree
+        let candidates = tree.flatMap(\.flattened).filter {
+            TerraformCommandLine.tools.contains($0.name) || TerraformProcesses.scriptShells.contains($0.name)
+        }.map { (pid: $0.pid, name: $0.name, children: $0.children.map(\.pid)) }
+        guard !candidates.isEmpty else {
+            if !terraform.isEmpty { terraform = [] }
+            return
+        }
+        let settings = TerraformClassSettings.current
+        let identities = TerraformRootStore.shared.productionIdentities
+        let rows = await TerraformPanelModel.blocking {
+            candidates.compactMap { node -> TerraformInfoRow? in
+                guard let process = TerraformProcesses.inspect(node.pid, name: node.name, children: node.children) else { return nil }
+                return TerraformInfoRow.make(process, settings: settings, identities: identities)
+            }
+        }
+        if terraform != rows { terraform = rows }
+        TerraformRootStore.shared.rememberProduction(rows.compactMap(\.rememberIdentity))
     }
 
-    /// Its processes' ports, then what its checkout's containers publish.
+    /// Its processes' ports, then what its checkout's containers publish,
+    /// then its Kubernetes forwards.
     func refreshPorts() async {
-        ports = await ListeningPorts.of(processes.flatMap(\.flattened).map(\.pid)) + tab.containerPorts
+        ports = await ListeningPorts.of(processes.flatMap(\.flattened).map(\.pid)) + tab.containerPorts + tab.forwardPorts
     }
 
     /// Where Claude Code runs in this tab: a running `claude`'s directory,
     /// else — for a Claude tab — the tab's.
     var claudeDirectory: String? {
-        let running = processes.flatMap(\.flattened).first { node in
-            node.name == "claude" || (node.command.split(separator: " ").first.map { $0 == "claude" || $0.hasSuffix("/claude") } ?? false)
-        }
-        if let cwd = running?.workingDirectory { return cwd }
+        if let cwd = Self.runningClaude(in: processes)?.workingDirectory { return cwd }
         return tab.agent == .claude ? (tab.workingDirectory ?? tab.terminal.workingDirectory) : nil
+    }
+
+    /// A Claude Code process in the tree, by name or argv[0] as the agent
+    /// overview finds one (`argvAgent`: `command` is masked).
+    nonisolated static func runningClaude(in processes: [ProcessNode]) -> ProcessNode? {
+        processes.flatMap(\.flattened).first { AgentOverviewModel.agent(of: $0) == .claude }
     }
 
     func refreshClaude() async {

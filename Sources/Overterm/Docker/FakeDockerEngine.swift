@@ -478,22 +478,23 @@ final class FakeDockerEngine: @unchecked Sendable {
     /// the tag moves to it from another image, as a pull moves it; in the
     /// containerd store the platform joins the tag's index. `digest`: the
     /// one its registry gave it, recorded as `RepoDigests` (`nginx@…`), as
-    /// a pull records it; none, it was built or tagged here. Another digest
+    /// a pull records it (`repository`'s, untagged — pulled by digest);
+    /// none, it was built or tagged here. Another digest
     /// is another image. The containerd store records one for every named
     /// image, a build's too: its own ID, the index's digest.
     @discardableResult
     func addImage(
         _ tag: String?, size: Int, containers: Int = 0, architecture: String = "arm64", variant: String? = nil, labels: [String: String] = [:],
-        shell: Bool = true, digest: String? = nil
+        shell: Bool = true, digest: String? = nil, repository: String? = nil
     ) -> String {
         let platform = ImagePlatform(architecture: architecture, variant: variant)
         let index = locked { containerdStore }
-        let name = (tag ?? UUID().uuidString) + (digest.map { "@" + $0 } ?? "")
+        let name = (tag ?? repository ?? UUID().uuidString) + (digest.map { "@" + $0 } ?? "")
         let id = index ? digest ?? Self.imageID(name) : Self.imageID(architecture == "arm64" ? name : architecture + (variant.map { "/" + $0 } ?? "") + "@" + name)
         let recorded = index ? id : digest
         let image = ImageSummary(
             Id: id, RepoTags: tag.map { [$0] } ?? ["<none>:<none>"],
-            RepoDigests: tag.flatMap { tag in recorded.map { [DockerEngine.split(tag).0 + "@" + $0] } } ?? [],
+            RepoDigests: (tag.map { DockerEngine.split($0).0 } ?? repository).flatMap { repository in recorded.map { [repository + "@" + $0] } } ?? [],
             Created: Int(Date().timeIntervalSince1970) - 86_400, Size: size, Containers: containers, Labels: labels)
         locked {
             if index, let at = images.firstIndex(where: { $0.Id == image.Id }) {
@@ -709,7 +710,10 @@ final class FakeDockerEngine: @unchecked Sendable {
             locked { if let at = images.firstIndex(where: { $0.Id == found.Id }) { images[at].RepoTags = (images[at].RepoTags ?? []) + [name] } }
             emitImage("tag", found.Id)
             return .empty(201)
-        case "images" where !named && verb == "create": return pull((query["fromImage"] ?? "") + ":" + (query["tag"] ?? "latest"), platform: query["platform"])
+        case "images" where !named && verb == "create":
+            // `tag` is a tag or a digest, as the engine takes it.
+            let tag = query["tag"] ?? "latest"
+            return pull((query["fromImage"] ?? "") + (DockerImageReference.isDigest(tag) ? "@" : ":") + tag, platform: query["platform"])
         case "commit" where method == .POST: return commit(query)
         case "networks" where named && ["connect", "disconnect"].contains(verb):
             return other(method, kind, id, named, body, query.merging(["_verb": verb]) { $1 })
@@ -1440,6 +1444,15 @@ final class FakeDockerEngine: @unchecked Sendable {
                 #"{"status":"Pulling fs layer","progressDetail":{},"id":"l2"}"#, #"{"status":"Pull complete","progressDetail":{},"id":"l2"}"#,
                 #"{"status":"Digest: \#(digest)"}"#, #"{"status":"Status: Downloaded newer image for \#(name)"}"#,
             ]
+            return .raw(200, Data(lines.joined(separator: "\n").utf8 + [0x0A]), [("Content-Type", "application/json")])
+        }
+        // By digest (`repo@sha256:…`): that image, untagged, its repo digest recorded.
+        if let at = name.firstIndex(of: "@") {
+            let repository = String(name[..<at])
+            let digest = String(name[name.index(after: at)...])
+            addImage(nil, size: 2048, digest: digest, repository: repository)
+            emitImage("pull", name)
+            let lines = [#"{"status":"Pulling fs layer","progressDetail":{},"id":"l3"}"#, #"{"status":"Digest: \#(digest)"}"#]
             return .raw(200, Data(lines.joined(separator: "\n").utf8 + [0x0A]), [("Content-Type", "application/json")])
         }
         if name.hasPrefix("private/") {

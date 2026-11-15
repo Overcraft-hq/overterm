@@ -57,6 +57,12 @@ final class DockerSSHTests: XCTestCase {
         let local = DockerSSHForward.localSocket(for: target)
         XCTAssertLessThan(local.utf8.count, 104, "a unix socket's path")
         XCTAssertEqual(local, DockerSSHForward.localSocket(for: target), "one a host")
+        let launch = DockerSSHForward.launch(target, localSocket: "/tmp/ot.sock", remoteSocket: "/var/run/docker.sock")
+        XCTAssertEqual(launch.executable, DockerSSHForward.ssh)
+        XCTAssertEqual(launch.arguments, arguments)
+        XCTAssertEqual(launch.removing, ["/tmp/ot.sock"], "a socket left behind is removed, before and after")
+        XCTAssertEqual(launch.timeout, 20)
+        guard case .socket("/tmp/ot.sock") = launch.readiness else { return XCTFail("ready when the local end takes a connection") }
     }
 
     func testWhatSSHSays() {

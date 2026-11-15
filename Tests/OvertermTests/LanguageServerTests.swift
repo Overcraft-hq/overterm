@@ -333,6 +333,124 @@ final class LanguageServerTests: XCTestCase {
         XCTAssertEqual(discovery.command(for: rust)?.executable.lastPathComponent, "rust-analyzer")
     }
 
+    func testZedsTerraformLSTheNewestVersion() throws {
+        let home = try scratch()
+        let work = home.appendingPathComponent("Library/Application Support/Zed/extensions/work/terraform")
+        let spec = LanguageServers.Spec(
+            id: "terraform", extensions: ["tf": "terraform"], launch: [.executable("terraform-ls", ["serve"]), .zedTerraformLS])
+        let discovery = ServerDiscovery(home: home, searchDirectories: [home.appendingPathComponent("bin")], toolchainDirectories: [], runsXcrun: false)
+        XCTAssertNil(discovery.command(for: spec), "none installed, none downloaded")
+        for version in ["terraform-ls-0.9.0", "terraform-ls-v0.36.4", "terraform-ls-0.34.2"] {
+            try mkdir(work.appendingPathComponent(version))
+            try executable(work.appendingPathComponent("\(version)/terraform-ls"))
+        }
+        // A newer folder without its binary (a download cut short) is passed over.
+        try mkdir(work.appendingPathComponent("terraform-ls-0.40.0"))
+        let found = try XCTUnwrap(discovery.command(for: spec))
+        XCTAssertEqual(found.executable.path, work.appendingPathComponent("terraform-ls-v0.36.4/terraform-ls").path)
+        XCTAssertEqual(found.arguments, ["serve"])
+        // One on the search path comes first.
+        try mkdir(home.appendingPathComponent("bin"))
+        try executable(home.appendingPathComponent("bin/terraform-ls"))
+        XCTAssertEqual(discovery.command(for: spec)?.executable.path, home.appendingPathComponent("bin/terraform-ls").path)
+    }
+
+    func testRemovedNamesWinOverTheAppsAndTheCommands() {
+        let environment = LanguageServer.environment(
+            ["PATH": "/usr/bin", "AWS_PROFILE": "acme-prod", "AWS_SECRET_ACCESS_KEY": "acme-hunter2-SECRET", "TF_LOG": "trace", "HOME": "/Users/acme"],
+            adding: ["PATH": "/opt/homebrew/bin:/usr/bin", "TF_LOG": "debug", "ACME_TOKEN": "tok-acme-123"],
+            removing: ["AWS_*", "TF_LOG", "ACME_TOKEN"])
+        XCTAssertEqual(environment, ["PATH": "/opt/homebrew/bin:/usr/bin", "HOME": "/Users/acme"])
+        XCTAssertEqual(LanguageServer.environment(["A": "1"], adding: ["B": "2"], removing: []), ["A": "1", "B": "2"])
+        // The spec's variables over the app's and the command's; a removed
+        // name still wins over them.
+        let set = LanguageServer.environment(
+            ["PATH": "/usr/bin", "HOME": "/Users/acme", "CHECKPOINT_DISABLE": "", "AWS_PROFILE": "acme-prod"],
+            adding: ["HOME": "/Users/globex"],
+            setting: ["HOME": "/private/tmp/acme-scratch", "CHECKPOINT_DISABLE": "1", "AWS_REGION": "eu-west-1", "TF_LOG": "trace"],
+            removing: ["AWS_*", "TF_LOG"])
+        XCTAssertEqual(set, ["PATH": "/usr/bin", "HOME": "/private/tmp/acme-scratch", "CHECKPOINT_DISABLE": "1"])
+    }
+
+    func testSpecsAreKeysWithTheirOptions() {
+        let plain = LanguageServers.Spec(id: "terraform", extensions: ["tf": "terraform"], launch: [.zedTerraformLS])
+        var options = plain
+        options.initializationOptions = ["experimentalFeatures": ["validateOnSave": false]]
+        options.environmentRemoved = ["AWS_*"]
+        XCTAssertNotEqual(plain, options)
+        var added = options
+        added.environmentAdded = ["CHECKPOINT_DISABLE": "1"]
+        XCTAssertNotEqual(added, options)
+        XCTAssertEqual(Set([plain, options, options, added]).count, 3)
+        XCTAssertTrue(
+            LanguageServers.specs.filter { $0.id != "terraform" }.allSatisfy {
+                $0.initializationOptions == nil && $0.environmentAdded.isEmpty && $0.environmentRemoved.isEmpty
+            })
+    }
+
+    /// terraform-ls (analysis 4.14): its files, its validate on save off, and
+    /// what it and the `terraform validate` it runs never get — a hostile
+    /// shell's credentials, the variables that inject flags or log values —
+    /// with a scratch HOME and CLI config, and no call home.
+    func testTerraformLSSpec() throws {
+        func id(_ name: String) -> String? { LanguageServers.languageID(for: URL(fileURLWithPath: "/acme/envs/dev/\(name)")) }
+        XCTAssertEqual(id("main.tf"), "terraform")
+        XCTAssertEqual(id("prod.tfvars"), "terraform-vars")
+        XCTAssertEqual(id("main.tofu"), "opentofu")
+        XCTAssertNil(id(".terraform.lock.hcl"))
+        XCTAssertNil(id("terragrunt.hcl"))
+        XCTAssertEqual(id("main.tf.json"), "json")
+        let spec = try XCTUnwrap(LanguageServers.specs.first { $0.id == "terraform" })
+        XCTAssertEqual(spec.rootMarkers, [], "rooted at the checkout's top: one server a worktree")
+        XCTAssertEqual(spec.launch, [.executable("terraform-ls", ["serve"]), .zedTerraformLS])
+        guard case .object(let options)? = spec.initializationOptions, case .object(let features)? = options["experimentalFeatures"] else {
+            return XCTFail("initializationOptions: \(String(describing: spec.initializationOptions))")
+        }
+        XCTAssertEqual(features["validateOnSave"], .bool(false))
+        let hostile = [
+            "PATH": "/usr/bin", "HOME": "/Users/acme", "AWS_PROFILE": "acme-prod-admin", "AWS_SECRET_ACCESS_KEY": "acme-hunter2-SECRET",
+            "GOOGLE_APPLICATION_CREDENTIALS": "/Users/acme/key.json", "ARM_CLIENT_SECRET": "globex-BKPW", "TF_TOKEN_app_terraform_io": "tok-acme-123",
+            "GITHUB_TOKEN": "tok-acme-123", "ACME_CLIENT_SECRET_ID": "x", "KUBECONFIG": "/Users/acme/.kube/config",
+            "TF_CLI_ARGS_apply": "-auto-approve", "TF_CLI_ARGS": "-lock=false", "TF_LOG": "trace", "TF_LOG_PATH": "/tmp/acme.log",
+            "TF_REATTACH_PROVIDERS": "{}", "TF_WORKSPACE": "acme-prod", "TF_DATA_DIR": "/tmp/acme", "TF_VAR_db_password": "acme-hunter2-SECRET",
+            "TF_CLI_CONFIG_FILE": "/Users/acme/.terraformrc", "LANG": "en_US.UTF-8",
+            "KUBE_CONFIG_PATH": "/Users/acme/.kube/acme-prod", "KUBE_CTX": "acme-prod", "KUBE_CLIENT_KEY_DATA": "acme-hunter2-SECRET",
+            "KUBE_HOST": "https://acme-prod.example", "HELM_KUBETOKEN": "tok-acme-123",
+            "aws_secret_access_key": "acme-hunter2-SECRET", "vault_token": "tok-acme-123", "acme_client_secret": "globex-BKPW",
+        ]
+        let environment = LanguageServer.environment(hostile, adding: [:], setting: spec.environmentAdded, removing: spec.environmentRemoved)
+        let scratch = AppEnvironment.terraformScratchDirectory
+        XCTAssertEqual(environment["HOME"], scratch.appendingPathComponent("home").path)
+        XCTAssertEqual(environment["TF_CLI_CONFIG_FILE"], scratch.appendingPathComponent("terraformrc").path)
+        XCTAssertEqual(environment["CHECKPOINT_DISABLE"], "1")
+        XCTAssertEqual(Set(environment.keys), ["PATH", "HOME", "LANG", "CHECKPOINT_DISABLE", "TF_CLI_CONFIG_FILE"])
+        XCTAssertEqual(
+            Set(hostile.keys.filter(TerraformGuards.isCredential)).intersection(environment.keys), [], "the same names validate's environment loses")
+        // terraform.path: the terraform Overterm runs, added at launch.
+        guard case .object(let launched)? = LanguageServers.launchOptions(spec, terraformPath: "/opt/acme/bin/terraform") else {
+            return XCTFail("launch options")
+        }
+        XCTAssertEqual(launched["terraform"], .object(["path": .string("/opt/acme/bin/terraform")]))
+        XCTAssertEqual(launched["experimentalFeatures"], options["experimentalFeatures"])
+        XCTAssertNotNil(launched["indexing"])
+        XCTAssertEqual(LanguageServers.launchOptions(spec, terraformPath: nil), spec.initializationOptions)
+        let go = try XCTUnwrap(LanguageServers.specs.first { $0.id == "go" })
+        XCTAssertNil(LanguageServers.launchOptions(go, terraformPath: "/opt/acme/bin/terraform"), "only terraform-ls is told")
+    }
+
+    func testRemovalPatterns() {
+        XCTAssertTrue(LanguageServer.pattern("AWS_*", matches: "AWS_PROFILE"))
+        XCTAssertFalse(LanguageServer.pattern("AWS_*", matches: "MY_AWS_PROFILE"))
+        XCTAssertTrue(LanguageServer.pattern("*_TOKEN", matches: "GITHUB_TOKEN"))
+        XCTAssertFalse(LanguageServer.pattern("*_TOKEN", matches: "GITHUB_TOKEN_PATH"))
+        XCTAssertTrue(LanguageServer.pattern("*_SECRET*", matches: "ACME_SECRET_ID"))
+        XCTAssertTrue(LanguageServer.pattern("TF_LOG", matches: "TF_LOG"))
+        XCTAssertFalse(LanguageServer.pattern("TF_LOG", matches: "TF_LOG_PATH"))
+        XCTAssertFalse(LanguageServer.pattern("*", matches: "PATH"), "a lone star removes nothing")
+        XCTAssertTrue(LanguageServer.pattern("AWS_*", matches: "aws_secret_access_key"), "a name in lower case too")
+        XCTAssertTrue(LanguageServer.pattern("*_TOKEN", matches: "vault_token"))
+    }
+
     @MainActor
     func testServerNamesWithoutVersions() {
         XCTAssertEqual(EditorViewController.displayName(ofServer: "gopls_0.23.0_go_1.27.0"), "gopls")
@@ -367,8 +485,10 @@ final class LanguageServerTests: XCTestCase {
 
     private static let script = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent("Fixtures/fake-lsp.py")
 
-    private func fakeCommand(log: URL) -> LanguageServer.Command {
-        LanguageServer.Command(executable: URL(fileURLWithPath: "/usr/bin/python3"), arguments: [Self.script.path, log.path])
+    private func fakeCommand(log: URL, watch: Bool = false, environment: [String: String] = [:]) -> LanguageServer.Command {
+        LanguageServer.Command(
+            executable: URL(fileURLWithPath: "/usr/bin/python3"), arguments: [Self.script.path, log.path] + (watch ? ["watch"] : []),
+            environment: environment)
     }
 
     private func fake() throws -> Fake {
@@ -522,6 +642,93 @@ final class LanguageServerTests: XCTestCase {
             XCTAssertTrue(error is CancellationError, "\(error)")
         }
         try await Self.eventually { fake.logText.contains("$/cancelRequest") }
+    }
+
+    /// The server's options and environment as its spec says; then what it
+    /// registered is watched — a file written beside it is told to it, under
+    /// the root as it was given (not /private/var), created, changed, deleted
+    /// — and its death stops the watching.
+    @MainActor
+    func testWatchedFilesOptionsAndEnvironment() async throws {
+        let dir = try scratch()
+        let log = dir.appendingPathComponent("log.txt")
+        let server = LanguageServer(
+            name: "fake",
+            command: fakeCommand(log: log, watch: true, environment: ["ACME_TOKEN": "tok-acme-123", "ACME_REGION": "eu-west-1", "AWS_PROFILE": "acme-prod"]),
+            root: dir, initializationOptions: ["indexing": ["ignorePaths": ["envs/scratch"]], "experimentalFeatures": ["validateOnSave": false]],
+            environmentAdded: [
+                "CHECKPOINT_DISABLE": "1", "HOME": dir.appendingPathComponent("scratch-home").path, "AWS_REGION": "eu-west-1",
+                "ACME_TOKEN": "tok-acme-456",
+            ],
+            environmentRemoved: ["ACME_TOKEN", "AWS_*"])
+        started.append(server)
+        func logText() -> String { (try? String(contentsOf: log, encoding: .utf8)) ?? "" }
+        try server.start()
+        _ = try await server.waitUntilReady()
+        try await Self.eventually { logText().contains("response watch-1 null") }
+        let text = logText()
+        XCTAssertTrue(text.contains(#"initializationOptions {"experimentalFeatures": {"validateOnSave": false}, "indexing": {"ignorePaths": ["envs/scratch"]}}"#), text)
+        XCTAssertTrue(
+            text.contains("env ACME_REGION,CHECKPOINT_DISABLE\n"), "the removed names, the app's, the command's and the added, aren't there: \(text)")
+        XCTAssertTrue(
+            text.contains("envValues CHECKPOINT_DISABLE=1 HOME=\(dir.appendingPathComponent("scratch-home").path)\n"), "the spec's variables are set: \(text)")
+        XCTAssertTrue(text.contains(#"watchCapability {"dynamicRegistration": true, "relativePatternSupport": true}"#), text)
+        try await Self.eventually { server.watchedFileFolders == [LSPWatchedFiles.realPath(dir.path)] }
+        // FSEvents reports only what happens after the stream is live.
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        let module = dir.appendingPathComponent("modules/acme-net")
+        try mkdir(module)
+        let tf = module.appendingPathComponent("main.tf")
+        let go = dir.appendingPathComponent("main.go")
+        try Data("package main\n".utf8).write(to: go)
+        try Data("variable \"acme\" {}\n".utf8).write(to: tf)
+        try Data("notes\n".utf8).write(to: dir.appendingPathComponent("README.md"))
+        try await Self.eventually { logText().contains("watched \(LSP.uri(for: go)) 1") }
+        try FileManager.default.removeItem(at: tf)
+        try await Self.eventually { logText().contains("watched \(LSP.uri(for: tf)) 3") }
+        let watched = logText().components(separatedBy: "\n").filter { $0.hasPrefix("watched ") }
+        XCTAssertFalse(watched.contains { $0.contains("README.md") }, "\(watched)")
+        XCTAssertTrue(watched.contains { $0.hasSuffix("main.tf 1") }, "\(watched)")
+        XCTAssertFalse(watched.contains { $0.hasSuffix("main.tf 2") }, "*.tf is registered for creates and deletes only: \(watched)")
+        XCTAssertFalse(watched.contains { $0.contains("/private/var/") && !dir.path.hasPrefix("/private/var/") }, "\(watched)")
+
+        // Stopped: nothing watched any more.
+        server.stop()
+        try await Self.eventually { server.watchedFileFolders.isEmpty }
+    }
+
+    /// A folder a server registered outside its root, spelled through a
+    /// link (and /var, not /private/var): it is watched at its real path,
+    /// and its files are told to the server as the server spelled them.
+    @MainActor
+    func testAFolderOutsideTheRootIsToldInTheServersSpelling() async throws {
+        let dir = try scratch()
+        let root = dir.appendingPathComponent("acme-app")
+        let library = dir.appendingPathComponent("acme-lib-real")
+        let linked = dir.appendingPathComponent("acme-lib")
+        try mkdir(root)
+        try mkdir(library)
+        try FileManager.default.createSymbolicLink(at: linked, withDestinationURL: library)
+        let log = dir.appendingPathComponent("log.txt")
+        let server = LanguageServer(
+            name: "fake", command: fakeCommand(log: log, watch: true, environment: ["FAKE_LSP_EXTRA_BASE": linked.path]), root: root)
+        started.append(server)
+        func logText() -> String { (try? String(contentsOf: log, encoding: .utf8)) ?? "" }
+        try server.start()
+        _ = try await server.waitUntilReady()
+        try await Self.eventually { logText().contains("response watch-1 null") }
+        let real = LSPWatchedFiles.realPath(library.path)
+        XCTAssertNotEqual(real, linked.path)
+        try await Self.eventually { server.watchedFileFolders == [LSPWatchedFiles.realPath(root.path), real].sorted() }
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        try Data("x = 1\n".utf8).write(to: library.appendingPathComponent("acme.py"))
+        let spelled = LSP.uri(for: URL(fileURLWithPath: linked.path + "/acme.py", isDirectory: false))
+        try await Self.eventually { logText().contains("watched \(spelled) 1") }
+        XCTAssertFalse(logText().contains("acme-lib-real"), logText())
+        server.stop()
+        try await Self.eventually { server.watchedFileFolders.isEmpty }
     }
 
     func testDeathFailsWhatIsPending() async throws {

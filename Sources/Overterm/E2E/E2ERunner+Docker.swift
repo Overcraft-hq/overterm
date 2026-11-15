@@ -551,7 +551,7 @@ extension E2ERunner {
         page.actions?.run = { command, _ in commands.append(command) }
         page.actions?.askName = { _, _, _, then in then("ot/tagged:2") }
         defer { page.actions = actions }
-        func titles(_ verbs: [DockerVerb], _ place: DockerVerb.Place) -> [String] { verbs.filter { $0.place == place }.map(\.title) }
+        func titles(_ verbs: [ResourceVerb], _ place: ResourceVerb.Place) -> [String] { verbs.filter { $0.place == place }.map(\.title) }
         page.showDetail = true
 
         // A volume: the used verbs as buttons, the rest behind More.
@@ -989,6 +989,7 @@ extension E2ERunner {
         let summary = updates.summary(of: project)
         check("the project says which service has one", summary.available.map(\.service) == ["web"], "\(summary)")
         await drawn("its row has a chip", await shownText(15, chip))
+        await capture("update-chip")
         await drawn("its detail says which", await shownText { $0.contains("Newer in the registry") })
         let pullVerb = page.verbs(for: project).first { $0.title == "Pull Updates in a Tab" }
         check("Pull Updates is a button on the project", pullVerb?.place == .button)
@@ -1481,9 +1482,11 @@ extension E2ERunner {
             page.cleaned ?? page.error ?? "")
         check("the container it was saved through is gone", !docker.containers.contains { $0.name.contains("-saving-") }, "\(docker.containers.map(\.name))")
         // Run from it: Compose's labels are there, emptied — no project's.
-        if let run = try? await docker.engine?.create(fromImage: "ot/web-snapshot:1", name: "ot-from-snapshot"),
-            await eventually(5, { docker.container(run) != nil }), let made = docker.container(run)
-        {
+        // Listed once the engine's event is read: a busy machine (scenarios
+        // side by side) takes longer than 5 s.
+        var created: Result<String?, Error> = .success(nil)
+        do { created = .success(try await docker.engine?.create(fromImage: "ot/web-snapshot:1", name: "ot-from-snapshot")) } catch { created = .failure(error) }
+        if case .success(let run?) = created, await eventually(10, { docker.container(run) != nil }), let made = docker.container(run) {
             let joined = docker.projects.contains { $0.containers.contains { $0.Id == run } }
             check(
                 "and a container run from it joins no project",
@@ -1491,7 +1494,12 @@ extension E2ERunner {
                     && !DockerMCP.describe([made]).contains("compose"), "\(made.Labels ?? [:]) \(DockerMCP.describe([made]))")
             try? await docker.remove(run, force: true)
         } else {
-            check("a container run from the image", false, page.error ?? "")
+            let why: String
+            switch created {
+            case .failure(let error): why = "\(error)"
+            case .success(let id): why = id.map { "\($0) never listed" } ?? "no engine"
+            }
+            check("a container run from the image", false, why)
         }
 
         // A password in its command: no commit can take it out, so it is said.
@@ -1554,7 +1562,9 @@ extension E2ERunner {
         }
 
         check(
-            "Testcontainers' containers are a run of their own, after the rest", await eventually(5) { page.groups.last?.id == tag },
+            "Testcontainers' containers are a run of their own, after the rest",
+            // All three listed: the run is there as soon as the first is.
+            await eventually(10) { page.groups.last?.id == tag && page.groups.last?.session.map { $0.members.count == 2 && $0.reaper != nil } == true },
             "\(page.groups.map(\.id))")
         let loose = page.groups.first { $0.id == DockerPageModel.looseTag }?.containers.map(\.Id) ?? []
         check("not among the other containers", !loose.contains(pg) && !loose.contains(kafka) && !loose.contains(ryuk), "\(loose)")
@@ -1566,9 +1576,10 @@ extension E2ERunner {
             run.map { "\($0.members.count) \($0.started) vs \(started)" } ?? "no run")
         check("folded at first", page.collapsed.contains(tag) && !page.rows.contains(pg), "\(page.rows)")
         // Its row's own words, and the session's start drawn: Vision reads
-        // "java" as "iava" and the 1 of "3f2a9c1e" as an l.
+        // "java" as "iava", the 1 of "3f2a9c1e" as an l, and on macOS 27
+        // its f as a ł — the middle of it is what is looked for.
         check("its row says the library and the session", run?.subtitle == "java · 3f2a9c1e", run?.subtitle ?? "no run")
-        await drawn("and draws them", await shownText { $0.contains("3f2a9c") })
+        await drawn("and draws them", await shownText { $0.contains("2a9c") })
         await drawn("and how long ago the run started", await shownText { $0.contains("5 min ago") })
         page.toggleFold(tag)
         check("unfolded with a click", page.rows.contains(pg) && page.rows.contains(kafka), "\(page.rows)")
@@ -1612,7 +1623,7 @@ extension E2ERunner {
         check("a run selected is its own detail", page.detailedSession?.id == session && page.detailed == nil)
         check("the selection means its containers, not Ryuk", Set(page.selectedContainers.map(\.Id)) == [pg, kafka], "\(page.selectedContainers.map(\.name))")
         let verbs = page.detailedSession.map { page.verbs(for: $0) } ?? []
-        func titles(_ place: DockerVerb.Place) -> [String] { verbs.filter { $0.place == place }.map(\.title) }
+        func titles(_ place: ResourceVerb.Place) -> [String] { verbs.filter { $0.place == place }.map(\.title) }
         check(
             "its verbs as buttons, Remove All last", titles(.button) == ["Stop All", "Copy Session ID"] && titles(.remove) == ["Remove All…"],
             "\(verbs.map(\.title))")
@@ -1711,7 +1722,7 @@ extension E2ERunner {
         page.detailTab = .overview
         _ = await eventually(3) { self.app.dockerListHasKeyboard() }
 
-        func askWhy(_ verbs: [DockerVerb]) -> DockerVerb? { verbs.first { $0.title == "Ask an Agent Why…" } }
+        func askWhy(_ verbs: [ResourceVerb]) -> ResourceVerb? { verbs.first { $0.title == "Ask an Agent Why…" } }
         // The sheet's SwiftUI buttons are no NSButtons to click: what each
         // runs, the sheet's own closures.
         func sheet() -> AskAgentView? { (window.attachedSheet?.contentViewController as? NSHostingController<AskAgentView>)?.rootView }
@@ -1796,11 +1807,11 @@ extension E2ERunner {
         // ⌘L on lines picked out of its log: whole lines, the container as context.
         page.selection = [worker]
         page.detailTab = .logs
-        func logView() -> DockerLogTextView? {
-            Self.find(DockerLogTextView.self, in: app.dockerView) { $0.accessibilityIdentifier() == "docker.text" }
+        func logView() -> LogLinesTextView? {
+            Self.find(LogLinesTextView.self, in: app.dockerView) { $0.accessibilityIdentifier() == "docker.text" }
         }
         let shown = await eventually(5) { logView()?.string.contains("Cannot find module") == true }
-        check("its log is a view that answers ⌘L itself", shown, logView()?.string ?? "no DockerLogTextView")
+        check("its log is a view that answers ⌘L itself", shown, logView()?.string ?? "no LogLinesTextView")
         if shown, let text = logView() {
             // Nothing picked: the log passes ⌘L on, to the container.
             text.setSelectedRange(NSRange(location: 0, length: 0))
@@ -1882,32 +1893,117 @@ extension E2ERunner {
     /// bottom left, as an event's location) — for what SwiftUI draws itself,
     /// which no AppKit view holds and, without an assistive app, no
     /// accessibility element either.
-    private func readWindow() async -> [(text: String, frame: CGRect)] {
+    func readWindow(tiled: Bool = false, halves: Bool = false) async -> [(text: String, frame: CGRect)] {
         guard let image = app.windowImage(window) else { return [] }
         let pixels = WindowPixels(image: image)
         let size = window.frame.size
-        return await Task.detached { Self.recognize(pixels, size: size) }.value
+        return await Task.detached { Self.recognize(pixels, size: size, tiled: tiled, halves: halves) }.value
     }
 
-    private struct WindowPixels: @unchecked Sendable {
+    struct WindowPixels: @unchecked Sendable {
         let image: CGImage
     }
 
-    nonisolated private static func recognize(_ pixels: WindowPixels, size: CGSize) -> [(text: String, frame: CGRect)] {
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = false
-        try? VNImageRequestHandler(cgImage: pixels.image).perform([request])
-        return (request.results ?? []).compactMap { observation in
-            guard let text = observation.topCandidates(1).first?.string else { return nil }
-            let box = observation.boundingBox
-            return (text, CGRect(x: box.minX * size.width, y: box.minY * size.height, width: box.width * size.width, height: box.height * size.height))
+    nonisolated static func recognize(_ pixels: WindowPixels, size: CGSize, tiled: Bool = false, halves: Bool = false) -> [(text: String, frame: CGRect)] {
+        recognized(pixels.image, tiled: tiled, halves: halves).map { candidate, place in
+            let box = place(candidate.boundingBox)
+            return (latin(candidate.text), CGRect(x: box.minX * size.width, y: box.minY * size.height, width: box.width * size.width, height: box.height * size.height))
         }
+    }
+
+    /// `text` with the Cyrillic and Greek letters Vision reads in place of
+    /// the Latin ones they look like put back: no scenario draws them, and
+    /// Vision read a pod's "cpu 250m" as "сpu 250m" (Cyrillic с) and
+    /// "64Mi" as "64Mі" in a full run, the check waiting out its 15 s on
+    /// text that was on screen. One character for one, so a range found in
+    /// it is at the same character offsets in Vision's own string.
+    nonisolated static func latin(_ text: String) -> String {
+        guard text.unicodeScalars.contains(where: { $0.value >= 0x370 && $0.value < 0x530 }) else { return text }
+        let map: [Character: Character] = [
+            "а": "a", "в": "B", "е": "e", "к": "k", "м": "m", "н": "H", "о": "o", "р": "p", "с": "c", "т": "T", "у": "y", "х": "x",
+            "і": "i", "ј": "j", "ѕ": "s", "и": "u", "п": "n", "г": "r", "з": "3", "З": "3",
+            "А": "A", "В": "B", "Е": "E", "К": "K", "М": "M", "Н": "H", "О": "O", "Р": "P", "С": "C", "Т": "T", "У": "Y", "Х": "X",
+            "І": "I", "Ј": "J", "Ѕ": "S",
+            "α": "a", "ο": "o", "ρ": "p", "ν": "v", "ι": "i", "κ": "k", "Α": "A", "Β": "B", "Ε": "E", "Ζ": "Z", "Η": "H", "Ι": "I",
+            "Κ": "K", "Μ": "M", "Ν": "N", "Ο": "O", "Ρ": "P", "Τ": "T", "Υ": "Y", "Χ": "X",
+        ]
+        return String(text.map { map[$0] ?? $0 })
+    }
+
+    /// One recognized line, with its box: `boundingBox` is the line's, and
+    /// a box Vision gives within it (a word's) is placed in the whole image
+    /// — normalized, origin bottom left — by the closure that comes with it.
+    struct RecognizedLine: @unchecked Sendable {
+        let candidate: VNRecognizedText
+        let boundingBox: CGRect
+        var text: String { candidate.string }
+    }
+
+    /// The lines Vision reads in `image`, each with how to place a box of
+    /// its tile in the whole image. Accurate recognition can read nothing
+    /// at all of a large window that is mostly empty (a 4112×2466 Retina
+    /// capture of a sparse page: no results, no error — full-width bands
+    /// of it come back as erratically empty), so a read that comes back
+    /// empty is read again in overlapping tiles of 1400 pixels (700 points
+    /// on Retina), each of which Vision reads; a line two tiles both read
+    /// is kept once. `tiled` reads in tiles whatever the whole read gave:
+    /// on a laptop's own screen the whole read leaves out small text — a
+    /// severity chip, a list row's chip — that a tile reads.
+    nonisolated static func recognized(_ image: CGImage, tiled: Bool = false, halves: Bool = false) -> [(RecognizedLine, (CGRect) -> CGRect)] {
+        func read(_ image: CGImage) -> [RecognizedLine] {
+            let request = VNRecognizeTextRequest()
+            request.recognitionLevel = .accurate
+            request.usesLanguageCorrection = false
+            try? VNImageRequestHandler(cgImage: image).perform([request])
+            return (request.results ?? []).compactMap { observation in
+                observation.topCandidates(1).first.map { RecognizedLine(candidate: $0, boundingBox: observation.boundingBox) }
+            }
+        }
+        let whole = tiled ? [] : read(image)
+        let (width, height) = (image.width, image.height)
+        let tile = 1400
+        let step = tile - 200
+        // `halves` (`shownText`'s): across, tiles overlap by half, so a line
+        // up to half a tile wide (350 points) is whole in one of them.
+        // Overlapping by 200 pixels, a detail's caption that started just
+        // before one tile's edge and ran past the next's was read in two
+        // halves, neither matching.
+        let across = halves ? tile / 2 : step
+        guard whole.isEmpty, width > tile || height > tile else { return whole.map { ($0, { $0 }) } }
+        var lines: [(RecognizedLine, (CGRect) -> CGRect)] = []
+        var seen = Set<String>()
+        var top = 0
+        while true {
+            let rows = min(tile, height - top)
+            var left = 0
+            while true {
+                let columns = min(tile, width - left)
+                // A tile's rows count from the top; its boxes from its bottom left.
+                let x = CGFloat(left) / CGFloat(width)
+                let y = CGFloat(height - top - rows) / CGFloat(height)
+                let (sx, sy) = (CGFloat(columns) / CGFloat(width), CGFloat(rows) / CGFloat(height))
+                let place: (CGRect) -> CGRect = { box in
+                    CGRect(x: x + box.minX * sx, y: y + box.minY * sy, width: box.width * sx, height: box.height * sy)
+                }
+                if let crop = image.cropping(to: CGRect(x: left, y: top, width: columns, height: rows)) {
+                    for line in read(crop) {
+                        let box = place(line.boundingBox)
+                        let key = "\(line.text)@\(Int(box.midX * 100)),\(Int(box.midY * 100))"
+                        if seen.insert(key).inserted { lines.append((line, place)) }
+                    }
+                }
+                if left + columns >= width { break }
+                left += across
+            }
+            if top + rows >= height { break }
+            top += step
+        }
+        return lines
     }
 
     /// Where `word` is drawn, read again until it shows: its own frame
     /// within the line Vision reads it in — a row of chips is one line.
-    private func wordFrame(_ word: String, timeout: TimeInterval = 15) async -> CGRect? {
+    func wordFrame(_ word: String, timeout: TimeInterval = 15) async -> CGRect? {
         let deadline = Date().addingTimeInterval(timeout)
         repeat {
             if let image = app.windowImage(window) {
@@ -1921,15 +2017,19 @@ extension E2ERunner {
     }
 
     nonisolated private static func locate(_ word: String, in pixels: WindowPixels, size: CGSize) -> CGRect? {
-        let request = VNRecognizeTextRequest()
-        request.recognitionLevel = .accurate
-        request.usesLanguageCorrection = false
-        try? VNImageRequestHandler(cgImage: pixels.image).perform([request])
-        for observation in request.results ?? [] {
-            guard let candidate = observation.topCandidates(1).first, let range = candidate.string.range(of: word),
-                let box = (try? candidate.boundingBox(for: range))?.boundingBox
-            else { continue }
-            return CGRect(x: box.minX * size.width, y: box.minY * size.height, width: box.width * size.width, height: box.height * size.height)
+        for tiled in [false, true] {
+            for (line, place) in recognized(pixels.image, tiled: tiled) {
+                // Found in its Latin reading, boxed in Vision's own string
+                // at the same character offsets.
+                let raw = line.text
+                let folded = latin(raw)
+                guard let match = folded.range(of: word) else { continue }
+                let start = raw.index(raw.startIndex, offsetBy: folded.distance(from: folded.startIndex, to: match.lowerBound))
+                let end = raw.index(start, offsetBy: folded.distance(from: match.lowerBound, to: match.upperBound))
+                guard let found = (try? line.candidate.boundingBox(for: start..<end))?.boundingBox else { continue }
+                let box = place(found)
+                return CGRect(x: box.minX * size.width, y: box.minY * size.height, width: box.width * size.width, height: box.height * size.height)
+            }
         }
         return nil
     }
@@ -1938,20 +2038,79 @@ extension E2ERunner {
     /// shows (SwiftUI draws a moment later). A Vision pass can take seconds
     /// on a busy machine, so the wait is long — it only runs out when
     /// something isn't drawn.
-    private func shownText(_ timeout: TimeInterval = 15, _ match: @escaping (String) -> Bool) async -> (text: String, frame: CGRect)? {
+    func shownText(
+        _ timeout: TimeInterval = 15, file: StaticString = #fileID, line: UInt = #line, _ match: @escaping (String) -> Bool
+    ) async -> (text: String, frame: CGRect)? {
         let deadline = Date().addingTimeInterval(timeout)
+        var read: [String] = []
         repeat {
-            if let line = await readWindow().first(where: { match($0.text) }) { return line }
+            let whole = await readWindow()
+            if let line = whole.first(where: { match($0.text) }) { return line }
+            let tiles = await readWindow(tiled: true, halves: true)
+            if let line = tiles.first(where: { match($0.text) }) { return line }
+            read = tiles.isEmpty ? whole.map(\.text) : tiles.map(\.text)
             await pause(0.3)
         } while Date() < deadline
+        sawInstead(read, at: "\(file):\(line)")
         return nil
+    }
+
+    /// Not found: what was read instead, beside the next failing check
+    /// (`unread`) — the window's size and how many lines; the lines
+    /// themselves only when asked (OVERTERM_E2E_READ=1) and never while the
+    /// part may draw a Secret's value (`withholdPictures`): a run that
+    /// reveals a Secret's value never prints what it read. A picture of
+    /// the window is taken only if that next check fails (`check`), so a
+    /// read expected to find nothing saves none.
+    func sawInstead(_ read: [String], at place: String) {
+        var said = "\(place) read \(read.count) lines of a \(Int(window.frame.width))×\(Int(window.frame.height)) window"
+        if ProcessInfo.processInfo.environment["OVERTERM_E2E_READ"] == "1", !withholdPictures { said += ": \(read.joined(separator: " | "))" }
+        unread = said
+        unreadPicture = !withholdPictures
+    }
+
+    /// A picture of the window beside a failure that followed a read which
+    /// found nothing: only when asked, into the folder named
+    /// (OVERTERM_E2E_READ_DIR — the person's, kept or removed by them),
+    /// never while the part may draw a Secret's value, 20 a run at most.
+    func pictureOfFailure() -> String? {
+        guard let folder = ProcessInfo.processInfo.environment["OVERTERM_E2E_READ_DIR"], !folder.isEmpty, !withholdPictures, picturesSaved < 20
+        else { return nil }
+        let url = URL(fileURLWithPath: folder, isDirectory: true)
+        try? FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        picturesSaved += 1
+        let path = url.appendingPathComponent("\(AppEnvironment.e2eScenario ?? "run")-\(Int(Date().timeIntervalSince1970))-\(picturesSaved).png").path
+        app.captureWindow(to: path, window: window)
+        return path
+    }
+
+    /// Whether `phrase` is drawn, on one line or wrapped onto the next: a
+    /// narrow column wraps a sentence where its width says, and the two
+    /// lines Vision reads are next to each other in what it gives.
+    func shownPhrase(_ phrase: String, _ timeout: TimeInterval = 15, file: StaticString = #fileID, line: UInt = #line) async -> Bool {
+        func found(_ lines: [(text: String, frame: CGRect)]) -> Bool {
+            let texts = lines.map(\.text)
+            return texts.contains { $0.contains(phrase) } || zip(texts, texts.dropFirst()).contains { ($0 + " " + $1).contains(phrase) }
+        }
+        let deadline = Date().addingTimeInterval(timeout)
+        var read: [String] = []
+        repeat {
+            let whole = await readWindow()
+            if found(whole) { return true }
+            let tiles = await readWindow(tiled: true, halves: true)
+            if found(tiles) { return true }
+            read = (tiles.isEmpty ? whole : tiles).map(\.text)
+            await pause(0.3)
+        } while Date() < deadline
+        sawInstead(read, at: "\(file):\(line)")
+        return false
     }
 
     /// A click where a person would click, for the window itself. Both
     /// events are queued, not sent: a mouse-down that tracks the mouse
     /// until it is up (a disabled button passes it on) takes its mouse-up
     /// off the queue, where one sent after it would never come.
-    private func click(at point: CGPoint) async {
+    func click(at point: CGPoint) async {
         for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
             NSApp.postEvent(
                 NSEvent.mouseEvent(
@@ -2112,8 +2271,9 @@ extension E2ERunner {
         let line = "Own ports: db \(held) → \(dbTo) · web 38080 → \(webTo)"
         var drawn = ""
         let drawnLine = await eventually(5) {
-            // SwiftUI's selectable Text is an AppKit text field.
-            drawn = Self.find(NSTextField.self, in: self.app.dockerView) { $0.stringValue.hasPrefix("Own ports") }?.stringValue ?? ""
+            // SwiftUI's selectable Text, as VoiceOver reads it: an AppKit
+            // text field before macOS 27, its own text view since.
+            drawn = Self.staticText(in: self.app.dockerView) { $0.hasPrefix("Own ports") } ?? ""
             return drawn == line
         }
         check("the project's detail says what moved", drawnLine, drawn.isEmpty ? "nothing drawn" : drawn)
@@ -2319,7 +2479,7 @@ extension E2ERunner {
         page.showDetail = true
         page.selection = [tag]
         page.projectTab = .services
-        func titles(_ verbs: [DockerVerb], _ place: DockerVerb.Place) -> [String] { verbs.filter { $0.place == place }.map(\.title) }
+        func titles(_ verbs: [ResourceVerb], _ place: ResourceVerb.Place) -> [String] { verbs.filter { $0.place == place }.map(\.title) }
 
         _ = page.verbs(for: project)
         check(
@@ -2433,29 +2593,27 @@ extension E2ERunner {
         check(
             "and the tab it follows in is that service's",
             page.projectSession?.feed.terminalCommand?.hasSuffix(" logs -f --tail 100 web") == true, page.projectSession?.feed.terminalCommand ?? "nil")
-        // The picker over the log, as a click picks in it.
-        func picker() -> NSPopUpButton? { Self.find(NSPopUpButton.self, in: app.dockerView) { $0.itemTitles.contains("All services") } }
-        func pick(_ title: String) {
-            guard let popup = picker(), let menu = popup.menu else { return }
-            let index = popup.indexOfItem(withTitle: title)
-            if index >= 0 { menu.performActionForItem(at: index) }
+        // The picker over the log, as a click picks in it: its menu, opened
+        // by a press on it, read and picked in while it tracks.
+        func filterField() -> NSView? {
+            Self.find(NSTextField.self, in: app.dockerView) { $0.placeholderString == "Filter the log" && !$0.isHiddenOrHasHiddenAncestor }
         }
-        func wiring() -> String {
-            guard let popup = picker() else { return "no picker" }
-            return "button \(popup.action.map(NSStringFromSelector) ?? "-"), items \(popup.itemArray.map { $0.action.map(NSStringFromSelector) ?? "-" })"
+        func pick(_ title: String) async -> MenuPicked? {
+            await Self.menuPicker(in: app.dockerView, rightOf: filterField(), containing: "All services", choose: title)
         }
+        let shown = await Self.menuPicker(in: app.dockerView, rightOf: filterField(), containing: "All services")
         check(
-            "the log's picker lists the services, on the one shown", picker()?.itemTitles == ["All services", "db", "web"] && picker()?.titleOfSelectedItem == "web",
-            "\(picker()?.itemTitles ?? []) \(picker()?.titleOfSelectedItem ?? "no picker")")
-        pick("db")
+            "the log's picker lists the services, on the one shown", shown?.titles == ["All services", "db", "web"] && shown?.selected == "web",
+            "\(shown?.titles ?? []) \(shown?.selected ?? "no picker")")
+        let picked = await pick("db")
         check(
             "db picked there shows db's lines alone",
             await eventually(5) { page.projectSession?.service == "db" && logText().contains("db-line-e2e") && !logText().contains("web-line-e2e") },
-            "\(page.projectSession?.service ?? "all") \(wiring()) | \(logText().suffix(300))")
+            "\(page.projectSession?.service ?? "all") \(picked == nil ? "no picker" : "picked") | \(logText().suffix(300))")
         check(
             "and follows db in a tab", page.projectSession?.feed.terminalCommand?.hasSuffix(" logs -f --tail 100 db") == true,
             page.projectSession?.feed.terminalCommand ?? "nil")
-        pick("All services")
+        _ = await pick("All services")
         check(
             "All services merges them again",
             await eventually(5) { page.projectSession?.service == nil && logText().contains("web-line-e2e") && logText().contains("db-line-e2e") },
@@ -2464,13 +2622,13 @@ extension E2ERunner {
         page.projectSession?.feed.clear()
         fake.log(web, "web-after-clear")
         _ = await eventually(5) { fed() == ["web-after-clear"] }
-        pick("db")
+        _ = await pick("db")
         check(
             "a service with nothing to show says so, in place of the text",
             await eventually(5) {
                 page.projectSession?.service == "db" && Self.find(NSTextView.self, in: self.app.dockerView) { $0.accessibilityIdentifier() == "docker.text" } == nil
             }, "\(fed()) | \(logText().suffix(100))")
-        pick("All services")
+        _ = await pick("All services")
         check("all of them shown again", await eventually(5) { logText().contains("web-after-clear") }, logText().suffix(100).description)
 
         // The files changed: read again; nothing to watch, Watch goes.
@@ -2601,11 +2759,11 @@ extension E2ERunner {
         check(
             "and so does the panel's menu", app.dockerPanel.verbs(apiSummary).contains { $0.title == rebuildTitle },
             "\(app.dockerPanel.verbs(apiSummary).map(\.title))")
-        await drawn("its detail says it runs emulated", await shownText { $0.hasPrefix("Emulated:") }) { $0.contains("linux/amd64") }
+        await drawn("its detail says it runs emulated", await shownText { $0.drop(while: { !$0.isLetter }).hasPrefix("Emulated:") }) { $0.contains("linux/amd64") }
         // The row's value may wrap in the detail's column ("linux/amd64 —"
         // then "emulated here"): the platform read as a line, "emulated"
-        // anywhere after it.
-        let emulatedRow = await shownText { $0.hasPrefix("linux/amd64") }
+        // anywhere after it. Its first letter as Vision may read it: "1inux".
+        let emulatedRow = await shownText { $0.hasPrefix("linux/amd64") || $0.hasPrefix("1inux/amd64") }
         let words = await readWindow().map(\.text)
         let afterRow = emulatedRow.flatMap { row in words.firstIndex(of: row.text).map { Array(words[$0...].prefix(4)) } } ?? []
         check(
@@ -2651,7 +2809,10 @@ extension E2ERunner {
             "\(docker.platforms)")
         await drawn("and says it under its name", await shownText { $0.contains("linux/amd64") })
         page.imageSelection = [legacy]
-        await drawn("an emulated image's detail says so", await shownText { $0.hasPrefix("Emulated:") }) { $0.contains("linux/amd64") }
+        // Both in what is picked: a line a tile's edge cut ("Emulated: linux/ai") isn't the line.
+        await drawn(
+            "an emulated image's detail says so", await shownText { $0.drop(while: { !$0.isLetter }).hasPrefix("Emulated:") && $0.contains("linux/amd64") }
+        ) { $0.contains("linux/amd64") }
         // Vision reads the row's parts as lines of their own — the label,
         // "linux/amd64 -", "emulated" — so they are looked for side by side.
         let platformLabel = await shownText { $0 == "Platform" }
@@ -2678,7 +2839,7 @@ extension E2ERunner {
             "\(inspects(legacy)) reads, \(docker.platforms[legacy]?.description ?? "none")")
         await pause(0.3)
         let gone = await readWindow()
-        check("and its box is gone", !gone.contains { $0.text.hasPrefix("Emulated:") }, gone.map(\.text).joined(separator: " | "))
+        check("and its box is gone", !gone.contains { $0.text.drop(while: { !$0.isLetter }).hasPrefix("Emulated:") }, gone.map(\.text).joined(separator: " | "))
         page.imageSelection = []
 
         // The containers made from it before still run amd64, and say so.
@@ -3159,6 +3320,43 @@ extension E2ERunner {
         check("and the local engine is back", await eventually(5) { docker.connection.isRunning && docker.publishedHost == nil })
     }
 
+    /// A container's port pill in the list, clicked where a person would:
+    /// a tapped label in a reused row (not a Button), it still opens its
+    /// URL — handed to the window's recorder, not the browser — and the
+    /// row it is on is selected.
+    private func portPillChecks(_ page: DockerPageModel, web: String, db: String) async {
+        var opened: [URL] = []
+        app.dockerLinkRecorder = { opened.append($0) }
+        defer {
+            app.dockerLinkRecorder = nil
+            page.selection = [web]
+        }
+        page.selection = [db]
+        await pause(0.3)
+        // Where the row is, then the pill's words read off the window in it
+        // (SwiftUI's own elements aren't there until an assistive app asks).
+        func row() -> CGRect? {
+            guard let view = app.dockerView, let cell = Self.find(ResourceHostingCell.self, in: view, where: { $0.accessibilityIdentifier() == web })
+            else { return nil }
+            return cell.convert(cell.bounds, to: nil)
+        }
+        var frame: CGRect?
+        var seen = "no row"
+        if await eventually(5, { row() != nil }), let row = row() {
+            // The one 58080 on screen: the detail is db's, which has none.
+            let found = await wordFrame("58080")
+            seen = "row \(row), 58080 at \(found.map { "\($0)" } ?? "none")"
+            frame = found.flatMap { $0.intersects(row) ? $0 : nil }
+        }
+        check("the list's row shows its port pill", frame != nil, seen)
+        guard let frame else { return }
+        await click(at: CGPoint(x: frame.midX, y: frame.midY))
+        check(
+            "a click on a list row's pill opens its URL", await eventually(3) { opened.map(\.absoluteString) == ["http://localhost:58080"] },
+            "\(opened)")
+        check("and selects its row", await eventually(3) { page.selection == [web] }, "\(page.selection)")
+    }
+
     func dockerScenario() async {
         await settledPrompt()
         let socket = "/tmp/ot-e2e-docker-\(UUID().uuidString.prefix(6)).sock"
@@ -3206,6 +3404,7 @@ extension E2ERunner {
             "and the list keeps the keyboard as the detail comes in", app.dockerListHasKeyboard(), "\(String(describing: window.firstResponder))")
         check("its inspect data is read", await eventually(5) { page.session?.detail?.name == "ot-shop-web-1" })
         check("a port listed once, not per address family", PublishedPort.of(page.detailed?.Ports ?? []).map(\.label) == ["58080→80"])
+        await portPillChecks(page, web: web, db: db)
 
         // Logs: the last lines, then what comes, levels read.
         fake.log(web, "booting nginx")
@@ -3244,10 +3443,10 @@ extension E2ERunner {
         page.projectTab = .logs
         let merged = await eventually(5) {
             let lines = page.projectSession?.feed.lines ?? []
-            return lines.contains { $0.service == "db" && $0.message.contains("ready to accept") } && lines.contains { $0.service == "web" && $0.message == "GET /health 200" }
+            return lines.contains { $0.source == "db" && $0.message.contains("ready to accept") } && lines.contains { $0.source == "web" && $0.message == "GET /health 200" }
         }
-        let stamps = (page.projectSession?.feed.lines ?? []).compactMap(\.timestamp).map(DockerLogFeed.sortable)
-        check("a project's logs merge its services'", merged, "\(page.projectSession?.feed.lines.map { "\($0.service ?? "") \($0.message)" } ?? [])")
+        let stamps = (page.projectSession?.feed.lines ?? []).compactMap(\.timestamp).map(LogFeed.sortable)
+        check("a project's logs merge its services'", merged, "\(page.projectSession?.feed.lines.map { "\($0.source ?? "") \($0.message)" } ?? [])")
         check("in time order", stamps == stamps.sorted())
         await capture("project")
         page.selection = [web]
@@ -3455,13 +3654,14 @@ extension E2ERunner {
         page.selection = [pgID]
         page.press("d")
         check("d opens a database container in the connection form", await eventually(5) { self.window.attachedSheet != nil })
-        let draft = app.dockerDatabaseDraft?.connection
+        let draft = app.databaseDraft?.connection
         check(
             "filled in from its image, env and port",
             draft?.kind == .postgres && draft?.port == 55432 && draft?.user == "shop" && draft?.database == "orders"
-                && app.dockerDatabaseDraft?.password == "hunter2", "\(String(describing: draft))")
+                && app.databaseDraft?.password == "hunter2", "\(String(describing: draft))")
         if let sheet = window.attachedSheet { window.endSheet(sheet) }
         _ = await eventually(2) { self.window.attachedSheet == nil }
+        check("the form put away, the window keeps no password", app.databaseDraft != nil && app.databaseDraft?.password == nil)
         check(
             "the form put away gives the keyboard back to the list, not the terminal under the page",
             await eventually(3) { self.app.dockerListHasKeyboard() },
@@ -3740,4 +3940,122 @@ extension E2ERunner {
         check("and closed, it stops looking", await eventually(3) { docker.viewerCount == looking }, "\(docker.viewerCount) of \(looking)")
 
     }
+}
+
+/// What a menu picker's menu held when it opened: its items and the one
+/// ticked.
+struct MenuPicked: Equatable {
+    let titles: [String]
+    let selected: String?
+}
+
+extension E2ERunner {
+    /// The first static text under `view` whose text matches, as VoiceOver
+    /// reads it. SwiftUI's selectable `Text` was an `NSTextField` before
+    /// macOS 27; since, it is a private text-interaction view that only
+    /// says its text through accessibility.
+    static func staticText(in view: NSView?, where match: (String) -> Bool) -> String? {
+        let hit = find(NSView.self, in: view) { view in
+            guard view.accessibilityRole() == .staticText else { return false }
+            let text = (view as? NSTextField)?.stringValue ?? (view.accessibilityValue() as? String) ?? ""
+            return match(text)
+        }
+        return hit.map { ($0 as? NSTextField)?.stringValue ?? ($0.accessibilityValue() as? String) ?? "" }
+    }
+
+    /// A SwiftUI menu `Picker`, as a click opens it: the items of the menu
+    /// that holds `title`, the ticked one, and `choose` picked in it.
+    ///
+    /// Before macOS 27 the picker is an `NSPopUpButton` in the tree. Since,
+    /// SwiftUI draws it itself — no AppKit view, no accessibility element
+    /// until an assistive app asks, and its menu made only when it is
+    /// pressed. So the press goes where it is drawn — its focus ring's
+    /// frame, on the row of `anchor` and right of it (the controls beside
+    /// a field: a press elsewhere could press a button) — and the menu is
+    /// read and picked in while it tracks; one that isn't it is closed
+    /// untouched. The press is the window's (`sendEvent`), never the
+    /// system's.
+    ///
+    /// Only a pop-up's ring is pressed: the glyph buttons in a field (a
+    /// log's `.*` and highlight) have rings too, and pressing one would
+    /// change what is shown. And it returns once the menu it opened has
+    /// stopped tracking — a menu closes about 0.3 s after it is cancelled,
+    /// and a press made while it still tracked opened nothing: the next
+    /// pick returned nil.
+    static let menuPickerMinHeight: CGFloat = 16
+    static func menuPicker(in view: NSView?, rightOf anchor: NSView?, containing title: String, choose: String? = nil) async -> MenuPicked? {
+        if let popup = find(NSPopUpButton.self, in: view, where: { $0.itemTitles.contains(title) }) {
+            let seen = MenuPicked(titles: popup.itemTitles, selected: popup.titleOfSelectedItem)
+            if let choose, let menu = popup.menu {
+                let index = popup.indexOfItem(withTitle: choose)
+                if index >= 0 { menu.performActionForItem(at: index) }
+            }
+            return seen
+        }
+        guard let view, let anchor, let window = view.window else { return nil }
+        let row = anchor.convert(anchor.bounds, to: nil)
+        var rings: [(view: NSView, frame: NSRect)] = []
+        func collect(_ candidate: NSView) {
+            if String(describing: type(of: candidate)).hasSuffix("FocusRingView"), !candidate.isHiddenOrHasHiddenAncestor {
+                let frame = candidate.convert(candidate.bounds, to: nil)
+                if abs(frame.midY - row.midY) < 8, frame.minX >= row.maxX - 1, frame.height >= menuPickerMinHeight {
+                    rings.append((candidate, frame))
+                }
+            }
+            candidate.subviews.forEach(collect)
+        }
+        collect(view)
+        // Rightmost first: the toolbar ends with the service picker.
+        for ring in rings.sorted(by: { $0.frame.minX > $1.frame.minX }) {
+            let point = NSPoint(x: ring.frame.midX, y: ring.frame.midY)
+            let seen = MenuSeen()
+            let observer = NotificationCenter.default.addObserver(forName: NSMenu.didBeginTrackingNotification, object: nil, queue: nil) { note in
+                nonisolated(unsafe) let tracked = note.object as? NSMenu
+                MainActor.assumeIsolated {
+                    guard let menu = tracked, seen.menu == nil else { return }
+                    seen.menu = menu
+                    let titles = menu.items.filter { !$0.isSeparatorItem }.map(\.title)
+                    let ours = titles.contains(title)
+                    if ours { seen.picked = MenuPicked(titles: titles, selected: menu.items.first { $0.state == .on }?.title) }
+                    let index = ours ? choose.flatMap { choose in menu.items.firstIndex { $0.title == choose } } : nil
+                    // Once it tracks: picked, then closed.
+                    DispatchQueue.main.async {
+                        if let index { menu.performActionForItem(at: index) }
+                        menu.cancelTracking()
+                    }
+                }
+            }
+            func mouse(_ type: NSEvent.EventType) -> NSEvent {
+                NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                    windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1)!
+            }
+            let ended = NotificationCenter.default.addObserver(forName: NSMenu.didEndTrackingNotification, object: nil, queue: nil) { note in
+                nonisolated(unsafe) let tracked = note.object as? NSMenu
+                MainActor.assumeIsolated {
+                    if let menu = tracked, menu === seen.menu { seen.ended = true }
+                }
+            }
+            NSApp.postEvent(mouse(.leftMouseUp), atStart: false)
+            window.sendEvent(mouse(.leftMouseDown))
+            // Its menu open (or none, within a second), then closed.
+            let start = ProcessInfo.processInfo.systemUptime
+            while ProcessInfo.processInfo.systemUptime - start < 3 {
+                if seen.menu == nil ? ProcessInfo.processInfo.systemUptime - start > 1 : seen.ended { break }
+                try? await Task.sleep(for: .milliseconds(20))
+            }
+            NotificationCenter.default.removeObserver(observer)
+            NotificationCenter.default.removeObserver(ended)
+            if let picked = seen.picked { return picked }
+        }
+        return nil
+    }
+}
+
+/// What the menu said, from its tracking notification.
+private final class MenuSeen: @unchecked Sendable {
+    var picked: MenuPicked?
+    /// The menu the press opened, and whether it has stopped tracking.
+    var menu: NSMenu?
+    var ended = false
 }

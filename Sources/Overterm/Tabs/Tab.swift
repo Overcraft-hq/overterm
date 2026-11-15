@@ -61,6 +61,16 @@ final class Tab: ObservableObject, Identifiable {
 
     @Published var activity = TabActivity()
 
+    /// What its checkout deploys has failed (attention marks, 3.13): the
+    /// newest first — Ask Why on the mark asks about the first.
+    @Published var kubeAlerts: [KubeAttentionAlert] = []
+    /// Why its checkout's failures won't mark it now ("not watched");
+    /// nil while they will, or nothing is bound.
+    @Published var kubeNotWatched: String?
+    /// One of its panes asks for a Terraform write (TerraformPrompt, 3.3):
+    /// its tab's mark and the Inbox's card; never answered by Overterm.
+    @Published var terraformAsk: TerraformAsk?
+
     /// The island this tab belongs to, if any. The group is looked up in
     /// `TabStore.groups`; the store keeps a group's tabs contiguous.
     @Published var groupID: TabGroup.ID?
@@ -94,9 +104,23 @@ final class Tab: ObservableObject, Identifiable {
     /// What the compose projects of its checkout publish (DockerModel).
     /// Apart from `ports`: they don't make the tab a server.
     @Published var containerPorts: [ListeningPort] = []
+    /// The Kubernetes port-forwards started from this tab (`KubeForwards`):
+    /// pills naming the pod each is pinned to. Apart from `ports` too.
+    @Published var forwardPorts: [ListeningPort] = []
 
     /// What this tab is, for the glyph in its icon tile.
-    var kind: TabKind { TabKind.of(agent: agent, title: shellTitle, hasPort: !ports.isEmpty) }
+    var kind: TabKind {
+        TabKind.of(
+            agent: agent, title: shellTitle, hasPort: !ports.isEmpty, pinned: kubeBadge != nil, terraform: terminals.contains { $0.terraformRoot != nil })
+    }
+
+    /// The Kubernetes context the focused pane is pinned to — Terminal in
+    /// this context. A pane moved in from another tab keeps its own, so
+    /// the tab as a whole is `kubeBadge`.
+    var kubePin: KubeTerminalPin? { terminal.kubePin }
+
+    /// What the strip says of the panes' contexts: one, `mixed`, or a lost pin.
+    var kubeBadge: KubeTabBadge? { KubeTabBadge.of(terminals.map { KubeTabBadge.Pane(pin: $0.kubePin, lost: $0.kubePinLost) }) }
 
     var title: String { customTitle ?? Self.shortened(shellTitle) }
 

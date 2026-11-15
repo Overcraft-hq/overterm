@@ -342,10 +342,12 @@ extension TerminalWindowController {
 
     /// Every attention notice goes through here: while focusing on one
     /// island, another group's tab waits — unless its agent is blocked.
-    func notifyUnlessHeld(_ tab: Tab) {
+    /// `note` and `mark`: a notice that isn't the tab's own mark (a cluster
+    /// failure under an agent's waiting mark).
+    func notifyUnlessHeld(_ tab: Tab, note: String? = nil, mark: TabActivity.Mark? = nil) {
         let name = store.group(of: tab)?.name ?? "Ungrouped"
-        guard focus.shouldNotify(tab: tab, groupName: name) else { return }
-        AttentionNotifier.notify(tab: tab)
+        guard focus.shouldNotify(tab: tab, groupName: name, note: note, mark: mark) else { return }
+        AttentionNotifier.notify(tab: tab, note: note, mark: mark)
     }
 
     func leaveFocus() {

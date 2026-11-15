@@ -57,10 +57,10 @@ final class TabKindTests: XCTestCase {
 
     /// What the shell would pass: quoted words are one, their quotes off.
     func testTheTitleIsReadInTheShellsWords() {
-        XCTAssertEqual(TabKind.shellWords("  docker   ps "), ["docker", "ps"])
-        XCTAssertEqual(TabKind.shellWords("-f '/w/my app/compose.yaml' run"), ["-f", "/w/my app/compose.yaml", "run"])
-        XCTAssertEqual(TabKind.shellWords(#"-p 'it'\''s' "a \"b\"" c\ d ''"#), ["-p", "it's", #"a "b""#, "c d", ""])
-        XCTAssertEqual(TabKind.shellWords("sh -c 'unclosed here"), ["sh", "-c", "unclosed here"])
+        XCTAssertEqual(ShellCommandLine.words("  docker   ps "), ["docker", "ps"])
+        XCTAssertEqual(ShellCommandLine.words("-f '/w/my app/compose.yaml' run"), ["-f", "/w/my app/compose.yaml", "run"])
+        XCTAssertEqual(ShellCommandLine.words(#"-p 'it'\''s' "a \"b\"" c\ d ''"#), ["-p", "it's", #"a "b""#, "c d", ""])
+        XCTAssertEqual(ShellCommandLine.words("sh -c 'unclosed here"), ["sh", "-c", "unclosed here"])
     }
 
     func testAPlainShellIsTheFallback() {

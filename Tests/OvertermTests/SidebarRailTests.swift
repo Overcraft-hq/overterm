@@ -10,11 +10,13 @@ final class SidebarRailTests: XCTestCase {
     /// API client and the notes — the order the rail draws and the order
     /// somebody reaches for them in.
     func testThePanelsInOrder() {
-        XCTAssertEqual(SidebarPanel.allCases, [.files, .git, .sessions, .snippets, .api, .notes, .database, .docker])
+        XCTAssertEqual(SidebarPanel.allCases, [.files, .git, .sessions, .snippets, .api, .notes, .database, .docker, .kubernetes, .terraform])
         XCTAssertEqual(SidebarPanel.files.title, "Files")
         XCTAssertEqual(SidebarPanel.git.title, "Overgit")
         XCTAssertEqual(SidebarPanel.api.title, "API")
         XCTAssertEqual(SidebarPanel.notes.title, "Notes")
+        XCTAssertEqual(SidebarPanel.terraform.title, "Terraform")
+        XCTAssertEqual(SidebarPanel.terraform.toggleKey, "terraform.enabled")
     }
 
     /// The optional panels' icons are there only while Settings has them
@@ -24,6 +26,8 @@ final class SidebarRailTests: XCTestCase {
         XCTAssertEqual(SidebarPanel.shown.contains(.notes), Settings.shared.notesEnabled)
         XCTAssertEqual(SidebarPanel.shown.contains(.database), Settings.shared.databaseEnabled)
         XCTAssertEqual(SidebarPanel.shown.contains(.docker), Settings.shared.dockerEnabled)
+        XCTAssertEqual(SidebarPanel.shown.contains(.kubernetes), Settings.shared.kubernetesEnabled)
+        XCTAssertEqual(SidebarPanel.shown.contains(.terraform), Settings.shared.terraformEnabled)
         XCTAssertEqual(SidebarPanel.shown.contains(.sessions), Settings.shared.sessionsEnabled)
         XCTAssertEqual(SidebarPanel.shown.contains(.snippets), Settings.shared.snippetsEnabled)
         XCTAssertEqual(SidebarPanel.shown, SidebarPanel.order.filter(\.isEnabled), "in the user's order")
@@ -36,7 +40,7 @@ final class SidebarRailTests: XCTestCase {
         XCTAssertEqual(SidebarPanel.ordered([]), SidebarPanel.allCases)
         XCTAssertEqual(
             SidebarPanel.ordered(["database", "files", "nope", "database", "git"]),
-            [.database, .files, .git, .sessions, .snippets, .api, .notes, .docker])
+            [.database, .files, .git, .sessions, .snippets, .api, .notes, .docker, .kubernetes, .terraform])
     }
 
     /// Moving goes past the next icon you can see: a hidden panel between
@@ -46,10 +50,10 @@ final class SidebarRailTests: XCTestCase {
         let visible: [SidebarPanel] = [.files, .git, .api, .database]  // sessions, snippets, notes, docker off
         XCTAssertEqual(
             SidebarPanel.moving(.api, by: -1, in: order, visible: visible),
-            [.files, .api, .git, .sessions, .snippets, .notes, .database, .docker])
+            [.files, .api, .git, .sessions, .snippets, .notes, .database, .docker, .kubernetes, .terraform])
         XCTAssertEqual(
             SidebarPanel.moving(.api, by: 1, in: order, visible: visible),
-            [.files, .git, .sessions, .snippets, .notes, .database, .api, .docker])
+            [.files, .git, .sessions, .snippets, .notes, .database, .api, .docker, .kubernetes, .terraform])
         XCTAssertEqual(SidebarPanel.moving(.files, by: -1, in: order, visible: visible), order, "nothing before the first")
         XCTAssertEqual(SidebarPanel.moving(.database, by: 1, in: order, visible: visible), order, "nothing after the last")
     }

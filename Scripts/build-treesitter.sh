@@ -44,6 +44,7 @@ GRAMMARS=(
   "java|https://github.com/tree-sitter/tree-sitter-java|09d650def6cdf7f479f4b78f595e9ef5b58ce31e|-"
   "kotlin|https://github.com/fwcd/tree-sitter-kotlin|c4ddea359a7ff4d92360b2efcd6cfce5dc25afe6|-"
   "diff|https://github.com/the-mikedavis/tree-sitter-diff|fd74c78fa88a20085dbc7bbeaba066f4d1692b63|-"
+  "hcl|https://github.com/tree-sitter-grammars/tree-sitter-hcl|9e3ec9848f28d26845ba300fd73c740459b83e9b|-"
 )
 # Helix query directories the languages above inherit from ("; inherits: ecma").
 QUERY_EXTRAS=(ecma _javascript _typescript _jsx)
@@ -147,9 +148,17 @@ module TreeSitterKit {
 }
 MAP
 
+# The headers in a folder of the module's name: Swift 6.4's build system
+# copies every static xcframework's headers into one include folder, where
+# this module.modulemap and GhosttyKit's collided ("Multiple commands
+# produce …/include/module.modulemap").
+rm -rf "$BUILD/headers"
+mkdir -p "$BUILD/headers"
+cp -R "$BUILD/include" "$BUILD/headers/TreeSitterKit"
+
 rm -rf "$OUT"
 mkdir -p "$(dirname "$OUT")"
-xcodebuild -create-xcframework -library "$BUILD/libtreesitterkit.a" -headers "$BUILD/include" -output "$OUT" >/dev/null
+xcodebuild -create-xcframework -library "$BUILD/libtreesitterkit.a" -headers "$BUILD/headers" -output "$OUT" >/dev/null
 
 echo "==> queries"
 rm -rf "$QUERIES"

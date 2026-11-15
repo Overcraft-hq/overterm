@@ -8,6 +8,9 @@ final class EditorBuffer {
     let document = EditorDocument()
     let storage = NSTextStorage()
     let undo = UndoManager()
+    /// The storage's delegate: an edit noted once, whichever editor made
+    /// it, and every editor showing the buffer told.
+    let relay = EditorStorageRelay()
     private(set) var language: EditorLanguage?
     private(set) var syntax: SyntaxDocument?
 
@@ -36,6 +39,13 @@ final class EditorBuffer {
     var drawing: DrawingModel?
     /// A `.sql` file: the console under it (connection, results).
     var sqlConsole: SQLConsole?
+    /// A Kubernetes manifest — a cluster object's copy (`y`), a checkout's
+    /// file, a kustomization: the bar under it (Diff with Cluster, Apply).
+    var kubeManifest: KubeManifestSession?
+    /// A cluster object's YAML (`KubeResourceBuffer`): one buffer for the
+    /// resource, shown by the detail's YAML tab and by the editor's tab `y`
+    /// opens — never a file.
+    weak var resource: KubeResourceBuffer?
     /// A note shown as Obsidian's Live Preview (NoteLivePreview) — on by default.
     var livePreview = false
     /// The caret's lines when Live Preview last styled them: their markup shows.
@@ -43,7 +53,25 @@ final class EditorBuffer {
     /// The note's frontmatter and code blocks, for the text's `version`.
     var liveBlocks: (version: Int, blocks: [NoteLivePreview.Block])?
 
-    var diagnostics: [EditorDiagnostic] = []
+    /// A Terraform file: its module folder — validate, Format — and the bar under it.
+    var terraform: TerraformFolder?
+    /// Validate asked for while it had edits: it is saved first, and its
+    /// folder validated once the save has written it (format on save
+    /// writes later than `save` returns).
+    var terraformValidatesOnSave = false
+
+    /// The language server's problems, the fields a Kubernetes manifest's
+    /// cluster doesn't know (3.15), and `terraform validate`'s: shown together.
+    var diagnostics: [EditorDiagnostic] {
+        get { serverDiagnostics + kubeDiagnostics + terraformDiagnostics }
+        set { serverDiagnostics = newValue }
+    }
+    var serverDiagnostics: [EditorDiagnostic] = []
+    var kubeDiagnostics: [EditorDiagnostic] = []
+    /// The last validate's, laid over the text it was saved as — never over
+    /// one edited since that validate started (`TerraformFolder.describes`):
+    /// dropped at the next edit, which they no longer describe.
+    var terraformDiagnostics: [EditorDiagnostic] = []
     /// The file as the last commit has it; nil outside git or when new.
     var gitBase: String?
     var gitMarks: [GitGutterMark] = []
@@ -56,6 +84,20 @@ final class EditorBuffer {
 
     var url: URL? { document.url }
     var name: String { document.name }
+
+    init() {
+        relay.buffer = self
+        storage.delegate = relay
+    }
+
+    /// Text that is no file's (`EditorDocument.loadVirtual`), coloured as
+    /// `url`'s language.
+    func loadVirtual(_ url: URL, text: String, attributes: [NSAttributedString.Key: Any]) {
+        document.loadVirtual(url, text: text)
+        language = EditorLanguage.language(for: url)
+        syntax = language.map { SyntaxDocument(language: $0) }
+        setText(text, attributes: attributes)
+    }
 
     func load(_ url: URL, attributes: [NSAttributedString.Key: Any]) {
         document.load(url)
@@ -119,6 +161,33 @@ final class EditorBuffer {
     var languageID: String? { url.flatMap { EditCommands.languageID(forFileName: $0.lastPathComponent) } }
 
     var indentUnit: String { usesTabs ? "\t" : String(repeating: " ", count: indentWidth) }
+}
+
+/// A buffer's storage delegate. The editors that show the buffer — the
+/// window's, and the Kubernetes detail's YAML tab for a cluster object —
+/// each hold a layout manager on the one storage; an edit made in either
+/// is noted once (`noteEdit`) and every one of them repaints.
+@MainActor
+final class EditorStorageRelay: NSObject, NSTextStorageDelegate {
+    weak var buffer: EditorBuffer?
+    let editors = NSHashTable<EditorViewController>.weakObjects()
+    /// An edit landed (any editor's, or a reload's).
+    var onEdit: (() -> Void)?
+
+    nonisolated func textStorage(
+        _ textStorage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions, range editedRange: NSRange,
+        changeInLength delta: Int
+    ) {
+        guard editedMask.contains(.editedCharacters) else { return }
+        // Storages are only edited on the main thread: the text view's.
+        MainActor.assumeIsolated {
+            let showing = editors.allObjects
+            guard let buffer, !showing.contains(where: \.isSwapping) else { return }
+            buffer.noteEdit(location: editedRange.location, oldLength: editedRange.length - delta, newLength: editedRange.length)
+            for editor in showing { editor.storageEdited(buffer) }
+            onEdit?()
+        }
+    }
 }
 
 /// Every line as tall as the setting asks, the text centred in it — Zed's

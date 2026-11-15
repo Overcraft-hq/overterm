@@ -66,6 +66,39 @@ final class DiffModelTests: XCTestCase {
         XCTAssertFalse(model.diffs["a.txt"]!.lines.contains { $0.text.hasPrefix("diff --git") }, "headers are the card's job")
     }
 
+    /// What the rail's GitOps answers hear from the diff (gitops.md 4.3):
+    /// HEAD, set only when it moves — a save republishes nothing — and a
+    /// fetch, seen from the watchers' paths alone.
+    @MainActor
+    func testHeadMovesOnlyOnACommitAndAFetchIsSeen() async throws {
+        try await git("init", "-q", "-b", "main")
+        try write("a.txt", "one\n")
+        try await git("add", ".")
+        try await git("commit", "-q", "-m", "init")
+        let model = DiffModel()
+        model.setRoot(repo)
+        try await eventually { model.head != nil }
+        let first = try await Git.run(["rev-parse", "HEAD"], in: repo).trimmingCharacters(in: .whitespacesAndNewlines)
+        XCTAssertEqual(model.head, first)
+        var heads: [String?] = []
+        let sink = model.$head.dropFirst().sink { heads.append($0) }
+        defer { sink.cancel() }
+        try write("a.txt", "two\n")
+        try await eventually { model.files.first?.added == 1 }
+        XCTAssertEqual(heads, [], "a save moves no HEAD")
+        try await git("commit", "-q", "-am", "two")
+        try await eventually { model.head != first }
+        XCTAssertNotEqual(model.head, first)
+        XCTAssertEqual(heads.count, 1)
+        let moved = model.remoteRefsMoved
+        try await git("update-ref", "refs/remotes/origin/main", "HEAD")
+        try await eventually { model.remoteRefsMoved != moved }
+        XCTAssertNotEqual(model.remoteRefsMoved, moved, "a fetch's remote-tracking ref")
+        XCTAssertTrue(DiffModel.isRemoteRef("/r/.git/refs/remotes/origin/"))
+        XCTAssertFalse(DiffModel.isRemoteRef("/r/.git/refs/heads/"))
+        XCTAssertFalse(DiffModel.isRemoteRef("/r/src/remotes/"))
+    }
+
     /// The scenario from the first real use: git init, add, edit — no HEAD.
     @MainActor
     func testWorksBeforeTheFirstCommit() async throws {

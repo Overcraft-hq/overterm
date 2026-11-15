@@ -187,6 +187,30 @@ final class DockerModelTests: XCTestCase {
         try await eventually("no stats stream left") { self.fake.openStreams == base }
     }
 
+    /// A follower stopped — a Logs tab left, a service gone — closes the
+    /// engine's connection: its cancellation goes through the source's
+    /// own stream of parsed lines to the engine's.
+    func testAStoppedLogFollowerClosesTheEnginesConnection() async throws {
+        let id = fake.add(name: "chatty")
+        fake.log(id, "one")
+        model.start()
+        try await eventually("the container") { model.container(id) != nil }
+        try await eventually("listening") { fake.listening == 1 }
+        let base = fake.openStreams
+        let feed = LogFeed()
+        let follower = LogFollower(source: DockerLogSource(id: id, docker: model), feed: feed, merging: false)
+        follower.start(tail: 10)
+        try await eventually("followed") { follower.following && self.fake.openStreams == base + 1 }
+        try await eventually("its line") { feed.lines.map(\.message) == ["one"] }
+        fake.log(id, "two")
+        try await eventually("what comes") { feed.lines.map(\.message) == ["one", "two"] }
+        follower.stop()
+        try await eventually("its connection closed") { self.fake.openStreams == base }
+        fake.log(id, "three")
+        try await Task.sleep(for: .milliseconds(100))
+        XCTAssertEqual(feed.lines.map(\.message), ["one", "two"])
+    }
+
     /// Inspect's secrets are found in its own text: nothing of it goes up
     /// before they are known, whatever the detail's read is doing.
     /// Inspect's text is JSON: a password with a quote or a backslash in

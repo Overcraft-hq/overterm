@@ -37,4 +37,24 @@ final class TabStripTests: XCTestCase {
         XCTAssertFalse(TabStripHostingView<EmptyView>.isEmptyStrip(NSButton()))
         XCTAssertFalse(TabStripHostingView<EmptyView>.isEmptyStrip(nil))
     }
+
+    /// On macOS 27 the scroll view's content is one plain container that
+    /// answers for the tabs SwiftUI handles (a review's, a page's, the
+    /// island's +) and for the empty space after them alike: it is asked by
+    /// place — in the scroll view, off the tabs' row.
+    func testTheEmptyStripIsWhereNoTabIs() {
+        let scroller = NSRect(x: 0, y: 0, width: 600, height: 52)
+        let row = NSRect(x: 0, y: 8, width: 300, height: 36)
+        let container = NSView()
+        func empty(_ view: NSView?, _ x: CGFloat) -> Bool {
+            TabStripHostingView<EmptyView>.isEmptyStrip(view, at: NSPoint(x: x, y: 26), scroller: scroller, row: row)
+        }
+        XCTAssertTrue(empty(container, 450), "after the last tab")
+        XCTAssertFalse(empty(container, 150), "on a tab SwiftUI handles")
+        XCTAssertFalse(empty(container, 650), "beside the scroll view: a chip")
+        XCTAssertFalse(empty(StripPressNSView(), 450))
+        XCTAssertFalse(empty(NSButton(), 450))
+        XCTAssertFalse(empty(WindowDragView(), 450))
+        XCTAssertFalse(TabStripHostingView<EmptyView>.isEmptyStrip(container), "nowhere measured, nothing taken")
+    }
 }

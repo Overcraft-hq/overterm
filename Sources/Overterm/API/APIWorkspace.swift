@@ -30,6 +30,13 @@ final class APIWorkspace: ObservableObject {
     @Published var search = ""
     /// Specs, collections and servers to import from (APIDiscovery).
     @Published private(set) var discovered: [APIDiscovery.Source] = []
+    /// The APIs Kubernetes forwards serve (`KubeForwards.openAPI`): offered
+    /// whichever checkout shows — the window keeps them.
+    @Published var forwardSources: [APIDiscovery.Source] = []
+    /// What the panel offers to import: what was found here, then the forwards'.
+    var importable: [APIDiscovery.Source] {
+        discovered + forwardSources.filter { source in !discovered.contains { $0.id == source.id } }
+    }
     /// The ports the selected tab listens on — the window answers.
     var ports: () -> [Int] = { [] }
 

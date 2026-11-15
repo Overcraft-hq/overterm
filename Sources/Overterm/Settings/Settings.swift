@@ -11,10 +11,20 @@ import Foundation
 /// Appearance and Terminal values are Ghostty options: unset leaves the
 /// user's Ghostty config in charge, a value overrides it (written to
 /// `ghosttyOverridesFile`, loaded after the user's config).
+///
+/// Except a security setting (`SettingSpec.heldWhenEditedOutside`): any
+/// agent can write settings.json, so one changed there — not by the page,
+/// not by a sheet of the app's — is held (`held`): the value before stays
+/// in effect until a window's banner Keeps the new one, or Revert writes
+/// the old one back (docs/design/terraform/analysis.md 5.8, D-7).
 @MainActor
 final class Settings: ObservableObject {
-    static let shared = Settings(
-        url: AppEnvironment.supportDirectory.appendingPathComponent("settings.json"), legacy: AppEnvironment.defaults)
+    static let shared = Settings(url: sharedURL, legacy: AppEnvironment.defaults)
+
+    /// settings.json in the support folder — an isolated run's own, a unit
+    /// test's included: a test that sets a value must never write, or turn
+    /// off, what the running Overterm reads.
+    static var sharedURL: URL { AppEnvironment.supportDirectory.appendingPathComponent("settings.json") }
 
     enum NewTabDirectory: String, CaseIterable, Identifiable {
         /// The selected tab's directory.
@@ -48,6 +58,20 @@ final class Settings: ObservableObject {
     /// The keys whose values changed, as they change — from the page, or
     /// from the file edited by hand.
     let changes = PassthroughSubject<Set<String>, Never>()
+    /// The security settings the file changed outside the page, by key:
+    /// waiting for Keep or Revert, the value before still in effect.
+    @Published private(set) var held: [String: HeldSetting] = [:]
+    /// The file's own values of the security settings, not fitted, as
+    /// last taken: what Revert writes back. Kept on disk too
+    /// (`confirmedURL`), so a change made while Overterm isn't running —
+    /// or left unanswered at quit — is held at the next launch.
+    private var taken: [String: SettingValue] = [:]
+    private var recordedTaken: [String: SettingValue]?
+
+    /// The security settings' values last confirmed, beside settings.json
+    /// in the support folder (an isolated run's own): no secret, only what
+    /// a later launch holds the file against.
+    var confirmedURL: URL { url.deletingLastPathComponent().appendingPathComponent("settings-confirmed.json") }
 
     /// The file as last read or written, to tell an outside edit from our own.
     private var knownText: String?
@@ -76,6 +100,22 @@ final class Settings: ObservableObject {
         values[key] ?? SettingsSchema.byKey[key]?.defaultValue
     }
 
+    /// The setting as the file has it, not fitted: an entry's fields this
+    /// build doesn't know, or whose value it can't use, are still there —
+    /// for an edit that writes the whole value back and must keep what it
+    /// didn't change. The default when the file doesn't set it; nil when
+    /// the file doesn't parse, or the value isn't one a setting holds.
+    /// A security setting's is the file's value last taken — the value
+    /// before while one is held, never one the watcher hasn't seen yet: an
+    /// edit made in the app builds on what is in effect, never on an
+    /// agent's change it would then write as the app's own.
+    func fileValue(_ key: String) -> SettingValue? {
+        guard let object = try? SettingsJSON.object(from: fileText) else { return nil }
+        if SettingsSchema.byKey[key]?.heldWhenEditedOutside == true { return taken[key] ?? SettingsSchema.byKey[key]?.defaultValue }
+        guard let raw = object[key] else { return SettingsSchema.byKey[key]?.defaultValue }
+        return SettingValue(json: raw)
+    }
+
     /// Whether the file sets it (Settings shows a reset for those).
     func isSet(_ key: String) -> Bool { values[key] != nil }
 
@@ -92,6 +132,8 @@ final class Settings: ObservableObject {
         case .string(let text): !text.isEmpty
         case .int, .double: value(key)?.number != SettingsSchema.byKey[key]?.defaultValue?.number
         case .list(let items): !items.isEmpty
+        case .entries(let entries): !entries.isEmpty
+        case .records(let records): !records.isEmpty
         case nil: false
         }
     }
@@ -102,30 +144,76 @@ final class Settings: ObservableObject {
     // MARK: Writing
 
     /// Sets `key` (nil: back to its default), editing the file in place.
+    /// The app's own edit: a held `key` takes this value, not the file's.
     func set(_ key: String, _ value: SettingValue?) {
         guard let spec = SettingsSchema.byKey[key] else { return }
+        // An outside edit the watcher hasn't reported yet is held first:
+        // this write must not carry it in as the app's own.
+        reloadIfChanged()
         let stored = value == spec.defaultValue ? nil : value
-        guard values[key] != stored else { return }
+        guard values[key] != stored || held[key] != nil else { return }
         // A file that doesn't parse is the user's to fix, not ours to lose.
         guard problemsParsing == false else { return }
         let current = (try? String(contentsOf: url, encoding: .utf8)) ?? "{\n}\n"
         var all = values
         all[key] = stored
         // In place when the file's layout allows, else rewritten whole.
-        let text = SettingsJSON.setting(current, key: key, json: stored?.json) ?? SettingsJSON.text(of: all)
+        let text = SettingsJSON.setting(current, key: key, json: stored?.json, members: stored?.members) ?? SettingsJSON.text(of: all)
         write(text)
-        apply(text)
+        apply(text, trusting: .keys([key]))
     }
 
     /// The JSON view's Save: the text as typed, written even when it has
-    /// problems — they are shown, and the good parts apply.
+    /// problems — they are shown, and the good parts apply. A security
+    /// setting is the person's own only where the text changes it from
+    /// the file on disk: the view's draft is the file, an agent's edit
+    /// included, so saving it as it was — a typo fixed elsewhere, another
+    /// setting changed — isn't a Keep; that change is held as any outside
+    /// edit, against the value in effect.
     func save(text: String) {
+        reloadIfChanged()
+        let before = try? SettingsJSON.object(from: knownText ?? "")
         write(text)
-        apply(text)
+        apply(text, trusting: .savedText(before: before.map { Self.written($0) }))
     }
 
-    /// Re-reads the file now (the watcher does so on its own).
-    func reload() { load() }
+    /// Re-reads the file now, as the watcher does on its own: an edit
+    /// made outside the page, its security settings held.
+    func reload() { reloadIfChanged() }
+
+    // MARK: Held security settings
+
+    /// Keep: the held settings take the file's values. Only what the
+    /// banner showed — a file changed again since is shown again first.
+    func keep(_ shown: [String: HeldSetting]) {
+        reloadIfChanged()
+        guard !shown.isEmpty, shown == held else { return }
+        var next = values
+        for (key, change) in shown {
+            next[key] = change.proposed
+            taken[key] = change.written
+        }
+        held = [:]
+        record()
+        let changed = Set(shown.keys).filter { next[$0] != values[$0] }
+        values = next
+        if !changed.isEmpty { changes.send(changed) }
+    }
+
+    /// Revert: the values before written back into the file, in place,
+    /// as `set` writes. Nothing while the file doesn't parse (the page
+    /// says so); the values before stay in effect meanwhile.
+    func revert(_ shown: [String: HeldSetting]) {
+        reloadIfChanged()
+        guard !shown.isEmpty, shown == held, !problemsParsing else { return }
+        var text: String? = fileText
+        for change in shown.values.sorted(by: { $0.key < $1.key }) {
+            text = text.flatMap { SettingsJSON.setting($0, key: change.key, json: change.before?.json, members: change.before?.members) }
+        }
+        let written = text ?? SettingsJSON.text(of: values)
+        write(written)
+        apply(written, trusting: .keys(Set(shown.keys)))
+    }
 
     private var problemsParsing = false
 
@@ -135,21 +223,77 @@ final class Settings: ObservableObject {
         knownText = text
     }
 
+    /// At launch: the file against the security settings last confirmed
+    /// (`confirmedURL`) — what changed since, by anyone, is held, as the
+    /// watcher would have. With no record yet (the first launch that
+    /// keeps one) the file is taken as it is: nothing before to hold it
+    /// against.
     private func load() {
         let text = try? String(contentsOf: url, encoding: .utf8)
         knownText = text
-        apply(text ?? "")
+        guard let record = Self.readRecord(confirmedURL) else { return apply(text ?? "", trusting: .all) }
+        taken = record
+        recordedTaken = record
+        for key in SettingsSchema.heldKeys {
+            values[key] = record[key].flatMap { Self.fit(key, $0) }
+        }
+        apply(text ?? "", trusting: .outside)
+    }
+
+    /// The security settings' raw values in a parsed file; absent: unset.
+    private static func written(_ object: [String: Any]) -> [String: SettingValue] {
+        var found: [String: SettingValue] = [:]
+        for key in SettingsSchema.heldKeys { found[key] = object[key].flatMap { SettingValue(json: $0) } }
+        return found
+    }
+
+    /// A raw value as `apply` takes it, nil when the setting can't use it.
+    private static func fit(_ key: String, _ value: SettingValue) -> SettingValue? {
+        guard let spec = SettingsSchema.byKey[key] else { return nil }
+        let fitted: SettingValue = if case .number = spec.kind, case .int(let int) = value { .double(Double(int)) } else { value }
+        guard spec.problem(with: fitted) == nil else { return nil }
+        return spec.fitted(fitted).value
+    }
+
+    private static func readRecord(_ url: URL) -> [String: SettingValue]? {
+        guard let text = try? String(contentsOf: url, encoding: .utf8), let object = try? SettingsJSON.object(from: text) else { return nil }
+        return written(object)
+    }
+
+    /// `taken` written down when it changed: what the next launch holds
+    /// the file against.
+    private func record() {
+        guard recordedTaken != taken else { return }
+        try? FileManager.default.createDirectory(at: confirmedURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try? SettingsJSON.text(of: taken).write(to: confirmedURL, atomically: true, encoding: .utf8)
+        recordedTaken = taken
     }
 
     private func reloadIfChanged() {
         let text = try? String(contentsOf: url, encoding: .utf8)
         guard text != knownText else { return }
         knownText = text
-        apply(text ?? "")
+        apply(text ?? "", trusting: .outside)
     }
 
-    /// Takes the text's settings: every valid one, the rest reported.
-    private func apply(_ text: String) {
+    /// Whose text `apply` takes, and so which security settings it holds.
+    private enum Trust {
+        /// The file at launch.
+        case all
+        /// The app's own edit of these keys (`set`, Revert); the others
+        /// as the file has them.
+        case keys(Set<String>)
+        /// The JSON view's Save: a security setting is its own only where
+        /// the text changes it from the file before (nil: that file didn't
+        /// parse, so nothing is) — the rest held as an outside edit.
+        case savedText(before: [String: SettingValue]?)
+        /// The file changed by someone else: every change held.
+        case outside
+    }
+
+    /// Takes the text's settings: every valid one, the rest reported; a
+    /// security setting changed by someone else held (`Trust`).
+    private func apply(_ text: String, trusting trust: Trust) {
         let object: [String: Any]
         do {
             object = try SettingsJSON.object(from: text)
@@ -177,12 +321,34 @@ final class Settings: ObservableObject {
                 found.append("\"\(key)\" \(problem); its default applies.")
                 continue
             }
-            parsed[key] = fitted
+            let (kept, fieldProblems) = spec.fitted(fitted)
+            found += fieldProblems
+            parsed[key] = kept
         }
         problems = found
-        let changed = Set(parsed.keys).union(values.keys).filter { parsed[$0] != values[$0] }
+        var next = parsed
+        var nextHeld: [String: HeldSetting] = [:]
+        for key in SettingsSchema.heldKeys {
+            let written = object[key].flatMap { SettingValue(json: $0) }
+            let trusted =
+                switch trust {
+                case .all: true
+                case .keys(let keys): keys.contains(key)
+                case .savedText(let before): before.map { $0[key] != written } ?? false
+                case .outside: false
+                }
+            if trusted || parsed[key] == values[key] {
+                taken[key] = written
+                continue
+            }
+            next[key] = values[key]
+            nextHeld[key] = HeldSetting(key: key, current: values[key], proposed: parsed[key], before: taken[key], written: written)
+        }
+        if held != nextHeld { held = nextHeld }
+        record()
+        let changed = Set(next.keys).union(values.keys).filter { next[$0] != values[$0] }
         guard !changed.isEmpty else { return }
-        values = parsed
+        values = next
         changes.send(changed)
     }
 
@@ -299,6 +465,22 @@ final class Settings: ObservableObject {
     var editorLanguageServers: Bool { bool("editor.languageServers") }
     var editorCompletions: Bool { bool("editor.completions") }
     var editorFormatOnSave: Bool { bool("editor.formatOnSave") }
+    var terraformFormatOnSave: Bool { bool("terraform.formatOnSave") }
+    var terraformEnabled: Bool { bool("terraform.enabled") }
+    /// `terraform.path`, trimmed; empty: mise's or the PATH's (`TerraformCLI`).
+    var terraformPath: String { string("terraform.path").trimmingCharacters(in: .whitespaces) }
+    var terraformProductionPattern: String { string("terraform.productionPattern") }
+    var terraformProductionAccounts: [String] {
+        (value("terraform.productionAccounts")?.list ?? []).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+    /// Each root's own settings, by its path in the repository.
+    var terraformRoots: [String: TerraformRootSettings] { TerraformRootSettings.all(from: value("terraform.roots")) }
+    /// Agents started with Terraform's writes denied (analysis 3.4, D-8).
+    var terraformAgentWriteGuard: Bool { terraformEnabled && bool("terraform.agentWriteGuard") }
+    /// New Task initialises a new worktree's roots without their backend (stage 2b).
+    var terraformNewWorktreeInit: Bool { terraformEnabled && bool("terraform.newWorktreeInit") }
+    /// Agents' `tf_` tools (`TerraformMCP`).
+    var terraformAgentAccess: Bool { terraformEnabled && bool("terraform.agentAccess") }
     var editorVimMode: Bool { bool("editor.vimMode") }
     var editorRelativeLineNumbers: Bool { bool("editor.relativeLineNumbers") }
     var browserEnabled: Bool { bool("browser.enabled") }
@@ -332,6 +514,30 @@ final class Settings: ObservableObject {
     var dockerCheckPorts: Bool { dockerEnabled && bool("docker.checkPorts") }
     var dockerAgentAccess: Bool { dockerEnabled && bool("docker.agentAccess") }
     var dockerAgentWrites: Bool { dockerAgentAccess && bool("docker.agentWrites") }
+    var kubernetesEnabled: Bool { bool("kubernetes.enabled") }
+    /// Agents' `k8s_` read tools (KubeMCP).
+    var kubernetesAgentAccess: Bool { kubernetesEnabled && bool("kubernetes.agentAccess") }
+    /// The setting's extra kubeconfig files and folders, as written (`~` unexpanded).
+    var kubernetesKubeconfigs: [String] { value("kubernetes.kubeconfigs")?.list ?? [] }
+    /// Each context's own settings, by its name.
+    var kubernetesContexts: [String: KubeContextSettings] { KubeContextSettings.all(from: value("kubernetes.contexts")) }
+    var kubernetesPinnedContexts: [String] { value("kubernetes.pinnedContexts")?.list ?? [] }
+    var kubernetesAgentWrites: [String] {
+        (value("kubernetes.agentWrites")?.list ?? []).map { $0.trimmingCharacters(in: .whitespaces) }.filter { !$0.isEmpty }
+    }
+    var kubernetesDebugImage: String { string("kubernetes.debugImage").trimmingCharacters(in: .whitespaces).nonEmptyOr("busybox:1.36") }
+    var kubernetesMaxProxies: Int { Int(number("kubernetes.maxProxies") ?? 4) }
+    var kubernetesProxyIdleMinutes: Int { Int(number("kubernetes.proxyIdleMinutes") ?? 10) }
+    /// How many containers a merged log follows at once.
+    var kubernetesLogStreams: Int { max(Int(number("kubernetes.logStreams") ?? 10), 1) }
+    /// The helm `helm template` runs, as written; empty: found (`KubeHelmLocator`).
+    var kubernetesHelmPath: String { string("kubernetes.helmPath").trimmingCharacters(in: .whitespaces) }
+    /// The attention watches (3.13): a bound checkout's tab marked when its pods or rollouts fail.
+    var kubernetesNotifyOnFailure: Bool { kubernetesEnabled && bool("kubernetes.notifyOnFailure") }
+    /// How many bound namespaces the attention watches follow at once.
+    var kubernetesBackgroundWatches: Int { max(Int(number("kubernetes.backgroundWatches") ?? 4), 1) }
+    /// The kubectl the proxies run, as written; empty: found (`KubectlLocator`).
+    var kubernetesKubectlPath: String { string("kubernetes.kubectlPath").trimmingCharacters(in: .whitespaces) }
 
     // MARK: Ghostty overrides
 

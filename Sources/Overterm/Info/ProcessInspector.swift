@@ -6,8 +6,20 @@ struct ProcessNode: Identifiable, Equatable {
     let pid: pid_t
     let parent: pid_t
     let name: String
-    /// argv, space-joined.
-    let command: String
+    /// argv, space-joined, its secrets masked (`masked`): all a person or
+    /// an agent reads of it — Tab Info's tooltip —, and only for a read
+    /// that shows it (`ProcessInspector.tree`'s `commands`), else empty.
+    /// The raw words never leave the read; what the checks decide from them
+    /// is taken first (`argvAgent`, `resumes`), since masking can change a
+    /// word they read.
+    fileprivate(set) var command: String
+    /// The agent argv's first word names by its base name (`claude`,
+    /// `/opt/homebrew/bin/codex`): with `name`, which agent this is.
+    let argvAgent: Agent?
+    /// The session a Claude's `--resume <id>` or `-r <id>` picks back up,
+    /// an id's hex and dashes only — Sessions' match. Masked, the `-r` of
+    /// `--fork-session -r <id>` goes: a `session` flag's value looks secret.
+    let resumes: String?
     /// Share of one core over the last sampling interval (100 = one full core).
     var cpuPercent: Double
     /// Resident memory in bytes.
@@ -15,6 +27,64 @@ struct ProcessNode: Identifiable, Equatable {
     /// Where it runs.
     let workingDirectory: String?
     var children: [ProcessNode] = []
+
+    /// A process from its raw argv: `command` masked (`masked`), the
+    /// checks' facts read off the words as given — split at spaces, as the
+    /// line always was.
+    init(
+        pid: pid_t, parent: pid_t, name: String, arguments: [String], cpuPercent: Double, memory: UInt64, workingDirectory: String?,
+        children: [ProcessNode] = []
+    ) {
+        self.init(
+            pid: pid, parent: parent, name: name, arguments: arguments, shown: Self.masked(arguments), cpuPercent: cpuPercent, memory: memory,
+            workingDirectory: workingDirectory, children: children)
+    }
+
+    /// The same with `command` as the inspector has it: masked at an earlier
+    /// read, or none yet — for a read that shows nothing, or until the read
+    /// masks it. Only this file passes or sets one: never a raw argv.
+    fileprivate init(
+        pid: pid_t, parent: pid_t, name: String, arguments: [String], shown command: String, cpuPercent: Double, memory: UInt64,
+        workingDirectory: String?, children: [ProcessNode] = []
+    ) {
+        // The line's first word: no word holds the space joining two.
+        var first: Substring?
+        for word in arguments {
+            first = word.split(separator: " ").first
+            if first != nil { break }
+        }
+        let agent = first.flatMap { Agent(rawValue: (String($0) as NSString).lastPathComponent) }
+        self.pid = pid
+        self.parent = parent
+        self.name = name
+        self.command = command
+        argvAgent = agent
+        // Claude as `AgentOverviewModel.agent(of:)` finds it: by name, or argv[0].
+        let claude = name == Agent.claude.rawValue || agent == .claude
+        resumes = claude ? Self.resumedSession(in: arguments.joined(separator: " ").split(separator: " ")) : nil
+        self.cpuPercent = cpuPercent
+        self.memory = memory
+        self.workingDirectory = workingDirectory
+        self.children = children
+    }
+
+    /// `arguments` as `command` shows them: each word's secrets masked
+    /// before the words are joined (`Secrets.maskArguments`) — joined
+    /// first, a password with a space in it would split past the mask —,
+    /// then every URL's password (`maskURLs`) and what looks like a
+    /// credential (`scrubCredentials`: a bearer or a vendor's token,
+    /// `token=`, a PEM block, and last base64 blobs, `maskBase64Blobs`).
+    static func masked(_ arguments: [String]) -> String {
+        Secrets.scrubCredentials(Secrets.maskURLs(in: Secrets.maskArguments(arguments).joined(separator: " ")))
+    }
+
+    /// The word after the first `--resume` or `-r`, when it is a session
+    /// id (`ClaudeSession.isValidID`) — every session Sessions lists is.
+    static func resumedSession(in words: [Substring]) -> String? {
+        guard let flag = words.firstIndex(where: { $0 == "--resume" || $0 == "-r" }), flag + 1 < words.count else { return nil }
+        let id = String(words[flag + 1])
+        return ClaudeSession.isValidID(id) ? id : nil
+    }
 
     var id: pid_t { pid }
 
@@ -39,16 +109,23 @@ final class ProcessInspector: @unchecked Sendable {
     private let lock = NSLock()
     /// pid → (start time, tag or nil): the environment read once per process.
     private var tags: [pid_t: (start: UInt64, tag: String?)] = [:]
-    /// pid → (cpu nanoseconds, when) for the CPU% delta.
-    private var lastCPU: [pid_t: (ns: UInt64, at: UInt64)] = [:]
+    /// Each process's CPU time as last read, for the CPU% delta.
+    private var cpu = CPUBaselines()
+    /// pid → (start time, its argv's hash, its masked line): an argv is
+    /// masked once while it stays as it is, not at every read — a
+    /// compiler's thousands of words, read every second. Only the masked
+    /// line is kept.
+    private var shown: [pid_t: (start: UInt64, argv: Int, command: String)] = [:]
 
     /// The measured tree of a tab: the descendants of `root` (not `root`
     /// itself — for a tab that is the root-owned `login`), plus processes
     /// tagged `tag`. Blocking (a few ms, more the first time); call off the
-    /// main thread.
-    func tree(root: pid_t?, tag: String?) -> [ProcessNode] {
+    /// main thread. `commands`: each process's `command`, masked, for a
+    /// read that shows it (Tab Info) — a compiler's thousands of words take
+    /// a while to mask; a read that only decides something (which agent
+    /// runs, a drop, an image paste, Suspend Tab) leaves it empty.
+    func tree(root: pid_t?, tag: String?, commands: Bool = false) -> [ProcessNode] {
         lock.lock()
-        defer { lock.unlock() }
         let now = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
         let uid = getuid()
 
@@ -73,7 +150,7 @@ final class ProcessInspector: @unchecked Sendable {
         }
         if let tag {
             for (pid, bsd) in infos where bsd.pbi_uid == uid && !members.contains(pid) {
-                let start = UInt64(bsd.pbi_start_tvsec) * 1_000_000 + UInt64(bsd.pbi_start_tvusec)
+                let start = Self.startTime(bsd)
                 if tags[pid]?.start != start {
                     tags[pid] = (start, Self.environment(of: pid)?[Self.tagVariable])
                 }
@@ -88,23 +165,54 @@ final class ProcessInspector: @unchecked Sendable {
         }
 
         var nodes: [pid_t: ProcessNode] = [:]
+        // The argvs this read masks, once the lock is let go.
+        var unmasked: [(pid: pid_t, start: UInt64, argv: Int, arguments: [String])] = []
         for pid in members {
             guard let bsd = infos[pid] else { continue }
             let task = Self.taskInfo(pid)
-            let cpuNS = task.map { Self.nanoseconds($0.pti_total_user + $0.pti_total_system) } ?? 0
             var percent = 0.0
-            if let last = lastCPU[pid], now > last.at, cpuNS >= last.ns {
-                percent = Double(cpuNS - last.ns) / Double(now - last.at) * 100
+            // A task that can't be read (it is ending) leaves its baseline as it was.
+            if let task {
+                let ns = Self.nanoseconds(task.pti_total_user + task.pti_total_system)
+                percent = cpu.percent(pid: pid, start: Self.startTime(bsd), cpu: ns, at: now)
             }
-            lastCPU[pid] = (cpuNS, now)
+            let arguments = Self.arguments(of: pid)
+            var command = ""
+            if commands {
+                let start = Self.startTime(bsd)
+                let argv = arguments.hashValue
+                if let known = shown[pid], known.start == start, known.argv == argv {
+                    command = known.command
+                } else {
+                    unmasked.append((pid, start, argv, arguments))
+                }
+            }
             nodes[pid] = ProcessNode(
                 pid: pid, parent: pid_t(bsd.pbi_ppid), name: Self.name(pid, fallback: bsd),
-                command: Self.arguments(of: pid).joined(separator: " "),
+                arguments: arguments, shown: command,
                 cpuPercent: percent, memory: task?.pti_resident_size ?? 0, workingDirectory: Self.workingDirectory(of: pid))
         }
-        // Forget processes that are gone (pids get reused).
+        // Forget processes that are gone (pids get reused) — only those: one
+        // outside this tree is another caller's to read (the other panes of
+        // a split tab, the window's agent poll).
         tags = tags.filter { infos[$0.key] != nil }
-        lastCPU = lastCPU.filter { nodes[$0.key] != nil }
+        cpu.forgetEnded { infos[$0].map(Self.startTime) }
+        shown = shown.filter { infos[$0.key].map(Self.startTime) == $0.value.start }
+        lock.unlock()
+        // Masked outside the lock — a compiler's thousands of words take tens
+        // of ms, which the agent poll, the Agent Overview and Suspend Tab
+        // would wait for —, then kept for the next read.
+        if !unmasked.isEmpty {
+            var masked: [(pid: pid_t, entry: (start: UInt64, argv: Int, command: String))] = []
+            for item in unmasked {
+                let command = ProcessNode.masked(item.arguments)
+                nodes[item.pid]?.command = command
+                masked.append((item.pid, (item.start, item.argv, command)))
+            }
+            lock.lock()
+            for item in masked { shown[item.pid] = item.entry }
+            lock.unlock()
+        }
         return Self.assemble(nodes)
     }
 
@@ -253,4 +361,48 @@ final class ProcessInspector: @unchecked Sendable {
 
     static func environment(of pid: pid_t) -> [String: String]? { procArgs(pid)?.environment }
     static func arguments(of pid: pid_t) -> [String] { procArgs(pid)?.arguments ?? [] }
+}
+
+extension ProcessInspector {
+    /// When a process started (µs): with its pid, which process it is — a
+    /// pid is reused, the pair never.
+    static func startTime(_ bsd: proc_bsdinfo) -> UInt64 {
+        UInt64(bsd.pbi_start_tvsec) * 1_000_000 + UInt64(bsd.pbi_start_tvusec)
+    }
+
+    /// Each process's CPU time as last read, whoever read it. Tab Info reads
+    /// a split tab pane by pane, and the window's agent poll reads with the
+    /// same inspector: a reading is the rate since that process's previous
+    /// sample, by any of them. (Kept only for the tree just read, each pane's
+    /// read forgot the other's, and every pane read 0%.) Held with the start
+    /// time, so a reused pid never borrows another process's baseline, and
+    /// forgotten only when that process is gone: bounded by the live ones.
+    struct CPUBaselines {
+        /// A rate spans at most this long (ns). A baseline lives as long as
+        /// its process, so one read again after a while — Tab Info on a tab
+        /// nobody read since — would show the gap's average as its CPU now;
+        /// past this, its reading starts again, as a first one does.
+        static let longestInterval: UInt64 = 15_000_000_000
+
+        private var last: [pid_t: (start: UInt64, ns: UInt64, at: UInt64)] = [:]
+
+        /// How many processes have one.
+        var count: Int { last.count }
+
+        /// The share of one core the process used since its previous sample
+        /// (100 = one full core), `ns` its CPU time at `now`; this sample is
+        /// its next baseline. 0 for its first.
+        mutating func percent(pid: pid_t, start: UInt64, cpu ns: UInt64, at now: UInt64) -> Double {
+            defer { last[pid] = (start, ns, now) }
+            guard let previous = last[pid], previous.start == start, now > previous.at, now - previous.at <= Self.longestInterval, ns >= previous.ns
+            else { return 0 }
+            return Double(ns - previous.ns) / Double(now - previous.at) * 100
+        }
+
+        /// Forgets the processes that ended: a pid `started` gives no start
+        /// time for, or another one (the pid reused).
+        mutating func forgetEnded(started: (pid_t) -> UInt64?) {
+            last = last.filter { started($0.key) == $0.value.start }
+        }
+    }
 }

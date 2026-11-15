@@ -189,5 +189,11 @@ final class EditorLanguage: @unchecked Sendable {
         EditorLanguage(
             "diff", "Diff", extensions: ["diff", "patch"], aliases: ["patch"], lineComment: nil,
             grammar: tree_sitter_diff()),
+        // Terraform, OpenTofu, Terragrunt, Nomad: HCL. `x.tftest.hcl` is HCL by its
+        // last extension; `*.tf.json` stays JSON (analysis 4.14).
+        EditorLanguage(
+            "hcl", "Terraform", extensions: ["tf", "tfvars", "hcl", "tofu", "nomad"],
+            fileNames: [".terraform.lock.hcl", "terragrunt.hcl", "root.hcl"], aliases: ["terraform", "tf", "tfvars", "opentofu"],
+            lineComment: "# ", blockComment: ("/*", "*/"), grammar: tree_sitter_hcl()),
     ]
 }

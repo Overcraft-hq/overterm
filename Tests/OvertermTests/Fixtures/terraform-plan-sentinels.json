@@ -1,0 +1,901 @@
+{
+ "acme_future": {
+  "token": "tok-acme-123"
+ },
+ "action_invocations": [
+  {
+   "address": "action.local_command.acme_notify",
+   "config_sensitive": {
+    "command": true
+   },
+   "config_unknown": {},
+   "config_values": {
+    "command": "echo tok-acme-123",
+    "note": "acme"
+   },
+   "lifecycle_action_trigger": {
+    "action_trigger_block_index": 0,
+    "action_trigger_event": "after_create",
+    "actions_list_index": 0,
+    "triggering_resource_address": "terraform_data.acme_api"
+   },
+   "name": "acme_notify",
+   "provider_name": "registry.terraform.io/hashicorp/local",
+   "type": "local_command"
+  }
+ ],
+ "applyable": true,
+ "checks": [
+  {
+   "address": {
+    "kind": "resource",
+    "mode": "managed",
+    "name": "acme_db",
+    "to_display": "terraform_data.acme_db",
+    "type": "terraform_data"
+   },
+   "instances": [
+    {
+     "address": {
+      "to_display": "terraform_data.acme_db"
+     },
+     "problems": [
+      {
+       "message": "acme-hunter2-SECRET"
+      }
+     ],
+     "status": "pass"
+    }
+   ],
+   "status": "pass"
+  }
+ ],
+ "complete": true,
+ "configuration": {
+  "provider_config": {
+   "terraform": {
+    "full_name": "terraform.io/builtin/terraform",
+    "name": "terraform"
+   }
+  },
+  "root_module": {
+   "outputs": {
+    "api_name": {
+     "expression": {
+      "references": [
+       "terraform_data.acme_api.output",
+       "terraform_data.acme_api"
+      ]
+     }
+    },
+    "db_password": {
+     "expression": {
+      "references": [
+       "var.acme_db_password"
+      ]
+     },
+     "sensitive": true
+    }
+   },
+   "resources": [
+    {
+     "address": "terraform_data.acme_api",
+     "expressions": {
+      "input": {
+       "references": [
+        "var.acme_name"
+       ]
+      },
+      "triggers_replace": {
+       "references": [
+        "var.acme_name"
+       ]
+      }
+     },
+     "mode": "managed",
+     "name": "acme_api",
+     "provider_config_key": "terraform",
+     "schema_version": 0,
+     "type": "terraform_data"
+    },
+    {
+     "address": "terraform_data.acme_db",
+     "expressions": {
+      "input": {
+       "references": [
+        "var.acme_db_password"
+       ]
+      }
+     },
+     "mode": "managed",
+     "name": "acme_db",
+     "provider_config_key": "terraform",
+     "schema_version": 0,
+     "type": "terraform_data"
+    },
+    {
+     "address": "terraform_data.acme_tags",
+     "count_expression": {
+      "constant_value": 3
+     },
+     "expressions": {
+      "input": {
+       "constant_value": {
+        "note": "tok-acme-123",
+        "owner": "acme",
+        "rev": "2"
+       }
+      }
+     },
+     "mode": "managed",
+     "name": "acme_tags",
+     "provider_config_key": "terraform",
+     "schema_version": 0,
+     "type": "terraform_data"
+    }
+   ],
+   "variables": {
+    "acme_db_password": {
+     "default": "acme-hunter2-SECRET",
+     "sensitive": true
+    },
+    "acme_name": {
+     "default": "acme-api-v2"
+    }
+   }
+  }
+ },
+ "errored": false,
+ "format_version": "1.2",
+ "output_changes": {
+  "api_name": {
+   "actions": [
+    "update"
+   ],
+   "after_sensitive": false,
+   "after_unknown": true,
+   "before": "acme-api",
+   "before_sensitive": false
+  },
+  "db_password": {
+   "actions": [
+    "no-op"
+   ],
+   "after": "acme-hunter2-SECRET",
+   "after_sensitive": true,
+   "after_unknown": false,
+   "before": "acme-hunter2-SECRET",
+   "before_sensitive": true
+  }
+ },
+ "planned_values": {
+  "outputs": {
+   "api_name": {
+    "sensitive": false
+   },
+   "db_password": {
+    "sensitive": true,
+    "type": "string",
+    "value": "acme-hunter2-SECRET"
+   }
+  },
+  "root_module": {
+   "resources": [
+    {
+     "address": "terraform_data.acme_api",
+     "mode": "managed",
+     "name": "acme_api",
+     "provider_name": "terraform.io/builtin/terraform",
+     "schema_version": 0,
+     "sensitive_values": {
+      "triggers_replace": [
+       false
+      ]
+     },
+     "type": "terraform_data",
+     "values": {
+      "input": "acme-api-v2",
+      "store": null,
+      "triggers_replace": [
+       "acme-api-v2"
+      ]
+     }
+    },
+    {
+     "address": "terraform_data.acme_db",
+     "mode": "managed",
+     "name": "acme_db",
+     "provider_name": "terraform.io/builtin/terraform",
+     "schema_version": 0,
+     "sensitive_values": {
+      "input": {
+       "password": true
+      },
+      "output": {}
+     },
+     "type": "terraform_data",
+     "values": {
+      "id": "daeba7e7-fb3a-f0f4-c3bc-fe58deeb7584",
+      "input": {
+       "key_name": "acme-key-2",
+       "name": "acme-db",
+       "password": "acme-hunter2-SECRET"
+      },
+      "store": null,
+      "triggers_replace": null
+     }
+    },
+    {
+     "address": "terraform_data.acme_tags[0]",
+     "index": 0,
+     "mode": "managed",
+     "name": "acme_tags",
+     "provider_name": "terraform.io/builtin/terraform",
+     "schema_version": 0,
+     "sensitive_values": {
+      "input": {},
+      "output": {}
+     },
+     "type": "terraform_data",
+     "values": {
+      "id": "8a1dec77-1d30-a279-9638-ec3bf23b91a2",
+      "input": {
+       "note": "tok-acme-123",
+       "owner": "acme",
+       "rev": "2"
+      },
+      "store": null,
+      "triggers_replace": null
+     }
+    },
+    {
+     "address": "terraform_data.acme_tags[1]",
+     "index": 1,
+     "mode": "managed",
+     "name": "acme_tags",
+     "provider_name": "terraform.io/builtin/terraform",
+     "schema_version": 0,
+     "sensitive_values": {
+      "input": {},
+      "output": {}
+     },
+     "type": "terraform_data",
+     "values": {
+      "id": "aeb16e52-7354-1294-0ef9-a85eb857daab",
+      "input": {
+       "note": "tok-acme-123",
+       "owner": "acme",
+       "rev": "2"
+      },
+      "store": null,
+      "triggers_replace": null
+     }
+    },
+    {
+     "address": "terraform_data.acme_tags[2]",
+     "index": 2,
+     "mode": "managed",
+     "name": "acme_tags",
+     "provider_name": "terraform.io/builtin/terraform",
+     "schema_version": 0,
+     "sensitive_values": {
+      "input": {},
+      "output": {}
+     },
+     "type": "terraform_data",
+     "values": {
+      "id": "c44ba6d1-e7cb-a742-4de9-f9c046f39a1d",
+      "input": {
+       "note": "tok-acme-123",
+       "owner": "acme",
+       "rev": "2"
+      },
+      "store": null,
+      "triggers_replace": null
+     }
+    }
+   ]
+  }
+ },
+ "prior_state": {
+  "format_version": "1.0",
+  "terraform_version": "1.17.1",
+  "values": {
+   "outputs": {
+    "api_name": {
+     "sensitive": false,
+     "type": "string",
+     "value": "acme-api"
+    },
+    "db_password": {
+     "sensitive": true,
+     "type": "string",
+     "value": "acme-hunter2-SECRET"
+    }
+   },
+   "root_module": {
+    "resources": [
+     {
+      "address": "terraform_data.acme_api",
+      "mode": "managed",
+      "name": "acme_api",
+      "provider_name": "terraform.io/builtin/terraform",
+      "schema_version": 0,
+      "sensitive_values": {
+       "triggers_replace": [
+        false
+       ]
+      },
+      "type": "terraform_data",
+      "values": {
+       "id": "54aefc48-a8e7-ec76-c324-1ea219254ca0",
+       "input": "acme-api",
+       "output": "acme-api",
+       "store": null,
+       "triggers_replace": [
+        "acme-api"
+       ]
+      }
+     },
+     {
+      "address": "terraform_data.acme_db",
+      "mode": "managed",
+      "name": "acme_db",
+      "provider_name": "terraform.io/builtin/terraform",
+      "schema_version": 0,
+      "sensitive_values": {
+       "input": {
+        "password": true
+       },
+       "output": {}
+      },
+      "type": "terraform_data",
+      "values": {
+       "id": "daeba7e7-fb3a-f0f4-c3bc-fe58deeb7584",
+       "input": {
+        "key_name": "acme-key",
+        "name": "acme-db",
+        "password": "acme-hunter2-SECRET"
+       },
+       "output": {
+        "key_name": "acme-key",
+        "name": "acme-db",
+        "password": "acme-hunter2-SECRET"
+       },
+       "store": null,
+       "triggers_replace": null
+      }
+     },
+     {
+      "address": "terraform_data.acme_old",
+      "mode": "managed",
+      "name": "acme_old",
+      "provider_name": "terraform.io/builtin/terraform",
+      "schema_version": 0,
+      "sensitive_values": {},
+      "type": "terraform_data",
+      "values": {
+       "id": "dccfc64a-ae35-03b5-b62a-f76a9402bffb",
+       "input": "acme-old",
+       "output": "acme-old",
+       "store": null,
+       "triggers_replace": null
+      }
+     },
+     {
+      "address": "terraform_data.acme_tags[0]",
+      "index": 0,
+      "mode": "managed",
+      "name": "acme_tags",
+      "provider_name": "terraform.io/builtin/terraform",
+      "schema_version": 0,
+      "sensitive_values": {
+       "input": {},
+       "output": {}
+      },
+      "type": "terraform_data",
+      "values": {
+       "id": "8a1dec77-1d30-a279-9638-ec3bf23b91a2",
+       "input": {
+        "note": "tok-acme-123",
+        "owner": "acme"
+       },
+       "output": {
+        "note": "tok-acme-123",
+        "owner": "acme"
+       },
+       "store": null,
+       "triggers_replace": null
+      }
+     },
+     {
+      "address": "terraform_data.acme_tags[1]",
+      "index": 1,
+      "mode": "managed",
+      "name": "acme_tags",
+      "provider_name": "terraform.io/builtin/terraform",
+      "schema_version": 0,
+      "sensitive_values": {
+       "input": {},
+       "output": {}
+      },
+      "type": "terraform_data",
+      "values": {
+       "id": "aeb16e52-7354-1294-0ef9-a85eb857daab",
+       "input": {
+        "note": "tok-acme-123",
+        "owner": "acme"
+       },
+       "output": {
+        "note": "tok-acme-123",
+        "owner": "acme"
+       },
+       "store": null,
+       "triggers_replace": null
+      }
+     },
+     {
+      "address": "terraform_data.acme_tags[2]",
+      "index": 2,
+      "mode": "managed",
+      "name": "acme_tags",
+      "provider_name": "terraform.io/builtin/terraform",
+      "schema_version": 0,
+      "sensitive_values": {
+       "input": {},
+       "output": {}
+      },
+      "type": "terraform_data",
+      "values": {
+       "id": "c44ba6d1-e7cb-a742-4de9-f9c046f39a1d",
+       "input": {
+        "note": "tok-acme-123",
+        "owner": "acme"
+       },
+       "output": {
+        "note": "tok-acme-123",
+        "owner": "acme"
+       },
+       "store": null,
+       "triggers_replace": null
+      }
+     }
+    ]
+   }
+  }
+ },
+ "relevant_attributes": [
+  {
+   "attribute": [
+    "output"
+   ],
+   "resource": "terraform_data.acme_api"
+  }
+ ],
+ "resource_changes": [
+  {
+   "action_reason": "replace_because_cannot_update",
+   "address": "terraform_data.acme_api",
+   "change": {
+    "actions": [
+     "delete",
+     "create"
+    ],
+    "after": {
+     "input": "acme-api-v2",
+     "store": null,
+     "triggers_replace": [
+      "acme-api-v2"
+     ]
+    },
+    "after_sensitive": {
+     "triggers_replace": [
+      false
+     ]
+    },
+    "after_unknown": {
+     "id": true,
+     "output": true,
+     "triggers_replace": [
+      false
+     ]
+    },
+    "before": {
+     "id": "acme-acme_api",
+     "input": "acme-api",
+     "output": "acme-api",
+     "store": null,
+     "triggers_replace": [
+      "acme-api"
+     ]
+    },
+    "before_sensitive": {
+     "triggers_replace": [
+      false
+     ]
+    },
+    "replace_paths": [
+     [
+      "triggers_replace"
+     ]
+    ]
+   },
+   "mode": "managed",
+   "name": "acme_api",
+   "provider_name": "terraform.io/builtin/terraform",
+   "type": "terraform_data"
+  },
+  {
+   "address": "terraform_data.acme_db",
+   "change": {
+    "actions": [
+     "update"
+    ],
+    "after": {
+     "id": "acme-acme_db",
+     "input": {
+      "client_secret": "globex-BKPW",
+      "key_name": "acme-key-2",
+      "kms_key_id": "acme-kms-1",
+      "name": "acme-db",
+      "password": "acme-hunter2-SECRET"
+     },
+     "store": null,
+     "triggers_replace": null
+    },
+    "after_sensitive": {
+     "input": {
+      "password": true
+     },
+     "output": {}
+    },
+    "after_unknown": {
+     "input": {},
+     "output": true
+    },
+    "before": {
+     "id": "acme-acme_db",
+     "input": {
+      "client_secret": "globex-BKPW",
+      "key_name": "acme-key",
+      "kms_key_id": "acme-kms-1",
+      "name": "acme-db",
+      "password": "acme-hunter2-SECRET"
+     },
+     "output": {
+      "key_name": "acme-key",
+      "name": "acme-db",
+      "password": "acme-hunter2-SECRET"
+     },
+     "store": null,
+     "triggers_replace": null
+    },
+    "before_sensitive": {
+     "input": {
+      "password": true
+     },
+     "output": {}
+    }
+   },
+   "mode": "managed",
+   "name": "acme_db",
+   "provider_name": "terraform.io/builtin/terraform",
+   "type": "terraform_data"
+  },
+  {
+   "action_reason": "delete_because_no_resource_config",
+   "address": "terraform_data.acme_old",
+   "change": {
+    "actions": [
+     "delete"
+    ],
+    "after": null,
+    "after_sensitive": false,
+    "after_unknown": {},
+    "before": {
+     "id": "acme-acme_old",
+     "input": "acme-old",
+     "output": "acme-old",
+     "store": null,
+     "triggers_replace": null
+    },
+    "before_sensitive": {}
+   },
+   "mode": "managed",
+   "name": "acme_old",
+   "provider_name": "terraform.io/builtin/terraform",
+   "type": "terraform_data"
+  },
+  {
+   "address": "terraform_data.acme_tags[0]",
+   "change": {
+    "actions": [
+     "update"
+    ],
+    "after": {
+     "id": "acme-acme_tags-0",
+     "input": {
+      "note": "acme-note",
+      "owner": "acme",
+      "rev": "2"
+     },
+     "store": null,
+     "triggers_replace": null
+    },
+    "after_sensitive": {
+     "input": {},
+     "output": {}
+    },
+    "after_unknown": {
+     "input": {},
+     "output": true
+    },
+    "before": {
+     "id": "acme-acme_tags-0",
+     "input": {
+      "note": "acme-note",
+      "owner": "acme"
+     },
+     "output": {
+      "note": "acme-note",
+      "owner": "acme"
+     },
+     "store": null,
+     "triggers_replace": null
+    },
+    "before_sensitive": {
+     "input": {},
+     "output": {}
+    }
+   },
+   "index": 0,
+   "mode": "managed",
+   "name": "acme_tags",
+   "provider_name": "terraform.io/builtin/terraform",
+   "type": "terraform_data"
+  },
+  {
+   "address": "terraform_data.acme_tags[1]",
+   "change": {
+    "actions": [
+     "update"
+    ],
+    "after": {
+     "id": "acme-acme_tags-1",
+     "input": {
+      "note": "acme-note",
+      "owner": "acme",
+      "rev": "2"
+     },
+     "store": null,
+     "triggers_replace": null
+    },
+    "after_sensitive": {
+     "input": {},
+     "output": {}
+    },
+    "after_unknown": {
+     "input": {},
+     "output": true
+    },
+    "before": {
+     "id": "acme-acme_tags-1",
+     "input": {
+      "note": "acme-note",
+      "owner": "acme"
+     },
+     "output": {
+      "note": "acme-note",
+      "owner": "acme"
+     },
+     "store": null,
+     "triggers_replace": null
+    },
+    "before_sensitive": {
+     "input": {},
+     "output": {}
+    }
+   },
+   "index": 1,
+   "mode": "managed",
+   "name": "acme_tags",
+   "provider_name": "terraform.io/builtin/terraform",
+   "type": "terraform_data"
+  },
+  {
+   "address": "terraform_data.acme_tags[2]",
+   "change": {
+    "actions": [
+     "update"
+    ],
+    "after": {
+     "id": "acme-acme_tags-2",
+     "input": {
+      "note": "acme-note",
+      "owner": "acme",
+      "rev": "2"
+     },
+     "store": null,
+     "triggers_replace": null
+    },
+    "after_sensitive": {
+     "input": {},
+     "output": {}
+    },
+    "after_unknown": {
+     "input": {},
+     "output": true
+    },
+    "before": {
+     "id": "acme-acme_tags-2",
+     "input": {
+      "note": "acme-note",
+      "owner": "acme"
+     },
+     "output": {
+      "note": "acme-note",
+      "owner": "acme"
+     },
+     "store": null,
+     "triggers_replace": null
+    },
+    "before_sensitive": {
+     "input": {},
+     "output": {}
+    }
+   },
+   "index": 2,
+   "mode": "managed",
+   "name": "acme_tags",
+   "provider_name": "terraform.io/builtin/terraform",
+   "type": "terraform_data"
+  },
+  {
+   "address": "terraform_data.acme_moved",
+   "change": {
+    "actions": [
+     "no-op"
+    ],
+    "after": {
+     "id": "acme-moved",
+     "input": "acme"
+    },
+    "after_sensitive": {},
+    "after_unknown": {},
+    "before": {
+     "id": "acme-moved",
+     "input": "acme"
+    },
+    "before_sensitive": {}
+   },
+   "mode": "managed",
+   "name": "acme_moved",
+   "previous_address": "terraform_data.acme_before",
+   "provider_name": "terraform.io/builtin/terraform",
+   "type": "terraform_data"
+  },
+  {
+   "address": "terraform_data.acme_imported",
+   "change": {
+    "actions": [
+     "no-op"
+    ],
+    "after": {
+     "id": "p-9hUg",
+     "input": "acme"
+    },
+    "after_sensitive": {},
+    "after_unknown": {},
+    "before": {
+     "id": "p-9hUg",
+     "input": "acme"
+    },
+    "before_sensitive": {},
+    "importing": {
+     "id": "p-9hUg"
+    }
+   },
+   "mode": "managed",
+   "name": "acme_imported",
+   "provider_name": "terraform.io/builtin/terraform",
+   "type": "terraform_data"
+  },
+  {
+   "action_reason": "delete_because_no_resource_config",
+   "address": "terraform_data.acme_forgotten",
+   "change": {
+    "actions": [
+     "forget"
+    ],
+    "after": null,
+    "after_sensitive": false,
+    "after_unknown": {},
+    "before": {
+     "id": "acme-forgotten",
+     "input": "acme"
+    },
+    "before_sensitive": {}
+   },
+   "mode": "managed",
+   "name": "acme_forgotten",
+   "provider_name": "terraform.io/builtin/terraform",
+   "type": "terraform_data"
+  },
+  {
+   "action_reason": "read_because_config_unknown",
+   "address": "data.terraform_remote_state.globex",
+   "change": {
+    "actions": [
+     "read"
+    ],
+    "after": {
+     "backend": "local",
+     "outputs": {
+      "token": "tok-acme-123"
+     }
+    },
+    "after_sensitive": {
+     "outputs": true
+    },
+    "after_unknown": {
+     "outputs": true
+    },
+    "before": null,
+    "before_sensitive": false
+   },
+   "mode": "data",
+   "name": "globex",
+   "provider_name": "terraform.io/builtin/terraform",
+   "type": "terraform_remote_state"
+  }
+ ],
+ "resource_drift": [
+  {
+   "address": "terraform_data.acme_db",
+   "change": {
+    "actions": [
+     "update"
+    ],
+    "after": {
+     "id": "acme-acme_db",
+     "input": {
+      "name": "acme-db",
+      "password": "globex-BKPW"
+     }
+    },
+    "after_sensitive": {
+     "input": {
+      "password": true
+     }
+    },
+    "after_unknown": {},
+    "before": {
+     "id": "acme-acme_db",
+     "input": {
+      "name": "acme-db",
+      "password": "acme-hunter2-SECRET"
+     }
+    },
+    "before_sensitive": {
+     "input": {
+      "password": true
+     }
+    }
+   },
+   "mode": "managed",
+   "name": "acme_db",
+   "provider_name": "terraform.io/builtin/terraform",
+   "type": "terraform_data"
+  }
+ ],
+ "terraform_version": "1.17.1",
+ "timestamp": "2026-11-08T11:42:46Z",
+ "variables": {
+  "acme_db_password": {
+   "value": "acme-hunter2-SECRET"
+  },
+  "acme_name": {
+   "value": "acme-api-v2"
+  }
+ }
+}

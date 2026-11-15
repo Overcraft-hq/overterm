@@ -546,7 +546,7 @@ struct DockerBuildProgress: Sendable {
     /// across messages was joined first), colour codes out, a progress bar
     /// redrawn with `\r` as its last drawing.
     private static func line(_ data: Data, offset: Double, stderr: Bool) -> LogLine {
-        let text = DockerLogLine.stripANSI(String(decoding: data, as: UTF8.self))
+        let text = Overterm.LogLine.stripANSI(String(decoding: data, as: UTF8.self))
         let drawn: String
         if text.unicodeScalars.contains("\r") {
             let segments = text.unicodeScalars.split(separator: "\r", omittingEmptySubsequences: true)

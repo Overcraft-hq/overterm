@@ -112,6 +112,33 @@ notification and on the Dock; Claude Code needs no setup for it.
     </td>
   </tr>
   <tr>
+    <td><img alt="A production context's pods and a pod's CPU and memory over an hour" src="docs/assets/screenshot-kubernetes.png"></td>
+    <td>
+      <h3>Kubernetes <kbd>⌥⌘J</kbd></h3>
+      Your kubeconfig's contexts, production marked in red everywhere. Every
+      kind live in the server's own columns, k9s's keys, an Overview of the
+      cluster; logs, a pod's shell and port-forwards in your terminals. Writes
+      are confirmed naming the context — the name typed where they destroy —
+      and <code>writable: false</code> in <code>kubernetes.contexts</code>
+      makes a context read-only. Metrics from metrics-server or Prometheus,
+      Argo CD and Flux on one screen, Ask Why for an agent, and
+      <code>k8s_</code> tools over MCP.
+    </td>
+  </tr>
+  <tr>
+    <td><img alt="Terraform's roots with production marked, and a plan of it in the right slot" src="docs/assets/screenshot-terraform.png"></td>
+    <td>
+      <h3>Terraform <kbd>⌥⌘E</kbd></h3>
+      The checkout's roots with their workspace, backend and class — production
+      by its names, and once seen always. A plan in the right slot, read as
+      data: replaces first and why, drift, never a sensitive value. Apply only
+      that plan, confirmed, the root's name typed on production; state and
+      outputs masked, Check Drift, <code>terraform test</code>. Claude Code
+      starts with Terraform's writes denied where a root is production, and
+      agents get <code>tf_</code> tools over MCP.
+    </td>
+  </tr>
+  <tr>
     <td><img alt="Overgit: the commit graph and a commit" src="docs/assets/screenshot-overgit.png"></td>
     <td>
       <h3>Overgit <kbd>⌥⌘G</kbd></h3>
@@ -147,7 +174,7 @@ notification and on the Dock; Claude Code needs no setup for it.
 | **⌘L** | The selection to an agent, with the command it came from, its exit code and the diff. |
 | **New Task** <kbd>⇧⌘N</kbd> | A worktree, a branch and an agent tab in one go — and its compose stack, on free ports if another worktree's has them. |
 | **Search** <kbd>⌘F</kbd> | The scrollback, the checkout's file names and their contents; ⌘-click a `path:line` to open it. |
-| **Agents over MCP** | Claude Code started here reaches the browser, the notes, the API client, the databases and Docker — reads freely, asks you before anything writes. |
+| **Agents over MCP** | Claude Code started here reaches the browser, the notes, the API client, the databases, Docker, Kubernetes (`k8s_get`, `k8s_logs`, `k8s_why`, `k8s_metrics`…) and Terraform (`tf_roots`, `tf_validate`, `tf_plan`, `tf_outputs`…) — reads freely, asks you before anything writes. |
 | **Restored** | Tabs, names, splits and islands come back on relaunch: shells with their last 2000 lines, agent tabs resuming their conversation. |
 
 How each works, in detail: [docs/architecture.md](docs/architecture.md).
@@ -198,6 +225,8 @@ The defaults; every one is rebindable in Settings ▸ Keyboard Shortcuts (or
 | ⌘B / ⌥⌘D | Sidebar / changes |
 | ⌥⌘G · ⌥⌘N · ⌥⌘R · ⌥⌘B | Overgit · notes · API client · database |
 | ⌥⌘P / ⇧⌥⌘P | Docker / find a container |
+| ⌥⌘J / ⌃⌘J | Kubernetes / a context, namespace or pod |
+| ⌥⌘E / ⌃⌘E | Terraform / a root |
 | ⇧⌘B · ⌥⌘U | Browser · usage |
 | ⇧⌘E | Tab Peek (or three fingers down) |
 | ⌘, / ⌥⌘O | Settings / what's new |
@@ -210,6 +239,15 @@ JSON behind it — `settings.json` and `keybindings.json` in
 hand: only what you changed is in them, comments are fine, and an edit applies
 at once. **Themes** is a gallery — each theme drawn as a little window in its
 own colours: Ghostty's 800-odd, and yours from `~/.config/ghostty/themes`.
+**Kubernetes** and **Terraform** have their own sections:
+`kubernetes.contexts` and `terraform.roots` hold each context's and root's
+class and `writable` (every one is writable unless it says `false`; on
+production each change is still asked, its name typed for a destroy or an
+apply), `kubernetes.agentWrites` names the contexts agents
+may change — a remote or production one only where its entry also sets
+`writable: true` — and `terraform.agentAccess` and
+`terraform.agentWriteGuard` say what agents get. A security setting edited in the file outside Settings waits
+for a Keep or Revert.
 
 ## Build
 
@@ -255,7 +293,8 @@ the notes. `make hooks` keeps an app change from landing on a version already
 released. The details: [CLAUDE.md](CLAUDE.md), Commits.
 
 The README's pictures are taken by the app itself, in its isolated test mode,
-from made-up data — `OVERTERM_E2E=showcase OVERTERM_DUMP_PNG=… OVERTERM_E2E_CWD=<an empty folder> ./Overterm.app/Contents/MacOS/Overterm`,
+from made-up data — `OVERTERM_E2E=showcase OVERTERM_DUMP_PNG=… OVERTERM_E2E_CWD=<an empty folder> OVERTERM_KUBECONFIG=<a file that isn't there yet> ./Overterm.app/Contents/MacOS/Overterm`
+(Kubernetes against a fake API server, Terraform with no terraform run),
 and the api, review, notes, drawing, database, overgit and docker scenarios the
 same way. The empty folder matters: the first tab starts there, and the window
 follows it — from your home folder it would find your own collections.

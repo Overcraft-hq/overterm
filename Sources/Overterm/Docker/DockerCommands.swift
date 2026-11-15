@@ -133,6 +133,8 @@ enum DockerCommands {
     static func quote(_ word: String) -> String {
         let plain = CharacterSet.alphanumerics.union(CharacterSet(charactersIn: "-_./:=@%+,"))
         if !word.isEmpty, word.unicodeScalars.allSatisfy(plain.contains) { return word }
+        // A control character is never on the line raw (`ShellWord`).
+        if ShellWord.hasControl(word) { return ShellWord.ansiC(word) }
         return "'" + word.replacingOccurrences(of: "'", with: #"'\''"#) + "'"
     }
 }

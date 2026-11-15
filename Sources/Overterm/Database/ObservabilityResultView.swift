@@ -170,7 +170,7 @@ private struct SeriesView: View {
 // MARK: Logs
 
 private struct LogsView: View {
-    let lines: [LogLine]
+    let lines: [LokiLine]
     let run: SQLConsole.Run
     @ObservedObject var console: SQLConsole
     @ObservedObject var theme: ChromeTheme
@@ -180,7 +180,7 @@ private struct LogsView: View {
     @State private var open: Set<String> = []
     @State private var wrap = false
 
-    private var shown: [LogLine] {
+    private var shown: [LokiLine] {
         lines.filter { line in
             (levels.isEmpty || line.level.map(levels.contains) == true) && (filter.isEmpty || line.line.localizedCaseInsensitiveContains(filter))
         }
@@ -260,7 +260,7 @@ private struct LogsView: View {
         .padding(.horizontal, 10).frame(height: ChromeMetrics.row(30))
     }
 
-    private func row(_ line: LogLine) -> some View {
+    private func row(_ line: LokiLine) -> some View {
         let expanded = open.contains(line.id)
         return VStack(alignment: .leading, spacing: 4) {
             HStack(alignment: .top, spacing: 8) {
