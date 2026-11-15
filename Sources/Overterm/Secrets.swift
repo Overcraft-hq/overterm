@@ -179,14 +179,34 @@ enum Secrets {
         return isSecret(name.replacingOccurrences(of: "-", with: "_")) || lower.hasSuffix("pass") || lower.contains("passphrase")
     }
 
-    /// A shell script's words masked in place, its spacing kept.
+    /// A shell script's words masked in place, its spacing kept: the words
+    /// masking changed put back in one pass. An agent's command is one such
+    /// script, a heredoc in it 15,000 words — each word put back into a new
+    /// copy of the whole script took the square of its length.
     private static func maskScript(_ script: String) -> String {
         let string = script as NSString
-        guard let words = try? NSRegularExpression(pattern: #"\S+"#) else { return script }
-        let matches = words.matches(in: script, range: NSRange(location: 0, length: string.length))
-        let masked = maskArguments(matches.map { string.substring(with: $0.range) })
-        var out = script as NSString
-        for (match, word) in zip(matches, masked).reversed() { out = out.replacingCharacters(in: match.range, with: word) as NSString }
+        guard let scriptWords else { return script }
+        let ranges = scriptWords.matches(in: script, range: NSRange(location: 0, length: string.length)).map(\.range)
+        let words = ranges.map { string.substring(with: $0) }
+        var changed: [(range: NSRange, text: String)] = []
+        for (index, word) in maskArguments(words).enumerated() where word != words[index] { changed.append((ranges[index], word)) }
+        return changed.isEmpty ? script : replacing(changed, in: string)
+    }
+
+    /// A script's words: what isn't whitespace.
+    private static let scriptWords = try? NSRegularExpression(pattern: #"\S+"#)
+
+    /// `string` with each range given its text — the ranges in order, apart
+    /// —, built in one pass however many there are.
+    private static func replacing(_ replacements: [(range: NSRange, text: String)], in string: NSString) -> String {
+        let out = NSMutableString(capacity: string.length)
+        var cursor = 0
+        for (range, text) in replacements {
+            out.append(string.substring(with: NSRange(location: cursor, length: range.location - cursor)))
+            out.append(text)
+            cursor = NSMaxRange(range)
+        }
+        out.append(string.substring(from: cursor))
         return out as String
     }
 
@@ -615,12 +635,9 @@ extension Secrets {
         guard text.utf8.count >= blobLength, hasBase64Run(text), let blobPattern else { return text }
         let string = text as NSString
         let matches = blobPattern.matches(in: text, range: NSRange(location: 0, length: string.length))
-        guard !matches.isEmpty else { return text }
-        var out = string
-        for match in matches.reversed() where looksLikeBlob(string.substring(with: match.range)) {
-            out = out.replacingCharacters(in: match.range, with: credentialMask) as NSString
-        }
-        return out as String
+        // Put back in one pass: a heredoc of base64 lines is thousands of blobs.
+        let blobs = matches.filter { looksLikeBlob(string.substring(with: $0.range)) }.map { (range: $0.range, text: credentialMask) }
+        return blobs.isEmpty ? text : replacing(blobs, in: string)
     }
 
     /// Whether `text` has a run of `blobLength` base64 characters with an

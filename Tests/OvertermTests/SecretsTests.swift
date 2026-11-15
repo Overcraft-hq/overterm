@@ -219,6 +219,23 @@ final class SecretsTests: XCTestCase {
         XCTAssertEqual(masked.last, "••••••")
         XCTAssertEqual(masked.count, words.count)
     }
+
+    /// A script's words are masked in place and put back in one pass, its
+    /// spacing as it was — runs of spaces, a tab, new lines —: an agent's
+    /// command is one script, a heredoc in it thousands of words, and a
+    /// heredoc of base64 lines thousands of blobs.
+    func testAScriptsWordsArePutBackInOnePass() {
+        let secret = ["Zq8", "vX2", "mN7", "pL4"].joined()
+        let script = "redis-cli  -a \(secret)\tping ||\n  docker login -p \(secret) acme.test"
+        XCTAssertEqual(Secrets.maskArguments(["sh", "-c", script]), ["sh", "-c", "redis-cli  -a ••••••\tping ||\n  docker login -p •••••• acme.test"])
+        let lines = (0..<3_000).map { "echo acme line \($0) of five" }
+        let heredoc = "cat > /tmp/acme.txt <<EOF\n" + lines.joined(separator: "\n") + "\nEOF\nredis-cli -a \(secret) ping"
+        XCTAssertEqual(Secrets.maskArguments(["/bin/zsh", "-c", "-l", heredoc]), ["/bin/zsh", "-c", "-l", heredoc.replacingOccurrences(of: secret, with: "••••••")])
+        // 36 characters of base64, upper- and lowercase and digits: a blob.
+        let blob = ["QWNtZUdsb2Jl", "eEZha2VEYXRh", "MDEyMzQ1Njc4"].joined()
+        let blobs = Array(repeating: blob, count: 2_000).joined(separator: "\n")
+        XCTAssertEqual(Secrets.maskBase64Blobs(in: blobs), Array(repeating: Secrets.credentialMask, count: 2_000).joined(separator: "\n"))
+    }
 }
 
 /// ⌘L on a selection in a pod's or a pinned tab (rule 9): what the cluster
