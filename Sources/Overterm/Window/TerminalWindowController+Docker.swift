@@ -446,6 +446,32 @@ extension TerminalWindowController {
                 }
             }
             .store(in: &cancellables)
+        // A tab's checkout follows its folder — its shell's, its agent's or
+        // the one attached — and so do its containers' ports, whichever tab
+        // it is, and a new tab's are made with it. The poll that walked the
+        // selected tab redid them every 6 s, and only for that tab.
+        store.$tabs
+            .dropFirst()
+            // @Published says before it changes: read after.
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] _ in self?.updateContainerPorts() }
+            .store(in: &cancellables)
+        store.$tabs
+            .map { tabs in
+                Publishers.MergeMany(
+                    tabs.map { tab in
+                        tab.$workingDirectory.map { _ in tab }.merge(
+                            with: tab.$agentDirectory.map { _ in tab }, tab.$attachedCheckout.map { _ in tab })
+                    }
+                )
+                // Each says its value as it is subscribed to: the tabs'
+                // change itself is the sink above's.
+                .dropFirst(tabs.count * 3)
+            }
+            .switchToLatest()
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] tab in self?.updateContainerPorts(of: tab) }
+            .store(in: &cancellables)
     }
 
     func updateContainerPorts() {

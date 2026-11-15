@@ -1886,8 +1886,6 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     byPane[ObjectIdentifier(panes[index]), default: []].append(port)
                 }
                 if tab.panePorts != byPane { tab.panePorts = byPane }
-                // Its folder may have moved: its checkout's containers again.
-                self.updateContainerPorts(of: tab)
             }
         }
     }

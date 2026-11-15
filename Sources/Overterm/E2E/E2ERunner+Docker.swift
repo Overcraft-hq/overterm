@@ -3819,9 +3819,11 @@ extension E2ERunner {
 
         // Its ports reach the tab, though Docker's process holds them — but
         // not a pane's header: nothing in any pane listens there.
+        // A new tab's are made with it, as its folder is known: no poll.
         if let tab = app.store.selected {
-            app.updateContainerPorts(of: tab)
-            check("a checkout's container ports reach its tab", await eventually(5) { tab.containerPorts.map(\.port) == [58080] }, "\(tab.containerPorts)")
+            check(
+                "a checkout's container ports reach its tab, a new one at once", await eventually(5) { tab.containerPorts.map(\.port) == [58080] },
+                "\(tab.containerPorts)")
             check("and don't make it a server", tab.kind != .server)
             check("nor a pane's header", tab.terminals.allSatisfy { tab.ports(of: $0).isEmpty }, "\(tab.panePorts)")
             let info = TabInfoModel(tab: tab, claudeReader: ClaudeUsageReader())
