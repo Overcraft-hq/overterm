@@ -526,9 +526,21 @@ gives the keyboard back to that page's list, not to the hidden terminal.
 
 A pane's header shows what anything in its process tree is listening on
 (`Info/ListeningPorts`, an `lsof`, run on every third tick of the poll
-that already walks the selected tab). A pill opens a popover with the
-process, its pid, and Open / Copy URL / Kill — the exact pid, never a
-pattern. A tab that listens is a server, which is what its icon then says
+that already walks the selected tab; each port with its process's start
+time, `ListeningPort.start`, read right after the listing). A pill opens
+a popover with the process, its pid, and Open / Copy URL / Stop….
+Stop… (`PortStop`, `stopListener`) asks first, every time — the process,
+its pid, the port, its command line masked as Tab Info's, SIGTERM — in
+the sheet every write uses (`WriteConfirmation`); then reads again, the
+pid's sockets (`lsof`) and its start time last, and sends SIGTERM to
+that pid alone, never a group or a pattern, only while it is still the
+process listed (the same pid and start time) and still holds the port.
+Otherwise nothing is sent and a sheet says why ("… has exited", "… no
+longer holds :3000"): the pid used to be signalled from an lsof up to
+6 s old, and after a server ended, whatever took its pid got it. A port
+whose start time couldn't be read can't be stopped from its pill. A
+forward's Stop is `KubeForwards`'; a checkout's containers have no pill.
+A tab that listens is a server, which is what its icon then says
 (`TabKind`).
 
 No preview of the page, which the design draws: that is a WebView per

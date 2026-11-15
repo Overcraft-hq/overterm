@@ -29,6 +29,7 @@ version is tagged `v<version>`.
 - sidebar: the Files tree no longer asks git again and redraws when a folder is rescanned unchanged — behind other windows, a tab in ~ could keep the app busy
 - build: Xcode 27 builds the app, and an app built with it takes clicks on macOS 27; double-clicking the strip's empty space zooms the window there again
 - window: built with macOS 26's SDK or later, the tab strip no longer sits on a grey glass band across the title bar
+- window: a port pill's Kill is now Stop… and asks first; it stops only the process still holding the port, never another that took an ended server's pid
 - terminal: in a folder four or more deep, the prompt is no longer taken for a command — a command's rows went to it, so ⇧⌘C copied the wrong output and ⌥⌘↓ missed failures
 - tabs: Tab Info's CPU is measured in a split tab, where every pane's processes read 0%, and in a tab that isn't selected, where they kept dropping to 0%
 - tabs: Tab Info's tooltip masks the passwords and tokens in a command line

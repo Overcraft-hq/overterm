@@ -5,6 +5,12 @@ import Foundation
 /// process holds those, so lsof never finds them under the tab).
 struct ListeningPort: Identifiable, Hashable {
     let pid: pid_t
+    /// When `pid`'s process started (µs), read with the listing
+    /// (`ListeningPorts.of`): with the pid, which process held the port —
+    /// a pid is reused, the pair never. A pill's Stop… signals only that
+    /// process (`PortStop`), and nothing when this couldn't be read. A
+    /// container's and a forward's have none: their owners stop them.
+    var start: UInt64? = nil
     let process: String
     let port: Int
     /// The bound address as lsof prints it (`*`, `127.0.0.1`, `[::1]`).
@@ -84,7 +90,8 @@ enum ListeningPorts {
         return false
     }
 
-    /// The listening TCP sockets of `pids`.
+    /// The listening TCP sockets of `pids`, each with its process's start
+    /// time read right after the listing, off the main thread as it is.
     static func of(_ pids: [pid_t]) async -> [ListeningPort] {
         guard !pids.isEmpty else { return [] }
         let list = pids.map(String.init).joined(separator: ",")
@@ -94,7 +101,17 @@ enum ListeningPorts {
             (try? await Git.run(
                 lsof, ["-nP", "-a", "-iTCP", "-sTCP:LISTEN", "-p", list, "-F", "pcn"],
                 in: URL(fileURLWithPath: "/"), success: [0, 1])) ?? ""
-        return parse(output)
+        return parse(output).map { port in
+            var port = port
+            port.start = start(of: port.pid)
+            return port
+        }
+    }
+
+    /// When `pid`'s process started (µs), if it runs and is the user's:
+    /// proc_pidinfo answers for no one else's.
+    static func start(of pid: pid_t) -> UInt64? {
+        ProcessInspector.bsdInfo(pid).map(ProcessInspector.startTime)
     }
 
     /// Parses `lsof -F pcn`: `p<pid>` and `c<command>` start a process, each

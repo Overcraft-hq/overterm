@@ -3235,6 +3235,11 @@ final class E2ERunner {
         guard let model = app.infoModel else { return check("a model", false) }
         let listed = await eventually { model.processes.flatMap(\.flattened).contains { $0.command.hasPrefix("sleep 61") } }
         let all = model.processes.flatMap(\.flattened)
+        // Its own sleep's pid and start time, read while it is still its
+        // shell's child: signalled at the end only while it is that process.
+        let sleeper = all.first { $0.command.hasPrefix("sleep 61") }.flatMap { node in
+            ProcessInspector.kinfo(node.pid).flatMap { $0.parent == node.parent ? (pid: node.pid, start: $0.start) : nil }
+        }
         // Counts only: the tab runs what the user's shell config starts too.
         check("its background job is listed", listed, "\(all.count) processes, \(all.filter { $0.name == "sleep" }.count) sleeps")
         check("under its shell", model.processes.contains { ["zsh", "bash", "fish", "sh"].contains($0.name) && $0.flattened.contains { $0.command.hasPrefix("sleep 61") } })
@@ -3286,13 +3291,18 @@ final class E2ERunner {
         app.showSelectedTabInfo(nil)
         await eventually(2) { self.app.infoPopover == nil }
         check("closing it stops the refresh", app.infoModel == nil)
-        // Leave no sleeps behind.
-        all.filter { $0.name == "sleep" || $0.command.contains("socket.socket") }.forEach { kill($0.pid, SIGTERM) }
+        // Leave nothing of its own behind, each by its pid while that is
+        // still its process — never another sleep the tab runs; the typed
+        // `kill %1` is its shell's own.
+        if let sleeper, ProcessInspector.kinfo(sleeper.pid)?.start == sleeper.start { kill(sleeper.pid, SIGTERM) }
         if let perl, ProcessInspector.kinfo(perl.pid)?.start == perl.start { kill(perl.pid, SIGTERM) }
         for tab in app.store.tabs {
             tab.terminal.insertText("kill %1 2>/dev/null")
             tab.terminal.pressReturn()
         }
+        // Last, the server's pill: Stop… asked, checked, then sent
+        // (E2ERunner+PortPill).
+        if let port { await portPillStop(in: first, port: port) }
     }
 
     /// The help — the tooltip `.help` gives — of every element `identifier`

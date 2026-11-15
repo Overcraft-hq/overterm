@@ -6,7 +6,10 @@ import SwiftUI
 /// happens to have the keyboard.
 struct PaneHeaderActions {
     var copyOutput: (TerminalView) -> Void
-    /// Stop whatever is listening — the exact pid, never a pattern.
+    /// Stop whatever is listening: a forward or a container by its owner,
+    /// a process asked first, then sent SIGTERM only while it is still the
+    /// one listed, holding the port (`PortStop`) — the exact pid, never a
+    /// pattern.
     var killPort: (ListeningPort) -> Void
     var rerun: (TerminalView) -> Void
     var splitRight: (TerminalView) -> Void
@@ -278,10 +281,16 @@ private struct PortPill: View {
                             actions.killPort(port)
                         }
                     } else {
-                        action("Kill") {
+                        // SIGTERM asks a process to stop: Stop, as the
+                        // forward's beside it and a container's; the
+                        // ellipsis, that it asks first (`PortStop`).
+                        action("Stop…") {
                             showing = false
                             actions.killPort(port)
                         }
+                        .disabled(port.start == nil)
+                        .opacity(port.start == nil ? 0.45 : 1)
+                        .help(stopHelp)
                     }
                 }
             }
@@ -311,6 +320,12 @@ private struct PortPill: View {
             return "kubectl port-forward \(forward.target) → pod \(forward.pod ?? "…") in \(forward.context)/\(forward.namespace): \(forward.state)"
         }
         return "\(port.process) is listening on \(port.port)"
+    }
+
+    /// Stop…'s: its start time unread, nothing tells it from a later process of its pid.
+    private var stopHelp: String {
+        guard port.start != nil else { return "Overterm can't tell which process this is: stop it in its terminal." }
+        return "Asks first, then sends pid \(port.pid) SIGTERM if it still holds :\(port.port)"
     }
 
     private func action(_ title: String, filled: Bool = false, _ run: @escaping () -> Void) -> some View {

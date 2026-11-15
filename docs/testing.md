@@ -423,6 +423,16 @@ carries a fake password, made at run time and never typed — a script it
 writes execs it —, once after a token's flag with a `/` in front, once with
 a space in it as one word, and reads its row's tooltip from the popover's
 accessibility tree: masked, the password and every part of it nowhere.
+`info` then stops its server through the pane pill's own action (the
+header's `killPort`): Stop… asks, naming the process, its pid, the port,
+its command line and SIGTERM, and Cancel sends nothing; a listing gone
+stale — its pid listed with another start time, a port it doesn't hold,
+a start time never read — is said at once, nothing asked or sent;
+confirmed, the server stops and its pill goes. Two perl listeners of its
+own (30 s at most) check the answer's own read: the first ended while its
+question is up, the second on its port, and the yes sends nothing. A pid
+really reused can't be made on demand: `PortStopTests` lists a listener
+of its own, then signals it under another start time.
 `marks` leaves one tab in each activity state; with `OVERTERM_DUMP_PNG=<png>`
 it captures the window, for judging the look. Run one by hand while working
 on it:

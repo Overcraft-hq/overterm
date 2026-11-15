@@ -988,10 +988,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                                 self?.dockerPage.act(.stop, on: DockerModel.shared.container(container).map { [$0] } ?? [])
                                 return
                             }
-                            // The exact pid lsof reported. Never a pattern:
+                            // The exact pid lsof reported, asked first, and
+                            // only while it is still that process holding
+                            // the port (`stopListener`). Never a pattern:
                             // `pkill -f` once killed the shell running the
                             // tests (CLAUDE.md).
-                            kill(port.pid, SIGTERM)
+                            self?.stopListener(port)
                         },
                         rerun: { [weak self] in self?.rerun(in: $0) },
                         splitRight: { [weak self] in self?.split($0, .right) },
