@@ -20,7 +20,9 @@ protocol ActivityKernel: Sendable {
     /// The user's process's usage, read now (`ActivityUsage.time` is when);
     /// nil when refused (another user's) or gone.
     func usage(of pid: pid_t) -> ActivityUsage?
-    /// `proc_name`: the name it runs as (`pbi_name`); the user's only.
+    /// `proc_name`: the name it runs as (`pbi_name`) — any user's, root's
+    /// too: XNU answers `PROC_PIDT_SHORTBSDINFO` without a same-user
+    /// check. A reader that trusts a name checks the uid first.
     func name(of pid: pid_t) -> String?
     /// `proc_pidpath`: any user's.
     func path(of pid: pid_t) -> String?
@@ -58,6 +60,10 @@ protocol ActivityKernel: Sendable {
     /// `KERN_PROC_PID`: one process's structure, read now — any user's, a
     /// zombie's too; nil once it is gone.
     func process(_ pid: pid_t) -> ActivityProcess?
+    /// `proc_listpids(PROC_PGRP_ONLY)`: the members of process group
+    /// `group` now, any user's — no table read, microseconds; nil when the
+    /// call fails. At most `limit`.
+    func groupMembers(_ group: pid_t, limit: Int) -> [pid_t]?
     /// `task_name_for_pid`, then `task_info(TASK_AUDIT_TOKEN)`: the token
     /// of the image `pid` runs now. The user's own processes only: nil for
     /// another user's, for a setuid one the user started (KERN_FAILURE,
@@ -198,6 +204,14 @@ struct LiveActivityKernel: ActivityKernel {
     static func nanoseconds(_ ticks: UInt64) -> UInt64 {
         let (high, low) = ticks.multipliedFullWidth(by: timebase.numer)
         return timebase.denom > high ? timebase.denom.dividingFullWidth((high, low)).quotient : .max
+    }
+
+    func groupMembers(_ group: pid_t, limit: Int) -> [pid_t]? {
+        guard group > 0, limit > 0 else { return [] }
+        var pids = [pid_t](repeating: 0, count: limit)
+        let bytes = pids.withUnsafeMutableBytes { proc_listpids(UInt32(PROC_PGRP_ONLY), UInt32(group), $0.baseAddress, Int32($0.count)) }
+        guard bytes >= 0 else { return nil }
+        return pids.prefix(Int(bytes) / MemoryLayout<pid_t>.stride).filter { $0 > 0 }
     }
 
     func name(of pid: pid_t) -> String? {
@@ -623,10 +637,16 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     }
 
     func name(of pid: pid_t) -> String? {
-        asked("name") { table[pid].flatMap { $0.record.effectiveUID == uid ? $0.name : nil } }
+        asked("name") { table[pid]?.name }
     }
 
     func path(of pid: pid_t) -> String? { asked("path") { table[pid]?.path } }
+
+    func groupMembers(_ group: pid_t, limit: Int) -> [pid_t]? {
+        asked("groupMembers") {
+            Array(table.values.map(\.record).filter { $0.group == group && !$0.isZombie }.map(\.pid).sorted().prefix(max(limit, 0)))
+        }
+    }
 
     func codeSigningStatus(of pid: pid_t) -> CodeSigningAnswer {
         asked("csops") {

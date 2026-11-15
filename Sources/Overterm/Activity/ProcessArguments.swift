@@ -204,6 +204,25 @@ struct ProcessArguments: Hashable, Sendable {
         }
     }
 
+    /// The file argv's first word names (`claude` of `/opt/acme/bin/claude
+    /// --resume …`), as `Agent.of` reads a command: argv[0] alone decoded,
+    /// to its first space — a title's first word —, nothing after it made a
+    /// `String` and nothing masked, the masking being most of a read's cost
+    /// (7.7: ⌘V asks this inside the key equivalent). A name longer than
+    /// `nameLimit` bytes is none. Nil when refused or gone, or unreadable
+    /// whole.
+    static func executableName(of pid: pid_t, kernel: some ActivityKernel, nameLimit: Int = 255) -> String? {
+        read(pid, kernel: kernel) { bytes -> String? in
+            guard let first = layout(of: bytes)?.words.first else { return nil }
+            var end = first.lowerBound
+            while end < first.upperBound, bytes[end] != UInt8(ascii: " ") { end += 1 }
+            var start = end
+            while start > first.lowerBound, bytes[start - 1] != UInt8(ascii: "/") { start -= 1 }
+            guard start < end, end - start <= nameLimit else { return nil }
+            return String(decoding: UnsafeRawBufferPointer(rebasing: bytes[start..<end]), as: UTF8.self)
+        }
+    }
+
     /// `kern.argmax`: the largest region a read uses — the kernel gives no
     /// more. 1 MB when it can't be read.
     static let argumentMaximum: Int = {

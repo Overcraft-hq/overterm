@@ -798,6 +798,7 @@ private final class RecordingKernel: ActivityKernel, @unchecked Sendable {
     func socket(of pid: pid_t, descriptor: Int32) -> socket_fdinfo? { real.socket(of: pid, descriptor: descriptor) }
     func workingDirectory(of pid: pid_t) -> String? { real.workingDirectory(of: pid) }
     func process(_ pid: pid_t) -> ActivityProcess? { real.process(pid) }
+    func groupMembers(_ group: pid_t, limit: Int) -> [pid_t]? { real.groupMembers(group, limit: limit) }
     func path(of token: ActivityAuditToken) -> String? { real.path(of: token) }
     var signalsByToken: Bool { real.signalsByToken }
 

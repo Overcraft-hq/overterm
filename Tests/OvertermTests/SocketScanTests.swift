@@ -328,6 +328,7 @@ private final class CountingKernel: ActivityKernel, @unchecked Sendable {
     }
     func workingDirectory(of pid: pid_t) -> String? { base.workingDirectory(of: pid) }
     func process(_ pid: pid_t) -> ActivityProcess? { base.process(pid) }
+    func groupMembers(_ group: pid_t, limit: Int) -> [pid_t]? { base.groupMembers(group, limit: limit) }
     func auditToken(of pid: pid_t) -> ActivityAuditToken? { base.auditToken(of: pid) }
     func path(of token: ActivityAuditToken) -> String? { base.path(of: token) }
     var signalsByToken: Bool { base.signalsByToken }
