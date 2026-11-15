@@ -50,6 +50,19 @@ final class TerminalView: NSView {
     /// identity it was listed with (TabSuspension); nil while it runs.
     var suspended: [ActivitySignalTarget]?
 
+    /// Its pty's device (`st_rdev` of `ghostty_surface_tty_name`'s path),
+    /// which the census compares with every process's controlling terminal
+    /// (docs/design/activity/analysis.md, 7.10): read once, on the main
+    /// thread, once its `login` is paired (`readTerminalDeviceOncePaired`).
+    /// Nil until then, or when the name couldn't be read.
+    private(set) var terminalDevice: dev_t?
+    /// How often it was asked with no device to show for it: asked again
+    /// at each context build until `terminalDeviceAttempts`.
+    private var terminalDeviceAsks = 0
+    /// Enough for a pty its IO thread opens late; not a read at every
+    /// build for a pane whose name never comes.
+    static let terminalDeviceAttempts = 20
+
     /// Last directory the shell reported (OSC 7 via shell integration);
     /// the starting directory until it reports one.
     var workingDirectory: String? {
@@ -1083,5 +1096,41 @@ extension TerminalView {
         dropPayload = nil
         dropHighlight?.removeFromSuperview()
         dropHighlight = nil
+    }
+}
+
+// MARK: The pane's pty (docs/design/activity/analysis.md, 7.10)
+
+extension TerminalView {
+    /// `ghostty_surface_tty_name` into `terminalDevice`, once its `login`
+    /// is paired. Not sooner: libghostty opens the pty on the surface's IO
+    /// thread, which it starts as the surface is made, and right after
+    /// `ghostty_surface_new` the name wasn't there yet (none of the
+    /// `splits` scenario's panes had one) — a read racing that thread's
+    /// write. The `login` is forked after the pty is open, and a pty's name
+    /// doesn't change while it lives — but a pairing is by order, so two
+    /// surfaces made together (a restored split) may pair one with the
+    /// other's `login` before its own pty is open: an empty name is asked
+    /// again at the next build, bounded, never given up at once — the tty
+    /// is what shows such a pairing wrong.
+    func readTerminalDeviceOncePaired() {
+        guard terminalDevice == nil, terminalDeviceAsks < Self.terminalDeviceAttempts, let surface else { return }
+        terminalDeviceAsks += 1
+        let name = ghostty_surface_tty_name(surface)
+        // Allocated by libghostty, freed by it; an empty one holds nothing.
+        defer { ghostty_string_free(name) }
+        guard let pointer = name.ptr, name.len > 0 else { return }
+        let path = String(decoding: UnsafeRawBufferPointer(start: pointer, count: Int(name.len)), as: UTF8.self)
+        terminalDevice = Self.device(ofTerminal: path)
+    }
+
+    /// A terminal's device from its path: `st_rdev` of a character device
+    /// under `/dev`, what `KERN_PROC_ALL` says as `e_tdev`; nil for
+    /// anything else.
+    nonisolated static func device(ofTerminal path: String) -> dev_t? {
+        guard path.hasPrefix("/dev/"), !path.split(separator: "/").contains("..") else { return nil }
+        var info = stat()
+        guard stat(path, &info) == 0, info.st_mode & S_IFMT == S_IFCHR else { return nil }
+        return info.st_rdev
     }
 }

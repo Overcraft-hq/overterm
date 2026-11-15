@@ -5,8 +5,8 @@ import Combine
 /// which pane is which, as one value the sampler's queue reads whole.
 extension TerminalWindowController {
     /// Every window's panes, in each strip's order: the pane's tag, its
-    /// tab and window, the `login` it was paired with, the agent its tab
-    /// was opened for. A surface still waiting for its `login` is paired
+    /// tab and window, the `login` it was paired with, its pty's device,
+    /// the agent its tab was opened for. A surface still waiting for its `login` is paired
     /// first, from the latest census's children of the app: microseconds,
     /// no scan — as far as what holds now lets it, the list being of any
     /// age (`SurfaceProcesses.pair`). What the later stages add — a pane's
@@ -21,8 +21,12 @@ extension TerminalWindowController {
             let window = controller.window?.windowNumber
             for tab in controller.store.tabs {
                 for pane in tab.terminals {
+                    let login = surfaces.login(of: pane)
+                    // Its pty, asked once more now that its `login` runs (7.10).
+                    if login != nil { pane.readTerminalDeviceOncePaired() }
                     context.panes.append(
-                        ActivityContext.Pane(tag: pane.processTag, tab: tab.id, window: window, login: surfaces.login(of: pane), agent: tab.agent))
+                        ActivityContext.Pane(
+                            tag: pane.processTag, tab: tab.id, window: window, login: login, terminal: pane.terminalDevice, agent: tab.agent))
                 }
             }
         }

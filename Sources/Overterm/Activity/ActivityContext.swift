@@ -26,8 +26,9 @@ struct ActivityContext: Hashable, Sendable {
         /// it from a census's children of the app (`SurfaceProcesses`,
         /// 7.7); nil until then. Its descendants are the pane's tree.
         var login: ActivityProcessID?
-        /// Its pty's device (`ghostty_surface_tty_name`'s `st_rdev`):
-        /// stage 0's tty spike (7.10); nil until it lands.
+        /// Its pty's device (`ghostty_surface_tty_name`'s `st_rdev`,
+        /// `TerminalView.terminalDevice`): what its processes carry as their
+        /// controlling terminal (7.10); nil until libghostty has named it.
         var terminal: dev_t?
         /// Its title, masked as a command (`ActivityText.title`).
         var title = ""

@@ -4013,6 +4013,11 @@ final class E2ERunner {
             "\(tab.ports.map(\.port))")
         check("not the left one's", !tab.ports(of: first).contains { $0.port == 47819 }, "\(tab.ports(of: first).map(\.port))")
 
+        // The tty spike (7.10): the pane's pty against the pairing.
+        await paneTTYChecks(tab)
+        window.makeFirstResponder(right)
+        await eventually(2) { tab.terminal === right }
+
         right.perform(binding: "new_split:down")
         check("Ghostty's new_split makes a third", tab.terminals.count == 3)
         let below = tab.terminals[2]
