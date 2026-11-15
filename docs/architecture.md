@@ -1977,8 +1977,11 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   Docker saying only "port is already allocated" (or, for a process,
   "address already in use"). The detail says who holds the port — another
   container (its project and folder, usually another worktree's), a
-  process in one of the windows' tabs, or one outside them (the census's
-  socket walk, `ListeningPorts.holder`: any process of the user's) — and
+  process in one of the windows' tabs (a one-off census of every pane,
+  `ListeningPorts.tab(holding:)`: a tab never visited, a hidden window's,
+  a server started since the last tick), or one outside them (the
+  census's socket walk, `ListeningPorts.holder`: any process of the
+  user's) — and
   offers the way out: stop that one and start this one, or show the tab.
   A compose container's detail also offers Up on Free Ports for its stack.
 - **A worktree's stack on its own ports** (`ComposePorts`, pure;

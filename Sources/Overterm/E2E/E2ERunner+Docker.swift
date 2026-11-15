@@ -2393,7 +2393,7 @@ extension E2ERunner {
         // line, whose middle is between them.
         let button = conflicted ? await wordFrame("Up on Free Ports") : nil
         if let button { await click(at: CGPoint(x: button.midX, y: button.midY)) }
-        // Its Up asks Compose (the stub) and lsof first: seconds on a busy machine.
+        // Its Up asks Compose (the stub) and the census first: seconds on a busy machine.
         let movedAgain = button != nil ? await eventually(15) { commands.count == count + 1 } : false
         check(
             "a conflict's own Up on Free Ports moves its stack",
@@ -3320,6 +3320,76 @@ extension E2ERunner {
         check("and the local engine is back", await eventually(5) { docker.connection.isRunning && docker.publishedHost == nil })
     }
 
+    /// A container that couldn't start because a server in a tab holds its
+    /// port — a tab that isn't selected, its server started since it was:
+    /// the census of every pane names that tab (docs/design/activity/
+    /// analysis.md, 6.12), where the tabs' pills knew only what the poll
+    /// had read of the selected one. The port is one nothing holds, so no
+    /// process of the user's is named; the server is the scenario's own,
+    /// ended by the identity it wrote itself (10.3): its pid, as the census
+    /// found it in its own tab, its start read again.
+    private func tabHoldingChecks(_ fake: FakeDockerEngine, page: DockerPageModel) async {
+        guard let looking = app.store.selected else { return check("a tab", false) }
+        app.newTab(in: scratch)
+        guard let holding = app.store.selected, holding !== looking else { return check("a second tab", false) }
+        await waitForPrompt()
+        app.store.select(looking)
+        if app.store.showingOverlay != .docker { app.showOverlay(.docker) }
+        let taken = (42_000...42_999).first { !ListeningPorts.isBound($0) } ?? 42_000
+        let script = out("holder.py")
+        let up = out("holder.up")
+        try? """
+        import os, socket, time
+        s = socket.socket()
+        s.bind(("127.0.0.1", \(taken)))
+        s.listen()
+        open("\(up.path)", "w").write(str(os.getpid()))
+        time.sleep(60)
+        """.write(to: script, atomically: true, encoding: .utf8)
+        holding.terminal.insertText("python3 \(script.path) &")
+        holding.terminal.pressReturn()
+        let listening = await eventually(10) { FileManager.default.fileExists(atPath: up.path) }
+        let wanting = fake.add(name: "ot-elsewhere-web-1", image: "nginx:1.27", state: .created)
+        fake.set(wanting, state: .created, error: "driver failed programming external connectivity: Bind for 0.0.0.0:\(taken) failed: port is already allocated")
+        _ = await eventually(5) { DockerModel.shared.container(wanting) != nil }
+        page.selection = [wanting]
+        let named = await eventually(8) {
+            if case .tab(let id, _, _)? = page.session?.conflict?.holder { return id == holding.id }
+            return false
+        }
+        // Said by its case alone: a process or another tab is one of the
+        // user's, whose name and pid stay out of the run's output (9.9).
+        let said: String
+        switch page.session?.conflict?.holder {
+        case .tab(let id, _, _)?: said = id == holding.id ? "the holding tab" : "another tab"
+        case .process?: said = "a process outside the tabs"
+        case .container?: said = "a container"
+        case .unknown?: said = "unknown"
+        case nil: said = "no conflict"
+        }
+        check(
+            "a port held in a tab that isn't selected names that tab", listening && named && app.store.selected === looking,
+            "\(said); listening \(listening); selected unchanged \(app.store.selected === looking)")
+        try? await DockerModel.shared.remove(wanting, force: true)
+        // Only the server the scenario started: the pid it wrote, held in
+        // `holding` as the light tick read that tab — the census's identity
+        // of the scenario's own process, never whoever holds the number
+        // elsewhere on the Mac — its start read again, and ended by the one
+        // signal path, the run's gate in it.
+        if let pid = (try? String(contentsOf: up, encoding: .utf8)).flatMap({ pid_t($0.trimmingCharacters(in: .whitespacesAndNewlines)) }) {
+            _ = await eventually(5) { holding.ports.contains { $0.port == taken && $0.pid == pid } }
+            var sent = false
+            if let identity = holding.ports.first(where: { $0.port == taken && $0.pid == pid })?.identity,
+                ProcessInspector.kinfo(identity.pid)?.start == identity.start,
+                case .sent = ProcessSignals().send(.term, to: ActivitySignalTarget(identity, path: nil), alone: true)
+            {
+                sent = true
+            }
+            check("its server ended by the identity it wrote", sent && listening)
+        }
+        if app.store.showingOverlay != .docker { app.showOverlay(.docker) }
+    }
+
     /// A container's port pill in the list, clicked where a person would:
     /// a tapped label in a reused row (not a Button), it still opens its
     /// URL — handed to the window's recorder, not the browser — and the
@@ -3757,6 +3827,7 @@ extension E2ERunner {
         try? await docker.remove(clash, force: true)
         try? await docker.perform(.start, on: web)
         _ = await eventually(5) { docker.container(web)?.state == .running }
+        await tabHoldingChecks(fake, page: page)
 
         // Remove asks first.
         page.selection = [loose]

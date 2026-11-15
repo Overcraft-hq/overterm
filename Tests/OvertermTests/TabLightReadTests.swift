@@ -156,4 +156,26 @@ final class TabLightReadTests: XCTestCase {
         let unreadable = try tick(sampler, [left, right], tabs: [tab])
         XCTAssertEqual(TabLightRead.of(["pane-right", "pane-left"], tab: tab, in: unreadable).agent, .absent)
     }
+
+    /// Docker's "a tab holds the port" from a census of every pane: the
+    /// first tab whose pane holds it, with the holder's name — a pane's
+    /// tree or what carries its tag —; a process outside every pane, or a
+    /// pane the snapshot has for another tab, names none.
+    func testTheTabHoldingAPortFromACensus() throws {
+        typealias K = FakeActivityKernel
+        appAndLaunchd()
+        let left = pane("pane-left", login: 1100, tab: tab)
+        let elsewhere = pane("pane-other", login: 1400, tab: other)
+        add(1402, parent: 1401, name: "acme-web", sockets: [K.tcp(local: "127.0.0.1", port: 3000)])
+        add(1500, parent: 1, name: "acme-daemon", sockets: [K.tcp(local: "127.0.0.1", port: 5432, handle: 2)])
+        let snapshot = try XCTUnwrap(
+            ActivitySampler(kernel: kernel).tickNow(ActivityDemand(.full), context: ActivityContext(panes: [left, elsewhere], appPID: app)))
+        let tabs = [(id: tab, title: "acme", tags: ["pane-left"]), (id: other, title: "acme-2", tags: ["pane-other"])]
+        let held = try XCTUnwrap(ListeningPorts.tab(holding: 3000, among: tabs, in: snapshot))
+        XCTAssertEqual(held.0, other)
+        XCTAssertEqual(held.1, "acme-2")
+        XCTAssertEqual(held.2, "acme-web")
+        XCTAssertNil(ListeningPorts.tab(holding: 5432, among: tabs, in: snapshot), "a process outside every pane is no tab's")
+        XCTAssertNil(ListeningPorts.tab(holding: 3000, among: [(id: tab, title: "acme", tags: ["pane-other"])], in: snapshot), "another tab's pane")
+    }
 }

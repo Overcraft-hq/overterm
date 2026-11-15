@@ -113,14 +113,18 @@ extension TerminalWindowController {
             }
             return false
         }
-        // A port a container wanted, held by a process in a tab: any window's.
+        // A port a container wanted, held by a process in a tab: any
+        // window's, from a one-off census that reads every pane — a tab
+        // never visited, a hidden window's, a server started since the last
+        // tick (docs/design/activity/analysis.md, 6.12) — where the tabs'
+        // pills knew only what the poll had read of the selected tab.
         ContainerSession.tabHolding = { port in
+            guard let snapshot = await ActivityMonitor.shared.census() else { return nil }
+            var tabs: [(id: UUID, title: String, tags: [String])] = []
             for controller in NSApp.windows.compactMap({ $0.windowController as? TerminalWindowController }) {
-                for tab in controller.store.tabs {
-                    if let held = tab.ports.first(where: { $0.port == port }) { return (tab.id, tab.title, held.process) }
-                }
+                for tab in controller.store.tabs { tabs.append((tab.id, tab.title, tab.terminals.map(\.processTag))) }
             }
-            return nil
+            return ListeningPorts.tab(holding: port, among: tabs, in: snapshot)
         }
         diff.$root
             .combineLatest(store.$selectedID)

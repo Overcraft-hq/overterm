@@ -33,9 +33,9 @@ final class ContainerSession: ObservableObject {
 
     /// It couldn't start: its host port is taken, and by whom.
     @Published private(set) var conflict: DockerPortConflict?
-    /// The windows' tab holding a port: its id, title and process (the app
-    /// sets it).
-    static var tabHolding: (Int) -> (UUID, String, String)? = { _ in nil }
+    /// The windows' tab holding a port: its id, title and process — from
+    /// a census of every pane, a tab never visited too (the app sets it).
+    static var tabHolding: @MainActor (Int) async -> (UUID, String, String)? = { _ in nil }
 
     static let tail = 500
 
@@ -114,7 +114,7 @@ final class ContainerSession: ObservableObject {
         } else if docker.publishedHost != nil {
             // A remote engine's port is its host's: nothing here holds it.
             conflict = DockerPortConflict(port: port, holder: .unknown)
-        } else if let (tab, title, process) = Self.tabHolding(port) {
+        } else if let (tab, title, process) = await Self.tabHolding(port) {
             conflict = DockerPortConflict(port: port, holder: .tab(id: tab, title: title, process: process))
         } else if let process = await ListeningPorts.holder(of: port) {
             conflict = DockerPortConflict(port: port, holder: .process(pid: process.pid, command: process.process))

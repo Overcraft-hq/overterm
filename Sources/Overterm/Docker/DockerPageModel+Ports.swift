@@ -346,7 +346,7 @@ extension DockerPageModel {
         var refined = taken
         var asking: [ComposePortKey] = []
         for (key, holder) in taken where holder == .unknown {
-            if let (id, title, process) = ContainerSession.tabHolding(key.port) {
+            if let (id, title, process) = await ContainerSession.tabHolding(key.port) {
                 refined[key] = .tab(id: id, title: title, process: process)
             } else if key.proto == "tcp" {
                 asking.append(key)

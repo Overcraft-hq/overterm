@@ -213,6 +213,24 @@ enum ListeningPorts {
             families: records.reduce([]) { $0.union($1.families) }, scope: scope(of: bound), start: holder.start, host: host(of: bound))
     }
 
+    /// Of `tabs` — each its id, title and panes' tags —, the first whose
+    /// panes `snapshot` read holding `port` (a TCP listener), with the
+    /// holder's name: Docker's "a tab holds the port". A pane the snapshot
+    /// has for another tab isn't this one's. Pure.
+    static func tab(holding port: Int, among tabs: [(id: UUID, title: String, tags: [String])], in snapshot: ActivitySnapshot) -> (
+        UUID, String, String
+    )? {
+        for tab in tabs {
+            for tag in tab.tags {
+                guard let slice = snapshot.pane(tag), slice.tab == tab.id,
+                    let held = of(slice.placed, in: snapshot).first(where: { $0.port == port })
+                else { continue }
+                return (tab.id, tab.title, held.process)
+            }
+        }
+        return nil
+    }
+
     /// A socket's bound address as lsof prints it.
     static func address(of record: SocketRecord) -> String {
         guard let local = record.localAddress, !local.isWildcard else { return "*" }

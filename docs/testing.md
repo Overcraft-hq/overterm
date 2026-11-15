@@ -485,9 +485,12 @@ value, a path or an address of a process that isn't the test's.
   screen, an agent's `tf_` and `k8s_` calls scoped at their first ask to
   the worktree it just entered); the focused pane's
   agent first, its folder followed once read, kept while it isn't, nothing
-  to follow where it can't be read. Setting them on the tabs is the
-  `info` scenario's: a server started in a tab that isn't selected shows
-  on its pill, and a window off screen wants no light tick until it shows.
+  to follow where it can't be read; Docker's "a tab holds the port" from
+  a census of every pane, a process outside every pane no tab's. Setting
+  them on the tabs is the `info` scenario's — a server started in a tab
+  that isn't selected shows on its pill, and a window off screen wants no
+  light tick until it shows — and the `docker` scenario's: a container
+  whose port a server holds in a tab that isn't selected names that tab.
 - `ActivityMonitorTests`: one tick for every reader at the fastest
   cadence, the ticks stopped at the last `unwant` and when a reader goes
   away, an early tick only for a wider want and once for a burst, one-off
