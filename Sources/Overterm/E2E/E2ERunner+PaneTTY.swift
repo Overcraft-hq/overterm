@@ -3,7 +3,7 @@ import Darwin
 
 /// Stage 0's spikes in the app (docs/design/activity/analysis.md, 3.11,
 /// 7.10): each pane's pty named by libghostty against what the census
-/// reads.
+/// reads, and the bridge's listener in the socket walk.
 /// Read only: the real process table, the run's own panes and processes
 /// alone named, counts and devices printed — nothing else of the Mac's.
 extension E2ERunner {
@@ -81,6 +81,26 @@ extension E2ERunner {
         check("a process that called setsid drops off the tty and is found by the tree (7.10, 4)", leftItsTTY)
         // It ends itself: no signal from here.
         FileManager.default.createFile(atPath: stop.path, contents: Data())
+    }
+
+    /// 3.5's sentinel (3.11): the bridge's `NWListener` is found by the
+    /// census's own socket walk of this process.
+    func bridgeInSocketWalkCheck() async {
+        let ready = await eventually(10) { BrowserBridge.shared.port != nil }
+        guard ready, let port = BrowserBridge.shared.port else { return check("the bridge listens", false) }
+        let listeners: [SocketRecord] = await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async { @Sendable in
+                let kernel = LiveActivityKernel()
+                guard let me = kernel.process(getpid()) else { return continuation.resume(returning: []) }
+                var scan = SocketScan()
+                scan.advance(keeping: [me.identity])
+                continuation.resume(returning: scan.read(me.identity, kernel: kernel)?.listeners ?? [])
+            }
+        }
+        let found = listeners.contains { $0.isListening && $0.localPort == port }
+        check(
+            "the socket walk lists the MCP bridge's NWListener (3.5, 3.11)", found,
+            "\(listeners.count) listeners, none on the bridge's port")
     }
 
     /// One `KERN_PROC_ALL`, read here for the scenario's checks only — off
