@@ -394,7 +394,9 @@ enum TerraformRootScan {
         var folders = TerraformRootGuess.folders(of: paths)
         if folders.count > maxFolders {
             capped = true
-            let kept = folders.keys.sorted().prefix(maxFolders)
+            // A set: `contains` on the sorted slice made a capped monorepo's
+            // listing quadratic (20,000 folders took 14 s).
+            let kept = Set(folders.keys.sorted().prefix(maxFolders))
             folders = folders.filter { kept.contains($0.key) }
         }
         return Listing(folders: folders, capped: capped)
