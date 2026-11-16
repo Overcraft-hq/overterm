@@ -59,7 +59,7 @@ extension E2ERunner {
         let order = sent.filter { !$0.hasPrefix("SELECT *") && !$0.contains("system.") }.map { String($0.prefix(14)) }
         check(
             "each UPDATE and DELETE counts its key's rows first, one at a time",
-            order == ["SELECT count() ", "DELETE FROM `s", "SELECT count() ", "ALTER TABLE `s", "SELECT count() ", "ALTER TABLE `s", "INSERT INTO `s"], "\(order)")
+            order == ["SELECT count()", "DELETE FROM `s", "SELECT count()", "ALTER TABLE `s", "SELECT count()", "ALTER TABLE `s", "INSERT INTO `s"], "\(order)")
         check("then the table is changed", fake.notes == ["it's", "", "new"], "\(fake.notes)")
         check("and the rows read again", await eventually(5) { console.current?.result?.rows.map { $0[1] } == ["it's", "", "new"] }, "\(console.current?.result?.rows ?? [])")
         check("nothing is pending after", rows.edits.isEmpty && rows.error == nil, rows.error ?? "")
