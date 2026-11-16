@@ -233,8 +233,11 @@ extension TerminalWindowController {
                 }
             }
         case .allowed(.signalGroup(let signal), _, _):
+            // Only the members the sheet listed: one that joined since
+            // refuses the send.
+            let listed = Set(asked.groupMembers.map(\.signal.identity))
             DispatchQueue.global(qos: .userInitiated).async { @Sendable in
-                let answer = ProcessSignals().sendToGroup(signal, leader: target, policy: true)
+                let answer = ProcessSignals().sendToGroup(signal, leader: target, listed: listed, policy: true)
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     if let said = ActivityPortFree.answer(answer, pid: target.identity.pid) { return self.tell("Not sent", said) }

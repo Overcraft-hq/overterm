@@ -107,6 +107,10 @@ enum ActivitySignalRefusal: Hashable, Sendable {
     /// pane's shell, an agent, a terraform write — though the sheet's
     /// census had none: one exec'd into it, or joined, since.
     case groupHolds
+    /// A group's send with the members its sheet listed: a member read
+    /// just before the `killpg` isn't one of them — it joined since (a
+    /// fork, a pipeline's new stage). Nobody is signalled who wasn't listed.
+    case groupChanged
 
     var reason: String {
         switch self {
@@ -120,6 +124,7 @@ enum ActivitySignalRefusal: Hashable, Sendable {
         case .unpinned: "It can't be pinned to this process: macOS gave no audit token for it, and without one Overterm sends only a single Stop or Interrupt."
         case .group: "Its process group isn't its own alone: something in it didn't start under it, or isn't yours."
         case .groupHolds: "Its process group now holds a pane's shell, an agent or a terraform write: no group Stop reaches it — nothing was sent."
+        case .groupChanged: "A process joined its group since you were asked: nothing was sent — ask again to see every member it holds now."
         }
     }
 }
@@ -334,8 +339,12 @@ struct ProcessSignals: Sendable {
     /// whatever the sheet's census said: one that exec'd into it or joined
     /// since refuses the send (`.refused(.groupHolds)`). Terraform's close
     /// guard, whose group is terraform's own and its providers', sends
-    /// without it.
-    func sendToGroup(_ signal: ActivitySignal, leader target: ActivitySignalTarget, policy: Bool = false) -> ActivitySignalAnswer {
+    /// without it. `listed`: the members the sheet listed — a live member
+    /// that isn't one of them joined since, and refuses the send
+    /// (`.refused(.groupChanged)`): `killpg` reaches only who was asked about.
+    func sendToGroup(
+        _ signal: ActivitySignal, leader target: ActivitySignalTarget, listed: Set<ActivityProcessID>? = nil, policy: Bool = false
+    ) -> ActivitySignalAnswer {
         let identity = target.identity
         if let refusal = Self.refusal(before: identity, app: app) { return .refused(refusal) }
         let leader: ActivityProcess
@@ -367,6 +376,7 @@ struct ProcessSignals: Sendable {
                 !Self.isPaneLogin(member, uid: kernel.uid), refusal(for: member) == nil
             else { return .refused(.group) }
             if let session, let theirs = kernel.session(of: pid), theirs != session { return .refused(.group) }
+            if let listed, !listed.contains(member.identity) { return .refused(.groupChanged) }
             if policy, holdsWhatNoGroupReaches(member) { return .refused(.groupHolds) }
         }
         let answer = kernel.signal(signal.number, group: group)

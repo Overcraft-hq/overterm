@@ -151,6 +151,22 @@ final class ProcessSignalsTests: XCTestCase {
         XCTAssertEqual(sender().sendToGroup(.int, leader: leader), .sent(pinned: true), "without the policy: terraform's close guard's group")
     }
 
+    /// Stop Its Group sends to the members its sheet listed and nobody
+    /// else: one that joined the group since refuses the send; one that
+    /// left or ended since leaves nothing to refuse.
+    func testAGroupsSendReachesOnlyTheMembersItsSheetListed() {
+        let leader = groupMac()
+        let listed: Set<ActivityProcessID> = [ActivityProcessID(pid: 601, start: 601_000)]
+        add(620, parent: 600, group: 600, name: "acme-stage")
+        kernel.update(620) { $0.session = 200 }
+        XCTAssertEqual(sender().sendToGroup(.term, leader: leader, listed: listed, policy: true), .refused(.groupChanged), "joined since the sheet")
+        XCTAssertTrue(kernel.sent.isEmpty, "nothing sent")
+        kernel.remove(620)
+        kernel.remove(601)
+        XCTAssertEqual(sender().sendToGroup(.term, leader: leader, listed: listed, policy: true), .sent(pinned: true), "one that ended since")
+        XCTAssertEqual(kernel.sent, [FakeActivityKernel.Sent(pid: 600, signal: SIGTERM, pinned: false, group: true)])
+    }
+
     func testAGroupItsLeaderDoesntLeadOrThatEndedIsntSignalled() {
         mac()
         // In the shell's group: the shell's job control's, not its own.
