@@ -914,12 +914,45 @@ walks the closing panes' trees itself, on the main thread, at the close
   main thread (`ActivityRows`, pure) from each full snapshot, the Started
   column's words with them; a first sample's CPU is "—", and so are the
   meters' cores after a gap longer than a rate may span. A tab's title is
-  masked as a command (design 9.3) before the Where column says it. In an
+  masked as a command (design 9.3) before the Where column and a
+  group's header say it. In an
   isolated run it lists only the run's own tabs' processes, the Mac as
   counts (design 9.9). Each row says its name, pid, CPU and tab to
   VoiceOver (`ResourceTable`'s `accessibilityLabel`). Settings ▸ Activity
   holds `activity.enabled`, `interval` (the census's cadence, the light
   tick's too), `everyone` and `appServices`.
+- **Owners** (`ActivityAttribution`, pure: one snapshot, the context,
+  what the main actor says of the tabs — title, checkout, branch, strip
+  order — through `ActivityTabFacts`). Design 6.5's rules in order, the
+  first that matches wins: Overterm and what it started (its children
+  that aren't a pane's `login`, the forwards by pid, the registries), a
+  pane's session and tree — its agent, the agent's MCP servers, tool
+  shells and servers (`ProcessRole`, read off the masked argv) —, what
+  left a pane through the pane's set (`ActivityPaneSet`: detached on
+  purpose, an app started from it, what carries its tag), engines by the
+  ports their running containers publish and by their VM, another
+  Overterm, apps by the outermost `.app` on the path, the XPC service or
+  VM an app is responsible for (D-31: `ProcessResponsibility`, the private
+  call looked up and off at its first failure; read once an identity, the
+  user's only, at the full level while `activity.appServices` is on and
+  the call answers, kept by the responsible process's identity — unread,
+  an XPC service is unknown, never macOS), macOS narrowly, other users', the user's
+  elsewhere. A child inherits its parent's owner unless a rule matches
+  it. Rules 8 and 11 (Left Behind) come with that section.
+- **Processes' list** (`ActivityRows+Groups`, pure, with the rows): by
+  checkout (default) — its tabs in the strips' order, a split tab's
+  panes, each pane's tree with parents linked by start time, "Left its
+  terminal", the checkout's running containers "in Docker's VM" with
+  their usage (Docker's model shown and `DockerUsageMonitor` wanted only
+  while Processes shows, a local engine's only; at the checkout's scope
+  and wider) —, then Overterm, another Overterm, your apps,
+  yours elsewhere, macOS and other users' (the last four folded). `G`
+  cycles checkout, tab, agent, app, user, none; `t` tree or flat. Group
+  order is stable, never by load; siblings follow the sort. Folds are
+  the page's, in memory; a group past 500 rows ends "+N more". The scope
+  ladder (`ActivityScope`: tab, checkout, all tabs, the Mac; `[` and `]`,
+  a chip with ✕) filters both sections; All tabs is remembered per
+  section, a tab or a checkout only for the launch.
 - **The switcher** (⌃⌘A, `ActivitySwitcher`): the palette on the
   listening ports, by number, then the ten busiest processes. It holds
   the full level every second while the palette shows it, page or no
