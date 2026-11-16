@@ -143,12 +143,16 @@ extension E2ERunner {
         let filtered = await eventually(5) { Set(page.content.ports.map(\.port)) == [held, free] }
         page.setFilter("")
         check("owner:container lists exactly those two", filtered)
+        await activityFreeChecks(tab: tab, held: held, free: free, split: split, shared: shared, parent: parent, child: child)
+        await activityEngineLinkChecks(tab: tab, engine: engine, split: split, parent: parent)
 
         // Open (o): the server's URL in its tab's browser column.
         guard let server else { return check("the server's row", false) }
         var opened: [(URL, Bool)] = []
         app.linkRecorder = { opened.append(($0, $1)) }
         defer { app.linkRecorder = nil }
+        // The page shown again after the links: its rows read again first.
+        _ = await eventually(15) { page.section == .listening && page.content.ports.contains { $0.id == server.id } }
         page.selection = [server.id]
         check("o opens the server's port", page.press("o"))
         check(
