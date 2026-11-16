@@ -101,6 +101,9 @@ notification and on the Dock; Claude Code needs no setup for it.
       Loki and Tempo too: PromQL graphed, logs followed live, a log line's trace
       opened as its waterfall. Queries saved under their connection. Passwords stay
       in your keychain; TLS, and SSH tunnels through your own <code>~/.ssh</code>.
+      MongoDB and DocumentDB with the mongo shell's statements, MariaDB,
+      Elasticsearch and OpenSearch as Kibana's Dev Tools writes them, DynamoDB,
+      InfluxDB, Neo4j, RabbitMQ and Oracle, each with its own tree and console.
       S3 and Google Cloud Storage in the same panel.
     </td>
   </tr>
