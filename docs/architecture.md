@@ -845,7 +845,7 @@ A popover per tab, live while open (`TabInfoModel`, `Sources/Overterm/Info/`):
 |---|---|
 | Location | tab cwd → checkout, branch, worktree-of, changed files (git) |
 | Running | The census's light slice for its tab (`ActivityMonitor`, docs/design/activity/analysis.md 6.12), every second while it is open — no scan of its own: each pane's tree under its `login` (paired to its surface by `SurfaceProcesses`, since libghostty doesn't expose the pid), and what carries the pane's `OVERTERM_TAB_ID` outside it. A split tab is a group a pane, labelled by what the pane runs (`CommandLedger.running`), else its title, masked; the shell its group's dimmed root; what left its terminal (nohup, disown) under its pane, marked ↗. CPU% since the census's last sample ("—" for a first one), a pane's baselines kept while its processes live, so a split tab reads every pane's; Memory the footprint, Activity Monitor's, real memory (RSS) in the tooltip. A row's tooltip: the command masked as it was read, its folder, its start. |
-| Listening | The census's socket walk of the tab's processes (`ListeningPorts.of(_:in:)`), no lsof — a process's sockets on one port one entry, with their families, scope and the holder's start; then its checkout's containers' and its forwards' ports, a forward's scope from the address kubectl listens on; the address said beside a port bound to one address that isn't loopback, and beside a forward that isn't this Mac's alone (`TabInfoView.address(of:)`: one to the whole network never looks like a loopback one); Open → where it listens (`ListeningPort.url`, Live ports and links) |
+| Listening | The census's socket walk of the tab's processes (`ListeningPorts.of(_:in:)`), no lsof — a process's sockets on one port one entry, with their families, scope and the holder's start; then its checkout's containers' and its forwards' ports, a forward's scope from the address kubectl listens on; the address said beside a port bound to one address that isn't loopback, and beside a forward that isn't this Mac's alone (`TabInfoView.address(of:)`: one to the whole network never looks like a loopback one); Open → where it listens (`ListeningPort.url`, Live ports and links); each row says "tcp · v4 + v6 · This Mac" (`TabInfoView.portWords`), its ⋯ Copy URL and Show in Activity. The header's gauge and a process's menu show it in Activity too (`showInActivity`); Tab Info itself signals nothing |
 | Claude session | `ClaudeUsageReader` on `~/.claude/projects/<cwd as ->/<session>.jsonl`: streamed, incremental, ends-of-line byte search, replies de-duplicated by id |
 | Disk | `DiskUsage` of the checkout only, cancellable, cached 60 s |
 
@@ -968,7 +968,7 @@ walks the closing panes' trees itself, on the main thread, at the close
   paused, the rows kept —, `↩` its tab and pane, Space the detail, `o`
   in the owner tab's browser column in the window that holds it (⌥o the
   default browser, `WorkspacePage.optionPress`), `r`, `i`, `s` (`sample
-  <pid> 5` in a new tab); ← and → fold in `ResourceTable` itself
+  <pid> 5 -file /dev/stdout` in a new tab), `e` and ⌥r (its folder); ← and → fold in `ResourceTable` itself
   (`fold`). A row's verbs are one list (`ActivityPageModel.verbs`): the
   detail's `ResourceActionBar` and the row's right-click menu. Columns
   (`ActivityColumns`): every one 6.5 offers, picked in the header's menu,
@@ -1028,6 +1028,32 @@ walks the closing panes' trees itself, on the main thread, at the close
   of the user's elsewhere and a launchd job's never do, and a filter
   shows them. The header's count is every listener; the switcher lists
   the folded ones too.
+- **Free :N** (`f` on a listener; design 6.8): through the owner's own
+  verb (`ActivityPortHolder`, pure; `TerminalWindowController+ActivityFree`)
+  — Stop Container (the Docker page's Stop), Stop Forward, Disconnect a
+  database's tunnel, a launchd or brew service's own stop typed and run in
+  a new tab, AirPlay Receiver's switch opened in System Settings, the read
+  route (`sudo lsof`, typed with no Return) for another user's —, each
+  asked (`WriteConfirmation`), the holder read again from a one-off census
+  as the sheet opens; afterwards the port is watched as a pill's is, never
+  by a bind, and the header says what became of it. The user's own
+  processes are greyed until the verbs' stage: a tab's are freed by its
+  pane pill. Every new tab the page opens — Terminal in Its Folder (`e`,
+  the selection's folder read at the focus level), Open Files, Sample, a
+  service's stop, the read route — goes through `activityTerminal`.
+- **Links** (`ActivityLink`, `showInActivity`): Tab Info's header, a
+  process's and a port's menu, a pane pill, the tab's menu, ⌘K's
+  Activity: This Tab, an Agents card and Docker's port-conflict box open
+  the page at the tab's scope, or with the process or port selected and
+  followed. A port opens at its tab's checkout — where the checkout's
+  containers are listed, which a tab's scope isn't — and is selected once
+  a tick lists it (`pendingPort`); a tick that doesn't widens the look to
+  the Mac's, and the Mac's not listing it either gives up and says ":N
+  isn't listed (another user's?)". The person's hand (a key, a selection,
+  a section) drops a link still waiting, so it never takes the selection
+  later. An Agents card also says its agent's CPU and memory — it and
+  everything under it, from the census the card was made from
+  (`AgentOverviewModel.usage`) — and its servers as pills that open.
 - **The switcher** (⌃⌘A, `ActivitySwitcher`): the palette on the
   listening ports, by number, then the ten busiest processes. It holds
   the full level every second while the palette shows it, page or no
