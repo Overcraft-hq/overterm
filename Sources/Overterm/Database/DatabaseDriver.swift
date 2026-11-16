@@ -85,6 +85,18 @@ enum DatabaseDrivers {
         case .prometheus, .loki, .tempo: ObservabilityDriver(connection, password: password)
         // Storage has its own client (StorageClient); nothing runs SQL on it.
         case .s3, .gcs: NoSQLDriver()
+        // Each its own driver, written in 1.6.1; until then, said so.
+        case .mongodb: PendingDriver(kind: .mongodb)
+        case .documentdb: PendingDriver(kind: .documentdb)
+        case .mariadb: PendingDriver(kind: .mariadb)
+        case .elasticsearch: PendingDriver(kind: .elasticsearch)
+        case .opensearch: PendingDriver(kind: .opensearch)
+        case .dynamodb: PendingDriver(kind: .dynamodb)
+        case .influxdb: PendingDriver(kind: .influxdb)
+        case .neo4j: PendingDriver(kind: .neo4j)
+        case .rabbitmq: PendingDriver(kind: .rabbitmq)
+        case .kafka: PendingDriver(kind: .kafka)
+        case .oracle: PendingDriver(kind: .oracle)
         }
     }
 
@@ -100,4 +112,18 @@ actor NoSQLDriver: DatabaseDriver {
     func schemas() async throws -> [String] { [] }
     func tables(in schema: String) async throws -> [CatalogTable] { [] }
     func columns(in schema: String) async throws -> [CatalogColumn] { [] }
+}
+
+/// A kind whose driver isn't written yet: every call says so.
+actor PendingDriver: DatabaseDriver {
+    let kind: DatabaseKind
+    init(kind: DatabaseKind) { self.kind = kind }
+
+    private var unsupported: DatabaseError { .failed("\(kind.title) isn't supported yet.") }
+    func connect() async throws { throw unsupported }
+    func close() async {}
+    func execute(_ sql: String, limit: Int) async throws -> QueryResult { throw unsupported }
+    func schemas() async throws -> [String] { throw unsupported }
+    func tables(in schema: String) async throws -> [CatalogTable] { throw unsupported }
+    func columns(in schema: String) async throws -> [CatalogColumn] { throw unsupported }
 }

@@ -7,6 +7,10 @@ enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable {
     /// Metrics, logs and traces: queried over HTTP in their own languages
     /// (PromQL, LogQL, TraceQL) over a window of time.
     case prometheus, loki, tempo
+    /// 1.6.1's: document stores, search engines, AWS's key-value, a graph,
+    /// time series, queues and logs, and Oracle — each its own driver
+    /// (`PendingDriver` until it has one).
+    case mongodb, documentdb, mariadb, elasticsearch, opensearch, dynamodb, influxdb, neo4j, rabbitmq, kafka, oracle
     /// Buckets and their files: S3 and everything that speaks it (Spaces,
     /// MinIO, R2, B2, Wasabi, GCS's interoperability), and GCS's own API.
     case s3, gcs
@@ -28,6 +32,17 @@ enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .prometheus: "Prometheus"
         case .loki: "Loki"
         case .tempo: "Tempo"
+        case .mongodb: "MongoDB"
+        case .documentdb: "Amazon DocumentDB"
+        case .mariadb: "MariaDB"
+        case .elasticsearch: "Elasticsearch"
+        case .opensearch: "OpenSearch"
+        case .dynamodb: "Amazon DynamoDB"
+        case .influxdb: "InfluxDB"
+        case .neo4j: "Neo4j"
+        case .rabbitmq: "RabbitMQ"
+        case .kafka: "Apache Kafka"
+        case .oracle: "Oracle Database"
         case .s3: "S3-Compatible Storage"
         case .gcs: "Google Cloud Storage"
         }
@@ -45,12 +60,29 @@ enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .prometheus: 9090
         case .loki: 3100
         case .tempo: 3200
+        case .mongodb, .documentdb: 27017
+        case .mariadb: 3306
+        case .elasticsearch, .opensearch: 9200
+        // DynamoDB Local's; AWS's own is a region's endpoint.
+        case .dynamodb: 8000
+        case .influxdb: 8086
+        // The HTTP API's; Bolt is 7687.
+        case .neo4j: 7474
+        // The management API's; AMQP is 5672.
+        case .rabbitmq: 15672
+        case .kafka: 9092
+        case .oracle: 1521
         case .sqlite, .bigquery, .s3, .gcs: nil
         }
     }
 
     /// A host, a port, a user and a password — the SQL servers, and Redis.
-    var usesServer: Bool { [.postgres, .mysql, .redshift, .clickhouse, .redis, .prometheus, .loki, .tempo].contains(self) }
+    var usesServer: Bool {
+        [
+            .postgres, .mysql, .redshift, .clickhouse, .redis, .prometheus, .loki, .tempo, .mongodb, .documentdb, .mariadb, .elasticsearch, .opensearch,
+            .dynamodb, .influxdb, .neo4j, .rabbitmq, .kafka, .oracle,
+        ].contains(self)
+    }
 
     /// Prometheus, Loki, Tempo: queries over a window of time, answered with
     /// series, log lines or traces; they only read.
