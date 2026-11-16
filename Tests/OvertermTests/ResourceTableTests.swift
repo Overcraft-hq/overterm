@@ -204,6 +204,7 @@ final class ResourceTableTests: XCTestCase {
         table.removeTableColumn(table.tableColumns[0])
         XCTAssertEqual(ResourceTable<Fruit>.placed(columns, in: table).map(\.column.id), ["name", "status"])
     }
+
     /// Rows reordered in place (a CPU sort every tick): rows added or taken
     /// at the end only, a row on screen remade only where its kind or span
     /// changed, another's height noted; nothing else is reloaded.
@@ -277,5 +278,56 @@ final class ResourceTableTests: XCTestCase {
         let fruitCells = Set(columns.map { ResourceHostingCell.identifier(column: $0.id, kind: Fruit.basket("acme").reuseKind) })
         let left = (0..<table.numberOfColumns).compactMap { table.view(atColumn: $0, row: offscreen, makeIfNecessary: false)?.identifier }
         XCTAssertFalse(left.contains { fruitCells.contains($0) }, "no fruit's cell left where the basket now is")
+    }
+
+    /// The selection moving with its rows stays where the person left the
+    /// list unless followed; a selection made is brought into view once.
+    @MainActor
+    func testOnlyAFollowedSelectionIsKeptInView() {
+        let columns = ["name", "weight"].map { ResourceColumn(id: $0, title: $0) }
+        func list(_ fruit: [Fruit], selected: String, follow: Bool) -> ResourceTable<Fruit> {
+            ResourceTable<Fruit>(
+                rows: fruit, selection: .constant([selected]), columns: columns, sort: .constant(nil),
+                cell: { _, _ in AnyView(Text(verbatim: "cell")) }, verbs: { _ in [] }, copy: {}
+            )
+            .with { $0.follow = follow }
+        }
+        let fruit: [Fruit] = (0..<60).map { (index: Int) in .fruit("f\(index)", weight: index) }
+        let coordinator = list(fruit, selected: "f0", follow: false).makeCoordinator()
+        let table = ResourceTableView()
+        table.dataSource = coordinator
+        table.delegate = coordinator
+        table.intercellSpacing = .zero
+        coordinator.table = table
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        scroll.documentView = table
+        let window = NSWindow(contentRect: scroll.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = scroll
+        coordinator.update(list(fruit, selected: "f0", follow: false))
+        table.layoutSubtreeIfNeeded()
+        XCTAssertEqual(table.selectedRow, 0)
+        let top = scroll.contentView.bounds.origin.y
+
+        // Re-sorted: the selected row moves to the end, off screen.
+        let reversed = Array(fruit.reversed())
+        coordinator.update(list(reversed, selected: "f0", follow: false))
+        XCTAssertEqual(table.selectedRow, 59, "still selected, by id")
+        XCTAssertEqual(scroll.contentView.bounds.origin.y, top, "not followed: the list stays where it was")
+        // Followed: brought into view as it moves.
+        coordinator.update(list(fruit, selected: "f0", follow: true))
+        coordinator.update(list(reversed, selected: "f0", follow: true))
+        XCTAssertTrue(table.rows(in: table.visibleRect).contains(59), "followed: in view")
+        // A selection made elsewhere is brought into view once, unfollowed.
+        scroll.contentView.scroll(to: .zero)
+        coordinator.update(list(reversed, selected: "f1", follow: false))
+        XCTAssertTrue(table.rows(in: table.visibleRect).contains(58), "a new selection is shown")
+    }
+
+    func testAShownRowIsWhollyInsideTheVisibleRange() {
+        XCTAssertTrue(ResourceTable<Fruit>.Coordinator.shows(3, in: NSRange(location: 2, length: 5)))
+        XCTAssertFalse(ResourceTable<Fruit>.Coordinator.shows(7, in: NSRange(location: 2, length: 5)))
+        XCTAssertFalse(ResourceTable<Fruit>.Coordinator.shows(0, in: NSRange(location: 0, length: 0)))
     }
 }

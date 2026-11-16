@@ -90,6 +90,8 @@ extension ResourceKey {
 struct ResourceKeySheet<Key: ResourceKey>: View {
     @ObservedObject var theme: ChromeTheme
     let identifier: String
+    /// A line under the keys: what the list itself reads (← →).
+    var footnote: String? = nil
     let close: () -> Void
 
     var body: some View {
@@ -101,6 +103,9 @@ struct ResourceKeySheet<Key: ResourceKey>: View {
                         .frame(width: 48, alignment: .leading)
                     Text(key.title).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
                 }
+            }
+            if let footnote {
+                Text(verbatim: footnote).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).padding(.top, 2)
             }
             Text("↑↓ to move, ⇧ and ⌘ to pick several, ⌘C copies their names.").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                 .padding(.top, 6)

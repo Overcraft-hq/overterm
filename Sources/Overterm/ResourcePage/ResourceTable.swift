@@ -37,6 +37,19 @@ struct ResourceColumn: Equatable, Sendable {
     static let row = ResourceColumn(id: "row", title: "", sortable: false)
 }
 
+/// What a person is doing with a list (`ResourceTable.interacting`): the
+/// pointer over it, a press, its menu. A page whose order moves on its own
+/// (a CPU sort) holds it while these last, or a press resolved at release,
+/// or a menu's targets, could land on another row (Activity, 6.7).
+enum ResourceTableInteraction: Equatable, Sendable {
+    /// The pointer moved over the list, or came onto it.
+    case hover
+    /// It left the list.
+    case exit
+    case pressBegan, pressEnded
+    case menuOpened, menuClosed
+}
+
 /// A list's order: by a column, either way.
 struct ResourceSort: Equatable, Sendable {
     var column: String
@@ -112,6 +125,29 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
     /// What VoiceOver says of a row, set on its row view: nil leaves the
     /// cells to speak for themselves.
     var accessibilityLabel: ((Row) -> String)? = nil
+    /// The pointer, a press, the menu (`ResourceTableInteraction`).
+    var interacting: ((ResourceTableInteraction) -> Void)? = nil
+    /// A header dragged to another place or resized by the person: every
+    /// column in the table's order now, with its width — the page keeps
+    /// them, or the next change of its columns loses the move.
+    var columnsChanged: (([ResourceColumn]) -> Void)? = nil
+    /// The header's right-click menu: every column the page offers, each
+    /// ticked while shown, `toggleColumn` with its id when picked. Nil: no
+    /// menu.
+    var columnChoices: [ResourceColumn]? = nil
+    var toggleColumn: ((String) -> Void)? = nil
+    /// ← and → on the selected row (its id; true for →): whether it folded
+    /// or unfolded something. False, or nil, leaves the key to the table.
+    var fold: ((String, Bool) -> Bool)? = nil
+    /// The selected row kept in view as the rows change under it.
+    var follow = false
+
+    /// This table with `change` made: the options above, set in place.
+    func with(_ change: (inout ResourceTable) -> Void) -> ResourceTable {
+        var table = self
+        change(&table)
+        return table
+    }
 
     /// A list of one column, its rows drawing everything (Docker's).
     init(
@@ -176,6 +212,7 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
         let menu = NSMenu()
         menu.delegate = context.coordinator
         table.menu = menu
+        context.coordinator.rowMenu = menu
         table.setAccessibilityIdentifier(accessibilityIdentifier)
         let scroll = NSScrollView()
         scroll.documentView = table
@@ -196,6 +233,10 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
     @MainActor
     final class Coordinator: NSObject, NSTableViewDataSource, NSTableViewDelegate, NSMenuDelegate {
         weak var table: ResourceTableView?
+        weak var rowMenu: NSMenu?
+        private var headerMenu: NSMenu?
+        /// Set while the table's columns are made from the model's.
+        private var settingColumns = false
         private var rows: [Row] = []
         private var columns: [ResourceColumn] = []
         private var view: ResourceTable?
@@ -203,6 +244,8 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
         private var settingSelection = false
         /// Set while the table's sort is set from the model's.
         private var settingSort = false
+        /// The selection, by id, as the last update found it.
+        private var shownSelection: Set<String> = []
 
         func update(_ view: ResourceTable) {
             self.view = view
@@ -212,6 +255,14 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
                 guard let self, self.rows.indices.contains(index) else { return }
                 self.view?.pressed?(self.rows[index].id)
             }
+            table.interaction = view.interacting
+            table.foldRow =
+                view.fold.map { fold in
+                    { [weak self] index, open in
+                        guard let self, self.rows.indices.contains(index) else { return false }
+                        return fold(self.rows[index].id, open)
+                    }
+                }
             let columnsMade = view.columns != columns
             if columnsMade { setColumns(view, in: table) }
             if view.rows.map(\.id) != rows.map(\.id) {
@@ -237,11 +288,20 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
                 showVisible(view, in: table)
             }
             let wanted = IndexSet(rows.indices.filter { view.selection.contains(rows[$0].id) })
+            // A selection made — a press, a link, a reveal — is brought into
+            // view once; the same selection moving with its rows only when
+            // followed (`follow`), or the list jumps to it at every re-sort.
+            // A row a reveal selected before its rows came stays to bring
+            // into view once they do.
+            let picked = view.selection != shownSelection
+            if !wanted.isEmpty || view.selection.isEmpty { shownSelection = view.selection }
             if wanted != table.selectedRowIndexes {
                 settingSelection = true
                 table.selectRowIndexes(wanted, byExtendingSelection: false)
-                if let first = wanted.first, !table.rows(in: table.visibleRect).contains(first) { table.scrollRowToVisible(first) }
                 settingSelection = false
+            }
+            if picked || view.follow, let first = wanted.first, !Self.shows(first, in: table.rows(in: table.visibleRect)) {
+                table.scrollRowToVisible(first)
             }
             if view.hasHeader { showSort(view.sort.wrappedValue, in: table) }
         }
@@ -311,7 +371,14 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
             return (added, removed, remade, heights)
         }
 
+        /// Whether `row` lies inside the visible range, wholly. Pure.
+        nonisolated static func shows(_ row: Int, in visible: NSRange) -> Bool {
+            visible.length > 0 && row >= visible.location && row < visible.location + visible.length
+        }
+
         private func setColumns(_ view: ResourceTable, in table: NSTableView) {
+            settingColumns = true
+            defer { settingColumns = false }
             columns = view.columns
             for column in table.tableColumns { table.removeTableColumn(column) }
             for column in columns {
@@ -329,6 +396,35 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
                 table.addTableColumn(item)
             }
             table.headerView = view.hasHeader ? NSTableHeaderView() : nil
+            if view.columnChoices != nil, let header = table.headerView {
+                let menu = NSMenu()
+                menu.delegate = self
+                header.menu = menu
+                headerMenu = menu
+            }
+        }
+
+        /// The columns as the table holds them now: its order, its widths.
+        private func tableColumns(_ table: NSTableView) -> [ResourceColumn] {
+            table.tableColumns.compactMap { item in
+                guard var column = columns.first(where: { $0.id == item.identifier.rawValue }) else { return nil }
+                column.width = item.width.rounded()
+                return column
+            }
+        }
+
+        func tableViewColumnDidMove(_ notification: Notification) {
+            guard !settingColumns, let table, let view, view.hasHeader else { return }
+            columns = tableColumns(table)
+            view.columnsChanged?(columns)
+        }
+
+        func tableViewColumnDidResize(_ notification: Notification) {
+            // The person's drag only: the table's own autoresizing as the
+            // window resizes is no choice to keep.
+            guard !settingColumns, let table, let view, view.hasHeader, (table.headerView?.resizedColumn ?? -1) >= 0 else { return }
+            columns = tableColumns(table)
+            view.columnsChanged?(columns)
         }
 
         private func showSort(_ sort: ResourceSort?, in table: NSTableView) {
@@ -407,10 +503,35 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
 
         func menuNeedsUpdate(_ menu: NSMenu) {
             menu.removeAllItems()
+            if menu === headerMenu {
+                guard let choices = view?.columnChoices else { return }
+                let shown = Set(columns.map(\.id))
+                for choice in choices {
+                    let item = NSMenuItem(title: choice.title.isEmpty ? choice.id : choice.title, action: #selector(toggleColumn(_:)), keyEquivalent: "")
+                    item.target = self
+                    item.representedObject = choice.id
+                    item.state = shown.contains(choice.id) ? .on : .off
+                    menu.addItem(item)
+                }
+                return
+            }
             guard let table, let view, rows.indices.contains(table.clickedRow) else { return }
             let ids = Self.menuTargets(
                 clicked: table.clickedRow, selected: table.selectedRowIndexes, ids: rows.map(\.id))
             for item in ResourceVerbMenuItem.items(view.verbs(ids)) { menu.addItem(item) }
+        }
+
+        @objc func toggleColumn(_ item: NSMenuItem) {
+            guard let id = item.representedObject as? String else { return }
+            view?.toggleColumn?(id)
+        }
+
+        func menuWillOpen(_ menu: NSMenu) {
+            if menu === rowMenu { view?.interacting?(.menuOpened) }
+        }
+
+        func menuDidClose(_ menu: NSMenu) {
+            if menu === rowMenu { view?.interacting?(.menuClosed) }
         }
 
         /// The rows a right-click means: on the selection, the selection's;
@@ -434,10 +555,50 @@ final class ResourceTableView: NSTableView {
     var copySelection: () -> Void = {}
     /// A plain click on a row, by its index, once it is selected.
     var pressedRow: (Int) -> Void = { _ in }
+    /// The pointer, a press, the menu: the page's `interacting`.
+    var interaction: ((ResourceTableInteraction) -> Void)?
+    /// ← and → on the selected row, by index (true for →): whether the page
+    /// folded or unfolded it.
+    var foldRow: ((Int, Bool) -> Bool)?
     /// Counted for the scenarios (`activityPerf`): whole reloads, and rows
     /// moved in place — a held order makes neither.
     var reloads = 0
     var reorders = 0
+    private var hover: NSTrackingArea?
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hover { removeTrackingArea(hover) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect], owner: self)
+        addTrackingArea(area)
+        hover = area
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        super.mouseEntered(with: event)
+        interaction?(.hover)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        super.mouseMoved(with: event)
+        interaction?(.hover)
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        super.mouseExited(with: event)
+        interaction?(.exit)
+    }
+
+    /// ← folds the selected row, → unfolds it, where the page says it
+    /// can; otherwise the table's own (Docker's list, a leaf).
+    override func keyDown(with event: NSEvent) {
+        if let foldRow, event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty, selectedRow >= 0,
+            let key = event.specialKey, key == .leftArrow || key == .rightArrow, foldRow(selectedRow, key == .rightArrow)
+        {
+            return
+        }
+        super.keyDown(with: event)
+    }
 
     /// Called by a row's view as a press ends on it.
     func pressRow(_ event: NSEvent) {
@@ -469,6 +630,7 @@ final class ResourceTableView: NSTableView {
     /// here too, selecting it again undid a ⌘-click's toggle.
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
+        interaction?(.hover)
         if row(at: convert(event.locationInWindow, from: nil)) < 0 { deselectAll(nil) }
     }
 
@@ -531,6 +693,7 @@ final class ResourceRowHostingView: NSHostingView<AnyView> {
 
     override func mouseDown(with event: NSEvent) {
         down = event
+        table?.interaction?(.pressBegan)
         super.mouseDown(with: event)
     }
 
@@ -539,6 +702,7 @@ final class ResourceRowHostingView: NSHostingView<AnyView> {
         if let down {
             self.down = nil
             table?.pressRow(down)
+            table?.interaction?(.pressEnded)
         }
     }
 
