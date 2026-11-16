@@ -5,7 +5,7 @@ import Foundation
 /// row limit itself (`max_result_rows`, `result_overflow_mode=break`), and
 /// a read-only connection is ClickHouse's own `readonly=1`.
 actor ClickHouseDriver: DatabaseDriver {
-    private let config: DatabaseConnection
+    let config: DatabaseConnection
     private let password: String?
     private let session: URLSession
 
@@ -18,7 +18,7 @@ actor ClickHouseDriver: DatabaseDriver {
     }
 
     /// `http://host:8123/` — https unless SSL is off.
-    func url(database: String?, limit: Int?) -> URL? {
+    func url(database: String?, limit: Int?, settings: [String: String] = [:]) -> URL? {
         var components = URLComponents()
         components.scheme = config.sslMode == .disable ? "http" : "https"
         components.host = config.host
@@ -30,6 +30,7 @@ actor ClickHouseDriver: DatabaseDriver {
             items.append(URLQueryItem(name: "max_result_rows", value: "\(limit + 1)"))
             items.append(URLQueryItem(name: "result_overflow_mode", value: "break"))
         }
+        for (name, value) in settings.sorted(by: { $0.key < $1.key }) { items.append(URLQueryItem(name: name, value: value)) }
         if config.readOnly { items.append(URLQueryItem(name: "readonly", value: "1")) }
         components.queryItems = items
         return components.url
@@ -42,7 +43,12 @@ actor ClickHouseDriver: DatabaseDriver {
     func close() async { session.invalidateAndCancel() }
 
     func execute(_ sql: String, limit: Int) async throws -> QueryResult {
-        guard let url = url(database: config.database, limit: SQLText.onlyReads(sql) ? limit : nil) else {
+        try await send(sql, limit: limit)
+    }
+
+    /// A statement POSTed, with settings of its own (a Save's `mutations_sync`).
+    func send(_ sql: String, limit: Int, settings: [String: String] = [:]) async throws -> QueryResult {
+        guard let url = url(database: config.database, limit: SQLText.onlyReads(sql) ? limit : nil, settings: settings) else {
             throw DatabaseError.failed("The host isn't a valid address.")
         }
         var request = URLRequest(url: url)

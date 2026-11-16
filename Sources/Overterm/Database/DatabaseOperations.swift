@@ -142,6 +142,9 @@ struct SlowQuery: Equatable, Sendable, Identifiable {
     var rows: Int?
     var database: String?
     var user: String?
+    /// What else the engine's record says of it (BigQuery's bytes processed
+    /// and slot time, Oracle's CPU and buffer gets).
+    var detail: String? = nil
 }
 
 /// A session waiting on another.
@@ -284,6 +287,14 @@ struct TableKey: Equatable, Sendable {
     /// Columns a cell of the grid can't be written back into: generated ones,
     /// and those whose text isn't their value (a SQLite BLOB's "<n bytes>").
     var readOnlyColumns: Set<String> = []
+    /// Columns a new row sets but an existing row's UPDATE can't change
+    /// (ClickHouse's sorting and partition keys).
+    var fixedColumns: Set<String> = []
+    /// A word or two the edit bar shows beside the pencil when a kind's Save
+    /// isn't the usual one ("mutations", "key not enforced", "by ROWID").
+    var label: String?
+    /// What the edit bar's help says of it beside the key.
+    var note: String?
 
     /// What the status bar says the rows are found by.
     var summary: String {
@@ -475,7 +486,10 @@ enum OpsText {
     static func maskSecrets(_ text: String) -> String {
         text.replacingOccurrences(
             of: #"(?i)\b(PASSWORD|IDENTIFIED\s+BY|IDENTIFIED\s+WITH\s+\S+\s+(?:BY|AS)|USING)(\s*\(?\s*)(?:E|N)?'(?:[^'\\]|''|\\.)*'"#,
-            with: "$1$2'••••'", options: .regularExpression)
+            with: "$1$2'••••'", options: .regularExpression
+        )
+        // Oracle's: a quoted identifier or a bare word (`IDENTIFIED BY "…"`).
+        .replacingOccurrences(of: #"(?i)\b(IDENTIFIED\s+BY\s+)(?:"[^"]*"|[^\s'";]+)"#, with: "$1\"••••\"", options: .regularExpression)
     }
 
     static func percent(_ ratio: Double) -> String { String(format: "%.1f%%", ratio * 100) }

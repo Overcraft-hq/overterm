@@ -4,7 +4,7 @@ import Foundation
 /// for it (rows edited, users changed). Every name is quoted and every
 /// value a literal — a name or a value never ends the statement it is in.
 struct SQLDialect: Equatable, Sendable {
-    enum Engine: Equatable, Sendable { case postgres, redshift, mysql, mariadb, sqlite }
+    enum Engine: Equatable, Sendable { case postgres, redshift, mysql, mariadb, sqlite, oracle, clickhouse, bigquery }
 
     var engine: Engine
     /// MySQL's and MariaDB's strings take `\` as an escape, unless the
@@ -16,19 +16,46 @@ struct SQLDialect: Equatable, Sendable {
     static let mysql = SQLDialect(engine: .mysql)
     static let mariadb = SQLDialect(engine: .mariadb)
     static let sqlite = SQLDialect(engine: .sqlite)
+    static let oracle = SQLDialect(engine: .oracle)
+    static let clickhouse = SQLDialect(engine: .clickhouse)
+    static let bigquery = SQLDialect(engine: .bigquery)
 
     var isMySQL: Bool { engine == .mysql || engine == .mariadb }
+    /// ClickHouse's and BigQuery's names and strings escape with a
+    /// backslash, always (`` `a\`b` ``, `'it\'s'`).
+    private var escapesWithBackslash: Bool { engine == .clickhouse || engine == .bigquery }
 
-    /// `"a""b"`, or MySQL's `` `a``b` ``.
+    /// `"a""b"`, MySQL's `` `a``b` ``, ClickHouse's and BigQuery's `` `a\`b` ``.
     func identifier(_ name: String) -> String {
-        isMySQL ? "`" + name.replacingOccurrences(of: "`", with: "``") + "`" : "\"" + name.replacingOccurrences(of: "\"", with: "\"\"") + "\""
+        if escapesWithBackslash { return "`" + Self.backslashed(name, quote: "`") + "`" }
+        return isMySQL ? "`" + name.replacingOccurrences(of: "`", with: "``") + "`" : "\"" + name.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 
-    /// `'it''s'` — MySQL's backslashes doubled too while they escape.
+    /// `'it''s'` — MySQL's backslashes doubled too while they escape;
+    /// ClickHouse's and BigQuery's `'it\'s'`.
     func literal(_ text: String) -> String {
+        if escapesWithBackslash { return "'" + Self.backslashed(text, quote: "'") + "'" }
         var body = text
         if isMySQL, backslashEscapes { body = body.replacingOccurrences(of: "\\", with: "\\\\") }
         return "'" + body.replacingOccurrences(of: "'", with: "''") + "'"
+    }
+
+    /// The backslash, the quote and control characters escaped — a BigQuery
+    /// string may not hold a raw newline.
+    private static func backslashed(_ text: String, quote: Character) -> String {
+        var out = ""
+        for c in text {
+            switch c {
+            case "\\": out += "\\\\"
+            case quote: out += "\\" + String(quote)
+            case "\n": out += "\\n"
+            case "\r": out += "\\r"
+            case "\t": out += "\\t"
+            case "\0": out += "\\x00"
+            default: out.append(c)
+            }
+        }
+        return out
     }
 
     func value(_ cell: CellValue) -> String {
@@ -243,6 +270,12 @@ struct EditableResult: Equatable {
         guard columns.indices.contains(column) else { return false }
         let name = columns[column]
         return name != "rowid" || key.kind != .rowid ? !key.readOnlyColumns.contains(name) : false
+    }
+
+    /// Whether an existing row's cell may be written — a new row's may be
+    /// where an UPDATE can't reach (`TableKey.fixedColumns`).
+    func isUpdatable(_ column: Int) -> Bool {
+        isEditable(column) && !key.fixedColumns.contains(columns[column])
     }
 }
 

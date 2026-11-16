@@ -289,14 +289,14 @@ enum DatabaseMCP {
             ], required: ["sql"]),
         tool(
             "db_server",
-            "A database server's headline numbers (version, uptime, connections used of max, cache hit rate, replication) and its sizes (databases, the biggest tables and indexes) — PostgreSQL, MySQL, MariaDB; a SQLite file's pages and journal; Redis's INFO; Neo4j's version, nodes and relationships, each label's and type's count; InfluxDB's version, series, memory, each database's (1.x) or bucket's (2.x) disk and retention; RabbitMQ's nodes (memory, disk, file descriptors, alarms), totals and rates, its queues by size; MongoDB's serverStatus and collections; a search cluster's health, heap and indices; DynamoDB's tables (items, size, billing, capacity, indexes, TTL, PITR).",
+            "A database server's headline numbers (version, uptime, connections used of max, cache hit rate, replication) and its sizes (databases, the biggest tables and indexes) — PostgreSQL, MySQL, MariaDB; a SQLite file's pages and journal; Redis's INFO; Neo4j's version, nodes and relationships, each label's and type's count; InfluxDB's version, series, memory, each database's (1.x) or bucket's (2.x) disk and retention; RabbitMQ's nodes (memory, disk, file descriptors, alarms), totals and rates, its queues by size; MongoDB's serverStatus and collections; a search cluster's health, heap and indices; DynamoDB's tables (items, size, billing, capacity, indexes, TTL, PITR); Oracle's instance (schemas as its databases, by dba_segments); ClickHouse's (parts on disk, merges, mutations); BigQuery's project — its jobs and its datasets' storage.",
             [
                 "connection": ["type": "string", "description": "Its name, from db_connections (optional when there is one)."],
                 "limit": ["type": "integer", "description": "Tables and indexes listed (default 50, at most 200)."],
             ]),
         tool(
             "db_activity",
-            "What a database server is running now: each session's id, user, database, client, state, how long, and its statement (cut to a line) — Redis's clients (their last command), Neo4j's transactions, InfluxDB 1's queries, RabbitMQ's connections (their channels, consumers, unacked messages), MongoDB's operations ($currentOp), a search cluster's tasks. Idle sessions left out unless “idle” is true. Reads only: no tool cancels a session.",
+            "What a database server is running now: each session's id, user, database, client, state, how long, and its statement (cut to a line) — Redis's clients (their last command), Neo4j's transactions, InfluxDB 1's queries, RabbitMQ's connections (their channels, consumers, unacked messages), MongoDB's operations ($currentOp), a search cluster's tasks, Oracle's v$session, ClickHouse's running queries, BigQuery's running and pending jobs. Idle sessions left out unless “idle” is true. Reads only: no tool cancels a session.",
             [
                 "connection": ["type": "string", "description": "Its name, from db_connections (optional when there is one)."],
                 "idle": ["type": "boolean", "description": "Idle sessions too."],
@@ -304,7 +304,7 @@ enum DatabaseMCP {
             ]),
         tool(
             "db_slow_queries",
-            "A database server's own record of its statements, costliest first — PostgreSQL's pg_stat_statements, MySQL's and MariaDB's performance_schema (or MariaDB's slow log table), Redis's SLOWLOG (the same command line together), Neo4j's statements running now by how long (its record is a file on the server), MongoDB's profiler (values left out) or $queryStats, OpenSearch's Query Insights: calls, total and mean time, rows. Says what to turn on when the record is off.",
+            "A database server's own record of its statements, costliest first — PostgreSQL's pg_stat_statements, MySQL's and MariaDB's performance_schema (or MariaDB's slow log table), Redis's SLOWLOG (the same command line together), Neo4j's statements running now by how long (its record is a file on the server), MongoDB's profiler (values left out) or $queryStats, OpenSearch's Query Insights, Oracle's v$sqlstats, ClickHouse's system.query_log (the last 7 days), BigQuery's INFORMATION_SCHEMA.JOBS_BY_PROJECT (the last 7 days; a billed query, with bytes processed and slot time as “cost”): calls, total and mean time, rows. Says what to turn on when the record is off.",
             [
                 "connection": ["type": "string", "description": "Its name, from db_connections (optional when there is one)."],
                 "order": ["type": "string", "description": "“total” (default) or “mean” time."],
@@ -312,7 +312,7 @@ enum DatabaseMCP {
             ]),
         tool(
             "db_locks",
-            "Who waits on whom on a database server: the waiting session, the one blocking it, the lock, how long, both statements — PostgreSQL, MySQL, MariaDB, Neo4j (its transactions' “Blocked by”), MongoDB (operations waiting for a lock).",
+            "Who waits on whom on a database server: the waiting session, the one blocking it, the lock, how long, both statements — PostgreSQL, MySQL, MariaDB, Neo4j (its transactions' “Blocked by”), MongoDB (operations waiting for a lock), Oracle (v$session's blocking_session).",
             ["connection": ["type": "string", "description": "Its name, from db_connections (optional when there is one)."]]),
         tool("storage_connections", "The user's saved S3 / GCS connections: name, kind, bucket.", [:]),
         tool(
@@ -389,13 +389,15 @@ enum ServerText {
     static func slowQueries(_ queries: [SlowQuery], byMean: Bool, limit: Int) -> String {
         guard !queries.isEmpty else { return "No statements recorded yet." }
         let sorted = byMean ? queries.sorted { $0.mean > $1.mean } : queries.sorted { $0.total > $1.total }
+        // What else the record says (BigQuery's bytes and slots), when it says it.
+        let detail = sorted.contains { $0.detail != nil }
         let rows = sorted.prefix(limit).map { query -> [String?] in
             [
                 "\(query.calls)", OpsText.duration(query.total), OpsText.duration(query.mean), query.rows.map(String.init), query.database,
-                OpsText.statement(query.statement, limit: statementLimit),
-            ]
+            ] + (detail ? [query.detail] : []) + [OpsText.statement(query.statement, limit: statementLimit)]
         }
-        return ResultExport.text(.markdown, columns: ["calls", "total", "mean", "rows", "database", "statement"], rows: rows)
+        let columns = ["calls", "total", "mean", "rows", "database"] + (detail ? ["cost"] : []) + ["statement"]
+        return ResultExport.text(.markdown, columns: columns, rows: rows)
             + "\nBy \(byMean ? "mean" : "total") time; \(min(limit, sorted.count)) of \(sorted.count)."
     }
 

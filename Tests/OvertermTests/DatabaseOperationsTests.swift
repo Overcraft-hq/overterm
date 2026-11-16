@@ -14,7 +14,10 @@ final class DatabaseOperationsTests: XCTestCase {
         XCTAssertEqual(DatabaseKind.mysql.features, [.monitoring, .editing, .users])
         XCTAssertEqual(DatabaseKind.mariadb.features, [.monitoring, .editing, .users])
         XCTAssertEqual(DatabaseKind.sqlite.features, [.monitoring, .editing])
-        for kind in [DatabaseKind.clickhouse, .bigquery, .s3, .prometheus, .oracle] {
+        XCTAssertEqual(DatabaseKind.oracle.features, [.monitoring, .editing, .users])
+        XCTAssertEqual(DatabaseKind.clickhouse.features, [.monitoring, .editing, .users])
+        XCTAssertEqual(DatabaseKind.bigquery.features, [.monitoring, .editing], "IAM isn't SQL: no Users page")
+        for kind in [DatabaseKind.s3, .prometheus] {
             XCTAssertEqual(kind.features, [], "\(kind)")
         }
         XCTAssertEqual(SQLiteDriver.monitorParts(for: .sqlite), [.overview])

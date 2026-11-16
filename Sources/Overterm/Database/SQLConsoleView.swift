@@ -351,7 +351,11 @@ struct EditBar: View {
             case .editable(let result):
                 if editor.edits.isEmpty {
                     Image(systemName: "pencil").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
-                        .help("Double-click a cell to edit it; the menu adds, duplicates and deletes rows. Rows are found by their \(result.key.summary).")
+                        .help("Double-click a cell to edit it; the menu adds, duplicates and deletes rows. Rows are found by their \(result.key.summary)." + (result.key.note.map { " \($0)" } ?? ""))
+                    if let label = result.key.label {
+                        Text(verbatim: label).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.orangeText)
+                            .help(result.key.note ?? label).accessibilityIdentifier("editNote")
+                    }
                     Button("+ Row") { editor.addRow() }.buttonStyle(.plain).font(.system(size: ChromeMetrics.text(10.5)))
                         .foregroundStyle(theme.accentText).help("A new row, its columns DEFAULT until set")
                 } else {
@@ -365,7 +369,7 @@ struct EditBar: View {
                         }
                     }
                     .controlSize(.small)
-                    .help("The statements Save runs, in one transaction")
+                    .help(editor.editable?.key.note ?? "The statements Save runs, in one transaction")
                     .popover(isPresented: $previewing, arrowEdge: .bottom) {
                         ScrollView {
                             Text(verbatim: preview).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).textSelection(.enabled)
@@ -378,7 +382,7 @@ struct EditBar: View {
                         ProgressView().controlSize(.mini)
                     } else {
                         Button("Save") { Task { await editor.save() } }.controlSize(.small)
-                            .help("Ask, then run every change in one transaction and read the rows again")
+                            .help(editor.editable?.key.note.map { "Ask, then run them. \($0)" } ?? "Ask, then run every change in one transaction and read the rows again")
                             .accessibilityIdentifier("editSave")
                     }
                 }

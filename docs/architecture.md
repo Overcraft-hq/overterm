@@ -1383,7 +1383,15 @@ destroying statement are there too).
   a session cancelled, a lock waited on, a user made and signed in with
   its password); the `databaseOps` scenario edits and saves a SQLite
   result in the grid and opens its Server page — and PostgreSQL's Server
-  and Users pages when :55432 answers.
+  and Users pages when :55432 answers. Oracle's, ClickHouse's and BigQuery's:
+  `DatabaseOperationsKindsTests` (pure) and `DatabaseOperationsKindsDriverTests`
+  (ClickHouse from the script — its user may manage access, so SQL users are
+  made and signed in with — and Oracle Database Free, as `ot`, who reads no
+  `v$` view, and as SYSTEM; BigQuery has no server to test against); the
+  `databaseOpsClickHouse` scenario edits a ClickHouse result as mutations,
+  stops a query on its Server page and reads its Users page, against
+  `E2EClickHouseServer` — a fake that keeps one table and changes it by the
+  statements a Save sends.
 
 ### Redis (Redis Insight's work, in the panel and the right-hand pane)
 
@@ -1740,7 +1748,8 @@ Tested against mariadb:11.4 (`DatabaseDriverTests.testMariaDB`).
   above, the limit, PL/SQL, DESC, the catalog, read-only, a wrong
   password, an unknown service, a closed port, TLS to a plain listener —
   against Oracle Database Free with `Scripts/database-test-servers.sh
-  oracle` and `OVERTERM_DB_TESTS=1`.
+  oracle` and `OVERTERM_DB_TESTS=1` — its Server page, editing and users in
+  `DatabaseOperationsKindsDriverTests`.
 
 ### What a driver does beyond statements (DatabaseOperations)
 
@@ -1763,7 +1772,7 @@ them in its own file (`PostgresOperations`, `MySQLOperations`,
 `SQLiteOperations`); a document store's "row" is a document by `_id`, a
 session may have no database. Every read goes through the driver's own
 connection — the session's actor, never a second connection — and isn't
-recorded in the history. PostgreSQL's and MySQL's drivers run one
+recorded in the history. PostgreSQL's, MySQL's and Oracle's drivers run one
 operation at a time (`exclusive`, as Redis's): a Save's transaction is
 BEGIN, its statements, COMMIT, and a read of the Server page between
 them would run inside it.
@@ -1772,6 +1781,8 @@ A kind whose words aren't SQL's — Neo4j, InfluxDB, RabbitMQ, Redis
 (`Neo4jOperations`, `InfluxDBOperations`, `RabbitMQOperations`,
 `RedisOperations`), MongoDB and DocumentDB, Elasticsearch and OpenSearch,
 DynamoDB (`MongoOperations`, `SearchOperations`, `DynamoDBOperations`) —
+and a SQL engine whose ways differ — Oracle, ClickHouse, BigQuery
+(`OracleOperations`, `ClickHouseOperations`, `BigQueryOperations`) —
 fills a few hooks, each with a default that is the SQL engines' way:
 
 - `sessionStops` — how a session is stopped, as `SessionStop`s: the menu
@@ -1805,13 +1816,24 @@ fills a few hooks, each with a default that is the SQL engines' way:
   `roleCandidates`). `SQLUserStatements` wraps `UserStatements` for the SQL
   engines; `Neo4jUserStatements`, `InfluxUserStatements`,
   `Influx2UserStatements`, `RabbitUserStatements`, `RedisUserStatements`,
-  `MongoUserStatements`, `SearchUserStatements` are the others'. A
+  `MongoUserStatements`, `SearchUserStatements` are the others';
+  `OracleUserStatements` and `ClickHouseUserStatements` are SQL of their
+  own (`UserForm.sql`: listed with `;` as SQL's are). A
   request-shaped user change (RabbitMQ's, InfluxDB 2's) is a `UserRequest`
   line, `METHOD /api/path {json}`, `NEW` before it where it must not
   replace what is there.
 
 A size that counts things rather than bytes (nodes, relationships) says
-its `unit`.
+its `unit`. A slow statement may say what else its record does
+(`SlowQuery.detail`: BigQuery's bytes and slot time, Oracle's CPU and
+buffer gets, ClickHouse's bytes read) — a "cost" column for agents. A key
+may carry a word for the edit bar and its help (`TableKey.label`/`note`:
+"mutations", "key not enforced", "by ROWID") and columns a new row sets but
+an UPDATE never changes (`fixedColumns`, `EditableResult.isUpdatable`:
+ClickHouse's sorting and partition keys). `SQLDialect` quotes Oracle's
+names as PostgreSQL's, ClickHouse's and BigQuery's with backslash escapes
+(`` `a\`b` ``, `'it\'s'`, no raw newline). `OpsText.maskSecrets` masks
+Oracle's `IDENTIFIED BY "…"` (or a bare word) too.
 
 ### Server page (monitoring)
 
@@ -1911,6 +1933,42 @@ offered on the page's own session (the driver refuses it too).
   `DescribeTable` (items, size, billing, capacity, status, GSIs and LSIs as
   indexes), `DescribeTimeToLive`, `DescribeContinuousBackups` (PITR); 100
   tables at most. Consumed capacity is CloudWatch's — said.
+- **Oracle** (`OracleOperations`): `v$session` with its statement from
+  `v$sql` (INACTIVE is idle); Cancel Statement… is `ALTER SYSTEM CANCEL SQL
+  'sid,serial#'`, Kill Session… `ALTER SYSTEM KILL SESSION '…' IMMEDIATE`
+  (ALTER SYSTEM's; the id checked to be digits before it is put in a
+  statement). One of Overterm's own connections (`program` Overterm) is
+  offered Cancel only, and the driver refuses its kill: OracleNIO never
+  answers a statement on a killed session — it is disconnected in the
+  panel. `v$sqlstats`, the hundred costliest by elapsed time and the
+  hundred by a call's, with CPU and buffer gets; locks from `v$session`'s
+  `blocking_session`, the object from the row it waits on, an idle
+  blocker's last statement; sizes from `dba_segments` — schemas as the
+  "databases", the biggest tables and indexes outside Oracle's own schemas
+  — else `user_segments` (this user's own, said); `v$instance`,
+  `v$database`, sessions and processes of their `v$parameter`, the buffer
+  cache's hit rate. A user who may not read `v$`/`dba_` views is told the
+  grant (SELECT_CATALOG_ROLE); the overview falls back to `v$version`.
+- **ClickHouse** (`ClickHouseOperations`): no Locks (it takes no row
+  locks). `system.processes` — every running query, the page's own read
+  marked (`queryID()`); Kill Query… is `KILL QUERY WHERE query_id = …`, its
+  one stop — HTTP has no session to end. `system.query_log`'s last seven
+  days grouped by `normalized_query_hash`, the page's own reads left out
+  (they start with `ClickHouseOps.marker`) — no query log, said with the
+  setting; sizes from `system.parts` (active, on disk) and
+  `system.data_skipping_indices`; version, uptime, connections of
+  `max_connections` (`system.server_settings`), memory, the mark cache's
+  hit rate, merges and mutations not done, replicated tables' delay.
+- **BigQuery** (`BigQueryOperations`): no server — the project's jobs.
+  Overview and Activity from the REST API's `jobs.list` (running and
+  pending; everyone's with `bigquery.jobs.listAll`, else this account's —
+  said), free; Cancel Job… is `jobs.cancel` at the job's location, never a
+  job the page's own reads started. Slow Queries
+  (`region-<location>.INFORMATION_SCHEMA.JOBS_BY_PROJECT`, the last seven
+  days grouped by the normalized query, by slot time, with bytes processed
+  and slots) and Sizes (`TABLE_STORAGE`, datasets as the "databases") are
+  queries, billed as any — the overview says so. No location on the
+  connection: US, said. No Locks.
 
 ### Editing rows
 
@@ -1987,6 +2045,35 @@ driver doesn't edit, offers nothing.
   `DELETE … WHERE` the key — PartiQL checks no condition of a missing item,
   so one already gone is a no-op. S, N, BOOL, NULL; a map,
   list or set as JSON; a binary attribute read only.
+- **Oracle**: the SQL way, in Oracle's quoting — the primary key, else an
+  enabled unique key over NOT NULL columns, else a heap table's ROWID
+  (`SELECT ROWID, t.* FROM … t`; the bar says "by ROWID", the confirmation
+  that it holds until the table is moved or shrunk); an unquoted name is
+  found upper-case. CLOBs, BLOBs, LONG, JSON, object types, virtual and
+  identity ALWAYS columns aren't written. A Save sets the session's date,
+  timestamp and number formats to the grid's (`OracleOps.nlsSetStatements`)
+  so a value's text reads back as itself, and puts the session's own back
+  after. Oracle keeps `''` as NULL — said. No DEFAULT VALUES: a new row
+  sets one column at least.
+- **ClickHouse**: only a plain MergeTree (Replicated, Shared too) whose
+  primary key is plain columns, none Nullable — its rows are found by it,
+  and ClickHouse doesn't keep it unique. A change is a mutation
+  (`ClickHouseOps.editStatements`: `ALTER TABLE … UPDATE`, a lightweight
+  `DELETE FROM`, `INSERT`), sent one at a time with `mutations_sync`, each
+  UPDATE and DELETE only after counting the key's rows and finding one; no
+  transaction: one that fails stops the rest, the error says which ran.
+  The bar says "mutations". The sorting and partition keys are set by an
+  INSERT, never changed in a row (`fixedColumns`); MATERIALIZED and ALIAS
+  columns, arrays, maps, tuples, JSON aren't written.
+- **BigQuery**: only a table with a primary key declared
+  (`INFORMATION_SCHEMA.TABLE_CONSTRAINTS`) — BigQuery enforces none, the
+  bar says "key not enforced". Its own `editableResult` reads the key and
+  every column's type (`EditableResult.types`); each literal is cast to
+  its column's (`BigQueryOps.editStatements`: `CAST('5' AS INT64)`, a type
+  only as the catalog's words); nested, BYTES and GEOGRAPHY columns aren't
+  written. A Save is one script (`BigQueryOps.script`): a transaction whose
+  every statement is checked by `@@row_count`, any failure rolled back and
+  raised again.
 - **Not edited**: InfluxDB — a point isn't updated in place (a write of
   the same series and time overwrites it) and a delete is by time range
   and predicate, never a row; RabbitMQ — messages aren't rows; Redis — a
@@ -2080,6 +2167,27 @@ list, never typed), shown in the sheet as it will run, asked
   (OpenSearch: the REST API's admin), is said. No Grant…: privileges are
   roles'.
 - **DynamoDB** has no users of its own (IAM's): no page.
+- **Oracle** (`OracleUserStatements`): `dba_users` (Oracle's own left
+  out; never a password column), `dba_roles` (those made here, and
+  CONNECT, RESOURCE, DBA and the catalog roles — Oracle's own granted,
+  never dropped), `dba_role_privs`; grants from `dba_sys_privs` (a system
+  privilege each), `dba_role_privs` and `dba_tab_privs` — this user's own
+  from `user_*` without SELECT_CATALOG_ROLE, another's said. CREATE USER …
+  IDENTIFIED BY `"…"` (Oracle's password is a quoted identifier: no `"` in
+  it; sent once, encrypted only over TCPS) and GRANT CREATE SESSION when it
+  logs in; a plain name typed is upper-cased as Oracle reads it. Grants: a
+  system privilege (WITH ADMIN OPTION) or a table's (WITH GRANT OPTION);
+  roles only as roles; DROP USER/ROLE — what it owns must go first.
+- **ClickHouse** (`ClickHouseUserStatements`): `system.users` (never
+  `auth_params`), `system.roles`, `system.role_grants`, `system.grants` by
+  `*.*`, `db.*`, `db.table`. A user from the server's users.xml or LDAP
+  can't be changed by SQL: said among its attributes, offered no write.
+  CREATE USER … IDENTIFIED WITH `sha256_hash` BY the salted hash — the
+  password never on the wire — and VALID UNTIL, or CREATE ROLE for one that
+  doesn't log in; GRANT/REVOKE on the server, a database or a table (a
+  column's grant and a partial revoke left alone); roles; DROP USER/ROLE.
+- **BigQuery** has no Users page: who may do what is Google Cloud IAM, not
+  SQL.
 
 ### Saved queries
 
@@ -2113,8 +2221,10 @@ On the MCP server the browser's tools are on (BrowserBridge), with
 `db_server`, `db_activity`, `db_slow_queries`, `db_locks`,
 `storage_connections`, `storage_list`, `storage_read`. The four Server
 tools are the page's reads as Markdown tables (`ServerText`), statements
-on one line and cut; no tool cancels a session, edits a row or changes a
-user, and none reads a password or its hash. Connections are
+on one line and cut (a slow statement's `detail` — BigQuery's bytes and
+slots — as a "cost" column when a kind says one); no tool cancels a
+session, edits a row or changes a user, and none reads a password or its
+hash. Connections are
 named, never their secrets. `db_query` takes one statement and reads only:
 `SQLText.agentReads` is stricter than a person's check — a WITH hiding a
 write, `SELECT … INTO` and `EXPLAIN ANALYZE` of a write all count as

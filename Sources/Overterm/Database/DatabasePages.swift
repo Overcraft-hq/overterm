@@ -200,6 +200,8 @@ final class DatabaseUsersModel: ObservableObject {
 
     var name: String { session?.connection.name ?? "" }
     var canWrite: Bool { session?.connection.readOnly == false }
+    /// Its statements are SQL: listed with `;`, a drop told what it owns.
+    var statementsAreSQL: Bool { dialect != nil || maker?.form.sql == true }
     var selectedUser: DatabaseUser? { users?.value?.first { $0.id == selected } }
 
     func show(_ session: DatabaseSession) {

@@ -79,7 +79,7 @@ final class ResultEditor: ObservableObject {
     // MARK: Changes
 
     func set(row: Int, column: Int, to value: CellValue) {
-        guard let result = editable, result.isEditable(column), rows.indices.contains(row) else { return }
+        guard let result = editable, result.isUpdatable(column), rows.indices.contains(row) else { return }
         edits.set(row: row, column: column, to: value, original: rows[row][safe: column] ?? nil)
     }
 

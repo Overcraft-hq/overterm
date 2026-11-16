@@ -241,6 +241,7 @@ final class E2ETests: XCTestCase {
     func testDockerPerf() throws { try run("dockerPerf") }
     func testDatabase() throws { try run("database") }
     func testDatabaseOps() throws { try run("databaseOps") }
+    func testDatabaseOpsClickHouse() throws { try run("databaseOpsClickHouse") }
     func testDatabaseOpsKinds() throws { try run("databaseOpsKinds") }
     func testStorage() throws { try run("storage") }
     func testRedis() throws { try run("redis") }

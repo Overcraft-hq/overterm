@@ -197,7 +197,7 @@ struct ResultGrid: NSViewRepresentable {
             menu.addItem(.separator())
             let rows = targetRows(clicked: row)
             if let column, let place = place(row) {
-                let canEdit = editable.isEditable(column) && marking(place, column: column) != .deleted
+                let canEdit = Self.writable(editable, place, column) && marking(place, column: column) != .deleted
                 menu.addItem(ClosureMenuItem("Edit Value…", enabled: canEdit) { [weak self] in self?.editInSheet(row: row, column: column) })
                 menu.addItem(ClosureMenuItem("Set to NULL", enabled: canEdit) { [weak self] in self?.set(row: row, column: column, to: .null) })
                 menu.addItem(ClosureMenuItem("Set to Empty String", enabled: canEdit) { [weak self] in self?.set(row: row, column: column, to: .text("")) })
@@ -245,7 +245,13 @@ struct ResultGrid: NSViewRepresentable {
 
         private func canEdit(row: Int, column: Int) -> Bool {
             guard let editable, editor != nil, let place = place(row) else { return false }
-            return editable.isEditable(column) && marking(place, column: column) != .deleted
+            return Self.writable(editable, place, column) && marking(place, column: column) != .deleted
+        }
+
+        /// A read row's cell is written by an UPDATE, a new row's by its INSERT.
+        private static func writable(_ editable: EditableResult, _ place: Place, _ column: Int) -> Bool {
+            if case .read = place { return editable.isUpdatable(column) }
+            return editable.isEditable(column)
         }
 
         /// A double-click edits the cell in place — or, a value of several

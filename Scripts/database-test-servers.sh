@@ -137,7 +137,8 @@ rm -rf "$MONGO_TLS" && mkdir -p "$MONGO_TLS"
 docker run -d --name ot-mongodb -e MONGO_INITDB_ROOT_USERNAME=ot -e MONGO_INITDB_ROOT_PASSWORD=otpass -p 57017:27017 \
   -v "$MONGO_TLS:/tls:ro" mongo:7 --tlsMode allowTLS --tlsCertificateKeyFile /tls/server.pem --tlsCAFile /tls/ca.pem \
   --tlsAllowConnectionsWithoutCertificates >/dev/null
-docker run -d --name ot-ch -e CLICKHOUSE_USER=ot -e CLICKHOUSE_PASSWORD=otpass -e CLICKHOUSE_DB=shop -p 58123:8123 \
+# ot may manage access: the Users page's tests make SQL users and roles.
+docker run -d --name ot-ch -e CLICKHOUSE_USER=ot -e CLICKHOUSE_PASSWORD=otpass -e CLICKHOUSE_DB=shop -e CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT=1 -p 58123:8123 \
   clickhouse/clickhouse-server:24.8 >/dev/null
 # S3, for the storage client: access key `otadmin`, secret `otpass12345`.
 # RustFS — MinIO no longer publishes images anyone can pull; this one

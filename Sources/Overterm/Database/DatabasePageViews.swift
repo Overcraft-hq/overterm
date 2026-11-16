@@ -267,6 +267,7 @@ struct DatabaseServerView: View {
                                     Text(verbatim: "mean \(OpsText.duration(query.mean))").foregroundStyle(model.slowOrder == .mean ? theme.orangeText : theme.dimText)
                                     if let rows = query.rows { Text(verbatim: "\(rows) rows") }
                                     if let database = query.database { Text(verbatim: database) }
+                                    if let detail = query.detail { Text(verbatim: detail) }
                                 }
                                 .font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.dimText)
                             }
@@ -511,7 +512,7 @@ struct DatabaseUsersView: View {
 
     private func askDrop(_ user: DatabaseUser) {
         guard let maker = model.maker, let statement = try? maker.drop(user) else { return }
-        let sql = model.dialect != nil
+        let sql = model.statementsAreSQL
         var confirmation = WriteConfirmation(
             title: "Drop \(user.display)?", scope: model.name,
             detail: statement.shown + (sql ? ";" : "")
@@ -537,7 +538,7 @@ struct DatabaseUsersView: View {
 @MainActor
 enum UsersConfirm {
     static func ask(_ title: String, _ statements: [UserStatement], button: String, model: DatabaseUsersModel, actions: DatabaseSlotActions) {
-        let end = model.dialect != nil ? ";" : ""
+        let end = model.statementsAreSQL ? ";" : ""
         let confirmation = WriteConfirmation(
             title: title, scope: model.name, detail: statements.map { $0.shown + end }.joined(separator: "\n"), button: button)
         actions.confirm(confirmation) { _ in Task { _ = await model.run(statements) } }
@@ -623,7 +624,7 @@ private struct CreateUserSheet: View {
     var body: some View {
         let form = maker.form
         UserSheetFrame(
-            title: "New \(form.noun) on \(model.name)", preview: preview, end: model.dialect != nil ? ";" : "", button: "Create…", close: close, go: go
+            title: "New \(form.noun) on \(model.name)", preview: preview, end: model.statementsAreSQL ? ";" : "", button: "Create…", close: close, go: go
         ) {
             TextField("Name", text: $user.name).textFieldStyle(.roundedBorder).accessibilityIdentifier("newUserName")
             if let account = form.account {
@@ -673,7 +674,7 @@ private struct PasswordSheet: View {
 
     var body: some View {
         UserSheetFrame(
-            title: "New Password for \(user.display)", preview: preview, end: model.dialect != nil ? ";" : "", button: "Change…", close: close, go: go
+            title: "New Password for \(user.display)", preview: preview, end: model.statementsAreSQL ? ";" : "", button: "Change…", close: close, go: go
         ) {
             SecureField("Password", text: $password).textFieldStyle(.roundedBorder)
             SecureField("Password again", text: $again).textFieldStyle(.roundedBorder)
@@ -713,7 +714,7 @@ private struct GrantSheet: View {
 
     var body: some View {
         UserSheetFrame(
-            title: "Grant to \(user.display)", preview: preview, end: model.dialect != nil ? ";" : "", button: "Grant…", close: close, go: go
+            title: "Grant to \(user.display)", preview: preview, end: model.statementsAreSQL ? ";" : "", button: "Grant…", close: close, go: go
         ) {
             if maker.form.grantKinds.count > 1 {
                 Picker("On", selection: $kind) {
@@ -776,7 +777,7 @@ private struct GrantRoleSheet: View {
 
     var body: some View {
         UserSheetFrame(
-            title: "Grant a Role to \(user.display)", preview: preview, end: model.dialect != nil ? ";" : "", button: "Grant…", close: close, go: go
+            title: "Grant a Role to \(user.display)", preview: preview, end: model.statementsAreSQL ? ";" : "", button: "Grant…", close: close, go: go
         ) {
             Picker("Role", selection: $role) {
                 Text("Choose…").tag(DatabaseUser.ID?.none)

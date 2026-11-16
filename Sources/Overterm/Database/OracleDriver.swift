@@ -17,10 +17,29 @@ import OracleNIO
 actor OracleDriver: DatabaseDriver {
     static let sidMarker = "sid"
 
-    private let config: DatabaseConnection
+    let config: DatabaseConnection
     private let password: String?
-    private var connection: OracleConnection?
+    private(set) var connection: OracleConnection?
     private var nextID = 1
+    /// This connection's own SID: its session is never cancelled from the
+    /// Server page.
+    var ownSession: String?
+    // One operation at a time: a Save is its statements then COMMIT, and a
+    // statement between them — each commits itself — would commit half of it
+    // (an actor gives way at every await).
+    private var busy = false
+    private var queue: [CheckedContinuation<Void, Never>] = []
+
+    func exclusive<T: Sendable>(_ work: () async throws -> T) async throws -> T {
+        if busy {
+            await withCheckedContinuation { queue.append($0) }
+        }
+        busy = true
+        defer {
+            if queue.isEmpty { busy = false } else { queue.removeFirst().resume() }
+        }
+        return try await work()
+    }
 
     init(_ connection: DatabaseConnection, password: String?) {
         config = connection
@@ -45,7 +64,7 @@ actor OracleDriver: DatabaseDriver {
             host: host, port: port, service: service, username: config.user, password: password ?? "", tls: try Self.tls(config.sslMode))
         configuration.options.connectTimeout = .seconds(15)
         if config.sslMode == .verifyFull { configuration.options.tlsServerName = config.serverName ?? host }
-        configuration.programName = "Overterm"
+        configuration.programName = OracleOps.programName
         do {
             // NIOPosix's loop, not Network.framework's (the package's
             // default): that one waits out the timeout on a refused port.
@@ -76,6 +95,10 @@ actor OracleDriver: DatabaseDriver {
     }
 
     func execute(_ sql: String, limit: Int) async throws -> QueryResult {
+        try await exclusive { try await executeAlone(sql, limit: limit) }
+    }
+
+    private func executeAlone(_ sql: String, limit: Int) async throws -> QueryResult {
         guard let connection else { throw DatabaseError.notConnected }
         let started = Date()
         if config.readOnly, !OracleText.onlyReads(sql) { throw DatabaseError.readOnly(OracleText.verb(of: sql)) }

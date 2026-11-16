@@ -74,6 +74,9 @@ struct UserForm: Equatable, Sendable {
     var noGrants = "None of its own."
     /// What a user is called in the sheets' titles.
     var noun = "User"
+    /// A SQL engine's statements, made by a maker of its own (Oracle's,
+    /// ClickHouse's): listed with `;` as `SQLUserStatements`' are.
+    var sql = false
 }
 
 /// The SQL engines' user statements — `UserStatements` in their dialect.
