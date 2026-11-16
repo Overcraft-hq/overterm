@@ -3,9 +3,11 @@ import Foundation
 /// The Activity page's keys (docs/design/activity/analysis.md, 6.3), only
 /// while its list has the keyboard. Letters are case-sensitive, as Docker's
 /// `d` and `D` are. ← and → aren't here: `ResourceTable` folds and unfolds
-/// with them itself. The verbs' keys (`k`, `K`, `x`, `p`, `b`, `n`, `f`,
-/// `a`) come with the verbs (stage 2) — `f` frees a port through its
-/// owner's own verb now (`ActivityPortHolder`); Open Files (`l`), the
+/// with them itself. `k` stops the selection the way its class asks
+/// (Interrupt, Stop Agent, Stop), `K` force-quits it, `x` sends a signal
+/// (`ActivityPageModel+Verbs`); `p`, `b`, `n` and `a` come with the rest of
+/// stage 2's verbs — `f` frees a port through its owner's own verb
+/// (`ActivityPortHolder`); Open Files (`l`), the
 /// detail's Files tab, with stage 4's. `e` opens a terminal in the
 /// selection's folder, read at the focus level. ⌥o and ⌥r are
 /// `ActivityPageModel.pressOption`'s. Pure.
@@ -15,6 +17,7 @@ enum ActivityKey: String, ResourceKey {
     case open, reveal, tabInfo, sample, terminal
     case tree, group, narrower, wider
     case follow, pause, mine, connections, free
+    case stop, forceQuit, signal
     case sortCPU, sortMemory, sortTime, sortPID, invert
 
     var section: ActivityPageModel.Section? {
@@ -47,6 +50,9 @@ enum ActivityKey: String, ResourceKey {
         case .mine: "u"
         case .connections: "c"
         case .free: "f"
+        case .stop: "k"
+        case .forceQuit: "K"
+        case .signal: "x"
         case .sortCPU: "P"
         case .sortMemory: "M"
         case .sortTime: "T"
@@ -77,6 +83,9 @@ enum ActivityKey: String, ResourceKey {
         case .mine: "Yours only, or everyone's"
         case .connections: "Listening: your established connections too, paired end to end"
         case .free: "Listening: free the port through its owner — Stop Container, Stop Forward, Disconnect, Stop the Service, AirPlay's switch"
+        case .stop: "Stop it as its class asks: Interrupt a pane's foreground job (⌃C typed), Stop Agent, Stop — asked"
+        case .forceQuit: "Force Quit: SIGKILL to it alone — asked, and \"Stop it first?\" unless a Stop didn't end it"
+        case .signal: "Send a signal: HUP, INT, QUIT, TERM, USR1, USR2, KILL, STOP or CONT — asked"
         case .sortCPU: "Sort by CPU"
         case .sortMemory: "Sort by memory"
         case .sortTime: "Sort by CPU time"

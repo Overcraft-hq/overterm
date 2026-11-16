@@ -1037,10 +1037,33 @@ walks the closing panes' trees itself, on the main thread, at the close
   asked (`WriteConfirmation`), the holder read again from a one-off census
   as the sheet opens; afterwards the port is watched as a pill's is, never
   by a bind, and the header says what became of it. The user's own
-  processes are greyed until the verbs' stage: a tab's are freed by its
+  processes are freed by their own Stop or Interrupt (`k`) or by their
   pane pill. Every new tab the page opens — Terminal in Its Folder (`e`,
   the selection's folder read at the focus level), Open Files, Sample, a
   service's stop, the read route — goes through `activityTerminal`.
+- **The verbs that change a process** (design 6.10; `ActivityPageModel+Verbs`,
+  `TerminalWindowController+ActivitySignals`): `k` — Interrupt on a
+  pane's foreground job and a terraform write, Stop Agent on an agent,
+  else Stop, the pane's shell its close —, Interrupt Turn, `K` Force Quit,
+  `x` Send a Signal (each signal under the verb it equals), Stop Its Tree,
+  Group and Parent. One list with the row's other verbs, each greyed with
+  `ActivitySignalCheck`'s reason, decided on the latest snapshot
+  (`ActivityVerbSubject`, pure: the class by the owner, a terraform or
+  release write by the masked argv, the tree parents first, the group,
+  the supervisor). The sheet reads the process again from a one-off
+  census and asks the policy with those facts (`ActivityVerbQuestion`,
+  pure: every character, the executable, the command it equals; critical
+  past 10 targets, the count typed past 50); the button reads it again and
+  asks again — a process that changed while asked is refused, never sent
+  what was asked for what it was. Signals go through `ProcessSignals` by
+  the identity listed (a tree's members each by its own token, parents
+  first, `sendTree`); Interrupt is ⌃C typed into the pane, after the
+  pane's foreground group is read again — a raw-mode program reads it as
+  a key. `K` with no Stop in the last two minutes asks "Stop it first?".
+  After a Stop the header says stopped, still running — Force Quit…, or
+  came back as pid N (`ActivityStopWatch`, pure; five reads a second
+  apart). Suspend, Resume, the priorities, an app's Quit and Ask an
+  Agent are the policy's already and come with their own steps.
 - **Links** (`ActivityLink`, `showInActivity`): Tab Info's header, a
   process's and a port's menu, a pane pill, the tab's menu, ⌘K's
   Activity: This Tab, an Agents card and Docker's port-conflict box open

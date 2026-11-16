@@ -172,7 +172,7 @@ extension TerminalWindowController {
     /// The pane's own route for its `login` and shell (6.10): asked by
     /// Activity already, then Terraform's guard, then the close with no
     /// second alert.
-    private func closeForFree(_ pane: TerminalView, in tab: Tab) {
+    func closeForFree(_ pane: TerminalView, in tab: Tab) {
         let split = tab.isSplit
         let proceed = { [weak self, weak tab, weak pane] in
             guard let self, let tab else { return }

@@ -60,6 +60,11 @@ struct ActivityPageActions {
     /// A new tab: Terminal in Its Folder (`e`), Open Files in a Tab — it
     /// only reads.
     var terminal: @MainActor (ActivityTerminalRequest) -> Void = { _ in }
+    /// A verb that changes a process (6.10): read again, asked, sent
+    /// through `ProcessSignals` or typed into its pane.
+    var act: @MainActor (ActivityVerb, ActivityProcessID) -> Void = { _, _ in }
+    /// Send a Signal (`x`): which one, asked first.
+    var chooseSignal: @MainActor (ActivityProcessID) -> Void = { _ in }
 }
 
 /// The Activity page (⌥⌘A; docs/design/activity/analysis.md, 6.4): its
@@ -137,9 +142,16 @@ final class ActivityPageModel: ObservableObject {
     }
     /// The selected process's detail (6.4).
     @Published private(set) var detail: ActivityDetail?
-    /// What a Free from the page said last (6.8, After the step): ":3000
-    /// freeing…", then free or still held; cleared a while after.
+    /// What a Free or a Stop from the page said last (6.8, After the step;
+    /// 6.10 step 10): ":3000 freeing…", then free or still held; "Stopping
+    /// “x”…", then stopped, still running or came back as pid N.
     @Published var freeing: String?
+    /// What the page sent SIGTERM or SIGINT to, and when: Force Quit is
+    /// offered without "Stop it first?" for two minutes after (D-11).
+    var stoppedAt: [ActivityProcessID: Date] = [:]
+    /// The main actor's facts a verb's target is read with (running apps,
+    /// what Activity and Suspend Tab stopped): set by the window.
+    var known: @MainActor () -> ActivityVerbSubject.Known = { ActivityVerbSubject.Known() }
     /// What a link said of a port it couldn't show (6.12): ":N isn't
     /// listed"; cleared by the next link, the person's hand, or a hide.
     @Published private(set) var linkSaid: String?
@@ -218,7 +230,7 @@ final class ActivityPageModel: ObservableObject {
     private(set) var wanting = false
     /// Rows made, a scenario's count.
     private(set) var builds = 0
-    private var latest: ActivitySnapshot?
+    private(set) var latest: ActivitySnapshot?
     private var generation = 0
     private var snapshots: AnyCancellable?
     /// The tabs' facts the last rows were made with.
@@ -634,6 +646,7 @@ final class ActivityPageModel: ObservableObject {
                 ActivityPortHolder.unavailable(row) == nil
             else { return false }
             actions.free(row)
+        case .stop, .forceQuit, .signal: return pressSignalKey(key)
         case .sortCPU where processes: processSort = ResourceSort(column: "cpu", ascending: false)
         case .sortMemory where processes: processSort = ResourceSort(column: "memory", ascending: false)
         case .sortTime where processes: processSort = ResourceSort(column: "time", ascending: false)
@@ -810,6 +823,7 @@ final class ActivityPageModel: ObservableObject {
                 perform: { [weak self] in
                     self?.actions.terminal(ActivityTerminalRequest(directory: NSHomeDirectory(), command: Self.openFilesCommand(row.identity.pid)))
                 }))
+        verbs += signalVerbs(for: row)
         verbs.append(ResourceVerb(title: "Copy PID", symbol: "number", group: 1, perform: { copy([String(row.identity.pid)]) }))
         verbs.append(
             ResourceVerb(

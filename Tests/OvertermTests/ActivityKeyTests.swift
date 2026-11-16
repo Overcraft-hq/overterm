@@ -69,7 +69,9 @@ final class ActivityKeyTests: XCTestCase {
         XCTAssertEqual(ActivityKey.of(" "), .detail)
         XCTAssertEqual(ActivityKey.of("P"), .sortCPU)
         XCTAssertNil(ActivityKey.of("p"), "case matters: p is Suspend's, a stage 2 verb")
-        XCTAssertNil(ActivityKey.of("k"), "no verb that signals before stage 2")
+        XCTAssertEqual(ActivityKey.of("k"), .stop)
+        XCTAssertEqual(ActivityKey.of("K"), .forceQuit, "case matters")
+        XCTAssertEqual(ActivityKey.of("x"), .signal)
         XCTAssertNil(ActivityKey.of(String(Character(UnicodeScalar(NSLeftArrowFunctionKey)!))), "← is the table's own")
         XCTAssertEqual(ActivityKey.press("?", sheetShowing: false).map { if case .help = $0 { true } else { false } }, true)
         XCTAssertEqual(ActivityKey.press("x", sheetShowing: true).map { if case .closeSheet = $0 { true } else { false } }, true)
@@ -195,8 +197,12 @@ final class ActivityKeyTests: XCTestCase {
             var goTo: [(UUID, String?)] = []
             var sampled: [pid_t] = []
             var copied: [[String]] = []
+            var acted: [(ActivityVerb, ActivityProcessID)] = []
+            var chosen: [ActivityProcessID] = []
         }
         let box = Box()
+        page.actions.act = { verb, identity in box.acted.append((verb, identity)) }
+        page.actions.chooseSignal = { box.chosen.append($0) }
         page.actions.goTo = { tab, pane in box.goTo.append((tab, pane)) }
         page.actions.sample = { box.sampled.append($0) }
         let server = try XCTUnwrap(page.content.processes.first { $0.name == "acme-server" })
@@ -207,7 +213,8 @@ final class ActivityKeyTests: XCTestCase {
             verbs.map(\.title),
             [
                 "Go to Tab", "Open in Browser", "Open in Default Browser", "Reveal in Finder", "Reveal Its Folder in Finder", "Terminal in Its Folder",
-                "Tab Info", "Sample for 5 Seconds in a Tab", "Open Files in a Tab", "Copy PID", "Copy Command", "Copy",
+                "Tab Info", "Sample for 5 Seconds in a Tab", "Open Files in a Tab", "Interrupt…", "Stop…", "Force Quit…", "Send a Signal",
+                "Stop Its Tree…", "Stop Its Group…", "Stop Its Parent…", "Copy PID", "Copy Command", "Copy",
             ])
         XCTAssertEqual(verbs.filter { $0.place == .button }.map(\.title), ["Go to Tab", "Open in Browser", "Reveal in Finder", "Tab Info"])
         XCTAssertNotNil(verbs.first { $0.title == "Open in Browser" }?.unavailable, "it listens on nothing: greyed, with why")
@@ -220,6 +227,18 @@ final class ActivityKeyTests: XCTestCase {
         XCTAssertTrue(page.press("s"))
         XCTAssertEqual(box.sampled, [1102])
         XCTAssertFalse(page.pressOption("o"), "nothing to open")
+        // k, K, x: the verb its class asks, Force Quit, Send a Signal —
+        // each handed to the window, which reads it again and asks.
+        let subject = try XCTUnwrap(page.subject(for: server))
+        XCTAssertTrue(page.press("k"))
+        XCTAssertEqual(box.acted.last?.0, ActivityPageModel.stopVerb(for: subject.target))
+        XCTAssertEqual(box.acted.last?.1, server.identity)
+        XCTAssertTrue(page.press("K"))
+        XCTAssertEqual(box.acted.last?.0, .forceQuit)
+        XCTAssertTrue(page.press("x"))
+        XCTAssertEqual(box.chosen, [server.identity])
+        verbs.first { $0.title == "Stop Its Tree…" }?.perform()
+        XCTAssertEqual(box.acted.last?.0, .stopTree)
         verbs.first { $0.title == "Copy" }?.perform()
         XCTAssertEqual(box.copied.last, ["acme-server\t1102"])
         XCTAssertEqual(page.verbs(for: [other.id]) { _ in }.first { $0.title == "Go to Tab" }?.unavailable, "It runs outside every tab")
