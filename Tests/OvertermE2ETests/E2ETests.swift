@@ -350,6 +350,13 @@ final class E2ETests: XCTestCase {
     func testReorder() throws { try run("reorder") }
     func testInfo() throws { try run("info") }
     func testActivity() throws { try run("activity") }
+    /// The Activity page at this Mac's process count, from a fake of that
+    /// size: the census's CPU a tick, rows made, shown, held and scrolled.
+    func testActivityPerf() throws {
+        let printed = try run("activityPerf")
+        // Its numbers, counts and times only, in the test's output.
+        for line in printed.split(separator: "\n") where line.hasPrefix("E2E INFO activityPerf") { print(line) }
+    }
     func testClaudeInfo() throws { try run("claude") }
     func testDiskInfo() throws { try run("disk") }
     func testFollow() throws { try run("follow") }

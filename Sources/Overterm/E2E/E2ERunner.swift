@@ -35,6 +35,7 @@ final class E2ERunner {
         "observability": { await $0.observabilityScenario() },
         "suspend": { await $0.suspendScenario() },
         "activity": { await $0.activityScenario() },
+        "activityPerf": { await $0.activityPerfScenario() },
         "databaseAgent": { await $0.databaseAgentScenario() },
         "databaseTunnel": { await $0.databaseTunnelScenario() },
         "sessionGroups": { await $0.sessionGroupsScenario() },
