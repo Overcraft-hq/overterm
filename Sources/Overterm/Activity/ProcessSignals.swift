@@ -361,6 +361,19 @@ struct ProcessSignals: Sendable {
         return .sent(pinned: true)
     }
 
+    /// Sends `signal` to a tree's members as its sheet listed them (6.10
+    /// step 8), `members` parents first: each by its own token taken now,
+    /// never by its pid — a member is never `alone` —, and checked as
+    /// `send` checks one. TERM, STOP and the rest go parents first, so a
+    /// supervisor can't start again what follows; CONT children first. A
+    /// member's answer is its own: one that ended or exec'd since the sheet
+    /// is said, the rest still sent. The caller leaves out what the policy
+    /// keeps out of a bulk (`ActivitySignalCheck.bulkRefusal`).
+    func sendTree(_ signal: ActivitySignal, to members: [ActivitySignalTarget]) -> [(target: ActivitySignalTarget, answer: ActivitySignalAnswer)] {
+        let ordered = signal == .cont ? Array(members.reversed()) : members
+        return ordered.map { ($0, send(signal, to: $0, alone: false)) }
+    }
+
     /// The refusals made before anything is read (step 1).
     static func refusal(before identity: ActivityProcessID, app: ActivityProcessID) -> ActivitySignalRefusal? {
         if identity.pid <= 1 { return .system }

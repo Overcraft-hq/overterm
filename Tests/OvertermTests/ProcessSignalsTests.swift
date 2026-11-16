@@ -306,6 +306,103 @@ final class ProcessSignalsTests: XCTestCase {
         XCTAssertTrue(kernel.sent.isEmpty)
     }
 
+    // MARK: Stage 2: a tree, Force Quit, what came back
+
+    /// A tree's members: each by its own token, parents first — CONT
+    /// children first —, one that exec'd since the sheet said and the rest
+    /// still sent; never by a pid.
+    func testATreeIsSentParentsFirstEachByItsToken() {
+        mac()
+        let root = add(800, parent: 300, name: "acme-supervisor")
+        let worker = add(801, parent: 800, name: "acme-worker")
+        let leaf = add(802, parent: 801, name: "acme-leaf")
+        let answers = sender().sendTree(.term, to: [root, worker, leaf])
+        XCTAssertEqual(answers.map(\.answer), [.sent(pinned: true), .sent(pinned: true), .sent(pinned: true)])
+        XCTAssertEqual(kernel.sent.map(\.pid), [800, 801, 802], "parents first: a supervisor can't start again what follows")
+        XCTAssertTrue(kernel.sent.allSatisfy(\.pinned))
+
+        kernel.resetCounts()
+        let continued = sender().sendTree(.cont, to: [root, worker, leaf])
+        XCTAssertEqual(continued.map(\.target.identity.pid), [802, 801, 800], "CONT children first")
+        XCTAssertEqual(Array(kernel.sent.suffix(3)).map(\.pid), [802, 801, 800])
+
+        // One exec'd since the sheet: said, the others sent.
+        let before = kernel.sent.count
+        kernel.exec(801, path: "/opt/acme/bin/acme-other", name: "acme-other")
+        let mixed = sender().sendTree(.term, to: [root, worker, leaf])
+        XCTAssertEqual(mixed[1].answer, .ranAnotherProgram(path: "/opt/acme/bin/acme-other"))
+        XCTAssertEqual(kernel.sent.count - before, 2, "the parent and the leaf, not what 801 runs now")
+    }
+
+    /// Without tokens a tree's members, and a Force Quit, are refused: only
+    /// a single Stop or Interrupt falls back to its pid.
+    func testATreeAndAForceQuitNeedTokens() {
+        mac()
+        let root = add(810, parent: 300, name: "acme-supervisor")
+        let worker = add(811, parent: 810, name: "acme-worker")
+        kernel.refuseTokens(true)
+        XCTAssertEqual(sender().sendTree(.term, to: [root, worker]).map(\.answer), [.refused(.unpinned), .refused(.unpinned)])
+        XCTAssertEqual(sender().send(.kill, to: root, alone: true), .refused(.unpinned), "Force Quit: no fallback")
+        XCTAssertTrue(kernel.sent.isEmpty)
+        XCTAssertEqual(sender().send(.term, to: root, alone: true), .sent(pinned: false), "a single Stop does")
+        kernel.refuseTokens(false)
+    }
+
+    /// Force Quit by its token: SIGKILL to the process alone, never its
+    /// group, and no CONT after it — even stopped, a KILL ends it.
+    func testForceQuitIsTheProcessAlone() {
+        mac()
+        let target = add(820, parent: 300, group: 300, status: SSTOP, name: "acme-stuck")
+        XCTAssertEqual(sender().send(.kill, to: target, alone: true), .sent(pinned: true))
+        XCTAssertEqual(kernel.sent, [FakeActivityKernel.Sent(pid: 820, signal: SIGKILL, pinned: true)])
+    }
+
+    /// What a Stop's watch says (6.10 step 10): stopping, then stopped,
+    /// still running at its end, or came back as pid N — the same
+    /// executable under the same parent, or its port, by a process started
+    /// since; never one older.
+    func testTheStopWatch() {
+        let listed = ActivityStopWatch.Listed(
+            identity: ActivityProcessID(pid: 4242, start: 1_000), name: "acme-server", path: "/opt/acme/bin/acme-server", parent: 4200, ports: [3000])
+        let sentAt: UInt64 = 5_000
+        XCTAssertEqual(ActivityStopWatch.state(listed, alive: true, seen: [], sentAt: sentAt, final: false), .stopping)
+        XCTAssertEqual(ActivityStopWatch.state(listed, alive: true, seen: [], sentAt: sentAt, final: true), .stillRunning)
+        XCTAssertEqual(ActivityStopWatch.state(listed, alive: false, seen: [], sentAt: sentAt, final: false), .stopped)
+        let again = ActivityStopWatch.Seen(identity: ActivityProcessID(pid: 4300, start: 6_000), path: listed.path, parent: 4200)
+        XCTAssertEqual(ActivityStopWatch.state(listed, alive: false, seen: [again], sentAt: sentAt, final: false), .cameBack(pid: 4300))
+        let port = ActivityStopWatch.Seen(identity: ActivityProcessID(pid: 4301, start: 7_000), path: "/opt/acme/bin/other", parent: 1, ports: [3000])
+        XCTAssertEqual(ActivityStopWatch.state(listed, alive: false, seen: [port], sentAt: sentAt, final: false), .cameBack(pid: 4301))
+        let older = ActivityStopWatch.Seen(identity: ActivityProcessID(pid: 4100, start: 2_000), path: listed.path, parent: 4200, ports: [3000])
+        XCTAssertEqual(ActivityStopWatch.state(listed, alive: false, seen: [older], sentAt: sentAt, final: true), .stopped, "older: not a comeback")
+        let elsewhere = ActivityStopWatch.Seen(identity: ActivityProcessID(pid: 4302, start: 8_000), path: listed.path, parent: 1)
+        XCTAssertEqual(ActivityStopWatch.state(listed, alive: false, seen: [elsewhere], sentAt: sentAt, final: true), .stopped, "another parent's")
+        XCTAssertEqual(ActivityStopWatch.label(.cameBack(pid: 4300), listed), "“acme-server” (pid 4242) came back as pid 4300")
+        XCTAssertEqual(ActivityStopWatch.label(.stillRunning, listed), "“acme-server” (pid 4242) still running — Force Quit…")
+    }
+
+    /// A real tree of the test's own: a shell and its two sleeps, ended by
+    /// their tokens parents first.
+    func testARealTreeEndedByTokens() throws {
+        let child = try TestChild("/bin/sh", ["-c", "/bin/sleep 30 & /bin/sleep 30 & wait"])
+        defer { child.stop() }
+        let real = LiveActivityKernel()
+        func kids() -> [ActivityProcess] { (real.processes() ?? []).filter { $0.parentPID == child.pid && !$0.isZombie } }
+        XCTAssertTrue(TestChild.eventually { kids().count == 2 }, "two sleeps")
+        let members = [child.identity] + kids().map(\.identity)
+        // Whatever the checks say, the test's own sleeps end with it: each
+        // by its pid, once its start is read again.
+        defer {
+            for identity in members.dropFirst() where real.process(identity.pid)?.identity == identity { kill(identity.pid, SIGKILL) }
+        }
+        for identity in members { own(identity) }
+        let signals = ProcessSignals(kernel: RecordingKernel(own: Set(members)))
+        let targets = members.map { ActivitySignalTarget($0, path: real.path(of: $0.pid)) }
+        let answers = signals.sendTree(.term, to: targets)
+        XCTAssertEqual(answers.map(\.answer), Array(repeating: .sent(pinned: true), count: 3))
+        XCTAssertNotNil(child.exited(), "the shell ended")
+        XCTAssertTrue(TestChild.eventually { members.dropFirst().allSatisfy { real.process($0.pid)?.identity != $0 || real.process($0.pid)?.isZombie == true } })
+    }
+
     // MARK: Sent
 
     /// The plain case: by its token, once.
