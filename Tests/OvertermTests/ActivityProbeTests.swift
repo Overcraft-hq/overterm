@@ -232,6 +232,36 @@ final class ActivityProbeTests: XCTestCase {
                 + String(format: "%.2f ms", Double(times.last ?? 0) / 1_000_000) + "; meters read median "
                 + micros(meters[meters.count / 2], 1) + ", \(full.meters?.cores.count ?? 0) cores")
         XCTAssertEqual(content.processes.count, full.table.processes.count)
+        // The owners alone (6.5): how many each place holds, and how many
+        // processes another is responsible for (D-31) — counts only.
+        var owners: [UInt64] = []
+        var attribution = ActivityAttribution(owners: [:])
+        for _ in 0..<20 {
+            let (made, time) = timed { ActivityAttribution.of(full, context: context) }
+            attribution = made
+            owners.append(time)
+        }
+        owners.sort()
+        var places: [String: Int] = [:]
+        for owner in attribution.owners.values {
+            let place: String
+            switch owner.place {
+            case .overterm: place = "overterm"
+            case .pane: place = "pane"
+            case .anotherOverterm: place = "another"
+            case .engine: place = "engine"
+            case .app: place = "app"
+            case .macOS: place = "macOS"
+            case .system: place = "system"
+            case .elsewhere: place = "elsewhere"
+            }
+            places[place, default: 0] += 1
+        }
+        let responsible = full.facts.values.filter { $0.responsible != nil }.count
+        report(
+            "owners: median " + String(format: "%.2f ms", Double(owners[owners.count / 2]) / 1_000_000) + "; "
+                + places.sorted { $0.key < $1.key }.map { "\($0.key) \($0.value)" }.joined(separator: ", ")
+                + "; \(responsible) with another responsible, \(content.list.count) rows listed")
     }
 
     /// The old API on the census (7.8): a tab's tree answered from a
