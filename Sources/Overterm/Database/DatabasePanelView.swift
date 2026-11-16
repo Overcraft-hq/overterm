@@ -149,7 +149,8 @@ private struct ConnectionTree: View {
             if connection.kind.isRedis {
                 Button("Server Info") { actions.redisServer(session) }
             }
-            if connection.kind.features.contains(.monitoring) { Button("Server") { actions.server(connection) } }
+            // Redis's own page is its Server Info: the shared one's reads are its agents'.
+            if connection.kind.features.contains(.monitoring), !connection.kind.isRedis { Button("Server") { actions.server(connection) } }
             if connection.kind.features.contains(.users) { Button("Users & Roles") { actions.users(connection) } }
             if session.isOpen {
                 Button("Disconnect") { model.disconnect(connection) }

@@ -17,7 +17,7 @@ import Foundation
 /// sends outside the query languages; a read-only connection refuses it,
 /// and every statement that isn't a read, before sending.
 actor InfluxDBDriver: DatabaseDriver {
-    private let config: DatabaseConnection
+    let config: DatabaseConnection
     private let password: String?
     private let http: HTTPDriverTransport
     private(set) var version: InfluxVersion?
@@ -33,7 +33,7 @@ actor InfluxDBDriver: DatabaseDriver {
         database = connection.database
     }
 
-    private var organization: String { config.project.trimmingCharacters(in: .whitespaces) }
+    var organization: String { config.project.trimmingCharacters(in: .whitespaces) }
 
     /// 1.x: Basic with a user; 2.x: `Token`; 3.x: `Bearer`.
     private func authorize(_ request: inout URLRequest, _ version: InfluxVersion) {
@@ -50,7 +50,7 @@ actor InfluxDBDriver: DatabaseDriver {
         }
     }
 
-    private func send(
+    func send(
         _ method: String, _ path: String, _ query: [(String, String)] = [], body: Data? = nil, contentType: String? = nil,
         accept: String = "application/json"
     ) async throws -> Data {
@@ -149,7 +149,7 @@ actor InfluxDBDriver: DatabaseDriver {
     /// InfluxQL at `/query`: a read a GET, a write a POST (1.x refuses
     /// those as a GET). `db` the database, a bucket through 2.x's
     /// compatibility API.
-    private func influxQL(_ q: String, database: String?, write: Bool) async throws -> [[InfluxParse.Series]] {
+    func influxQL(_ q: String, database: String?, write: Bool) async throws -> [[InfluxParse.Series]] {
         var query: [(String, String)] = []
         if let database, !database.isEmpty { query.append(("db", database)) }
         let data: Data

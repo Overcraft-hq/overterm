@@ -7,9 +7,9 @@ import Foundation
 /// it is sent. The tree: databases (`SHOW DATABASES`) → labels and
 /// relationship types (`[:TYPE]`) → their property keys with their types.
 actor Neo4jDriver: DatabaseDriver {
-    private let config: DatabaseConnection
-    private let password: String?
-    private let http: HTTPDriverTransport
+    let config: DatabaseConnection
+    let password: String?
+    let http: HTTPDriverTransport
     /// Where statements run: the connection's database (else `neo4j`), until a `:use`.
     private(set) var database: String
 
@@ -26,9 +26,11 @@ actor Neo4jDriver: DatabaseDriver {
     /// is off.
     enum API: Sendable { case transactional, query }
     private(set) var api: API
+    /// The property types of a label's nodes, from the catalog, by database and label — what an edited cell is written as.
+    var editTypes: [String: [String: [String]]] = [:]
 
     /// One statement in its own transaction, the raw answer.
-    private func post(_ statement: String, database: String, graph: Bool) async throws -> Data {
+    func post(_ statement: String, database: String, graph: Bool) async throws -> Data {
         do {
             return try await post(statement, database: database, graph: graph, api: api)
         } catch let missing as Missing where api == .transactional {
@@ -87,14 +89,17 @@ actor Neo4jDriver: DatabaseDriver {
         }
     }
 
-    private func run(_ statement: String, database: String, limit: Int) async throws -> QueryResult {
-        let answer = try Neo4jParse.answer(try await post(statement, database: database, graph: true), limit: limit)
+    private func run(_ statement: String, database: String, limit: Int, nodes: String? = nil) async throws -> QueryResult {
+        let data = try await post(statement, database: database, graph: true)
+        // `MATCH (n:Label) RETURN n`: its nodes as rows of their properties, to be edited.
+        if let nodes, let flat = Neo4jEdits.flatten(data, variable: nodes, limit: limit) { return flat }
+        let answer = try Neo4jParse.answer(data, limit: limit)
         if let error = answer.errors.first { throw DatabaseError.failed(Neo4jParse.explain(error.code, error.message)) }
         return answer.result
     }
 
     /// The rows' raw values, for the catalog.
-    private func rows(_ statement: String, database: String) async throws -> [[Any]] {
+    func rows(_ statement: String, database: String) async throws -> [[Any]] {
         let data = try await post(statement, database: database, graph: false)
         if let error = try Neo4jParse.answer(data, limit: 0).errors.first { throw DatabaseError.failed(Neo4jParse.explain(error.code, error.message)) }
         return Neo4jParse.rawRows(data)
@@ -122,7 +127,7 @@ actor Neo4jDriver: DatabaseDriver {
             statement = use.rest
         }
         while statement.hasSuffix(";") { statement.removeLast() }
-        var result = try await run(statement, database: database, limit: limit)
+        var result = try await run(statement, database: database, limit: limit, nodes: Neo4jEdits.nodeQuery(statement)?.variable)
         if !result.hasRows, result.message == nil { result.message = "Done" }
         result.duration = Date().timeIntervalSince(started)
         return result

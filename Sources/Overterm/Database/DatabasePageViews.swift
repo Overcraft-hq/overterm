@@ -228,24 +228,37 @@ struct DatabaseServerView: View {
             Button("Copy Session ID") { RedisChrome(theme: theme).copy(session.id) }
             if model.canCancel, !session.isOwn {
                 Divider()
-                Button("Cancel Statement…") { askCancel(session, terminate: false) }
-                Button("Terminate Session…") { askCancel(session, terminate: true) }
+                ForEach(stops(for: session), id: \.menu) { stop in Button(stop.menu) { ask(stop, session) } }
             }
         }
         .accessibilityIdentifier("session-\(session.id)")
     }
 
-    private func askCancel(_ session: DatabaseActivity, terminate: Bool) {
-        let kind = model.session?.connection.kind
+    /// How a session is stopped here: the kind's own ways, else the SQL engines' two.
+    private func stops(for session: DatabaseActivity) -> [SessionStop] {
+        guard let kind = model.session?.connection.kind else { return [] }
+        if let type = DatabaseDrivers.driverType(of: kind) as? any DatabaseMonitoring.Type, let own = type.sessionStops(for: session, kind: kind) {
+            return own
+        }
         let mysql = kind == .mysql || kind == .mariadb
-        let verb = terminate ? (mysql ? "KILL \(session.id)" : "pg_terminate_backend(\(session.id))") : (mysql ? "KILL QUERY \(session.id)" : "pg_cancel_backend(\(session.id))")
         let who = [session.user, session.database, session.client].compactMap { $0 }.joined(separator: " · ")
+        let said = "\(who)\n\(OpsText.statement(session.statement, limit: 400))"
+        return [
+            SessionStop(
+                terminate: false, menu: "Cancel Statement…", title: "Cancel session \(session.id)'s statement?",
+                command: mysql ? "KILL QUERY \(session.id)" : "pg_cancel_backend(\(session.id))", effect: said + "\n\nThe statement stops; the session stays.",
+                button: "Cancel Statement"),
+            SessionStop(
+                terminate: true, menu: "Terminate Session…", title: "End session \(session.id)?",
+                command: mysql ? "KILL \(session.id)" : "pg_terminate_backend(\(session.id))",
+                effect: said + "\n\nIts connection is closed; what it hadn't committed is rolled back.", button: "Terminate"),
+        ]
+    }
+
+    private func ask(_ stop: SessionStop, _ session: DatabaseActivity) {
         let confirmation = WriteConfirmation(
-            title: terminate ? "End session \(session.id)?" : "Cancel session \(session.id)'s statement?", scope: model.name,
-            detail: "\(who)\n\(OpsText.statement(session.statement, limit: 400))\n\n\(verb) — "
-                + (terminate ? "its connection is closed; what it hadn't committed is rolled back." : "the statement stops; the session stays."),
-            button: terminate ? "Terminate" : "Cancel Statement", cancel: "Don't")
-        actions.confirm(confirmation) { _ in Task { await model.cancel(session, terminate: terminate) } }
+            title: stop.title, scope: model.name, detail: stop.command + "\n\n" + stop.effect, button: stop.button, cancel: "Don't")
+        actions.confirm(confirmation) { _ in Task { await model.cancel(session, terminate: stop.terminate) } }
     }
 
     // MARK: Slow queries
@@ -321,8 +334,7 @@ struct DatabaseServerView: View {
                                         ?? .some(DatabaseActivity(id: wait.blocking, user: wait.blockingUser, statement: wait.blockingStatement)),
                                     !blocker.isOwn
                                 {
-                                    Button("Cancel the Blocker's Statement…") { askCancel(blocker, terminate: false) }
-                                    Button("Terminate the Blocker…") { askCancel(blocker, terminate: true) }
+                                    ForEach(stops(for: blocker), id: \.menu) { stop in Button("The Blocker: " + stop.menu) { ask(stop, blocker) } }
                                 }
                             }
                         }
@@ -359,7 +371,7 @@ struct DatabaseServerView: View {
                         Text(verbatim: entry.schema.map { "\($0).\(entry.name)" } ?? entry.name).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)
                         Spacer(minLength: 4)
                         if let detail = entry.detail { Text(verbatim: detail).foregroundStyle(theme.dimText).lineLimit(1) }
-                        Text(verbatim: OpsText.bytes(entry.bytes)).foregroundStyle(theme.text).frame(width: 80, alignment: .trailing)
+                        Text(verbatim: entry.size).foregroundStyle(theme.text).frame(minWidth: 80, alignment: .trailing)
                     }
                     .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
                     .background(alignment: .leading) {
@@ -476,15 +488,17 @@ struct DatabaseUsersView: View {
                     user.attributes.isEmpty ? nil : user.attributes.joined(separator: " · "),
                 ].compactMap { $0 }
             ForEach(facts, id: \.self) { Text(verbatim: $0).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2) }
-            if model.canWrite {
+            if model.canWrite, let maker = model.maker {
                 HStack(spacing: 6) {
-                    if !user.isRole || model.dialect?.isMySQL == false {
+                    if maker.offers(.password, on: user) {
                         Button("Change Password…") { sheet = .password(user) }.controlSize(.small)
                     }
-                    Button("Grant…") { sheet = .grant(user) }.controlSize(.small)
-                    Button("Grant Role…") { sheet = .grantRole(user) }.controlSize(.small)
+                    if maker.offers(.grant, on: user) { Button("Grant…") { sheet = .grant(user) }.controlSize(.small) }
+                    if maker.offers(.grantRole, on: user) { Button("Grant Role…") { sheet = .grantRole(user) }.controlSize(.small) }
                     Spacer()
-                    Button("Drop…") { askDrop(user) }.controlSize(.small).foregroundStyle(DiffColors.removed)
+                    if maker.offers(.drop, on: user) {
+                        Button("Drop…") { askDrop(user) }.controlSize(.small).foregroundStyle(DiffColors.removed)
+                    }
                 }
             }
             chrome.section("Grants")
@@ -492,9 +506,9 @@ struct DatabaseUsersView: View {
             case nil: chrome.caption("Reading…")
             case .unavailable(let gap)?: chrome.gap(gap)
             case .value(let grants)?:
-                if grants.isEmpty { chrome.caption("None of its own — it may still have what PUBLIC is granted, or its roles'.") }
+                if grants.isEmpty { chrome.caption(model.maker?.form.noGrants ?? "None of its own.") }
                 ForEach(grants) { grant in grantRow(grant, user: user) }
-                if model.dialect == .postgres { chrome.caption("Tables and schemas of this database; databases of the server.") }
+                if let note = model.maker?.form.grantsNote { chrome.caption(note) }
             }
         }
         .padding(.horizontal, 12).padding(.bottom, 12)
@@ -510,33 +524,21 @@ struct DatabaseUsersView: View {
         }
         .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
         .contextMenu {
-            if model.canWrite, let statement = revoke(grant, from: user) {
+            if model.canWrite, let statement = model.maker?.revoke(grant, from: user) {
                 Button("Revoke…") { ask("Revoke from \(user.display)?", [statement], button: "Revoke") }
             }
         }
     }
 
-    /// The statement that takes a listed grant back, when it is one Overterm can name.
-    private func revoke(_ grant: DatabaseGrant, from user: DatabaseUser) -> UserStatement? {
-        guard let dialect = model.dialect else { return nil }
-        if grant.kind == "role" {
-            let parts = grant.object.split(separator: "@", maxSplits: 1).map(String.init)
-            let role = DatabaseUser(
-                name: parts.first ?? grant.object, host: dialect == .mysql && parts.count > 1 ? parts[1] : nil, isRole: true)
-            return try? UserStatements.revokeRole(role, from: user, dialect: dialect)
-        }
-        guard let target = GrantTargets.target(of: grant, dialect: dialect) else { return nil }
-        let allowed = UserStatements.privileges(on: target, dialect: dialect)
-        let privileges = grant.privileges.filter(allowed.contains)
-        guard !privileges.isEmpty else { return nil }
-        return try? UserStatements.revoke(privileges, on: target, from: user, dialect: dialect)
-    }
-
     private func askDrop(_ user: DatabaseUser) {
-        guard let dialect = model.dialect, let statement = try? UserStatements.drop(user, dialect: dialect) else { return }
+        guard let maker = model.maker, let statement = try? maker.drop(user) else { return }
+        let sql = model.dialect != nil
         var confirmation = WriteConfirmation(
             title: "Drop \(user.display)?", scope: model.name,
-            detail: statement.shown + ";\n\nType its name to drop it. What it owns must be dropped or reassigned first; the server says so if not.",
+            detail: statement.shown + (sql ? ";" : "")
+                + (sql
+                    ? "\n\nType its name to drop it. What it owns must be dropped or reassigned first; the server says so if not."
+                    : "\n\nType its name to drop it."),
             button: "Drop", typedName: user.name, critical: true)
         confirmation.cancel = "Cancel"
         actions.confirm(confirmation) { typed in
@@ -556,8 +558,9 @@ struct DatabaseUsersView: View {
 @MainActor
 enum UsersConfirm {
     static func ask(_ title: String, _ statements: [UserStatement], button: String, model: DatabaseUsersModel, actions: DatabaseSlotActions) {
+        let end = model.dialect != nil ? ";" : ""
         let confirmation = WriteConfirmation(
-            title: title, scope: model.name, detail: statements.map { $0.shown + ";" }.joined(separator: "\n"), button: button)
+            title: title, scope: model.name, detail: statements.map { $0.shown + end }.joined(separator: "\n"), button: button)
         actions.confirm(confirmation) { _ in Task { _ = await model.run(statements) } }
     }
 }
@@ -582,6 +585,8 @@ enum GrantTargets {
 private struct UserSheetFrame<Fields: View>: View {
     let title: String
     let preview: Result<[UserStatement], Error>
+    /// What ends each statement as shown: `;` for SQL's.
+    var end = ";"
     let button: String
     let close: () -> Void
     let go: ([UserStatement]) -> Void
@@ -595,7 +600,7 @@ private struct UserSheetFrame<Fields: View>: View {
             Group {
                 switch preview {
                 case .success(let statements):
-                    Text(verbatim: statements.map { $0.shown + ";" }.joined(separator: "\n")).font(.system(size: 11, design: .monospaced))
+                    Text(verbatim: statements.map { $0.shown + end }.joined(separator: "\n")).font(.system(size: 11, design: .monospaced))
                         .textSelection(.enabled)
                 case .failure(let error):
                     Text(verbatim: error.localizedDescription).font(.system(size: 11)).foregroundStyle(.secondary)
@@ -629,37 +634,37 @@ private struct CreateUserSheet: View {
     @State private var user = NewUser()
     @State private var again = ""
 
-    private var dialect: UserDialect { model.dialect ?? .postgres }
+    private var maker: any UserStatementMaking { model.maker ?? SQLUserStatements(dialect: .postgres) }
 
     private var preview: Result<[UserStatement], Error> {
         if !user.password.isEmpty, user.password != again { return .failure(UserStatements.Refusal(message: "The two passwords differ.")) }
-        return Result { try UserStatements.create(user, dialect: dialect) }
+        return Result { try maker.create(user) }
     }
 
     var body: some View {
-        UserSheetFrame(title: "New User on \(model.name)", preview: preview, button: "Create…", close: close, go: go) {
+        let form = maker.form
+        UserSheetFrame(
+            title: "New \(form.noun) on \(model.name)", preview: preview, end: model.dialect != nil ? ";" : "", button: "Create…", close: close, go: go
+        ) {
             TextField("Name", text: $user.name).textFieldStyle(.roundedBorder).accessibilityIdentifier("newUserName")
-            if dialect.isMySQL {
+            if form.host {
                 TextField("Host (% is any)", text: $user.host).textFieldStyle(.roundedBorder)
             }
             SecureField("Password", text: $user.password).textFieldStyle(.roundedBorder)
             SecureField("Password again", text: $again).textFieldStyle(.roundedBorder)
-            if !dialect.isMySQL {
+            if form.login || form.superuser != nil || form.createDatabases || form.createRoles {
                 HStack(spacing: 14) {
-                    if dialect == .postgres { Toggle("Logs in", isOn: $user.login) }
-                    Toggle("Superuser", isOn: $user.superuser)
-                    Toggle("Creates databases", isOn: $user.createDatabases)
-                    if dialect == .postgres { Toggle("Creates roles", isOn: $user.createRoles) }
+                    if form.login { Toggle("Logs in", isOn: $user.login) }
+                    if let superuser = form.superuser { Toggle(superuser, isOn: $user.superuser) }
+                    if form.createDatabases { Toggle("Creates databases", isOn: $user.createDatabases) }
+                    if form.createRoles { Toggle("Creates roles", isOn: $user.createRoles) }
                 }
                 .toggleStyle(.checkbox).font(.system(size: 11.5))
+            }
+            if form.validUntil {
                 TextField("Valid until (yyyy-MM-dd, empty: forever)", text: $user.validUntil).textFieldStyle(.roundedBorder)
             }
-            Text(
-                dialect == .postgres
-                    ? "The password is sent as its SCRAM-SHA-256 verifier — never in the clear, and never kept here."
-                    : dialect == .redshift ? "The password is sent as its md5 form, and never kept here." : "The password is sent once, over this connection, and never kept here."
-            )
-            .font(.system(size: 10.5)).foregroundStyle(.secondary)
+            Text(verbatim: form.passwordNote).font(.system(size: 10.5)).foregroundStyle(.secondary)
         }
     }
 
@@ -679,11 +684,14 @@ private struct PasswordSheet: View {
 
     private var preview: Result<[UserStatement], Error> {
         if password != again { return .failure(UserStatements.Refusal(message: "The two passwords differ.")) }
-        return Result { [try UserStatements.password(of: user, to: password, dialect: model.dialect ?? .postgres)] }
+        guard let maker = model.maker else { return .failure(UserStatements.Refusal(message: "Not read yet.")) }
+        return Result { [try maker.password(of: user, to: password)] }
     }
 
     var body: some View {
-        UserSheetFrame(title: "New Password for \(user.display)", preview: preview, button: "Change…", close: close, go: go) {
+        UserSheetFrame(
+            title: "New Password for \(user.display)", preview: preview, end: model.dialect != nil ? ";" : "", button: "Change…", close: close, go: go
+        ) {
             SecureField("Password", text: $password).textFieldStyle(.roundedBorder)
             SecureField("Password again", text: $again).textFieldStyle(.roundedBorder)
         }
@@ -701,42 +709,39 @@ private struct GrantSheet: View {
     let actions: DatabaseSlotActions
     let close: () -> Void
     @State private var kind = ""
-    @State private var database = ""
-    @State private var schema = ""
-    @State private var table = ""
+    /// Each field's text, by its title — kept as the kind changes.
+    @State private var values: [String: String] = [:]
     @State private var picked: Set<String> = []
     @State private var grantOption = false
 
-    private var dialect: UserDialect { model.dialect ?? .postgres }
+    private var maker: any UserStatementMaking { model.maker ?? SQLUserStatements(dialect: .postgres) }
+    private var grantKind: GrantKind? { maker.form.grantKinds.first { $0.title == kind } ?? maker.form.grantKinds.first }
 
-    private var target: GrantTarget {
-        switch kind {
-        case "Server": return .server
-        case "Schema": return .schema(schema)
-        case "All tables in schema": return .allTables(schema)
-        case "Table": return .table(TableName(schema: dialect.isMySQL ? database : schema, name: table))
-        default: return .database(database)
-        }
+    private var target: GrantTarget? {
+        guard let grantKind else { return nil }
+        return maker.target(grantKind, fields: grantKind.fields.map { values[$0.title] ?? "" })
     }
 
     private var preview: Result<[UserStatement], Error> {
-        let privileges = UserStatements.privileges(on: target, dialect: dialect).filter(picked.contains)
-        return Result { [try UserStatements.grant(privileges, on: target, to: user, dialect: dialect, grantOption: grantOption)] }
+        guard let target else { return .failure(UserStatements.Refusal(message: "Nothing is granted here.")) }
+        let privileges = maker.privileges(on: target).filter(picked.contains)
+        return Result { [try maker.grant(privileges, on: target, to: user, grantOption: grantOption)] }
     }
 
     var body: some View {
-        UserSheetFrame(title: "Grant to \(user.display)", preview: preview, button: "Grant…", close: close, go: go) {
-            Picker("On", selection: $kind) {
-                ForEach(UserStatements.targetKinds(dialect), id: \.self) { Text($0).tag($0) }
+        UserSheetFrame(
+            title: "Grant to \(user.display)", preview: preview, end: model.dialect != nil ? ";" : "", button: "Grant…", close: close, go: go
+        ) {
+            if maker.form.grantKinds.count > 1 {
+                Picker("On", selection: $kind) {
+                    ForEach(maker.form.grantKinds, id: \.title) { Text($0.title).tag($0.title) }
+                }
             }
-            if kind == "Database" || (dialect.isMySQL && kind == "Table") {
-                TextField("Database", text: $database).textFieldStyle(.roundedBorder)
+            ForEach(grantKind?.fields ?? [], id: \.title) { field in
+                TextField(field.title, text: Binding(get: { values[field.title] ?? "" }, set: { values[field.title] = $0 }))
+                    .textFieldStyle(.roundedBorder)
             }
-            if !dialect.isMySQL, kind != "Database" {
-                TextField("Schema", text: $schema).textFieldStyle(.roundedBorder)
-            }
-            if kind == "Table" { TextField("Table", text: $table).textFieldStyle(.roundedBorder) }
-            let privileges = UserStatements.privileges(on: target, dialect: dialect)
+            let privileges = target.map { maker.privileges(on: $0) } ?? []
             LazyVGrid(columns: [GridItem(.adaptive(minimum: 120), alignment: .leading)], alignment: .leading, spacing: 4) {
                 ForEach(privileges, id: \.self) { privilege in
                     Toggle(
@@ -747,12 +752,21 @@ private struct GrantSheet: View {
                     .toggleStyle(.checkbox).font(.system(size: 11))
                 }
             }
-            Toggle("With grant option — it may grant these to others", isOn: $grantOption).toggleStyle(.checkbox).font(.system(size: 11.5))
+            if maker.form.grantOption {
+                Toggle("With grant option — it may grant these to others", isOn: $grantOption).toggleStyle(.checkbox).font(.system(size: 11.5))
+            }
         }
         .onAppear {
-            kind = UserStatements.targetKinds(dialect).first { $0 == "Database" } ?? "Database"
-            database = model.session?.connection.database ?? ""
-            schema = model.session?.schema ?? "public"
+            let kinds = maker.form.grantKinds
+            kind = (kinds.first { $0.title == "Database" } ?? kinds.first)?.title ?? ""
+            for field in kinds.flatMap(\.fields) where values[field.title] == nil {
+                switch field.fill {
+                case .empty: values[field.title] = ""
+                case .database: values[field.title] = model.session?.connection.database ?? ""
+                case .schema: values[field.title] = model.session?.schema ?? "public"
+                case .text(let text): values[field.title] = text
+                }
+            }
         }
     }
 
@@ -769,21 +783,18 @@ private struct GrantRoleSheet: View {
     let close: () -> Void
     @State private var role: DatabaseUser.ID?
 
-    private var dialect: UserDialect { model.dialect ?? .postgres }
-    /// Roles first; PostgreSQL grants any role, MySQL 8 any account.
-    private var candidates: [DatabaseUser] {
-        let others = (model.users?.value ?? []).filter { $0.id != user.id && !user.memberOf.contains($0.display) }
-        let roles = others.filter(\.isRole)
-        return dialect == .mariadb || dialect == .redshift ? roles : roles + others.filter { !$0.isRole }
-    }
+    private var maker: any UserStatementMaking { model.maker ?? SQLUserStatements(dialect: .postgres) }
+    private var candidates: [DatabaseUser] { maker.roleCandidates(for: user, among: model.users?.value ?? []) }
 
     private var preview: Result<[UserStatement], Error> {
         guard let picked = candidates.first(where: { $0.id == role }) else { return .failure(UserStatements.Refusal(message: "Pick a role.")) }
-        return Result { [try UserStatements.grantRole(picked, to: user, dialect: dialect)] }
+        return Result { [try maker.grantRole(picked, to: user)] }
     }
 
     var body: some View {
-        UserSheetFrame(title: "Grant a Role to \(user.display)", preview: preview, button: "Grant…", close: close, go: go) {
+        UserSheetFrame(
+            title: "Grant a Role to \(user.display)", preview: preview, end: model.dialect != nil ? ";" : "", button: "Grant…", close: close, go: go
+        ) {
             Picker("Role", selection: $role) {
                 Text("Choose…").tag(DatabaseUser.ID?.none)
                 ForEach(candidates) { Text(verbatim: $0.display + ($0.isRole ? "" : " (a user)")).tag(DatabaseUser.ID?.some($0.id)) }

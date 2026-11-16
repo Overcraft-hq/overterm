@@ -174,6 +174,8 @@ enum EditRefusal: Error, Equatable {
     case unknownColumn(String)
     case duplicateColumn(String)
     case truncatedKey
+    /// A kind's own reason, in its words.
+    case said(String)
 
     var message: String {
         switch self {
@@ -185,6 +187,7 @@ enum EditRefusal: Error, Equatable {
         case .unknownColumn(let name): "“\(name)” isn't one of the table's columns."
         case .duplicateColumn(let name): "“\(name)” is selected twice."
         case .truncatedKey: "The key's values aren't all there."
+        case .said(let message): message
         }
     }
 }

@@ -10,7 +10,7 @@ import NIOSSL
 /// command, as redis-cli takes it; `VIEW key` is Overterm's own, a key's
 /// value whatever its type — what a key in the tree opens with.
 actor RedisDriver: DatabaseDriver {
-    private let config: DatabaseConnection
+    let config: DatabaseConnection
     private let password: String?
     private var channel: Channel?
     private var replies: RedisReplyHandler?

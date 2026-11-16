@@ -42,6 +42,9 @@ enum GrantTarget: Equatable, Hashable, Sendable {
     /// Every table now in a schema (PostgreSQL's `ALL TABLES IN SCHEMA`).
     case allTables(String)
     case table(TableName)
+    /// An engine's own kind of object — RabbitMQ's vhost, Redis's key
+    /// pattern, Neo4j's graph: its kind as the engine says it, and its name.
+    case named(kind: String, name: String)
 
     var title: String {
         switch self {
@@ -50,6 +53,7 @@ enum GrantTarget: Equatable, Hashable, Sendable {
         case .schema(let name): "Schema \(name)"
         case .allTables(let name): "All tables in \(name)"
         case .table(let table): "Table \(table.schema.map { "\($0)." } ?? "")\(table.name)"
+        case .named(let kind, let name): "\(kind) \(name)"
         }
     }
 }
@@ -97,11 +101,11 @@ enum UserStatements {
                 ]
             case .database: return ["ALL PRIVILEGES"] + tables + ["EXECUTE", "CREATE ROUTINE", "ALTER ROUTINE", "EVENT", "LOCK TABLES", "CREATE TEMPORARY TABLES"]
             case .table: return ["ALL PRIVILEGES"] + tables
-            case .schema, .allTables: return []
+            case .schema, .allTables, .named: return []
             }
         }
         switch target {
-        case .server: return []
+        case .server, .named: return []
         case .database: return dialect == .redshift ? ["ALL", "CREATE", "TEMPORARY"] : ["ALL", "CONNECT", "CREATE", "TEMPORARY"]
         case .schema: return ["ALL", "USAGE", "CREATE"]
         case .table, .allTables:

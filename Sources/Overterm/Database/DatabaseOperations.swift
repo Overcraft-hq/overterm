@@ -165,7 +165,13 @@ struct SizeEntry: Equatable, Sendable, Identifiable {
     var bytes: Int64
     /// What else the engine says: rows (estimated), the index's table.
     var detail: String?
+    /// What `bytes` counts when it isn't bytes — "nodes", "messages" — for
+    /// an engine that says how many, not how big.
+    var unit: String?
     var id: String { "\(schema ?? "")\u{1}\(name)" }
+
+    /// As the page and the agents say it.
+    var size: String { unit.map { "\(bytes) \($0)" } ?? OpsText.bytes(bytes) }
 }
 
 struct DatabaseSizes: Equatable, Sendable {
@@ -193,6 +199,26 @@ protocol DatabaseMonitoring: DatabaseDriver {
     /// The engine's own consistency check, run on request (SQLite's
     /// `integrity_check`); nil where it has none.
     func integrityCheck() async throws -> String?
+    /// How a session is stopped on this kind, as the menu and the
+    /// confirmation say it; nil: the SQL engines' two (cancel the statement,
+    /// terminate the session).
+    static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]?
+}
+
+/// One way a session is stopped: Neo4j's TERMINATE TRANSACTION, Redis's
+/// CLIENT KILL, RabbitMQ's connection closed.
+struct SessionStop: Equatable, Sendable {
+    /// What `cancel(session:terminate:)` is called with.
+    var terminate: Bool
+    /// The menu item: "Terminate Transaction…".
+    var menu: String
+    /// The confirmation's question.
+    var title: String
+    /// What is sent, as the confirmation shows it.
+    var command: String
+    /// What it does.
+    var effect: String
+    var button: String
 }
 
 extension DatabaseMonitoring {
@@ -202,6 +228,7 @@ extension DatabaseMonitoring {
     func sizes() async throws -> Monitored<DatabaseSizes> { .unavailable(MonitorGap(reason: "This engine doesn't say its sizes.")) }
     func cancel(session: String, terminate: Bool) async throws { throw DatabaseError.failed("Sessions can't be cancelled here.") }
     func integrityCheck() async throws -> String? { nil }
+    static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]? { nil }
 }
 
 // MARK: Editing rows
@@ -221,6 +248,8 @@ struct TableKey: Equatable, Sendable {
         case unique(String)
         /// SQLite's rowid, for a rowid table without a primary key.
         case rowid
+        /// What the engine gives each row itself: a node's `elementId`.
+        case identity(String)
     }
 
     /// The table, resolved: its schema as the database names it.
@@ -238,6 +267,7 @@ struct TableKey: Equatable, Sendable {
         case .primary: return "primary key \(names)"
         case .unique(let index): return "unique key \(index) (\(names))"
         case .rowid: return "rowid"
+        case .identity(let what): return what
         }
     }
 }
@@ -251,6 +281,9 @@ struct EditStatement: Equatable, Sendable {
     /// A count of the rows the key finds — for MySQL, whose UPDATE counts
     /// only the rows it actually changed (0 when the value was the same).
     var countSQL: String?
+    /// What the Save's confirmation says of it beside the statement (a
+    /// node's relationships deleted with it).
+    var note: String?
 }
 
 /// A driver whose results can be edited: it finds a table's key, and
@@ -268,10 +301,18 @@ protocol DatabaseTableEditing: DatabaseDriver {
     /// expects; any failure rolls back all of them. Refused on a read-only
     /// connection.
     func apply(_ statements: [EditStatement]) async throws
+    /// A kind whose rows aren't a SQL table's (a graph's nodes) says itself
+    /// whether a result is edited — nil: the SQL way (`EditableQuery`, the
+    /// table's key, its catalog columns).
+    func editableResult(statement: String, columns: [String]) async -> Result<EditableResult, EditRefusal>?
+    /// …and makes a Save's statements; nil: `EditStatements` in `editDialect`.
+    func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement]?
 }
 
 extension DatabaseTableEditing {
     static func editsRows(_ kind: DatabaseKind) -> Bool { true }
+    func editableResult(statement: String, columns: [String]) async -> Result<EditableResult, EditRefusal>? { nil }
+    func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement]? { nil }
 }
 
 // MARK: Users and roles
@@ -320,10 +361,14 @@ protocol DatabaseUserManagement: DatabaseDriver {
     /// Statements `UserStatements` made, sent once, in order, nothing kept —
     /// not in the history, not in a log. Refused on a read-only connection.
     func run(_ statements: [UserStatement]) async throws
+    /// How its statements are made and what the sheets ask; the SQL
+    /// engines' from `userDialect()`.
+    func userStatements() async -> any UserStatementMaking
 }
 
 extension DatabaseUserManagement {
     static func managesUsers(_ kind: DatabaseKind) -> Bool { true }
+    func userStatements() async -> any UserStatementMaking { SQLUserStatements(dialect: await userDialect()) }
 }
 
 // MARK: Reading the engines' answers

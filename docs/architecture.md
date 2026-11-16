@@ -1768,6 +1768,20 @@ operation at a time (`exclusive`, as Redis's): a Save's transaction is
 BEGIN, its statements, COMMIT, and a read of the Server page between
 them would run inside it.
 
+A kind whose words aren't SQL's fills three small hooks, each with a
+default that is the SQL engines' way: `sessionStops` (how a session is
+stopped, as the menu and the confirmation say it — Neo4j's TERMINATE
+TRANSACTION, Redis's CLIENT KILL, RabbitMQ's connection closed),
+`editableResult`/`editStatements` (whether a result is edited and its
+Save's statements — a graph's nodes), `userStatements()` (an
+`UserStatementMaking`: the statements, or requests, its Users page
+makes, and what its sheets ask — `SQLUserStatements` wraps
+`UserStatements` for the SQL engines). A request-shaped user change
+(RabbitMQ's, InfluxDB 2's) is a `UserRequest` line, `METHOD /api/path
+{json}`, `NEW` before it where it must not replace what is there. A
+size that counts things rather than bytes (nodes, relationships) says
+its `unit`.
+
 ### Server page (monitoring)
 
 A connection's page in the right slot (`DatabaseSlotModel`,
@@ -1806,6 +1820,35 @@ offered on the page's own session (the driver refuses it too).
 - **SQLite**: the overview alone — the library's version, the file, pages,
   free pages, journal mode, encoding — and Check Integrity
   (`PRAGMA integrity_check`, on request).
+- **Neo4j** (`Neo4jOperations`): `SHOW TRANSACTIONS YIELD *` is Activity
+  (the page's own told by its statement; TERMINATE TRANSACTION), Slow
+  Queries (what runs now, longest first — finished ones are in query.log
+  on the server's disk, not read over HTTP, said) and Locks (each
+  transaction's `Blocked by: […]`); `dbms.components()`, the databases,
+  nodes and relationships from the count store; Sizes are each label's
+  and relationship type's count (a `unit`, not bytes — the store's bytes
+  only where JMX says them, 4.x).
+- **InfluxDB** (`InfluxDBOperations`): 1.x `SHOW DIAGNOSTICS`/`SHOW STATS`
+  (version, uptime, series, heap, queries, points written), `SHOW QUERIES`
+  (`KILL QUERY`), shards' `diskBytes` by database and retention policy —
+  each an admin's, else said with the GRANT; 2.x `/health` and
+  `/metrics`' headline numbers, the buckets with their retention and
+  their shards' bytes (`storage_shard_disk_size` by bucket id); its
+  running queries aren't listed (said). 3.x: its health only — said.
+- **RabbitMQ** (`RabbitMQOperations`): `/api/overview` and `/api/nodes`
+  (memory of the high watermark, disk free, file descriptors, alarms
+  said), the connections as sessions with their channels' consumers and
+  unacked messages (Close Connection: `DELETE /api/connections/<name>`;
+  none is the page's own — Overterm speaks HTTP), the queues by bytes
+  with their rates and each vhost's sum. Another user's connections are
+  shown to a user tagged monitoring or administrator — said.
+- **Redis** (`RedisOperations`): its own page stays Server Info
+  (`RedisSlotView`) — the panel and ⌘K offer no second one — but its
+  reads are the shared ones too, with the same parsers (`RedisInfo`,
+  `RedisClients`, `RedisSlowEntry`), so agents' tools say what the page
+  does: INFO, CLIENT LIST (CLIENT KILL; its own client marked), SLOWLOG
+  GET with the same command line together and AUTH's and ACL's secrets
+  masked.
 
 ### Editing rows
 
@@ -1841,6 +1884,23 @@ driver doesn't edit, offers nothing.
   everything rolls back and the error says which. Then the statement is
   run again and its rows replace the old; what ran goes in the history.
   Redshift doesn't enforce its keys, so its rows aren't edited.
+- **Neo4j's nodes** (`Neo4jEdits`, pure): `MATCH (n:Label) [WHERE …]
+  RETURN n [ORDER BY …] [SKIP …] [LIMIT …]` — one label, the node itself
+  returned — comes back as rows of its nodes' properties (`flatten`:
+  `elementId(n)`, then each property, sorted), each found again by its
+  `elementId` (`TableKey.Kind.identity`). A cell is written as the type
+  the catalog has seen for its property (`db.schema.nodeTypeProperties`:
+  String, Long, Double, Boolean, or a list of one); a date, a point, or a
+  property seen with two types is read-only — its text isn't its value.
+  NULL is `REMOVE n.p`, `''` an empty string; a node added is `CREATE
+  (n:Label {…})`, deleted `DETACH DELETE` (its relationships with it —
+  the confirmation says so). Each statement `RETURN count(n)`, all in one
+  explicit transaction (`/db/<db>/tx`), each checked to count 1, else
+  rolled back. Over the transactional API only.
+- **Not edited**: InfluxDB — a point isn't updated in place (a write of
+  the same series and time overwrites it) and a delete is by time range
+  and predicate, never a row; RabbitMQ — messages aren't rows; Redis — a
+  key has its own page.
 
 ### Users and roles
 
@@ -1875,6 +1935,40 @@ list, never typed), shown in the sheet as it will run, asked
   by `SHOW GRANTS FOR`, read with any `IDENTIFIED …` (MariaDB prints the
   hash) cut out first (`MySQLOps.redact`). A user who may not read
   `mysql.user` is told so, with the grant an administrator would give.
+- **Neo4j**: `SHOW USERS` (and Enterprise's `SHOW ROLES`, `SHOW ROLE|USER
+  … PRIVILEGES AS COMMANDS`) on `system`. CREATE USER … SET ENCRYPTED
+  PASSWORD — its stored form, `1,<hash>,<salt>` (SHA-256 of salt and
+  password, hashed 1024 times), so the password is never in the clear
+  on the wire or in the query log — ALTER USER, DROP USER; Enterprise:
+  CREATE ROLE, GRANT ROLE, a privilege granted to a role on a database or
+  graph, a listed privilege revoked in the server's own words (`GRANT … TO
+  r` → `REVOKE GRANT … FROM r`). Community has no roles or privileges —
+  said.
+- **InfluxDB**: 1.x InfluxQL — `SHOW USERS`, `SHOW GRANTS FOR`, CREATE
+  USER (admin: WITH ALL PRIVILEGES), SET PASSWORD (InfluxDB redacts it
+  from its log), GRANT/REVOKE READ, WRITE, ALL on a database, DROP USER.
+  2.x API — users created, their password set and made members of the
+  connection's organization (`{user:name}` and `{org}` in the request are
+  ids looked up just before sending), dropped; a user's tokens listed as
+  its grants by description and permissions — the token's value is never
+  decoded — and revoked (deleted); tokens aren't made here, since a new
+  one's value would have to be shown. 3.x has tokens, not users — said.
+- **RabbitMQ**: `/api/users?columns=name,tags` (never `password_hash`),
+  permissions per vhost and topic permissions. A user is a PUT with its
+  password's `rabbit_password_hashing_sha256` hash (salt and SHA-256,
+  RabbitMQ's own — never the password), its tags (administrator its
+  superuser); a new one never replaces one (`NEW`); a password change
+  PUTs its tags with it. Permissions on a vhost: configure, write, read —
+  each `.*` or `^$`; revoked and dropped with DELETE. Only an
+  administrator lists users — said, with `rabbitmqctl set_user_tags`.
+- **Redis**: ACL — `ACL LIST`, each line's password hashes counted ("a
+  password set"), never kept; its commands, key patterns (`~`, `%R~`,
+  `%W~`), channels and selectors as its grants. ACL SETUSER with each
+  word one argument, the password as `#<sha256>` (never in the clear, in
+  MONITOR or the slow log); a new user's line starts with `reset` and is
+  refused over one that exists; a row revoked whole (nocommands,
+  resetkeys, resetchannels, clearselectors); ACL DELUSER. Changes are the
+  running server's — ACL SAVE or CONFIG REWRITE keeps them (said).
 
 ### Saved queries
 

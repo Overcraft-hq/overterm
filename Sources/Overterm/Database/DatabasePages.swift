@@ -181,6 +181,8 @@ final class DatabaseUsersModel: ObservableObject {
     @Published private(set) var error: String?
     @Published private(set) var reading = false
     @Published private(set) var dialect: UserDialect?
+    /// How the kind's statements are made, and what the sheets ask.
+    @Published private(set) var maker: (any UserStatementMaking)?
 
     var visible = false {
         didSet { if visible, !oldValue, users == nil { Task { await reload() } } }
@@ -210,7 +212,9 @@ final class DatabaseUsersModel: ObservableObject {
         }
         reading = true
         defer { reading = false }
-        dialect = await driver.userDialect()
+        let maker = await driver.userStatements()
+        self.maker = maker
+        dialect = (maker as? SQLUserStatements)?.dialect
         do {
             users = try await driver.users()
             error = nil

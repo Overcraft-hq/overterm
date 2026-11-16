@@ -7,7 +7,7 @@ import Foundation
 /// connection refuses PUBLISH, PURGE and any method but GET before sending.
 /// AMQP itself is never spoken: PEEK and PUBLISH are the API's own.
 actor RabbitMQDriver: DatabaseDriver {
-    private let config: DatabaseConnection
+    let config: DatabaseConnection
     private let password: String?
     private let http: HTTPDriverTransport
     /// Where queue and exchange names are looked up: the connection's vhost (else `/`), until a `USE`.
@@ -28,7 +28,7 @@ actor RabbitMQDriver: DatabaseDriver {
     // MARK: HTTP
 
     /// `path` is already percent-encoded (the vhost `/` is `%2F`).
-    private func request(_ method: String, _ path: String, body: Data? = nil) async throws -> Data {
+    func request(_ method: String, _ path: String, body: Data? = nil) async throws -> Data {
         guard let base = http.url(""), let url = URL(string: base.absoluteString + path) else {
             throw DatabaseError.failed("\(path) isn't a valid address — percent-encode what isn't (a vhost's / is %2F).")
         }
@@ -78,7 +78,7 @@ actor RabbitMQDriver: DatabaseDriver {
         var errorDescription: String? { said }
     }
 
-    private func json(_ method: String, _ path: String, body: [String: Any]? = nil) async throws -> Any {
+    func json(_ method: String, _ path: String, body: [String: Any]? = nil) async throws -> Any {
         let data = try await request(method, path, body: try body.map { try JSONSerialization.data(withJSONObject: $0) })
         guard !data.isEmpty else { return [String: Any]() }
         do {

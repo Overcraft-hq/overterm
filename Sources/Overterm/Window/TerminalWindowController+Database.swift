@@ -392,7 +392,7 @@ extension TerminalWindowController {
         var items: [PaletteItem] = []
         for connection in DatabaseModel.shared.store.connections {
             let features = connection.kind.features
-            if features.contains(.monitoring) {
+            if features.contains(.monitoring), !connection.kind.isRedis {
                 items.append(
                     PaletteItem(
                         id: "db.server.\(connection.id)", group: .action, title: "Server: \(connection.name)",
