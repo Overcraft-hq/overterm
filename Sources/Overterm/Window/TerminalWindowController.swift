@@ -132,6 +132,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     var kubernetesPageHeld = false
     /// The Activity page's own state; its view is made the first time it opens.
     let activityPage = ActivityPageModel()
+    /// The ⌃⌘A switcher's hold and rows, while the palette shows it.
+    let activitySwitcher = ActivitySwitcher()
     /// What an isolated run would have opened in the default browser (an Ingress).
     var kubernetesOpenedExternally: [URL] = []
     /// …and for the ⌃⌘J switcher, while the palette shows it.
@@ -3167,6 +3169,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         paletteView?.isHidden = true
         focusSelectedTerminal()
         releaseKubernetesSwitcher()
+        releaseActivitySwitcher()
     }
 
     /// Actions first, then tabs, worktrees and snippets — the order shown

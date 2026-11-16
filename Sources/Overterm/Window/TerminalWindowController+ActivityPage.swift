@@ -34,6 +34,15 @@ extension TerminalWindowController {
     func wireActivityPage() {
         declarePage(activityWorkspacePage())
         activityPage.tabTitles = { Self.activityTabTitles() }
+        activitySwitcher.tabTitles = { Self.activityTabTitles() }
+        activitySwitcher.stocked = { [weak self] in self?.restockPalette() }
+        // The switcher holds while the palette shows its tab, however it got
+        // there — ⌃⌘A or ⇥ — and lets go when ⇥ leaves it. The emitted
+        // value: `scope` isn't set yet.
+        palette.$scope
+            .dropFirst()
+            .sink { [weak self] scope in self?.activityScopeChanged(scope) }
+            .store(in: &cancellables)
         activityPage.$focusList
             .dropFirst()
             .sink { [weak self] _ in self?.focusPageList(.activity) }
@@ -77,21 +86,96 @@ extension TerminalWindowController {
     /// An `activity.` setting changed: off closes the page and stops its
     /// reading; the interval and everyone's are the page's want and rows.
     func activitySettingsChanged() {
-        if !Settings.shared.activityEnabled { closeOverlay(.activity) }
+        if !Settings.shared.activityEnabled {
+            closeOverlay(.activity)
+            if paletteView?.isHidden == false, palette.scope == .activity { hidePalette() }
+        }
         activityPage.settingsChanged()
     }
 
-    /// What the palette offers of Activity: the page and its Listening.
+    /// ⌃⌘A: the palette, on the listening ports and the busiest processes.
+    /// It holds the census's full level while it shows, so `:5000` finds
+    /// AirPlay's listener with no page showing. With Activity off, its
+    /// settings.
+    @objc func showActivitySwitcher(_ sender: Any?) {
+        guard Settings.shared.activityEnabled else { return openSettings(.activity) }
+        togglePalette(scope: .activity)
+        guard paletteView?.isHidden == false, palette.scope == .activity else { return }
+        activitySwitcher.open()
+    }
+
+    /// The palette's tab changed to `scope`: the switcher held on
+    /// Activity's while the palette shows, given back on any other.
+    func activityScopeChanged(_ scope: PaletteItem.Group?) {
+        if scope == .activity {
+            guard Settings.shared.activityEnabled, paletteView?.isHidden == false else { return }
+            activitySwitcher.open()
+        } else {
+            activitySwitcher.close()
+        }
+    }
+
+    /// The palette closed: the switcher's hold goes — after what was picked
+    /// has opened the page, so the page's want comes first and the ticks
+    /// run on rather than starting again.
+    func releaseActivitySwitcher() {
+        guard activitySwitcher.holding else { return }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.paletteView?.isHidden != false else { return }
+            self.activitySwitcher.close()
+        }
+    }
+
+    /// A switcher row picked: ↩ shows it on the page; ⌥↩ opens a port where
+    /// Settings ▸ Browser says, or goes to a process's tab.
+    func pickActivityRow(_ row: ActivitySwitcher.Row, run: Bool) {
+        let section: ActivityPageModel.Section
+        if case .port = row.target { section = .listening } else { section = .processes }
+        if !run {
+            let tab = row.tab.flatMap { id in store.tabs.first { $0.id == id } }
+            if case .port(let url?) = row.target { return openLink(url, for: tab ?? store.selected) }
+            if let id = row.tab, let (window, _) = Self.activityWindow(of: id) {
+                if store.showingOverlay != nil { hideOverlay(focus: false) }
+                return window.reveal(tabID: id)
+            }
+        }
+        showActivityPage(section)
+        activityPage.reveal(row.id, in: section)
+    }
+
+    /// The window holding tab `id`.
+    static func activityWindow(of id: UUID) -> (TerminalWindowController, Tab)? {
+        for window in (NSApp as NSApplication?)?.windows ?? [] {
+            guard let controller = window.windowController as? TerminalWindowController else { continue }
+            if let tab = controller.store.tabs.first(where: { $0.id == id }) { return (controller, tab) }
+        }
+        return nil
+    }
+
+    /// Activity: Listening (`activity.listening`, no key by default): the
+    /// page on the listening ports.
+    @objc func showActivityListening(_ sender: Any?) {
+        showActivityPage(.listening)
+    }
+
+    /// What the palette offers of Activity: the page and its Listening, and
+    /// while the switcher holds the census, its rows.
     func activityPaletteItems() -> [PaletteItem] {
         guard Settings.shared.activityEnabled else { return [] }
-        return [
-            PaletteItem(id: "a.activity", group: .action, title: "Activity", subtitle: "Every process and port on this Mac  ⌥⌘A", symbol: "cpu") {
+        let rows = (activitySwitcher.rows ?? []).map { row in
+            PaletteItem(
+                id: "activity.\(row.id)", group: .activity, title: row.title, subtitle: row.subtitle,
+                symbol: { if case .port = row.target { return "dot.radiowaves.left.and.right" } else { return "cpu" } }()
+            ) { [weak self] run, _ in self?.pickActivityRow(row, run: run) }
+        }
+        return rows + [
+            PaletteItem(id: "a.activity", group: .action, title: "Activity", subtitle: "Every process and port on this Mac  ⌥⌘A  ·  ⌃⌘A its switcher", symbol: "cpu") {
                 [weak self] _, _ in self?.showActivityPage(.processes)
             },
             PaletteItem(
                 id: "a.activity.listening", group: .action, title: "Activity: Listening", subtitle: "Your processes' listening ports, and who holds each",
                 symbol: "dot.radiowaves.left.and.right"
-            ) { [weak self] _, _ in self?.showActivityPage(.listening) },
+            ) { [weak self] _, _ in self?.showActivityListening(nil) },
         ]
     }
 }

@@ -241,6 +241,89 @@ final class ActivityRowsTests: XCTestCase {
         monitor.stop()
     }
 
+    // MARK: The switcher (⌃⌘A)
+
+    /// Ports first by number, then the ten busiest with a rate.
+    func testTheSwitchersRowsPortsThenTheBusiest() throws {
+        let context = mac()
+        let sampler = ActivitySampler(kernel: kernel)
+        _ = try full(sampler, context)
+        burn(1102, 400_000_000)
+        burn(2000, 100_000_000)
+        kernel.advance(1_000_000_000)
+        let content = ActivityRows.content(of: try full(sampler, context), ActivityRows.Options(titles: [tab: "web"]))
+        let rows = ActivitySwitcher.rows(of: content)
+        XCTAssertEqual(rows.prefix(3).map(\.title), [":5173 acme-server", ":5353 acme-server", ":8080 globex-agent"])
+        XCTAssertEqual(rows.first?.subtitle, "tcp · This Mac — “web”")
+        XCTAssertEqual(rows.first?.target, .port(url: URL(string: "http://127.0.0.1:5173")))
+        let processes = rows.filter { $0.target == .process }
+        XCTAssertEqual(processes.first?.title, "acme-server")
+        XCTAssertEqual(processes.first?.subtitle, "40.0% CPU · pid 1102 — “web”")
+        XCTAssertLessThanOrEqual(processes.count, 10)
+        XCTAssertTrue(processes.allSatisfy { row in content.processes.first { $0.id == row.id }?.cpu != nil }, "only what has a rate")
+    }
+
+    /// It holds the full level every second while open, its rows frozen
+    /// once a read has rates; closed, nothing.
+    func testTheSwitcherHoldsTheFullLevelWhileOpen() async throws {
+        let context = mac()
+        let monitor = ActivityMonitor(sampler: ActivitySampler(kernel: kernel))
+        monitor.setContext(context)
+        let switcher = ActivitySwitcher(monitor: monitor)
+        switcher.isolated = false
+        var stocked = 0
+        switcher.stocked = { stocked += 1 }
+        switcher.open()
+        XCTAssertTrue(monitor.demand.full)
+        XCTAssertEqual(monitor.cadence, .seconds(1))
+        let first = await eventually { switcher.rows != nil }
+        XCTAssertTrue(first)
+        XCTAssertGreaterThanOrEqual(stocked, 1)
+        burn(1102, 400_000_000)
+        kernel.advance(1_000_000_000)
+        _ = await monitor.tick()
+        let rated = await eventually { switcher.rows?.contains { $0.target == .process } == true }
+        XCTAssertTrue(rated, "stocked again once a read has rates")
+        let frozen = switcher.rows
+        let stocks = switcher.stocks
+        burn(2000, 900_000_000)
+        kernel.advance(1_000_000_000)
+        _ = await eventually { !monitor.isSampling }
+        let later = monitor.fullTicks
+        _ = await monitor.tick()
+        _ = await eventually { monitor.fullTicks > later }
+        await Task.yield()
+        XCTAssertEqual(switcher.stocks, stocks, "then kept as ranked")
+        XCTAssertEqual(switcher.rows, frozen)
+        switcher.close()
+        XCTAssertFalse(monitor.demand.full)
+        XCTAssertNil(switcher.rows)
+        monitor.stop()
+    }
+
+    /// The switcher's subtitles, and so the palette's search, carry the
+    /// tab's title masked, as the page's rows do (9.3).
+    func testTheSwitchersRowsCarryTheMaskedTitle() throws {
+        let secret = "fake-secret-2"
+        let context = mac()
+        let sampler = ActivitySampler(kernel: kernel)
+        _ = try full(sampler, context)
+        burn(1102, 400_000_000)
+        kernel.advance(1_000_000_000)
+        let content = ActivityRows.content(of: try full(sampler, context), ActivityRows.Options(titles: [tab: "curl -u acme:\(secret) https://acme.test"]))
+        let rows = ActivitySwitcher.rows(of: content)
+        XCTAssertTrue(rows.contains { $0.subtitle.contains("“curl -u ") })
+        XCTAssertFalse(rows.contains { $0.title.contains(secret) || $0.subtitle.contains(secret) })
+    }
+
+    /// With Activity off, ⌘K offers no Activity tab to ⇥ into (6.13).
+    func testThePaletteOffersActivitysTabOnlyWhileOn() {
+        let palette = PaletteModel()
+        XCTAssertTrue(palette.tabs.contains(.activity))
+        Settings.shared.set("activity.enabled", .bool(false))
+        XCTAssertFalse(palette.tabs.contains(.activity))
+    }
+
     func testTheDigitsPickTheSections() {
         let page = ActivityPageModel(monitor: ActivityMonitor(sampler: ActivitySampler(kernel: kernel)))
         XCTAssertTrue(page.press("2"))

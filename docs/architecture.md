@@ -915,6 +915,13 @@ walks the closing panes' trees itself, on the main thread, at the close
   VoiceOver (`ResourceTable`'s `accessibilityLabel`). Settings ▸ Activity
   holds `activity.enabled`, `interval` (the census's cadence, the light
   tick's too), `everyone` and `appServices`.
+- **The switcher** (⌃⌘A, `ActivitySwitcher`): the palette on the
+  listening ports, by number, then the ten busiest processes. It holds
+  the full level every second while the palette shows it, page or no
+  page, and stocks its rows until a read has rates, then keeps them as
+  ranked — the palette re-ranks on a reorder, which would move the
+  selection. ↩ shows the row on the page; ⌥↩ opens a port where
+  Settings ▸ Browser says, or goes to a process's tab.
 
 ## Agents
 

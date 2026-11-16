@@ -114,11 +114,41 @@ extension E2ERunner {
             "hidden, it reads nothing: no full tick, no rows made, for 3 s", monitor.fullTicks == fullHidden && page.builds == builds,
             "\(monitor.fullTicks - fullHidden) full ticks, \(page.builds - builds) builds")
 
+        // ⌃⌘A, with no page showing: the palette on the ports and the
+        // busiest, holding the full level while it shows.
+        app.showActivitySwitcher(nil)
+        check("⌃⌘A opens the switcher", app.paletteView?.isHidden == false && app.palette.scope == .activity)
+        check("which holds the full level while it shows", app.activitySwitcher.holding && monitor.demand.full)
+        let portItem = "activity.\(row?.id ?? "-")"
+        let offered = await eventually(10) { self.app.palette.results.contains { $0.id == portItem } }
+        check("the server's port first among its rows, as :N and its process", offered && app.palette.results.first?.title.hasPrefix(":") == true)
+        let picked = app.palette.results.first { $0.id == portItem }
+        picked?.perform(true, [:])
+        app.hidePalette()
+        check(
+            "↩ shows it on the page, in Listening, selected",
+            app.store.showingOverlay == .activity && page.section == .listening && page.selection == [row?.id ?? "-"])
+        check("the switcher's hold goes with the palette", await eventually(3) { !self.app.activitySwitcher.holding })
+        check("the page's stays", page.wanting && monitor.demand.full)
+        app.toggleActivityPage(nil)
+        check("and goes when it hides", !page.wanting && !monitor.demand.full)
+
+        // ⌘K, then ⇥ onto Activity's tab: the switcher holds as ⌃⌘A's does;
+        // ⇥ off it gives the hold back, with the palette still open.
+        app.showPalette(nil)
+        while app.palette.scope != .activity, app.palette.tabs.contains(.activity) { app.palette.cycleScope(1) }
+        check("⇥ onto Activity's tab holds the full level", app.activitySwitcher.holding && monitor.demand.full)
+        check("and stocks its rows", await eventually(10) { self.app.palette.results.contains { $0.id.hasPrefix("activity.") } })
+        app.palette.cycleScope(1)
+        check("⇥ off it gives the hold back", app.paletteView?.isHidden == false && !app.activitySwitcher.holding && !monitor.demand.full)
+        app.hidePalette()
+
         // Off: no page; ⌥⌘A opens its settings.
         Settings.shared.set("activity.enabled", .bool(false))
         app.toggleActivityPage(nil)
         check("with Activity off, ⌥⌘A opens Settings ▸ Activity", app.store.showingOverlay == .settings && app.settingsPage.section == .activity)
         check("and nothing is offered in ⌘K", app.activityPaletteItems().isEmpty)
+        check("nor a tab to ⇥ into", !app.palette.tabs.contains(.activity))
         Settings.shared.set("activity.enabled", nil)
         app.hideOverlay()
         check("on, ⌘K offers the page", app.activityPaletteItems().contains { $0.title == "Activity" })

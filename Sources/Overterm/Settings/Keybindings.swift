@@ -322,10 +322,13 @@ enum KeyCommands {
         .init("kubernetes.terminal", "Terminal in Kubernetes Context…", group: "Panels"),
         // No key by default: ⇧⌘E is Tab Peek's.
         .init("kubernetes.exportCSV", "Export Kubernetes List as CSV…", group: "Panels"),
-        // ⌥⌘A (docs/design/activity/analysis.md, 6.3): bound by neither
-        // KeyCommands nor Ghostty v1.4.0's macOS defaults (⌥⌘ only W, I and
-        // the arrows).
+        // ⌥⌘A and ⌃⌘A (docs/design/activity/analysis.md, 6.3): bound by
+        // neither KeyCommands nor Ghostty v1.4.0's macOS defaults (⌥⌘ only
+        // W, I and the arrows; ⌃⌘ the arrows, = and F).
         .init("activity.page", "Activity", group: "Panels", key: "alt+cmd+a"),
+        .init("activity.switch", "Activity Switcher", group: "Panels", key: "ctrl+cmd+a"),
+        // No key by default (6.3): the user can bind it.
+        .init("activity.listening", "Activity: Listening", group: "Panels"),
         // ⌥⌘E and ⌃⌘E: bound by neither KeyCommands nor Ghostty v1.4.0's
         // defaults (src/config/Config.zig: ⌘E is search_selection, ⇧⌘E Tab Peek's here).
         .init("terraform.show", "Terraform", group: "Panels", key: "alt+cmd+e"),

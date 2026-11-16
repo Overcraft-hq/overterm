@@ -571,7 +571,9 @@ value, a path or an address of a process that isn't the test's.
   test run's own tabs' alone with the Mac counted, the user's listeners
   by number with their tab and reach, what each row says to VoiceOver,
   numbers written the same in every locale; the page's want — the full
-  level only while it is shown in a window on screen with Activity on.
+  level only while it is shown in a window on screen with Activity on;
+  the ⌃⌘A switcher's rows (ports by number, then the ten busiest with a
+  rate) and its hold, every second while open, its rows kept once rated.
 
 **The isolated-run gate.** A unit test or an isolated run is guarded
 (`AppEnvironment.guardsSignals`), over every change Overterm makes to a
@@ -699,8 +701,10 @@ accessibility tree: masked, the password and every part of it nowhere.
 run's own sleep and python server in their tab and nothing outside the
 run's tabs, the meters a core each, the server's port in Listening, each
 row's VoiceOver label; hidden, before and after, the census's full level
-doesn't tick for 3 s while the light tick goes on; with Activity off, ⌥⌘A
-opens Settings ▸ Activity. Its checks print counts, its own pids and port
+doesn't tick for 3 s while the light tick goes on; ⌃⌘A with no page
+showing holds the full level, offers the server's port first, and its ↩
+shows it on the page in Listening, the hold going with the palette; with
+Activity off, ⌥⌘A opens Settings ▸ Activity. Its checks print counts, its own pids and port
 numbers only.
 `marks` leaves one tab in each activity state; with `OVERTERM_DUMP_PNG=<png>`
 it captures the window, for judging the look. Run one by hand while working

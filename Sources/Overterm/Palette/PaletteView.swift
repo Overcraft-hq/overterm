@@ -87,6 +87,7 @@ struct PaletteView: View {
         case .container: "Docker"
         case .kubernetes: "Kubernetes"
         case .terraform: "Terraform"
+        case .activity: "Activity"
         }
     }
 
@@ -115,6 +116,7 @@ struct PaletteView: View {
             hint("↩", model.selected.map(Self.verb) ?? "open")
             if let group = model.selected?.group, group == .history || group == .snippet { hint("⌥↩", "type without running") }
             if model.selected?.group == .terraform { hint("⌥↩", "terminal in this root") }
+            if model.selected?.group == .activity { hint("⌥↩", "open the port, or go to the tab") }
             hint("⇥", "next tab")
             Spacer()
             hint("esc", "close")
@@ -133,6 +135,7 @@ struct PaletteView: View {
         case .container: "show it on the Docker page"
         case .kubernetes: "show it on the Kubernetes page"
         case .terraform: "show it in the Terraform panel"
+        case .activity: "show it on the Activity page"
         }
     }
 
