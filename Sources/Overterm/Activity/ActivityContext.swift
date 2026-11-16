@@ -108,6 +108,9 @@ struct ActivityContext: Hashable, Sendable {
     var tunnels: [Tunnel] = []
     /// The MCP bridge's port (`BrowserBridge.shared.port`): Overterm's own listener.
     var bridgePort: UInt16?
+    /// `activity.appServices` (D-31): the full level reads who is
+    /// responsible for each process.
+    var appServices = true
 
     // Seams: empty until their stage fills them.
 

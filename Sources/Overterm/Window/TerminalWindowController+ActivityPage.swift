@@ -90,6 +90,8 @@ extension TerminalWindowController {
             closeOverlay(.activity)
             if paletteView?.isHidden == false, palette.scope == .activity { hidePalette() }
         }
+        // `activity.appServices` is the census's to read (D-31).
+        ActivityMonitor.shared.contextChanged()
         activityPage.settingsChanged()
     }
 

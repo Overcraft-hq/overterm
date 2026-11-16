@@ -17,6 +17,7 @@ extension TerminalWindowController {
         let surfaces = SurfaceProcesses.shared
         if surfaces.hasWaiting, let snapshot = ActivityMonitor.shared.sampler.latest { surfaces.pair(snapshot) }
         var context = ActivityContext()
+        context.appServices = Settings.shared.activityAppServices
         for controller in windows.compactMap({ $0.windowController as? TerminalWindowController }) {
             let window = controller.window?.windowNumber
             for tab in controller.store.tabs {

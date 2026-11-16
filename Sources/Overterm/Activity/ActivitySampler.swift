@@ -243,6 +243,10 @@ final class ActivitySampler: @unchecked Sendable {
         var procName: String?
         var markers = Markers.unread
         var arguments = Arguments.unread
+        /// The process macOS holds responsible for it (D-31), once read, by
+        /// its identity — a pid alone would name whoever holds it after the
+        /// app quits: `.some(nil)` is its own, or none answered.
+        var responsible: ActivityProcessID??
         /// The tick it was last read or wanted: past the cache's limit, the
         /// least recent go.
         var used: Int
@@ -445,6 +449,21 @@ final class ActivitySampler: @unchecked Sendable {
             lastMeters = (counters, now)
         }
 
+        // Who is responsible for each of the user's (D-31, 9.1), at the full
+        // level while `activity.appServices` is on and the call answers:
+        // one call an identity, kept as the responsible one's identity — no
+        // younger than the process, as the one that started it is.
+        let readsResponsibility = context.appServices && kernel.readsResponsibility
+        if demand.full, readsResponsibility {
+            for process in table.processes
+            where process.isOwn(by: uid) && known[process.identity] != nil && known[process.identity]?.responsible == nil {
+                let responsible = kernel.responsiblePID(of: process.pid).flatMap { table.process(pid: $0) }.flatMap { found in
+                    found.identity != process.identity && found.identity.start <= process.identity.start ? found.identity : nil
+                }
+                known[process.identity]?.responsible = .some(responsible)
+            }
+        }
+
         var facts: [ActivityProcessID: ActivityFacts] = [:]
         let described = demand.full ? table.processes : wanted
         facts.reserveCapacity(described.count)
@@ -453,6 +472,18 @@ final class ActivitySampler: @unchecked Sendable {
             facts[process.identity] = Self.facts(
                 process, known[process.identity], usage: usage?.0, rates: usage?.1, sockets: sockets[process.identity],
                 folder: folders[process.identity])
+            // Read is "none" or the one still running; a responsible one that
+            // has since gone leaves it unread, never another's.
+            if readsResponsibility, process.isOwn(by: uid), let read = known[process.identity]?.responsible {
+                if let responsible = read {
+                    if table.process(responsible) != nil {
+                        facts[process.identity]?.responsible = responsible
+                        facts[process.identity]?.responsibilityRead = true
+                    }
+                } else {
+                    facts[process.identity]?.responsibilityRead = true
+                }
+            }
         }
         cost.own = table.processes.lazy.filter { $0.isOwn(by: uid) }.count
         // The pairing's list (7.7): the app's children, and the logins no

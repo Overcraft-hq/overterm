@@ -124,6 +124,14 @@ struct ActivityFacts: Hashable, Sendable {
     /// Its working folder, where a level asked (a pane's agent, a process
     /// in focus): the last read, never waited for.
     var folder: ProcessFolders.Folder?
+    /// The process macOS holds responsible for it, when another (6.5 rule
+    /// 13, D-31): read at the full level while `activity.appServices` is
+    /// on; nil when off, unknown or its own.
+    var responsible: ActivityProcessID?
+    /// Whether `responsible` was read: false while off, where the call
+    /// answers nothing, for another user's, or once the one read has gone —
+    /// a nil then is unknown, never "none" (D-31).
+    var responsibilityRead = false
 }
 
 /// One pane's processes as the light level found them (6.5): the slices

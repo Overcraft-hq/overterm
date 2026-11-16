@@ -94,6 +94,12 @@ protocol ActivityKernel: Sendable {
     /// The system's own counters for the meters (`SystemMeterCounters`):
     /// read in the full tick; nil when they can't be read.
     func meterCounters() -> SystemMeterCounters?
+    /// The process macOS holds responsible for `pid` (6.5 rule 13, D-31:
+    /// `ProcessResponsibility`): nil when off, unknown, or its own.
+    func responsiblePID(of pid: pid_t) -> pid_t?
+    /// Whether `responsiblePID` answers at all: false when the call is
+    /// missing or turned itself off, so its nil is unread, never "none".
+    var readsResponsibility: Bool { get }
 }
 
 /// A process's audit token (`TASK_AUDIT_TOKEN`, 3.9): it names one
@@ -142,6 +148,8 @@ enum CodeSigningAnswer: Hashable, Sendable {
 
 extension ActivityKernel {
     func meterCounters() -> SystemMeterCounters? { nil }
+    func responsiblePID(of pid: pid_t) -> pid_t? { nil }
+    var readsResponsibility: Bool { false }
 
     /// `pid`'s code signing: `csops`, else Security.framework's answer
     /// while `fallbacks` lasts (each over a millisecond); nil is unknown — never
@@ -234,6 +242,9 @@ struct LiveActivityKernel: ActivityKernel {
         guard length > 0 else { return nil }
         return String(decoding: buffer.prefix(Int(length)), as: UTF8.self)
     }
+
+    func responsiblePID(of pid: pid_t) -> pid_t? { ProcessResponsibility.responsible(for: pid) }
+    var readsResponsibility: Bool { ProcessResponsibility.isAvailable }
 
     func path(of pid: pid_t) -> String? {
         var buffer = [UInt8](repeating: 0, count: 4 * Int(MAXPATHLEN))
@@ -433,6 +444,8 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
         var image: UInt32 = 0
         /// Its session (`getsid`); nil: unreadable.
         var session: pid_t?
+        /// The process macOS holds responsible for it (D-31); nil: its own.
+        var responsible: pid_t?
     }
 
     /// A signal the fake was asked to send.
@@ -458,6 +471,7 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     private var sends: [Sent] = []
     private var lastImage: UInt32 = 0
     private var meters: SystemMeterCounters?
+    private var responsibility = true
 
     init(uid: uid_t = 501) { self.uid = uid }
 
@@ -499,6 +513,10 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
 
     /// Without `proc_signal_with_audittoken`, as a system that lacks it.
     func dropTokenSignal() { lock.withLock { tokenCall = false } }
+
+    /// Without the responsibility call, as a system that lacks it or where
+    /// it turned itself off (D-31): it answers nothing.
+    func dropResponsibilityCall() { lock.withLock { responsibility = false } }
 
     /// `pid` execs `path`: the same pid and start, another image — its
     /// version moved on, so a token taken before names nothing now.
@@ -683,6 +701,10 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     }
 
     func path(of pid: pid_t) -> String? { asked("path") { table[pid]?.path } }
+
+    func responsiblePID(of pid: pid_t) -> pid_t? { asked("responsible") { responsibility ? table[pid]?.responsible : nil } }
+
+    var readsResponsibility: Bool { lock.withLock { responsibility } }
 
     func groupMembers(_ group: pid_t, limit: Int) -> [pid_t]? {
         asked("groupMembers") {
