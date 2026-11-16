@@ -304,7 +304,13 @@ final class KindOperationsDriverTests: XCTestCase {
         try await driver.connect()
         _ = try await driver.execute("PUT /api/queues/%2F/ot-ops\n{\"durable\": false}", limit: 1)
         _ = try await driver.execute("PUBLISH amq.default ot-ops hello", limit: 1)
-        let overview = try await driver.overview()
+        // A node's memory comes with its first stats, a few seconds after the
+        // management API answers: a server just started has none yet.
+        var overview = try await driver.overview()
+        for _ in 0..<20 where !overview.facts.contains(where: { $0.title.hasPrefix("Memory") }) {
+            try await Task.sleep(for: .milliseconds(500))
+            overview = try await driver.overview()
+        }
         XCTAssertTrue(overview.facts.contains { $0.title.hasPrefix("Memory") }, "\(overview.facts)")
         let read26 = try await driver.activity().value
         XCTAssertNotNil(read26)
