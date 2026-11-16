@@ -33,6 +33,7 @@ final class E2ERunner {
         "reviewPerf": { await $0.reviewPerfScenario() },
         "dockerPerf": { await $0.dockerPerfScenario() },
         "database": { await $0.databaseScenario() },
+        "databaseOps": { await $0.databaseOpsScenario() },
         "storage": { await $0.storageScenario() },
         "redis": { await $0.redisScenario() },
         "observability": { await $0.observabilityScenario() },

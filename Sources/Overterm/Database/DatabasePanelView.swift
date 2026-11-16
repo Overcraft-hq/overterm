@@ -26,6 +26,9 @@ struct DatabaseActions {
     var newRedisKey: (DatabaseSession, Int) -> Void = { _, _ in }
     /// The server's page.
     var redisServer: (DatabaseSession) -> Void = { _ in }
+    /// A SQL connection's Server page (monitoring), and its Users page.
+    var server: (DatabaseConnection) -> Void = { _ in }
+    var users: (DatabaseConnection) -> Void = { _ in }
     /// Asks, then deletes the key.
     var deleteRedisKey: (DatabaseSession, Int, String) -> Void = { _, _, _ in }
     /// Asks for a new name (title, the current one), then gives it.
@@ -146,6 +149,8 @@ private struct ConnectionTree: View {
             if connection.kind.isRedis {
                 Button("Server Info") { actions.redisServer(session) }
             }
+            if connection.kind.features.contains(.monitoring) { Button("Server") { actions.server(connection) } }
+            if connection.kind.features.contains(.users) { Button("Users & Roles") { actions.users(connection) } }
             if session.isOpen {
                 Button("Disconnect") { model.disconnect(connection) }
             } else {

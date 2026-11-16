@@ -115,11 +115,14 @@ fi
 
 docker rm -f ot-pg ot-mysql ot-mariadb ot-ch ot-mongodb ot-minio ot-ssh ot-dynamodb ot-influxdb ot-influxdb1 ot-influxdb3 ot-neo4j >/dev/null 2>&1 || true
 docker network create ot-net >/dev/null 2>&1 || true
-docker run -d --name ot-pg --network ot-net -e POSTGRES_USER=ot -e POSTGRES_PASSWORD=otpass -e POSTGRES_DB=shop -p 55432:5432 postgres:16 >/dev/null
+# The Server page's sources on: pg_stat_statements preloaded (the tests
+# CREATE EXTENSION it), performance_schema on (MariaDB's is off by default).
+docker run -d --name ot-pg --network ot-net -e POSTGRES_USER=ot -e POSTGRES_PASSWORD=otpass -e POSTGRES_DB=shop -p 55432:5432 postgres:16 \
+  -c shared_preload_libraries=pg_stat_statements >/dev/null
 docker run -d --name ot-mysql -e MYSQL_ROOT_PASSWORD=otpass -e MYSQL_DATABASE=shop -e MYSQL_USER=ot -e MYSQL_PASSWORD=otpass \
-  -p 53306:3306 mysql:8.4 >/dev/null
+  -p 53306:3306 mysql:8.4 --performance-schema=ON >/dev/null
 docker run -d --name ot-mariadb -e MARIADB_ROOT_PASSWORD=otpass -e MARIADB_DATABASE=shop -e MARIADB_USER=ot -e MARIADB_PASSWORD=otpass \
-  -p 53307:3306 mariadb:11.4 >/dev/null
+  -p 53307:3306 mariadb:11.4 --performance-schema=ON >/dev/null
 rm -rf "$MONGO_TLS" && mkdir -p "$MONGO_TLS"
 (
   cd "$MONGO_TLS"

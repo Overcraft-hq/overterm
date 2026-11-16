@@ -10,9 +10,18 @@ import PostgresNIO
 /// text, whatever its type, which is what a client that can't know the
 /// types in advance wants.
 actor PostgresDriver: DatabaseDriver {
-    private let config: DatabaseConnection
+    let config: DatabaseConnection
     private let password: String?
-    private var connection: PostgresConnection?
+    private(set) var connection: PostgresConnection?
+    /// This connection's own backend: never cancelled from the Server page.
+    var ownPID: Int?
+    /// `server_version_num`: pg_stat_statements renamed its columns in 13.
+    var versionNumber: Int?
+    // One operation at a time: a Save's transaction is BEGIN, its
+    // statements, COMMIT — a read of the Server page between them would
+    // run inside it (an actor gives way at every await).
+    private var busy = false
+    private var queue: [CheckedContinuation<Void, Never>] = []
 
     init(_ connection: DatabaseConnection, password: String?) {
         config = connection
@@ -32,6 +41,17 @@ actor PostgresDriver: DatabaseDriver {
         case .verifyFull:
             return .require(try NIOSSLContext(configuration: .makeClientConfiguration()))
         }
+    }
+
+    func exclusive<T: Sendable>(_ work: () async throws -> T) async throws -> T {
+        if busy {
+            await withCheckedContinuation { queue.append($0) }
+        }
+        busy = true
+        defer {
+            if queue.isEmpty { busy = false } else { queue.removeFirst().resume() }
+        }
+        return try await work()
     }
 
     func connect() async throws {
@@ -61,6 +81,10 @@ actor PostgresDriver: DatabaseDriver {
     }
 
     func execute(_ sql: String, limit: Int) async throws -> QueryResult {
+        try await exclusive { try await run(sql, limit: limit) }
+    }
+
+    private func run(_ sql: String, limit: Int) async throws -> QueryResult {
         guard let connection else { throw DatabaseError.notConnected }
         let started = Date()
         let collected = Collected(limit: limit)
@@ -142,7 +166,7 @@ actor PostgresDriver: DatabaseDriver {
 }
 
 /// Rows as the event loop hands them over, kept to the limit.
-private final class Collected: @unchecked Sendable {
+final class Collected: @unchecked Sendable {
     private let lock = NSLock()
     private let limit: Int
     private var value = QueryResult()

@@ -226,6 +226,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// A stored file opened from the Database panel.
     let storageObject = StorageObjectModel()
     let redisSlot = RedisSlotModel()
+    /// A database connection's Server or Users page, in the right slot.
+    let databaseSlot = DatabaseSlotModel()
     /// A Kubernetes manifest's diff with its cluster (the editor's Diff with Cluster).
     let kubernetesManifest = KubeManifestPane()
     /// Everything waiting on you (⌘I), as its own column on the right.
@@ -661,6 +663,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 object: StorageObjectView(model: storageObject, theme: theme, actions: storageObjectActions),
                 container: DockerSlotView(panel: dockerPanel, docker: .shared, theme: theme, actions: dockerActions),
                 redis: RedisSlotView(model: redisSlot, theme: theme, actions: redisSlotActions),
+                database: DatabaseSlotView(model: databaseSlot, theme: theme, actions: databaseSlotActions),
                 mcp: MCPPageView(inspector: apiWorkspace.mcp, theme: theme, close: { [weak self] in self?.toggleDiff(nil) }),
                 graph: NotesGraphView(model: NotesModel.shared, theme: theme, open: { [weak self] in self?.openNote($0) }),
                 manifest: KubeManifestDiffView(
@@ -3399,6 +3402,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         for page in pages.all { items += page.paletteItems?() ?? [] }
         items += terraformPaletteItems()
         items += terraformPlanPaletteItems()
+        items += databasePaletteItems()
         // History last in the unranked order — before you type, what you
         // want is an action; once you type, ranking decides.
         items += historyItems(matching: query)
@@ -4095,6 +4099,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         storageObject.visible = shown && rightPane.mode == .object
         dockerPanel.slotVisible = shown && rightPane.mode == .container
         redisSlot.visible = shown && rightPane.mode == .redis
+        databaseSlot.visible = shown && rightPane.mode == .database
         kubernetesPanel.slotVisible = shown && rightPane.mode == .kubernetes
         // An expanded chart reads (its tab's reads) only while the slot shows it.
         kubernetesPage.expandedChartOnScreen =

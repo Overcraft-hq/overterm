@@ -1376,7 +1376,14 @@ destroying statement are there too).
 - **Tests**: `DatabaseDriverTests` run PostgreSQL, MySQL, MariaDB and
   ClickHouse in Docker (`Scripts/database-test-servers.sh`, then `OVERTERM_DB_TESTS=1`);
   SQLite always; BigQuery's signing and answers offline. The `database`
-  scenario runs the panel and a console on SQLite.
+  scenario runs the panel and a console on SQLite. The Server page,
+  editing and users: `DatabaseOperationsTests` (the pure parts) and
+  `DatabaseOperationsDriverTests` (SQLite always; PostgreSQL, MySQL,
+  MariaDB with the script's pg_stat_statements and performance_schema on —
+  a session cancelled, a lock waited on, a user made and signed in with
+  its password); the `databaseOps` scenario edits and saves a SQLite
+  result in the grid and opens its Server page — and PostgreSQL's Server
+  and Users pages when :55432 answers.
 
 ### Redis (Redis Insight's work, in the panel and the right-hand pane)
 
@@ -1735,6 +1742,140 @@ Tested against mariadb:11.4 (`DatabaseDriverTests.testMariaDB`).
   against Oracle Database Free with `Scripts/database-test-servers.sh
   oracle` and `OVERTERM_DB_TESTS=1`.
 
+### What a driver does beyond statements (DatabaseOperations)
+
+Three protocols a driver conforms to, as far as its engine supports it —
+`DatabaseMonitoring` (the Server page), `DatabaseTableEditing` (rows
+edited), `DatabaseUserManagement` (the Users page) — in
+`DatabaseOperations.swift`, with the values every kind fills in: a
+session (`DatabaseActivity`: an id cancelling names, who, a database or
+none, where from, state, statement, how long, `isOwn`), a statement's
+record (`SlowQuery`), a wait (`LockWait`), sizes, headline numbers
+(`ServerFact`); a table's key (`TableKey`: primary, a unique key over NOT
+NULL columns, SQLite's rowid); a user or role (`DatabaseUser`, never a
+password or its hash) and its grants. A read whose source isn't there
+says so — `Monitored.unavailable(MonitorGap)`: the reason and the line
+that turns it on — never an empty table. The UI asks the driver's *type*
+(`DatabaseDrivers.features(of:)`, through `driverType(of:)`): a kind whose
+driver doesn't conform shows no item; a static on the protocol says it of
+a kind (Redshift, PostgreSQL's driver, edits no rows). A new kind fills
+them in its own file (`PostgresOperations`, `MySQLOperations`,
+`SQLiteOperations`); a document store's "row" is a document by `_id`, a
+session may have no database. Every read goes through the driver's own
+connection — the session's actor, never a second connection — and isn't
+recorded in the history. PostgreSQL's and MySQL's drivers run one
+operation at a time (`exclusive`, as Redis's): a Save's transaction is
+BEGIN, its statements, COMMIT, and a read of the Server page between
+them would run inside it.
+
+### Server page (monitoring)
+
+A connection's page in the right slot (`DatabaseSlotModel`,
+`DatabaseServerModel`, `DatabaseServerView`; `RightPane.Mode.database`),
+from its row's menu (Server) or ⌘K (Server: name). Its tabs are the
+driver's `monitorParts`: Overview, Activity, Slow Queries, Locks, Sizes.
+**Read only while it shows**: the tab on screen is read again every 5 s
+(Pause stops it); Slow Queries and Sizes, heavier, when their tab opens
+and on Refresh. A session is cancelled or terminated from its menu — asked
+first (`WriteConfirmation`), refused on a read-only connection, never
+offered on the page's own session (the driver refuses it too).
+
+- **PostgreSQL**: `pg_stat_activity` (client backends; `pg_cancel_backend`,
+  `pg_terminate_backend`); `pg_stat_statements`, the hundred costliest by
+  total and the hundred by mean (`total_exec_time` from 13, `total_time`
+  before) — not installed, or installed but not preloaded, said with
+  `shared_preload_libraries` and `CREATE EXTENSION`; `pg_blocking_pids`
+  against `pg_stat_activity`, the lock from `pg_locks`; sizes from
+  `pg_database_size` (where CONNECT is allowed), `pg_total_relation_size`,
+  indexes; version, uptime, connections of `max_connections`, the shared
+  buffers' hit rate, replica and its lag, commits, deadlocks. Another
+  user's statement is `<insufficient privilege>` without
+  `pg_read_all_stats` — said under the list.
+- **Redshift** (not tested against a cluster): `stv_sessions` with
+  `stv_recents`, `sys_query_history` grouped by text, `svv_transactions`'
+  waits, `svv_table_info`; no indexes.
+- **MySQL, MariaDB**: `information_schema.PROCESSLIST` (`KILL QUERY`,
+  `KILL`; other users' sessions need PROCESS — said);
+  `performance_schema.events_statements_summary_by_digest`, else MariaDB's
+  `mysql.slow_log` when `log_output` is TABLE, else what to turn on; MySQL's
+  `performance_schema.data_lock_waits`, MariaDB's
+  `information_schema.INNODB_LOCK_WAITS` (PROCESS); sizes from
+  `information_schema` (MySQL caches them up to a day — said) and indexes
+  from `mysql.innodb_index_stats`; `SHOW GLOBAL STATUS`, the variables,
+  `SHOW REPLICA STATUS`.
+- **SQLite**: the overview alone — the library's version, the file, pages,
+  free pages, journal mode, encoding — and Check Integrity
+  (`PRAGMA integrity_check`, on request).
+
+### Editing rows
+
+A console result whose rows are one table's is edited in its grid
+(`ResultEditor`, `ResultGrid`): Select Top from the tree, or any
+`SELECT * | columns FROM [schema.]table [alias] [WHERE …] [ORDER BY …]
+[LIMIT …]` — `EditableQuery` (pure) refuses a join, a comma, GROUP BY,
+DISTINCT, UNION, a subquery in FROM, and any expression or alias in the
+select list (an alias could pass another column off as the key). Its key
+(`key(of:)`: the primary key, else a unique key over NOT NULL columns, not
+partial or on expressions; SQLite's rowid for a rowid table, which needs
+`SELECT rowid, *`) must be among the result's columns, each of which must
+be the table's (`EditableResult.match`). Otherwise the status bar says why
+(Read only, its reason on hover). A read-only connection, or a kind whose
+driver doesn't edit, offers nothing.
+
+- **Changes are pending** (`PendingEdits`, pure) until Save: a cell
+  (double-click; several lines, or Edit Value…, in a sheet; Set to NULL,
+  Set to Empty String — NULL and `''` are two), a row added (its columns
+  DEFAULT until set), duplicated (the key and generated columns left to
+  the new row), deleted; Revert. The grid tints an edited cell, strikes a
+  deleted row, greens an added one; it keeps where each row came from
+  (`sortedIndexes`), so a sorted grid edits the right row. Generated
+  columns, and those whose text isn't their value (a SQLite BLOB, MySQL's
+  binary and spatial types), aren't written.
+- **The statements** (`EditStatements`, pure): deletes, updates, inserts,
+  each row found by its key's values as read; every name quoted and every
+  value a literal the engine's way (`SQLDialect`; MySQL's backslashes as
+  the session's sql_mode has them). Preview shows them; Save asks with
+  them all (`WriteConfirmation`), then applies them in one transaction —
+  each must change the one row it names (MySQL's UPDATE counts only rows
+  it changed, so a 0 is checked by counting the key's rows), else
+  everything rolls back and the error says which. Then the statement is
+  run again and its rows replace the old; what ran goes in the history.
+  Redshift doesn't enforce its keys, so its rows aren't edited.
+
+### Users and roles
+
+A connection's Users page in the right slot (`DatabaseUsersModel`,
+`DatabaseUsersView`), from its row's menu or ⌘K: users and roles with their
+attributes (superuser, logs in, creates databases or roles, replication,
+locked, password expired, valid until, connection limit) and memberships;
+a picked one's grants. New User…, Change Password…, Grant…, Grant Role…,
+Drop… (its name typed), Revoke… from a grant's menu: each made by
+`UserStatements` (pure — names quoted, privileges only from the engine's
+list, never typed), shown in the sheet as it will run, asked
+(`WriteConfirmation`), sent once; refused on a read-only connection.
+
+- **A new password** is typed in SecureFields, lives in the sheet's state
+  until its statement is sent, and is never kept — not the keychain, a
+  log, the history. PostgreSQL's goes as its SCRAM-SHA-256 verifier
+  (`scramVerifier`, as psql's `\password` makes it) and Redshift's as its
+  md5 form, so neither is in the clear on the wire or in a server log;
+  MySQL's goes as `IDENTIFIED BY` over the text protocol (MySQLNIO logs a
+  prepared statement's text, a simple query's never). Every preview,
+  confirmation and error shows `shown` — the statement with the password
+  masked — and an error is scrubbed of it (`UserStatement.scrub`).
+- **PostgreSQL**: `pg_roles` (never `pg_authid`), `pg_auth_members`; grants
+  from the catalog's ACLs (`aclexplode` of databases, schemas and this
+  database's tables — readable by anyone) and what the role owns. CREATE
+  ROLE … LOGIN PASSWORD, ALTER ROLE … PASSWORD, GRANT/REVOKE on a
+  database, schema, all tables in a schema or a table, GRANT role, DROP
+  ROLE. **Redshift**: `pg_user`, `pg_group` as roles, `svv_relation_privileges`.
+- **MySQL, MariaDB**: `mysql.user` without `authentication_string` (or
+  MariaDB's `Password`), MariaDB's lock flag from `mysql.global_priv`;
+  roles from `mysql.role_edges` (MySQL 8) or `mysql.roles_mapping`; grants
+  by `SHOW GRANTS FOR`, read with any `IDENTIFIED …` (MariaDB prints the
+  hash) cut out first (`MySQLOps.redact`). A user who may not read
+  `mysql.user` is told so, with the grant an administrator would give.
+
 ### Saved queries
 
 Any connection's (`DatabaseModel.saved`, `Database/saved.json` in
@@ -1764,7 +1905,11 @@ one on quit. Tested against an Alpine sshd beside PostgreSQL
 
 On the MCP server the browser's tools are on (BrowserBridge), with
 `database.agentAccess`: `db_connections`, `db_schema`, `db_query`,
-`storage_connections`, `storage_list`, `storage_read`. Connections are
+`db_server`, `db_activity`, `db_slow_queries`, `db_locks`,
+`storage_connections`, `storage_list`, `storage_read`. The four Server
+tools are the page's reads as Markdown tables (`ServerText`), statements
+on one line and cut; no tool cancels a session, edits a row or changes a
+user, and none reads a password or its hash. Connections are
 named, never their secrets. `db_query` takes one statement and reads only:
 `SQLText.agentReads` is stricter than a person's check — a WITH hiding a
 write, `SELECT … INTO` and `EXPLAIN ANALYZE` of a write all count as

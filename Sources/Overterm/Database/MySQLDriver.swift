@@ -9,9 +9,28 @@ import NIOSSL
 /// its values come back as text, whatever their types; a write as a query,
 /// which is what says how many rows it changed.
 actor MySQLDriver: DatabaseDriver {
-    private let config: DatabaseConnection
+    let config: DatabaseConnection
     private let password: String?
-    private var connection: MySQLConnection?
+    private(set) var connection: MySQLConnection?
+    /// `CONNECTION_ID()`: never killed from the Server page.
+    var ownID: Int?
+    /// Whether the session's strings take `\` as an escape (no NO_BACKSLASH_ESCAPES).
+    var backslashEscapes: Bool?
+    // One operation at a time: a Save's transaction must not have another
+    // read run inside it (an actor gives way at every await).
+    private var busy = false
+    private var queue: [CheckedContinuation<Void, Never>] = []
+
+    func exclusive<T: Sendable>(_ work: () async throws -> T) async throws -> T {
+        if busy {
+            await withCheckedContinuation { queue.append($0) }
+        }
+        busy = true
+        defer {
+            if queue.isEmpty { busy = false } else { queue.removeFirst().resume() }
+        }
+        return try await work()
+    }
 
     init(_ connection: DatabaseConnection, password: String?) {
         config = connection
@@ -51,6 +70,10 @@ actor MySQLDriver: DatabaseDriver {
     }
 
     func execute(_ sql: String, limit: Int) async throws -> QueryResult {
+        try await exclusive { try await run(sql, limit: limit) }
+    }
+
+    private func run(_ sql: String, limit: Int) async throws -> QueryResult {
         guard let connection else { throw DatabaseError.notConnected }
         let started = Date()
         let collected = MySQLCollected(limit: limit)
@@ -112,7 +135,7 @@ actor MySQLDriver: DatabaseDriver {
     }
 }
 
-private final class MySQLCollected: @unchecked Sendable {
+final class MySQLCollected: @unchecked Sendable {
     private let lock = NSLock()
     private let limit: Int
     private var value = QueryResult()

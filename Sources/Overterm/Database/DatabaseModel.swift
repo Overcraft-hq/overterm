@@ -48,6 +48,21 @@ final class DatabaseSession: ObservableObject, Identifiable {
     /// a trace, the live tail.
     var observability: ObservabilityDriver? { driver as? ObservabilityDriver }
 
+    /// The Server page's reads — the driver's own connection, nothing else.
+    var monitoring: (any DatabaseMonitoring)? {
+        connection.kind.features.contains(.monitoring) ? driver as? any DatabaseMonitoring : nil
+    }
+
+    /// A result's rows edited — never on a read-only connection.
+    var editing: (any DatabaseTableEditing)? {
+        !connection.readOnly && connection.kind.features.contains(.editing) ? driver as? any DatabaseTableEditing : nil
+    }
+
+    /// The Users page's reads and writes (the writes refused on a read-only connection).
+    var userManagement: (any DatabaseUserManagement)? {
+        connection.kind.features.contains(.users) ? driver as? any DatabaseUserManagement : nil
+    }
+
     /// A Prometheus, Loki or Tempo connection's names and values.
     func observabilityCatalog() -> ObservabilityCatalog {
         if let catalog { return catalog }

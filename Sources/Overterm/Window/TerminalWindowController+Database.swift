@@ -28,6 +28,8 @@ extension TerminalWindowController {
                 self?.showRedisSlot()
             },
             redisServer: { [weak self] session in self?.openRedisServer(session) },
+            server: { [weak self] in self?.openDatabasePage(.server, for: $0) },
+            users: { [weak self] in self?.openDatabasePage(.users, for: $0) },
             deleteRedisKey: { [weak self] session, db, key in self?.deleteRedisKey(session, db, key) },
             rename: { [weak self] title, current, done in
                 self?.askForName(title: title, detail: "", initial: current, action: "Rename") { name in
@@ -349,6 +351,63 @@ extension TerminalWindowController {
             guard response == .alertFirstButtonReturn else { return }
             MainActor.assumeIsolated { then() }
         }
+    }
+}
+
+// MARK: Server and Users pages
+
+extension TerminalWindowController {
+    var databaseSlotActions: DatabaseSlotActions {
+        DatabaseSlotActions(
+            confirm: { [weak self] confirmation, then in
+                guard let window = self?.window else { return }
+                confirmation.present(on: window) { typed in then(typed) }
+            },
+            close: { [weak self] in
+                self?.databaseSlot.show(.none)
+                self?.toggleDiff(nil)
+            })
+    }
+
+    /// A connection's Server or Users page in the right slot, which it joins
+    /// as every pane there does — read only while it shows.
+    func openDatabasePage(_ page: DatabaseSlotModel.Page, for connection: DatabaseConnection) {
+        let session = DatabaseModel.shared.session(connection)
+        switch page {
+        case .server: databaseSlot.server.show(session)
+        case .users: databaseSlot.users.show(session)
+        case .none: break
+        }
+        databaseSlot.show(page)
+        if zoomedColumn != nil { setZoomed(nil) }
+        rightPane.databaseOpened = true
+        rightPane.mode = .database
+        if diffItem?.isCollapsed == true { toggleDiff(nil) }
+        updateRightPaneVisibility()
+    }
+
+    /// ⌘K: each connection's Server and Users pages, as far as its kind has them.
+    func databasePaletteItems() -> [PaletteItem] {
+        guard Settings.shared.databaseEnabled else { return [] }
+        var items: [PaletteItem] = []
+        for connection in DatabaseModel.shared.store.connections {
+            let features = connection.kind.features
+            if features.contains(.monitoring) {
+                items.append(
+                    PaletteItem(
+                        id: "db.server.\(connection.id)", group: .action, title: "Server: \(connection.name)",
+                        subtitle: "\(connection.kind.title) — sessions, slow queries, locks, sizes", symbol: "server.rack"
+                    ) { [weak self] _, _ in self?.openDatabasePage(.server, for: connection) })
+            }
+            if features.contains(.users) {
+                items.append(
+                    PaletteItem(
+                        id: "db.users.\(connection.id)", group: .action, title: "Users & Roles: \(connection.name)",
+                        subtitle: "\(connection.kind.title) — users, roles, grants", symbol: "person.2"
+                    ) { [weak self] _, _ in self?.openDatabasePage(.users, for: connection) })
+            }
+        }
+        return items
     }
 }
 

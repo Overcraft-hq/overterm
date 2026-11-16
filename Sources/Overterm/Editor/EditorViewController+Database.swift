@@ -17,6 +17,10 @@ extension EditorViewController {
         else { return }
         let console = SQLConsole(file: url, model: DatabaseModel.shared)
         console.confirm = { [weak self] sql, why in await self?.confirmDestructive(sql, why: why) ?? false }
+        console.confirmWrite = { [weak self] confirmation in
+            guard let window = self?.view.window else { return false }
+            return await confirmation.ask(on: window) != nil
+        }
         buffer.sqlConsole = console
         if let session = console.session { Task { await session.open() } }
     }

@@ -4,7 +4,7 @@ import SwiftUI
 @MainActor
 final class RightPane: ObservableObject {
     enum Mode: String {
-        case changes, pullRequest, usage, commit, runner, graph, compare, object, container, redis, manifest, kubernetes, terraformPlan, mcp
+        case changes, pullRequest, usage, commit, runner, graph, compare, object, container, redis, database, manifest, kubernetes, terraformPlan, mcp
     }
 
     @Published var mode: Mode = .changes
@@ -18,6 +18,8 @@ final class RightPane: ObservableObject {
     @Published var containerOpened = false
     /// A Redis key or server was opened (Database panel): its tab stays from then on.
     @Published var redisOpened = false
+    /// A database connection's Server or Users page was opened: its tab stays from then on.
+    @Published var databaseOpened = false
     /// An MCP server was inspected (API panel): its tab stays from then on.
     @Published var mcpOpened = false
     /// A Kubernetes manifest was diffed with its cluster: its tab stays from then on.
@@ -51,6 +53,7 @@ struct RightPaneView: View {
     let object: StorageObjectView
     let container: DockerSlotView
     let redis: RedisSlotView
+    let database: DatabaseSlotView
     let mcp: MCPPageView
     let graph: NotesGraphView
     let manifest: KubeManifestDiffView
@@ -124,6 +127,11 @@ struct RightPaneView: View {
                         Image(systemName: "bolt.horizontal").font(.system(size: ChromeMetrics.text(11)))
                     }
                 }
+                if pane.databaseOpened {
+                    tab(.database, help: "A database connection's Server or Users page") {
+                        Image(systemName: "server.rack").font(.system(size: ChromeMetrics.text(11)))
+                    }
+                }
                 if pane.containerOpened {
                     tab(.container, help: "The container picked in the Docker panel") {
                         Image(systemName: "shippingbox").font(.system(size: ChromeMetrics.text(11)))
@@ -169,6 +177,7 @@ struct RightPaneView: View {
             case .object: object
             case .container: container
             case .redis: redis
+            case .database: database
             case .mcp: mcp
             case .manifest: manifest
             case .kubernetes: kubernetes

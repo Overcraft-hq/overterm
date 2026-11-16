@@ -240,6 +240,7 @@ final class E2ETests: XCTestCase {
     func testReviewPerf() throws { try run("reviewPerf") }
     func testDockerPerf() throws { try run("dockerPerf") }
     func testDatabase() throws { try run("database") }
+    func testDatabaseOps() throws { try run("databaseOps") }
     func testStorage() throws { try run("storage") }
     func testRedis() throws { try run("redis") }
     func testObservability() throws { try run("observability") }

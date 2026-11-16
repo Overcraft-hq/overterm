@@ -220,8 +220,14 @@ struct SQLConsoleView: View {
                     grid: { AnyView(ResultGrid(result: result, theme: theme, table: "result")) })
                 status(result, sql: run.sql)
             } else if result.hasRows {
-                ResultGrid(result: result, theme: theme, table: SQLText.tables(in: run.sql).first?.name ?? "table_name")
-                status(result, sql: run.sql)
+                let table = SQLText.tables(in: run.sql).first?.name ?? "table_name"
+                if let editor = console.editor(for: run) {
+                    EditableGrid(result: result, editor: editor, theme: theme, table: table)
+                    status(result, sql: run.sql, editor: editor)
+                } else {
+                    ResultGrid(result: result, theme: theme, table: table)
+                    status(result, sql: run.sql)
+                }
             } else {
                 VStack(alignment: .leading, spacing: 4) {
                     Text(verbatim: Self.summary(result)).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text)
@@ -254,10 +260,12 @@ struct SQLConsoleView: View {
         seconds < 1 ? "\(Int(seconds * 1000)) ms" : String(format: "%.2f s", seconds)
     }
 
-    private func status(_ result: QueryResult, sql: String) -> some View {
+    private func status(_ result: QueryResult, sql: String, editor: ResultEditor? = nil) -> some View {
         HStack(spacing: 8) {
             Text(verbatim: Self.summary(result)).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(result.truncated ? theme.orangeText : theme.text3)
                 .help(result.truncated ? "More rows than Settings ▸ Database ▸ Rows fetched" : "")
+                .lineLimit(1)
+            if let editor { EditBar(editor: editor, theme: theme) }
             Spacer(minLength: 0)
             Menu {
                 ForEach(ResultExport.Format.allCases) { format in
@@ -305,5 +313,80 @@ private struct RangeMenu: View {
         .fixedSize()
         .help("The window every query looks at, up to now")
         .accessibilityIdentifier("consoleRange")
+    }
+}
+
+/// A result whose rows may be edited: the grid redrawn as its changes do.
+private struct EditableGrid: View {
+    let result: QueryResult
+    @ObservedObject var editor: ResultEditor
+    @ObservedObject var theme: ChromeTheme
+    let table: String
+
+    var body: some View {
+        ResultGrid(result: result, theme: theme, table: table, editor: editor, edits: editor.edits, editable: editor.editable)
+    }
+}
+
+/// Beside a result's summary: whether its rows can be edited (and why not),
+/// then — with changes pending — how many, their statements, Discard, Save.
+struct EditBar: View {
+    @ObservedObject var editor: ResultEditor
+    @ObservedObject var theme: ChromeTheme
+    @State private var previewing = false
+    @State private var preview = ""
+
+    var body: some View {
+        HStack(spacing: 6) {
+            switch editor.state {
+            case .checking:
+                EmptyView()
+            case .refused(let why):
+                if !why.isEmpty {
+                    Label("Read only", systemImage: "lock").labelStyle(.titleAndIcon)
+                        .font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3)
+                        .help(why)
+                        .accessibilityIdentifier("editRefused")
+                }
+            case .editable(let result):
+                if editor.edits.isEmpty {
+                    Image(systemName: "pencil").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
+                        .help("Double-click a cell to edit it; the menu adds, duplicates and deletes rows. Rows are found by their \(result.key.summary).")
+                    Button("+ Row") { editor.addRow() }.buttonStyle(.plain).font(.system(size: ChromeMetrics.text(10.5)))
+                        .foregroundStyle(theme.accentText).help("A new row, its columns DEFAULT until set")
+                } else {
+                    Text(verbatim: "\(editor.edits.count) change\(editor.edits.count == 1 ? "" : "s")")
+                        .font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).foregroundStyle(theme.orangeText)
+                        .accessibilityIdentifier("editCount")
+                    Button("Preview") {
+                        Task {
+                            preview = await editor.preview()
+                            previewing = true
+                        }
+                    }
+                    .controlSize(.small)
+                    .help("The statements Save runs, in one transaction")
+                    .popover(isPresented: $previewing, arrowEdge: .bottom) {
+                        ScrollView {
+                            Text(verbatim: preview).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading).padding(10)
+                        }
+                        .frame(width: 520, height: 220)
+                    }
+                    Button("Discard") { editor.discard() }.controlSize(.small)
+                    if editor.saving {
+                        ProgressView().controlSize(.mini)
+                    } else {
+                        Button("Save") { Task { await editor.save() } }.controlSize(.small)
+                            .help("Ask, then run every change in one transaction and read the rows again")
+                            .accessibilityIdentifier("editSave")
+                    }
+                }
+            }
+            if let error = editor.error {
+                Text(verbatim: error).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(DiffColors.removed).lineLimit(1).truncationMode(.middle)
+                    .help(error)
+            }
+        }
     }
 }

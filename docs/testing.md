@@ -91,6 +91,13 @@ committed); `MongoDriverTests.testTLS` verifies against it.
 Without `OVERTERM_DB_TESTS=1` those are skipped, so `make test` and
 CI need no Docker. BigQuery's signing and its answers are tested offline.
 
+`DatabaseOperationsDriverTests` (the Server page, editing, users) run on
+the same servers — `OVERTERM_DB_TESTS=1 swift test --filter
+DatabaseOperationsDriverTests` — the script preloading pg_stat_statements
+and turning performance_schema on (MariaDB's is off by default). The
+`databaseOps` scenario edits a SQLite result always, and opens
+PostgreSQL's Server and Users pages only when :55432 answers.
+
 It also starts an SSH bastion (:52222, on a Docker network with
 PostgreSQL) for `SSHTunnelTests` and the `databaseTunnel` scenario; both
 keep the host key out of your `~/.ssh/known_hosts`.
