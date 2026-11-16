@@ -21,6 +21,10 @@ extension EditorViewController {
             guard let window = self?.view.window else { return false }
             return await confirmation.ask(on: window) != nil
         }
+        console.confirmDiscard = { [weak self] edits in
+            guard let window = self?.view.window else { return false }
+            return await Self.askDiscardRowEdits(edits, on: window)
+        }
         buffer.sqlConsole = console
         if let session = console.session { Task { await session.open() } }
     }
@@ -291,5 +295,18 @@ extension EditorViewController {
         let items = candidates.map { EditorListItem(title: $0.label, detail: $0.detail, badge: $0.badge, badgeColor: $0.badgeColor, matched: []) }
         completionPopup.show(items, details: candidates.map(\.detail), at: textView.screenRect(forCharacterAt: anchor), in: window)
         return true
+    }
+}
+
+extension EditorViewController {
+    /// Rows edited in a result and not saved: Cancel, or Discard. They are
+    /// never on disk — the database has the rows as they were.
+    static func askDiscardRowEdits(_ edits: Int, on window: NSWindow) async -> Bool {
+        let alert = NSAlert()
+        alert.messageText = edits == 1 ? "Discard 1 row edit not saved?" : "Discard \(edits) row edits not saved?"
+        alert.informativeText = "Edited rows are held here until you Save them; the database still has them as they were."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Discard Edits").hasDestructiveAction = true
+        return await alert.beginSheetModal(for: window) == .alertSecondButtonReturn
     }
 }

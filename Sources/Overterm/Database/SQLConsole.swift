@@ -27,8 +27,17 @@ final class SQLConsole: ObservableObject {
     var confirm: (_ sql: String, _ why: String) async -> Bool = { _, _ in true }
     /// Asked before a Save of edited rows, its statements shown: true to run them.
     var confirmWrite: (WriteConfirmation) async -> Bool = { _ in false }
+    /// Asked before rows edited and not saved are lost (a result's tab or
+    /// the console closed): true to discard them.
+    var confirmDiscard: (_ edits: Int) async -> Bool = { _ in true }
     /// Each run's rows as edited (`ResultEditor`), made when its grid first shows.
     private var editors: [UUID: ResultEditor] = [:]
+
+    /// Row edits not saved, in a run or in all of them — never kept on
+    /// disk, so closing loses them (CLAUDE.md: closing always asks).
+    func unsavedEdits(in run: Run? = nil) -> Int {
+        editors.filter { id, editor in (run == nil || id == run?.id) && !editor.saving }.values.reduce(0) { $0 + $1.edits.count }
+    }
 
     init(file: URL, model: DatabaseModel) {
         self.file = file
@@ -85,7 +94,11 @@ final class SQLConsole: ObservableObject {
             }
             // Statements not reached (one before failed): their tabs go.
             runs.removeAll { $0.running }
-            if runs.count > 10 { runs.removeFirst(runs.count - 10) }
+            // The oldest go past ten — never one with row edits not saved.
+            while runs.count > 10, let old = runs.firstIndex(where: { unsavedEdits(in: $0) == 0 }) {
+                editors[runs[old].id] = nil
+                runs.remove(at: old)
+            }
             if !runs.contains(where: { $0.id == selected }) { selected = runs.last?.id }
         }
     }
@@ -98,6 +111,20 @@ final class SQLConsole: ObservableObject {
         for index in runs.indices where runs[index].running {
             runs[index].running = false
             runs[index].error = "Stopped."
+        }
+    }
+
+    /// Every run's row edits dropped (its file closing, asked first).
+    func discardAllEdits() {
+        for editor in editors.values { editor.discard() }
+    }
+
+    /// A result's tab closed — asked first when its rows have edits not saved.
+    func requestClose(_ run: Run) {
+        let edits = unsavedEdits(in: run)
+        guard edits > 0 else { return close(run) }
+        Task { @MainActor in
+            if await confirmDiscard(edits) { close(run) }
         }
     }
 

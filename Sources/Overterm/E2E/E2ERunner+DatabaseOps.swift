@@ -72,7 +72,23 @@ extension E2ERunner {
         rows.set(row: 0, column: 2, to: .null)
         await rows.save()
         check("a declined Save runs nothing", Self.notes(file) == ["edited", "", "new"] && rows.edits.count == 1)
+
+        // Edits not saved are never lost unasked: the window's close counts
+        // them, the result's tab asks, and later runs never push it out.
+        check("the window's close counts them", editor.unsavedNames.contains(editor.active?.name ?? "-"), "\(editor.unsavedNames)")
+        var discardAsked = 0
+        console.confirmDiscard = { _ in
+            discardAsked += 1
+            return false
+        }
+        console.requestClose(run)
+        check("closing its tab asks, and Cancel keeps it", await eventually(3) { discardAsked == 1 } && console.runs.contains { $0.id == run.id })
+        console.run((1...11).map { "SELECT \($0)" })
+        check("eleven runs after", await eventually(10) { !console.isRunning && console.runs.count >= 10 })
+        check("never push out a run with edits", console.runs.contains { $0.id == run.id } && rows.edits.count == 1, "\(console.runs.count)")
         rows.discard()
+        check("discarded: nothing left to ask", editor.unsavedNames.isEmpty && console.unsavedEdits() == 0, "\(editor.unsavedNames)")
+        console.selected = run.id
 
         // A join's rows aren't edited, and the bar says why.
         console.run(["SELECT o.id, count(*) FROM orders o GROUP BY o.id"])

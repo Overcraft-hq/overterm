@@ -171,7 +171,7 @@ struct SQLConsoleView: View {
                         }
                         Text(verbatim: Self.title(run, index: index, kind: console.connection?.kind ?? .postgres)).font(.system(size: ChromeMetrics.text(11))).lineLimit(1)
                         Button {
-                            console.close(run)
+                            console.requestClose(run)
                         } label: {
                             Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(7), weight: .bold))
                         }
