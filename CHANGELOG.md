@@ -9,6 +9,7 @@ version is tagged `v<version>`.
 ## 1.6.1 — 2026-11-16
 
 - api: GraphQL — New GraphQL Request; the server's schema read by introspection (with the request's URL, headers and auth) into a Schema tab to browse and filter; the query completed from it as it is typed — fields, arguments, types
+- api: MCP servers — the checkout's .mcp.json, Claude Code's and Codex's servers listed in the API panel (read, never written), and your own added there (secrets in the keychain); one inspected beside the editor: its tools called with JSON arguments started from their schema, its resources read, its prompts got, every message logged — over stdio, Streamable HTTP or SSE
 
 ## 1.6.0 — 2026-11-13
 

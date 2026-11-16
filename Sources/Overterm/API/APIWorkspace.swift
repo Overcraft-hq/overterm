@@ -30,6 +30,8 @@ final class APIWorkspace: ObservableObject {
     /// GraphQL schemas, by the endpoint they were read from: kept for the
     /// session, read again on Refresh.
     @Published private(set) var graphQLSchemas: [String: GraphQLSchemaState] = [:]
+    /// The MCP servers the panel lists, and the one inspected.
+    let mcp = MCPInspector.make()
     @Published var search = ""
     /// Specs, collections and servers to import from (APIDiscovery).
     @Published private(set) var discovered: [APIDiscovery.Source] = []
@@ -107,6 +109,7 @@ final class APIWorkspace: ObservableObject {
         // to that one, it is read again (an agent found nothing otherwise).
         loadedRoot = nil
         if visible { reload() }
+        mcp.reload(checkout: url)
     }
 
     // MARK: My Requests
@@ -175,6 +178,7 @@ final class APIWorkspace: ObservableObject {
 
     /// Finds the collections again and reads them — off the main thread.
     func reload() {
+        mcp.reload(checkout: root)
         guard let root else {
             collections = []
             return

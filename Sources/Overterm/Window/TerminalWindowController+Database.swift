@@ -351,3 +351,17 @@ extension TerminalWindowController {
         }
     }
 }
+
+// MARK: MCP
+
+extension TerminalWindowController {
+    /// An MCP server in the right-hand pane, connected — as every pane there joins it.
+    func inspectMCP(_ server: MCPServerConfig) {
+        apiWorkspace.mcp.open(server)
+        if zoomedColumn != nil { setZoomed(nil) }
+        rightPane.mcpOpened = true
+        rightPane.mode = .mcp
+        if diffItem?.isCollapsed == true { toggleDiff(nil) }
+        updateRightPaneVisibility()
+    }
+}

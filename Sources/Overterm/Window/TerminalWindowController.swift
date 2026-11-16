@@ -470,7 +470,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     editSecrets: { [weak self] environment, collection in self?.editAPISecrets(environment, in: collection) },
                     rename: { [weak self] item, name in try self?.renameAPIItem(item, to: name) ?? item.url },
                     trash: { [weak self] item in self?.trashItem(item.url) },
-                    openDocs: { [weak self] in self?.openAPIDocs($0) }
+                    openDocs: { [weak self] in self?.openAPIDocs($0) },
+                    openMCP: { [weak self] in self?.inspectMCP($0) }
                 ),
                 notesActions: notesActions,
                 databaseActions: databaseActions,
@@ -660,6 +661,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 object: StorageObjectView(model: storageObject, theme: theme, actions: storageObjectActions),
                 container: DockerSlotView(panel: dockerPanel, docker: .shared, theme: theme, actions: dockerActions),
                 redis: RedisSlotView(model: redisSlot, theme: theme, actions: redisSlotActions),
+                mcp: MCPPageView(inspector: apiWorkspace.mcp, theme: theme, close: { [weak self] in self?.toggleDiff(nil) }),
                 graph: NotesGraphView(model: NotesModel.shared, theme: theme, open: { [weak self] in self?.openNote($0) }),
                 manifest: KubeManifestDiffView(
                     pane: kubernetesManifest, page: kubernetesPage, theme: theme, onClose: { [weak self] in self?.toggleDiff(nil) },

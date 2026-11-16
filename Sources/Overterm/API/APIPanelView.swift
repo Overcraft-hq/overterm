@@ -20,6 +20,8 @@ struct APIActions {
     var trash: (_ item: APIItem) -> Void
     /// A request's .bru, or a folder's folder.bru, open on its Docs.
     var openDocs: (URL) -> Void = { _ in }
+    /// An MCP server, inspected in the right-hand pane.
+    var openMCP: (MCPServerConfig) -> Void = { _ in }
 }
 
 /// The sidebar's API panel: the checkout's Bruno collection — its
@@ -86,6 +88,7 @@ struct APIPanelView: View {
             } else {
                 empty
             }
+            MCPServersSection(inspector: workspace.mcp, theme: theme, open: actions.openMCP)
         }
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .clipped()

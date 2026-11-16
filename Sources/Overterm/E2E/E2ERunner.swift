@@ -25,6 +25,7 @@ final class E2ERunner {
         "api": { await $0.apiScenario() },
         "apiImport": { await $0.apiImportScenario() },
         "apiGraphQL": { await $0.apiGraphQLScenario() },
+        "apiMCP": { await $0.apiMCPScenario() },
         "notes": { await $0.notesScenario() },
         "drawing": { await $0.drawingScenario() },
         "review": { await $0.reviewScenario() },
