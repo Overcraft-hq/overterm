@@ -1333,7 +1333,7 @@ in it, and `.obsidian/` is read for where things go, never written.
 
 A database client beside the terminal, DataGrip's work in the sidebar and
 the editor: PostgreSQL, MySQL, SQLite, Redshift, ClickHouse, BigQuery,
-Redis, Prometheus, Loki and Tempo, and Elasticsearch and OpenSearch (Settings ▸ Database turns it off; its rows fetched and asking before a
+Redis, DynamoDB, InfluxDB, Neo4j, Prometheus, Loki and Tempo, and Elasticsearch and OpenSearch (Settings ▸ Database turns it off; its rows fetched and asking before a
 destroying statement are there too).
 
 - **Connections** (`DatabaseConnection`, `DatabaseStore`): a name, a kind,
@@ -1503,6 +1503,63 @@ destroying statement are there too).
   password, Verify Full refused) and OpenSearch 2 (security off) with
   `Scripts/database-test-servers.sh search` and `OVERTERM_DB_TESTS=1`
   (`SearchDriverTests`).
+
+### DynamoDB, InfluxDB, Neo4j (REST APIs, their own console languages)
+
+- **Shared** (`KindConsoleText`, `HTTPDriverTransport`): each kind's
+  console language is a `KindConsoleText` (`DatabaseKind.consoleText`),
+  asked first by `statements`, `verb`, `onlyReads`, `agentReads`, `danger`
+  and `subject`; the panel's Select Top is `DatabaseKind.browseStatement`.
+  The drivers share a base URL (TLS Off, Require or Verify Full —
+  `ClickHouseTrust`; Prefer is plain), a failure to reach the server said
+  as one (nothing there, no such host, TLS), JSON values as text. A pasted
+  address fills the form (`KindAddress`, `HTTPKindFields`). Docker:
+  `neo4j` maps to its HTTP port, and InfluxDB and DynamoDB Local — which
+  have no client in `DockerClient` — through `DockerDatabaseGuess.panelOnlyWords`.
+- **DynamoDB** (`DynamoDBDriver`, `DynamoDBText`): the JSON API
+  (`X-Amz-Target: DynamoDB_20120810.*`) signed by `S3Signer` as service
+  `dynamodb`; an AWS profile, or the access key (User) and its secret (the
+  keychain's password); AWS's endpoint for the region (Location), or
+  DynamoDB Local's — signed with placeholders when no key is given. The
+  console is PartiQL (`ExecuteStatement`), followed page by page to the row
+  limit (100 pages at most); items are rows — the table's keys first, then
+  every attribute by name; S and N as written, B base64, BOOL a word, NULL
+  NULL, sets, lists and maps as JSON (`DynamoItems`). The tree: one folder,
+  the region; its tables; a table's keys (partition, sort) and indexes. Only
+  SELECT reads; a DELETE or UPDATE without WHERE is asked about. No tunnel to
+  AWS's endpoint (it is signed for its own host).
+- **InfluxDB** (`InfluxDBDriver`, `InfluxDBText`): the version is Location
+  (`1`, `2`, `3`) or `/ping`'s `X-Influxdb-Version`. 1.x: InfluxQL at
+  `/query` (a read a GET, a write a POST), Basic auth. 2.x: Flux at
+  `/api/v2/query` (annotated CSV, `InfluxParse.flux`), a token and an
+  organization (Project); a statement that starts as InfluxQL goes through
+  the 1.x compatibility API, the bucket its database. 3.x: SQL at
+  `/api/v3/query_sql`, SHOW at `query_influxql`, as CSV. A block of lines
+  up to a blank one is a statement, a `;` ends one too; `USE db` alone or
+  leading a statement says the database (bucket); `WRITE` and line protocol
+  — the only write outside the query languages — posts the points. Flux
+  reads unless it calls `to()`/`wideTo()` or a package that posts. Series
+  are flattened: the measurement when several, tags, then columns. The
+  tree: databases or buckets (InfluxDB's own `_…` last) → measurements →
+  fields with their types and tags (2.x by InfluxQL's SHOW … KEYS, else
+  Flux's `schema` a measurement at a time, 50 at most).
+- **Neo4j** (`Neo4jDriver`, `Neo4jText`): the transactional HTTP API
+  (`/db/<db>/tx/commit`, rows and graph), else the Query API
+  (`/db/<db>/query/v2`, 5.19+ and Aura) where the first answers 404; Basic
+  auth. A node is `{"labels", "properties"}`, a relationship `{"type",
+  "properties"}`, a path the list of both. Statements end at `;` or a
+  blank line; `:use db` switches. Read-only is Neo4j's own read mode
+  (`access-mode: READ`, `accessMode: Read`) and a clause that writes
+  (CREATE, MERGE, SET, DELETE, REMOVE, DROP, LOAD CSV, FOREACH, `IN
+  TRANSACTIONS`…) refused before sending — a property `n.set` or a label
+  `:Create` isn't one; an agent's procedures only from a list that reads
+  (`db.labels`, `db.schema.*`…). A DELETE with no WHERE, property or LIMIT
+  is asked about. The tree: databases → labels and `[:TYPES]` → their
+  property keys and types (`db.schema.nodeTypeProperties`).
+- **Tested**: pure parts always (`DynamoDBTests`, `InfluxDBTests`,
+  `Neo4jTests`); the drivers against DynamoDB Local, InfluxDB 2.7, 1.11 and
+  3 Core and Neo4j 5 in `Scripts/database-test-servers.sh` with
+  `OVERTERM_DB_TESTS=1`.
 
 ### Saved queries
 

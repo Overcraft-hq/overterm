@@ -21,7 +21,9 @@ enum DockerDatabaseGuess {
     /// table as its own client's (`DockerClient`), so a tool named after a
     /// database — PostgREST, an exporter, a keeper — is none.
     static func kind(of image: String) -> (DatabaseKind, port: Int)? {
-        DockerClient.kind(of: image)?.database ?? searchKind(words: DockerClient.words(of: image))
+        if let client = DockerClient.kind(of: image) { return client.database }
+        let words = DockerClient.words(of: image)
+        return searchKind(words: words) ?? panelOnly(words: words)
     }
 
     /// Elasticsearch and OpenSearch have no client to run inside, so no
@@ -36,13 +38,25 @@ enum DockerDatabaseGuess {
         return nil
     }
 
+    /// Images the panel speaks to that have no client of theirs to run
+    /// in the container (`DockerClient`): InfluxDB, DynamoDB Local.
+    static let panelOnlyWords: [(DatabaseKind, port: Int, Set<String>)] = [
+        (.influxdb, 8086, ["influxdb", "influxdb3"]),
+        (.dynamodb, 8000, ["dynamodb"]),
+    ]
+
+    private static func panelOnly(words: [String]) -> (DatabaseKind, port: Int)? {
+        let words = Set(words)
+        guard !words.isEmpty, words.isDisjoint(with: DockerClient.toolWords) else { return nil }
+        return panelOnlyWords.first { !$0.2.isDisjoint(with: words) }.map { ($0.0, $0.port) }
+    }
+
     /// A container's, by the same rule as its client's: a compose
     /// project's name in its image says nothing, and an image listed by
     /// its ID is known by `reference` (inspect's `Config.Image`).
     static func kind(of container: ContainerSummary, reference: String? = nil) -> (DatabaseKind, port: Int)? {
-        if let found = DockerClient.kind(of: container, reference: reference)?.database { return found }
-        let image = DockerClient.listsImageByID(container) ? reference : container.Image
-        return image.flatMap { searchKind(words: DockerClient.words(of: $0)) }
+        if let client = DockerClient.kind(of: container, reference: reference) { return client.database }
+        return DockerClient.imageWords(of: container, reference: reference).flatMap { searchKind(words: $0) ?? panelOnly(words: $0) }
     }
 
     static func guess(
@@ -121,6 +135,39 @@ enum DockerDatabaseGuess {
                 password = first("OPENSEARCH_INITIAL_ADMIN_PASSWORD", "OPENSEARCH_PASSWORD")
             }
             connection.sslMode = disabled ? .disable : .require
+        case .neo4j:
+            // NEO4J_AUTH is `user/password`, or `none`.
+            if let auth = first("NEO4J_AUTH"), auth != "none", let slash = auth.firstIndex(of: "/") {
+                connection.user = String(auth[..<slash])
+                password = String(auth[auth.index(after: slash)...])
+            } else {
+                connection.user = first("NEO4J_AUTH") == "none" ? "" : "neo4j"
+            }
+            connection.sslMode = .disable
+        case .influxdb:
+            connection.sslMode = .disable
+            if let org = first("DOCKER_INFLUXDB_INIT_ORG") {
+                // 2.x's setup: its org, bucket and — when given — the admin token.
+                connection.location = InfluxVersion.v2.rawValue
+                connection.project = org
+                connection.database = first("DOCKER_INFLUXDB_INIT_BUCKET") ?? ""
+                password = first("DOCKER_INFLUXDB_INIT_ADMIN_TOKEN")
+            } else if let database = first("INFLUXDB_DB") {
+                // 1.x's: its database, the admin or the user it made.
+                connection.location = InfluxVersion.v1.rawValue
+                connection.database = database
+                if let user = first("INFLUXDB_ADMIN_USER") {
+                    connection.user = user
+                    password = first("INFLUXDB_ADMIN_PASSWORD")
+                } else if let user = first("INFLUXDB_USER") {
+                    connection.user = user
+                    password = first("INFLUXDB_USER_PASSWORD")
+                }
+            }
+        case .dynamodb:
+            // DynamoDB Local: any credentials, its tables a region's.
+            connection.sslMode = .disable
+            connection.location = first("AWS_REGION", "AWS_DEFAULT_REGION") ?? "us-east-1"
         default:
             return nil
         }

@@ -332,36 +332,43 @@ enum RedisResult {
 extension DatabaseKind {
     func statements(in text: String) -> [NSRange] {
         if isSearch { return SearchText.statements(in: text) }
+        if let own = consoleText { return own.statements(in: text) }
         return isRedis ? RedisText.statements(in: text) : isObservability ? ObservabilityText.statements(in: text) : SQLText.statements(in: text)
     }
     func statement(at caret: Int, in text: String) -> NSRange? {
         if isSearch { return SearchText.statement(at: caret, in: text) }
+        if let own = consoleText { return own.statement(at: caret, in: text) }
         return isRedis
             ? RedisText.statement(at: caret, in: text)
             : isObservability ? ObservabilityText.statement(at: caret, in: text) : SQLText.statement(at: caret, in: text)
     }
     func verb(of statement: String) -> String {
         if isSearch { return (try? SearchRequest.parse(statement))?.verb ?? "the request" }
+        if let own = consoleText { return own.verb(of: statement) }
         return isRedis ? RedisText.verb(of: statement) : isObservability ? "Query" : SQLText.verb(of: statement)
     }
     /// Prometheus, Loki and Tempo only read.
     func onlyReads(_ statement: String) -> Bool {
         if isSearch { return (try? SearchRequest.parse(statement))?.onlyReads ?? false }
+        if let own = consoleText { return own.onlyReads(statement) }
         return isRedis ? RedisText.onlyReads(statement) : isObservability ? true : SQLText.onlyReads(statement)
     }
     /// What an agent may run without asking.
     func agentReads(_ statement: String) -> Bool {
         if isSearch { return (try? SearchRequest.parse(statement))?.agentReads ?? false }
+        if let own = consoleText { return own.agentReads(statement) }
         return isRedis ? RedisText.onlyReads(statement) : isObservability ? true : SQLText.agentReads(statement)
     }
     func danger(of statement: String) -> String? {
         if isSearch { return (try? SearchRequest.parse(statement))?.danger }
+        if let own = consoleText { return own.danger(of: statement) }
         return isRedis ? RedisText.danger(of: statement) : isObservability ? nil : SQLText.danger(of: statement)
     }
     /// What a statement is about, for a tab's name and an export's: its
     /// first table, a Redis command's key, a metric, a stream, a trace, an index.
     func subject(of statement: String) -> String? {
         if isSearch { return SearchText.subject(of: statement) }
+        if let own = consoleText { return own.subject(of: statement) }
         if isRedis {
             let words = (try? RedisProtocol.words(statement)) ?? []
             let skip = RedisText.withSubcommand.contains(words.first?.uppercased() ?? "") ? 2 : 1

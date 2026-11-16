@@ -205,13 +205,13 @@ enum DatabaseMCP {
                 "schema": [
                     "type": "string",
                     "description":
-                        "The schema (dataset in BigQuery, database in MySQL/ClickHouse, db0… in Redis — its keys, up to 1000; indices, data streams or aliases in Elasticsearch/OpenSearch, each with its mapping's fields).",
+                        "The schema (dataset in BigQuery, database in MySQL/ClickHouse, db0… in Redis — its keys, up to 1000; indices, data streams or aliases in Elasticsearch/OpenSearch, each with its mapping's fields; the region in DynamoDB — tables with their keys and indexes; a database or bucket in InfluxDB — measurements with fields and tags; a database in Neo4j — labels and [:TYPES] with their properties).",
                 ],
                 "table": ["type": "string", "description": "One table's columns."],
             ]),
         tool(
             "db_query",
-            "Run one SQL statement — or, on a Redis connection, one Redis command as redis-cli takes it (`HGETALL user:1`, `SCAN 0 MATCH user:* COUNT 100`; `VIEW key` reads any key whatever its type), or on Elasticsearch / OpenSearch one request as Kibana's Dev Tools writes it (`GET /orders/_search` then its JSON body on the lines below; a search's hits come back as rows, `_cat/indices` too; `POST /_sql` and ES|QL `POST /_query` as their columns), or PromQL / LogQL / TraceQL on Prometheus, Loki, Tempo (over the window the user picked in the console, an hour unless changed; a 32-hex trace id reads that trace; `.targets` and `.alerts` on Prometheus) — on a saved connection and get its rows as a Markdown table. Reads only, unless the user allows agents to write in Settings — then they are asked each time.",
+            "Run one SQL statement — or, on a Redis connection, one Redis command as redis-cli takes it (`HGETALL user:1`, `SCAN 0 MATCH user:* COUNT 100`; `VIEW key` reads any key whatever its type), or on Elasticsearch / OpenSearch one request as Kibana's Dev Tools writes it (`GET /orders/_search` then its JSON body on the lines below; a search's hits come back as rows, `_cat/indices` too; `POST /_sql` and ES|QL `POST /_query` as their columns), or PromQL / LogQL / TraceQL on Prometheus, Loki, Tempo (over the window the user picked in the console, an hour unless changed; a 32-hex trace id reads that trace; `.targets` and `.alerts` on Prometheus), PartiQL on DynamoDB (`SELECT * FROM \"orders\" WHERE pk = 'a'`), InfluxQL, Flux (2.x) or SQL (3.x) on InfluxDB, Cypher on Neo4j (`MATCH (n:Person) RETURN n LIMIT 10`) — on a saved connection and get its rows as a Markdown table. Reads only, unless the user allows agents to write in Settings — then they are asked each time.",
             [
                 "connection": ["type": "string", "description": "Its name, from db_connections (optional when there is one)."],
                 "sql": ["type": "string", "description": "One statement, one Redis command, or one Elasticsearch/OpenSearch request."],

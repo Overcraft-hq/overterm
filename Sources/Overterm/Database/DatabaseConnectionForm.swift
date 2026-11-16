@@ -36,7 +36,7 @@ struct DatabaseConnectionForm: View {
                 .onChange(of: connection.kind) { kind in
                     connection.port = kind.defaultPort
                     // Redis doesn't negotiate TLS: Prefer would be plain, said as Off.
-                    if (kind == .redis || kind.isObservability || kind.isSearch), connection.sslMode == .prefer { connection.sslMode = .disable }
+                    if (kind == .redis || kind.isObservability || kind.isSearch || kind.consoleText != nil), connection.sslMode == .prefer { connection.sslMode = .disable }
                     if kind == .s3 { connection.apply(connection.provider) }
                     if kind == .gcs { connection.bigQueryAuth = .gcloud }
                     tested = nil
@@ -49,6 +49,13 @@ struct DatabaseConnectionForm: View {
                 case .redis: redisFields
                 case .prometheus, .loki, .tempo: observabilityFields
                 case .elasticsearch, .opensearch: searchFields
+                case .dynamodb, .influxdb, .neo4j:
+                    HTTPKindFields(connection: $connection, password: $password, hasSavedPassword: hasSavedPassword) { tested = nil }
+                    // AWS's DynamoDB is signed for its own host: no tunnel.
+                    if !(connection.kind == .dynamodb && DynamoItems.isAWS(connection.host)) {
+                        Toggle("Through an SSH tunnel", isOn: $connection.sshEnabled)
+                        if connection.sshEnabled { sshFields }
+                    }
                 default: serverFields
                 }
                 Toggle("Read-only — refuse anything that writes", isOn: $connection.readOnly)
@@ -394,7 +401,9 @@ struct DatabaseConnectionForm: View {
                     let schemas = (try? await driver.schemas())?.count ?? 0
                     await driver.close()
                     let through = tunnel == nil ? "" : " through \(connection.sshHost)"
-                    let noun = connection.kind.isRedis ? "database" : connection.kind.isObservability || connection.kind.isSearch ? "folder" : "schema"
+                    let noun =
+                        connection.kind.isRedis || connection.kind == .influxdb || connection.kind == .neo4j
+                        ? "database" : connection.kind == .dynamodb ? "region" : connection.kind.isObservability || connection.kind.isSearch ? "folder" : "schema"
                     tested = .success(
                         "Connected\(through) in \(Int(Date().timeIntervalSince(started) * 1000)) ms — \(schemas) \(noun)\(schemas == 1 ? "" : "s")")
                 }

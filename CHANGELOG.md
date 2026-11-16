@@ -13,6 +13,7 @@ version is tagged `v<version>`.
 - api: gRPC — Bruno's gRPC requests: New gRPC Request, its methods from the server's reflection or the collection's .proto files (with protoc), messages typed as JSON, metadata and auth; unary, server, client and bidi streams called over HTTP/2 (TLS or plain), every reply and the status shown
 - terraform: a root is compared with main alone — not every worktree's branch ("feat/x has no lock file", a dozen branches "sharing its state" are gone); Needs init said only when a required provider really isn't locked (by its source, so better-uptime is better-uptime), naming it and what to do; the branch and version said once above the cards, "no state yet" where a local state isn't there
 - kubernetes: the rail's warnings — the last hour's Warning events of the bound namespace, or unbound of the page's context in the namespace the checkout's files name — with the nodes' readiness; the forwards running shown unbound too; a workload's image tag when no commit is known
+- database: new kinds — Elasticsearch and OpenSearch (Kibana Dev Tools' console, indices and their mappings, SQL and ES|QL), DynamoDB (PartiQL; an AWS profile or a key; DynamoDB Local), InfluxDB (1.x InfluxQL, 2.x Flux, 3.x SQL), Neo4j (Cypher) — each with its tree, read-only and what to ask before, agents' tools and Docker containers opened as connections
 
 ## 1.6.0 — 2026-11-13
 
