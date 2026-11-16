@@ -204,4 +204,78 @@ final class ResourceTableTests: XCTestCase {
         table.removeTableColumn(table.tableColumns[0])
         XCTAssertEqual(ResourceTable<Fruit>.placed(columns, in: table).map(\.column.id), ["name", "status"])
     }
+    /// Rows reordered in place (a CPU sort every tick): rows added or taken
+    /// at the end only, a row on screen remade only where its kind or span
+    /// changed, another's height noted; nothing else is reloaded.
+    func testRowsMoveInPlace() {
+        typealias Shape = ResourceTable<Fruit>.Coordinator.RowShape
+        let row = Shape(height: 24, kind: "process", spans: false)
+        let group = Shape(height: 24, kind: "group", spans: true)
+        let tall = Shape(height: 40, kind: "process", spans: false)
+        let plan = ResourceTable<Fruit>.Coordinator.inPlace(old: [group, row, row, row, row], new: [group, row, group, tall], made: IndexSet(0..<3))
+        XCTAssertEqual(plan.removed, IndexSet([4]))
+        XCTAssertEqual(plan.added, IndexSet())
+        XCTAssertEqual(plan.remade, IndexSet([2]), "on screen and now a group")
+        XCTAssertEqual(plan.heights, IndexSet([3]))
+        let grown = ResourceTable<Fruit>.Coordinator.inPlace(old: [row], new: [row, row, group], made: IndexSet(0..<1))
+        XCTAssertEqual(grown.added, IndexSet([1, 2]))
+        XCTAssertTrue(grown.remade.isEmpty)
+        let offscreen = ResourceTable<Fruit>.Coordinator.inPlace(old: [row, row], new: [row, group], made: IndexSet(0..<1))
+        XCTAssertTrue(offscreen.remade.isEmpty, "no view: made as it scrolls in")
+        let prepared = ResourceTable<Fruit>.Coordinator.inPlace(old: [row, row, row], new: [row, row, group], made: IndexSet([0, 2]))
+        XCTAssertEqual(prepared.remade, IndexSet([2]), "a view prepared off screen is remade too")
+    }
+
+    /// A row the table prepared beyond the visible rect (responsive
+    /// scrolling) is a row with a view: moved in place, it is handed its
+    /// new row — never left drawing the one that sat there, which a press
+    /// or ↩, resolved by index, would then act on.
+    @MainActor
+    func testARowPreparedOffScreenTakesItsNewRow() throws {
+        let columns = ["name", "weight"].map { ResourceColumn(id: $0, title: $0) }
+        func list(_ fruit: [Fruit]) -> ResourceTable<Fruit> {
+            ResourceTable<Fruit>(
+                rows: fruit, selection: .constant([]), columns: columns, sort: .constant(nil), cell: { _, _ in AnyView(Text(verbatim: "cell")) },
+                verbs: { _ in [] }, copy: {})
+        }
+        let first: [Fruit] = (0..<60).map { (index: Int) in .fruit("f\(index)", weight: index) }
+        let coordinator = list(first).makeCoordinator()
+        let table = ResourceTableView()
+        table.dataSource = coordinator
+        table.delegate = coordinator
+        table.intercellSpacing = .zero
+        coordinator.table = table
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        scroll.documentView = table
+        let window = NSWindow(contentRect: scroll.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        window.contentView = scroll
+        coordinator.update(list(first))
+        table.layoutSubtreeIfNeeded()
+        let visible = table.rows(in: table.visibleRect)
+        let offscreen = visible.location + visible.length + 3
+        // Prepared as responsive scrolling prepares it: views beyond the
+        // visible rect, none of them on screen.
+        _ = try XCTUnwrap(table.rowView(atRow: offscreen, makeIfNecessary: true))
+        XCTAssertFalse(ResourceTable<Fruit>.Coordinator.shows(offscreen, in: visible))
+        XCTAssertTrue(ResourceTable<Fruit>.Coordinator.madeRows(in: table).contains(offscreen), "a prepared row has a view")
+
+        // Reversed: every row moves; the prepared one's cells say the new row.
+        let moved = Array(first.reversed())
+        coordinator.update(list(moved))
+        XCTAssertEqual(table.reloads, 1, "the first rows only")
+        XCTAssertEqual(table.reorders, 1)
+        for at in 0..<table.numberOfColumns {
+            let cell = try XCTUnwrap(table.view(atColumn: at, row: offscreen, makeIfNecessary: false))
+            XCTAssertEqual(cell.accessibilityIdentifier(), moved[offscreen].id)
+        }
+        // Now a basket there: the prepared row is made again, spanning.
+        var grouped = moved
+        grouped[offscreen] = .basket("acme")
+        coordinator.update(list(grouped))
+        let fruitCells = Set(columns.map { ResourceHostingCell.identifier(column: $0.id, kind: Fruit.basket("acme").reuseKind) })
+        let left = (0..<table.numberOfColumns).compactMap { table.view(atColumn: $0, row: offscreen, makeIfNecessary: false)?.identifier }
+        XCTAssertFalse(left.contains { fruitCells.contains($0) }, "no fruit's cell left where the basket now is")
+    }
 }
