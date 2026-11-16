@@ -129,6 +129,8 @@ extension TerminalWindowController {
                 case .allowed(.interruptPane, _, _): self.interrupt(holder, port: port, in: pane, of: tab)
                 case .allowed(.signal(let signal), _, _): self.signal(signal, holder, port: port, in: pane, of: tab)
                 case .route(.closePane, _): self.closeForFree(pane, in: tab)
+                // The pill's rule asks for nothing else: ⌃C, a signal or the close.
+                case .allowed: self.tell("Not freed", ActivitySignalCheck.helper)
                 // Stage 0 names every helper `.other`, refused before the
                 // sheet: a route a pill can't take is said, never a beep.
                 case .route, .refused: self.tell(ActivityPortFree.refusal(ActivitySignalCheck.helper, port: port.port).title, ActivitySignalCheck.helper)

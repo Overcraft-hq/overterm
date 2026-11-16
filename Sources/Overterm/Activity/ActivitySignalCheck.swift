@@ -1,19 +1,57 @@
 import Darwin
 
 /// What a person asks of a process (docs/design/activity/analysis.md,
-/// 6.10). Stage 0 has the pane pill's one; the page's — Stop, Interrupt,
-/// Stop Agent, Force Quit, Send a Signal, Suspend… — come with the whole
-/// class table in stage 2.
-enum ActivityVerb: String, CaseIterable, Sendable {
+/// 6.10): the pane pill's Free…, and the page's verbs — one per row of
+/// 6.10's verb table that changes a process. `ActivitySignalCheck` decides
+/// each for each class.
+enum ActivityVerb: Hashable, Sendable {
     /// The pill's Free :N…: whatever ends the port's holder the way its
     /// class asks (6.12) — each asked.
     case free
+    /// Stop… (`k`): SIGTERM — an app's Quit, an agent's Stop Agent, a
+    /// terraform write's Interrupt.
+    case stop
+    /// Interrupt… (`k` on a pane's foreground job): ⌃C typed into the pane.
+    case interrupt
+    /// Interrupt Turn… on an agent's row: the same ⌃C into the agent's pane.
+    case interruptTurn
+    /// Stop Agent… (`k` on an agent's row): SIGTERM to the agent, critical.
+    case stopAgent
+    /// Force Quit… (`K`): SIGKILL to the process alone.
+    case forceQuit
+    /// Send a Signal ▸ (`x`): that signal, under the rule of the verb it equals.
+    case send(ActivitySignal)
+    /// Stop Its Tree…: SIGTERM to the subtree, parents first.
+    case stopTree
+    /// Stop Its Group…: `killpg` after the member check.
+    case stopGroup
+    /// Stop Its Parent…: the parent's own class decides.
+    case stopParent
+    /// Suspend / Resume (`p`).
+    case suspend
+    case resume
+    /// Run in Background / Normally (`b`).
+    case background
+    case runNormally
+    /// Lower Priority ▸ (`n`): upward only.
+    case lowerPriority
+    /// Free :N from the page, for the user's own holder (6.8): what ends
+    /// it as its class asks, apps and detached processes included — there
+    /// they are picked alone.
+    case freePort
+
+    /// Every verb, each signal of Send a Signal one.
+    static var allCases: [ActivityVerb] {
+        [.free, .stop, .interrupt, .interruptTurn, .stopAgent, .forceQuit] + ActivitySignal.allCases.map { .send($0) }
+            + [.stopTree, .stopGroup, .stopParent, .suspend, .resume, .background, .runNormally, .lowerPriority, .freePort]
+    }
 }
 
-/// A process's class to the policy: 6.10's rows, as far as a pane's port
-/// pill can name one (6.12) — the pane's own processes, Overterm's
-/// helpers, a container. Stage 2 adds the page's: Left Behind, yours
-/// elsewhere, another Overterm, the engine and its VM, macOS's daemons.
+/// A process's class to the policy: 6.10's rows. A pane's port pill names
+/// the pane's own processes, Overterm's helpers, a container (6.12); the
+/// page any of them. Whose it is — root's, another user's, a setuid
+/// program's —, a zombie, a stopped process, an app, a terraform or a helm
+/// write, what chose to outlive its terminal are the target's facts.
 enum ActivityClass: Hashable, Sendable {
     /// A job in a pane: the user's, under its `login`.
     case paneJob
@@ -33,6 +71,32 @@ enum ActivityClass: Hashable, Sendable {
     case container
     /// Overterm itself.
     case overterm
+    /// What outlived its tab, its agent or an earlier Overterm (6.9).
+    case leftBehind
+    /// The user's, outside every tab: another terminal's, another
+    /// Overterm's tabs', a `/usr/bin` tool someone ran.
+    case elsewhere
+    /// Another Overterm, the app itself.
+    case anotherOverterm
+    /// Docker's engine or its VM, OrbStack's, Colima's, Lima's (6.5 rule 6).
+    case engine
+    /// macOS's own daemons and agents outside the tabs (6.5 rule 14).
+    case macOS
+}
+
+/// Who stopped a stopped process (6.10's last row): only what Activity
+/// stopped is resumed here.
+enum ActivityStopper: Hashable, Sendable {
+    /// Activity's Suspend, kept by identity.
+    case activity
+    /// Suspend Tab: Resume Tab resumes it.
+    case suspendTab
+    /// Its shell's job control (⌃Z): `fg` in its tab.
+    case jobControl
+    /// A debugger (`P_TRACED`): SIGCONT would interfere.
+    case traced
+    /// Nobody Overterm knows.
+    case unknown
 }
 
 /// Which of Overterm's helpers, for its own verb (6.10's helpers row).
@@ -91,11 +155,26 @@ struct ActivityTarget: Hashable, Sendable {
     var detached = false
     /// A GUI app, anything inside an `.app`, or an app started from a pane.
     var isApp = false
+    /// Inside an `.app` without being the app (a helper): Stop warns, a
+    /// Suspend asks — a stopped helper can freeze its app.
+    var insideApp = false
+    /// Stopped (T), and by whom; nil while it runs.
+    var stopped: ActivityStopper?
+    /// Activity put it in the background (3.9: nothing else can say so).
+    var backgroundedHere = false
+    /// It leads its process group (`pgid == pid`).
+    var leadsGroup = false
+    /// Its group holds a process outside its subtree: Stop Its Group says
+    /// more than Stop Its Tree.
+    var groupBeyondTree = false
+    /// What its group holds that no group Stop may reach — "a shell", "an
+    /// agent", "a terraform write", "Overterm's own" —; nil when nothing.
+    var groupHolds: String?
 
     init(
         _ kind: ActivityClass, pid: pid_t, effectiveUID: uid_t, realUID: uid_t? = nil, savedUID: uid_t? = nil, isZombie: Bool = false,
         inForeground: Bool = false, groupHoldsAgent: Bool = false, terraformWrite: String? = nil, releaseWrite: String? = nil, detached: Bool = false,
-        isApp: Bool = false
+        isApp: Bool = false, insideApp: Bool = false, stopped: ActivityStopper? = nil
     ) {
         self.kind = kind
         self.pid = pid
@@ -109,6 +188,8 @@ struct ActivityTarget: Hashable, Sendable {
         self.releaseWrite = releaseWrite
         self.detached = detached
         self.isApp = isApp
+        self.insideApp = insideApp
+        self.stopped = stopped
     }
 
     /// Whether it runs as `user` and as nobody else — its effective, real
@@ -183,6 +264,23 @@ enum ActivityAction: Hashable, Sendable {
     case interruptPane
     /// A signal, through `ProcessSignals`.
     case signal(ActivitySignal)
+    /// The signal to its subtree as the sheet lists it, each member by its
+    /// own token, parents first (CONT children first).
+    case signalTree(ActivitySignal)
+    /// The signal to its process group, every member checked first.
+    case signalGroup(ActivitySignal)
+    /// SIGSTOP and SIGCONT, kept by identity.
+    case suspend
+    case resume
+    /// `PRIO_DARWIN_BG`, and back.
+    case background
+    case normalPriority
+    /// nice raised: can't be lowered back without an administrator.
+    case lowerPriority
+    /// An app asked to quit (`NSRunningApplication.terminate`), or ended
+    /// without asking (`forceTerminate`).
+    case quitApp
+    case forceQuitApp
 }
 
 /// An owner's own verb, where the owner, not a signal, ends it (6.10, 6.8).
@@ -203,19 +301,82 @@ enum ActivityRoute: Hashable, Sendable {
     case restartLanguageServer
     /// The terraform run's own Stop.
     case stopTerraformRun
+    /// Suspend Tab / Resume Tab, for the pane's shell and what Suspend Tab
+    /// stopped.
+    case suspendTab
+    case resumeTab
+    /// Suspended with its pane: the shell too, or it takes the terminal back.
+    case suspendPane
 }
 
-/// The policy (6.10): what each verb does to each class of process. Pure,
-/// and tested class by class, as `KubeProcessCheck` is. Stage 0's is the
-/// class table restricted to what a pane's port pill can name (6.12);
-/// stage 2's is the whole table. `ProcessSignals` makes its own refusals
-/// under it, whatever it says.
+/// The policy (6.10): what each verb does to each class of process — the
+/// whole class table, the only source of who is asked. Pure, and tested
+/// verb by verb and class by class, as `KubeProcessCheck` is.
+/// `ProcessSignals` makes its own refusals under it, whatever it says.
 enum ActivitySignalCheck {
-    static func rule(_ verb: ActivityVerb, for target: ActivityTarget, user: uid_t = getuid()) -> ActivityRule {
+    /// What `verb` does to `target`. `parent`: Stop Its Parent's, read
+    /// with the same facts — its own class decides.
+    static func rule(_ verb: ActivityVerb, for target: ActivityTarget, parent: ActivityTarget? = nil, user: uid_t = getuid()) -> ActivityRule {
         switch verb {
-        case .free: free(target, user: user)
+        case .free: return free(target, user: user)
+        case .stopParent: return stopParent(of: target, parent: parent, user: user)
+        case .send(let signal): return send(signal, to: target, user: user)
+        default: break
+        }
+        if let owned = owners(verb, target) { return owned }
+        if let never = never(target, user: user) { return never }
+        switch verb {
+        case .stop: return stop(target)
+        case .interrupt: return interrupt(target)
+        case .interruptTurn: return interruptTurn(target)
+        case .stopAgent: return target.kind == .agent ? stopAgentRule : .refused(notAnAgent)
+        case .forceQuit: return forceQuit(target)
+        case .stopTree: return stopTree(target)
+        case .stopGroup: return stopGroup(target)
+        case .suspend: return suspend(target)
+        case .resume: return resume(target)
+        case .background, .lowerPriority:
+            if target.terraformWrite != nil { return .refused(terraformPriority) }
+            return verb == .background ? .allowed(.background, confirm: false, critical: false) : .allowed(.lowerPriority, confirm: true, critical: false)
+        case .runNormally:
+            return target.backgroundedHere ? .allowed(.normalPriority, confirm: false, critical: false) : .refused(notBackgrounded)
+        case .freePort: return interruptsPane(target) && target.terraformWrite == nil ? .allowed(.interruptPane, confirm: true, critical: target.releaseWrite != nil) : stop(target)
+        case .free, .stopParent, .send: return .refused(helper)
         }
     }
+
+    // MARK: Words
+
+    static let daemon = "Part of macOS; it would start again."
+    static let anotherOverterm = "Another Overterm: quit it there."
+    static let engine = "Docker's engine or its VM: it holds every container's ports, and containers run inside it — stop a container, or quit the app from its menu."
+    static let paneSession = "The pane's own shell: close the pane or the tab instead."
+    static let container = "A container: stop it on the Docker page."
+    static let terraformKill = "SIGKILL can leave the state locked and half written; Interrupt asks terraform to stop safely."
+    static let terraformOnly = "A terraform write: Interrupt only — SIGTERM, SIGKILL or any other signal can leave its state locked and half written."
+    static let terraformSuspend = "A terraform write: stopped, it holds its state's lock — Interrupt it instead."
+    static let terraformPriority = "A terraform write: Overterm changes nothing of it but Interrupt."
+    static let terraformBulk = "A terraform write is in no bulk Stop: Interrupt it alone."
+    static let notAnAgent = "Not an agent: Stop… instead."
+    static let agentNotForeground = "The agent isn't the pane's foreground job now: ⌃C typed into the pane would reach another."
+    static let notForeground = "Not the pane's foreground job: ⌃C typed into the pane would reach another — Stop… instead."
+    static let groupHoldsAgentWords = "Its process group holds the agent: ⌃C would reach the agent too — Stop… instead."
+    static let underAgent = "It runs under an agent: ⌃C would reach the agent — Stop… instead."
+    static let noPane = "It runs in no pane: ⌃C reaches only a pane's foreground job — Send a Signal ▸ INT instead."
+    static let appInterrupt = "An app: Quit… instead."
+    static let appBulk = "An app is never in a bulk Stop: Quit… it alone."
+    static let notLeader = "It doesn't lead its process group: Stop Its Tree… instead."
+    static let groupIsTree = "Its process group is its tree: Stop Its Tree… instead."
+    static let alreadyStopped = "It is stopped already."
+    static let notStopped = "It isn't stopped."
+    static let traced = "A debugger holds it: SIGCONT would interfere with the debugger."
+    static let jobControl = "Stopped by its shell (⌃Z): `fg` in its tab — a bare SIGCONT would run it behind a shell that still thinks it stopped."
+    static let notStoppedHere = "Activity didn't stop it: resume it where it was stopped."
+    static let notBackgrounded = "Activity didn't put it in the background: nothing to put back."
+    static let parentUnknown = "Its parent isn't known now."
+    static let parentLaunchd = "launchd is its parent: it collects it shortly."
+    static let parentOverterm = "Overterm is its parent: Overterm will collect it; report it if it stays."
+    static let parentStopped = "Its parent is stopped: Resume it first, or its zombies wait."
 
     static let macOS = ActivitySignalRefusal.system.reason
     static let overterm = ActivitySignalRefusal.overterm.reason
@@ -256,7 +417,10 @@ enum ActivitySignalCheck {
         case .paneSession: return .route(.closePane, confirm: true)
         case .helper(let helper): return route(helper)
         case .overterm: return .refused(overterm)
-        case .paneJob, .agent, .agentChild, .leftTerminal: break
+        case .anotherOverterm: return .refused(anotherOverterm)
+        case .engine: return .route(.stopContainer, confirm: true)
+        case .macOS: return .refused(target.pid <= 1 ? macOS : daemon)
+        case .paneJob, .agent, .agentChild, .leftTerminal, .leftBehind, .elsewhere: break
         }
         if target.pid <= 1 { return .refused(macOS) }
         if !target.isWhollyOwn(by: user) { return .refused(notYours(target, user: user)) }
@@ -280,6 +444,229 @@ enum ActivitySignalCheck {
         // Another job of the pane, one that left its terminal, an agent's
         // child — never interrupted: a ⌃C would reach the agent too.
         return .allowed(.signal(.term), confirm: true, critical: critical)
+    }
+
+    // MARK: The class table
+
+    /// The owners' own rows, before whose a process is: a container, the
+    /// pane itself, Overterm and its helpers, another Overterm, the engine
+    /// and its VM, macOS's daemons.
+    private static func owners(_ verb: ActivityVerb, _ target: ActivityTarget) -> ActivityRule? {
+        switch target.kind {
+        case .container:
+            return verb == .stop || verb == .freePort ? .route(.stopContainer, confirm: true) : .refused(container)
+        case .overterm: return .refused(overterm)
+        case .anotherOverterm: return .refused(anotherOverterm)
+        case .helper(let kind):
+            return verb == .stop || verb == .interrupt || verb == .freePort ? route(kind) : .refused(kind == .kubectlProxy ? kubectlProxy : helper)
+        case .paneSession:
+            switch verb {
+            case .stop, .interrupt, .forceQuit, .stopTree: return .route(.closePane, confirm: true)
+            case .suspend: return .route(.suspendTab, confirm: false)
+            case .resume: return target.stopped == nil ? .refused(notStopped) : .route(.resumeTab, confirm: false)
+            default: return .refused(paneSession)
+            }
+        case .engine: return verb == .freePort ? .route(.stopContainer, confirm: true) : .refused(engine)
+        case .macOS: return .refused(target.pid <= 1 ? macOS : daemon)
+        case .paneJob, .agent, .agentChild, .leftTerminal, .leftBehind, .elsewhere: return nil
+        }
+    }
+
+    /// The never-list's facts: launchd and the kernel, what doesn't run as
+    /// the user alone, a zombie.
+    private static func never(_ target: ActivityTarget, user: uid_t) -> ActivityRule? {
+        if target.pid <= 1 { return .refused(macOS) }
+        if !target.isWhollyOwn(by: user) { return .refused(notYours(target, user: user)) }
+        if target.isZombie { return .refused(ended) }
+        return nil
+    }
+
+    /// Stop…: SIGTERM, asked — an agent's is Stop Agent, an app's Quit, a
+    /// terraform write's Interrupt; a helm or pulumi write's critical.
+    private static func stop(_ target: ActivityTarget) -> ActivityRule {
+        if target.terraformWrite != nil { return interrupt(target) }
+        if target.kind == .agent { return stopAgentRule }
+        if target.isApp { return .allowed(.quitApp, confirm: true, critical: false) }
+        return .allowed(.signal(.term), confirm: true, critical: target.releaseWrite != nil)
+    }
+
+    private static let stopAgentRule = ActivityRule.allowed(.signal(.term), confirm: true, critical: true)
+
+    /// Interrupt…: ⌃C typed into the pane, for its foreground job with no
+    /// agent in its group; a terraform write's anywhere — typed where it is
+    /// the pane's job, else SIGINT as `TerraformCloseGuard.interruptTarget`
+    /// sends it: to its group when terraform leads it and the group holds
+    /// nothing no group send may reach, else to terraform alone.
+    private static func interrupt(_ target: ActivityTarget) -> ActivityRule {
+        if target.terraformWrite != nil {
+            let action: ActivityAction =
+                interruptsPane(target) ? .interruptPane : target.leadsGroup && target.groupHolds == nil ? .signalGroup(.int) : .signal(.int)
+            return .allowed(action, confirm: true, critical: false)
+        }
+        if target.kind == .agent { return interruptTurn(target) }
+        if target.isApp { return .refused(appInterrupt) }
+        switch target.kind {
+        case .paneJob:
+            guard target.inForeground else { return .refused(notForeground) }
+            if target.groupHoldsAgent { return .refused(groupHoldsAgentWords) }
+            return .allowed(.interruptPane, confirm: true, critical: target.releaseWrite != nil)
+        case .agentChild: return .refused(underAgent)
+        default: return .refused(noPane)
+        }
+    }
+
+    /// Interrupt Turn…: ⌃C typed into the agent's pane — Claude Code and
+    /// Codex cancel the turn. Asked, plainly.
+    private static func interruptTurn(_ target: ActivityTarget) -> ActivityRule {
+        guard target.kind == .agent else { return .refused(notAnAgent) }
+        guard target.inForeground else { return .refused(agentNotForeground) }
+        return .allowed(.interruptPane, confirm: true, critical: false)
+    }
+
+    /// Force Quit…: SIGKILL to the process alone, critical; never a
+    /// terraform write's.
+    private static func forceQuit(_ target: ActivityTarget) -> ActivityRule {
+        if target.terraformWrite != nil { return .refused(terraformKill) }
+        if target.isApp { return .allowed(.forceQuitApp, confirm: true, critical: true) }
+        return .allowed(.signal(.kill), confirm: true, critical: true)
+    }
+
+    /// Stop Its Tree…: the subtree, parents first, each member by its own
+    /// token — the sheet lists each, and what it leaves out
+    /// (`treeMemberRefusal`).
+    private static func stopTree(_ target: ActivityTarget) -> ActivityRule {
+        if target.terraformWrite != nil { return .refused(terraformBulk) }
+        if target.isApp { return .refused(appBulk) }
+        return .allowed(.signalTree(.term), confirm: true, critical: target.kind == .agent || target.releaseWrite != nil)
+    }
+
+    /// Stop Its Group…: offered only where the group says more than the
+    /// tree, and holds no shell, `login`, agent, terraform write or
+    /// Overterm's own.
+    private static func stopGroup(_ target: ActivityTarget) -> ActivityRule {
+        if target.terraformWrite != nil { return .refused(terraformBulk) }
+        if target.isApp { return .refused(appBulk) }
+        if target.kind == .agent { return .refused("Its process group holds the agent: Stop Agent… instead.") }
+        guard target.leadsGroup else { return .refused(notLeader) }
+        if let holds = target.groupHolds { return .refused("Its process group holds \(holds): no group Stop reaches it.") }
+        guard target.groupBeyondTree else { return .refused(groupIsTree) }
+        return .allowed(.signalGroup(.term), confirm: true, critical: target.releaseWrite != nil)
+    }
+
+    /// Stop Its Parent…: for a zombie, or a supervised child — the
+    /// parent's own class decides, checked again here.
+    private static func stopParent(of target: ActivityTarget, parent: ActivityTarget?, user: uid_t) -> ActivityRule {
+        guard let parent else { return .refused(parentUnknown) }
+        if parent.pid <= 1 { return .refused(parentLaunchd) }
+        if parent.kind == .overterm { return .refused(parentOverterm) }
+        if parent.stopped != nil, parent.isWhollyOwn(by: user) { return .refused(parentStopped) }
+        return rule(.stop, for: parent, user: user)
+    }
+
+    /// Suspend: SIGSTOP — a pane's job with its pane, no ask; an app's or
+    /// anything inside an `.app`'s, or a helm or pulumi write's, asked.
+    private static func suspend(_ target: ActivityTarget) -> ActivityRule {
+        if target.terraformWrite != nil { return .refused(terraformSuspend) }
+        if target.stopped != nil { return .refused(alreadyStopped) }
+        if target.kind == .paneJob || target.kind == .agent { return .route(.suspendPane, confirm: false) }
+        return .allowed(.suspend, confirm: target.isApp || target.insideApp || target.releaseWrite != nil, critical: false)
+    }
+
+    /// Resume: only what Activity stopped; Suspend Tab's through Resume
+    /// Tab; never a ⌃Z job's (its shell's `fg`) nor a traced one's.
+    private static func resume(_ target: ActivityTarget) -> ActivityRule {
+        switch target.stopped {
+        case nil: return .refused(notStopped)
+        case .traced: return .refused(traced)
+        case .jobControl: return .refused(jobControl)
+        case .unknown: return .refused(notStoppedHere)
+        case .suspendTab: return .route(.resumeTab, confirm: false)
+        case .activity: return .allowed(.resume, confirm: target.isApp || target.insideApp, critical: false)
+        }
+    }
+
+    /// Send a Signal ▸: under the rule of the verb it equals — KILL as
+    /// Force Quit, INT to a pane's job as Interrupt, STOP and CONT as
+    /// Suspend and Resume, HUP to a pane's shell as its close, TERM as
+    /// Stop —, a terraform write's anything but INT refused. Always asked.
+    private static func send(_ signal: ActivitySignal, to target: ActivityTarget, user: uid_t) -> ActivityRule {
+        if target.kind == .paneSession {
+            switch signal {
+            case .stop: return asked(.route(.suspendTab, confirm: true))
+            case .cont: return asked(rule(.resume, for: target, user: user))
+            default: return .route(.closePane, confirm: true)
+            }
+        }
+        if let owned = owners(.send(signal), target) { return owned }
+        if let never = never(target, user: user) { return never }
+        if target.terraformWrite != nil { return signal == .int ? interrupt(target) : .refused(signal == .kill ? terraformKill : terraformOnly) }
+        switch signal {
+        case .kill: return forceQuit(target)
+        case .term: return stop(target)
+        case .stop: return asked(suspend(target))
+        case .cont: return asked(resume(target))
+        case .int:
+            if target.kind == .agent { return interruptTurn(target) }
+            if interruptsPane(target) { return interrupt(target) }
+            return .allowed(.signal(.int), confirm: true, critical: target.releaseWrite != nil)
+        case .hup, .quit, .usr1, .usr2:
+            return .allowed(.signal(signal), confirm: true, critical: target.kind == .agent || target.releaseWrite != nil)
+        }
+    }
+
+    /// `rule`, asked: Send a Signal always asks.
+    private static func asked(_ rule: ActivityRule) -> ActivityRule {
+        switch rule {
+        case .refused: rule
+        case .allowed(let action, _, let critical): .allowed(action, confirm: true, critical: critical)
+        case .route(let route, _): .route(route, confirm: true)
+        }
+    }
+
+    /// Why a member of a tree or a group is left out of its bulk Stop (6.10
+    /// never-list 12): a terraform write (Interrupt offered for it alone),
+    /// what isn't the user's alone, the pane itself, an agent, Overterm's
+    /// own, an app, what chose to outlive its terminal. Nil: it is stopped
+    /// with the rest.
+    static func bulkRefusal(_ member: ActivityTarget, user: uid_t = getuid()) -> String? {
+        if member.terraformWrite != nil { return "a terraform write: Interrupt it alone" }
+        if member.pid <= 1 || !member.isWhollyOwn(by: user) { return "not yours alone" }
+        if member.isZombie { return "it has ended" }
+        switch member.kind {
+        case .paneSession: return "the pane's shell"
+        case .agent: return "an agent: Stop Agent… alone"
+        case .overterm, .anotherOverterm, .helper: return "Overterm's own"
+        case .engine: return "Docker's engine"
+        case .macOS: return "part of macOS"
+        case .container, .paneJob, .agentChild, .leftTerminal, .leftBehind, .elsewhere: break
+        }
+        if member.isApp || member.insideApp { return "an app: Quit… it alone" }
+        if member.detached { return "it chose to outlive its terminal: stop it alone" }
+        return nil
+    }
+
+    /// What a group member is, when no group Stop may reach it: what
+    /// `groupHolds` says.
+    /// `killpg` can't leave a member out as a tree's send does, so a group
+    /// holding any of never-list 12's is refused whole: a terraform write,
+    /// what isn't the user's alone, the pane itself, an agent, Overterm's
+    /// own, the engine, macOS's, an app or a helper inside one, what chose
+    /// to outlive its terminal.
+    static func groupBlocker(_ member: ActivityTarget, user: uid_t = getuid()) -> String? {
+        if member.pid <= 1 { return "part of macOS" }
+        if member.terraformWrite != nil { return "a terraform write" }
+        if !member.isWhollyOwn(by: user) { return "another user's process" }
+        switch member.kind {
+        case .paneSession: return "the pane's shell"
+        case .agent: return "an agent"
+        case .overterm, .anotherOverterm, .helper: return "Overterm's own"
+        case .engine: return "Docker's engine"
+        case .macOS: return "part of macOS"
+        case .container, .paneJob, .agentChild, .leftTerminal, .leftBehind, .elsewhere: break
+        }
+        if member.isApp || member.insideApp { return "an app" }
+        if member.detached { return "a process that chose to outlive its terminal" }
+        return nil
     }
 
     /// ⌃C typed into its pane reaches it as Ctrl-C would, and no agent:

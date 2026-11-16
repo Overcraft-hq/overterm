@@ -237,6 +237,10 @@ enum ActivityPortFree {
                     lines.append(held)
                     lines.append("It is sent SIGTERM, by the process Overterm listed — its pid, start and executable — and nothing else.")
                 }
+            // A pill's rule is ⌃C, one signal or the close: the page's own
+            // verbs ask with `ActivityVerbQuestion`.
+            default:
+                return nil
             }
             if let write = holder.target.terraformWrite {
                 lines.append("A running \(DockerMCP.displayed(write)): SIGTERM or SIGKILL could leave its state locked and half written.")
@@ -256,10 +260,20 @@ enum ActivityPortFree {
     }
 
     /// What the sheet says it equals, as Kubernetes' asks name their kubectl.
-    static func equals(_ action: ActivityAction, pid: pid_t) -> String {
+    /// `members`: a tree's, parents first, the target among them.
+    static func equals(_ action: ActivityAction, pid: pid_t, members: [pid_t] = []) -> String {
         switch action {
         case .interruptPane: "⌃C in the pane"
         case .signal(let signal): signal.command(for: pid)
+        case .signalTree(let signal): "kill -\(signal.rawValue) \((members.isEmpty ? [pid] : members).map(String.init).joined(separator: " "))"
+        case .signalGroup(let signal): "kill -\(signal.rawValue) -- -\(pid)"
+        case .suspend: ActivitySignal.stop.command(for: pid)
+        case .resume: ActivitySignal.cont.command(for: pid)
+        case .background: "taskpolicy -b -p \(pid)"
+        case .normalPriority: "taskpolicy -B -p \(pid)"
+        case .lowerPriority: "renice +10 -p \(pid)"
+        case .quitApp: "Quit, as its menu's Quit does"
+        case .forceQuitApp: "Force Quit, as the Force Quit window does"
         }
     }
 

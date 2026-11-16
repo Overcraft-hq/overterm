@@ -17,11 +17,11 @@ final class ActivitySignalCheckTests: XCTestCase {
     /// One of the user's, in a pane.
     private func own(
         _ kind: ActivityClass, inForeground: Bool = false, groupHoldsAgent: Bool = false, terraformWrite: String? = nil, releaseWrite: String? = nil,
-        detached: Bool = false, isApp: Bool = false, isZombie: Bool = false
+        detached: Bool = false, isApp: Bool = false, isZombie: Bool = false, stopped: ActivityStopper? = nil
     ) -> ActivityTarget {
         ActivityTarget(
             kind, pid: 4242, effectiveUID: user, isZombie: isZombie, inForeground: inForeground, groupHoldsAgent: groupHoldsAgent,
-            terraformWrite: terraformWrite, releaseWrite: releaseWrite, detached: detached, isApp: isApp)
+            terraformWrite: terraformWrite, releaseWrite: releaseWrite, detached: detached, isApp: isApp, stopped: stopped)
     }
 
     private let interrupt = ActivityRule.allowed(.interruptPane, confirm: true, critical: false)
@@ -218,6 +218,7 @@ final class ActivitySignalCheckTests: XCTestCase {
                     switch action {
                     case .interruptPane: XCTAssertTrue(kind == .paneJob && target.inForeground && !target.groupHoldsAgent, "\(kind) \(facts)")
                     case .signal(let signal): XCTAssertTrue(signal == .term || signal == .int, "\(kind) \(facts): \(signal)")
+                    default: XCTFail("\(kind) \(facts): a pill's Free is ⌃C, a signal or the close — \(action)")
                     }
                     if target.terraformWrite != nil { XCTAssertNotEqual(action, .signal(.term), "\(kind) \(facts): a write is interrupted only") }
                 }
@@ -225,5 +226,306 @@ final class ActivitySignalCheckTests: XCTestCase {
         }
         XCTAssertGreaterThan(allowed, 0)
         XCTAssertEqual(routes, [.closePane, .stopContainer, .stopForward, .disconnect, .restartLanguageServer, .stopTerraformRun], "every route seen")
+    }
+
+    // MARK: The page's verbs, every one over every class (stage 2)
+
+    private func rule(_ verb: ActivityVerb, _ target: ActivityTarget, parent: ActivityTarget? = nil) -> ActivityRule {
+        ActivitySignalCheck.rule(verb, for: target, parent: parent, user: user)
+    }
+
+    /// Every class of 6.10's table, with the facts that make a row of it.
+    private var everyClass: [(String, ActivityTarget)] {
+        var rows: [(String, ActivityTarget)] = [
+            ("job", own(.paneJob)), ("foreground job", own(.paneJob, inForeground: true)), ("agent", own(.agent, inForeground: true, groupHoldsAgent: true)),
+            ("agent's child", own(.agentChild, groupHoldsAgent: true)), ("left its terminal", own(.leftTerminal)), ("left behind", own(.leftBehind)),
+            ("elsewhere", own(.elsewhere)), ("terraform", own(.paneJob, inForeground: true, terraformWrite: "terraform apply")),
+            ("helm", own(.elsewhere, releaseWrite: "helm upgrade")), ("detached", own(.paneJob, detached: true)), ("app", own(.elsewhere, isApp: true)),
+            ("another Overterm", own(.anotherOverterm)), ("Overterm", own(.overterm)), ("engine", own(.engine)), ("macOS", own(.macOS)),
+            ("pane's shell", own(.paneSession, inForeground: true)), ("login", ActivityTarget(.paneSession, pid: 4100, effectiveUID: 0, realUID: user)),
+            ("container", ActivityTarget(.container, pid: 0, effectiveUID: user)), ("launchd", ActivityTarget(.macOS, pid: 1, effectiveUID: 0)),
+            ("root's", ActivityTarget(.elsewhere, pid: 4301, effectiveUID: 0)), ("setuid", ActivityTarget(.paneJob, pid: 4300, effectiveUID: 0, realUID: user)),
+            ("zombie", own(.paneJob, isZombie: true)),
+        ]
+        rows += ActivityHelper.allCases.map { ("helper \($0)", own(.helper($0))) }
+        return rows
+    }
+
+    /// Whatever ends a process asks: every verb but Suspend, Resume and the
+    /// background for one plain process — and Send a Signal always.
+    func testEveryVerbThatEndsAProcessAsks() {
+        for verb in ActivityVerb.allCases where verb != .stopParent {
+            for (name, target) in everyClass {
+                let decided = rule(verb, target)
+                switch decided {
+                case .refused: continue
+                case .route(let route, let confirm):
+                    if case .send = verb { XCTAssertTrue(confirm, "\(verb) \(name)") }
+                    if route == .closePane || route == .stopContainer { XCTAssertTrue(confirm, "\(verb) \(name): the close asks") }
+                case .allowed(let action, let confirm, let critical):
+                    switch action {
+                    case .suspend, .resume, .background, .normalPriority:
+                        if case .send = verb { XCTAssertTrue(confirm, "\(verb) \(name): Send a Signal asks") }
+                    default:
+                        XCTAssertTrue(confirm, "\(verb) \(name): \(action) asks")
+                    }
+                    if action == .signal(.kill) || action == .forceQuitApp { XCTAssertTrue(critical, "\(verb) \(name): Force Quit is critical") }
+                }
+            }
+        }
+    }
+
+    /// The never-list, for every verb: launchd and the kernel, what doesn't
+    /// run as the user alone, Overterm, another Overterm, the engine,
+    /// macOS's daemons, a zombie — refused; the pane's shell only its
+    /// close (and Suspend Tab's) route.
+    func testTheNeverListForEveryVerb() {
+        let never: [(String, ActivityTarget)] = everyClass.filter {
+            ["launchd", "root's", "setuid", "zombie", "Overterm", "another Overterm", "macOS"].contains($0.0)
+        }
+        for verb in ActivityVerb.allCases where verb != .stopParent && verb != .free {
+            for (name, target) in never {
+                XCTAssertNotNil(rule(verb, target).refusal, "\(verb) \(name)")
+            }
+            for helper in ActivityHelper.allCases {
+                if case .route = rule(verb, own(.helper(helper))) {
+                    XCTAssertTrue([ActivityVerb.stop, .interrupt, .freePort].contains(verb), "\(verb): a helper's only routes are its own Stop")
+                }
+                if case .allowed = rule(verb, own(.helper(helper))) { XCTFail("\(verb) helper \(helper): never signalled") }
+            }
+            switch rule(verb, own(.paneSession)) {
+            case .allowed(let action, _, _): XCTFail("\(verb): the pane's shell is never sent \(action)")
+            case .route(let route, _): XCTAssertTrue([.closePane, .suspendTab, .resumeTab].contains(route), "\(verb) \(route)")
+            case .refused: break
+            }
+            if case .allowed = rule(verb, own(.engine)) { XCTFail("\(verb): the engine is never signalled") }
+        }
+    }
+
+    /// k on each: Stop, or Interrupt on the pane's foreground job, Stop
+    /// Agent (critical) on the agent; an app's Quit.
+    func testStopByClass() {
+        XCTAssertEqual(rule(.stop, own(.paneJob)), stop)
+        XCTAssertEqual(rule(.stop, own(.leftTerminal)), stop)
+        XCTAssertEqual(rule(.stop, own(.elsewhere, detached: true)), stop, "picked alone: asked, one at a time")
+        XCTAssertEqual(rule(.stop, own(.agent)), stopAgent)
+        XCTAssertEqual(rule(.stop, own(.elsewhere, releaseWrite: "pulumi up")), .allowed(.signal(.term), confirm: true, critical: true))
+        XCTAssertEqual(rule(.stop, own(.elsewhere, isApp: true)), .allowed(.quitApp, confirm: true, critical: false))
+        XCTAssertEqual(rule(.stop, own(.paneSession)), .route(.closePane, confirm: true))
+        XCTAssertEqual(rule(.stop, ActivityTarget(.container, pid: 0, effectiveUID: user)), .route(.stopContainer, confirm: true))
+        XCTAssertEqual(rule(.stop, own(.engine)).refusal, ActivitySignalCheck.engine)
+        XCTAssertEqual(rule(.stop, own(.macOS)).refusal, ActivitySignalCheck.daemon)
+        XCTAssertEqual(rule(.stop, own(.anotherOverterm)).refusal, ActivitySignalCheck.anotherOverterm)
+    }
+
+    /// Interrupt: ⌃C typed for the pane's foreground job alone — never
+    /// where its group holds an agent, never under an agent, never what
+    /// runs in no pane.
+    func testInterruptIsThePanesForegroundJobOnly() {
+        XCTAssertEqual(rule(.interrupt, own(.paneJob, inForeground: true)), interrupt)
+        XCTAssertEqual(rule(.interrupt, own(.paneJob)).refusal, ActivitySignalCheck.notForeground)
+        XCTAssertEqual(rule(.interrupt, own(.paneJob, inForeground: true, groupHoldsAgent: true)).refusal, ActivitySignalCheck.groupHoldsAgentWords)
+        XCTAssertEqual(rule(.interrupt, own(.agentChild, inForeground: true)).refusal, ActivitySignalCheck.underAgent)
+        for kind in [ActivityClass.leftTerminal, .leftBehind, .elsewhere] {
+            XCTAssertEqual(rule(.interrupt, own(kind, inForeground: true)).refusal, ActivitySignalCheck.noPane, "\(kind)")
+        }
+        XCTAssertEqual(rule(.interrupt, own(.elsewhere, isApp: true)).refusal, ActivitySignalCheck.appInterrupt)
+        XCTAssertEqual(rule(.interrupt, own(.paneJob, inForeground: true, releaseWrite: "helm upgrade")), .allowed(.interruptPane, confirm: true, critical: true))
+    }
+
+    /// The agent: Interrupt Turn (⌃C, plain) while it is the pane's
+    /// foreground job; Stop Agent critical; neither for anything else.
+    func testTheAgentsTwoVerbs() {
+        XCTAssertEqual(rule(.interruptTurn, own(.agent, inForeground: true, groupHoldsAgent: true)), interrupt)
+        XCTAssertEqual(rule(.interrupt, own(.agent, inForeground: true, groupHoldsAgent: true)), interrupt, "its Interrupt is the turn's")
+        XCTAssertEqual(rule(.interruptTurn, own(.agent)).refusal, ActivitySignalCheck.agentNotForeground)
+        XCTAssertEqual(rule(.stopAgent, own(.agent)), stopAgent)
+        for kind in [ActivityClass.paneJob, .agentChild, .elsewhere] {
+            XCTAssertEqual(rule(.interruptTurn, own(kind, inForeground: true)).refusal, ActivitySignalCheck.notAnAgent, "\(kind)")
+            XCTAssertEqual(rule(.stopAgent, own(kind)).refusal, ActivitySignalCheck.notAnAgent, "\(kind)")
+        }
+    }
+
+    /// Force Quit: SIGKILL to the process alone, critical; an app's
+    /// `forceTerminate`; never a terraform write's.
+    func testForceQuit() {
+        let kill = ActivityRule.allowed(.signal(.kill), confirm: true, critical: true)
+        for kind in [ActivityClass.paneJob, .agent, .agentChild, .leftTerminal, .leftBehind, .elsewhere] {
+            XCTAssertEqual(rule(.forceQuit, own(kind)), kill, "\(kind)")
+        }
+        XCTAssertEqual(rule(.forceQuit, own(.elsewhere, isApp: true)), .allowed(.forceQuitApp, confirm: true, critical: true))
+        XCTAssertEqual(rule(.forceQuit, own(.paneJob, terraformWrite: "terraform apply")).refusal, ActivitySignalCheck.terraformKill)
+        XCTAssertEqual(rule(.forceQuit, own(.paneSession)), .route(.closePane, confirm: true), "the shell: its close")
+    }
+
+    /// A terraform write, wherever it runs: Interrupt only — ⌃C where it is
+    /// the pane's job, SIGINT to terraform alone anywhere else — and in no
+    /// bulk, no suspend, no priority.
+    func testATerraformWriteIsInterruptOnly() {
+        let pane = own(.paneJob, inForeground: true, terraformWrite: "terraform apply")
+        let elsewhere = own(.elsewhere, terraformWrite: "tofu destroy")
+        let underAgent = own(.agentChild, inForeground: true, groupHoldsAgent: true, terraformWrite: "terraform apply")
+        for verb in [ActivityVerb.stop, .interrupt, .freePort, .send(.int)] {
+            XCTAssertEqual(rule(verb, pane), interrupt, "\(verb)")
+            XCTAssertEqual(rule(verb, elsewhere), interruptAlone, "\(verb)")
+            XCTAssertEqual(rule(verb, underAgent), interruptAlone, "\(verb): never the agent's group")
+        }
+        for signal in ActivitySignal.allCases where signal != .int {
+            XCTAssertNotNil(rule(.send(signal), pane).refusal, "\(signal)")
+        }
+        for verb in [ActivityVerb.forceQuit, .stopTree, .stopGroup, .suspend, .background, .lowerPriority] {
+            XCTAssertNotNil(rule(verb, elsewhere).refusal, "\(verb)")
+        }
+    }
+
+    /// Send a Signal ▸: each under the verb it equals, always asked; USR1
+    /// and the rest plain signals, asked.
+    func testSendASignalMapsToItsVerb() {
+        let job = own(.paneJob, inForeground: true)
+        XCTAssertEqual(rule(.send(.kill), job), rule(.forceQuit, job))
+        XCTAssertEqual(rule(.send(.term), job), stop, "TERM is Stop, not Interrupt")
+        XCTAssertEqual(rule(.send(.int), job), interrupt, "INT to the pane's job is Interrupt")
+        XCTAssertEqual(rule(.send(.int), own(.elsewhere)), interruptAlone, "else a plain SIGINT")
+        XCTAssertEqual(rule(.send(.int), own(.agent, inForeground: true)), interrupt, "an agent's: its turn")
+        XCTAssertEqual(rule(.send(.term), own(.agent)), stopAgent)
+        XCTAssertEqual(rule(.send(.stop), own(.elsewhere)), .allowed(.suspend, confirm: true, critical: false), "STOP is Suspend, asked")
+        XCTAssertEqual(rule(.send(.stop), job), .route(.suspendPane, confirm: true))
+        var stopped = own(.elsewhere)
+        stopped.stopped = .activity
+        XCTAssertEqual(rule(.send(.cont), stopped), .allowed(.resume, confirm: true, critical: false), "CONT is Resume, asked")
+        stopped.stopped = .jobControl
+        XCTAssertEqual(rule(.send(.cont), stopped).refusal, ActivitySignalCheck.jobControl)
+        for signal in [ActivitySignal.hup, .quit, .usr1, .usr2] {
+            XCTAssertEqual(rule(.send(signal), own(.elsewhere)), .allowed(.signal(signal), confirm: true, critical: false), "\(signal)")
+            XCTAssertEqual(rule(.send(signal), own(.paneSession)), .route(.closePane, confirm: true), "\(signal) to the shell: its close")
+        }
+        XCTAssertEqual(rule(.send(.stop), own(.paneSession)), .route(.suspendTab, confirm: true))
+        XCTAssertEqual(rule(.send(.hup), own(.helper(.forward))).refusal, ActivitySignalCheck.helper, "never a signal to a helper")
+    }
+
+    /// Stop Its Tree: asked, the agent's critical; never a terraform write's
+    /// or an app's. What a bulk leaves out, member by member.
+    func testStopItsTreeAndWhatItLeavesOut() {
+        XCTAssertEqual(rule(.stopTree, own(.paneJob)), .allowed(.signalTree(.term), confirm: true, critical: false))
+        XCTAssertEqual(rule(.stopTree, own(.agent)), .allowed(.signalTree(.term), confirm: true, critical: true))
+        XCTAssertEqual(rule(.stopTree, own(.paneJob, terraformWrite: "terraform apply")).refusal, ActivitySignalCheck.terraformBulk)
+        XCTAssertEqual(rule(.stopTree, own(.elsewhere, isApp: true)).refusal, ActivitySignalCheck.appBulk)
+        XCTAssertNil(ActivitySignalCheck.bulkRefusal(own(.paneJob), user: user))
+        XCTAssertNil(ActivitySignalCheck.bulkRefusal(own(.agentChild), user: user))
+        for (member, why) in [
+            (own(.paneJob, terraformWrite: "terraform apply"), "terraform"), (own(.paneJob, detached: true), "outlive"), (own(.elsewhere, isApp: true), "app"),
+            (ActivityTarget(.elsewhere, pid: 9, effectiveUID: 0, realUID: user), "not yours"), (own(.agent), "agent"), (own(.paneSession), "shell"),
+            (own(.helper(.other)), "Overterm"),
+        ] {
+            XCTAssertTrue(ActivitySignalCheck.bulkRefusal(member, user: user)?.contains(why) == true, why)
+        }
+    }
+
+    /// Stop Its Group: only where it leads a group that says more than its
+    /// tree and holds nothing no group Stop may reach.
+    func testStopItsGroup() {
+        var leader = own(.paneJob)
+        XCTAssertEqual(rule(.stopGroup, leader).refusal, ActivitySignalCheck.notLeader)
+        leader.leadsGroup = true
+        XCTAssertEqual(rule(.stopGroup, leader).refusal, ActivitySignalCheck.groupIsTree)
+        leader.groupBeyondTree = true
+        XCTAssertEqual(rule(.stopGroup, leader), .allowed(.signalGroup(.term), confirm: true, critical: false))
+        leader.groupHolds = "the pane's shell"
+        XCTAssertTrue(rule(.stopGroup, leader).refusal?.contains("the pane's shell") == true)
+        XCTAssertEqual(ActivitySignalCheck.groupBlocker(own(.agent), user: user), "an agent")
+        XCTAssertEqual(ActivitySignalCheck.groupBlocker(own(.paneSession), user: user), "the pane's shell")
+        XCTAssertNil(ActivitySignalCheck.groupBlocker(own(.paneJob), user: user))
+    }
+
+    /// What `killpg` would reach and no bulk may (never-list 12): each one
+    /// in a group refuses the whole group Stop, as it is left out of a tree.
+    func testAGroupHoldingWhatNoBulkReachesIsRefusedWhole() {
+        var inside = own(.elsewhere)
+        inside.insideApp = true
+        let members: [(ActivityTarget, String)] = [
+            (own(.paneJob, detached: true), "a process that chose to outlive its terminal"), (own(.elsewhere, isApp: true), "an app"), (inside, "an app"),
+            (own(.engine), "Docker's engine"), (own(.macOS), "part of macOS"), (own(.anotherOverterm), "Overterm's own"),
+            (ActivityTarget(.elsewhere, pid: 1, effectiveUID: user), "part of macOS"), (own(.helper(.other)), "Overterm's own"),
+            (own(.paneJob, terraformWrite: "terraform apply"), "a terraform write"),
+            (ActivityTarget(.paneJob, pid: 9, effectiveUID: 0, realUID: user), "another user's process"),
+        ]
+        for (member, words) in members {
+            XCTAssertEqual(ActivitySignalCheck.groupBlocker(member, user: user), words, words)
+            XCTAssertNotNil(ActivitySignalCheck.bulkRefusal(member, user: user), "a tree leaves it out too: \(words)")
+            var leader = own(.paneJob)
+            leader.leadsGroup = true
+            leader.groupBeyondTree = true
+            leader.groupHolds = ActivitySignalCheck.groupBlocker(member, user: user)
+            XCTAssertEqual(rule(.stopGroup, leader).refusal, "Its process group holds \(words): no group Stop reaches it.", words)
+        }
+        XCTAssertNil(ActivitySignalCheck.groupBlocker(own(.leftTerminal), user: user))
+        XCTAssertNil(ActivitySignalCheck.groupBlocker(own(.agentChild), user: user))
+    }
+
+    /// A terraform write that isn't the pane's foreground job: SIGINT to
+    /// its group when it leads one holding nothing no group send reaches
+    /// (`TerraformCloseGuard.interruptTarget`'s rule), else to it alone.
+    func testATerraformWritesInterruptGoesToTheGroupItLeads() {
+        var leader = own(.elsewhere, terraformWrite: "terraform apply")
+        leader.leadsGroup = true
+        let toGroup = ActivityRule.allowed(.signalGroup(.int), confirm: true, critical: false)
+        for verb in [ActivityVerb.stop, .interrupt, .send(.int)] { XCTAssertEqual(rule(verb, leader), toGroup, "\(verb)") }
+        leader.groupHolds = "an agent"
+        XCTAssertEqual(rule(.interrupt, leader), interruptAlone, "a group holding an agent: terraform alone")
+        var pane = own(.paneJob, inForeground: true, terraformWrite: "terraform apply")
+        pane.leadsGroup = true
+        XCTAssertEqual(rule(.interrupt, pane), interrupt, "the pane's foreground job: ⌃C typed")
+    }
+
+    /// Stop Its Parent: the parent's own class decides.
+    func testStopItsParent() {
+        let zombie = own(.paneJob, isZombie: true)
+        XCTAssertEqual(rule(.stopParent, zombie).refusal, ActivitySignalCheck.parentUnknown)
+        XCTAssertEqual(rule(.stopParent, zombie, parent: own(.paneSession)), .route(.closePane, confirm: true), "a shell: its pane's close")
+        XCTAssertEqual(rule(.stopParent, zombie, parent: own(.agent)), stopAgent, "an agent: Stop Agent, critical")
+        XCTAssertEqual(rule(.stopParent, zombie, parent: own(.paneJob)), stop)
+        XCTAssertEqual(rule(.stopParent, zombie, parent: own(.overterm)).refusal, ActivitySignalCheck.parentOverterm)
+        XCTAssertEqual(rule(.stopParent, zombie, parent: ActivityTarget(.macOS, pid: 1, effectiveUID: 0)).refusal, ActivitySignalCheck.parentLaunchd)
+        XCTAssertEqual(rule(.stopParent, zombie, parent: own(.paneJob, stopped: .jobControl)).refusal, ActivitySignalCheck.parentStopped)
+        XCTAssertNotNil(rule(.stopParent, zombie, parent: ActivityTarget(.elsewhere, pid: 50, effectiveUID: 0)).refusal, "root's parent")
+        XCTAssertEqual(rule(.stop, zombie).refusal, ActivitySignalCheck.ended, "the zombie itself: nothing to signal")
+    }
+
+    /// Suspend and Resume: a pane's job with its pane; an app asked; Resume
+    /// only for what Activity stopped.
+    func testSuspendAndResume() {
+        XCTAssertEqual(rule(.suspend, own(.paneJob)), .route(.suspendPane, confirm: false))
+        XCTAssertEqual(rule(.suspend, own(.agentChild)), .allowed(.suspend, confirm: false, critical: false))
+        XCTAssertEqual(rule(.suspend, own(.elsewhere, isApp: true)), .allowed(.suspend, confirm: true, critical: false))
+        XCTAssertEqual(rule(.suspend, own(.paneSession)), .route(.suspendTab, confirm: false))
+        XCTAssertEqual(rule(.suspend, own(.elsewhere, stopped: .activity)).refusal, ActivitySignalCheck.alreadyStopped)
+        XCTAssertEqual(rule(.resume, own(.elsewhere)).refusal, ActivitySignalCheck.notStopped)
+        XCTAssertEqual(rule(.resume, own(.elsewhere, stopped: .activity)), .allowed(.resume, confirm: false, critical: false))
+        XCTAssertEqual(rule(.resume, own(.elsewhere, stopped: .suspendTab)), .route(.resumeTab, confirm: false))
+        XCTAssertEqual(rule(.resume, own(.elsewhere, stopped: .jobControl)).refusal, ActivitySignalCheck.jobControl)
+        XCTAssertEqual(rule(.resume, own(.elsewhere, stopped: .traced)).refusal, ActivitySignalCheck.traced)
+        XCTAssertEqual(rule(.resume, own(.elsewhere, stopped: .unknown)).refusal, ActivitySignalCheck.notStoppedHere)
+    }
+
+    /// Priority: Background unasked, Normally only for what Activity put
+    /// there, Lower asked.
+    func testPriority() {
+        XCTAssertEqual(rule(.background, own(.paneJob)), .allowed(.background, confirm: false, critical: false))
+        XCTAssertEqual(rule(.runNormally, own(.paneJob)).refusal, ActivitySignalCheck.notBackgrounded)
+        var put = own(.paneJob)
+        put.backgroundedHere = true
+        XCTAssertEqual(rule(.runNormally, put), .allowed(.normalPriority, confirm: false, critical: false))
+        XCTAssertEqual(rule(.lowerPriority, own(.paneJob)), .allowed(.lowerPriority, confirm: true, critical: false))
+    }
+
+    /// Free :N from the page for the user's own holder: what its pill's
+    /// would be, but apps and what chose to outlive its terminal asked here.
+    func testFreeFromThePage() {
+        XCTAssertEqual(rule(.freePort, own(.paneJob, inForeground: true)), interrupt)
+        XCTAssertEqual(rule(.freePort, own(.paneJob)), stop)
+        XCTAssertEqual(rule(.freePort, own(.paneJob, detached: true)), stop)
+        XCTAssertEqual(rule(.freePort, own(.elsewhere, isApp: true)), .allowed(.quitApp, confirm: true, critical: false))
+        XCTAssertEqual(rule(.freePort, own(.agent)), stopAgent)
+        XCTAssertEqual(rule(.freePort, own(.engine)), .route(.stopContainer, confirm: true))
     }
 }
