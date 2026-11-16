@@ -95,7 +95,6 @@ enum DatabaseDrivers {
         case .influxdb: InfluxDBDriver(connection, password: password)
         case .neo4j: Neo4jDriver(connection, password: password)
         case .rabbitmq: RabbitMQDriver(connection, password: password)
-        case .kafka: PendingDriver(kind: .kafka)
         case .oracle: OracleDriver(connection, password: password)
         }
     }
@@ -112,18 +111,4 @@ actor NoSQLDriver: DatabaseDriver {
     func schemas() async throws -> [String] { [] }
     func tables(in schema: String) async throws -> [CatalogTable] { [] }
     func columns(in schema: String) async throws -> [CatalogColumn] { [] }
-}
-
-/// A kind whose driver isn't written yet: every call says so.
-actor PendingDriver: DatabaseDriver {
-    let kind: DatabaseKind
-    init(kind: DatabaseKind) { self.kind = kind }
-
-    private var unsupported: DatabaseError { .failed("\(kind.title) isn't supported yet.") }
-    func connect() async throws { throw unsupported }
-    func close() async {}
-    func execute(_ sql: String, limit: Int) async throws -> QueryResult { throw unsupported }
-    func schemas() async throws -> [String] { throw unsupported }
-    func tables(in schema: String) async throws -> [CatalogTable] { throw unsupported }
-    func columns(in schema: String) async throws -> [CatalogColumn] { throw unsupported }
 }
