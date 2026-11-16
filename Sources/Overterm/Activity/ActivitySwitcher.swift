@@ -68,7 +68,9 @@ final class ActivitySwitcher {
     private func take(_ snapshot: ActivitySnapshot) {
         guard holding, !rated, snapshot.tick > latest else { return }
         latest = snapshot.tick
-        let options = ActivityRows.Options(titles: tabTitles(), everyone: Settings.shared.activityEveryone, isolated: isolated)
+        var options = ActivityRows.Options(titles: tabTitles(), everyone: Settings.shared.activityEveryone, isolated: isolated)
+        // Its rows are flat: no groups made.
+        options.grouping = nil
         Task { [weak self] in
             let made = await Self.make(snapshot, options)
             guard let self, self.holding, !self.rated, self.latest == snapshot.tick else { return }

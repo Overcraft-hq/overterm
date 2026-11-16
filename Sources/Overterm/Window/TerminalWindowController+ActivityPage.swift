@@ -34,6 +34,31 @@ extension TerminalWindowController {
     func wireActivityPage() {
         declarePage(activityWorkspacePage())
         activityPage.tabTitles = { Self.activityTabTitles() }
+        activityPage.tabFacts = { Self.activityTabFacts() }
+        activityPage.currentTab = { [weak self] in self?.store.selected?.id }
+        activityPage.runningApps = { Self.activityRunningApps() }
+        activityPage.containers = { Self.activityContainers() }
+        activityPage.contextFacts = { context in Self.activityContextFacts(&context) }
+        let docker = ActivityDockerHold()
+        activityPage.wantContainers = { wanted in
+            // While Processes shows: Docker's model watched — its running
+            // containers listed under their checkouts, their published ports
+            // rule 6's — and the usage monitor's own cost, one Engine call a
+            // container a round; nothing otherwise (6.5).
+            if wanted {
+                DockerModel.shared.usage.want()
+                if Settings.shared.dockerEnabled, !docker.shown {
+                    docker.shown = true
+                    DockerModel.shared.show()
+                }
+            } else {
+                DockerModel.shared.usage.unwant()
+                if docker.shown {
+                    docker.shown = false
+                    DockerModel.shared.hide()
+                }
+            }
+        }
         activitySwitcher.tabTitles = { Self.activityTabTitles() }
         activitySwitcher.stocked = { [weak self] in self?.restockPalette() }
         // The switcher holds while the palette shows its tab, however it got
@@ -57,6 +82,95 @@ extension TerminalWindowController {
             for tab in controller.store.tabs { titles[tab.id] = tab.title }
         }
         return titles
+    }
+
+    /// What every window says of its tabs (6.5): title, the checkout its
+    /// sidebar shows, its branch and repository from the window's
+    /// worktrees, its place in the strips; and every checkout known.
+    static func activityTabFacts() -> (tabs: [UUID: ActivityTabFacts], checkouts: [String]) {
+        var tabs: [UUID: ActivityTabFacts] = [:]
+        var checkouts: Set<String> = []
+        var order = 0
+        for window in (NSApp as NSApplication?)?.windows ?? [] {
+            guard let controller = window.windowController as? TerminalWindowController else { continue }
+            let worktrees = controller.worktrees.worktrees
+            let repository = worktrees.first(where: \.isMain).map { $0.path.lastPathComponent }
+            for worktree in worktrees where !worktree.isPrunable { checkouts.insert(worktree.path.standardizedFileURL.path) }
+            for tab in controller.store.tabs {
+                let checkout = activityCheckout(of: tab)
+                if let checkout { checkouts.insert(checkout) }
+                let worktree = checkout.flatMap { path in worktrees.first { $0.path.standardizedFileURL.path == path } }
+                var facts = ActivityTabFacts(id: tab.id, title: tab.title, checkout: checkout, branch: worktree?.branch, order: order, agent: tab.agent)
+                if worktree != nil { facts.repository = repository }
+                tabs[tab.id] = facts
+                order += 1
+            }
+        }
+        return (tabs, checkouts.sorted())
+    }
+
+    /// The checkout a tab's sidebar shows, kept by what it is made of: the
+    /// lookup asks the disk for `.git` up the folders, and the page's rows
+    /// are made every tick.
+    static func activityCheckout(of tab: Tab) -> String? {
+        let key = [tab.attachedCheckout?.path, tab.agentDirectory, tab.workingDirectory].map { $0 ?? "" }.joined(separator: "\u{0}")
+        if let known = activityCheckouts[key] { return known.isEmpty ? nil : known }
+        let checkout = tab.checkoutSource?.root.standardizedFileURL.path
+        if activityCheckouts.count > 256 { activityCheckouts = [:] }
+        activityCheckouts[key] = checkout ?? ""
+        return checkout
+    }
+
+    @MainActor private static var activityCheckouts: [String: String] = [:]
+
+    /// The forwards Overterm keeps, what a local engine's running
+    /// containers publish, the bridge's port: who holds what (6.5).
+    static func activityContextFacts(_ context: inout ActivityContext) {
+        context.forwards = KubeForwards.shared.forwards.compactMap { forward in
+            forward.pid.map { ActivityContext.Forward(pid: $0, port: UInt16(clamping: forward.spec.localPort), target: forward.spec.target.description, tab: forward.spec.tab) }
+        }
+        context.bridgePort = BrowserBridge.shared.port
+        let docker = DockerModel.shared
+        guard docker.endpoint?.remoteHost == nil else { return }
+        context.published = docker.containers.filter { $0.State == "running" }.flatMap { container in
+            (container.Ports ?? []).compactMap { port in
+                port.PublicPort.map { published in
+                    ActivityContext.PublishedPort(
+                        container: (container.Names.first ?? container.Id).trimmingCharacters(in: CharacterSet(charactersIn: "/")),
+                        project: container.Labels?["com.docker.compose.project"], address: port.IP ?? "", port: UInt16(clamping: published),
+                        proto: port.Type)
+                }
+            }
+        }
+    }
+
+    /// The apps running, their bundles by pid.
+    static func activityRunningApps() -> [pid_t: String] {
+        var apps: [pid_t: String] = [:]
+        for app in NSWorkspace.shared.runningApplications {
+            if let bundle = app.bundleURL?.path { apps[app.processIdentifier] = bundle }
+        }
+        return apps
+    }
+
+    /// The running containers of a local engine, with what its usage
+    /// monitor last read; none from a remote one, whose processes aren't
+    /// this Mac's.
+    static func activityContainers() -> [ActivityContainer] {
+        let docker = DockerModel.shared
+        guard docker.endpoint?.remoteHost == nil else { return [] }
+        var containers: [ActivityContainer] = []
+        let folders = Dictionary(docker.projects.map { ($0.name, $0.workingDir) }, uniquingKeysWith: { first, _ in first })
+        for container in docker.containers where container.State == "running" {
+            let project = container.Labels?["com.docker.compose.project"]
+            let usage = docker.usage.byContainer[container.Id]
+            let name = (container.Names.first ?? container.Id).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            containers.append(
+                ActivityContainer(
+                    id: container.Id, name: name, project: project, folder: project.flatMap { folders[$0] ?? nil }, cpu: usage?.cpuPercent,
+                    memory: usage.map { UInt64(max($0.memoryBytes, 0)) }))
+        }
+        return containers
     }
 
     /// View ▸ Activity (⌥⌘A): the page, or back to the terminal from it.
@@ -180,4 +294,11 @@ extension TerminalWindowController {
             ) { [weak self] _, _ in self?.showActivityListening(nil) },
         ]
     }
+}
+
+/// Whether a window's Activity page holds Docker's model shown (`show`,
+/// given back by `hide` once, whatever the setting did in between).
+@MainActor
+final class ActivityDockerHold {
+    var shown = false
 }

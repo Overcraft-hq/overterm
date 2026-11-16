@@ -84,6 +84,8 @@ struct ActivityTabFacts: Hashable, Sendable {
     /// The checkout its sidebar shows, and its branch.
     var checkout: String?
     var branch: String?
+    /// The repository's name — its main worktree's folder — when known.
+    var repository: String?
     /// Its place in the strips: every window's, in window order.
     var order = 0
     /// The agent it was opened for.

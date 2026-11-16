@@ -333,6 +333,319 @@ final class ActivityRowsTests: XCTestCase {
         XCTAssertFalse(page.press("x"), "not the page's: the list's")
     }
 
+    // MARK: Groups, the tree, the scope (6.5)
+
+    private let tabB = UUID()
+    private let checkout = "/Users/fake/src/acme-shop"
+
+    /// `mac()` and a second tab of the same checkout, split: one pane's
+    /// shell, the other's agent with an MCP server and a tool shell.
+    private func grouped() -> ActivityContext {
+        var context = mac()
+        let loginB = add(1200, parent: app, uid: 0, name: "login")
+        add(1201, parent: 1200, name: "zsh")
+        let loginC = add(1300, parent: app, uid: 0, name: "login")
+        add(1301, parent: 1300, name: "zsh")
+        var claude = FakeActivityKernel.Process(record: FakeActivityKernel.record(pid: 1302, start: 1_302_000, parent: 1301, name: "claude"))
+        claude.name = "claude"
+        claude.path = "/opt/acme/bin/claude"
+        claude.codeSigning = ActivityCodeSigning(flags: ActivityCodeSigning.valid)
+        claude.usage = FakeActivityKernel.usage(footprint: 8 << 20, threads: 3)
+        claude.arguments = FakeActivityKernel.arguments(executable: "/opt/acme/bin/claude", ["claude"])
+        kernel.add(claude)
+        var mcp = FakeActivityKernel.Process(record: FakeActivityKernel.record(pid: 1303, start: 1_303_000, parent: 1302, name: "node"))
+        mcp.name = "node"
+        mcp.path = "/opt/acme/bin/node"
+        mcp.codeSigning = ActivityCodeSigning(flags: ActivityCodeSigning.valid)
+        mcp.usage = FakeActivityKernel.usage(footprint: 8 << 20, threads: 3)
+        mcp.arguments = FakeActivityKernel.arguments(executable: "/opt/acme/bin/node", ["node", "fake-mcp-server.js"])
+        kernel.add(mcp)
+        add(1110, parent: app, name: "git")
+        context.panes += [ActivityContext.Pane(tag: "pane-b", tab: tabB, login: loginB), ActivityContext.Pane(tag: "pane-c", tab: tabB, login: loginC)]
+        return context
+    }
+
+    private func options(_ context: ActivityContext, _ change: (inout ActivityRows.Options) -> Void = { _ in }) -> ActivityRows.Options {
+        var options = ActivityRows.Options()
+        options.tabs = [
+            tab: ActivityTabFacts(id: tab, title: "web", checkout: checkout, branch: "feature-x", repository: "acme", order: 0),
+            tabB: ActivityTabFacts(id: tabB, title: "agent", checkout: checkout, branch: "feature-x", repository: "acme", order: 1),
+        ]
+        options.context = context
+        options.checkouts = [checkout]
+        change(&options)
+        return options
+    }
+
+    private func plain(_ context: ActivityContext, _ change: (inout ActivityRows.Options) -> Void) -> ActivityRows.Options {
+        var options = ActivityRows.Options()
+        options.context = context
+        change(&options)
+        return options
+    }
+
+    private func processIDs(_ list: [ActivityListItem]) -> [String] {
+        list.compactMap { if case .process(let row) = $0 { row.name } else { nil } }
+    }
+
+    private func groups(_ list: [ActivityListItem]) -> [ActivityGroupRow] {
+        list.compactMap { if case .group(let row) = $0 { row } else { nil } }
+    }
+
+    private func process(_ name: String, _ list: [ActivityListItem]) -> ActivityProcessRow? {
+        for item in list { if case .process(let row) = item, row.name == name { return row } }
+        return nil
+    }
+
+    func testByCheckoutThenTabThenPaneThenTheTree() throws {
+        let context = grouped()
+        let snapshot = try full(ActivitySampler(kernel: kernel), context)
+        let list = ActivityRows.content(of: snapshot, options(context)).list
+        let headers = groups(list)
+        XCTAssertEqual(
+            headers.map(\.id).prefix(5),
+            ["group:checkout:\(checkout)", "group:tab:\(tab.uuidString)", "group:tab:\(tabB.uuidString)", "group:pane:pane-b", "group:pane:pane-c"],
+            "the checkout, its tabs in the strip's order, a split tab's panes")
+        XCTAssertEqual(headers.first?.title, "acme · feature-x")
+        XCTAssertEqual(headers.first?.detail, "✳ Claude  2 tabs")
+        let fixed = headers.filter { $0.kind == .fixed }.map(\.id)
+        XCTAssertEqual(fixed, ["group:fixed:overterm", "group:fixed:elsewhere", "group:fixed:system"], "then the fixed groups, in order")
+        let zsh = try XCTUnwrap(process("zsh", list))
+        let server = try XCTUnwrap(process("acme-server", list))
+        XCTAssertEqual(server.depth, zsh.depth + 1, "a child under its parent")
+        XCTAssertEqual(zsh.depth, 3, "under its login, in its tab, in its checkout")
+        let agentTab = try XCTUnwrap(headers.first { $0.id == "group:tab:\(tabB.uuidString)" })
+        XCTAssertEqual(agentTab.agent, .claude)
+        XCTAssertEqual(agentTab.detail, "Claude Code  1 MCP")
+        XCTAssertTrue(process("git", list) != nil, "Overterm's helper under Overterm")
+        XCTAssertNil(process("globex-agent", list), "Yours elsewhere is folded by default")
+        XCTAssertNil(process("fakeservd", list), "and other users'")
+        let label = try XCTUnwrap(process("acme-server", list)?.accessibilityLabel)
+        XCTAssertEqual(label, "acme-server, pid 1102, in “web”, acme-shop")
+        XCTAssertTrue(headers.first?.accessibilityLabel.hasPrefix("acme · feature-x, ✳ Claude  2 tabs, ") == true)
+    }
+
+    func testFoldsHideAndUnfoldShows() throws {
+        let context = grouped()
+        let snapshot = try full(ActivitySampler(kernel: kernel), context)
+        let tabID = "group:tab:\(tab.uuidString)"
+        let folded = ActivityRows.content(of: snapshot, options(context) { $0.folds = [tabID: true, "group:fixed:elsewhere": false] }).list
+        XCTAssertNil(process("acme-server", folded))
+        XCTAssertEqual(groups(folded).first { $0.id == tabID }?.folded, true)
+        XCTAssertNotNil(process("globex-agent", folded), "unfolded on demand")
+        let zsh = try XCTUnwrap(snapshot.table.process(pid: 1101)).identity.id
+        let tree = ActivityRows.content(of: snapshot, options(context) { $0.folds = [zsh: true] }).list
+        XCTAssertNil(process("acme-server", tree), "a process folded hides its children")
+        XCTAssertEqual(process("zsh", tree.filter { $0.id == zsh })?.folded, true)
+    }
+
+    func testSiblingsSortWithinTheTreeAndFlatSortsWithinTheGroup() throws {
+        let context = grouped()
+        add(1103, parent: 1101, name: "acme-worker")
+        let sampler = ActivitySampler(kernel: kernel)
+        _ = try full(sampler, context)
+        burn(1103, 600_000_000)
+        burn(1102, 100_000_000)
+        kernel.advance(1_000_000_000)
+        let snapshot = try full(sampler, context)
+        let list = ActivityRows.content(of: snapshot, options(context)).list
+        let names = processIDs(list)
+        let worker = try XCTUnwrap(names.firstIndex(of: "acme-worker"))
+        let server = try XCTUnwrap(names.firstIndex(of: "acme-server"))
+        XCTAssertLessThan(worker, server, "the busier sibling first")
+        let flat = ActivityRows.content(of: snapshot, options(context) { $0.tree = false }).list
+        let tabRows = flat.compactMap { item -> ActivityProcessRow? in
+            if case .process(let row) = item, row.tab == tab { return row }
+            return nil
+        }
+        XCTAssertEqual(Set(tabRows.map(\.depth)).count, 1, "flat: one depth in the group")
+        XCTAssertEqual(tabRows.first?.name, "acme-worker", "sorted by CPU")
+    }
+
+    func testEveryGroupingListsEachProcessOnce() throws {
+        let context = grouped()
+        let snapshot = try full(ActivitySampler(kernel: kernel), context)
+        for grouping in ActivityGrouping.allCases {
+            let unfolded = Dictionary(uniqueKeysWithValues: ActivityRows.Fixed.allCases.map { ($0.id, false) })
+            let list = ActivityRows.content(
+                of: snapshot,
+                options(context) {
+                    $0.grouping = grouping
+                    $0.folds = unfolded.merging(["group:user:\(ActivityRows.userName(0))": false]) { $1 }
+                }
+            ).list
+            let names = list.compactMap { if case .process(let row) = $0 { row.id } else { nil } }
+            XCTAssertEqual(names.count, Set(names).count, "\(grouping): each once")
+            XCTAssertFalse(list.isEmpty, "\(grouping)")
+        }
+        let byAgent = ActivityRows.content(of: snapshot, options(context) { $0.grouping = .agent }).list
+        let agent = try XCTUnwrap(groups(byAgent).first)
+        XCTAssertEqual(agent.title, "Claude · “agent” · acme-shop")
+        XCTAssertEqual(agent.detail, "1 MCP")
+        XCTAssertEqual(processIDs(byAgent).prefix(2), ["claude", "node"], "the agent and its subtree under it")
+        XCTAssertTrue(groups(byAgent).contains { $0.title == "No agent" })
+        let byApp = ActivityRows.content(of: snapshot, options(context) { $0.grouping = .app }).list
+        XCTAssertTrue(groups(byApp).contains { $0.title == "zsh ×2" || $0.title == "zsh ×3" }, "command-line processes by executable")
+        XCTAssertTrue(groups(byApp).contains { $0.title == "Overterm" })
+        let none = ActivityRows.content(of: snapshot, options(context) { $0.grouping = ActivityGrouping.none }).list
+        XCTAssertTrue(groups(none).isEmpty, "no headers")
+        XCTAssertEqual(process("launchd", none)?.depth, 0, "launchd at the top")
+        XCTAssertEqual(ActivityGrouping.none.next, .checkout, "G comes round")
+    }
+
+    func testTheScopeLadder() throws {
+        let context = grouped()
+        let snapshot = try full(ActivitySampler(kernel: kernel), context)
+        func names(_ scope: ActivityScope) -> Set<String> {
+            Set(ActivityRows.content(of: snapshot, options(context) { $0.scope = scope }).processes.map(\.name))
+        }
+        XCTAssertEqual(names(.tab(tab)), ["login", "zsh", "acme-server"])
+        XCTAssertEqual(names(.checkout(checkout)), ["login", "zsh", "acme-server", "claude", "node"])
+        XCTAssertTrue(names(.allTabs).isSuperset(of: ["Overterm", "git", "claude"]))
+        XCTAssertFalse(names(.allTabs).contains("globex-agent"), "not a tab's")
+        XCTAssertTrue(names(.mac).contains("globex-agent"))
+        let ports = ActivityRows.content(of: snapshot, options(context) { $0.scope = .tab(tabB) }).ports
+        XCTAssertTrue(ports.isEmpty, "the other tab's listener isn't this one's")
+        XCTAssertEqual(ActivityScope.mac.narrower(tab: tab, checkout: checkout), .allTabs)
+        XCTAssertEqual(ActivityScope.allTabs.narrower(tab: tab, checkout: checkout), .checkout(checkout))
+        XCTAssertEqual(ActivityScope.checkout(checkout).narrower(tab: tab, checkout: checkout), .tab(tab))
+        XCTAssertNil(ActivityScope.tab(tab).narrower(tab: tab, checkout: checkout))
+        XCTAssertEqual(ActivityScope.tab(tab).wider(checkout: checkout), .checkout(checkout))
+        XCTAssertEqual(ActivityScope.tab(tab).wider(checkout: nil), .allTabs)
+        XCTAssertEqual(ActivityScope.allTabs.wider(checkout: nil), .mac)
+        // The checkout's stack is the checkout's scope's and wider's, never
+        // one tab's (6.5).
+        let stack = [ActivityContainer(id: "c1", name: "acme-db-1", project: "acme-shop", folder: checkout, cpu: 40, memory: 512 << 20)]
+        for scope in [ActivityScope.checkout(checkout), .allTabs, .mac] {
+            let list = ActivityRows.content(
+                of: snapshot,
+                options(context) {
+                    $0.scope = scope
+                    $0.containers = stack
+                }
+            ).list
+            XCTAssertTrue(groups(list).contains { $0.kind == .container }, "\(scope)")
+        }
+        for grouping in [ActivityGrouping.checkout, .tab] {
+            let list = ActivityRows.content(
+                of: snapshot,
+                options(context) {
+                    $0.scope = .tab(tab)
+                    $0.grouping = grouping
+                    $0.containers = stack
+                }
+            ).list
+            XCTAssertFalse(groups(list).contains { $0.kind == .container || $0.kind == .docker }, "\(grouping): not the tab's")
+            XCTAssertNil(groups(list).first?.cpu, "nor counted in its header: its processes have no rate yet")
+        }
+    }
+
+    /// Grouped by tab, what left a tab's terminal is under the tab's header:
+    /// folding the tab folds it too.
+    func testWhatLeftATabFoldsWithIt() throws {
+        let context = grouped()
+        var left = FakeActivityKernel.Process(record: FakeActivityKernel.record(pid: 1500, start: 1_500_000, parent: 1, name: "acme-worker"))
+        left.name = "acme-worker"
+        left.path = "/opt/acme/bin/acme-worker"
+        left.codeSigning = ActivityCodeSigning(flags: ActivityCodeSigning.valid)
+        left.usage = FakeActivityKernel.usage(footprint: 8 << 20, threads: 1)
+        left.arguments = FakeActivityKernel.arguments(executable: "/opt/acme/bin/acme-worker", ["acme-worker"], environment: ["OVERTERM_TAB_ID=pane-a"])
+        kernel.add(left)
+        let snapshot = try full(ActivitySampler(kernel: kernel), context)
+        let tabID = "group:tab:\(tab.uuidString)"
+        let open = ActivityRows.content(of: snapshot, options(context) { $0.grouping = .tab }).list
+        let headers = groups(open)
+        let leftHeader = try XCTUnwrap(headers.first { $0.kind == .left })
+        let tabHeader = try XCTUnwrap(headers.first { $0.id == tabID })
+        XCTAssertEqual(leftHeader.depth, tabHeader.depth + 1, "under the tab")
+        XCTAssertNotNil(process("acme-worker", open))
+        let folded = ActivityRows.content(
+            of: snapshot,
+            options(context) {
+                $0.grouping = .tab
+                $0.folds = [tabID: true]
+            }
+        ).list
+        XCTAssertFalse(groups(folded).contains { $0.kind == .left }, "folded with its tab")
+        XCTAssertNil(process("acme-worker", folded))
+    }
+
+    func testContainersUnderTheirCheckout() throws {
+        let context = grouped()
+        let snapshot = try full(ActivitySampler(kernel: kernel), context)
+        let list = ActivityRows.content(
+            of: snapshot,
+            options(context) {
+                $0.containers = [
+                    ActivityContainer(id: "c1", name: "acme-db-1", project: "acme-shop", folder: checkout + "/deploy", cpu: 12, memory: 64 << 20),
+                    ActivityContainer(id: "c2", name: "globex-cache", project: "globex", folder: "/Users/fake/src/globex", cpu: 3, memory: 1 << 20),
+                ]
+            }
+        ).list
+        let headers = groups(list)
+        let docker = try XCTUnwrap(headers.first { $0.kind == .docker })
+        XCTAssertEqual(docker.title, "In Docker’s VM: acme-db-1")
+        XCTAssertEqual(docker.detail, "compose project acme-shop")
+        XCTAssertEqual(headers.first { $0.kind == .container }?.title, "acme-db-1")
+        XCTAssertFalse(headers.contains { $0.title.contains("globex-cache") }, "outside every known checkout: not listed under one")
+        XCTAssertEqual(headers.first?.cpu ?? 0, 12, accuracy: 0.01, "the checkout's totals count its stack")
+        XCTAssertEqual(headers.first?.memory, (64 << 20) + 6 * (8 << 20), "its processes' memory and the container's")
+    }
+
+    func testAGroupPastItsLimitSaysHowManyMore() throws {
+        let context = mac()
+        for pid in pid_t(5000)..<pid_t(10_000) { add(pid, parent: 1, name: "fake-\(pid % 7)") }
+        let snapshot = try full(ActivitySampler(kernel: kernel), context)
+        let content = ActivityRows.content(of: snapshot, plain(context) { $0.folds = ["group:fixed:elsewhere": false] })
+        let more = try XCTUnwrap(groups(content.list).first { $0.kind == .more })
+        XCTAssertEqual(more.id, "more:group:fixed:elsewhere")
+        XCTAssertEqual(more.title, "+\(5_001 - 500) more", "5,000 and globex-agent, 500 shown")
+        XCTAssertLessThan(content.list.count, 600)
+        let all = ActivityRows.content(
+            of: snapshot,
+            plain(context) {
+                $0.folds = ["group:fixed:elsewhere": false, "more:group:fixed:elsewhere": false]
+            })
+        XCTAssertNil(groups(all.list).first { $0.kind == .more }, "unfolded: every one")
+    }
+
+    /// The containers' want — Docker's model and its usage — is held while
+    /// Processes shows and given back when the window closes over it.
+    func testTheContainersWantIsGivenBackAtTheWindowsClose() {
+        let monitor = ActivityMonitor(sampler: ActivitySampler(kernel: kernel))
+        let page = ActivityPageModel(monitor: monitor)
+        var wants: [Bool] = []
+        page.wantContainers = { wants.append($0) }
+        page.visible = true
+        XCTAssertEqual(wants, [true])
+        page.section = .listening
+        XCTAssertEqual(wants, [true, false], "only while Processes shows")
+        page.section = .processes
+        page.close()
+        XCTAssertEqual(wants, [true, false, true, false], "the window's close gives it back")
+        monitor.stop()
+    }
+
+    func testThePagesKeysGroupTreeAndScope() {
+        let page = ActivityPageModel(monitor: ActivityMonitor(sampler: ActivitySampler(kernel: kernel)))
+        page.currentTab = { [tab] in tab }
+        XCTAssertTrue(page.press("G"))
+        XCTAssertEqual(page.grouping, .tab)
+        XCTAssertTrue(page.press("t"))
+        XCTAssertFalse(page.tree)
+        XCTAssertTrue(page.press("["))
+        XCTAssertEqual(page.scope(.processes), .allTabs)
+        XCTAssertEqual(page.scopeTitle(.processes), "All tabs")
+        XCTAssertTrue(page.press("["))
+        XCTAssertEqual(page.scope(.processes), .tab(tab), "no checkout known: the tab")
+        XCTAssertTrue(page.press("]"))
+        XCTAssertEqual(page.scope(.processes), .allTabs)
+        XCTAssertTrue(page.press("]"))
+        XCTAssertEqual(page.scope(.processes), .mac)
+        XCTAssertNil(page.scopeTitle(.processes))
+        XCTAssertEqual(page.scope(.listening), .mac, "a section each")
+    }
+
     /// Waits for `condition`, at most `seconds`, never sampling one moment.
     private func eventually(_ seconds: Double = 10, _ condition: @MainActor () -> Bool) async -> Bool {
         let deadline = Date().addingTimeInterval(seconds)

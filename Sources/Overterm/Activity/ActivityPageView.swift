@@ -6,20 +6,29 @@ import SwiftUI
 enum ActivityListRow: ResourceTableRow {
     case process(ActivityProcessRow)
     case port(ActivityPortRow)
+    /// A group's header, a container, "+N more" (6.5).
+    case group(ActivityGroupRow)
 
     var id: String {
         switch self {
         case .process(let row): row.id
         case .port(let row): row.id
+        case .group(let row): row.id
         }
     }
 
     var height: CGFloat { 24 }
 
+    var spansColumns: Bool {
+        if case .group(let row) = self { return row.spansColumns }
+        return false
+    }
+
     var reuseKind: String {
         switch self {
         case .process: "process"
         case .port: "port"
+        case .group(let row): row.kind == .container ? "container" : "group"
         }
     }
 
@@ -27,6 +36,7 @@ enum ActivityListRow: ResourceTableRow {
         switch self {
         case .process(let row): row.accessibilityLabel
         case .port(let row): row.accessibilityLabel
+        case .group(let row): row.accessibilityLabel
         }
     }
 }
@@ -129,6 +139,40 @@ struct ActivityPageView: View {
                     .accessibilityIdentifier("activity.counts")
             }
             Spacer(minLength: 8)
+            if let scope = page.scopeTitle(page.section) {
+                HStack(spacing: 4) {
+                    Text(verbatim: scope).lineLimit(1)
+                    Button {
+                        page.setScope(.mac)
+                    } label: {
+                        Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(9), weight: .bold))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Back to the whole Mac (])")
+                }
+                .font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text)
+                .padding(.horizontal, 8).frame(height: ChromeMetrics.row(22))
+                .background(Capsule().fill(theme.selected))
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("activity.scope")
+            }
+            if page.section == .processes {
+                Button {
+                    page.grouping = page.grouping.next
+                } label: {
+                    Text(verbatim: "Group: \(page.grouping.title)").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
+                }
+                .buttonStyle(.plain)
+                .help("Group by checkout, tab, agent, app, user or none (G)")
+                .accessibilityIdentifier("activity.grouping")
+                Button {
+                    page.tree.toggle()
+                } label: {
+                    Text(page.tree ? "Tree" : "Flat").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
+                }
+                .buttonStyle(.plain)
+                .help("A tree of parents and children, or flat and sorted (t)")
+            }
             if Self.reading(hasRead: page.hasRead, summary) {
                 Text("Reading…").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3)
                     .accessibilityIdentifier("activity.reading")
@@ -164,7 +208,13 @@ struct ActivityPageView: View {
 
     private var rows: [ActivityListRow] {
         switch page.section {
-        case .processes: page.content.processes.map(ActivityListRow.process)
+        case .processes:
+            page.content.list.map { item in
+                switch item {
+                case .group(let row): ActivityListRow.group(row)
+                case .process(let row): ActivityListRow.process(row)
+                }
+            }
         case .listening: page.content.ports.map(ActivityListRow.port)
         }
     }
@@ -173,16 +223,18 @@ struct ActivityPageView: View {
         switch page.section {
         case .processes:
             [
-                ResourceColumn(id: "name", title: "Name", width: 220, minWidth: 120),
+                ResourceColumn(id: "name", title: "Name", width: 300, minWidth: 140),
                 ResourceColumn(id: "pid", title: "PID", width: 64),
                 ResourceColumn(id: "cpu", title: "CPU %", width: 64, help: "100% is one core, as htop and Tab Info count"),
                 ResourceColumn(id: "memory", title: "Memory", width: 84, help: "The footprint: Activity Monitor's Memory"),
                 ResourceColumn(id: "threads", title: "Threads", width: 60),
                 ResourceColumn(id: "state", title: "St", width: 36, help: "R running, S sleeping, T stopped, Z ended and not collected"),
                 ResourceColumn(id: "started", title: "Started", width: 80),
+                ResourceColumn(id: "listening", title: "Listening", width: 110, sortable: false, help: "The TCP ports it listens on"),
                 ResourceColumn(id: "user", title: "User", width: 90),
-                ResourceColumn(id: "where", title: "Where", width: 160, help: "The tab it runs in"),
             ]
+                + (page.grouping == .checkout || page.grouping == .tab
+                    ? [] : [ResourceColumn(id: "where", title: "Where", width: 200, help: "Its tab · checkout · agent, or who it belongs to")])
         case .listening:
             [
                 ResourceColumn(id: "port", title: "Port", width: 70),
@@ -259,14 +311,123 @@ struct ActivityPageView: View {
         switch row {
         case .process(let process): AnyView(processCell(process, column?.id))
         case .port(let port): AnyView(portCell(port, column?.id))
+        case .group(let group): AnyView(groupCell(group, column?.id))
         }
+    }
+
+    /// The fold's triangle, or its room.
+    private func disclosure(_ id: String, foldable: Bool, folded: Bool) -> some View {
+        Group {
+            if foldable {
+                Button {
+                    page.toggleFold(id, folded: folded)
+                } label: {
+                    Image(systemName: folded ? "chevron.right" : "chevron.down").font(.system(size: ChromeMetrics.text(9), weight: .semibold))
+                        .foregroundStyle(theme.text3).frame(width: 14, height: 18).contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(Text(folded ? "Unfold" : "Fold"))
+            } else {
+                Color.clear.frame(width: 14, height: 18)
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func groupCell(_ row: ActivityGroupRow, _ column: String?) -> some View {
+        if row.kind == .container {
+            switch column {
+            case "name":
+                HStack(spacing: 4) {
+                    Color.clear.frame(width: CGFloat(row.depth) * 14 + 14)
+                    Image(systemName: "shippingbox").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
+                    text(row.title, theme.text2)
+                }
+                .help(row.detail.isEmpty ? "A container: its processes run inside Docker’s VM" : row.detail)
+            case "cpu": number(row.cpu.map(ActivityRows.percent) ?? "—", (row.cpu ?? 0) >= 50 ? TabStatusStyle.signal : theme.text2)
+            case "memory": number(row.memory.map(ActivityRows.bytes) ?? "—")
+            default: EmptyView()
+            }
+        } else {
+            HStack(spacing: 6) {
+                Color.clear.frame(width: CGFloat(row.depth) * 14)
+                disclosure(row.id, foldable: row.foldable, folded: row.folded)
+                if let agent = row.agent { Image(systemName: agent.symbol).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text2) }
+                Text(verbatim: row.title).font(.system(size: ChromeMetrics.text(12), weight: row.kind == .more ? .regular : .semibold))
+                    .foregroundStyle(row.kind == .more ? theme.text3 : theme.text).lineLimit(1).truncationMode(.middle)
+                if !row.detail.isEmpty {
+                    Text(verbatim: row.detail).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).lineLimit(1)
+                        .truncationMode(.tail)
+                }
+                Spacer(minLength: 8)
+                if row.kind != .more {
+                    if !row.ports.isEmpty {
+                        Text(verbatim: Self.ports(row.ports)).font(.system(size: ChromeMetrics.text(11.5), design: .monospaced))
+                            .foregroundStyle(theme.text2).lineLimit(1)
+                    }
+                    Text(verbatim: row.cpu.map { "\(ActivityRows.percent($0))%" } ?? "—").font(.system(size: ChromeMetrics.text(11.5), design: .monospaced))
+                        .foregroundStyle((row.cpu ?? 0) >= 50 ? TabStatusStyle.signal : theme.text2).frame(minWidth: 52, alignment: .trailing)
+                    Text(verbatim: row.memory.map(ActivityRows.bytes) ?? "").font(.system(size: ChromeMetrics.text(11.5), design: .monospaced))
+                        .foregroundStyle(theme.text2).frame(minWidth: 64, alignment: .trailing)
+                }
+            }
+            .padding(.horizontal, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .clipped()
+        }
+    }
+
+    /// At most three ports, then "+N".
+    static func ports(_ ports: [Int]) -> String {
+        let shown = ports.prefix(3).map { ":\($0)" }.joined(separator: " ")
+        return ports.count > 3 ? "\(shown) +\(ports.count - 3)" : shown
+    }
+
+    /// The chips beside a process's name (6.5): its role, what it did.
+    static func chips(_ row: ActivityProcessRow) -> [String] {
+        guard let owner = row.owner else { return [] }
+        var chips: [String] = []
+        if let counts = row.agentCounts, !counts.isEmpty { chips.append(counts) }
+        if owner.paneRole != .agent {
+            switch owner.role {
+            case .mcp: chips.append("MCP")
+            case .server: break
+            case .shell where owner.paneRole == .agentChild: chips.append("tool shell")
+            case .build: chips.append("build")
+            default: break
+            }
+        }
+        if owner.marks.contains(.detached) { chips.append("detached on purpose") }
+        if owner.marks.contains(.leftTerminal) { chips.append("↗ left its terminal") }
+        if owner.marks.contains(.nohup) { chips.append("nohup") }
+        if owner.marks.contains(.setsid), owner.paneRole != .agentChild { chips.append("setsid") }
+        return chips
     }
 
     @ViewBuilder
     private func processCell(_ row: ActivityProcessRow, _ column: String?) -> some View {
         switch column {
         case "name":
-            text(row.name, row.isOwn ? theme.text : theme.text2)
+            HStack(spacing: 4) {
+                Color.clear.frame(width: CGFloat(row.depth) * 14)
+                disclosure(row.id, foldable: row.hasChildren, folded: row.folded)
+                if row.owner?.paneRole == .agent, let agent = row.owner?.agentKind {
+                    Image(systemName: agent.symbol).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text)
+                }
+                Text(verbatim: row.name).font(.system(size: ChromeMetrics.text(12)))
+                    .foregroundStyle(
+                        row.owner?.paneRole == .session || row.owner?.paneRole == .shell ? theme.text3 : row.isOwn ? theme.text : theme.text2
+                    )
+                    .lineLimit(1).truncationMode(.middle).layoutPriority(1)
+                ForEach(Self.chips(row), id: \.self) { chip in
+                    Text(verbatim: chip).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3).lineLimit(1)
+                        .padding(.horizontal, 5).background(Capsule().stroke(theme.border))
+                }
+                Spacer(minLength: 0)
+            }
+            .padding(.horizontal, 6)
+            .clipped()
+            .help(row.owner?.reason ?? "")
         case "pid":
             number("\(row.identity.pid)")
         case "cpu":
@@ -281,8 +442,10 @@ struct ActivityPageView: View {
             number(row.startedText)
         case "user":
             text(row.user, theme.text3)
+        case "listening":
+            text(Self.ports(row.listening), theme.text2)
         case "where":
-            text(row.tabTitle.map { "“\($0)”" } ?? "", theme.text2)
+            text(row.whereText, theme.text2)
         default:
             EmptyView()
         }

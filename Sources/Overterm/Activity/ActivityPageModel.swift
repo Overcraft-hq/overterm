@@ -36,8 +36,24 @@ final class ActivityPageModel: ObservableObject {
     }
 
     @Published var section: Section = .processes {
-        didSet { if section != oldValue { selection = [] } }
+        didSet {
+            guard section != oldValue else { return }
+            selection = []
+            updateContainers()
+            if scope(section) != scope(oldValue) { rebuild() }
+        }
     }
+    /// How Processes is grouped (`G`), and whether as a tree (`t`).
+    @Published var grouping: ActivityGrouping = .checkout {
+        didSet { if grouping != oldValue { rebuild() } }
+    }
+    @Published var tree = true {
+        didSet { if tree != oldValue { rebuild() } }
+    }
+    /// The scope ladder's rung (6.5, `[` and `]`), a section each.
+    @Published private(set) var scopes: [Section: ActivityScope] = [:]
+    /// Folds by row id, kept in memory for the app's life (6.5).
+    @Published private(set) var folds: [String: Bool] = [:]
     @Published var selection: Set<String> = []
     @Published var processSort: ResourceSort? = ResourceSort(column: "cpu", ascending: false) {
         didSet { if processSort != oldValue { rebuild() } }
@@ -63,6 +79,20 @@ final class ActivityPageModel: ObservableObject {
     }
     /// Every window's tabs' titles, by id: what the Where column says.
     var tabTitles: @MainActor () -> [UUID: String] = { [:] }
+    /// What every window says of its tabs — checkout, branch, order — and
+    /// the checkouts it knows; with it the titles above are unused.
+    var tabFacts: @MainActor () -> (tabs: [UUID: ActivityTabFacts], checkouts: [String])? = { nil }
+    /// The window's selected tab: where `[` narrows to with no row selected.
+    var currentTab: @MainActor () -> UUID? = { nil }
+    /// The running containers with their usage, and the want of their
+    /// usage while Processes shows (6.5): set by the window.
+    var containers: @MainActor () -> [ActivityContainer] = { [] }
+    var wantContainers: @MainActor (Bool) -> Void = { _ in }
+    /// What the census's context leaves to the page (6.5, rules 2 and 6):
+    /// the forwards, the containers' published ports, the bridge's port.
+    var contextFacts: @MainActor (inout ActivityContext) -> Void = { _ in }
+    /// Running apps' bundles by pid: a deleted executable's place.
+    var runningApps: @MainActor () -> [pid_t: String] = { [:] }
     /// A test run lists only its own tabs' processes (6.4, 9.9).
     var isolated = AppEnvironment.isIsolated
 
@@ -74,9 +104,75 @@ final class ActivityPageModel: ObservableObject {
     private var latest: ActivitySnapshot?
     private var generation = 0
     private var snapshots: AnyCancellable?
+    /// The tabs' facts the last rows were made with.
+    private var lastTabs: [UUID: ActivityTabFacts] = [:]
+    /// A row shown by a link: its groups unfolded for it.
+    private var revealed: String?
+    /// Whether it holds the containers' usage now.
+    private(set) var wantsContainers = false
 
     init(monitor: ActivityMonitor = .shared) {
         self.monitor = monitor
+        for section in Section.allCases {
+            if let saved = AppEnvironment.defaults.string(forKey: Self.scopeKey(section)), saved == "allTabs" { scopes[section] = .allTabs }
+        }
+    }
+
+    private static func scopeKey(_ section: Section) -> String { "activity.page.scope.\(section.rawValue)" }
+
+    /// The scope of `section`: the Mac by default (⌥⌘A).
+    func scope(_ section: Section) -> ActivityScope { scopes[section] ?? .mac }
+
+    /// Sets `section`'s scope; remembered across launches only as All
+    /// tabs or the Mac — a tab or a checkout is this launch's.
+    func setScope(_ scope: ActivityScope, for section: Section? = nil) {
+        let section = section ?? self.section
+        guard self.scope(section) != scope else { return }
+        scopes[section] = scope
+        let saved: String? = scope == .allTabs ? "allTabs" : nil
+        AppEnvironment.defaults.set(saved, forKey: Self.scopeKey(section))
+        rebuild()
+    }
+
+    /// The chip's words: "Tab: web", "Checkout: acme-shop", "All tabs";
+    /// nil on the Mac.
+    func scopeTitle(_ section: Section) -> String? {
+        switch scope(section) {
+        case .mac: return nil
+        case .allTabs: return "All tabs"
+        case .checkout(let path): return "Checkout: \(ActivityRows.folderName(path))"
+        case .tab(let id): return "Tab: \(lastTabs[id].map { ActivityText.title($0.title) } ?? "a tab")"
+        }
+    }
+
+    /// `[`: narrower, onto the selected row's tab or the window's.
+    func narrowScope() {
+        let row = content.processes.first { selection.contains($0.id) }
+        let tab = row?.owner.flatMap(ActivityRows.paneTab) ?? row?.tab ?? currentTab()
+        guard let narrower = scope(section).narrower(tab: tab, checkout: tab.flatMap { lastTabs[$0]?.checkout }) else { return }
+        setScope(narrower)
+    }
+
+    /// `]`: wider.
+    func widenScope() {
+        var checkout: String?
+        if case .tab(let id) = scope(section) { checkout = lastTabs[id]?.checkout }
+        setScope(scope(section).wider(checkout: checkout))
+    }
+
+    /// A row's fold flipped: a group, a process with children, "+N more".
+    func toggleFold(_ id: String, folded now: Bool) {
+        folds[id] = !now
+        revealed = nil
+        rebuild()
+    }
+
+    /// The containers' usage wanted while Processes shows.
+    private func updateContainers() {
+        let wanted = wanting && section == .processes
+        guard wanted != wantsContainers else { return }
+        wantsContainers = wanted
+        wantContainers(wanted)
     }
 
     /// Its want, as it shows and Activity is on: the full level at the
@@ -94,6 +190,7 @@ final class ActivityPageModel: ObservableObject {
             snapshots = nil
             forget()
         }
+        updateContainers()
     }
 
     /// Hidden: the rows go with the want, so the page shown again says
@@ -128,15 +225,32 @@ final class ActivityPageModel: ObservableObject {
         guard wanting, let snapshot = latest else { return }
         generation += 1
         let generation = self.generation
-        let options = ActivityRows.Options(
-            titles: tabTitles(), everyone: Settings.shared.activityEveryone, isolated: isolated, processSort: processSort, portSort: portSort)
+        var options = ActivityRows.Options(
+            everyone: Settings.shared.activityEveryone, isolated: isolated, processSort: processSort, portSort: portSort)
+        if let facts = tabFacts() {
+            options.tabs = facts.tabs
+            options.checkouts = facts.checkouts
+            lastTabs = facts.tabs
+        } else {
+            options.titles = tabTitles()
+            lastTabs = options.titles.reduce(into: [:]) { $0[$1.key] = ActivityTabFacts(id: $1.key, title: $1.value) }
+        }
+        options.context = monitor.context
+        contextFacts(&options.context)
+        options.runningApps = runningApps()
+        options.grouping = grouping
+        options.tree = tree
+        options.scope = scope(section)
+        options.folds = folds
+        options.reveal = revealed
+        options.containers = wantsContainers ? containers() : []
         Task { [weak self] in
             let content = await Self.make(snapshot, options)
             guard let self, self.generation == generation else { return }
             self.content = content
             self.hasRead = true
             self.builds += 1
-            let shown = Set(content.processes.map(\.id)).union(content.ports.map(\.id))
+            let shown = Set(content.processes.map(\.id)).union(content.list.map(\.id)).union(content.ports.map(\.id))
             if !self.selection.isSubset(of: shown) { self.selection = self.selection.intersection(shown) }
         }
     }
@@ -169,8 +283,17 @@ final class ActivityPageModel: ObservableObject {
 
     /// A key while the list has the keyboard: the sections' digits (6.3).
     func press(_ characters: String) -> Bool {
-        guard let section = Section.allCases.first(where: { $0.key == characters }) else { return false }
-        self.section = section
+        if let section = Section.allCases.first(where: { $0.key == characters }) {
+            self.section = section
+            return true
+        }
+        switch characters {
+        case "G" where section == .processes: grouping = grouping.next
+        case "t" where section == .processes: tree.toggle()
+        case "[": narrowScope()
+        case "]": widenScope()
+        default: return false
+        }
         return true
     }
 
@@ -187,6 +310,8 @@ final class ActivityPageModel: ObservableObject {
     /// The process or port shown on the page: its section, selected.
     func reveal(_ id: String, in section: Section) {
         self.section = section
+        revealed = id
+        rebuild()
         selection = [id]
         focusList += 1
     }

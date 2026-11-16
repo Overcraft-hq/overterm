@@ -36,7 +36,8 @@ extension E2ERunner {
         open("\(portFile.path)", "w").write(str(s.getsockname()[1]))
         time.sleep(40)
         """.write(to: script, atomically: true, encoding: .utf8)
-        pane.insertText("python3 \(script.path) & sleep 47 &")
+        // …and a stand-in agent: argv[0] claude, a sleep its child.
+        pane.insertText("python3 \(script.path) & sleep 47 & (exec -a claude /bin/sh -c 'sleep 45 & wait') &")
         pane.pressReturn()
         let started = await eventually(15) { FileManager.default.fileExists(atPath: portFile.path) }
         let port = (try? String(contentsOf: portFile, encoding: .utf8)).flatMap { Int($0) } ?? -1
@@ -70,6 +71,7 @@ extension E2ERunner {
             "\(page.content.processes.count) rows, \(page.content.processes.filter { $0.tab == nil }.count) outside a tab")
         check(
             "its rows name the tab", ownRows().allSatisfy { $0.tabTitle != nil }, "\(ownRows().filter { $0.tabTitle == nil }.count) unnamed")
+        await activityOwners(tab: tab)
         check(
             "the header counts the Mac, the rows the run's", page.content.summary.scopedToRun && page.content.summary.processes > page.content.summary.shown,
             "\(page.content.summary.shown) of \(page.content.summary.processes)")
@@ -79,10 +81,12 @@ extension E2ERunner {
 
         // VoiceOver: each row's label names the process, its pid and its tab.
         let labels = await eventually(5) { !self.activityRowLabels().isEmpty }
-        let said = activityRowLabels()
+        let said = activityRowLabels().filter { $0.contains(", pid ") }
         check(
-            "each row says its name, pid and tab to VoiceOver", labels && said.allSatisfy { $0.contains(", pid ") && $0.contains(", in “") },
+            "each process row says its name, pid and tab to VoiceOver", labels && !said.isEmpty && said.allSatisfy { $0.contains(", in “") },
             "\(said.count) labels")
+        let headers = activityRowLabels().filter { !$0.contains(", pid ") }
+        check("and each group's header its name and count", headers.contains { $0.contains(" process") }, "\(headers.count) headers")
 
         // Listening (2): the server's port, in its tab, This Mac only.
         check("2 is Listening", page.press("2") && page.section == .listening)
@@ -152,6 +156,80 @@ extension E2ERunner {
         Settings.shared.set("activity.enabled", nil)
         app.hideOverlay()
         check("on, ⌘K offers the page", app.activityPaletteItems().contains { $0.title == "Activity" })
+    }
+
+    /// Owners, groups and the scope (6.5) over the run's own children: the
+    /// tab's server under its checkout and its tab, the stand-in agent's
+    /// sleep under the agent — in the checkout's tree and in `G`'s Agent
+    /// grouping —, `[` and `]` along the ladder. Pids and counts only.
+    func activityOwners(tab: Tab) async {
+        let page = app.activityPage
+        func list() -> [ActivityListItem] { page.content.list }
+        func index(_ id: String) -> Int? { list().firstIndex { $0.id == id } }
+        func header(_ id: String) -> ActivityGroupRow? {
+            for item in list() { if case .group(let row) = item, row.id == id { return row } }
+            return nil
+        }
+        func rows() -> [(index: Int, row: ActivityProcessRow)] {
+            list().enumerated().compactMap { if case .process(let row) = $0.element, row.tab == tab.id { ($0.offset, row) } else { nil } }
+        }
+        let tabID = "group:tab:\(tab.id.uuidString)"
+        let agentFound = await eventually(15) { rows().contains { $0.row.owner?.paneRole == .agent } && header(tabID)?.agent == .claude }
+        let checkoutHeader = list().prefix { $0.id != tabID }.last { item in
+            if case .group(let row) = item { return row.kind == .checkout }
+            return false
+        }
+        check(
+            "Processes groups the tab under its checkout, the stand-in agent named on the tab",
+            agentFound && checkoutHeader != nil && header(tabID)?.depth == 1 && header(tabID)?.detail.hasPrefix("Claude Code") == true,
+            "\(list().count) rows")
+        // The end of the tab's group: the next header no deeper than it.
+        let start = index(tabID) ?? -1
+        let end =
+            list().enumerated().first { offset, item in
+                guard offset > start, case .group(let row) = item else { return false }
+                return row.depth <= 1 && row.kind != .pane
+            }?.offset ?? list().count
+        let server = rows().first { $0.row.name.lowercased().hasPrefix("python") }
+        check(
+            "the tab's server in its tab's tree, a pane's process by lineage",
+            server.map { $0.index > start && $0.index < end && $0.row.owner?.rule == 4 && $0.row.depth > 1 } == true
+                && server?.row.owner?.reason?.hasPrefix("in “") == true,
+            "pid \(server?.row.identity.pid ?? -1)")
+        let agent = rows().first { $0.row.owner?.paneRole == .agent }
+        let child = rows().first { $0.row.name == "sleep" && $0.row.owner?.agent != nil }
+        check(
+            "the agent's child under the agent, started by it",
+            agent != nil && child.map { $0.index > agent!.index && $0.row.depth > agent!.row.depth && $0.row.owner?.agent == agent?.row.identity } == true
+                && child?.row.owner?.reason?.hasPrefix("started by Claude") == true,
+            "agent pid \(agent?.row.identity.pid ?? -1), child pid \(child?.row.identity.pid ?? -1)")
+        let plain = rows().first { $0.row.name == "sleep" && $0.row.owner?.agent == nil }
+        check("the person's own sleep says nothing of an agent", plain?.row.owner?.paneRole == .background, "pid \(plain?.row.identity.pid ?? -1)")
+
+        // G: Checkout → Tab → Agent; the agent's group holds its child.
+        check("G groups by tab, then by agent", page.press("G") && page.grouping == .tab && page.press("G") && page.grouping == .agent)
+        let agentGroup = agent.map { "group:agent:\($0.row.id)" } ?? "-"
+        let grouped = await eventually(10) {
+            guard let at = index(agentGroup), let childID = child?.row.id, let below = index(childID) else { return false }
+            return below > at && header("group:agent:none") != nil
+        }
+        check("by agent, the agent's subtree under its group, the rest under No agent", grouped, "\(list().count) rows")
+        while page.grouping != .checkout { _ = page.press("G") }
+
+        // The ladder: [ narrows from the Mac to all tabs, the checkout, the
+        // tab; the chip says so; ] widens back.
+        check("[ narrows to all tabs", page.press("[") && page.scope(.processes) == .allTabs)
+        check("[ again, to the tab's checkout", page.press("[") && { if case .checkout = page.scope(.processes) { true } else { false } }())
+        check("[ again, to the tab", page.press("[") && page.scope(.processes) == .tab(tab.id))
+        let scoped = await eventually(10) { !page.content.processes.isEmpty && page.content.processes.allSatisfy { $0.tab == tab.id } }
+        let chip = await eventually(5) {
+            self.app.pages.view(.activity).flatMap { Self.accessibilityElement("activity.scope", in: $0) }?.text.contains("Tab:") == true
+        }
+        check("only the tab's processes, and the chip says Tab", scoped && chip, "\(page.content.processes.count) rows")
+        _ = page.press("]")
+        _ = page.press("]")
+        _ = page.press("]")
+        check("] widens back to the Mac", page.scope(.processes) == .mac && page.scopeTitle(.processes) == nil)
     }
 
     /// The accessibility labels of the page's list's rows on screen.

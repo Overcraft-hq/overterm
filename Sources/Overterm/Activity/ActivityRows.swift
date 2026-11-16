@@ -26,6 +26,21 @@ struct ActivityProcessRow: ResourceTableRow, Sendable {
     /// by its title; nil outside every tab.
     let tab: UUID?
     let tabTitle: String?
+    /// Who it belongs to, and why (6.5).
+    var owner: ActivityOwner?
+    /// Its tab's checkout, by its folder's name.
+    var checkout: String?
+    /// The Where column's words: tab · checkout · agent, or its owner.
+    var whereText = ""
+    /// The TCP ports it listens on, by number.
+    var listening: [Int] = []
+    /// Its depth in the list's tree, whether it has children there, and
+    /// whether they are folded.
+    var depth = 0
+    var hasChildren = false
+    var folded = false
+    /// An agent's row: what runs under it, counted ("12 MCP · 3 shells").
+    var agentCounts: String?
 
     var height: CGFloat { 24 }
 
@@ -33,7 +48,14 @@ struct ActivityProcessRow: ResourceTableRow, Sendable {
     var accessibilityLabel: String {
         var words = ["\(name), pid \(identity.pid)"]
         if let cpu { words.append("\(ActivityRows.percent(cpu)) percent CPU") }
-        if let tabTitle { words.append("in “\(tabTitle)”") } else if !isOwn { words.append(user) }
+        if let tabTitle {
+            words.append("in “\(tabTitle)”")
+            if let checkout { words.append(checkout) }
+        } else if let label = owner.flatMap(ActivityRows.ownerLabel) {
+            words.append(label)
+        } else if !isOwn {
+            words.append(user)
+        }
         return words.joined(separator: ", ")
     }
 }
@@ -116,7 +138,10 @@ struct ActivitySummary: Equatable, Sendable {
 /// What one full snapshot makes of the page: its rows, sorted, and what is
 /// said around them. Pure, run off the main thread (7.7).
 struct ActivityPageContent: Sendable {
+    /// Every process row in scope, flat, sorted: the switcher's, ⌘C's.
     var processes: [ActivityProcessRow] = []
+    /// Processes as the page lists them: grouped, as a tree (6.5).
+    var list: [ActivityListItem] = []
     var ports: [ActivityPortRow] = []
     var summary = ActivitySummary()
 }
@@ -126,6 +151,28 @@ enum ActivityRows {
     struct Options: Sendable {
         /// Tabs' titles, by id, every window's.
         var titles: [UUID: String] = [:]
+        /// What the main actor says of each tab: its title, checkout,
+        /// branch, its place in the strips. `titles` makes them when empty.
+        var tabs: [UUID: ActivityTabFacts] = [:]
+        /// The census's context the owners are read against (6.5).
+        var context = ActivityContext()
+        /// Every known checkout (the tabs', the worktrees'), and running
+        /// apps' bundles by pid.
+        var checkouts: [String] = []
+        var runningApps: [pid_t: String] = [:]
+        /// How Processes is grouped and whether as a tree; nil: no list
+        /// (the switcher's).
+        var grouping: ActivityGrouping? = .checkout
+        var tree = true
+        var scope = ActivityScope.mac
+        /// Folds by row id (true folded); a row not in it takes its default.
+        var folds: [String: Bool] = [:]
+        /// The containers running, with their usage (`DockerUsageMonitor`).
+        var containers: [ActivityContainer] = []
+        /// A row a link shows: the groups holding it unfolded.
+        var reveal: String?
+        /// Process rows a group shows before "+N more".
+        var groupLimit = 500
         /// Other users' processes too (`activity.everyone`).
         var everyone = true
         /// A test run (`AppEnvironment.isIsolated`): only the run's own
@@ -138,7 +185,19 @@ enum ActivityRows {
     static func content(of snapshot: ActivitySnapshot, _ options: Options) -> ActivityPageContent {
         // A tab's title is often the command running in it: masked as every
         // command is, wherever it leaves the strip (9.3).
-        let titles = options.titles.mapValues(ActivityText.title)
+        var tabFacts = options.tabs
+        for (id, title) in options.titles where tabFacts[id] == nil { tabFacts[id] = ActivityTabFacts(id: id, title: title) }
+        for (id, tab) in tabFacts { tabFacts[id]?.title = ActivityText.title(tab.title) }
+        let titles = tabFacts.mapValues(\.title)
+        // The owners only where something reads them: the switcher's flat
+        // rows over the whole Mac are ranked by CPU and port alone.
+        let attribution =
+            options.grouping == nil && options.scope == .mac
+            ? nil
+            : ActivityAttribution.of(
+                snapshot, context: options.context,
+                inputs: ActivityAttribution.Inputs(
+                    tabs: tabFacts, checkouts: options.checkouts + tabFacts.values.compactMap(\.checkout), runningApps: options.runningApps))
         let today = Calendar.current.startOfDay(for: snapshot.date)
         // Where each process runs: the first pane that places it.
         var tabs: [ActivityProcessID: UUID] = [:]
@@ -158,18 +217,31 @@ enum ActivityRows {
             if facts?.rates != nil { rated = true }
             if options.isolated, tabs[identity] == nil { continue }
             if !own, !options.everyone { continue }
+            let owner = attribution?[identity]
+            guard inScope(owner, options.scope, tabs: tabFacts, context: options.context, identity: identity) else { continue }
             let tab = tabs[identity]
             let started = Date(timeIntervalSince1970: Double(identity.start) / 1_000_000)
-            rows.append(
-                ActivityProcessRow(
-                    id: identity.id, identity: identity, name: snapshot.name(of: identity) ?? process.shortName, cpu: facts?.rates?.cpuPercent,
-                    memory: facts?.usage?.footprint, threads: facts?.usage?.threads,
-                    state: ActivityState(status: process.status, runningThreads: own ? facts?.usage?.runningThreads : nil),
-                    started: started, startedText: startedText(started, today: today),
-                    user: own ? userName(uid) : userName(process.effectiveUID), isOwn: own, tab: tab, tabTitle: tab.flatMap { titles[$0] }))
+            var row = ActivityProcessRow(
+                id: identity.id, identity: identity, name: snapshot.name(of: identity) ?? process.shortName, cpu: facts?.rates?.cpuPercent,
+                memory: facts?.usage?.footprint, threads: facts?.usage?.threads,
+                state: ActivityState(status: process.status, runningThreads: own ? facts?.usage?.runningThreads : nil),
+                started: started, startedText: startedText(started, today: today),
+                user: own ? userName(uid) : userName(process.effectiveUID), isOwn: own, tab: tab, tabTitle: tab.flatMap { titles[$0] })
+            row.owner = owner
+            row.checkout = tab.flatMap { tabFacts[$0]?.checkout }.map(folderName)
+            row.listening = Array(Set((facts?.sockets?.listeners ?? []).filter { $0.kind == .tcp }.map { Int($0.localPort) })).sorted()
+            row.whereText = whereText(row, tabs: tabFacts)
+            rows.append(row)
         }
         var content = ActivityPageContent()
         content.processes = sorted(rows, by: options.processSort)
+        if let grouping = options.grouping {
+            // A checkout's containers are its scope's and wider's (6.5): a
+            // tab's is its panes, what left them, its forwards.
+            var listed = options
+            if case .tab = options.scope { listed.containers = [] }
+            content.list = list(rows, grouping: grouping, in: snapshot, tabs: tabFacts, options: listed)
+        }
         content.ports = sorted(ports(of: rows, in: snapshot, tabs: tabs, titles: titles), by: options.portSort)
         var summary = ActivitySummary()
         summary.processes = snapshot.table.processes.count
