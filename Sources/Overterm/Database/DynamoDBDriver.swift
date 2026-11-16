@@ -12,7 +12,7 @@ import Foundation
 /// every attribute by name, each value as text (`DynamoItems`). The tree is
 /// the region's tables, and a table's keys and indexes as its columns.
 actor DynamoDBDriver: DatabaseDriver {
-    private let config: DatabaseConnection
+    let config: DatabaseConnection
     private let password: String?
     private let http: HTTPDriverTransport
     /// Each table's keys, partition then sort — read once, for a result's order.
@@ -135,7 +135,7 @@ actor DynamoDBDriver: DatabaseDriver {
         return names
     }
 
-    private func describe(_ table: String) async throws -> [String: Any] {
+    func describe(_ table: String) async throws -> [String: Any] {
         (try await call("DescribeTable", ["TableName": table]))["Table"] as? [String: Any] ?? [:]
     }
 
@@ -148,7 +148,7 @@ actor DynamoDBDriver: DatabaseDriver {
         try await names().map { CatalogTable(schema: schema, name: $0) }
     }
 
-    private func names() async throws -> [String] {
+    func names() async throws -> [String] {
         var names: [String] = []
         var after: String?
         repeat {

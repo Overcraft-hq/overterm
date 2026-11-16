@@ -261,7 +261,7 @@ final class MongoTests: XCTestCase {
                 ["_id": .int32(3)],
             ], limit: 2)
         XCTAssertEqual(result.columns, ["_id", "name", "tags", "address"], "_id first, then as met")
-        XCTAssertEqual(result.types, ["objectId", "string", "array", "object"])
+        XCTAssertEqual(result.types, ["mixed", "string", "array", "object"], "an ObjectId and an int: several types, said")
         XCTAssertEqual(
             result.rows,
             [

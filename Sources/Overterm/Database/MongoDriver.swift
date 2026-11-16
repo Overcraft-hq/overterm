@@ -17,17 +17,20 @@ import NIOSSL
 /// statement is the mongo shell's (`MongoStatement`); documents come back a
 /// row each, their top-level fields as columns.
 actor MongoDriver: DatabaseDriver {
-    private let config: DatabaseConnection
+    let config: DatabaseConnection
     private let password: String?
     private var channel: Channel?
     private var replies: MongoReplyHandler?
     private var nextRequest: Int32 = 1
     /// The database `db` is in the console (its `use`).
-    private var current: String
+    private(set) var current: String
     /// Not the primary: reads ask for any member, writes are the server's to refuse.
     private var onSecondary = false
     /// Where it is connected, for what is said.
     private var address = ""
+    /// What the server it is connected to said of itself: its replica set,
+    /// mongos, this connection's id (the Server page's own operations).
+    private(set) var hello: BSONDocument?
 
     /// Collections a database reads fields for at most.
     static let sampledCollections = 100
@@ -85,6 +88,7 @@ actor MongoDriver: DatabaseDriver {
                     }
                 }
                 onSecondary = !Self.writable(hello)
+                self.hello = hello
                 try await authenticate(hello, source: authSource.isEmpty ? "admin" : authSource)
                 return
             } catch let error as DatabaseError {
@@ -260,7 +264,7 @@ actor MongoDriver: DatabaseDriver {
 
     /// One command on a database, its answer — or the server's error,
     /// thrown as `MongoServerError`.
-    private func send(_ body: BSONDocument, database: String, timeout: TimeAmount? = nil) async throws -> BSONDocument {
+    func send(_ body: BSONDocument, database: String, timeout: TimeAmount? = nil) async throws -> BSONDocument {
         guard let channel, let replies else { throw DatabaseError.notConnected }
         var body = body
         body["$db"] = .string(database)
@@ -287,7 +291,7 @@ actor MongoDriver: DatabaseDriver {
     }
 
     /// A command as the console's, its errors in words.
-    private func command(_ body: BSONDocument, database: String) async throws -> BSONDocument {
+    func command(_ body: BSONDocument, database: String) async throws -> BSONDocument {
         do {
             return try await send(body, database: database)
         } catch let error as MongoServerError {
@@ -376,7 +380,7 @@ actor MongoDriver: DatabaseDriver {
 
     /// A cursor's documents, up to one past `limit` (so "there are more"
     /// is known), the rest of the cursor closed.
-    private func documents(_ command: MongoCommand, database: String, limit: Int) async throws -> [BSONDocument] {
+    func documents(_ command: MongoCommand, database: String, limit: Int) async throws -> [BSONDocument] {
         var body = command.body
         let wanted = min(command.limit ?? Int.max, limit + 1)
         if command.name == "find" {

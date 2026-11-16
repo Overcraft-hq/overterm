@@ -6,9 +6,12 @@ import Network
 /// listCollections), find with an equality filter, a sort, skip and limit
 /// and cursors across batches (getMore, killCursors), aggregate's $match,
 /// $group by a field or a constant with $sum, $sort, $skip and $limit,
-/// insert, update's $set, delete, count and drop — anything else is
-/// CommandNotFound, as a server says it. For the `mongodb` scenario and
-/// the always-run driver tests: the real server is `MongoDriverTests`'.
+/// insert, update's $set and $unset, delete, count and drop — and, for the
+/// Server page, serverStatus, `$currentOp` (this connection's operation and
+/// another's), `$collStats`, profile (off) and killOp — anything else is
+/// CommandNotFound, as a server says it. For the `mongodb` and `mongoOps`
+/// scenarios and the always-run driver tests: the real server is
+/// `MongoDriverTests`'.
 final class E2EMongoServer: @unchecked Sendable {
     private let queue = DispatchQueue(label: "overterm.e2e-mongodb")
     private var listener: NWListener?
@@ -23,6 +26,15 @@ final class E2EMongoServer: @unchecked Sendable {
     private var received: [String] = []
 
     var commands: [String] { lock.withLock { received } }
+    private var killed: [Int] = []
+    /// The operations killOp was sent for.
+    var killedOperations: [Int] { lock.withLock { killed } }
+    /// What every connection's hello says is its id: the page's own operation.
+    static let connectionID: Int32 = 42
+
+    func documents(_ database: String, _ collection: String) -> [BSONDocument] {
+        lock.withLock { data[database]?[collection] ?? [] }
+    }
 
     func seed(_ database: String, _ collection: String, _ documents: [BSONDocument]) {
         lock.withLock { data[database, default: [:]][collection, default: []] += documents }
@@ -107,7 +119,21 @@ final class E2EMongoServer: @unchecked Sendable {
             received.append(name)
             switch name {
             case "hello", "isMaster", "ismaster":
-                return ok(["isWritablePrimary": .bool(true), "maxWireVersion": .int32(21), "maxBsonObjectSize": .int32(16_777_216)])
+                return ok([
+                    "isWritablePrimary": .bool(true), "maxWireVersion": .int32(21), "maxBsonObjectSize": .int32(16_777_216),
+                    "connectionId": .int32(Self.connectionID),
+                ])
+            case "serverStatus":
+                return ok([
+                    "version": .string("7.0.0-fake"), "uptime": .double(3600), "host": .string("fake"),
+                    "connections": .document(["current": .int32(2), "available": .int32(98), "totalCreated": .int32(5)]),
+                    "opcounters": .document(["query": .int64(Int64(received.filter { $0 == "find" }.count)), "insert": .int64(0), "command": .int64(Int64(received.count))]),
+                ])
+            case "profile":
+                return ok(["was": .int32(0), "slowms": .int32(100)])
+            case "killOp":
+                killed.append(body["op"]?.int ?? -1)
+                return ok(["info": .string("attempting to kill op")])
             case "ping", "buildInfo":
                 return ok(name == "buildInfo" ? ["version": .string("7.0.0-fake")] : [:])
             case "listDatabases":
@@ -124,7 +150,33 @@ final class E2EMongoServer: @unchecked Sendable {
                 return cursor(found, namespace: "\(database).\(target)", body: body)
             case "aggregate":
                 var found = data[database]?[target] ?? []
-                for stage in body["pipeline"]?.array?.compactMap(\.document) ?? [] {
+                let stages = body["pipeline"]?.array?.compactMap(\.document) ?? []
+                if stages.first?.fields.first?.key == "$currentOp" {
+                    // This connection's own operation, and another's that runs long.
+                    let ops: [BSONDocument] = [
+                        [
+                            "opid": .int32(7), "active": .bool(true), "op": .string("command"), "ns": .string("admin.$cmd.aggregate"),
+                            "client": .string("127.0.0.1:50000"), "connectionId": .int32(Self.connectionID), "appName": .string("Overterm"),
+                            "microsecs_running": .int64(150), "command": .document(["aggregate": .int32(1)]),
+                        ],
+                        [
+                            "opid": .int32(8), "active": .bool(true), "op": .string("query"), "ns": .string("shop.orders"), "client": .string("10.0.0.9:41000"),
+                            "connectionId": .int32(43), "appName": .string("report"), "microsecs_running": .int64(12_000_000),
+                            "effectiveUsers": .array([.document(["user": .string("reporter"), "db": .string("admin")])]),
+                            "command": .document(["find": .string("orders"), "filter": .document(["status": .string("open")])]),
+                        ],
+                    ]
+                    return cursor(ops, namespace: "admin.$cmd.aggregate", body: body)
+                }
+                if stages.first?.fields.first?.key == "$collStats" {
+                    let count = found.count
+                    let stats: BSONDocument = [
+                        "count": .int32(Int32(count)), "size": .int32(Int32(count * 100)), "storageSize": .int32(4096),
+                        "indexSizes": .document(["_id_": .int32(4096)]),
+                    ]
+                    return cursor([["storageStats": .document(stats)]], namespace: "\(database).\(target)", body: body)
+                }
+                for stage in stages {
                     guard let operation = stage.fields.first else { continue }
                     switch operation.key {
                     case "$match": found = matching(found, operation.value.document)
@@ -177,6 +229,10 @@ final class E2EMongoServer: @unchecked Sendable {
                         n += 1
                         for (key, value) in statement["u"]?.document?["$set"]?.document?.fields ?? [] where documents[index][key] != value {
                             documents[index][key] = value
+                            modified += 1
+                        }
+                        for key in statement["u"]?.document?["$unset"]?.document?.keys ?? [] where documents[index][key] != nil {
+                            documents[index][key] = nil
                             modified += 1
                         }
                         if !multi { break }

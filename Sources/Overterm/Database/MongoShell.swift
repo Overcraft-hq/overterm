@@ -1060,7 +1060,16 @@ enum MongoResult {
                 seen.insert(field.key)
                 if field.key == "_id" { columns.insert(field.key, at: 0) } else { columns.append(field.key) }
             }
-            for field in document.fields where types[field.key] == nil || types[field.key] == "null" { types[field.key] = field.value.typeName }
+            for field in document.fields {
+                let type = field.value.typeName
+                switch types[field.key] {
+                case nil, "null"?: types[field.key] = type
+                case let known? where known != type && type != "null" && known != "mixed":
+                    // Several types: an edit reads the value as the shell writes one.
+                    types[field.key] = "mixed"
+                default: break
+                }
+            }
         }
         var result = QueryResult()
         result.columns = columns

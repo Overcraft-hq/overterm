@@ -130,13 +130,13 @@ final class KindOperationsDriverTests: XCTestCase {
         let statement = "MATCH (n:OtEdit) RETURN n ORDER BY n.name"
         let result = try await driver.execute(statement, limit: 100)
         XCTAssertEqual(result.columns, ["elementId(n)", "age", "born", "name", "tags"])
-        guard case .success(let editable)? = await driver.editableResult(statement: statement, columns: result.columns) else {
+        guard case .success(let editable)? = try await driver.editableResult(for: statement, result: result) else {
             return XCTFail("a label's nodes are edited")
         }
         XCTAssertFalse(editable.isEditable(0), "the elementId")
         XCTAssertFalse(editable.isEditable(2), "a date's text isn't its value")
         XCTAssertTrue(editable.isEditable(1) && editable.isEditable(4))
-        guard case .failure? = await driver.editableResult(statement: "MATCH (n:OtEdit) RETURN n.name", columns: ["n.name"]) else {
+        guard case .failure? = try await driver.editableResult(for: "MATCH (n:OtEdit) RETURN n.name", result: QueryResult(columns: ["n.name"])) else {
             return XCTFail("a property's result isn't edited")
         }
 
@@ -145,8 +145,7 @@ final class KindOperationsDriverTests: XCTestCase {
         edits.set(row: 0, column: 4, to: .text(#"["a", "b'"]"#), original: #"["a"]"#)
         edits.set(row: 1, column: 3, to: .text(""), original: "Bob")
         edits.add([3: .text("Cy"), 1: .text("5")])
-        let read11 = try await driver.editStatements(edits, rows: result.rows, result: editable)
-        let statements = try XCTUnwrap(read11)
+        let statements = try await driver.editStatements(edits, rows: result.rows, result: editable)
         try await driver.apply(statements)
         let after = try await driver.execute("MATCH (n:OtEdit) RETURN n.name AS name, n.age AS age, n.tags AS tags ORDER BY n.age", limit: 10)
         XCTAssertEqual(after.rows, [["Cy", "5", nil], ["Ann", "32", #"["a","b'"]"#], ["", "40", nil]], "an empty string isn't NULL")
@@ -156,8 +155,7 @@ final class KindOperationsDriverTests: XCTestCase {
         var stale = PendingEdits()
         stale.set(row: 0, column: 1, to: .text("1"), original: again.rows[0][1])
         stale.delete(rows: [1])
-        let read12 = try await driver.editStatements(stale, rows: again.rows, result: editable)
-        let staleStatements = try XCTUnwrap(read12)
+        let staleStatements = try await driver.editStatements(stale, rows: again.rows, result: editable)
         _ = try await driver.execute("MATCH (n:OtEdit {name: 'Ann'}) DETACH DELETE n", limit: 10)
         do {
             try await driver.apply(staleStatements)
@@ -172,8 +170,7 @@ final class KindOperationsDriverTests: XCTestCase {
         let last = try await driver.execute(statement, limit: 100)
         var delete = PendingEdits()
         delete.delete(rows: Array(last.rows.indices))
-        let read13 = try await driver.editStatements(delete, rows: last.rows, result: editable)
-        try await driver.apply(try XCTUnwrap(read13))
+        try await driver.apply(try await driver.editStatements(delete, rows: last.rows, result: editable))
         let left = try await driver.execute("MATCH (n:OtEdit) RETURN count(n) AS c", limit: 1)
         XCTAssertEqual(left.rows.first?.first, "0")
         _ = try await driver.execute("MATCH (n:OtOther) DETACH DELETE n", limit: 10)

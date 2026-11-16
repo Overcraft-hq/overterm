@@ -129,7 +129,7 @@ actor SearchDriver: DatabaseDriver {
     }
 
     /// The answer's body, or the server's own words for why not.
-    private func checked(_ request: SearchRequest) async throws -> (Data, Int) {
+    func checked(_ request: SearchRequest) async throws -> (Data, Int) {
         let (data, status) = try await send(request)
         switch status {
         case 200..<300: return (data, status)
@@ -146,7 +146,7 @@ actor SearchDriver: DatabaseDriver {
         }
     }
 
-    private func json(_ path: String) async throws -> Any {
+    func json(_ path: String) async throws -> Any {
         let (data, _) = try await checked(SearchRequest(method: "GET", path: path, body: nil))
         return try JSONSerialization.jsonObject(with: data, options: [.fragmentsAllowed])
     }

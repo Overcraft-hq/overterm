@@ -246,6 +246,7 @@ final class E2ETests: XCTestCase {
     func testRedis() throws { try run("redis") }
     func testObservability() throws { try run("observability") }
     func testMongoDB() throws { try run("mongodb") }
+    func testMongoOps() throws { try run("mongoOps") }
     func testAPIGraphQL() throws { try run("apiGraphQL") }
     func testAPIMCP() throws { try run("apiMCP") }
     func testAPIGRPC() throws { try run("apiGRPC") }

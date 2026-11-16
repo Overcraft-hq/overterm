@@ -51,8 +51,12 @@ struct GrantField: Hashable, Sendable {
 
 /// What the Users page's sheets show for a kind.
 struct UserForm: Equatable, Sendable {
-    /// MySQL's account host.
-    var host = false
+    /// What names an account besides its name (`NewUser.host`), as the
+    /// Create sheet asks for it — MySQL's host, MongoDB's database it signs
+    /// in to; nil: nothing.
+    var account: String?
+    /// What that field holds when the sheet opens; nil: `NewUser`'s own.
+    var accountFill: String?
     /// PostgreSQL's "Logs in" (a group role doesn't).
     var login = false
     /// The superuser toggle's words, nil: none.
@@ -92,7 +96,7 @@ struct SQLUserStatements: UserStatementMaking {
                 GrantKind(title: "Table", fields: [GrantField(title: "Schema", fill: .schema), GrantField(title: "Table")]),
             ]
         return UserForm(
-            host: mysql, login: dialect == .postgres, superuser: mysql ? nil : "Superuser", createDatabases: !mysql,
+            account: mysql ? "Host (% is any)" : nil, login: dialect == .postgres, superuser: mysql ? nil : "Superuser", createDatabases: !mysql,
             createRoles: dialect == .postgres, validUntil: !mysql,
             passwordNote: dialect == .postgres
                 ? "The password is sent as its SCRAM-SHA-256 verifier — never in the clear, and never kept here."

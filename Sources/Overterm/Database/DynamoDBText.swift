@@ -92,7 +92,10 @@ enum DynamoItems {
                     row.append(nil)
                     continue
                 }
-                if types[index].isEmpty, let type = value.keys.first, type != "NULL" { types[index] = type }
+                if let type = value.keys.first, type != "NULL" {
+                    // Several types: an edit reads the value from its JSON.
+                    if types[index].isEmpty { types[index] = type } else if types[index] != type { types[index] = "mixed" }
+                }
                 row.append(text(value))
             }
             rows.append(row)

@@ -399,22 +399,45 @@ enum SearchResults {
         let sources = shown.map { ($0["_source"] as? [String: Any]) ?? flatFields($0["fields"]) }
         let fields = keys(of: sources)
         let hasScore = shown.contains { !($0["_score"] is NSNull) && $0["_score"] != nil }
-        var columns = ["_index", "_id"] + (hasScore ? ["_score"] : [])
+        // What an edit finds a hit again by: its version (`seq_no_primary_term`), its routing.
+        let meta = ["_seq_no", "_primary_term", "_routing"].filter { name in shown.contains { $0[name] != nil && !($0[name] is NSNull) } }
+        var columns = ["_index", "_id"] + (hasScore ? ["_score"] : []) + meta
+        var types = ["string", "string"] + (hasScore ? ["number"] : []) + meta.map { $0 == "_routing" ? "string" : "number" }
         columns += fields
+        types += fields.map { field in jsonType(sources.compactMap { $0[field] }) }
         var rows: [[String?]] = []
         for (hit, source) in zip(shown, sources) {
             var row: [String?] = [cell(hit["_index"]), cell(hit["_id"])]
             if hasScore { row.append(cell(hit["_score"])) }
+            row += meta.map { cell(hit[$0]) }
             row += fields.map { cell(source[$0]) }
             rows.append(row)
         }
-        var result = QueryResult(columns: columns, types: columns.map { _ in "" }, rows: rows)
+        var result = QueryResult(columns: columns, types: types, rows: rows)
         result.truncated = list.count > limit || (total.map { $0.0 > shown.count || $0.1 } ?? false)
         var message = "\(said)\(took)"
         if shown.count < (total?.0 ?? 0) { message += ", \(shown.count) shown — \"size\" in the body for more" }
         if object["aggregations"] != nil { message += "; aggregations too — \"size\": 0 shows them" }
         result.message = message + "."
         return result
+    }
+
+    /// The JSON type of a field's values — string, number, boolean, object,
+    /// array —, "mixed" for several, "" when every one is null: how an
+    /// edited cell's text is read back (`SearchEdits`).
+    static func jsonType(_ values: [Any]) -> String {
+        var found: Set<String> = []
+        for value in values {
+            switch value {
+            case is NSNull: continue
+            case is String: found.insert("string")
+            case let number as NSNumber: found.insert(CFGetTypeID(number) == CFBooleanGetTypeID() ? "boolean" : "number")
+            case is [Any]: found.insert("array")
+            case is [String: Any]: found.insert("object")
+            default: found.insert("mixed")
+            }
+        }
+        return found.count == 1 ? found.first! : found.isEmpty ? "" : "mixed"
     }
 
     /// `fields`' values are arrays of one: said as the one.

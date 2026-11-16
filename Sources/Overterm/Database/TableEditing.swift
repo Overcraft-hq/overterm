@@ -35,6 +35,8 @@ struct SQLDialect: Equatable, Sendable {
         switch cell {
         case .null: "NULL"
         case .text(let text): literal(text)
+        // Only a document's field is removed; a SQL column has its default.
+        case .absent: "DEFAULT"
         }
     }
 
@@ -49,6 +51,10 @@ struct SQLDialect: Equatable, Sendable {
 enum CellValue: Equatable, Hashable, Sendable {
     case null
     case text(String)
+    /// No value, not even null: a document's or an item's field removed
+    /// (MongoDB's `$unset`, DynamoDB's REMOVE) — offered only where
+    /// `EditableResult.removesFields`.
+    case absent
 
     init(_ text: String?) { self = text.map(CellValue.text) ?? .null }
 
@@ -199,6 +205,12 @@ struct EditableResult: Equatable {
     var columns: [String]
     /// Where each key column is in the result.
     var keyIndexes: [Int]
+    /// A row is a document or an item: a cell's field can be removed, not
+    /// only set to null (`CellValue.absent`).
+    var removesFields = false
+    /// Each column's type as the engine said it — how a document kind reads
+    /// a value typed into a cell (`QueryResult.types`); empty for SQL.
+    var types: [String] = []
 
     /// The result's columns against the table's catalog columns and its key.
     static func match(resultColumns: [String], tableColumns: [String], key: TableKey) -> Result<EditableResult, EditRefusal> {

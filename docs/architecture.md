@@ -1768,18 +1768,49 @@ operation at a time (`exclusive`, as Redis's): a Save's transaction is
 BEGIN, its statements, COMMIT, and a read of the Server page between
 them would run inside it.
 
-A kind whose words aren't SQL's fills three small hooks, each with a
-default that is the SQL engines' way: `sessionStops` (how a session is
-stopped, as the menu and the confirmation say it — Neo4j's TERMINATE
-TRANSACTION, Redis's CLIENT KILL, RabbitMQ's connection closed),
-`editableResult`/`editStatements` (whether a result is edited and its
-Save's statements — a graph's nodes), `userStatements()` (an
-`UserStatementMaking`: the statements, or requests, its Users page
-makes, and what its sheets ask — `SQLUserStatements` wraps
-`UserStatements` for the SQL engines). A request-shaped user change
-(RabbitMQ's, InfluxDB 2's) is a `UserRequest` line, `METHOD /api/path
-{json}`, `NEW` before it where it must not replace what is there. A
-size that counts things rather than bytes (nodes, relationships) says
+A kind whose words aren't SQL's — Neo4j, InfluxDB, RabbitMQ, Redis
+(`Neo4jOperations`, `InfluxDBOperations`, `RabbitMQOperations`,
+`RedisOperations`), MongoDB and DocumentDB, Elasticsearch and OpenSearch,
+DynamoDB (`MongoOperations`, `SearchOperations`, `DynamoDBOperations`) —
+fills a few hooks, each with a default that is the SQL engines' way:
+
+- `sessionStops` — how a session is stopped, as `SessionStop`s: the menu
+  item, the confirmation's question, what is sent, what it does (Neo4j's
+  TERMINATE TRANSACTION, Redis's CLIENT KILL, RabbitMQ's connection
+  closed, MongoDB's `killOp` — an operation, never its session —, a
+  search task's `_cancel`); empty, none offered (DynamoDB); nil, the SQL
+  engines' two (`SessionStop.sql`: cancel the statement, terminate the
+  session).
+- `editableResult(for:result:)` finds a result's rows itself — a graph's
+  nodes, a find's documents, a search's hits, a SELECT's items — and their
+  key (`TableKey.Kind.identity`, said as given: `elementId`, `_id`,
+  `_index and _id`, a partition and sort key) with each column's type
+  (`EditableResult.types`, from `QueryResult.types` — a column of several
+  types is `mixed`); nil, the SQL way (`EditableQuery`, `key(of:)`, the
+  catalog's columns). `editStatements` makes the Save's statements in the
+  kind's console language (SQL's default: `EditStatements` in
+  `editDialect`), each with its `terminator` in the listing
+  (`EditStatement.listing`: `;`, or a blank line after a JSON body) and a
+  `note` the confirmation says once (Neo4j's "its relationships go too");
+  `editSaveNote` says how they run together. Each statement is written as
+  its console writes it and read back by the console's own parser to run —
+  what the preview shows is what runs. A document's field can be removed,
+  not only set to null (`CellValue.absent`, the grid's Remove Field, where
+  `EditableResult.removesFields`).
+- `userStatements()` — a `UserStatementMaking` (`UserStatementMaking.swift`):
+  the statements, or requests, its Users page makes, and what its sheets
+  ask (`UserForm`: an account field — MySQL's host, MongoDB's database it
+  signs in to, filled with the connection's —, toggles, grant kinds, the
+  password note; `offers` which buttons a user or role gets;
+  `roleCandidates`). `SQLUserStatements` wraps `UserStatements` for the SQL
+  engines; `Neo4jUserStatements`, `InfluxUserStatements`,
+  `Influx2UserStatements`, `RabbitUserStatements`, `RedisUserStatements`,
+  `MongoUserStatements`, `SearchUserStatements` are the others'. A
+  request-shaped user change (RabbitMQ's, InfluxDB 2's) is a `UserRequest`
+  line, `METHOD /api/path {json}`, `NEW` before it where it must not
+  replace what is there.
+
+A size that counts things rather than bytes (nodes, relationships) says
 its `unit`.
 
 ### Server page (monitoring)
@@ -1849,6 +1880,37 @@ offered on the page's own session (the driver refuses it too).
   does: INFO, CLIENT LIST (CLIENT KILL; its own client marked), SLOWLOG
   GET with the same command line together and AUTH's and ACL's secrets
   masked.
+- **MongoDB**: `serverStatus` (version, uptime, connections of current +
+  available, opcounters, the WiredTiger cache used, memory, network) and
+  hello's topology; `$currentOp` with `allUsers` (this user's own without
+  the inprog privilege; the page's own operation by hello's
+  `connectionId`; a command's `pwd` and secret-named fields masked; an
+  operation with no client is a daemon) — cancelled with `killOp`, no
+  session ended; the profiler of the console's database (`system.profile`,
+  its last 1,000 entries summed by namespace, kind and query hash, shown as
+  shapes — every value `?`), `$queryStats` first where the server has it,
+  the profiler off said with `runCommand({ profile: 1, slowms: 100 })`;
+  waits from `$currentOp`'s `waitingForLock` — MongoDB doesn't say on
+  whom, so the blocker named is the longest-running operation holding an
+  exclusive lock on the same database, else "?"; sizes from `listDatabases`
+  and each collection's `$collStats` (collStats on DocumentDB), the console's
+  database, 100 collections at most. **DocumentDB** (not tested against a
+  cluster): `currentOp` with `$all`; no Slow Queries (its profiler writes to
+  CloudWatch Logs) and no Locks — the overview says so.
+- **Elasticsearch, OpenSearch**: `_cluster/health`, `_nodes/stats` (the
+  fullest heap, the busiest CPU, disk), hot_threads' headline lines;
+  `_tasks?detailed` (the listing's own task marked; cancelled with
+  `POST /_tasks/<id>/_cancel`, an id checked to be `node:number`); the
+  search slow log is the nodes' files, not readable over the API — said,
+  with each index's thresholds and the `_settings` line that sets one;
+  OpenSearch's Query Insights (`_insights/top_queries?type=latency`) where
+  installed, its record off said with the cluster setting; `_cat/indices`
+  by store size. No Locks.
+- **DynamoDB**: no sessions, slow-query record or locks: the overview
+  (region, tables, `DescribeLimits`) and Sizes — each table's
+  `DescribeTable` (items, size, billing, capacity, status, GSIs and LSIs as
+  indexes), `DescribeTimeToLive`, `DescribeContinuousBackups` (PITR); 100
+  tables at most. Consumed capacity is CloudWatch's — said.
 
 ### Editing rows
 
@@ -1897,6 +1959,34 @@ driver doesn't edit, offers nothing.
   the confirmation says so). Each statement `RETURN count(n)`, all in one
   explicit transaction (`/db/<db>/tx`), each checked to count 1, else
   rolled back. Over the transactional API only.
+- **MongoDB, DocumentDB** (`MongoEdits`): a `find()` on one collection —
+  not an aggregate, not a projection that computes — whose `_id` is shown
+  and of one type. A cell is a top-level field: `$set` to a value or null,
+  `$unset` by Remove Field; a field with a dot or a leading `$` refused (a
+  path, an operator); a new document `insertOne` (its `_id` made at run
+  time unless set), a deleted one `deleteOne`, an `_id` never changed. Typed
+  text is read by its column's type (a string as itself, an int an int, a
+  date its ISO time, an ObjectId its hex), else as the shell writes a value.
+  Each write must find exactly its document; on a replica set, mongos or
+  DocumentDB all go in one transaction (`lsid`, `txnNumber`,
+  `commitTransaction`), on a standalone server one by one — the
+  confirmation says which.
+- **Elasticsearch, OpenSearch** (`SearchEdits`): a `_search`'s hits, found
+  by `_index` and `_id` (and `_routing`); with `"seq_no_primary_term": true`
+  (Select Top asks for it) on the version read — `if_seq_no`,
+  `if_primary_term`, a 409 said as changed since read. `_update` with `doc`,
+  a painless script where a field is removed; `POST /<index>/_doc`, or
+  `_create/<id>` when the new row's `_id` is set, into its `_index` cell or
+  the one index the search named; `DELETE`. Each `refresh=wait_for`, so the
+  hits read again show it; no transactions — one by one, said. A `_source`
+  filter refuses (a part of each document). Values by the field's JSON type.
+- **DynamoDB** (`DynamoEdits`): a `SELECT` from a table (not an index) whose
+  partition and sort key are shown, in PartiQL run by `ExecuteTransaction`
+  (100 statements at most): `UPDATE … SET … REMOVE … WHERE` the key and each
+  edited scalar as read, `INSERT … VALUE` (fails where the key is taken),
+  `DELETE … WHERE` the key — PartiQL checks no condition of a missing item,
+  so one already gone is a no-op. S, N, BOOL, NULL; a map,
+  list or set as JSON; a binary attribute read only.
 - **Not edited**: InfluxDB — a point isn't updated in place (a write of
   the same series and time overwrites it) and a delete is by time range
   and predicate, never a row; RabbitMQ — messages aren't rows; Redis — a
@@ -1969,6 +2059,27 @@ list, never typed), shown in the sheet as it will run, asked
   refused over one that exists; a row revoked whole (nocommands,
   resetkeys, resetchannels, clearselectors); ACL DELUSER. Changes are the
   running server's — ACL SAVE or CONFIG REWRITE keeps them (said).
+- **MongoDB, DocumentDB** (`MongoUserStatements`): `usersInfo` with
+  `forAllDBs` (else the auth database's), custom roles by `rolesInfo` —
+  never `showCredentials`; a user is `name@database` (`DatabaseUser.host`
+  carries the database). Grants: its roles (each revocable) and what they
+  give by resource (`showPrivileges`; DocumentDB's roles alone). Grant… is
+  a built-in role on a database (admin's cluster-wide ones too); Grant
+  Role… one of the server's own. `createUser`, `updateUser` (the password,
+  once, inside the command — the server keeps its SCRAM verifiers),
+  `grantRolesToUser`, `revokeRolesFromUser`, `dropUser`/`dropRole`, as
+  `db.getSiblingDB(…).runCommand({…})`.
+- **Elasticsearch** (`SearchUserStatements`): `_security/user` and
+  `_security/role` (a password never in either answer); a user's grants are
+  its roles' cluster and index privileges. Create (`POST`), change password
+  (`_password`), Grant Role/revoke by writing the user's roles whole (its
+  name and email kept), `DELETE`. **OpenSearch**: the security plugin's
+  `internalusers` (its `hash` never read), `roles`, `rolesmapping` — mapped
+  roles said, not changed; a user's own `opendistro_security_roles` and its
+  password by `PATCH`. Security off, or a user without `manage_security`
+  (OpenSearch: the REST API's admin), is said. No Grant…: privileges are
+  roles'.
+- **DynamoDB** has no users of its own (IAM's): no page.
 
 ### Saved queries
 

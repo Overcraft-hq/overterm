@@ -202,7 +202,10 @@ struct ResultGrid: NSViewRepresentable {
                 menu.addItem(ClosureMenuItem("Set to NULL", enabled: canEdit) { [weak self] in self?.set(row: row, column: column, to: .null) })
                 menu.addItem(ClosureMenuItem("Set to Empty String", enabled: canEdit) { [weak self] in self?.set(row: row, column: column, to: .text("")) })
                 if case .added = place {
-                    menu.addItem(ClosureMenuItem("Set to DEFAULT", enabled: canEdit) { [weak self] in self?.set(row: row, column: column, to: nil) })
+                    let title = editable.removesFields ? "Leave Unset" : "Set to DEFAULT"
+                    menu.addItem(ClosureMenuItem(title, enabled: canEdit) { [weak self] in self?.set(row: row, column: column, to: nil) })
+                } else if editable.removesFields {
+                    menu.addItem(ClosureMenuItem("Remove Field", enabled: canEdit) { [weak self] in self?.set(row: row, column: column, to: .absent) })
                 }
                 menu.addItem(.separator())
             }
@@ -360,6 +363,10 @@ final class GridCell: NSTableCellView {
             color = .tertiaryLabelColor
         case nil:
             text = "DEFAULT"
+            color = .tertiaryLabelColor
+            font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
+        case .absent?:
+            text = "(removed)"
             color = .tertiaryLabelColor
             font = NSFontManager.shared.convert(font, toHaveTrait: .italicFontMask)
         }

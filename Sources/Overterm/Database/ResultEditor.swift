@@ -38,18 +38,22 @@ final class ResultEditor: ObservableObject {
     /// The rows as they were read (the run's), in the result's order.
     var rows: [[String?]] { console?.runs.first { $0.id == runID }?.result?.rows ?? [] }
     private var resultColumns: [String] { console?.runs.first { $0.id == runID }?.result?.columns ?? [] }
+    private var result: QueryResult? { console?.runs.first { $0.id == runID }?.result }
 
-    /// One table, its key, its columns matched to the result's.
+    /// One table, its key, its columns matched to the result's — or, a kind
+    /// whose rows are documents or items, as its driver finds them.
     func resolve() async {
         guard let driver = session.editing else { return state = .refused("") }
-        dialect = await driver.editDialect()
-        // A kind of its own (a graph's nodes) says it, else the SQL way.
-        if let own = await driver.editableResult(statement: sql, columns: resultColumns) {
-            switch own {
-            case .success(let result): state = .editable(result)
-            case .failure(let refusal): state = .refused(refusal.message)
+        if let result {
+            do {
+                switch try await driver.editableResult(for: sql, result: result) {
+                case .success(let editable)?: return state = .editable(editable)
+                case .failure(let refusal)?: return state = .refused(refusal.message)
+                case nil: break
+                }
+            } catch {
+                return state = .refused(error.localizedDescription)
             }
-            return
         }
         let query: EditableQuery
         switch EditableQuery.parse(sql) {
@@ -110,21 +114,17 @@ final class ResultEditor: ObservableObject {
         error = nil
     }
 
-    /// What a Save would run, in order.
+    /// What a Save would run, in order, in the engine's own words.
     func statements() async throws -> [EditStatement] {
-        guard let result = editable else { return [] }
-        if let driver = session.editing, let own = try await driver.editStatements(edits, rows: rows, result: result) { return own }
-        return try EditStatements.make(edits, rows: rows, result: result, dialect: dialect)
+        guard let result = editable, let driver = session.editing else { return [] }
+        return try await driver.editStatements(edits, rows: rows, result: result)
     }
-
-    private var dialect = SQLDialect.postgres
 
     /// The statements as the preview shows them, or why they can't be made.
     func preview() async -> String {
-        if let driver = session.editing { dialect = await driver.editDialect() }
         do {
             let statements = try await statements()
-            return statements.isEmpty ? "Nothing to save." : statements.map { $0.sql + ";" }.joined(separator: "\n")
+            return statements.isEmpty ? "Nothing to save." : EditStatement.listing(statements)
         } catch let refusal as EditRefusal {
             return refusal.message
         } catch {
@@ -135,7 +135,6 @@ final class ResultEditor: ObservableObject {
     /// Asked with every statement shown; applied together; the rows read again.
     func save() async {
         guard let driver = session.editing, let console, !edits.isEmpty, !saving else { return }
-        dialect = await driver.editDialect()
         let statements: [EditStatement]
         do {
             statements = try await self.statements()
@@ -143,18 +142,24 @@ final class ResultEditor: ObservableObject {
             self.error = (error as? EditRefusal)?.message ?? error.localizedDescription
             return
         }
-        // A kind of its own names its table (a label) as it is.
-        let table =
-            editable.map { result in
-                if case .identity = result.key.kind { return result.key.table.name }
-                return dialect.qualified(result.key.table)
-            } ?? ""
+        // A kind of its own (a label, a collection) names its table as it is:
+        // its database, then its name.
+        var table = ""
+        if let key = editable?.key {
+            if case .identity = key.kind {
+                table = [key.table.schema, key.table.name].compactMap { $0 }.joined(separator: ".")
+            } else {
+                table = await driver.editDialect().qualified(key.table)
+            }
+        }
+        // Each statement's own note (a node's relationships go too) once,
+        // then how they run together.
         var notes: [String] = []
         for note in statements.compactMap(\.note) where !notes.contains(note) { notes.append(note) }
+        let note = await driver.editSaveNote()
         let confirmation = WriteConfirmation(
             title: "Save \(edits.count) change\(edits.count == 1 ? "" : "s") to \(table)?", scope: session.connection.name,
-            detail: statements.map { $0.sql + ";" }.joined(separator: "\n") + notes.map { "\n\n" + $0 }.joined()
-                + "\n\nIn one transaction: if any statement fails, none is kept.",
+            detail: EditStatement.listing(statements) + notes.map { "\n\n" + $0 }.joined() + "\n\n" + note,
             button: "Save")
         guard await console.confirmWrite(confirmation) else { return }
         saving = true

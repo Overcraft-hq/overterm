@@ -163,7 +163,8 @@ extension Neo4jDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
 
     func key(of table: TableName) async throws -> TableKey? { nil }
 
-    func editableResult(statement: String, columns: [String]) async -> Result<EditableResult, EditRefusal>? {
+    func editableResult(for statement: String, result: QueryResult) async throws -> Result<EditableResult, EditRefusal>? {
+        let columns = result.columns
         guard let query = Neo4jEdits.nodeQuery(statement) else { return .failure(.said(Neo4jEdits.refusal)) }
         guard api == .transactional else { return .failure(.said("Nodes are edited over Neo4j's transactional HTTP API, which this server has off.")) }
         let keyColumn = Neo4jEdits.keyColumn(query.variable)
@@ -194,7 +195,7 @@ extension Neo4jDriver: DatabaseMonitoring, DatabaseTableEditing, DatabaseUserMan
         return types
     }
 
-    func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement]? {
+    func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement] {
         let database = result.key.table.schema ?? self.database
         let types = try await propertyTypes(label: result.key.table.name, database: database)
         return try Neo4jEdits.statements(edits, rows: rows, result: result, types: types, use: database == self.database ? nil : database)
@@ -670,7 +671,7 @@ enum Neo4jEdits {
             for column in cells.keys.sorted() {
                 let target = "n." + property(result.columns[column])
                 switch cells[column] ?? .null {
-                case .null:
+                case .null, .absent:  // a property is null by being absent
                     guard result.isEditable(column) else { throw EditRefusal.unknownColumn(result.columns[column]) }
                     removes.append(target)
                 case .text(let text): sets.append(target + " = " + (try value(column, text)))

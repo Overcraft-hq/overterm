@@ -200,8 +200,8 @@ protocol DatabaseMonitoring: DatabaseDriver {
     /// `integrity_check`); nil where it has none.
     func integrityCheck() async throws -> String?
     /// How a session is stopped on this kind, as the menu and the
-    /// confirmation say it; nil: the SQL engines' two (cancel the statement,
-    /// terminate the session).
+    /// confirmation say it — MongoDB's killOp, a search task's cancel; empty:
+    /// none offered; nil: the SQL engines' two (`SessionStop.sql`).
     static func sessionStops(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop]?
 }
 
@@ -219,6 +219,29 @@ struct SessionStop: Equatable, Sendable {
     /// What it does.
     var effect: String
     var button: String
+}
+
+extension SessionStop {
+    /// Who a session is and what it runs, as a confirmation says it.
+    static func said(_ session: DatabaseActivity) -> String {
+        [session.user, session.database, session.client].compactMap { $0 }.joined(separator: " · ") + "\n"
+            + OpsText.statement(session.statement, limit: 400)
+    }
+
+    /// The SQL engines' two: cancel the statement, terminate the session.
+    static func sql(for session: DatabaseActivity, kind: DatabaseKind) -> [SessionStop] {
+        let mysql = kind == .mysql || kind == .mariadb
+        return [
+            SessionStop(
+                terminate: false, menu: "Cancel Statement…", title: "Cancel session \(session.id)'s statement?",
+                command: mysql ? "KILL QUERY \(session.id)" : "pg_cancel_backend(\(session.id))",
+                effect: said(session) + "\n\nThe statement stops; the session stays.", button: "Cancel Statement"),
+            SessionStop(
+                terminate: true, menu: "Terminate Session…", title: "End session \(session.id)?",
+                command: mysql ? "KILL \(session.id)" : "pg_terminate_backend(\(session.id))",
+                effect: said(session) + "\n\nIts connection is closed; what it hadn't committed is rolled back.", button: "Terminate"),
+        ]
+    }
 }
 
 extension DatabaseMonitoring {
@@ -248,7 +271,9 @@ struct TableKey: Equatable, Sendable {
         case unique(String)
         /// SQLite's rowid, for a rowid table without a primary key.
         case rowid
-        /// What the engine gives each row itself: a node's `elementId`.
+        /// A row's own identity, not a SQL table's key, said as the engine
+        /// says it: a node's `elementId`, a document's `_id`, a search hit's
+        /// `_index` and `_id`, a DynamoDB item's partition and sort key.
         case identity(String)
     }
 
@@ -284,6 +309,14 @@ struct EditStatement: Equatable, Sendable {
     /// What the Save's confirmation says of it beside the statement (a
     /// node's relationships deleted with it).
     var note: String?
+    /// What ends it in a listing: `;`, or a blank line after a request
+    /// whose body is JSON (Elasticsearch's).
+    var terminator = ";"
+
+    /// Statements as the preview and the confirmation list them.
+    static func listing(_ statements: [EditStatement]) -> String {
+        statements.map { $0.sql + $0.terminator }.joined(separator: "\n")
+    }
 }
 
 /// A driver whose results can be edited: it finds a table's key, and
@@ -301,18 +334,27 @@ protocol DatabaseTableEditing: DatabaseDriver {
     /// expects; any failure rolls back all of them. Refused on a read-only
     /// connection.
     func apply(_ statements: [EditStatement]) async throws
-    /// A kind whose rows aren't a SQL table's (a graph's nodes) says itself
-    /// whether a result is edited — nil: the SQL way (`EditableQuery`, the
-    /// table's key, its catalog columns).
-    func editableResult(statement: String, columns: [String]) async -> Result<EditableResult, EditRefusal>?
-    /// …and makes a Save's statements; nil: `EditStatements` in `editDialect`.
-    func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement]?
+    /// A kind whose statements aren't SQL (documents, items, hits) finds its
+    /// rows itself: the result's key and columns, or why not. nil: the SQL
+    /// way — `EditableQuery`, `key(of:)`, the catalog's columns.
+    func editableResult(for statement: String, result: QueryResult) async throws -> Result<EditableResult, EditRefusal>?
+    /// The statements a Save runs, in its own console language — what the
+    /// preview and the confirmation show, and what `apply` runs.
+    func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement]
+    /// What the confirmation says of how they run together.
+    func editSaveNote() async -> String
 }
 
 extension DatabaseTableEditing {
     static func editsRows(_ kind: DatabaseKind) -> Bool { true }
-    func editableResult(statement: String, columns: [String]) async -> Result<EditableResult, EditRefusal>? { nil }
-    func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement]? { nil }
+
+    func editableResult(for statement: String, result: QueryResult) async throws -> Result<EditableResult, EditRefusal>? { nil }
+
+    func editStatements(_ edits: PendingEdits, rows: [[String?]], result: EditableResult) async throws -> [EditStatement] {
+        try EditStatements.make(edits, rows: rows, result: result, dialect: await editDialect())
+    }
+
+    func editSaveNote() async -> String { "In one transaction: if any statement fails, none is kept." }
 }
 
 // MARK: Users and roles

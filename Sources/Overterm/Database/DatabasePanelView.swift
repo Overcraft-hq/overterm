@@ -284,8 +284,9 @@ private struct ConnectionTree: View {
 
     private func select(_ table: CatalogTable, limit: Int) -> String {
         if connection.kind.isMongo { return MongoText.find(table.name, in: table.schema, limit: limit) }
-        // An index's documents, as Kibana's Dev Tools asks for them.
-        if connection.kind.isSearch { return "GET /\(table.name)/_search\n{\n  \"size\": \(limit)\n}" }
+        // An index's documents, as Kibana's Dev Tools asks for them — with
+        // their versions, which an edit of them is made on.
+        if connection.kind.isSearch { return "GET /\(table.name)/_search\n{\n  \"size\": \(limit),\n  \"seq_no_primary_term\": true\n}" }
         return DatabaseKind.browseStatement(connection, table: table, limit: limit) ?? "SELECT * FROM \(qualified(table)) LIMIT \(limit);"
     }
 

@@ -228,31 +228,10 @@ struct DatabaseServerView: View {
             Button("Copy Session ID") { RedisChrome(theme: theme).copy(session.id) }
             if model.canCancel, !session.isOwn {
                 Divider()
-                ForEach(stops(for: session), id: \.menu) { stop in Button(stop.menu) { ask(stop, session) } }
+                ForEach(model.stops(for: session), id: \.menu) { stop in Button(stop.menu) { ask(stop, session) } }
             }
         }
         .accessibilityIdentifier("session-\(session.id)")
-    }
-
-    /// How a session is stopped here: the kind's own ways, else the SQL engines' two.
-    private func stops(for session: DatabaseActivity) -> [SessionStop] {
-        guard let kind = model.session?.connection.kind else { return [] }
-        if let type = DatabaseDrivers.driverType(of: kind) as? any DatabaseMonitoring.Type, let own = type.sessionStops(for: session, kind: kind) {
-            return own
-        }
-        let mysql = kind == .mysql || kind == .mariadb
-        let who = [session.user, session.database, session.client].compactMap { $0 }.joined(separator: " · ")
-        let said = "\(who)\n\(OpsText.statement(session.statement, limit: 400))"
-        return [
-            SessionStop(
-                terminate: false, menu: "Cancel Statement…", title: "Cancel session \(session.id)'s statement?",
-                command: mysql ? "KILL QUERY \(session.id)" : "pg_cancel_backend(\(session.id))", effect: said + "\n\nThe statement stops; the session stays.",
-                button: "Cancel Statement"),
-            SessionStop(
-                terminate: true, menu: "Terminate Session…", title: "End session \(session.id)?",
-                command: mysql ? "KILL \(session.id)" : "pg_terminate_backend(\(session.id))",
-                effect: said + "\n\nIts connection is closed; what it hadn't committed is rolled back.", button: "Terminate"),
-        ]
     }
 
     private func ask(_ stop: SessionStop, _ session: DatabaseActivity) {
@@ -334,7 +313,7 @@ struct DatabaseServerView: View {
                                         ?? .some(DatabaseActivity(id: wait.blocking, user: wait.blockingUser, statement: wait.blockingStatement)),
                                     !blocker.isOwn
                                 {
-                                    ForEach(stops(for: blocker), id: \.menu) { stop in Button("The Blocker: " + stop.menu) { ask(stop, blocker) } }
+                                    ForEach(model.stops(for: blocker), id: \.menu) { stop in Button("The Blocker: " + stop.menu) { ask(stop, blocker) } }
                                 }
                             }
                         }
@@ -647,8 +626,8 @@ private struct CreateUserSheet: View {
             title: "New \(form.noun) on \(model.name)", preview: preview, end: model.dialect != nil ? ";" : "", button: "Create…", close: close, go: go
         ) {
             TextField("Name", text: $user.name).textFieldStyle(.roundedBorder).accessibilityIdentifier("newUserName")
-            if form.host {
-                TextField("Host (% is any)", text: $user.host).textFieldStyle(.roundedBorder)
+            if let account = form.account {
+                TextField(account, text: $user.host).textFieldStyle(.roundedBorder)
             }
             SecureField("Password", text: $user.password).textFieldStyle(.roundedBorder)
             SecureField("Password again", text: $again).textFieldStyle(.roundedBorder)
@@ -665,6 +644,10 @@ private struct CreateUserSheet: View {
                 TextField("Valid until (yyyy-MM-dd, empty: forever)", text: $user.validUntil).textFieldStyle(.roundedBorder)
             }
             Text(verbatim: form.passwordNote).font(.system(size: 10.5)).foregroundStyle(.secondary)
+        }
+        .onAppear {
+            // MongoDB's account is a name in a database: the one it signs in to.
+            if let fill = maker.form.accountFill { user.host = fill }
         }
     }
 

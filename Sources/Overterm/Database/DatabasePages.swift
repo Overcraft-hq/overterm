@@ -75,6 +75,16 @@ final class DatabaseServerModel: ObservableObject {
     /// Sessions are cancelled only where the connection writes.
     var canCancel: Bool { session?.connection.readOnly == false }
 
+    /// How a session is stopped here: the kind's own ways (none: not
+    /// offered), else the SQL engines' two.
+    func stops(for activity: DatabaseActivity) -> [SessionStop] {
+        guard let kind = session?.connection.kind else { return [] }
+        if let type = DatabaseDrivers.driverType(of: kind) as? any DatabaseMonitoring.Type, let own = type.sessionStops(for: activity, kind: kind) {
+            return own
+        }
+        return SessionStop.sql(for: activity, kind: kind)
+    }
+
     func show(_ session: DatabaseSession) {
         if self.session?.id != session.id {
             overview = nil

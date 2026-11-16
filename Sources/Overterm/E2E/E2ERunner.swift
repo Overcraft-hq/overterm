@@ -39,6 +39,7 @@ final class E2ERunner {
         "redis": { await $0.redisScenario() },
         "observability": { await $0.observabilityScenario() },
         "mongodb": { await $0.mongoScenario() },
+        "mongoOps": { await $0.mongoOpsScenario() },
         "suspend": { await $0.suspendScenario() },
         "databaseAgent": { await $0.databaseAgentScenario() },
         "databaseTunnel": { await $0.databaseTunnelScenario() },
