@@ -442,6 +442,11 @@ final class ActivityAttributionTests: XCTestCase {
         XCTAssertEqual(ProcessRole.of(name: "swift-build", command: "swift-build", listensTCP: false), .build)
         XCTAssertEqual(ProcessRole.of(name: "cargo", command: "cargo build", listensTCP: false), .build)
         XCTAssertEqual(ProcessRole.of(name: "python3", command: "python3 -m pytest", listensTCP: false), .build)
+        XCTAssertTrue(ProcessRole.mentionsMCP("node /opt/acme/MCP.js"))
+        XCTAssertTrue(ProcessRole.mentionsMCP("npx @ModelContextProtocol/server-fake"))
+        XCTAssertFalse(ProcessRole.mentionsMCP("node /opt/acme/m-c-p.js"))
+        let helper = "fake-helper " + String(repeating: "--flag ", count: 1_000) + "fake-mcp"
+        XCTAssertEqual(ProcessRole.of(name: "fake-helper", command: helper, listensTCP: false), .other, "past the first 4 KB of flags, not read")
         XCTAssertEqual(ProcessRole.mcp.counted(12), "12 MCP")
         XCTAssertEqual(ProcessRole.shell.counted(1), "1 shell")
     }

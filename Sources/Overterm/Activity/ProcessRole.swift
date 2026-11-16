@@ -29,13 +29,25 @@ enum ProcessRole: String, Hashable, Sendable, CaseIterable {
 
     static let shells: Set<String> = ["zsh", "bash", "sh", "dash", "fish", "ksh"]
     static let packageRunners: Set<String> = ["npm", "pnpm", "yarn", "bun"]
+    static let builders: Set<String> = ["cargo", "xcodebuild", "pytest"]
 
     /// `name`'s role, its masked `command` read word by word, `listensTCP`
     /// whether it holds a TCP listener now.
     static func of(name: String, command: String?, listensTCP: Bool) -> ProcessRole {
-        let words = (command ?? "").split(separator: " ").map(String.init)
-        let base = words.first.map { ($0 as NSString).lastPathComponent } ?? name
-        if isMCP(name) || words.contains(where: isMCP) { return .mcp }
+        let command = command ?? ""
+        // An app's helper carries kilobytes of flags: its words are split
+        // only where `mcp` occurs at all, and only the first few are read.
+        if isMCP(name)
+            || (mentionsMCP(command)
+                && command.utf8.prefix(scanLimit).split(separator: UInt8(ascii: " ")).contains { word in
+                    isMCP(String(decoding: word, as: UTF8.self))
+                })
+        {
+            return .mcp
+        }
+        // Bytes, not characters: an argv's first words, past none of its rest.
+        let words = command.utf8.split(separator: UInt8(ascii: " "), maxSplits: 4).prefix(4).map { String(decoding: $0, as: UTF8.self) }
+        let base = words.first.map(ActivityAttribution.fileName) ?? name
         if shells.contains(name) || shells.contains(base),
             words.dropFirst().contains(where: { $0 == "-c" || $0 == "-lc" || $0 == "-ic" || $0 == "-cl" })
         {
@@ -46,17 +58,49 @@ enum ProcessRole: String, Hashable, Sendable, CaseIterable {
         return .other
     }
 
+    /// Whether `text` holds `needle` whatever its case: `strcasestr` over
+    /// the string's own bytes, no copy of a native string.
+    static func contains(_ text: String, _ needle: String) -> Bool {
+        text.withCString { haystack in needle.withCString { strcasestr(haystack, $0) != nil } }
+    }
+
+    /// The bytes of an argv a role is read from: an MCP server says so in
+    /// its first words; past them an Electron helper's kilobytes of flags.
+    static let scanLimit = 4_096
+
+    /// Whether the first `scanLimit` bytes of `command` hold `mcp` or
+    /// `modelcontextprotocol`, whatever their case: one pass, no copy.
+    static func mentionsMCP(_ command: String) -> Bool {
+        func scan(_ bytes: UnsafeBufferPointer<UInt8>) -> Bool {
+            let count = min(bytes.count, scanLimit)
+            var index = 0
+            while index + 2 < count {
+                let byte = bytes[index] | 0x20
+                if byte == UInt8(ascii: "m"), bytes[index + 1] | 0x20 == UInt8(ascii: "c"), bytes[index + 2] | 0x20 == UInt8(ascii: "p") { return true }
+                if byte == UInt8(ascii: "m"), index + 20 <= count,
+                    String(decoding: UnsafeBufferPointer(rebasing: bytes[index..<(index + 20)]), as: UTF8.self).lowercased() == "modelcontextprotocol"
+                {
+                    return true
+                }
+                index += 1
+            }
+            return false
+        }
+        return command.utf8.withContiguousStorageIfAvailable(scan) ?? Array(command.utf8.prefix(scanLimit)).withUnsafeBufferPointer(scan)
+    }
+
     /// A word naming an MCP server: `mcp` one of its alphanumeric runs, or
     /// the protocol's own scope.
     static func isMCP(_ word: String) -> Bool {
         let lower = word.lowercased()
         if lower.contains("@modelcontextprotocol/") || lower.contains("mcp-server") { return true }
+        guard lower.contains("mcp") else { return false }
         return lower.split(whereSeparator: { !$0.isLetter && !$0.isNumber }).contains("mcp")
     }
 
     private static func isBuild(name: String, base: String, words: [String]) -> Bool {
         let rest = Array(words.dropFirst())
-        if ["cargo", "xcodebuild", "pytest"].contains(name) || ["cargo", "xcodebuild", "pytest"].contains(base) { return true }
+        if builders.contains(name) || builders.contains(base) { return true }
         if packageRunners.contains(base) || packageRunners.contains(name) {
             return rest.first == "test" || (rest.first == "run" && rest.dropFirst().first == "test")
         }

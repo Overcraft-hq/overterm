@@ -150,13 +150,18 @@ struct ActivityAttribution: Sendable {
         let context: ActivityContext
         let inputs: Inputs
         var owners: [ActivityProcessID: ActivityOwner] = [:]
-
-        var table: ProcessTable { snapshot.table }
+        let table: ProcessTable
+        /// The panes' logins, and Overterm's helpers as the tick found them.
+        let logins: Set<ActivityProcessID>
+        let helpers: Set<ActivityProcessID>
 
         init(snapshot: ActivitySnapshot, context: ActivityContext, inputs: Inputs) {
             self.snapshot = snapshot
             self.context = context
             self.inputs = inputs
+            table = snapshot.table
+            logins = Set(snapshot.panes.compactMap(\.login)).union(context.panes.compactMap(\.login))
+            helpers = Set(snapshot.helpers)
         }
 
         func title(of tab: UUID) -> String { inputs.tabs[tab]?.title ?? "" }
@@ -188,7 +193,6 @@ struct ActivityAttribution: Sendable {
         /// or 7; the rest is the pane's. Rules 1, 2 and 6 still win.
         mutating func placePanes() {
             let appPID = context.appPID
-            let helpers = Set(snapshot.helpers)
             var sets: [(slice: ActivityPaneSlice, set: ActivityPaneSet)] = []
             for slice in snapshot.panes {
                 let terminal = context.panes.first { $0.tag == slice.tag }?.terminal
@@ -328,6 +332,9 @@ struct ActivityAttribution: Sendable {
                 return "kubectl port-forward to \(forward.target) Overterm started\(from)"
             }
             if let tunnel = context.tunnels.first(where: { $0.pid == process.pid && $0.pid > 0 }) { return "the database tunnel “\(tunnel.name)”" }
+            // The tick's own list of the app's children and below, where it
+            // read the panes; else the walk up.
+            if !snapshot.helpers.isEmpty || snapshot.demand.readsPanes, !helpers.contains(identity) { return nil }
             guard let root = helperRoot(identity) else { return nil }
             if root != identity, let parentReason = owners[root]?.reason, owners[root]?.place == .overterm { return parentReason }
             return "\(name(root)), started by Overterm"
@@ -335,7 +342,6 @@ struct ActivityAttribution: Sendable {
 
         /// The app's child above `identity` that isn't a pane's `login`.
         func helperRoot(_ identity: ActivityProcessID) -> ActivityProcessID? {
-            let logins = Set(snapshot.panes.compactMap(\.login)).union(context.panes.compactMap(\.login))
             var current = identity
             for _ in 0..<512 {
                 guard let parent = table.parent(of: current) else { return nil }
@@ -356,7 +362,7 @@ struct ActivityAttribution: Sendable {
             let held = (facts?.sockets?.listeners ?? []).filter { socket in
                 context.published.contains { ActivityAttribution.matches(socket, $0) }
             }
-            let file = facts?.path.map { ($0 as NSString).lastPathComponent } ?? process.shortName
+            let file = facts?.path.map(ActivityAttribution.fileName) ?? process.shortName
             let known = ActivityAttribution.engineHolders[file] ?? ActivityAttribution.engineHolders[facts?.name ?? process.shortName]
             if !held.isEmpty {
                 let containers = Set(context.published.filter { published in held.contains { ActivityAttribution.matches($0, published) } }.map(\.container))
@@ -381,8 +387,8 @@ struct ActivityAttribution: Sendable {
             {
                 return ActivityOwner(place: .anotherOverterm, rule: 10, reason: "a tab of another Overterm")
             }
-            if let path = facts?.path, let bundle = ActivityPaneSet.appBundle(of: path), let app = ActivityAttribution.appName(of: bundle),
-                app.hasPrefix("Overterm"), (path as NSString).lastPathComponent == "Overterm"
+            if let path = facts?.path, ProcessRole.contains(path, "overterm"), let bundle = ActivityPaneSet.appBundle(of: path), let app = ActivityAttribution.appName(of: bundle),
+                app.hasPrefix("Overterm"), ActivityAttribution.fileName(path) == "Overterm"
             {
                 return ActivityOwner(place: .anotherOverterm, rule: 10, reason: "\(app)")
             }
@@ -458,7 +464,7 @@ struct ActivityAttribution: Sendable {
         /// responsible — unknown signing never matches — or a known agent.
         func macOS(_ process: ActivityProcess, _ facts: ActivityFacts?) -> ActivityOwner? {
             guard let facts, facts.codeSigning?.isPlatformBinary == true else { return nil }
-            let file = facts.path.map { ($0 as NSString).lastPathComponent } ?? facts.name
+            let file = facts.path.map(ActivityAttribution.fileName) ?? facts.name
             if let known = ActivityAttribution.appleAgents[file] ?? ActivityAttribution.appleAgents[facts.name] {
                 return ActivityOwner(place: .macOS, rule: 14, reason: known)
             }
@@ -535,11 +541,17 @@ struct ActivityAttribution: Sendable {
     /// The outermost `.app` on `path`, by its name without `.app`: a string
     /// walk bounded by its components, nothing read.
     static func appName(of path: String?) -> String? {
-        guard let path else { return nil }
+        guard let path, ProcessRole.contains(path, ".app") else { return nil }
         for part in path.split(separator: "/", omittingEmptySubsequences: true) where part.hasSuffix(".app") && part.count > 4 {
             return String(part.dropLast(4))
         }
         return nil
+    }
+
+    /// A path's last component, without Foundation.
+    static func fileName(_ path: String) -> String {
+        guard let slash = path.lastIndex(of: "/") else { return path }
+        return String(path[path.index(after: slash)...])
     }
 
     /// `OVERTERM_RUN`'s `<kind>.<pid>.<start>` (D-15): the run it names.
@@ -554,12 +566,12 @@ struct ActivityAttribution: Sendable {
 
     /// A terminal's name (`ttys003`), kept for the app's life.
     static func deviceName(_ device: dev_t) -> String? {
-        if let known = devices.withLock({ deviceNames[device] }) { return known }
+        if let known = devices.withLock({ deviceNames[device] }) { return known.isEmpty ? nil : known }
         var buffer = [CChar](repeating: 0, count: 64)
-        guard devname_r(device, S_IFCHR, &buffer, Int32(buffer.count)) != nil else { return nil }
-        let name = String(cString: buffer)
-        guard !name.isEmpty, name != "??" else { return nil }
+        var name = devname_r(device, S_IFCHR, &buffer, Int32(buffer.count)) != nil ? String(cString: buffer) : ""
+        if name == "??" { name = "" }
+        // A device with no name is kept as none: never asked again.
         devices.withLock { deviceNames[device] = name }
-        return name
+        return name.isEmpty ? nil : name
     }
 }
