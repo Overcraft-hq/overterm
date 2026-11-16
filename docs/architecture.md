@@ -908,10 +908,15 @@ walks the closing panes' trees itself, on the main thread, at the close
   the full tick: CPU a core between two reads, memory in Activity
   Monitor's terms). It wants the full level only while it is the page on
   screen in a window that shows, and gives it back when hidden: then it
-  reads nothing and builds no rows. Its rows are made off the main thread
-  (`ActivityRows`, pure) from each full snapshot; a first sample's CPU is
-  "—". In an isolated run it lists only the run's own tabs' processes, the
-  Mac as counts (design 9.9). Each row says its name, pid, CPU and tab to
+  reads nothing and builds no rows — a setting or a sort changed then
+  included — and its rows go with the want, so shown again it says
+  "Reading…" until a fresh tick's rows land. Its rows are made off the
+  main thread (`ActivityRows`, pure) from each full snapshot, the Started
+  column's words with them; a first sample's CPU is "—", and so are the
+  meters' cores after a gap longer than a rate may span. A tab's title is
+  masked as a command (design 9.3) before the Where column says it. In an
+  isolated run it lists only the run's own tabs' processes, the Mac as
+  counts (design 9.9). Each row says its name, pid, CPU and tab to
   VoiceOver (`ResourceTable`'s `accessibilityLabel`). Settings ▸ Activity
   holds `activity.enabled`, `interval` (the census's cadence, the light
   tick's too), `everyone` and `appServices`.
@@ -920,8 +925,12 @@ walks the closing panes' trees itself, on the main thread, at the close
   the full level every second while the palette shows it, page or no
   page, and stocks its rows until a read has rates, then keeps them as
   ranked — the palette re-ranks on a reorder, which would move the
-  selection. ↩ shows the row on the page; ⌥↩ opens a port where
-  Settings ▸ Browser says, or goes to a process's tab.
+  selection. It follows the palette's scope: held on Activity's tab,
+  reached by ⌃⌘A or ⇥, let go on any other; with Activity off ⌘K has no
+  such tab. ↩ shows the row on the page; ⌥↩ opens a port where
+  Settings ▸ Browser says, or goes to a process's tab. Activity:
+  Listening (`activity.listening`, View menu, no key by default) opens
+  the page on its ports.
 
 ## Agents
 
