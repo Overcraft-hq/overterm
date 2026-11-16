@@ -104,6 +104,7 @@ extension E2ERunner {
         check("and below the list, what Listening doesn't read", noted)
         await activityListening(tab: tab, server: row)
         await activityVerbAndLinkChecks(tab: tab, server: row)
+        await activitySignalChecks(tab: tab)
         check("1 is Processes again", page.press("1") && page.section == .processes)
 
         // Hidden again: its want given back, no full tick for 3 s.

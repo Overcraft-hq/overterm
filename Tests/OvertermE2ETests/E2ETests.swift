@@ -349,7 +349,9 @@ final class E2ETests: XCTestCase {
     func testPalette() throws { try run("palette") }
     func testReorder() throws { try run("reorder") }
     func testInfo() throws { try run("info") }
-    func testActivity() throws { try run("activity") }
+    /// Its stage 2 verbs' checks (a Stop's five-second watches among them)
+    /// take it past the default two minutes on a busy Mac.
+    func testActivity() throws { try run("activity", timeout: 240) }
     /// The Activity page at this Mac's process count, from a fake of that
     /// size: the census's CPU a tick, rows made, shown, held and scrolled.
     func testActivityPerf() throws {

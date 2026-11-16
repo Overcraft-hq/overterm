@@ -10,7 +10,7 @@ import Darwin
 /// page at a row. Checks say ports, pids and counts of the run's own.
 extension E2ERunner {
     /// The sheet on the window: its texts and buttons.
-    private func activitySheet() -> (texts: [String], buttons: [String]) {
+    func activitySheet() -> (texts: [String], buttons: [String]) {
         guard let root = window.attachedSheet?.contentView else { return ([], []) }
         var texts: [String] = []
         var buttons: [String] = []
@@ -29,7 +29,7 @@ extension E2ERunner {
     }
 
     /// Answers the sheet on the window: its first button, or Cancel.
-    private func answerActivitySheet(_ code: NSApplication.ModalResponse) {
+    func answerActivitySheet(_ code: NSApplication.ModalResponse) {
         if let sheet = window.attachedSheet { window.endSheet(sheet, returnCode: code) }
     }
 
