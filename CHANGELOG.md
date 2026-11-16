@@ -6,6 +6,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
+## 1.6.1 — 2026-11-16
+
+- api: GraphQL — New GraphQL Request; the server's schema read by introspection (with the request's URL, headers and auth) into a Schema tab to browse and filter; the query completed from it as it is typed — fields, arguments, types
+
 ## 1.6.0 — 2026-11-13
 
 - kubernetes: Kubernetes beside the terminal (⌥⌘J) — your kubeconfig's contexts, production marked in red everywhere and writable like any other context, each change asked — a context's `writable: false` makes it read-only; every kind and custom resource as a live list in the server's own columns, several namespaces at once, k9s's keys and `:` bar, ⌃⌘J for a context, namespace or pod, and an Overview of the cluster as cards

@@ -84,6 +84,11 @@ final class E2EEchoServer: @unchecked Sendable {
                 connection, status: 200, headers: ["Content-Type": "text/plain"], body: Data((request.headers["cookie"] ?? "").utf8))
         case "/openapi.json":
             return respond(connection, status: 200, headers: ["Content-Type": "application/json"], body: Data(Self.openAPI.utf8))
+        case "/graphql":
+            // Introspection answers the schema; any other query, a user.
+            let isIntrospection = String(decoding: request.body, as: UTF8.self).contains("__schema")
+            let answer = isIntrospection ? Self.graphQLSchema : #"{"data":{"user":{"name":"Ada","posts":[{"title":"Hello"}]}}}"#
+            return respond(connection, status: 200, headers: ["Content-Type": "application/json"], body: Data(answer.utf8))
         default:
             let echo: [String: Any] = [
                 "method": request.method, "path": path, "query": query, "headers": request.headers,
@@ -102,6 +107,49 @@ final class E2EEchoServer: @unchecked Sendable {
         data.append(body)
         connection.send(content: data, completion: .contentProcessed { _ in connection.cancel() })
     }
+
+    /// A small schema, as a server's introspection answers: Query.user(id)
+    /// → User { name, posts → [Post!]! }, Mutation.rename, a Role enum.
+    static let graphQLSchema: String = {
+        func named(_ kind: String, _ name: String) -> [String: Any] { ["kind": kind, "name": name, "ofType": NSNull()] }
+        func nonNull(_ inner: [String: Any]) -> [String: Any] { ["kind": "NON_NULL", "name": NSNull(), "ofType": inner] }
+        func list(_ inner: [String: Any]) -> [String: Any] { ["kind": "LIST", "name": NSNull(), "ofType": inner] }
+        func field(_ name: String, _ type: [String: Any], args: [[String: Any]] = [], description: String? = nil) -> [String: Any] {
+            ["name": name, "type": type, "args": args, "description": description ?? NSNull(), "isDeprecated": false, "deprecationReason": NSNull()]
+        }
+        func argument(_ name: String, _ type: [String: Any]) -> [String: Any] {
+            ["name": name, "type": type, "description": NSNull(), "defaultValue": NSNull()]
+        }
+        func object(_ name: String, _ fields: [[String: Any]], description: String? = nil) -> [String: Any] {
+            [
+                "kind": "OBJECT", "name": name, "description": description ?? NSNull(), "fields": fields, "inputFields": NSNull(),
+                "interfaces": [], "enumValues": NSNull(), "possibleTypes": NSNull(),
+            ]
+        }
+        let id = nonNull(named("SCALAR", "ID"))
+        let string = named("SCALAR", "String")
+        let types: [[String: Any]] = [
+            object("Query", [field("user", named("OBJECT", "User"), args: [argument("id", id)], description: "One user, by id"), field("users", nonNull(list(nonNull(named("OBJECT", "User")))))]),
+            object("Mutation", [field("rename", named("OBJECT", "User"), args: [argument("id", id), argument("name", nonNull(string))])]),
+            object("User", [field("id", id), field("name", string), field("role", named("ENUM", "Role")), field("posts", nonNull(list(nonNull(named("OBJECT", "Post")))))]),
+            object("Post", [field("title", string), field("author", named("OBJECT", "User"))]),
+            [
+                "kind": "ENUM", "name": "Role", "description": NSNull(), "fields": NSNull(), "inputFields": NSNull(), "interfaces": NSNull(),
+                "enumValues": [["name": "ADMIN"], ["name": "MEMBER"]], "possibleTypes": NSNull(),
+            ],
+            ["kind": "SCALAR", "name": "ID", "description": NSNull(), "fields": NSNull(), "inputFields": NSNull(), "interfaces": NSNull(), "enumValues": NSNull(), "possibleTypes": NSNull()],
+            ["kind": "SCALAR", "name": "String", "description": NSNull(), "fields": NSNull(), "inputFields": NSNull(), "interfaces": NSNull(), "enumValues": NSNull(), "possibleTypes": NSNull()],
+            object("__Schema", []),
+        ]
+        let schema: [String: Any] = [
+            "data": [
+                "__schema": [
+                    "queryType": ["name": "Query"], "mutationType": ["name": "Mutation"], "subscriptionType": NSNull(), "types": types,
+                ]
+            ]
+        ]
+        return String(decoding: (try? JSONSerialization.data(withJSONObject: schema)) ?? Data(), as: UTF8.self)
+    }()
 
     static let openAPI = """
         {

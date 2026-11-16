@@ -238,6 +238,31 @@ extension BruFile {
 
     // MARK: New files
 
+    /// What a new request is: Bruno's request types.
+    enum RequestKind: String, Sendable {
+        case http, graphql
+
+        var title: String {
+            switch self {
+            case .http: "HTTP"
+            case .graphql: "GraphQL"
+            }
+        }
+    }
+
+    /// A new GraphQL request, as Bruno writes one: POSTed, its query a body.
+    static func newGraphQLRequest(name: String, url: String = "", seq: Int) -> BruFile {
+        var file = BruFile()
+        file.setPairs(
+            "meta", [BruPair(key: "name", value: name), BruPair(key: "type", value: "graphql"), BruPair(key: "seq", value: String(seq))])
+        file.setPairs(
+            "post", [BruPair(key: "url", value: url), BruPair(key: "body", value: "graphql"), BruPair(key: "auth", value: "inherit")],
+            keepEmpty: true)
+        file.setText("body:graphql", "query {\n  \n}")
+        file.setPairs("settings", [BruPair(key: "encodeUrl", value: "true")])
+        return file
+    }
+
     /// A new request file, laid out as Bruno writes one.
     static func newRequest(name: String, method: String = "get", url: String = "", seq: Int) -> BruFile {
         var file = BruFile()

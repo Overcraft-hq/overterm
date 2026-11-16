@@ -24,6 +24,7 @@ final class E2ERunner {
         "editor": { await $0.editorScenario() },
         "api": { await $0.apiScenario() },
         "apiImport": { await $0.apiImportScenario() },
+        "apiGraphQL": { await $0.apiGraphQLScenario() },
         "notes": { await $0.notesScenario() },
         "drawing": { await $0.drawingScenario() },
         "review": { await $0.reviewScenario() },

@@ -89,13 +89,17 @@ struct APIRequestView: View {
     private var requestPane: some View {
         VStack(spacing: 0) {
             APITabBar(
-                tabs: APIRequestModel.RequestTab.allCases.map { ($0.id, $0.title, model.count($0)) },
+                tabs: model.tabs.map { ($0.id, $0.title, model.count($0)) },
                 selection: Binding(get: { model.requestTab.id }, set: { model.requestTab = APIRequestModel.RequestTab(rawValue: $0) ?? .params }),
                 theme: theme)
             Group {
                 switch model.requestTab {
                 case .params: params
                 case .body: APIBodyEditor(model: model, theme: theme)
+                case .schema:
+                    if let workspace = model.workspace {
+                        GraphQLSchemaView(model: model, workspace: workspace, theme: theme)
+                    }
                 case .headers:
                     APIPairsEditor(
                         pairs: binding(\.headers), keyPlaceholder: "Header", valuePlaceholder: "Value", addTitle: "Add Header", theme: theme)
@@ -437,7 +441,12 @@ struct APIBodyEditor: View {
             APICodeView(text: bodyText(model.file.bodyMode), language: language, accessibilityIdentifier: "apiBody")
         case .graphql:
             VSplitView {
-                APICodeView(text: bodyText(.graphql), language: nil, accessibilityIdentifier: "apiGraphQL").frame(minHeight: 80)
+                APICodeView(
+                    text: bodyText(.graphql), language: nil, accessibilityIdentifier: "apiGraphQL",
+                    complete: { [weak model] before in model?.graphQLCompletions(before: before) ?? [] }
+                )
+                .frame(minHeight: 80)
+                .onAppear { model.workspace?.loadGraphQLSchema(model.file, at: model.url) }
                 VStack(alignment: .leading, spacing: 0) {
                     APISectionTitle(title: "Variables", theme: theme)
                     APICodeView(
