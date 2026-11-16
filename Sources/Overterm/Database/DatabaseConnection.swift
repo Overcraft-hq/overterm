@@ -278,6 +278,9 @@ struct DatabaseConnection: Codable, Identifiable, Equatable, Hashable, Sendable 
             return nil
         default:
             if host.trimmingCharacters(in: .whitespaces).isEmpty { return "The host, please." }
+            if kind == .oracle, database.trimmingCharacters(in: .whitespaces).isEmpty {
+                return location == OracleDriver.sidMarker ? "The SID, please." : "The service name, please — FREEPDB1, XEPDB1, ORCLPDB1…"
+            }
             if kind == .redis, !database.isEmpty, Int(database).map({ $0 >= 0 }) != true { return "The database is a number: 0, 1, 2…" }
             if let port, !(1...65535).contains(port) { return "The port is 1 to 65535." }
             if sshEnabled, sshHost.trimmingCharacters(in: .whitespaces).isEmpty { return "The SSH host, please." }

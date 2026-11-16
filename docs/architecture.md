@@ -1333,7 +1333,7 @@ in it, and `.obsidian/` is read for where things go, never written.
 
 A database client beside the terminal, DataGrip's work in the sidebar and
 the editor: PostgreSQL, MySQL, MariaDB, SQLite, Redshift, ClickHouse, BigQuery,
-Redis, MongoDB and Amazon DocumentDB, DynamoDB, InfluxDB, Neo4j, Prometheus, Loki and Tempo, and Elasticsearch and OpenSearch (Settings ▸ Database turns it off; its rows fetched and asking before a
+Redis, MongoDB and Amazon DocumentDB, DynamoDB, InfluxDB, Neo4j, Oracle, Prometheus, Loki and Tempo, and Elasticsearch and OpenSearch (Settings ▸ Database turns it off; its rows fetched and asking before a
 destroying statement are there too).
 
 - **Connections** (`DatabaseConnection`, `DatabaseStore`): a name, a kind,
@@ -1629,7 +1629,7 @@ Tested against mariadb:11.4 (`DatabaseDriverTests.testMariaDB`).
   3 Core and Neo4j 5 in `Scripts/database-test-servers.sh` with
   `OVERTERM_DB_TESTS=1`.
 
-### RabbitMQ (the management API, a console language of ours); Kafka not yet
+### RabbitMQ (the management API, a console language of ours); not Kafka
 
 - **RabbitMQ** (`RabbitMQDriver`, `RabbitMQText`): the management plugin's
   HTTP API (15672, 15671 with TLS; Path for one behind a proxy), Basic
@@ -1663,7 +1663,7 @@ Tested against mariadb:11.4 (`DatabaseDriverTests.testMariaDB`).
   (Bitnami's `RABBITMQ_USERNAME`…), else `guest`. Tested: `RabbitMQTests`,
   against `rabbitmq:3-management` with `Scripts/database-test-servers.sh
   queues` and `OVERTERM_DB_TESTS=1`.
-- **Kafka** stays `PendingDriver`. The rule is a maintained Swift package
+- **Kafka** is not offered (not a kind). The rule is a maintained Swift package
   or nothing, and `swift-kafka-client` doesn't fit yet: 1.0.0 (and
   1.0.0-beta.1) need swift-tools 6.2.3 and macOS 15; the last that builds
   with Swift 6.1 for macOS 13, 1.0.0-alpha.9, links librdkafka against the
@@ -1673,6 +1673,67 @@ Tested against mariadb:11.4 (`DatabaseDriverTests.testMariaDB`).
   C module is a target, not a product, so not reachable either). When
   the package's macOS floor allows 13 again (or the app's moves to 15)
   with the BoringSSL build 1.0.0 has, it fits.
+
+### Oracle Database
+
+- **The driver** (`OracleDriver`): OracleNIO (`lovetodream/oracle-nio`,
+  TNS on SwiftNIO, Apache-2.0 — no Instant Client), its tracing trait off;
+  on NIOPosix's loop, as Network.framework's waits out the timeout on a
+  refused port. Host, port, user, password; the Database field is the
+  **service name**, or a SID when "Connect by" says so (`location` is
+  `sid`). TLS is TCPS from the first byte (Oracle doesn't negotiate, so
+  Prefer is plain): Require doesn't check the certificate, Verify Full
+  checks it against the host (the tunnel's `serverName`). An Easy Connect
+  string pasted fills the form (`OracleAddress`: `host:port/service`,
+  `//host/service`, `tcps://…`, `host:port:SID`, JDBC's thin URL, and
+  SQL*Plus's `user/password@…` — its password to the keychain); a
+  `(DESCRIPTION=…)` descriptor isn't spread. A failure is said: a refused
+  login (ORA-01017), locked or expired, nothing at the port, the listener
+  closing before sign-in — a service it doesn't serve (OracleNIO reads the
+  listener's REFUSE as the connection closing), TLS.
+- **The console** (`OracleText`, pure): as SQL*Plus splits it — SQL ends at
+  `;`; a PL/SQL block (`BEGIN`, `DECLARE`, `<<label>>`, `CREATE …
+  PROCEDURE/FUNCTION/PACKAGE/TRIGGER/TYPE/…`) keeps its `;`s and ends at a
+  line of `/` alone, or the text's end; `'…'`, `q'[…]'`, `"…"`, `--` and
+  `/* */` skipped, `#` a name's letter. SQL is sent without its `;`, a block
+  with its last one; `EXEC p(…)` is `BEGIN p(…); END;`; `DESC [owner.]t`
+  is answered from ALL_TAB_COLUMNS as SQL*Plus lays it out. Each
+  statement commits itself (`autoCommit`). After a block, DBMS_OUTPUT's
+  lines (enabled before the first) follow "PL/SQL procedure successfully
+  completed." in the message. History puts a `/` after a block.
+- **Values as text** (`OracleValueText`, pure, from the bytes): NUMBER
+  exactly (base-100 digits, never through a Double), DATE `2024-02-29`
+  (with a time when it has one), TIMESTAMP to its nanoseconds, WITH TIME
+  ZONE at its own offset, intervals as Oracle writes them, RAW in hex,
+  BINARY_FLOAT/DOUBLE, BOOLEAN. LOBs are fetched as locators: a CLOB's
+  first 200 characters and its length (the first 50 CLOBs of a result;
+  the rest by length), a BLOB by its size — never dumped whole. JSON,
+  VECTOR and objects are named, with the function that shows them. An
+  empty read's columns come from `DBMS_SQL.DESCRIBE_COLUMNS3` (parsed,
+  never run — OracleNIO describes none without rows).
+- **Reads and writes**: SELECT, WITH and DESC read — not with `FOR
+  UPDATE`; a block, EXEC, DML and DDL write. A read-only connection
+  refuses the rest before sending, and runs each read inside `SET
+  TRANSACTION READ ONLY`, ended after it (the next read sees what was
+  committed since). Agents (`agentReads`): no write's word anywhere, no
+  `WITH FUNCTION`, no `SELECT … INTO`. Asked first: DROP, TRUNCATE,
+  DELETE or UPDATE without WHERE — inside a block too, and a DROP or
+  TRUNCATE as `EXECUTE IMMEDIATE`'s literal.
+- **The catalog**: the user's own schema first, then every one not
+  `oracle_maintained`; its tables (not nested, secondary or in the
+  recycle bin) and views; ALL_TAB_COLUMNS's columns with their types as
+  DESC says them (`VARCHAR2(40 CHAR)`, `NUMBER(12,2)`). Select Top is
+  `FETCH FIRST n ROWS ONLY`, names quoted unless upper-case.
+- **Docker**: gvenzl's `oracle-free`/`oracle-xe`, Oracle's registry's
+  `database/free|express|enterprise` and `oracle/database` (not Oracle
+  Linux or GraalVM) open as a connection — APP_USER over SYSTEM, the
+  default pluggable database (FREEPDB1, XEPDB1, ORCLPDB1) unless
+  ORACLE_DATABASE/ORACLE_PDB names one.
+- **Tested**: pure parts always (`OracleTests`); the driver — every type
+  above, the limit, PL/SQL, DESC, the catalog, read-only, a wrong
+  password, an unknown service, a closed port, TLS to a plain listener —
+  against Oracle Database Free with `Scripts/database-test-servers.sh
+  oracle` and `OVERTERM_DB_TESTS=1`.
 
 ### Saved queries
 

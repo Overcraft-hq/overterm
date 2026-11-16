@@ -85,7 +85,10 @@ extension EditorViewController {
         // A Redis command or a mongo shell statement is its line; SQL ends with a semicolon.
         // A search request ends at a blank line, so one goes before it.
         let terminator = kind.consoleText?.terminator ?? (kind.isRedis || kind.isMongo || kind.isSearch ? "" : ";")
-        let piece = (kind.isSearch ? "\n" : "") + lead + statement + (statement.hasSuffix(terminator) ? "" : terminator) + "\n"
+        // An Oracle block ends at a `/` line, as SQL*Plus has it.
+        let close = kind == .oracle && OracleText.isBlock(statement) ? (statement.hasSuffix(";") ? "" : ";") + "\n/" : nil
+        let piece =
+            (kind.isSearch ? "\n" : "") + lead + statement + (close ?? (statement.hasSuffix(terminator) ? "" : terminator)) + "\n"
         replaceText(of: buffer, with: text.replacingCharacters(in: NSRange(location: at, length: 0), with: piece))
         textView.setSelectedRange(NSRange(location: at + (lead as NSString).length, length: 0))
         textView.scrollRangeToVisible(textView.selectedRange())
@@ -170,7 +173,7 @@ extension EditorViewController {
         if session.connection.kind.isObservability {
             return updateObservabilityCompletion(session: session, buffer: buffer, caret: caret, window: window)
         }
-        let range = SQLText.statement(at: caret, in: text as String) ?? NSRange(location: 0, length: text.length)
+        let range = session.connection.kind.statement(at: caret, in: text as String) ?? NSRange(location: 0, length: text.length)
         let start = min(range.location, caret)
         let before = text.substring(with: NSRange(location: start, length: caret - start))
         let statement = text.substring(with: NSRange(location: start, length: max(NSMaxRange(range), caret) - start))

@@ -22,6 +22,10 @@ let package = Package(
         .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.46.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.15.1"),
         .package(url: "https://github.com/apple/swift-crypto.git", from: "4.5.2"),
+        // Oracle's TNS protocol, its sign-in's verifiers and TCPS: too much to
+        // write here (OracleTests runs it against Oracle Free). Pinned exactly —
+        // a release candidate; its tracing trait off, as nothing reads spans.
+        .package(url: "https://github.com/lovetodream/oracle-nio.git", exact: "1.0.0-rc.4", traits: []),
     ],
     targets: [
         // Built locally by `make ghosttykit` (Scripts/build-ghosttykit.sh); not
@@ -51,6 +55,7 @@ let package = Package(
                 .product(name: "NIOHPACK", package: "swift-nio-http2"),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "_CryptoExtras", package: "swift-crypto"),
+                .product(name: "OracleNIO", package: "oracle-nio"),
             ],
             path: "Sources/Overterm",
             linkerSettings: [

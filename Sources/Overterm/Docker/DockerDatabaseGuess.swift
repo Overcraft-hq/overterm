@@ -51,7 +51,19 @@ enum DockerDatabaseGuess {
     private static func panelOnly(words: [String]) -> (DatabaseKind, port: Int)? {
         let words = Set(words)
         guard !words.isEmpty, words.isDisjoint(with: DockerClient.toolWords) else { return nil }
+        if isOracle(words) { return (.oracle, 1521) }
         return panelOnlyWords.first { !$0.2.isDisjoint(with: words) }.map { ($0.0, $0.port) }
+    }
+
+    /// Oracle Database's images: gvenzl's (`oracle-free`, `oracle-xe`),
+    /// Oracle's own registry's (`database/free`, `database/express`,
+    /// `database/enterprise` — the registry is dropped from the words) and
+    /// the GitHub build's (`oracle/database`). "oracle" alone is no
+    /// database: Oracle Linux, GraalVM.
+    static func isOracle(_ words: Set<String>) -> Bool {
+        let editions: Set<String> = ["free", "xe", "express", "enterprise", "ee", "se", "se2"]
+        if words.contains("oracle") { return !words.isDisjoint(with: editions.union(["database"])) }
+        return words.contains("database") && !words.isDisjoint(with: ["free", "express", "enterprise"])
     }
 
     /// A container's, by the same rule as its client's: a compose
@@ -179,6 +191,24 @@ enum DockerDatabaseGuess {
                 password = "guest"
             }
             connection.database = first("RABBITMQ_DEFAULT_VHOST", "RABBITMQ_VHOST") ?? "/"
+        case .oracle:
+            // gvenzl's: the app's user in the default pluggable database
+            // (and ORACLE_DATABASE's), else SYSTEM with ORACLE_PASSWORD;
+            // Oracle's own images: SYSTEM with ORACLE_PWD.
+            let words = Set(DockerClient.imageWords(of: container, reference: reference) ?? [])
+            if let user = first("APP_USER"), let own = first("APP_USER_PASSWORD") {
+                connection.user = user
+                password = own
+            } else {
+                connection.user = "system"
+                password = first("ORACLE_PASSWORD", "ORACLE_PWD")
+            }
+            let xe = !words.isDisjoint(with: ["xe", "express"])
+            let edition = words.contains("free") ? "FREEPDB1" : xe ? (words.contains("11g") ? "XE" : "XEPDB1") : "ORCLPDB1"
+            // ORACLE_DATABASE may list several: the first.
+            let named = first("ORACLE_DATABASE", "ORACLE_PDB").map { String($0.split(separator: ",").first ?? Substring($0)) }
+            connection.database = named ?? edition
+            connection.sslMode = .disable
         case .dynamodb:
             // DynamoDB Local: any credentials, its tables a region's.
             connection.sslMode = .disable

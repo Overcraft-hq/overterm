@@ -52,6 +52,7 @@ struct DatabaseConnectionForm: View {
                 case .mongodb, .documentdb: mongoFields
                 case .prometheus, .loki, .tempo: observabilityFields
                 case .elasticsearch, .opensearch: searchFields
+                case .oracle: oracleFields
                 case .dynamodb, .influxdb, .neo4j, .rabbitmq:
                     HTTPKindFields(connection: $connection, password: $password, hasSavedPassword: hasSavedPassword) { tested = nil }
                     // AWS's DynamoDB is signed for its own host: no tunnel.
@@ -284,6 +285,36 @@ struct DatabaseConnectionForm: View {
             )
             .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(.secondary)
         }
+    }
+
+    /// Oracle's: an Easy Connect string (or a JDBC URL, or SQL*Plus's
+    /// `user/password@host/service`) pasted fills them; the Database field is
+    /// the service name, or a SID; TLS is TCPS from the first byte or off.
+    @ViewBuilder private var oracleFields: some View {
+        TextField(
+            "Connect", text: Binding(get: { "" }, set: { fillOracle(from: $0) }),
+            prompt: Text(verbatim: "Paste host:1521/FREEPDB1, tcps://host:2484/service or user@host/service"))
+        TextField("Host", text: $connection.host)
+        TextField(
+            "Port",
+            text: Binding(
+                get: { connection.port.map(String.init) ?? "" },
+                set: { connection.port = Int($0.filter(\.isNumber)) }))
+        TextField("User", text: $connection.user)
+        SecureField(hasSavedPassword ? "Password (saved — empty keeps it)" : "Password", text: $password)
+        Picker("Connect by", selection: $connection.location) {
+            Text("Service name").tag("")
+            Text("SID").tag(OracleDriver.sidMarker)
+        }
+        TextField(
+            connection.location == OracleDriver.sidMarker ? "SID" : "Service name", text: $connection.database,
+            prompt: Text(verbatim: connection.location == OracleDriver.sidMarker ? "ORCL, XE" : "FREEPDB1, XEPDB1, ORCLPDB1…"))
+        Picker("TLS", selection: $connection.sslMode) {
+            Text("Off — TCP").tag(DatabaseSSLMode.disable)
+            Text("On (TCPS) — don't check the certificate").tag(DatabaseSSLMode.require)
+            Text("On (TCPS) — verify the certificate").tag(DatabaseSSLMode.verifyFull)
+        }
+        .onAppear { if connection.sslMode == .prefer { connection.sslMode = .disable } }
         Toggle("Through an SSH tunnel", isOn: $connection.sshEnabled)
         if connection.sshEnabled { sshFields }
     }
@@ -311,6 +342,20 @@ struct DatabaseConnectionForm: View {
         if connection.name.isEmpty || connection.name == connection.kind.title {
             connection.name = MongoURL.split(url.hosts[0]).host.split(separator: ".").first.map(String.init) ?? url.hosts[0]
         }
+    }
+
+    /// An Easy Connect string, spread over the fields; its password typed
+    /// in, kept only if the connection is saved — then in the keychain.
+    private func fillOracle(from text: String) {
+        guard let address = OracleAddress.parse(text) else { return }
+        connection.host = address.host
+        connection.port = address.port ?? (address.tls ? 2484 : 1521)
+        if !address.service.isEmpty { connection.database = address.service }
+        connection.location = address.sid ? OracleDriver.sidMarker : ""
+        connection.sslMode = address.tls ? .verifyFull : .disable
+        if let user = address.user, !user.isEmpty { connection.user = user }
+        if let secret = address.password { password = secret }
+        if connection.name.isEmpty || connection.name == connection.kind.title { connection.name = address.host }
         tested = nil
     }
 

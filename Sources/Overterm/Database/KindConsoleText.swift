@@ -1,7 +1,8 @@
 import Foundation
 
 /// A console language a kind has of its own — DynamoDB's PartiQL, InfluxDB's
-/// InfluxQL/Flux/SQL and line protocol, Neo4j's Cypher: where its statements
+/// InfluxQL/Flux/SQL and line protocol, Neo4j's Cypher, Oracle's SQL and
+/// PL/SQL as SQL*Plus splits them: where its statements
 /// are and what each one does. `DatabaseKind`'s `statements`, `verb`,
 /// `onlyReads`, `agentReads`, `danger` and `subject` ask it first
 /// (`consoleText`), so every console, history and agent path follows it.
@@ -45,6 +46,7 @@ extension DatabaseKind {
         case .influxdb: InfluxText.self
         case .neo4j: CypherText.self
         case .rabbitmq: RabbitText.self
+        case .oracle: OracleText.self
         default: nil
         }
     }
@@ -57,6 +59,7 @@ extension DatabaseKind {
         case .influxdb: InfluxText.browse(table, connection: connection, limit: limit)
         case .neo4j: CypherText.browse(table, connection: connection, limit: limit)
         case .rabbitmq: RabbitText.browse(table, limit: limit)
+        case .oracle: OracleText.browse(table, limit: limit)
         default: nil
         }
     }

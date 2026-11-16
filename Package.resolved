@@ -1,5 +1,5 @@
 {
-  "originHash" : "6a23639e4a8255b78c0fa0d2e9771218a6108c7b8a0cd8f94557b19e7b0873e1",
+  "originHash" : "3c86e5288885fd94f31ae5dda983c8740f749943d2c906a975d867b1672fd62c",
   "pins" : [
     {
       "identity" : "mysql-nio",
@@ -8,6 +8,15 @@
       "state" : {
         "revision" : "57fec3f24169ed65365def42e516e579a03172ee",
         "version" : "1.9.2"
+      }
+    },
+    {
+      "identity" : "oracle-nio",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/lovetodream/oracle-nio.git",
+      "state" : {
+        "revision" : "182c0f032326b5d437f80eb991570381cb48eb02",
+        "version" : "1.0.0-rc.4"
       }
     },
     {
@@ -74,6 +83,15 @@
       }
     },
     {
+      "identity" : "swift-distributed-tracing",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-distributed-tracing.git",
+      "state" : {
+        "revision" : "cc504a45f6ce73ce6067837d7ac19fa67b229a56",
+        "version" : "1.5.0"
+      }
+    },
+    {
       "identity" : "swift-log",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-log.git",
@@ -137,12 +155,30 @@
       }
     },
     {
+      "identity" : "swift-service-context",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/apple/swift-service-context.git",
+      "state" : {
+        "revision" : "d0997351b0c7779017f88e7a93bc30a1878d7f29",
+        "version" : "1.3.0"
+      }
+    },
+    {
       "identity" : "swift-service-lifecycle",
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/swift-server/swift-service-lifecycle.git",
       "state" : {
         "revision" : "c55297914e26ce3085b73ca88c521ef99136f6ad",
         "version" : "2.12.1"
+      }
+    },
+    {
+      "identity" : "swift-syntax",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/swiftlang/swift-syntax.git",
+      "state" : {
+        "revision" : "4799286537280063c85a32f09884cfbca301b1a1",
+        "version" : "602.0.0"
       }
     },
     {

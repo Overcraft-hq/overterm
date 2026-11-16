@@ -21,6 +21,13 @@
 # its management API on :55672, user `ot` / `otpass`. Then:
 #   OVERTERM_DB_TESTS=1 swift test --filter RabbitMQTests
 # `… queues stop` removes it.
+# Oracle Database is larger still (~2.3 GB), and apart too:
+#   Scripts/database-test-servers.sh oracle
+# Oracle Database Free (gvenzl/oracle-free:slim) on :51521, service
+# FREEPDB1, user `ot` / `otpass` (its app user; SYSTEM's password `otpass`
+# too). Then:
+#   OVERTERM_DB_TESTS=1 swift test --filter OracleTests
+# `… oracle stop` removes it; `docker rmi gvenzl/oracle-free:slim` when done.
 set -euo pipefail
 
 if [[ "${1:-}" == "queues" ]]; then
@@ -38,6 +45,26 @@ if [[ "${1:-}" == "queues" ]]; then
   curl -sf -u ot:otpass "http://127.0.0.1:55672/api/overview" >/dev/null || { echo "error: RabbitMQ didn't come up" >&2; exit 1; }
   echo "==> RabbitMQ management :55672 (ot/otpass)"
   exit 0
+fi
+
+if [[ "${1:-}" == "oracle" ]]; then
+  docker rm -f ot-oracle >/dev/null 2>&1 || true
+  if [[ "${2:-}" == "stop" ]]; then
+    echo "==> stopped"
+    exit 0
+  fi
+  docker run -d --name ot-oracle -e ORACLE_PASSWORD=otpass -e APP_USER=ot -e APP_USER_PASSWORD=otpass \
+    -p 51521:1521 gvenzl/oracle-free:slim >/dev/null
+  # The image's own check: the database open and its PDB too.
+  for _ in $(seq 1 300); do
+    if docker exec ot-oracle healthcheck.sh >/dev/null 2>&1; then
+      echo "==> Oracle Database Free :51521/FREEPDB1 (ot/otpass)"
+      exit 0
+    fi
+    sleep 1
+  done
+  echo "error: Oracle didn't come up" >&2
+  exit 1
 fi
 
 if [[ "${1:-}" == "search" ]]; then
@@ -79,7 +106,7 @@ fi
 MONGO_TLS="${TMPDIR:-/tmp}/ot-mongodb-tls"
 
 if [[ "${1:-}" == "stop" ]]; then
-  docker rm -f ot-pg ot-mysql ot-mariadb ot-ch ot-mongodb ot-minio ot-ssh ot-elasticsearch ot-opensearch ot-dynamodb ot-influxdb ot-influxdb1 ot-influxdb3 ot-neo4j >/dev/null 2>&1 || true
+  docker rm -f ot-pg ot-mysql ot-mariadb ot-ch ot-mongodb ot-minio ot-ssh ot-elasticsearch ot-opensearch ot-oracle ot-rabbitmq ot-dynamodb ot-influxdb ot-influxdb1 ot-influxdb3 ot-neo4j >/dev/null 2>&1 || true
   rm -rf "$MONGO_TLS"
   docker network rm ot-net >/dev/null 2>&1 || true
   echo "==> stopped"

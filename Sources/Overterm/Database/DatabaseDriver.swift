@@ -96,7 +96,7 @@ enum DatabaseDrivers {
         case .neo4j: Neo4jDriver(connection, password: password)
         case .rabbitmq: RabbitMQDriver(connection, password: password)
         case .kafka: PendingDriver(kind: .kafka)
-        case .oracle: PendingDriver(kind: .oracle)
+        case .oracle: OracleDriver(connection, password: password)
         }
     }
 
