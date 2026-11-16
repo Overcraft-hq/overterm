@@ -39,10 +39,13 @@ enum DockerDatabaseGuess {
     }
 
     /// Images the panel speaks to that have no client of theirs to run
-    /// in the container (`DockerClient`): InfluxDB, DynamoDB Local.
+    /// in the container (`DockerClient`): InfluxDB, DynamoDB Local,
+    /// RabbitMQ — its management API, published only by an image that has
+    /// it (`rabbitmq:3-management`, Bitnami's).
     static let panelOnlyWords: [(DatabaseKind, port: Int, Set<String>)] = [
         (.influxdb, 8086, ["influxdb", "influxdb3"]),
         (.dynamodb, 8000, ["dynamodb"]),
+        (.rabbitmq, 15672, ["rabbitmq"]),
     ]
 
     private static func panelOnly(words: [String]) -> (DatabaseKind, port: Int)? {
@@ -164,6 +167,18 @@ enum DockerDatabaseGuess {
                     password = first("INFLUXDB_USER_PASSWORD")
                 }
             }
+        case .rabbitmq:
+            // The official image's variables, else Bitnami's; without them
+            // `guest`, which the image lets in from outside.
+            connection.sslMode = .disable
+            if let user = first("RABBITMQ_DEFAULT_USER", "RABBITMQ_USERNAME") {
+                connection.user = user
+                password = first("RABBITMQ_DEFAULT_PASS", "RABBITMQ_PASSWORD")
+            } else {
+                connection.user = "guest"
+                password = "guest"
+            }
+            connection.database = first("RABBITMQ_DEFAULT_VHOST", "RABBITMQ_VHOST") ?? "/"
         case .dynamodb:
             // DynamoDB Local: any credentials, its tables a region's.
             connection.sslMode = .disable

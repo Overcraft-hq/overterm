@@ -349,7 +349,7 @@ final class DatabaseModel: ObservableObject {
         let url = folder.appendingPathComponent("\(safe) — \(connection.id.uuidString.prefix(8)).sql")
         if !FileManager.default.fileExists(atPath: url.path) {
             try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            try? Data().write(to: url)
+            try? Data((connection.kind.consoleText?.help ?? "").utf8).write(to: url)
         }
         attach(url, to: connection.id)
         return url

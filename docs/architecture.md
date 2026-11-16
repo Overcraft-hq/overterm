@@ -1629,6 +1629,51 @@ Tested against mariadb:11.4 (`DatabaseDriverTests.testMariaDB`).
   3 Core and Neo4j 5 in `Scripts/database-test-servers.sh` with
   `OVERTERM_DB_TESTS=1`.
 
+### RabbitMQ (the management API, a console language of ours); Kafka not yet
+
+- **RabbitMQ** (`RabbitMQDriver`, `RabbitMQText`): the management plugin's
+  HTTP API (15672, 15671 with TLS; Path for one behind a proxy), Basic
+  auth, through `HTTPDriverTransport` like the REST kinds — TLS, the
+  tunnel, the address pasted (`KindAddress`: `http(s)://` as the API's
+  place, `amqp(s)://…/vhost` as the broker's — the vhost, the API's port,
+  443 for CloudAMQP). AMQP itself is never spoken. The vhost is the
+  connection's Database (`/` unless set). The console is `RabbitText`'s
+  language, a command a line (a payload may go on below), `#` comments —
+  a new console starts with them as its help (`KindConsoleText.help`):
+  `USE <vhost>`, `PEEK <queue> [n]` (`POST …/get` with
+  `ackmode=reject_requeue_true`: the messages stay, marked redelivered —
+  on a quorum queue a peek counts as a delivery, said; a stream refused),
+  `PUBLISH <exchange> <key> <payload>` (the payload as written; "routed"
+  or dropped, said), `PURGE <queue>`, and `GET|PUT|POST|DELETE /api/…`
+  with a JSON body below. A message is a row: payload (UTF-8, else
+  `base64:`), key, exchange, redelivered, properties and headers as JSON;
+  any other answer a row an object (`name` and the counts first), an
+  object as keys and values. The management API's counts are sampled
+  (every 5 s): PEEK's "of N" comes from the `get`'s own `message_count`,
+  PURGE says none. Read-only: only USE, PEEK and GET are sent; an agent
+  is asked about a PEEK (its messages go back redelivered, counted on a
+  quorum queue) and a GET of `/api/users`, `/api/definitions` or the
+  parameters (password hashes, a shovel's URI); PURGE and DELETE ask.
+  No `Accept` header: RabbitMQ refuses a purge that sends one (406). The
+  tree: vhosts → queues (type, ready, unacked, consumers) and
+  `exchange:<name>`s (the default one `amq.default`) → their bindings
+  with their keys, the default exchange's implied ones left out. Docker:
+  `rabbitmq` images through `panelOnlyWords` on 15672 — only an image
+  with the management plugin publishes it — with `RABBITMQ_DEFAULT_*`
+  (Bitnami's `RABBITMQ_USERNAME`…), else `guest`. Tested: `RabbitMQTests`,
+  against `rabbitmq:3-management` with `Scripts/database-test-servers.sh
+  queues` and `OVERTERM_DB_TESTS=1`.
+- **Kafka** stays `PendingDriver`. The rule is a maintained Swift package
+  or nothing, and `swift-kafka-client` doesn't fit yet: 1.0.0 (and
+  1.0.0-beta.1) need swift-tools 6.2.3 and macOS 15; the last that builds
+  with Swift 6.1 for macOS 13, 1.0.0-alpha.9, links librdkafka against the
+  system's OpenSSL found by pkg-config — Homebrew's, a dylib under
+  `/opt/homebrew` the shipped app can't count on — and its API has no
+  metadata: no topics, partitions or watermark offsets for the tree (its
+  C module is a target, not a product, so not reachable either). When
+  the package's macOS floor allows 13 again (or the app's moves to 15)
+  with the BoringSSL build 1.0.0 has, it fits.
+
 ### Saved queries
 
 Any connection's (`DatabaseModel.saved`, `Database/saved.json` in

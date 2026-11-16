@@ -52,7 +52,7 @@ struct DatabaseConnectionForm: View {
                 case .mongodb, .documentdb: mongoFields
                 case .prometheus, .loki, .tempo: observabilityFields
                 case .elasticsearch, .opensearch: searchFields
-                case .dynamodb, .influxdb, .neo4j:
+                case .dynamodb, .influxdb, .neo4j, .rabbitmq:
                     HTTPKindFields(connection: $connection, password: $password, hasSavedPassword: hasSavedPassword) { tested = nil }
                     // AWS's DynamoDB is signed for its own host: no tunnel.
                     if !(connection.kind == .dynamodb && DynamoItems.isAWS(connection.host)) {
@@ -485,7 +485,8 @@ struct DatabaseConnectionForm: View {
                     let through = tunnel == nil ? "" : " through \(connection.sshHost)"
                     let noun =
                         connection.kind.isRedis || connection.kind.isMongo || connection.kind == .influxdb || connection.kind == .neo4j
-                        ? "database" : connection.kind == .dynamodb ? "region" : connection.kind.isObservability || connection.kind.isSearch ? "folder" : "schema"
+                        ? "database"
+                        : connection.kind == .dynamodb ? "region" : connection.kind == .rabbitmq ? "vhost" : connection.kind.isObservability || connection.kind.isSearch ? "folder" : "schema"
                     tested = .success(
                         "Connected\(through) in \(Int(Date().timeIntervalSince(started) * 1000)) ms — \(schemas) \(noun)\(schemas == 1 ? "" : "s")")
                 }

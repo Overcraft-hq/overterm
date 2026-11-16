@@ -1,8 +1,9 @@
 import SwiftUI
 
-/// An address pasted into the form of DynamoDB, InfluxDB or Neo4j, spread
+/// An address pasted into the form of DynamoDB, InfluxDB, Neo4j or RabbitMQ, spread
 /// over the connection's fields: its host, port, TLS, a region from AWS's
-/// endpoint, Neo4j's `neo4j+s://` and `bolt://` as the HTTP API's place.
+/// endpoint, Neo4j's `neo4j+s://` and `bolt://` as the HTTP API's place,
+/// RabbitMQ's `amqp(s)://…/vhost` as its management API's.
 /// A password in it is handed back — the form keeps it, then the keychain.
 /// Pure.
 enum KindAddress {
@@ -18,7 +19,7 @@ enum KindAddress {
         else { return nil }
         var connection = connection
         let scheme = components.scheme?.lowercased() ?? "http"
-        let tls = scheme == "https" || scheme.hasSuffix("+s") || scheme.hasSuffix("+ssc")
+        let tls = scheme == "https" || scheme == "amqps" || scheme.hasSuffix("+s") || scheme.hasSuffix("+ssc")
         connection.host = host
         // A self-signed certificate (`+ssc`) isn't checked.
         connection.sslMode = !tls ? .disable : scheme.hasSuffix("+ssc") ? .require : .verifyFull
@@ -33,6 +34,23 @@ enum KindAddress {
             }
             let path = components.path.split(separator: "/").map(String.init)
             if path.count >= 2, path[0] == "db" { connection.database = path[1] }
+        case .rabbitmq:
+            let amqp = scheme.hasPrefix("amqp")
+            let path = components.percentEncodedPath.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            if amqp {
+                // AMQP's port says nothing of the management API's; a hosted
+                // broker (CloudAMQP) serves it on 443.
+                connection.port = host.hasSuffix(".cloudamqp.com") ? 443 : tls ? 15671 : 15672
+                connection.basePath = ""
+                // The path is the vhost, `/` as %2F — none is `/`.
+                connection.database = path.isEmpty ? "/" : path.removingPercentEncoding ?? path
+            } else {
+                connection.port = components.port ?? (tls ? 443 : 15672)
+                // The UI's address (`/#/queues`) or the API's (`/api`): the part before is a proxy's.
+                var base = path
+                if base == "api" { base = "" } else if base.hasSuffix("/api") { base = String(base.dropLast(4)) }
+                connection.basePath = base.isEmpty ? "" : "/" + base
+            }
         case .dynamodb:
             connection.port = components.port ?? (tls ? nil : 8000)
             if DynamoItems.isAWS(host) {
@@ -75,6 +93,7 @@ struct HTTPKindFields: View {
         switch connection.kind {
         case .dynamodb: dynamoFields
         case .influxdb: influxFields
+        case .rabbitmq: rabbitFields
         default: neo4jFields
         }
     }
@@ -83,6 +102,7 @@ struct HTTPKindFields: View {
         switch connection.kind {
         case .dynamodb: "Paste http://localhost:8000 or https://dynamodb.eu-west-1.amazonaws.com"
         case .influxdb: "Paste http://localhost:8086 — ?org=…&bucket=… for 2.x"
+        case .rabbitmq: "Paste http://host:15672 or amqps://user:password@host/vhost"
         default: "Paste neo4j+s://…, bolt://host:7687 or http://host:7474"
         }
     }
@@ -189,6 +209,23 @@ struct HTTPKindFields: View {
             TextField("Organization (2.x)", text: $connection.project)
             TextField("Database or bucket", text: $connection.database)
         }
+        tlsPicker
+    }
+
+    // MARK: RabbitMQ
+
+    @ViewBuilder private var rabbitFields: some View {
+        TextField("Host", text: $connection.host)
+        TextField(
+            "Management port",
+            text: Binding(
+                get: { connection.port.map(String.init) ?? "" },
+                set: { connection.port = Int($0.filter(\.isNumber)) }),
+            prompt: Text(verbatim: "15672 — 15671 with TLS; not AMQP's 5672"))
+        TextField("User", text: $connection.user, prompt: Text(verbatim: "guest"))
+        SecureField("Password" + secretPrompt, text: $password)
+        TextField("Vhost", text: $connection.database, prompt: Text(verbatim: "/"))
+        TextField("Path (behind a proxy)", text: $connection.basePath, prompt: Text(verbatim: "/rabbitmq"))
         tlsPicker
     }
 

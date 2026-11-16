@@ -16,7 +16,29 @@
 # must pass a policy `otpass` doesn't). Then:
 #   OVERTERM_DB_TESTS=1 swift test --filter SearchDriverTests
 # `… search stop` removes them; `docker rmi` the images when done.
+#
+# RabbitMQ is apart too: Scripts/database-test-servers.sh queues — 3.13 with
+# its management API on :55672, user `ot` / `otpass`. Then:
+#   OVERTERM_DB_TESTS=1 swift test --filter RabbitMQTests
+# `… queues stop` removes it.
 set -euo pipefail
+
+if [[ "${1:-}" == "queues" ]]; then
+  docker rm -f ot-rabbitmq >/dev/null 2>&1 || true
+  if [[ "${2:-}" == "stop" ]]; then
+    echo "==> stopped"
+    exit 0
+  fi
+  docker run -d --name ot-rabbitmq -e RABBITMQ_DEFAULT_USER=ot -e RABBITMQ_DEFAULT_PASS=otpass -p 55672:15672 \
+    rabbitmq:3-management >/dev/null
+  for _ in $(seq 1 90); do
+    if curl -sf -u ot:otpass "http://127.0.0.1:55672/api/overview" >/dev/null 2>&1; then break; fi
+    sleep 1
+  done
+  curl -sf -u ot:otpass "http://127.0.0.1:55672/api/overview" >/dev/null || { echo "error: RabbitMQ didn't come up" >&2; exit 1; }
+  echo "==> RabbitMQ management :55672 (ot/otpass)"
+  exit 0
+fi
 
 if [[ "${1:-}" == "search" ]]; then
   which="${2:-both}"

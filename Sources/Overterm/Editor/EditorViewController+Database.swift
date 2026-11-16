@@ -84,7 +84,8 @@ extension EditorViewController {
         let statement = sql.trimmingCharacters(in: .whitespacesAndNewlines)
         // A Redis command or a mongo shell statement is its line; SQL ends with a semicolon.
         // A search request ends at a blank line, so one goes before it.
-        let piece = (kind.isSearch ? "\n" : "") + lead + statement + (statement.hasSuffix(";") || kind.isRedis || kind.isMongo || kind.isSearch ? "" : ";") + "\n"
+        let terminator = kind.consoleText?.terminator ?? (kind.isRedis || kind.isMongo || kind.isSearch ? "" : ";")
+        let piece = (kind.isSearch ? "\n" : "") + lead + statement + (statement.hasSuffix(terminator) ? "" : terminator) + "\n"
         replaceText(of: buffer, with: text.replacingCharacters(in: NSRange(location: at, length: 0), with: piece))
         textView.setSelectedRange(NSRange(location: at + (lead as NSString).length, length: 0))
         textView.scrollRangeToVisible(textView.selectedRange())
@@ -164,7 +165,7 @@ extension EditorViewController {
         let caret = textView.selectedRange().location
         if session.connection.kind.isRedis { return updateRedisCompletion(session: session, buffer: buffer, caret: caret, window: window) }
         // Kibana's requests aren't SQL: nothing of SQL's to offer.
-        if session.connection.kind.isSearch { return false }
+        if session.connection.kind.isSearch || session.connection.kind.consoleText?.completesSQL == false { return false }
         if session.connection.kind.isMongo { return updateMongoCompletion(session: session, buffer: buffer, caret: caret, window: window) }
         if session.connection.kind.isObservability {
             return updateObservabilityCompletion(session: session, buffer: buffer, caret: caret, window: window)

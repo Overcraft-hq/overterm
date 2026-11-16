@@ -15,9 +15,20 @@ protocol KindConsoleText {
     static func agentReads(_ statement: String) -> Bool
     static func danger(of statement: String) -> String?
     static func subject(of statement: String) -> String?
+    /// What a statement inserted from the history ends with: `;`, or
+    /// nothing for a language whose statement is its line.
+    static var terminator: String { get }
+    /// Whether SQL's completion helps (Cypher, PartiQL…), or misleads.
+    static var completesSQL: Bool { get }
+    /// What a new console starts with — the language, as comments.
+    static var help: String { get }
 }
 
 extension KindConsoleText {
+    static var terminator: String { ";" }
+    static var completesSQL: Bool { true }
+    static var help: String { "" }
+
     /// The statement the caret is in — or, between two, the one it just left.
     static func statement(at caret: Int, in text: String) -> NSRange? {
         let all = statements(in: text)
@@ -33,6 +44,7 @@ extension DatabaseKind {
         case .dynamodb: DynamoText.self
         case .influxdb: InfluxText.self
         case .neo4j: CypherText.self
+        case .rabbitmq: RabbitText.self
         default: nil
         }
     }
@@ -44,6 +56,7 @@ extension DatabaseKind {
         case .dynamodb: DynamoText.browse(table.name)
         case .influxdb: InfluxText.browse(table, connection: connection, limit: limit)
         case .neo4j: CypherText.browse(table, connection: connection, limit: limit)
+        case .rabbitmq: RabbitText.browse(table, limit: limit)
         default: nil
         }
     }

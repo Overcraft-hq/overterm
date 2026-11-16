@@ -158,6 +158,16 @@ enum DatabaseMCP {
             if tables.count > 300 { out += "\n… \(tables.count - 300) more; db_schema with “table” for one." }
             return out
         }
+        if session.connection.kind == .rabbitmq {
+            guard !tables.isEmpty else { return "Vhost \(schema) has no queues or exchanges. Vhosts: \(session.schemas.joined(separator: ", "))" }
+            var out = "Vhost \(schema) (others: \(session.schemas.filter { $0 != schema }.joined(separator: ", "))); `PEEK <queue> [n]` reads a queue's messages\n"
+            for table in tables.prefix(500) {
+                let bindings = session.columns(of: table.name, in: schema).prefix(50).map { "\($0.name) key \($0.type)" }
+                out += "\n- \(table.name) [\(table.detail ?? "")]\(bindings.isEmpty ? "" : " " + bindings.joined(separator: ", "))"
+            }
+            if tables.count > 500 { out += "\n… \(tables.count - 500) more." }
+            return out
+        }
         if session.connection.kind.isRedis {
             guard !tables.isEmpty else { return "\(schema) has no keys. Databases with keys: \(session.schemas.joined(separator: ", "))" }
             return "Keys in \(schema) (first \(tables.count), by SCAN; `VIEW key` reads one):\n" + tables.map { "- \($0.name)" }.joined(separator: "\n")
@@ -215,13 +225,13 @@ enum DatabaseMCP {
                 "schema": [
                     "type": "string",
                     "description":
-                        "The schema (dataset in BigQuery, database in MySQL/MariaDB/ClickHouse/MongoDB, db0… in Redis — its keys, up to 1000; indices, data streams or aliases in Elasticsearch/OpenSearch, each with its mapping's fields; the region in DynamoDB — tables with their keys and indexes; a database or bucket in InfluxDB — measurements with fields and tags; a database in Neo4j — labels and [:TYPES] with their properties).",
+                        "The schema (dataset in BigQuery, database in MySQL/MariaDB/ClickHouse/MongoDB, db0… in Redis — its keys, up to 1000; indices, data streams or aliases in Elasticsearch/OpenSearch, each with its mapping's fields; the region in DynamoDB — tables with their keys and indexes; a database or bucket in InfluxDB — measurements with fields and tags; a database in Neo4j — labels and [:TYPES] with their properties; a vhost in RabbitMQ — queues with their messages and consumers, exchanges, their bindings).",
                 ],
                 "table": ["type": "string", "description": "One table's columns."],
             ]),
         tool(
             "db_query",
-            "Run one SQL statement — or, on a Redis connection, one Redis command as redis-cli takes it (`HGETALL user:1`, `SCAN 0 MATCH user:* COUNT 100`; `VIEW key` reads any key whatever its type), on MongoDB or DocumentDB one mongo shell statement (`db.orders.find({ status: \"open\" }).sort({ at: -1 })`, `db.orders.aggregate([…])`, `db.orders.countDocuments({})`, `db.getSiblingDB(\"other\").c.findOne({})`, `db.runCommand({ … })`, `show collections` — values only, no JavaScript), or on Elasticsearch / OpenSearch one request as Kibana's Dev Tools writes it (`GET /orders/_search` then its JSON body on the lines below; a search's hits come back as rows, `_cat/indices` too; `POST /_sql` and ES|QL `POST /_query` as their columns), or PromQL / LogQL / TraceQL on Prometheus, Loki, Tempo (over the window the user picked in the console, an hour unless changed; a 32-hex trace id reads that trace; `.targets` and `.alerts` on Prometheus), PartiQL on DynamoDB (`SELECT * FROM \"orders\" WHERE pk = 'a'`), InfluxQL, Flux (2.x) or SQL (3.x) on InfluxDB, Cypher on Neo4j (`MATCH (n:Person) RETURN n LIMIT 10`) — on a saved connection and get its rows as a Markdown table. Reads only, unless the user allows agents to write in Settings — then they are asked each time.",
+            "Run one SQL statement — or, on a Redis connection, one Redis command as redis-cli takes it (`HGETALL user:1`, `SCAN 0 MATCH user:* COUNT 100`; `VIEW key` reads any key whatever its type), on MongoDB or DocumentDB one mongo shell statement (`db.orders.find({ status: \"open\" }).sort({ at: -1 })`, `db.orders.aggregate([…])`, `db.orders.countDocuments({})`, `db.getSiblingDB(\"other\").c.findOne({})`, `db.runCommand({ … })`, `show collections` — values only, no JavaScript), or on Elasticsearch / OpenSearch one request as Kibana's Dev Tools writes it (`GET /orders/_search` then its JSON body on the lines below; a search's hits come back as rows, `_cat/indices` too; `POST /_sql` and ES|QL `POST /_query` as their columns), or PromQL / LogQL / TraceQL on Prometheus, Loki, Tempo (over the window the user picked in the console, an hour unless changed; a 32-hex trace id reads that trace; `.targets` and `.alerts` on Prometheus), PartiQL on DynamoDB (`SELECT * FROM \"orders\" WHERE pk = 'a'`), InfluxQL, Flux (2.x) or SQL (3.x) on InfluxDB, Cypher on Neo4j (`MATCH (n:Person) RETURN n LIMIT 10`), on RabbitMQ `PEEK <queue> [n]` (messages read and put back — they stay, marked redelivered; asked first), `PUBLISH <exchange> <routing key> <payload>`, `PURGE <queue>`, `USE <vhost>` or any management API path (`GET /api/queues/%2F?columns=name,messages`) — on a saved connection and get its rows as a Markdown table. Reads only, unless the user allows agents to write in Settings — then they are asked each time.",
             [
                 "connection": ["type": "string", "description": "Its name, from db_connections (optional when there is one)."],
                 "sql": ["type": "string", "description": "One statement, one Redis command, one mongo shell statement, or one Elasticsearch/OpenSearch request."],

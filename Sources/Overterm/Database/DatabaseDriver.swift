@@ -88,13 +88,13 @@ enum DatabaseDrivers {
         case .prometheus, .loki, .tempo: ObservabilityDriver(connection, password: password)
         // Storage has its own client (StorageClient); nothing runs SQL on it.
         case .s3, .gcs: NoSQLDriver()
-        // Each its own driver, written in 1.6.1; until then, said so.
+        // Each its own driver, written in 1.6.1.
         case .mongodb, .documentdb: MongoDriver(connection, password: password)
         case .elasticsearch, .opensearch: SearchDriver(connection, password: password)
         case .dynamodb: DynamoDBDriver(connection, password: password)
         case .influxdb: InfluxDBDriver(connection, password: password)
         case .neo4j: Neo4jDriver(connection, password: password)
-        case .rabbitmq: PendingDriver(kind: .rabbitmq)
+        case .rabbitmq: RabbitMQDriver(connection, password: password)
         case .kafka: PendingDriver(kind: .kafka)
         case .oracle: PendingDriver(kind: .oracle)
         }
