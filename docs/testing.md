@@ -605,7 +605,9 @@ grouping, D-31) present or not, and netstat's rows run by the probe and
 by an ad hoc-signed copy of `sh` against libproc's count of listeners,
 blind when the second is 0 (3.5); `testTheTicksEnergyAtEachQoS` — this
 process's `ri_energy_nj` a light and a full tick costs at `.userInitiated`
-and at `.utility` (D-8). It reads the whole table, read only, and prints
+and at `.utility` (D-8); `testThePagesRowsAndTheMeters` — the Activity
+page's rows made of a steady full tick, everyone's, and the meters' read.
+It reads the whole table, read only, and prints
 counts, errnos and timings, never a name or an argv:
 
 ```

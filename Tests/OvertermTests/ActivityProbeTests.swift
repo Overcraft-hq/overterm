@@ -202,6 +202,38 @@ final class ActivityProbeTests: XCTestCase {
         XCTAssertFalse(fullSteady.isEmpty)
     }
 
+    /// The page's rows (6.4, 7.7) from a steady full tick of this Mac,
+    /// everyone's, and the meters' read (3.8): times and counts only.
+    func testThePagesRowsAndTheMeters() throws {
+        let sampler = ActivitySampler(kernel: kernel)
+        let context = ActivityContext(appPID: -1)
+        var snapshot: ActivitySnapshot?
+        // Past the cold start: the churn budget's ticks, then two more.
+        for _ in 0..<12 {
+            snapshot = sampler.tickNow(ActivityDemand(.full), context: context)
+            if snapshot?.unread == 0, snapshot?.meters?.cores.isEmpty == false { break }
+            usleep(300_000)
+        }
+        let full = try XCTUnwrap(snapshot)
+        var times: [UInt64] = []
+        var content = ActivityPageContent()
+        for _ in 0..<20 {
+            let (made, time) = timed { ActivityRows.content(of: full, ActivityRows.Options()) }
+            content = made
+            times.append(time)
+        }
+        times.sort()
+        var meters: [UInt64] = []
+        for _ in 0..<20 { meters.append(timed { kernel.meterCounters() }.1) }
+        meters.sort()
+        report(
+            "page rows: \(content.processes.count) processes, \(content.ports.count) listening, median "
+                + String(format: "%.2f ms", Double(times[times.count / 2]) / 1_000_000) + ", max "
+                + String(format: "%.2f ms", Double(times.last ?? 0) / 1_000_000) + "; meters read median "
+                + micros(meters[meters.count / 2], 1) + ", \(full.meters?.cores.count ?? 0) cores")
+        XCTAssertEqual(content.processes.count, full.table.processes.count)
+    }
+
     /// The old API on the census (7.8): a tab's tree answered from a
     /// snapshot a tick old at most — what the poll's panes, the overview's
     /// tabs × panes and Tab Info's ask between ticks, where each call
