@@ -96,6 +96,7 @@ enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable {
     var symbol: String {
         switch self {
         case .redis: "bolt.horizontal"
+        case .mongodb, .documentdb: "leaf"
         case .prometheus: "chart.xyaxis.line"
         case .loki: "text.alignleft"
         case .tempo: "point.3.connected.trianglepath.dotted"
@@ -106,6 +107,10 @@ enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable {
 
     /// Commands a line, not SQL: its console reads and checks them so.
     var isRedis: Bool { self == .redis }
+
+    /// The mongo shell's statements, not SQL: MongoDB, and DocumentDB which
+    /// speaks its protocol.
+    var isMongo: Bool { self == .mongodb || self == .documentdb }
 
     /// The schema a new connection starts on.
     var defaultSchema: String? {
@@ -180,6 +185,13 @@ struct DatabaseConnection: Codable, Identifiable, Equatable, Hashable, Sendable 
     /// Prometheus, Loki, Tempo behind a proxy: the path their API is under
     /// (`/prometheus`), empty at the root.
     var basePath = ""
+    /// MongoDB's and DocumentDB's: the database the user is defined in
+    /// (empty: admin), a CA bundle to verify the server's certificate with
+    /// (DocumentDB's `global-bundle.pem`), and whether `host` is a
+    /// `mongodb+srv://` name, its hosts read from DNS at each connect.
+    var authSource = ""
+    var caFile = ""
+    var srv = false
     /// Not saved: the name TLS checks when `host` is a tunnel's local end.
     var serverName: String?
 
@@ -191,6 +203,10 @@ struct DatabaseConnection: Codable, Identifiable, Equatable, Hashable, Sendable 
         port = kind.defaultPort
         if kind == .bigquery || kind == .gcs { bigQueryAuth = .gcloud }
         if kind == .s3 { apply(.aws) }
+        // MongoDB doesn't negotiate TLS: on from the first byte or off.
+        // DocumentDB's clusters have it on, their certificates Amazon's.
+        if kind == .mongodb { sslMode = .disable }
+        if kind == .documentdb { sslMode = .verifyFull }
     }
 
     /// A provider's endpoint, region and addressing, as a starting point.
@@ -207,7 +223,7 @@ struct DatabaseConnection: Codable, Identifiable, Equatable, Hashable, Sendable 
     // opens (a missing field takes its default) — every connection kept.
     private enum CodingKeys: String, CodingKey {
         case id, name, kind, host, port, user, database, sslMode, filePath, project, location, bigQueryAuth, readOnly, provider,
-            pathStyle, awsProfile, sshEnabled, sshHost, sshPort, sshUser, sshKeyFile, basePath
+            pathStyle, awsProfile, sshEnabled, sshHost, sshPort, sshUser, sshKeyFile, basePath, authSource, caFile, srv
     }
 
     init(from decoder: Decoder) throws {
@@ -234,6 +250,9 @@ struct DatabaseConnection: Codable, Identifiable, Equatable, Hashable, Sendable 
         sshUser = try c.decodeIfPresent(String.self, forKey: .sshUser) ?? ""
         sshKeyFile = try c.decodeIfPresent(String.self, forKey: .sshKeyFile) ?? ""
         basePath = try c.decodeIfPresent(String.self, forKey: .basePath) ?? ""
+        authSource = try c.decodeIfPresent(String.self, forKey: .authSource) ?? ""
+        caFile = try c.decodeIfPresent(String.self, forKey: .caFile) ?? ""
+        srv = try c.decodeIfPresent(Bool.self, forKey: .srv) ?? false
     }
 
     /// Where it is, for its row and its tooltip.
@@ -263,6 +282,9 @@ struct DatabaseConnection: Codable, Identifiable, Equatable, Hashable, Sendable 
             if let port, !(1...65535).contains(port) { return "The port is 1 to 65535." }
             if sshEnabled, sshHost.trimmingCharacters(in: .whitespaces).isEmpty { return "The SSH host, please." }
             if sshEnabled, port == nil, kind.defaultPort == nil { return "The database's port, for the tunnel." }
+            if kind.isMongo, sshEnabled, srv || host.contains(",") {
+                return "Through a tunnel, one host: the cluster's endpoint or the primary — not an srv name or a list."
+            }
             return nil
         }
     }

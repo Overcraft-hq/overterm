@@ -37,6 +37,7 @@ enum DockerClient {
             case .redis, .valkey: (.redis, 6379)
             // The HTTP API's port: the Database panel doesn't speak Bolt.
             case .neo4j: (.neo4j, 7474)
+            case .mongo: (.mongodb, 27017)
             default: nil
             }
         }

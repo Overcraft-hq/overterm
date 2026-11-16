@@ -142,7 +142,7 @@ struct KubeDatabaseTarget: Equatable, Sendable {
 
 enum KubeDatabase {
     /// The kinds the Database client speaks, as the page says them.
-    static let spoken = "PostgreSQL, MySQL, MariaDB, ClickHouse, Redis and Valkey"
+    static let spoken = "PostgreSQL, MySQL, MariaDB, ClickHouse, Redis, Valkey and MongoDB"
 
     /// The first container whose image is a database the Database client
     /// speaks; nil when none is.
@@ -198,6 +198,13 @@ enum KubeDatabase {
                 // As Docker's: the official image has no password of its
                 // own, Bitnami's say theirs here; no user, database 0.
                 target.password = sources(["REDIS_PASSWORD", "VALKEY_PASSWORD"])
+                target.defaultDatabase = ""
+            case .mongodb:
+                // The official image's root user (in admin), or Bitnami's;
+                // none named: no auth, no user.
+                target.user = sources(["MONGO_INITDB_ROOT_USERNAME", "MONGODB_ROOT_USER"])
+                target.password = sources(["MONGO_INITDB_ROOT_PASSWORD", "MONGODB_ROOT_PASSWORD"])
+                target.database = sources(["MONGO_INITDB_DATABASE", "MONGODB_DATABASE"])
                 target.defaultDatabase = ""
             default:
                 continue
@@ -271,6 +278,8 @@ enum KubeDatabase {
         "POSTGRES_USER", "POSTGRESQL_USERNAME", "POSTGRESQL_USER", "POSTGRES_DB", "POSTGRESQL_DATABASE", "POSTGRES_DATABASE", "POSTGRES_PASSWORD",
         "POSTGRESQL_PASSWORD", "MYSQL_USER", "MARIADB_USER", "MYSQL_PASSWORD", "MARIADB_PASSWORD", "MYSQL_ROOT_PASSWORD", "MARIADB_ROOT_PASSWORD",
         "MYSQL_DATABASE", "MARIADB_DATABASE", "CLICKHOUSE_USER", "CLICKHOUSE_DB", "CLICKHOUSE_PASSWORD", "REDIS_PASSWORD", "VALKEY_PASSWORD",
+        "MONGO_INITDB_ROOT_USERNAME", "MONGODB_ROOT_USER", "MONGO_INITDB_ROOT_PASSWORD", "MONGODB_ROOT_PASSWORD", "MONGO_INITDB_DATABASE",
+        "MONGODB_DATABASE",
     ]
 
     /// The keys of a Secret read on the user's ask that `wanted` names, as
@@ -329,6 +338,11 @@ enum KubeDatabase {
         // Through kubectl's forward to the pod: whether the server speaks
         // TLS is its own — asked for, not required.
         connection.sslMode = .prefer
+        if target.kind == .mongodb {
+            // MongoDB doesn't negotiate TLS; a root user is admin's.
+            connection.sslMode = .disable
+            if !connection.user.isEmpty { connection.authSource = "admin" }
+        }
         return DockerDatabaseGuess.Guess(connection: connection, password: password.value)
     }
 }

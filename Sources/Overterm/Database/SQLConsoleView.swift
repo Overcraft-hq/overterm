@@ -197,7 +197,8 @@ struct SQLConsoleView: View {
         if kind.isObservability { return kind.subject(of: run.sql) ?? "Query \(index + 1)" }
         // `GET orders/_search`, as it was written.
         if kind.isSearch { return (try? SearchRequest.parse(run.sql)).map { "\($0.method) \($0.route.dropFirst().prefix(40))" } ?? "Request \(index + 1)" }
-        let verb = kind.verb(of: run.sql).capitalized
+        // insertOne stays insertOne: capitalized would say Insertone.
+        let verb = kind.isMongo ? kind.verb(of: run.sql) : kind.verb(of: run.sql).capitalized
         if let table = kind.subject(of: run.sql) { return "\(verb) \(table)" }
         return verb.isEmpty ? "Result \(index + 1)" : verb
     }

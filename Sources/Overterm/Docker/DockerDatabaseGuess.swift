@@ -168,6 +168,23 @@ enum DockerDatabaseGuess {
             // DynamoDB Local: any credentials, its tables a region's.
             connection.sslMode = .disable
             connection.location = first("AWS_REGION", "AWS_DEFAULT_REGION") ?? "us-east-1"
+        case .mongodb:
+            // The official image's root user lives in admin; Bitnami's app
+            // user in its own database, its root in admin.
+            if let user = first("MONGODB_USERNAME"), let own = first("MONGODB_PASSWORD"), let database = first("MONGODB_DATABASE") {
+                connection.user = user
+                password = own
+                connection.database = database
+                connection.authSource = database
+            } else if let user = first("MONGO_INITDB_ROOT_USERNAME", "MONGODB_ROOT_USER") ?? (first("MONGODB_ROOT_PASSWORD") != nil ? "root" : nil) {
+                connection.user = user
+                password = first("MONGO_INITDB_ROOT_PASSWORD", "MONGODB_ROOT_PASSWORD")
+                connection.authSource = "admin"
+                connection.database = first("MONGO_INITDB_DATABASE", "MONGODB_DATABASE") ?? ""
+            } else {
+                connection.database = first("MONGO_INITDB_DATABASE", "MONGODB_DATABASE") ?? ""
+            }
+            connection.sslMode = .disable
         default:
             return nil
         }

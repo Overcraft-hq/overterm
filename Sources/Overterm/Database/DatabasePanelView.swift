@@ -235,12 +235,21 @@ private struct ConnectionTree: View {
             toggle(key) { await session.loadColumns(table.schema) }
         }
         .contextMenu {
-            Button("Select Top 100") { actions.run(connection, select(table, limit: 100)) }
-            Button("New Console") { actions.console(connection) }
-            Divider()
-            Button("Copy Name") { copy(table.name) }
-            Button("Copy Qualified Name") { copy(qualified(table)) }
-            Button("Copy SELECT") { copy(select(table, limit: 100)) }
+            if connection.kind.isMongo {
+                Button("Find First 100") { actions.run(connection, select(table, limit: 100)) }
+                Button("New Console") { actions.console(connection) }
+                Divider()
+                Button("Copy Name") { copy(table.name) }
+                Button("Copy Namespace") { copy("\(table.schema).\(table.name)") }
+                Button("Copy find()") { copy(select(table, limit: 100)) }
+            } else {
+                Button("Select Top 100") { actions.run(connection, select(table, limit: 100)) }
+                Button("New Console") { actions.console(connection) }
+                Divider()
+                Button("Copy Name") { copy(table.name) }
+                Button("Copy Qualified Name") { copy(qualified(table)) }
+                Button("Copy SELECT") { copy(select(table, limit: 100)) }
+            }
         }
         if model.expanded.contains(key) {
             let columns = session.columns(of: table.name, in: table.schema)
@@ -268,6 +277,7 @@ private struct ConnectionTree: View {
     }
 
     private func select(_ table: CatalogTable, limit: Int) -> String {
+        if connection.kind.isMongo { return MongoText.find(table.name, in: table.schema, limit: limit) }
         // An index's documents, as Kibana's Dev Tools asks for them.
         if connection.kind.isSearch { return "GET /\(table.name)/_search\n{\n  \"size\": \(limit)\n}" }
         return DatabaseKind.browseStatement(connection, table: table, limit: limit) ?? "SELECT * FROM \(qualified(table)) LIMIT \(limit);"

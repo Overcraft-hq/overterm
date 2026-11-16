@@ -47,14 +47,19 @@ Async models supersede older refreshes by design; wait for them to settle
 ### Database drivers
 
 `DatabaseDriverTests` talks to real servers. SQLite runs always; PostgreSQL,
-MySQL, MariaDB and ClickHouse need Docker:
+MySQL, MariaDB and ClickHouse need Docker, as `MongoDriverTests` does
+MongoDB:
 
 ```
 Scripts/database-test-servers.sh            # PostgreSQL :55432, MySQL :53306, MariaDB :53307,
-                                            # ClickHouse :58123
-OVERTERM_DB_TESTS=1 swift test --filter DatabaseDriverTests
+                                            # ClickHouse :58123, MongoDB :57017
+OVERTERM_DB_TESTS=1 swift test --filter 'DatabaseDriverTests|MongoDriverTests'
 Scripts/database-test-servers.sh stop
 ```
+
+MongoDB takes plain and TLS clients on one port, its certificate signed
+by a throwaway CA the script makes in `$TMPDIR/ot-mongodb-tls` (never
+committed); `MongoDriverTests.testTLS` verifies against it.
 
 Without `OVERTERM_DB_TESTS=1` those are skipped, so `make test` and
 CI need no Docker. BigQuery's signing and its answers are tested offline.

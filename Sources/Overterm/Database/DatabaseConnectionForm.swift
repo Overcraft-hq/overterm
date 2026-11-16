@@ -36,7 +36,9 @@ struct DatabaseConnectionForm: View {
                 .onChange(of: connection.kind) { kind in
                     connection.port = kind.defaultPort
                     // Redis doesn't negotiate TLS: Prefer would be plain, said as Off.
-                    if (kind == .redis || kind.isObservability || kind.isSearch || kind.consoleText != nil), connection.sslMode == .prefer { connection.sslMode = .disable }
+                    if (kind == .redis || kind.isObservability || kind.isSearch || kind.consoleText != nil || kind == .mongodb), connection.sslMode == .prefer { connection.sslMode = .disable }
+                    // DocumentDB's clusters want TLS, checked against Amazon's bundle.
+                    if kind == .documentdb { connection.sslMode = .verifyFull }
                     if kind == .s3 { connection.apply(connection.provider) }
                     if kind == .gcs { connection.bigQueryAuth = .gcloud }
                     tested = nil
@@ -47,6 +49,7 @@ struct DatabaseConnectionForm: View {
                 case .s3: s3Fields
                 case .gcs: gcsFields
                 case .redis: redisFields
+                case .mongodb, .documentdb: mongoFields
                 case .prometheus, .loki, .tempo: observabilityFields
                 case .elasticsearch, .opensearch: searchFields
                 case .dynamodb, .influxdb, .neo4j:
@@ -232,6 +235,85 @@ struct DatabaseConnectionForm: View {
         tested = nil
     }
 
+    /// MongoDB's and DocumentDB's: a connection string pasted fills them
+    /// all; a replica set's hosts are a list, an srv name is looked up at
+    /// each connect; the user is defined in the auth database; TLS is on
+    /// from the first byte or off, a CA bundle of its own to verify with.
+    @ViewBuilder private var mongoFields: some View {
+        TextField(
+            "URL", text: Binding(get: { "" }, set: { fillMongo(from: $0) }),
+            prompt: Text(
+                verbatim: connection.kind == .documentdb
+                    ? "Paste mongodb://user:password@….docdb.amazonaws.com:27017/?tls=true&replicaSet=rs0"
+                    : "Paste mongodb://user:password@host:27017/db or mongodb+srv://…"))
+        Toggle("SRV name — its hosts from DNS (mongodb+srv://)", isOn: $connection.srv)
+        TextField(connection.srv ? "SRV name" : "Host (a replica set's: a,b:27018,c)", text: $connection.host)
+        if !connection.srv {
+            TextField(
+                "Port",
+                text: Binding(
+                    get: { connection.port.map(String.init) ?? "" },
+                    set: { connection.port = Int($0.filter(\.isNumber)) }))
+        }
+        TextField("User (optional)", text: $connection.user)
+        SecureField(hasSavedPassword ? "Password (saved — empty keeps it)" : "Password", text: $password)
+        TextField("Database", text: $connection.database, prompt: Text(verbatim: "test"))
+        TextField("Auth database", text: $connection.authSource, prompt: Text(verbatim: "admin — where the user is defined"))
+        Picker("TLS", selection: $connection.sslMode) {
+            Text("Off").tag(DatabaseSSLMode.disable)
+            Text("On — don't check the certificate").tag(DatabaseSSLMode.require)
+            Text("On — verify the certificate").tag(DatabaseSSLMode.verifyFull)
+        }
+        .onAppear { if connection.sslMode == .prefer { connection.sslMode = .disable } }
+        if connection.sslMode == .verifyFull {
+            HStack {
+                TextField(
+                    connection.kind == .documentdb ? "CA bundle (Amazon's global-bundle.pem)" : "CA bundle (optional — else the system's)",
+                    text: $connection.caFile)
+                Button("Choose…") {
+                    let panel = NSOpenPanel()
+                    panel.canChooseFiles = true
+                    panel.allowsOtherFileTypes = true
+                    if panel.runModal() == .OK, let url = panel.url { connection.caFile = (url.path as NSString).abbreviatingWithTildeInPath }
+                }
+            }
+        }
+        if connection.kind == .documentdb {
+            Text(
+                "DocumentDB: TLS with Amazon's CA bundle (truststore.pki.rds.amazonaws.com/global/global-bundle.pem). Overterm never retries a write, as DocumentDB's retryWrites=false asks. Outside its VPC, reach it through an SSH tunnel to the cluster's endpoint."
+            )
+            .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(.secondary)
+        }
+        Toggle("Through an SSH tunnel", isOn: $connection.sshEnabled)
+        if connection.sshEnabled { sshFields }
+    }
+
+    /// A mongodb:// or mongodb+srv:// string, spread over the fields; its
+    /// password typed in, kept only if the connection is saved — then in
+    /// the keychain.
+    private func fillMongo(from text: String) {
+        guard let url = MongoURL(text) else { return }
+        connection.srv = url.srv
+        if url.hosts.count == 1 {
+            let (host, port) = MongoURL.split(url.hosts[0])
+            connection.host = host
+            connection.port = url.srv ? nil : port ?? 27017
+        } else {
+            connection.host = url.hosts.joined(separator: ",")
+            connection.port = 27017
+        }
+        connection.user = url.user
+        connection.database = url.database
+        connection.authSource = url.authSource
+        connection.sslMode = url.tls ? (url.insecure ? .require : .verifyFull) : .disable
+        if !url.caFile.isEmpty { connection.caFile = url.caFile }
+        if let secret = url.password { password = secret }
+        if connection.name.isEmpty || connection.name == connection.kind.title {
+            connection.name = MongoURL.split(url.hosts[0]).host.split(separator: ".").first.map(String.init) ?? url.hosts[0]
+        }
+        tested = nil
+    }
+
     /// The bastion: Host and Port above are the database as the bastion sees it.
     @ViewBuilder private var sshFields: some View {
         TextField("SSH host (a name from ~/.ssh/config works)", text: $connection.sshHost)
@@ -402,7 +484,7 @@ struct DatabaseConnectionForm: View {
                     await driver.close()
                     let through = tunnel == nil ? "" : " through \(connection.sshHost)"
                     let noun =
-                        connection.kind.isRedis || connection.kind == .influxdb || connection.kind == .neo4j
+                        connection.kind.isRedis || connection.kind.isMongo || connection.kind == .influxdb || connection.kind == .neo4j
                         ? "database" : connection.kind == .dynamodb ? "region" : connection.kind.isObservability || connection.kind.isSearch ? "folder" : "schema"
                     tested = .success(
                         "Connected\(through) in \(Int(Date().timeIntervalSince(started) * 1000)) ms — \(schemas) \(noun)\(schemas == 1 ? "" : "s")")

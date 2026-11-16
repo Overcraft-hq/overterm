@@ -89,8 +89,7 @@ enum DatabaseDrivers {
         // Storage has its own client (StorageClient); nothing runs SQL on it.
         case .s3, .gcs: NoSQLDriver()
         // Each its own driver, written in 1.6.1; until then, said so.
-        case .mongodb: PendingDriver(kind: .mongodb)
-        case .documentdb: PendingDriver(kind: .documentdb)
+        case .mongodb, .documentdb: MongoDriver(connection, password: password)
         case .elasticsearch, .opensearch: SearchDriver(connection, password: password)
         case .dynamodb: DynamoDBDriver(connection, password: password)
         case .influxdb: InfluxDBDriver(connection, password: password)

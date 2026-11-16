@@ -82,9 +82,9 @@ extension EditorViewController {
         let at = min(NSMaxRange(line), text.length)
         let lead = at > 0 && text.character(at: at - 1) != 0x0A ? "\n\n" : "\n"
         let statement = sql.trimmingCharacters(in: .whitespacesAndNewlines)
-        // A Redis command is its line; SQL ends with a semicolon.
+        // A Redis command or a mongo shell statement is its line; SQL ends with a semicolon.
         // A search request ends at a blank line, so one goes before it.
-        let piece = (kind.isSearch ? "\n" : "") + lead + statement + (statement.hasSuffix(";") || kind.isRedis || kind.isSearch ? "" : ";") + "\n"
+        let piece = (kind.isSearch ? "\n" : "") + lead + statement + (statement.hasSuffix(";") || kind.isRedis || kind.isMongo || kind.isSearch ? "" : ";") + "\n"
         replaceText(of: buffer, with: text.replacingCharacters(in: NSRange(location: at, length: 0), with: piece))
         textView.setSelectedRange(NSRange(location: at + (lead as NSString).length, length: 0))
         textView.scrollRangeToVisible(textView.selectedRange())
@@ -165,6 +165,7 @@ extension EditorViewController {
         if session.connection.kind.isRedis { return updateRedisCompletion(session: session, buffer: buffer, caret: caret, window: window) }
         // Kibana's requests aren't SQL: nothing of SQL's to offer.
         if session.connection.kind.isSearch { return false }
+        if session.connection.kind.isMongo { return updateMongoCompletion(session: session, buffer: buffer, caret: caret, window: window) }
         if session.connection.kind.isObservability {
             return updateObservabilityCompletion(session: session, buffer: buffer, caret: caret, window: window)
         }
@@ -209,6 +210,22 @@ extension EditorViewController {
         let browser = session.browser(db)
         if !browser.scanned { Task { await browser.scan() } }
         guard let answer = RedisCompletion.complete(before, keys: browser.keys.map(\.name)) else {
+            completionPopup.hide()
+            completion = nil
+            return false
+        }
+        return showConsoleCompletion(answer.candidates, typed: answer.typed, buffer: buffer, caret: caret, window: window)
+    }
+
+    /// A MongoDB console's: the console database's collections after `db.`,
+    /// a collection's methods after `db.<collection>.`.
+    private func updateMongoCompletion(session: DatabaseSession, buffer: EditorBuffer, caret: Int, window: NSWindow) -> Bool {
+        let text = textView.string as NSString
+        let lineStart = text.lineRange(for: NSRange(location: caret, length: 0)).location
+        let before = text.substring(with: NSRange(location: lineStart, length: caret - lineStart))
+        let schema = session.schema ?? session.connection.database
+        if session.tables[schema] == nil { Task { await session.loadTables(schema) } }
+        guard let answer = MongoCompletion.complete(before, collections: (session.tables[schema] ?? []).map(\.name)) else {
             completionPopup.hide()
             completion = nil
             return false

@@ -1333,7 +1333,7 @@ in it, and `.obsidian/` is read for where things go, never written.
 
 A database client beside the terminal, DataGrip's work in the sidebar and
 the editor: PostgreSQL, MySQL, MariaDB, SQLite, Redshift, ClickHouse, BigQuery,
-Redis, DynamoDB, InfluxDB, Neo4j, Prometheus, Loki and Tempo, and Elasticsearch and OpenSearch (Settings ▸ Database turns it off; its rows fetched and asking before a
+Redis, MongoDB and Amazon DocumentDB, DynamoDB, InfluxDB, Neo4j, Prometheus, Loki and Tempo, and Elasticsearch and OpenSearch (Settings ▸ Database turns it off; its rows fetched and asking before a
 destroying statement are there too).
 
 - **Connections** (`DatabaseConnection`, `DatabaseStore`): a name, a kind,
@@ -1418,6 +1418,65 @@ destroying statement are there too).
 - **Tests** run against a redis-server of their own (`E2ERedisServer`: a
   free port, nothing on disk, TLS with a certificate made for it) —
   `RedisDriverTests` and the `redis` scenario; skipped without one (CI).
+
+### MongoDB and Amazon DocumentDB
+
+- **The driver** (`MongoDriver`): OP_MSG on SwiftNIO, no client library —
+  a command is a BSON document (`BSON.swift`: values, documents in their
+  order, decimal128, ObjectIds made as drivers make them), its answer one
+  (`MongoWire`, `MongoReplyHandler`: replies matched to requests by id).
+  `hello` (`isMaster` before 4.4), then SCRAM (`MongoSCRAM`, pure,
+  CryptoKit and CommonCrypto's PBKDF2): SHA-256 when the server says the
+  user has it, SHA-1 otherwise — MongoDB's SHA-1 password is its MD5
+  digest of `user:mongo:password`; the server's signature is checked.
+  The user's database is `authSource` (the form's Auth database, admin
+  when empty). TLS is on from the first byte or off, as Redis's; Verify
+  Full checks against the system's roots or the connection's CA bundle
+  (`caFile`). A replica set's hosts (`a,b:27018` in Host) or an srv name's
+  (`MongoSRV`: dnssd's SRV and TXT records, the hosts checked to be in the
+  name's domain, read at every connect) are tried in order and the
+  primary followed; one host, or a tunnel's local end, is spoken to
+  directly — reads on a secondary say `primaryPreferred`. A tunnel takes
+  one host, never an srv name or a list.
+- **The console** (`MongoShell.swift`, pure): the mongo shell's
+  statements, read — never evaluated: `show dbs`, `use x`,
+  `db.<c>.find(…).sort(…).limit(n)`, `findOne`, `aggregate`,
+  `countDocuments`, `distinct`, the writes, `findOneAnd…`, indexes,
+  `db.runCommand`/`adminCommand`, `getSiblingDB`, `getCollection`. Values
+  in the shell's notation (`ObjectId()`, `ISODate()`, `NumberLong()`,
+  `NumberDecimal()`, regex literals, unquoted keys) and Extended JSON's
+  `$oid` forms. A variable or a function is said to be unsupported. A
+  statement is a line or a bracketed block; `;` ends one, a line starting
+  with `.` goes on with the one above. `MongoCommand.onlyReads` is an
+  allow-list of commands (an aggregate with `$out`/`$merge` writes;
+  anything unread writes); `danger` names `deleteMany({})`, an
+  `updateMany({})`, drops, `$out`. The driver refuses a write on a
+  read-only connection too. Completion: a collection after `db.`, a
+  method after `db.<c>.`.
+- **Answers** (`MongoResult`): documents a row each, their top-level
+  fields as columns across the page (`_id` first), a nested value as the
+  shell writes it — what the console reads back; a string as itself, a
+  date as its ISO time. One past the row limit is read (getMore across
+  batches) to say there are more, the cursor then killed. A write says
+  what it did (inserted with the ids made for it, matched/modified,
+  deleted).
+- **The catalog**: databases (admin, config, local left out unless the
+  connection's), a database's collections (views marked), and as columns
+  the fields of each collection's first 20 documents — a collection has
+  no schema to read. Find First 100 names its database
+  (`getSiblingDB`): `use` may have moved `db`.
+- **DocumentDB** is the same driver: TLS on by default, Verify Full
+  against Amazon's `global-bundle.pem` chosen in the form; nothing is
+  retried, as its `retryWrites=false` asks. A command it refuses that
+  MongoDB takes is said so. Not tested against a real cluster here.
+- **Docker and Kubernetes**: a `mongo` container or pod is a connection —
+  `MONGO_INITDB_ROOT_*`, in admin; Bitnami's app user in its own database.
+- **Tests**: `MongoTests` (BSON, the shell, the RFCs' SCRAM examples,
+  connection strings, SRV records), `MongoFakeServerTests` against
+  `E2EMongoServer` (an in-memory mongod: OP_MSG, batches of 100) — and
+  the `mongodb` scenario —, `MongoDriverTests` against mongo:7 in Docker
+  (`OVERTERM_DB_TESTS=1`; plain and TLS on one port, verified against a CA
+  the script makes in `$TMPDIR`).
 
 ### MariaDB
 
@@ -2404,7 +2463,7 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   removed — a never-started one would hold its volume for good, and
   another Overterm may still be reading through a newer one.
 - **Open in Database** (`d`, `DockerDatabaseGuess`, pure): a PostgreSQL,
-  MySQL, MariaDB or ClickHouse container as a connection — the kind from
+  MySQL, MariaDB, ClickHouse, Redis or MongoDB container as a connection — the kind from
   its image, user, password and database from the variables its image's
   documentation asks for, the host port it publishes — in the Database
   panel's form, filled in. Nothing is saved until the form is, and then
@@ -3891,8 +3950,8 @@ never the proxy's socket, which refuses port-forward on every context.
   (`kubernetesOpenedExternally`) instead of opening anything.
 - **`d`** on a database pod (`databaseRef`, Open in Database Client on a
   pod whose detail read it): the image says which (`KubeDatabase.detect`, a
-  `KubeDatabaseTarget`, by `DockerClient`'s table — postgres, mysql and mariadb, clickhouse, redis and valkey; an
-  exporter beside it is a tool; Mongo and the rest are said, with their
+  `KubeDatabaseTarget`, by `DockerClient`'s table — postgres, mysql and mariadb, clickhouse, redis and valkey, mongo; an
+  exporter beside it is a tool; Cassandra and the rest are said, with their
   client in a shell), the container's port (the image's, or the one it
   declares — unless that is a port the image speaks another protocol on:
   ClickHouse's native 9000/9440/9009, MySQL's X Protocol 33060,
