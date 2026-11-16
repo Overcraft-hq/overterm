@@ -117,6 +117,40 @@ final class ProcessSignalsTests: XCTestCase {
         XCTAssertEqual(sender().sendToGroup(.int, leader: leader), .sent(pinned: true), "the group its own again")
     }
 
+    /// Activity's Stop Its Group reads each member again for what no group
+    /// Stop may reach: one that exec'd into an agent, a terraform write, or
+    /// a pane's shell joining since the sheet refuses the whole send.
+    func testAGroupsMembersAreReadAgainForWhatNoGroupStopReaches() {
+        let leader = groupMac()
+        func member(_ pid: pid_t, parent: pid_t = 600, name: String, argv: [String]) {
+            add(pid, parent: parent, group: 600, name: name)
+            kernel.update(pid) {
+                $0.session = 200
+                $0.arguments = FakeActivityKernel.arguments(executable: "/opt/acme/bin/\(name)", argv)
+            }
+        }
+        member(610, name: "claude", argv: ["claude"])
+        XCTAssertEqual(sender().sendToGroup(.term, leader: leader, policy: true), .refused(.groupHolds), "an agent")
+        kernel.remove(610)
+        member(611, name: "terraform", argv: ["terraform", "apply", "-auto-approve"])
+        XCTAssertEqual(sender().sendToGroup(.term, leader: leader, policy: true), .refused(.groupHolds), "a terraform write")
+        kernel.remove(611)
+        member(612, name: "terraform", argv: ["terraform", "plan"])
+        kernel.update(612) { $0.arguments = nil }
+        XCTAssertEqual(sender().sendToGroup(.term, leader: leader, policy: true), .refused(.groupHolds), "a terraform whose argv can't be read")
+        kernel.remove(612)
+        member(613, parent: 200, name: "zsh", argv: ["-zsh"])
+        XCTAssertEqual(sender().sendToGroup(.term, leader: leader, policy: true), .refused(.groupHolds), "a pane's shell")
+        kernel.remove(613)
+        XCTAssertTrue(kernel.sent.isEmpty, "nothing sent")
+        member(614, name: "terraform", argv: ["terraform", "plan"])
+        member(615, name: "sh", argv: ["sh", "-c", "acme-build"])
+        XCTAssertEqual(sender().sendToGroup(.term, leader: leader, policy: true), .sent(pinned: true), "a plan and a script's shell: a group's own")
+        member(616, name: "acme-agent", argv: ["claude", "--continue"])
+        XCTAssertEqual(sender().sendToGroup(.term, leader: leader, policy: true), .refused(.groupHolds), "argv[0] names the agent")
+        XCTAssertEqual(sender().sendToGroup(.int, leader: leader), .sent(pinned: true), "without the policy: terraform's close guard's group")
+    }
+
     func testAGroupItsLeaderDoesntLeadOrThatEndedIsntSignalled() {
         mac()
         // In the shell's group: the shell's job control's, not its own.

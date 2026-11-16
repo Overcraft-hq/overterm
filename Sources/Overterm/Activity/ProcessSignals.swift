@@ -102,6 +102,11 @@ enum ActivitySignalRefusal: Hashable, Sendable {
     /// started before it, in another session, a pane's `login`, one of
     /// Overterm's helpers or, in an isolated run, not the run's own.
     case group
+    /// A group's send under Activity's policy (6.10 step 9): a member read
+    /// again just before the `killpg` is what no group Stop may reach — a
+    /// pane's shell, an agent, a terraform write — though the sheet's
+    /// census had none: one exec'd into it, or joined, since.
+    case groupHolds
 
     var reason: String {
         switch self {
@@ -114,6 +119,7 @@ enum ActivitySignalRefusal: Hashable, Sendable {
         case .gate: "This run is isolated (a scenario or a test): it changes only its own processes."
         case .unpinned: "It can't be pinned to this process: macOS gave no audit token for it, and without one Overterm sends only a single Stop or Interrupt."
         case .group: "Its process group isn't its own alone: something in it didn't start under it, or isn't yours."
+        case .groupHolds: "Its process group now holds a pane's shell, an agent or a terraform write: no group Stop reaches it — nothing was sent."
         }
     }
 }
@@ -323,7 +329,13 @@ struct ProcessSignals: Sendable {
     /// reused group id fails —, isn't a pane's `login` nor one of
     /// Overterm's helpers, and passes the isolated-run gate. Any that
     /// doesn't refuses the whole send (`.refused(.group)`), nothing sent.
-    func sendToGroup(_ signal: ActivitySignal, leader target: ActivitySignalTarget) -> ActivitySignalAnswer {
+    /// `policy`: Activity's Stop Its Group — each member is also read
+    /// again for what no group Stop may reach (`holdsWhatNoGroupReaches`),
+    /// whatever the sheet's census said: one that exec'd into it or joined
+    /// since refuses the send (`.refused(.groupHolds)`). Terraform's close
+    /// guard, whose group is terraform's own and its providers', sends
+    /// without it.
+    func sendToGroup(_ signal: ActivitySignal, leader target: ActivitySignalTarget, policy: Bool = false) -> ActivitySignalAnswer {
         let identity = target.identity
         if let refusal = Self.refusal(before: identity, app: app) { return .refused(refusal) }
         let leader: ActivityProcess
@@ -355,6 +367,7 @@ struct ProcessSignals: Sendable {
                 !Self.isPaneLogin(member, uid: kernel.uid), refusal(for: member) == nil
             else { return .refused(.group) }
             if let session, let theirs = kernel.session(of: pid), theirs != session { return .refused(.group) }
+            if policy, holdsWhatNoGroupReaches(member) { return .refused(.groupHolds) }
         }
         let answer = kernel.signal(signal.number, group: group)
         guard answer == 0 else { return answer == ESRCH ? .ended(now: nil) : .failed(answer) }
@@ -372,6 +385,25 @@ struct ProcessSignals: Sendable {
     func sendTree(_ signal: ActivitySignal, to members: [ActivitySignalTarget]) -> [(target: ActivitySignalTarget, answer: ActivitySignalAnswer)] {
         let ordered = signal == .cont ? Array(members.reversed()) : members
         return ordered.map { ($0, send(signal, to: $0, alone: false)) }
+    }
+
+    /// Whether `member`, read now, is what no group Stop may reach (6.10
+    /// step 9): a pane's shell — a shell whose parent is a pane's `login`
+    /// —, an agent by its executable's, `p_comm`'s or argv[0]'s name, or a
+    /// terraform, tofu or terragrunt whose argv is a write or can't be
+    /// read — the sheet's own rule (`ActivityVerbSubject`'s target).
+    func holdsWhatNoGroupReaches(_ member: ActivityProcess) -> Bool {
+        let file = kernel.path(of: member.pid).map { ($0 as NSString).lastPathComponent }
+        let names = Set([file, member.shortName, ProcessArguments.executableName(of: member.pid, kernel: kernel)].compactMap { $0 })
+        if names.contains(where: { Agent(rawValue: $0) != nil }) { return true }
+        if !names.isDisjoint(with: TerraformCommandLine.tools) {
+            guard let command = ProcessArguments.read(member.pid, kernel: kernel, markers: false, codeSigning: nil)?.command else { return true }
+            return TerraformCommandLine.parse(command, probable: false)?.isWrite == true
+        }
+        if !names.isDisjoint(with: ProcessRole.shells), let parent = kernel.process(member.parentPID), parent.identity.start <= member.identity.start {
+            return Self.isPaneLogin(parent, uid: kernel.uid)
+        }
+        return false
     }
 
     /// The refusals made before anything is read (step 1).

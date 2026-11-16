@@ -234,7 +234,7 @@ extension TerminalWindowController {
             }
         case .allowed(.signalGroup(let signal), _, _):
             DispatchQueue.global(qos: .userInitiated).async { @Sendable in
-                let answer = ProcessSignals().sendToGroup(signal, leader: target)
+                let answer = ProcessSignals().sendToGroup(signal, leader: target, policy: true)
                 Task { @MainActor [weak self] in
                     guard let self else { return }
                     if let said = ActivityPortFree.answer(answer, pid: target.identity.pid) { return self.tell("Not sent", said) }
