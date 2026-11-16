@@ -224,7 +224,16 @@ extension EditorViewController {
         let lineStart = text.lineRange(for: NSRange(location: caret, length: 0)).location
         let before = text.substring(with: NSRange(location: lineStart, length: caret - lineStart))
         let schema = session.schema ?? session.connection.database
-        if session.tables[schema] == nil { Task { await session.loadTables(schema) } }
+        if session.tables[schema] == nil {
+            // The collections not read yet: read them, then offer again.
+            Task { [weak self, weak buffer] in
+                await session.loadTables(schema)
+                guard let self, let buffer, buffer === self.active, self.textView.selectedRange().location == caret,
+                    session.tables[schema] != nil
+                else { return }
+                self.updateSQLCompletion()
+            }
+        }
         guard let answer = MongoCompletion.complete(before, collections: (session.tables[schema] ?? []).map(\.name)) else {
             completionPopup.hide()
             completion = nil

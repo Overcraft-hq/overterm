@@ -86,7 +86,12 @@ extension E2ERunner {
         editor.replaceText(of: editor.active!, with: "db.us")
         editor.textView.setSelectedRange(NSRange(location: 5, length: 0))
         _ = editor.updateSQLCompletion()
-        let names = editor.completion.map { state in state.shown.map { state.candidates[$0].label } } ?? []
+        // The collections are read at the first `db.`, and the list offered when they come.
+        var names: [String] = []
+        _ = await eventually(5) {
+            names = editor.completion.map { state in state.shown.map { state.candidates[$0].label } } ?? []
+            return names.first == "users"
+        }
         check("a collection completes after db.", names.first == "users", "\(names)")
         editor.dismissCompletion()
 
