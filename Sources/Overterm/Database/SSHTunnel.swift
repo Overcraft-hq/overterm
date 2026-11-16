@@ -16,20 +16,24 @@ final class SSHTunnel: @unchecked Sendable {
     let localPort: UInt16
     /// The connection's name: what Activity's Listening calls its port.
     let name: String
+    /// The connection's id: what Activity's Disconnect closes — names
+    /// aren't unique, and a rename leaves an open tunnel's as it was.
+    let connection: UUID
     private let process: Process
 
-    private init(process: Process, localPort: UInt16, name: String) {
+    private init(process: Process, localPort: UInt16, name: String, connection: UUID) {
         self.process = process
         self.localPort = localPort
         self.name = name
+        self.connection = connection
     }
 
     /// The tunnels open now — ssh's pid, its local port, the connection's
-    /// name: their ports' owner on Activity's Listening (docs/design/
+    /// name and id: their ports' owner on Activity's Listening (docs/design/
     /// activity/analysis.md, 6.8 rule 4).
-    static func listed() -> [(pid: pid_t, port: UInt16, name: String)] {
+    static func listed() -> [(pid: pid_t, port: UInt16, name: String, connection: UUID)] {
         lock.withLock { Array(open.values) }.compactMap { tunnel in
-            tunnel.process.isRunning ? (tunnel.process.processIdentifier, tunnel.localPort, tunnel.name) : nil
+            tunnel.process.isRunning ? (tunnel.process.processIdentifier, tunnel.localPort, tunnel.name, tunnel.connection) : nil
         }
     }
 
@@ -100,7 +104,7 @@ final class SSHTunnel: @unchecked Sendable {
         } catch {
             throw DatabaseError.failed("ssh couldn't start: \(error.localizedDescription)")
         }
-        let tunnel = SSHTunnel(process: process, localPort: port, name: connection.name)
+        let tunnel = SSHTunnel(process: process, localPort: port, name: connection.name, connection: connection.id)
         lock.withLock { open[ObjectIdentifier(tunnel)] = tunnel }
         // Ready when the local end answers; ssh binds it only once it is in.
         let deadline = Date().addingTimeInterval(20)

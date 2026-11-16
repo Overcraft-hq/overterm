@@ -57,14 +57,14 @@ extension TerminalWindowController {
         return ActivityPortFree.read(identity, slice: slice, in: snapshot, foregroundGroup: foreground, terminal: terminal, checkouts: checkouts)
     }
 
-    private func confirmation(_ question: ActivityPortFree.Question) -> WriteConfirmation {
+    func confirmation(_ question: ActivityPortFree.Question) -> WriteConfirmation {
         WriteConfirmation(
             title: question.title, scope: question.scope, production: question.production, detail: question.detail, button: question.button,
             critical: question.critical)
     }
 
     /// Says `title` and `detail` in a sheet that asks nothing.
-    private func tell(_ title: String, _ detail: String) {
+    func tell(_ title: String, _ detail: String) {
         guard let window else { return }
         let alert = NSAlert()
         alert.messageText = title
@@ -201,31 +201,43 @@ extension TerminalWindowController {
         let sentAt = PortFreeing.now()
         Self.say(freeing, on: tab)
         Task { @MainActor [weak tab] in
-            let clock = ContinuousClock()
-            let deadline = clock.now + Self.freeWatch
             var said = freeing
-            var last: [ActivityProcessID] = []
-            // Bounded however the census answers: 500 ms apart, past the deadline.
-            for _ in 0..<40 where said.state == .freeing {
-                try? await Task.sleep(for: .milliseconds(500))
-                let final = clock.now >= deadline
-                guard let snapshot = await ActivityMonitor.shared.census() else {
-                    if final { break }
-                    continue
-                }
-                last = ListeningPorts.holders(of: port.port, proto: port.proto, in: snapshot)
-                said.state = PortFreeing.state(holders: last, freed: freed, sentAt: sentAt, final: final)
-            }
+            said.state = await Self.watchPort(port.port, proto: port.proto, freed: freed, sentAt: sentAt)
             guard let tab else { return }
-            // No read said otherwise by the deadline: still held, by what
-            // the last one found — or, with none, by the one freed.
-            if said.state == .freeing {
-                said.state = last.isEmpty ? .stillHeld(pid: freed?.pid) : PortFreeing.state(holders: last, freed: freed, sentAt: sentAt, final: true)
-            }
             Self.say(said, on: tab)
             try? await Task.sleep(for: Self.freeSaid)
             tab.portFreeing.removeAll { $0 == said }
         }
+    }
+
+    /// What became of `port` after a Free sent at `sentAt`: the one-off
+    /// census, at most one every 2 s (7.1's spacing — any reader's answers
+    /// the watch too), for 10 s, until nothing of the user's holds it, a
+    /// process started since the Free does ("came back as pid N"), or the
+    /// watch ends with it still held — never a bind of the port (6.8).
+    /// `freed`: the process listed on the port, nil for one an owner holds.
+    static func watchPort(_ port: Int, proto: String, freed: ActivityProcessID?, sentAt: UInt64) async -> PortFreeing.State {
+        let clock = ContinuousClock()
+        let deadline = clock.now + Self.freeWatch
+        var state = PortFreeing.State.freeing
+        var last: [ActivityProcessID] = []
+        // Bounded however the census answers: 500 ms apart, past the deadline.
+        for _ in 0..<40 where state == .freeing {
+            try? await Task.sleep(for: .milliseconds(500))
+            let final = clock.now >= deadline
+            guard let snapshot = await ActivityMonitor.shared.census() else {
+                if final { break }
+                continue
+            }
+            last = ListeningPorts.holders(of: port, proto: proto, in: snapshot)
+            state = PortFreeing.state(holders: last, freed: freed, sentAt: sentAt, final: final)
+        }
+        // No read said otherwise by the deadline: still held, by what the
+        // last one found — or, with none, by the one freed.
+        if state == .freeing {
+            state = last.isEmpty ? .stillHeld(pid: freed?.pid) : PortFreeing.state(holders: last, freed: freed, sentAt: sentAt, final: true)
+        }
+        return state
     }
 
     /// `freeing` in place of what its pane said of its port before.

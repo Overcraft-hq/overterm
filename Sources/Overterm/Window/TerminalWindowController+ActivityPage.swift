@@ -50,7 +50,8 @@ extension TerminalWindowController {
                 self.activityGoTo(tab: id)
                 window.showInfo(for: tab)
             },
-            sample: { [weak self] pid in self?.activitySample(pid) })
+            sample: { [weak self] pid in self?.activitySample(pid) },
+            free: { [weak self] row in self?.activityFree(row) })
         activityPage.containers = { Self.activityContainers() }
         activityPage.contextFacts = { context in Self.activityContextFacts(&context) }
         let docker = ActivityDockerHold()

@@ -17,6 +17,9 @@ struct ActivityPageActions {
     var reveal: @MainActor (String) -> Void = { path in NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
     /// `sample <pid> 5` in a new tab (`s`): it only reads.
     var sample: @MainActor (pid_t) -> Void = { _ in }
+    /// Free :N (`f`) through the row's owner's own verb, asked first
+    /// (`ActivityPortHolder`).
+    var free: @MainActor (ActivityPortRow) -> Void = { _ in }
 }
 
 /// The Activity page (⌥⌘A; docs/design/activity/analysis.md, 6.4): its
@@ -93,6 +96,9 @@ final class ActivityPageModel: ObservableObject {
     }
     /// The selected process's detail (6.4).
     @Published private(set) var detail: ActivityDetail?
+    /// What a Free from the page said last (6.8, After the step): ":3000
+    /// freeing…", then free or still held; cleared a while after.
+    @Published var freeing: String?
     /// The columns the person left: each section's, kept (6.5).
     @Published private(set) var layout: ActivityColumns.Layout = ActivityColumns.load()
     /// The scope ladder's rung (6.5, `[` and `]`), a section each.
@@ -525,6 +531,11 @@ final class ActivityPageModel: ObservableObject {
         case .pause: paused.toggle()
         case .mine: everyone = !(everyone ?? Settings.shared.activityEveryone)
         case .connections where !processes: connections.toggle()
+        case .free where !processes:
+            guard selection.count == 1, let id = selection.first, let row = content.ports.first(where: { $0.id == id }),
+                ActivityPortHolder.unavailable(row) == nil
+            else { return false }
+            actions.free(row)
         case .sortCPU where processes: processSort = ResourceSort(column: "cpu", ascending: false)
         case .sortMemory where processes: processSort = ResourceSort(column: "memory", ascending: false)
         case .sortTime where processes: processSort = ResourceSort(column: "time", ascending: false)
@@ -649,6 +660,14 @@ final class ActivityPageModel: ObservableObject {
                     title: "Copy URL", symbol: "link", unavailable: port.url == nil ? "Nothing a browser opens: UDP, or a link-local address" : nil, group: 1,
                     perform: { if let url = port.url { copy([url.absoluteString]) } }))
             verbs.append(ResourceVerb(title: "Copy Port", symbol: "number", group: 1, perform: { copy([String(port.port)]) }))
+            // 6.8, Free :N: the owner's own verb, asked first; stopping
+            // the user's own processes is the verbs' stage.
+            let step = ActivityPortHolder.step(for: port)
+            verbs.append(
+                ResourceVerb(
+                    title: step.map { ActivityPortHolder.title($0, port: port.port) } ?? "Free :\(port.port)…", label: "Free", symbol: "xmark.circle",
+                    place: .button, key: "f", unavailable: ActivityPortHolder.unavailable(port),
+                    perform: { [weak self] in self?.actions.free(port) }))
         }
         guard let row else { return verbs + [copyVerb] }
         verbs.append(

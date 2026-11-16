@@ -217,6 +217,11 @@ struct ActivityPageView: View {
                     .help("The rows keep their places while you work the list; values still change. It lets go once the pointer rests 5 s.")
                     .accessibilityIdentifier("activity.orderHeld")
             }
+            if let freeing = page.freeing {
+                Text(verbatim: freeing).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.orangeText)
+                    .help("What became of the port after its owner's verb, watched by the census — never by binding it")
+                    .accessibilityIdentifier("activity.freeing")
+            }
             if page.following {
                 Text("following").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
                     .help("The selection stays in view as it moves (F)")

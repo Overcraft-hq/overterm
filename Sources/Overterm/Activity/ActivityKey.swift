@@ -4,7 +4,8 @@ import Foundation
 /// while its list has the keyboard. Letters are case-sensitive, as Docker's
 /// `d` and `D` are. ← and → aren't here: `ResourceTable` folds and unfolds
 /// with them itself. The verbs' keys (`k`, `K`, `x`, `p`, `b`, `n`, `f`,
-/// `a`) come with the verbs (stage 2); Terminal in Its Folder (`e`) and
+/// `a`) come with the verbs (stage 2) — `f` frees a port through its
+/// owner's own verb now (`ActivityPortHolder`); Terminal in Its Folder (`e`) and
 /// Open Files (`l`) with the folder and descriptor reads they need. ⌥o is
 /// `ActivityPageModel.pressOption`'s. Pure.
 enum ActivityKey: String, ResourceKey {
@@ -12,7 +13,7 @@ enum ActivityKey: String, ResourceKey {
     case goTo, detail, filter, help
     case open, reveal, tabInfo, sample
     case tree, group, narrower, wider
-    case follow, pause, mine, connections
+    case follow, pause, mine, connections, free
     case sortCPU, sortMemory, sortTime, sortPID, invert
 
     var section: ActivityPageModel.Section? {
@@ -43,6 +44,7 @@ enum ActivityKey: String, ResourceKey {
         case .pause: "Z"
         case .mine: "u"
         case .connections: "c"
+        case .free: "f"
         case .sortCPU: "P"
         case .sortMemory: "M"
         case .sortTime: "T"
@@ -71,6 +73,7 @@ enum ActivityKey: String, ResourceKey {
         case .pause: "Pause updates"
         case .mine: "Yours only, or everyone's"
         case .connections: "Listening: your established connections too, paired end to end"
+        case .free: "Listening: free the port through its owner — Stop Container, Stop Forward, Disconnect, Stop the Service, AirPlay's switch"
         case .sortCPU: "Sort by CPU"
         case .sortMemory: "Sort by memory"
         case .sortTime: "Sort by CPU time"

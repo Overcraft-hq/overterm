@@ -206,6 +206,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// Info's — handed here with whether Settings ▸ Browser opens it in
     /// the browser column, instead of either browser.
     var linkRecorder: ((URL, _ inside: Bool) -> Void)?
+    /// A scenario's: a Free on the Activity page — its owner's verb —
+    /// handed here; only a container's Stop also acts (on the run's fake
+    /// engine), nothing else reaches a forward, a tunnel, launchd or System
+    /// Settings.
+    var activityFreeRecorder: ((ActivityPortHolder.Step) -> Void)?
+    /// A scenario's: what the Activity page would open in a new tab — a
+    /// folder, a command typed, run or not — handed here instead.
+    var activityTerminalRecorder: ((ActivityTerminalRequest) -> Void)?
     /// Ask Why on a tab's mark, in a scenario: the brief handed here
     /// instead of the sheet.
     var kubernetesBriefRecorder: ((KubeAgentBrief, Tab) -> Void)?
@@ -1332,6 +1340,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     func newTab(in directory: URL, running command: String) {
         let fontSize = store.selected?.terminal.inheritedSettings().fontSize
         let terminal = TerminalView(workingDirectory: directory.path, initialInput: command + "\n", fontSize: fontSize)
+        addTab(terminal, .folder, agent: nil, after: store.selected, in: directory.path)
+    }
+
+    /// A shell tab after the selected one, in `directory`, with `command`
+    /// typed as its shell starts and left there: Return is the person's
+    /// (Activity's read route, which asks for a password).
+    func newTab(in directory: URL, typing command: String) {
+        let fontSize = store.selected?.terminal.inheritedSettings().fontSize
+        let terminal = TerminalView(workingDirectory: directory.path, initialInput: command, fontSize: fontSize)
         addTab(terminal, .folder, agent: nil, after: store.selected, in: directory.path)
     }
 

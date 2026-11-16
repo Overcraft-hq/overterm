@@ -369,7 +369,10 @@ struct PortFreeing: Hashable, Sendable {
     var state: State
 
     /// What the header says of it.
-    var label: String {
+    var label: String { Self.label(state, port: port) }
+
+    /// What is said of `port` in `state`: the pill's header, the page's.
+    static func label(_ state: State, port: Int) -> String {
         switch state {
         case .freeing: ":\(port) freeing…"
         case .free: ":\(port) is free"
