@@ -810,6 +810,14 @@ final class TerraformRootsReviewTests: XCTestCase {
         let others = TerraformWorktree.others([main, bump, gone], of: URL(fileURLWithPath: "/w/acme-live"))
         XCTAssertEqual(others, [TerraformWorktree(url: URL(fileURLWithPath: "/w/acme-live-bump"), name: "bump-acme")])
         XCTAssertEqual(TerraformWorktree.others([main, bump], of: URL(fileURLWithPath: "/w/globex")), [], "another repository's list")
+        // What a root is compared with: main only — and nothing on main itself.
+        let other = Worktree(
+            path: URL(fileURLWithPath: "/w/acme-live-other"), head: "3", branch: "feat/other", isBare: false, isDetached: false, isLocked: false,
+            isMain: false)
+        XCTAssertEqual(
+            TerraformWorktree.comparedWith([main, bump, other], of: URL(fileURLWithPath: "/w/acme-live-bump")),
+            [TerraformWorktree(url: URL(fileURLWithPath: "/w/acme-live"), name: "main")], "another branch's worktree says nothing about this one")
+        XCTAssertEqual(TerraformWorktree.comparedWith([main, bump], of: URL(fileURLWithPath: "/w/acme-live")), [], "main itself: nothing to compare")
     }
 
     /// Outside git, a repository's top folder is walked, bounded; any other folder isn't.

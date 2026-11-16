@@ -11,6 +11,8 @@ version is tagged `v<version>`.
 - api: GraphQL — New GraphQL Request; the server's schema read by introspection (with the request's URL, headers and auth) into a Schema tab to browse and filter; the query completed from it as it is typed — fields, arguments, types
 - api: MCP servers — the checkout's .mcp.json, Claude Code's and Codex's servers listed in the API panel (read, never written), and your own added there (secrets in the keychain); one inspected beside the editor: its tools called with JSON arguments started from their schema, its resources read, its prompts got, every message logged — over stdio, Streamable HTTP or SSE
 - api: gRPC — Bruno's gRPC requests: New gRPC Request, its methods from the server's reflection or the collection's .proto files (with protoc), messages typed as JSON, metadata and auth; unary, server, client and bidi streams called over HTTP/2 (TLS or plain), every reply and the status shown
+- terraform: a root is compared with main alone — not every worktree's branch ("feat/x has no lock file", a dozen branches "sharing its state" are gone); Needs init said only when a required provider really isn't locked (by its source, so better-uptime is better-uptime), naming it and what to do; the branch and version said once above the cards, "no state yet" where a local state isn't there
+- kubernetes: the rail's warnings — the last hour's Warning events of the bound namespace, or unbound of the page's context in the namespace the checkout's files name — with the nodes' readiness; the forwards running shown unbound too; a workload's image tag when no commit is known
 
 ## 1.6.0 — 2026-11-13
 

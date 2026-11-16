@@ -211,6 +211,11 @@ extension E2ERunner {
             "the shared backend's root shares its state with main",
             panel.roots.first { $0.path == "envs/shared" }?.sharedWith == ["main"], "\(panel.roots.map { "\($0.path): \($0.sharedWith)" })")
         check("a local root's state is its own", panel.roots.first { $0.path == "envs/prod" }?.sharedWith == [])
+        check("the branch and version said once, above the cards", panel.branchLabel?.isEmpty == false)
+        if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty {
+            await pause(0.6)
+            app.captureWindow(to: (png as NSString).deletingPathExtension + "-terraform-panel.png")
+        }
         let calls = recorder.calls()
         check(
             "every terraform run was `version -json` or the pane's console",

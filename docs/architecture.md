@@ -7704,13 +7704,17 @@ stage 2e, force unlock, and stage 2f, a review's Terraform section.
   modules, the lock file's providers, a local backend's workspaces and
   whether this one's state file is here, the version pins from the root
   up to the checkout (`.terraform-version`, `.tool-versions`, `mise.toml`;
-  bounded, stopping at `/`). The repository's other worktrees — the
-  window's `WorktreeModel` list (`TerraformWorktree.others`: not bare,
-  not prunable, at most 12, none while the list is another repository's),
-  never a second `git worktree list` — are read for the same root, their
+  bounded, stopping at `/`). The main worktree — the default branch's
+  checkout, from the window's `WorktreeModel` list (`TerraformWorktree.comparedWith`:
+  `isMain` only, none on main itself or while the list is another
+  repository's), never a second `git worktree list` — is read for the same
+  root (every other worktree is someone's work in progress: "feat/x has no
+  lock file" said nothing about this checkout, and a dozen named on every
+  card buried what mattered), its
   backend and workspace only (`TerraformRootFacts.readIdentity`: the init
   record, else the backend block; kept by the files' size and mtime): one with the same
-  `TerraformStateIdentity` "shares its state"; a local root whose state is
+  `TerraformStateIdentity` is "the same state as main: an apply here changes
+  what it deploys"; a local root whose state is
   missing here but there says "no state in this worktree: the state is in
   `main`'s checkout" (3.7). Nothing is written but `TerraformRootStore`'s
   production identities, in Overterm's folder. A file event redoes the
@@ -8301,11 +8305,18 @@ stage 2e, force unlock, and stage 2f, a review's Terraform section.
   person's own Init or a plan ran there. `terraform.newWorktreeInit`
   (on) turns the init off; the warnings stay. What it did shows on the
   root's card. Every card also compares its lock file with the same
-  root's in the other worktrees (`TerraformLockDrift`, pure: "aws 5.80.0
-  here, 6.2.0 in main", "no lock file here"; one line a card, the first
-  and how many more — `summary`), read from the files
+  root's in the main worktree (`TerraformLockDrift`, pure: "aws 5.80.0
+  here, 6.2.0 on main", "no lock file here"; nothing when main has none —
+  nothing to compare), read from the files
   themselves — committed or not, what each worktree's init uses — and
   kept by their size and time. Tests: `TerraformWorktreeTests`; the
+  "Needs init" is a required provider the lock file doesn't pin, by its
+  source (namespace/type, as `TerraformInitPlan` reads it — the local
+  name isn't the type: `betteruptime` is `better-uptime`), named, with
+  what to do; no lock file and no `.terraform` is a quiet "not
+  initialised here yet". What every card shares — the branch @ commit, the
+  version they run — is said once above them; a card's version only when
+  it differs, a local backend's state "no state yet" when it isn't there.
   `terraform` scenario's `E2ERunner+TerraformA2b` (New Task's root warned,
   initialised through the recording wrapper, validate there — its local
   module installed by that init; a worktree without it needs init).

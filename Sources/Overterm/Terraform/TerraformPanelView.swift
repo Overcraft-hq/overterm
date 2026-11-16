@@ -71,6 +71,12 @@ struct TerraformPanelView: View {
         .accessibilityIdentifier("terraform.panel")
     }
 
+    /// The version every root (that says one) runs, when they agree.
+    static func commonVersion(_ roots: [TerraformRootCard]) -> String? {
+        let versions = Set(roots.compactMap(\.version))
+        return versions.count == 1 ? versions.first : nil
+    }
+
     private var content: some View {
         ScrollView {
             LazyVStack(alignment: .leading, spacing: 0) {
@@ -82,9 +88,20 @@ struct TerraformPanelView: View {
                 if panel.roots.isEmpty && panel.modules.isEmpty && panel.terragrunt.isEmpty {
                     quiet("No Terraform roots in this checkout.")
                 }
+                // What every card shared, said once: the checkout's branch @
+                // commit (6.2: shown, never a signal) and the version they run.
+                let common = Self.commonVersion(panel.roots)
+                if panel.branchLabel != nil || common != nil {
+                    Text(verbatim: [panel.branchLabel, common.map { "tf \($0)" }].compactMap { $0 }.joined(separator: " · "))
+                        .font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text3)
+                        .lineLimit(1).truncationMode(.middle)
+                        .help("The checkout's branch and commit: the branch names the work, not where it goes — never a production signal")
+                        .padding(.horizontal, 12).padding(.top, 4)
+                        .accessibilityIdentifier("terraform.panel.branch")
+                }
                 ForEach(groups, id: \.name) { group in
                     section(group.name)
-                    ForEach(group.roots) { card in RootRow(card: card, panel: panel, theme: theme, actions: actions) }
+                    ForEach(group.roots) { card in RootRow(card: card, panel: panel, theme: theme, actions: actions, commonVersion: common) }
                 }
                 if !panel.modules.isEmpty {
                     fold("Modules", count: panel.modules.count, open: $showModules)
@@ -204,6 +221,8 @@ private struct RootRow: View {
     @ObservedObject var setup = TerraformWorktreeSetup.shared
     @ObservedObject var theme: ChromeTheme
     let actions: TerraformPanelActions
+    /// The version most roots run: shown in the panel's top line, not on each card.
+    var commonVersion: String?
 
     private var selected: Bool { panel.selectedPath == card.path }
     private var color: Color { TerraformPanelView.color(card.rootClass, theme: theme) }
@@ -215,13 +234,6 @@ private struct RootRow: View {
                 HStack(spacing: 6) {
                     Text(verbatim: card.name).font(.system(size: ChromeMetrics.text(12), weight: .semibold, design: .monospaced))
                         .foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle).layoutPriority(1)
-                    // The checkout's branch @ commit (6.2): shown, never a signal (5.1).
-                    if let branch = panel.branchLabel {
-                        Text(verbatim: "· " + branch).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text3)
-                            .lineLimit(1).truncationMode(.tail)
-                            .help("The checkout's branch and commit: the branch names the work, not where it goes — never a production signal")
-                            .accessibilityIdentifier("terraform.panel.branch.\(card.path)")
-                    }
                     if card.touched { Circle().fill(theme.accentText).frame(width: 6, height: 6).help("Changed in this checkout") }
                     Spacer(minLength: 4)
                     classPill
@@ -230,7 +242,8 @@ private struct RootRow: View {
                     Button {
                         actions.chooseWorkspace(card)
                     } label: {
-                        Text(verbatim: "workspace \(card.workspace) ▾").font(.system(size: ChromeMetrics.text(10.5), design: .monospaced))
+                        // The name alone: "workspace " cut it to "workspac…" in a rail's width.
+                        Text(verbatim: "\(card.workspace) ▾").font(.system(size: ChromeMetrics.text(10.5), design: .monospaced))
                             .padding(.horizontal, 5).frame(height: 17)
                             .background(RoundedRectangle(cornerRadius: 4).fill(theme.rowSel))
                             .foregroundStyle(theme.text2)
@@ -239,8 +252,14 @@ private struct RootRow: View {
                     .buttonStyle(.plain)
                     .help("Select a workspace: it writes \(card.name)/.terraform/environment, which every terminal there follows")
                     .accessibilityIdentifier("terraform.panel.workspace.\(card.path)")
-                    Text(verbatim: card.backendSummary).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text2)
-                        .lineLimit(1).truncationMode(.middle)
+                    // A local state file that isn't there yet is said so: the
+                    // path alone read as if there were a state.
+                    // Said once: "no state in this worktree" below says it louder.
+                    let noState = card.facts.backend.type == "local" && !card.facts.localStateExists && card.stateElsewhere == nil
+                    Text(verbatim: card.backendSummary + (noState ? " · no state yet" : ""))
+                        .font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text2)
+                        .lineLimit(2).truncationMode(.middle)
+                        .help(card.backendSummary)
                 }
                 notes
                 if selected { detail }
@@ -281,7 +300,8 @@ private struct RootRow: View {
                 .accessibilityIdentifier("terraform.panel.newWorktree.\(card.path)")
         }
         if !card.sharedWith.isEmpty {
-            line("Shares its state with " + card.sharedWith.joined(separator: ", "), theme.text3)
+            // Only main is compared: an apply here changes what main deploys.
+            line("Same state as " + card.sharedWith.joined(separator: ", ") + ": an apply here changes what it deploys.", theme.text3)
                 .accessibilityIdentifier("terraform.panel.shared.\(card.path)")
         }
         // An apply going here — this session's, or one followed again after
@@ -310,9 +330,18 @@ private struct RootRow: View {
             line("var files: " + varFiles.joined(separator: ", "), theme.text3).accessibilityIdentifier("terraform.panel.varFiles.\(card.path)")
         }
         if card.backendChanged { line("The backend changed since init: run init in a terminal.", theme.orangeText) }
-        if card.facts.needsInit { line("Needs init: a provider it requires isn't in its lock file.", theme.orangeText) }
+        if card.facts.needsInit {
+            line(
+                "Needs init: \(card.facts.unlocked.joined(separator: ", ")) \(card.facts.unlocked.count == 1 ? "isn't" : "aren't") in its lock file — run terraform init in a terminal, then review the lock file.",
+                theme.orangeText
+            )
+            .accessibilityIdentifier("terraform.panel.needsInit.\(card.path)")
+        } else if card.facts.neverInitialised {
+            line("Not initialised here yet: no lock file.", theme.text3).accessibilityIdentifier("terraform.panel.notInitialised.\(card.path)")
+        }
         HStack(spacing: 6) {
-            if let version = card.version {
+            // The version once, in the panel's top line; here only when it differs.
+            if let version = card.version, card.versionMismatch != nil || version != commonVersion {
                 Text(verbatim: card.versionMismatch ?? "tf \(version)").font(.system(size: ChromeMetrics.text(10), design: .monospaced))
                     .foregroundStyle(card.versionMismatch == nil ? theme.text3 : theme.orangeText)
                     .accessibilityIdentifier("terraform.panel.version.\(card.path)")
@@ -354,12 +383,16 @@ private struct RootRow: View {
                 button("Terminal in This Root", "terminal") { actions.openTerminal(card) }
                     .accessibilityIdentifier("terraform.panel.terminal")
                 button("Validate", "checkmark.seal") { actions.validate(card) }
+                    .accessibilityIdentifier("terraform.panel.validate")
             }
             HStack(spacing: 6) {
                 button("Check Drift", "arrow.triangle.2.circlepath") { actions.checkDrift(card) }
                     .accessibilityIdentifier("terraform.panel.drift")
                 button("Test", "checkmark.circle") { actions.test(card) }
                     .accessibilityIdentifier("terraform.panel.test")
+                // As the context menu has it: a destroy is planned (and asked) like any plan.
+                button("Plan Destroy…", "trash.circle") { actions.planDestroy(card) }
+                    .accessibilityIdentifier("terraform.panel.planDestroy")
             }
             .disabled(setup.isInitializing(card.folder))
             if !(Settings.shared.terraformRoots[card.path]?.writable ?? true) {

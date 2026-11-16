@@ -156,9 +156,13 @@ enum TerraformMCP {
         let settings = TerraformClassSettings.current
         let identities = TerraformRootStore.shared.productionIdentities
         guard let listing = await TerraformRootScan.list(checkout) else { return nil }
+        // Main's worktree, as the panel compares with it: an agent told "no
+        // state here — it is in main" before it plans everything again.
+        let listed = Worktree.parse(porcelain: (try? await Git.run(["worktree", "list", "--porcelain"], in: checkout)) ?? "")
+        let main = TerraformWorktree.comparedWith(listed, of: checkout)
         let assembled = await TerraformPanelModel.blocking {
             TerraformPanelModel.assemble(
-                checkout: checkout, listing: listing, worktrees: [], settings: settings, identities: identities, awsProfile: nil, changed: [])
+                checkout: checkout, listing: listing, worktrees: main, settings: settings, identities: identities, awsProfile: nil, changed: [])
         }
         TerraformAgentGuards.shared.record(checkout, roots: assembled.roots, complete: !listing.capped, settings: settings, identities: identities)
         TerraformRootStore.shared.rememberProduction(assembled.roots.flatMap(\.rememberedIdentities))
@@ -171,7 +175,8 @@ enum TerraformMCP {
         var lines = ["Terraform roots of \(checkout.lastPathComponent) (\(read.roots.count)):"]
         for card in read.roots {
             var line = "\(card.path.isEmpty ? "." : card.path) — \(card.rootClass.title.uppercased()) (\(card.verdict.reason)) · workspace \(card.workspace) · \(card.backendSummary)"
-            if card.facts.needsInit { line += " · needs init" }
+            if card.facts.needsInit { line += " · needs init (\(card.facts.unlocked.joined(separator: ", ")) not locked)" }
+            if let drift = TerraformLockDrift.summary(card.lockDrift) { line += " · lock file: \(drift)" }
             if let elsewhere = card.stateElsewhere { line += " · no state here (it is in \(elsewhere))" }
             if !card.modules.isEmpty { line += " · calls \(card.modules.joined(separator: ", "))" }
             lines.append(line)
@@ -230,7 +235,7 @@ enum TerraformMCP {
         let lock = root.appendingPathComponent(".terraform.lock.hcl")
         guard FileManager.default.fileExists(atPath: lock.path) else { return "it has no .terraform.lock.hcl" }
         guard lockFileClean else { return "its .terraform.lock.hcl isn't committed, or changed since HEAD" }
-        if facts.needsInit { return "a provider it requires isn't in its lock file" }
+        if facts.needsInit { return "\(facts.unlocked.joined(separator: ", ")) isn't in its lock file" }
         if facts.modulesJSON.count < Set(facts.config.moduleSources).count { return "a module it calls isn't installed" }
         return nil
     }

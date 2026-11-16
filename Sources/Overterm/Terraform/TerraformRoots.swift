@@ -203,8 +203,13 @@ struct TerraformRootFacts: Equatable, Sendable {
     /// A local backend's state file for `workspace` is here.
     var localStateExists = false
     var pins = TerraformVersionPins()
-    /// `required_providers` with no lock entry: "needs init" (4.12 step 4).
-    var needsInit = false
+    /// `required_providers` with no lock entry: "needs init" (4.12 step 4) —
+    /// only where there is a lock file to miss them.
+    var needsInit: Bool { !unlocked.isEmpty }
+    /// The required providers its lock file doesn't pin, by their local names.
+    var unlocked: [String] = []
+    /// No lock file and no `.terraform` either: never initialised here.
+    var neverInitialised = false
 
     var backend: TerraformConfigFacts.Backend { TerraformStateIdentity.effective(config: config.backend, record: initRecord) }
 
@@ -261,8 +266,15 @@ struct TerraformRootFacts: Equatable, Sendable {
             facts.localStateExists = FileManager.default.fileExists(atPath: state.path)
         }
         if !facts.config.requiredProviders.isEmpty {
-            let locked = Set((facts.lockProviders ?? []).map(\.type))
-            facts.needsInit = facts.config.requiredProviders.keys.contains { !locked.contains($0) && $0 != "terraform" }
+            if let lock = facts.lockProviders {
+                // By each provider's source — namespace and type, as the lock
+                // file says them — not its local name: `betteruptime` is
+                // `BetterStackHQ/better-uptime`, locked as better-uptime.
+                facts.unlocked = TerraformInitPlan.items(config: facts.config, lockProviders: lock)
+                    .filter { $0.kind == .provider && $0.flag != nil && $0.name != "terraform" }.map(\.name)
+            } else {
+                facts.neverInitialised = !FileManager.default.fileExists(atPath: data.appendingPathComponent("providers").path)
+            }
         }
         facts.pins = pins(from: root, checkout: checkout, required: facts.config.requiredVersion)
         return facts
