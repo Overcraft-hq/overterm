@@ -222,7 +222,11 @@ final class PaneTokenTests: XCTestCase {
         let a = tokens.token(for: "pane-a")
         XCTAssertEqual(BridgeServer.route(request("/mcp/pane-a", bearer: nil), tokens: tokens), .refused(status: 401))
         XCTAssertEqual(BridgeServer.route(request("/mcp/pane-a", bearer: "wrong"), tokens: tokens), .refused(status: 401))
-        XCTAssertEqual(BridgeServer.route(request("/mcp/pane-a", bearer: String(a.dropLast()) + "0"), tokens: tokens).isRefused, true)
+        // One digit off — never the same digit: a token ending in 0 (one in
+        // sixteen) "changed" to 0 was itself, and was let in.
+        let offByOne = String(a.dropLast()) + (a.hasSuffix("0") ? "1" : "0")
+        XCTAssertNotEqual(offByOne, a)
+        XCTAssertEqual(BridgeServer.route(request("/mcp/pane-a", bearer: offByOne), tokens: tokens).isRefused, true)
         XCTAssertEqual(BridgeServer.route(request("/mcp/pane-z", bearer: a), tokens: tokens), .refused(status: 401), "a pane with no token")
         XCTAssertEqual(BridgeServer.route(request("/mcp/pane-a/extra", bearer: a), tokens: tokens), .refused(status: 404))
         let bare = HTTPRequest(method: "POST", path: "/mcp/pane-a", headers: ["authorization": a], body: Data())
