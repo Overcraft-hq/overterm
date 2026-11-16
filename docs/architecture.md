@@ -1164,6 +1164,73 @@ opens in Bruno and runs under `bru run` — nothing of Overterm's own on disk.
   runs while either tool set is given (`BrowserBridge.update`). The
   response's ✦ hands a request and what came back to an agent.
 
+### GraphQL
+
+Bruno's GraphQL requests (`meta type: graphql`, `body:graphql` and its
+vars) are sent as JSON as they were; what was added is the schema
+(`GraphQLSchema`, pure). It is read by introspection — GraphiQL's query,
+sent with the request's own URL, headers and auth (`APIWorkspace.loadGraphQLSchema`)
+— kept per endpoint for the session, and shown in a Schema tab
+(`GraphQLSchemaView`). The query completes from it (`APICodeView.complete`,
+AppKit's completion with nothing picked first): the place of the caret is
+read from the text alone — the type at each `{`, a field's parentheses, a
+type after `on` or a variable's colon — strings and comments skipped, so a
+query that doesn't parse yet still completes.
+
+### MCP servers
+
+MCP Inspector's work beside the editor. Servers come from the agents'
+configs, read never written (`MCPServerConfig.discover`): the checkout's
+`.mcp.json`, Claude Code's `~/.claude.json` (the user's, and this
+checkout's under `projects`), Codex's `~/.codex/config.toml` (`TOMLLine`,
+as much TOML as those tables use); `${VAR}` and `${VAR:-default}` expanded.
+Servers added here are Overterm's (`MCPAddedServers`, `API/MCPServers.json`
+in its folder), their headers' and env's values in the keychain — and
+nothing goes into a Bruno collection, which has no MCP request.
+
+`MCPClient` (an actor) is JSON-RPC 2.0 over stdio (a process run with the
+user's shell environment, ended at quit), Streamable HTTP (its
+`Mcp-Session-Id`, answers as JSON or an event stream) or the 2024 SSE
+transport; `initialize`, then what `capabilities` says the server has. An
+event stream is read by `SSELines`, which keeps the empty lines that end
+events — `AsyncBytes.lines` drops them. A request unanswered in 60 s fails.
+`MCPInspector` (the API workspace's) lists tools, resources (and templates)
+and prompts, calls a tool with JSON arguments started from its input schema,
+logs every message and stderr; `MCPPageView` is the right-hand slot's page.
+
+### gRPC
+
+Bruno's gRPC request (`meta type: grpc`; `grpc { url, method, methodType,
+protoPath, auth }`, `metadata`, a `body:grpc { name, content }` a message —
+`BruFile.setBlocks` keeps several blocks of one name, and a content always in
+triple quotes, as Bruno writes it). No gRPC library:
+
+- **`Protobuf`** (pure): the wire format; FileDescriptorProto and
+  FileDescriptorSet read into a `Registry`; a message as proto3's JSON to
+  bytes and back by its descriptor — 64-bit numbers as strings, enums by
+  name, bytes in base64, maps, oneofs, Timestamp, Duration, the wrappers,
+  Struct/Value/ListValue — and a skeleton to start a message from.
+- **`GRPCConnection`**: HTTP/2 on swift-nio-http2 — a stream a call, the
+  HEADERS with `te: trailers` and the metadata, a DATA frame a message with
+  gRPC's five-byte prefix, the status in the trailers (or the headers alone,
+  trailers-only). TLS by ALPN h2, h2c to a local server; `grpc://` and
+  `grpcs://` as Bruno reads them. Messages are handed on as they arrive.
+- **Where methods come from**: the collection's `.proto` files (the
+  request's `protoPath`, else bruno.json's `protobuf`) compiled by the
+  `protoc` on this Mac (`GRPCProtoc`, not shipped), else the server's
+  reflection, v1 then v1alpha (`GRPCReflection`; what the files import asked
+  for by name).
+- **`GRPCPlan`** fills variables as an HTTP request's plan does; the
+  collection's and folders' headers become metadata, and the auth
+  (inherited too) a header. **`GRPCRequestView`**: the method picker, the
+  messages, metadata, auth, docs; the status, every reply, headers and
+  trailers. One message for a unary call or a server stream, all of them
+  for a client or bidi stream (sent, then the stream half-closed).
+- **Tested** against `E2EGRPCServer` (h2c, `Fixtures/grpc/shop.proto`'s
+  service with its descriptors embedded, reflection v1 and v1alpha) and
+  `E2EMCPServer` (a stdio script, a Streamable HTTP server) — the
+  `apiGraphQL`, `apiMCP` and `apiGRPC` scenarios.
+
 ## Notes (⌥⌘N, sidebar)
 
 A notes vault beside the terminal: a folder of Markdown that is an

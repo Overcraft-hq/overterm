@@ -160,6 +160,10 @@ final class APIRequestModel: ObservableObject {
 
     func send() {
         guard let workspace else { return }
+        if file.isGRPC {
+            if workspace.grpcResult(for: url)?.running == true { workspace.cancelGRPC(url) } else { workspace.sendGRPC(file, at: url) }
+            return
+        }
         if isSending { workspace.cancel(url) } else { workspace.send(file, at: url) }
     }
 

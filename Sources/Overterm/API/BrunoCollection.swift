@@ -20,6 +20,10 @@ struct BrunoCollection: Equatable, Sendable {
 
     /// My Requests: Overterm's own, not the checkout's (APIWorkspace).
     var isPersonal = false
+    /// bruno.json's `protobuf`: the .proto files gRPC requests read, and the
+    /// folders their imports are found in — relative to the root.
+    var protoFiles: [String] = []
+    var protoImportPaths: [String] = []
 
     /// Reads the collection at `root`; nil when it has no bruno.json.
     static func load(_ root: URL) -> BrunoCollection? {
@@ -31,7 +35,12 @@ struct BrunoCollection: Equatable, Sendable {
         let flow = ((json["scripts"] as? [String: Any])?["flow"] as? String) ?? "sandwich"
         let tree = folder(root, root: root, ignore: ignore, name: name)
         let environments = environmentFiles(root)
-        return BrunoCollection(root: root, name: name, ignore: ignore, tree: tree, environments: environments, scriptFlow: flow)
+        var collection = BrunoCollection(root: root, name: name, ignore: ignore, tree: tree, environments: environments, scriptFlow: flow)
+        let protobuf = json["protobuf"] as? [String: Any] ?? [:]
+        collection.protoFiles = (protobuf["protoFiles"] as? [[String: Any]] ?? []).compactMap { $0["path"] as? String }
+        collection.protoImportPaths = (protobuf["importPaths"] as? [[String: Any]] ?? []).filter { $0["enabled"] as? Bool != false }
+            .compactMap { $0["path"] as? String }
+        return collection
     }
 
     /// The collections under `checkout`: bruno.json at most `depth` folders
@@ -88,7 +97,7 @@ struct BrunoCollection: Equatable, Sendable {
                 requests.append(
                     APIItem(
                         url: child, name: file.name.isEmpty ? child.deletingPathExtension().lastPathComponent : file.name,
-                        method: file.method, seq: file.seq, children: nil, hasDocs: file.docs?.isEmpty == false))
+                        method: file.isGRPC ? "GRPC" : file.method, seq: file.seq, children: nil, hasDocs: file.docs?.isEmpty == false))
             }
         }
         // Bruno's sidebar: folders first, each list by seq, then name.

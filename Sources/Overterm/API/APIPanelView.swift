@@ -53,6 +53,7 @@ struct APIPanelView: View {
                     Menu {
                         Button("New Request…") { newRequest(in: workspace.collection?.root) }
                         Button("New GraphQL Request…") { newRequest(in: workspace.collection?.root, kind: .graphql) }
+                        Button("New gRPC Request…") { newRequest(in: workspace.collection?.root, kind: .grpc) }
                         Button("New Folder…") { newFolder(in: workspace.collection?.root) }
                         Divider()
                         importItems
@@ -263,6 +264,7 @@ struct APIPanelView: View {
         let folder = item.isFolder ? item.url : item.url.deletingLastPathComponent()
         Button("New Request…") { newRequest(in: folder) }
         Button("New GraphQL Request…") { newRequest(in: folder, kind: .graphql) }
+        Button("New gRPC Request…") { newRequest(in: folder, kind: .grpc) }
         Button("New Folder…") { newFolder(in: folder) }
         Divider()
         if item.hasDocs {
@@ -425,7 +427,7 @@ struct APIPanelView: View {
             // Yours start blank, for a URL typed whole; a collection's
             // start from its environment's base.
             let personal = workspace.collection(containing: folder.appendingPathComponent("x"))?.isPersonal == true
-            actions.open(try workspace.newDraft(in: folder, url: personal ? "" : "{{baseUrl}}/", kind: kind))
+            actions.open(try workspace.newDraft(in: folder, url: kind == .grpc ? "" : (personal ? "" : "{{baseUrl}}/"), kind: kind))
         }
     }
 

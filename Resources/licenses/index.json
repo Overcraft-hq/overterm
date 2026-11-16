@@ -465,6 +465,14 @@
  },
  {
   "group": "Swift packages",
+  "name": "swift-nio-http2",
+  "version": "1.46.0",
+  "license": "Apache-2.0",
+  "url": "https://github.com/apple/swift-nio-http2",
+  "file": "licenses/swift-nio-http2.txt"
+ },
+ {
+  "group": "Swift packages",
   "name": "swift-nio-ssl",
   "version": "2.37.6",
   "license": "Apache-2.0",

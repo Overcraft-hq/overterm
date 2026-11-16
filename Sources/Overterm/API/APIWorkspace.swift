@@ -30,6 +30,10 @@ final class APIWorkspace: ObservableObject {
     /// GraphQL schemas, by the endpoint they were read from: kept for the
     /// session, read again on Refresh.
     @Published private(set) var graphQLSchemas: [String: GraphQLSchemaState] = [:]
+    /// gRPC: each source's services and methods, each request's last call.
+    @Published var grpcSchemas: [String: GRPCSchemaState] = [:]
+    @Published var grpcResults: [URL: GRPCResult] = [:]
+    var grpcTasks: [URL: Task<Void, Never>] = [:]
     /// The MCP servers the panel lists, and the one inspected.
     let mcp = MCPInspector.make()
     @Published var search = ""
@@ -634,6 +638,7 @@ final class APIWorkspace: ObservableObject {
             switch kind {
             case .http: BruFile.newRequest(name: name, url: url, seq: 1)
             case .graphql: BruFile.newGraphQLRequest(name: name, url: url, seq: 1)
+            case .grpc: BruFile.newGRPCRequest(name: name, url: url, seq: 1)
             }
         try made.text.write(to: file, atomically: true, encoding: .utf8)
         drafts[Self.canonicalPath(file)] = folder

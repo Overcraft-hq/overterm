@@ -9,6 +9,14 @@ struct APIRequestView: View {
     @ObservedObject var theme: ChromeTheme
 
     var body: some View {
+        if model.file.isGRPC, let workspace = model.workspace {
+            GRPCRequestView(model: model, workspace: workspace, theme: theme)
+        } else {
+            http
+        }
+    }
+
+    private var http: some View {
         VStack(spacing: 0) {
             addressBar
             Rectangle().fill(theme.border).frame(height: 1)
@@ -207,6 +215,7 @@ enum APIMethodStyle {
         case "PUT": Color(red: 0.36, green: 0.62, blue: 0.98)
         case "PATCH": Color(red: 0.70, green: 0.52, blue: 0.98)
         case "DELETE": Color(red: 0.96, green: 0.40, blue: 0.40)
+        case "GRPC": Color(red: 0.25, green: 0.76, blue: 0.80)
         default: Color(red: 0.6, green: 0.6, blue: 0.65)
         }
     }

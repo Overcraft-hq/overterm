@@ -245,6 +245,7 @@ final class E2ETests: XCTestCase {
     func testObservability() throws { try run("observability") }
     func testAPIGraphQL() throws { try run("apiGraphQL") }
     func testAPIMCP() throws { try run("apiMCP") }
+    func testAPIGRPC() throws { try run("apiGRPC") }
     // The whole Docker page, end to end: 80–110 s on a busy machine.
     func testDocker() throws { try run("docker", timeout: 300) }
     /// The Kubernetes page against the fake API server: the run's only

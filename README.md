@@ -52,8 +52,12 @@ notification and on the Dock; Claude Code needs no setup for it.
       requests by folder, environments — with Bruno's tabs: params, body, headers,
       auth, vars, scripts, asserts, tests, docs. Scripts and tests run as in Bruno,
       a folder runs top to bottom, and every edit is a minimal edit to the
-      <code>.bru</code> you commit. Imports OpenAPI, Postman, <code>.http</code> and
-      cURL; agents send requests over MCP.
+      <code>.bru</code> you commit. GraphQL with its schema browsed and the query
+      completed from it; gRPC — methods by reflection or your <code>.proto</code>
+      files, unary and streaming calls. MCP servers — your agents'
+      <code>.mcp.json</code>, Claude Code's and Codex's — inspected: tools called,
+      resources read, every message logged. Imports OpenAPI, Postman,
+      <code>.http</code> and cURL; agents send requests over MCP.
     </td>
   </tr>
   <tr>

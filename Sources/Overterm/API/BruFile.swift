@@ -162,17 +162,47 @@ struct BruFile: Equatable, Sendable {
         }
     }
 
+    /// Every block of a name — `body:grpc`, one a message — in the file's order.
+    func blocks(named name: String) -> [BruBlock] { blocks.filter { $0.name == name } }
+
+    /// Replaces every block of a name with these dictionaries, in order, where
+    /// the first of them was (else where Bruno puts it); a block unchanged
+    /// keeps its bytes.
+    mutating func setBlocks(_ name: String, _ dictionaries: [[BruPair]]) {
+        let old = blocks(named: name)
+        guard old.map(\.content) != dictionaries.map({ BruBlock.Content.dictionary($0) }) else { return }
+        let first = index(of: name)
+        while index(of: name) != nil { remove(name) }
+        guard !dictionaries.isEmpty else { return }
+        var made = dictionaries.enumerated().map { offset, pairs in
+            old.indices.contains(offset) && old[offset].content == .dictionary(pairs) ? old[offset] : BruBlock(name: name, content: .dictionary(pairs))
+        }
+        if let first, first <= segments.count {
+            var insertion: [Segment] = []
+            for block in made { insertion += [.block(block), .gap("\n")] }
+            segments.insert(contentsOf: insertion, at: min(first, segments.count))
+            return
+        }
+        set(made.removeFirst())
+        // The rest after it, a blank line apart.
+        guard var at = index(of: name) else { return }
+        for block in made {
+            segments.insert(contentsOf: [.gap("\n"), .block(block)], at: at + 1)
+            at += 2
+        }
+    }
+
     private func index(of name: String) -> Int? {
         segments.firstIndex { if case .block(let block) = $0 { block.name == name } else { false } }
     }
 
     /// The order Bruno's writer emits blocks in; unknown names go last.
     static let order: [String] = [
-        "meta", "get", "post", "put", "patch", "delete", "options", "head", "connect", "trace", "http", "graphql",
-        "params:query", "params:path", "headers",
+        "meta", "get", "post", "put", "patch", "delete", "options", "head", "connect", "trace", "http", "graphql", "grpc", "ws",
+        "params:query", "params:path", "headers", "metadata",
         "auth", "auth:awsv4", "auth:basic", "auth:bearer", "auth:digest", "auth:ntlm", "auth:oauth2", "auth:wsse", "auth:apikey",
         "body", "body:json", "body:text", "body:xml", "body:sparql", "body:form-urlencoded", "body:multipart-form", "body:file",
-        "body:graphql", "body:graphql:vars",
+        "body:graphql", "body:graphql:vars", "body:grpc", "body:ws",
         "vars", "vars:secret", "vars:pre-request", "vars:post-response", "assert",
         "script:pre-request", "script:post-response", "tests", "settings", "docs",
     ]
@@ -186,7 +216,8 @@ struct BruFile: Equatable, Sendable {
     /// Blocks whose content is text, written indented by two spaces;
     /// every other `{ }` block holds `key: value` lines.
     static func isTextBlock(_ name: String) -> Bool {
-        name.hasPrefix("body:") && !["body:form-urlencoded", "body:multipart-form", "body:file"].contains(name)
+        // gRPC's and WebSocket's messages are name and content pairs, not text.
+        name.hasPrefix("body:") && !["body:form-urlencoded", "body:multipart-form", "body:file", "body:grpc", "body:ws"].contains(name)
             || name.hasPrefix("script:") || name == "tests" || name == "docs"
     }
 
@@ -268,6 +299,7 @@ struct BruFile: Equatable, Sendable {
                 }
                 index += 1
                 pair.value = value.joined(separator: "\n")
+                pair.multiline = true
             }
             pairs.append(pair)
         }
@@ -320,11 +352,24 @@ struct BruPair: Equatable, Hashable, Sendable {
     var key: String
     var value: String
     var enabled = true
+    /// Written in triple quotes even on one line — as Bruno writes a gRPC
+    /// message's content — and read so. How it is written, not what it is:
+    /// left out of equality.
+    var multiline = false
 
-    init(key: String, value: String, enabled: Bool = true) {
+    static func == (a: BruPair, b: BruPair) -> Bool { a.key == b.key && a.value == b.value && a.enabled == b.enabled }
+
+    func hash(into hasher: inout Hasher) {
+        hasher.combine(key)
+        hasher.combine(value)
+        hasher.combine(enabled)
+    }
+
+    init(key: String, value: String, enabled: Bool = true, multiline: Bool = false) {
         self.key = key
         self.value = value
         self.enabled = enabled
+        self.multiline = multiline
     }
 
     /// A line of a dictionary block, its indent already gone.
@@ -349,7 +394,7 @@ struct BruPair: Equatable, Hashable, Sendable {
     var written: String {
         let needsQuotes = key.contains(":") || key.hasPrefix("~") || key.hasPrefix("\"") || key != key.trimmingCharacters(in: .whitespaces)
         let name = (enabled ? "" : "~") + (needsQuotes ? "\"\(key)\"" : key)
-        guard value.contains("\n") else { return value.isEmpty ? "\(name): " : "\(name): \(value)" }
+        guard value.contains("\n") || multiline else { return value.isEmpty ? "\(name): " : "\(name): \(value)" }
         let lines = value.components(separatedBy: "\n").map { "    " + $0 }.joined(separator: "\n")
         return "\(name): '''\n\(lines)\n  '''"
     }

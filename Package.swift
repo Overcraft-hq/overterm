@@ -17,6 +17,9 @@ let package = Package(
         // their logger, and RSA — BigQuery's service account signs a JWT.
         .package(url: "https://github.com/apple/swift-nio.git", from: "2.104.0"),
         .package(url: "https://github.com/apple/swift-nio-ssl.git", from: "2.37.5"),
+        // gRPC's transport: HTTP/2 with trailers, and h2c to a local server —
+        // neither of which URLSession gives.
+        .package(url: "https://github.com/apple/swift-nio-http2.git", from: "1.46.0"),
         .package(url: "https://github.com/apple/swift-log.git", from: "1.15.1"),
         .package(url: "https://github.com/apple/swift-crypto.git", from: "4.5.2"),
     ],
@@ -44,6 +47,8 @@ let package = Package(
                 // Docker's Engine API: HTTP over its unix socket.
                 .product(name: "NIOHTTP1", package: "swift-nio"),
                 .product(name: "NIOSSL", package: "swift-nio-ssl"),
+                .product(name: "NIOHTTP2", package: "swift-nio-http2"),
+                .product(name: "NIOHPACK", package: "swift-nio-http2"),
                 .product(name: "Logging", package: "swift-log"),
                 .product(name: "_CryptoExtras", package: "swift-crypto"),
             ],
