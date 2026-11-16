@@ -264,7 +264,7 @@ private struct ConnectionTree: View {
     private func quote(_ name: String) -> String {
         let plain = name.range(of: #"^[a-z_][a-z0-9_]*$"#, options: .regularExpression) != nil
         if plain { return name }
-        return connection.kind == .mysql || connection.kind == .clickhouse ? "`\(name)`" : "\"\(name.replacingOccurrences(of: "\"", with: "\"\""))\""
+        return [.mysql, .mariadb, .clickhouse].contains(connection.kind) ? "`\(name)`" : "\"\(name.replacingOccurrences(of: "\"", with: "\"\""))\""
     }
 
     private func select(_ table: CatalogTable, limit: Int) -> String {

@@ -94,7 +94,7 @@ enum DockerDatabaseGuess {
             password = first("POSTGRES_PASSWORD")
             // A local container speaks no TLS.
             connection.sslMode = .disable
-        case .mysql:
+        case .mysql, .mariadb:
             // The image makes the app's user only given its password too.
             if let user = first("MYSQL_USER", "MARIADB_USER"), let own = first("MYSQL_PASSWORD", "MARIADB_PASSWORD") {
                 connection.user = user

@@ -174,7 +174,7 @@ enum KubeDatabase {
                 target.database = sources(["POSTGRES_DB", "POSTGRESQL_DATABASE", "POSTGRES_DATABASE"])
                 target.password = sources(["POSTGRES_PASSWORD", "POSTGRESQL_PASSWORD"])
                 target.defaultUser = "postgres"
-            case .mysql:
+            case .mysql, .mariadb:
                 // The image makes the app's user only given its password
                 // too; else root — which, while an envFrom Secret may or
                 // may not hold them, is decided once it is read.
@@ -317,7 +317,7 @@ enum KubeDatabase {
     ) -> DockerDatabaseGuess.Guess {
         var user = resolve(target.user, read)
         var password = resolve(target.password, read, literal: false)
-        if target.kind == .mysql, !(user.given && password.given) {
+        if target.kind == .mysql || target.kind == .mariadb, !(user.given && password.given) {
             user = (false, nil)
             password = resolve(target.rootPassword, read, literal: false)
         }

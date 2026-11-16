@@ -80,7 +80,8 @@ enum DatabaseDrivers {
         switch connection.kind {
         case .sqlite: SQLiteDriver(connection)
         case .postgres, .redshift: PostgresDriver(connection, password: password)
-        case .mysql: MySQLDriver(connection, password: password)
+        // MariaDB speaks MySQL's protocol: the same driver, its words its own.
+        case .mysql, .mariadb: MySQLDriver(connection, password: password)
         case .clickhouse: ClickHouseDriver(connection, password: password)
         case .bigquery: BigQueryDriver(connection, serviceAccount: serviceAccount)
         case .redis: RedisDriver(connection, password: password)
@@ -90,7 +91,6 @@ enum DatabaseDrivers {
         // Each its own driver, written in 1.6.1; until then, said so.
         case .mongodb: PendingDriver(kind: .mongodb)
         case .documentdb: PendingDriver(kind: .documentdb)
-        case .mariadb: PendingDriver(kind: .mariadb)
         case .elasticsearch, .opensearch: SearchDriver(connection, password: password)
         case .dynamodb: DynamoDBDriver(connection, password: password)
         case .influxdb: InfluxDBDriver(connection, password: password)

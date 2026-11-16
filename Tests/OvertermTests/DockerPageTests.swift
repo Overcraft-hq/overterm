@@ -922,7 +922,7 @@ final class DockerDatabaseGuessTests: XCTestCase {
     func testMySQLAndClickHouse() throws {
         let port = [DockerPort(IP: "127.0.0.1", PrivatePort: 3306, PublicPort: 53306, Type: "tcp")]
         let root = try XCTUnwrap(DockerDatabaseGuess.guess(container("mariadb:11", ports: port), env: [("MARIADB_ROOT_PASSWORD", "r00t")]))
-        XCTAssertEqual(root.connection.kind, .mysql)
+        XCTAssertEqual(root.connection.kind, .mariadb)
         XCTAssertEqual(root.connection.user, "root")
         XCTAssertEqual(root.password, "r00t")
         let user = try XCTUnwrap(

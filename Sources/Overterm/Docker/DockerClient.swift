@@ -31,7 +31,8 @@ enum DockerClient {
         var database: (DatabaseKind, port: Int)? {
             switch self {
             case .postgres: (.postgres, 5432)
-            case .mysql, .mariadb: (.mysql, 3306)
+            case .mysql: (.mysql, 3306)
+            case .mariadb: (.mariadb, 3306)
             case .clickhouse: (.clickhouse, 8123)
             case .redis, .valkey: (.redis, 6379)
             // The HTTP API's port: the Database panel doesn't speak Bolt.

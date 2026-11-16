@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # The database client's test servers, in Docker: PostgreSQL 16, MySQL 8.4,
-# ClickHouse 24.8, an S3 server (RustFS), an SSH bastion, DynamoDB Local,
+# MariaDB 11.4, ClickHouse 24.8, an S3 server (RustFS), an SSH bastion, DynamoDB Local,
 # InfluxDB 2.7, 1.11 and 3, and Neo4j 5 on ports nothing else uses,
 # user `ot`, password `otpass`, database `shop` (where a server has them). Then:
 #   OVERTERM_DB_TESTS=1 swift test --filter DatabaseDriverTests
@@ -52,17 +52,19 @@ if [[ "${1:-}" == "search" ]]; then
 fi
 
 if [[ "${1:-}" == "stop" ]]; then
-  docker rm -f ot-pg ot-mysql ot-ch ot-minio ot-ssh ot-elasticsearch ot-opensearch ot-dynamodb ot-influxdb ot-influxdb1 ot-influxdb3 ot-neo4j >/dev/null 2>&1 || true
+  docker rm -f ot-pg ot-mysql ot-mariadb ot-ch ot-minio ot-ssh ot-elasticsearch ot-opensearch ot-dynamodb ot-influxdb ot-influxdb1 ot-influxdb3 ot-neo4j >/dev/null 2>&1 || true
   docker network rm ot-net >/dev/null 2>&1 || true
   echo "==> stopped"
   exit 0
 fi
 
-docker rm -f ot-pg ot-mysql ot-ch ot-minio ot-ssh ot-dynamodb ot-influxdb ot-influxdb1 ot-influxdb3 ot-neo4j >/dev/null 2>&1 || true
+docker rm -f ot-pg ot-mysql ot-mariadb ot-ch ot-minio ot-ssh ot-dynamodb ot-influxdb ot-influxdb1 ot-influxdb3 ot-neo4j >/dev/null 2>&1 || true
 docker network create ot-net >/dev/null 2>&1 || true
 docker run -d --name ot-pg --network ot-net -e POSTGRES_USER=ot -e POSTGRES_PASSWORD=otpass -e POSTGRES_DB=shop -p 55432:5432 postgres:16 >/dev/null
 docker run -d --name ot-mysql -e MYSQL_ROOT_PASSWORD=otpass -e MYSQL_DATABASE=shop -e MYSQL_USER=ot -e MYSQL_PASSWORD=otpass \
   -p 53306:3306 mysql:8.4 >/dev/null
+docker run -d --name ot-mariadb -e MARIADB_ROOT_PASSWORD=otpass -e MARIADB_DATABASE=shop -e MARIADB_USER=ot -e MARIADB_PASSWORD=otpass \
+  -p 53307:3306 mariadb:11.4 >/dev/null
 docker run -d --name ot-ch -e CLICKHOUSE_USER=ot -e CLICKHOUSE_PASSWORD=otpass -e CLICKHOUSE_DB=shop -p 58123:8123 \
   clickhouse/clickhouse-server:24.8 >/dev/null
 # S3, for the storage client: access key `otadmin`, secret `otpass12345`.
@@ -95,13 +97,14 @@ docker run -d --name ot-neo4j -e NEO4J_AUTH=neo4j/otpass1234 -p 57474:7474 -p 57
 for _ in $(seq 1 120); do
   if docker exec ot-pg pg_isready -U ot >/dev/null 2>&1 \
     && docker exec ot-mysql mysqladmin ping -uot -potpass --silent >/dev/null 2>&1 \
+    && docker exec ot-mariadb mariadb -uot -potpass -e 'SELECT 1' shop >/dev/null 2>&1 \
     && curl -sf "http://127.0.0.1:58123/ping" >/dev/null \
     && [[ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:59000/)" == "403" ]] \
     && nc -z 127.0.0.1 52222 >/dev/null 2>&1 && docker exec ot-ssh pgrep sshd >/dev/null 2>&1 \
     && [[ "$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:58800/)" == "400" ]] \
     && curl -sf "http://127.0.0.1:58086/ping" >/dev/null && curl -sf "http://127.0.0.1:58087/ping" >/dev/null && curl -sf "http://127.0.0.1:58181/health" >/dev/null \
     && curl -sf "http://127.0.0.1:57474/" >/dev/null; then
-    echo "==> PostgreSQL :55432, MySQL :53306, ClickHouse :58123, S3 (RustFS) :59000, SSH :52222,"
+    echo "==> PostgreSQL :55432, MySQL :53306, MariaDB :53307, ClickHouse :58123, S3 (RustFS) :59000, SSH :52222,"
     echo "    DynamoDB Local :58800, InfluxDB 2 :58086, InfluxDB 1.11 :58087, InfluxDB 3 :58181, Neo4j :57474 (Bolt :57687)"
     exit 0
   fi

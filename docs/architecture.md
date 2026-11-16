@@ -1332,7 +1332,7 @@ in it, and `.obsidian/` is read for where things go, never written.
 ## Database (⌥⌘B, sidebar)
 
 A database client beside the terminal, DataGrip's work in the sidebar and
-the editor: PostgreSQL, MySQL, SQLite, Redshift, ClickHouse, BigQuery,
+the editor: PostgreSQL, MySQL, MariaDB, SQLite, Redshift, ClickHouse, BigQuery,
 Redis, DynamoDB, InfluxDB, Neo4j, Prometheus, Loki and Tempo, and Elasticsearch and OpenSearch (Settings ▸ Database turns it off; its rows fetched and asking before a
 destroying statement are there too).
 
@@ -1373,8 +1373,8 @@ destroying statement are there too).
   only reads, whether it destroys; what the caret is writing — a table
   after FROM, a column after `alias.` — and the candidates from the
   catalog, a schema not read yet read and the list asked again.
-- **Tests**: `DatabaseDriverTests` run PostgreSQL, MySQL and ClickHouse in
-  Docker (`Scripts/database-test-servers.sh`, then `OVERTERM_DB_TESTS=1`);
+- **Tests**: `DatabaseDriverTests` run PostgreSQL, MySQL, MariaDB and
+  ClickHouse in Docker (`Scripts/database-test-servers.sh`, then `OVERTERM_DB_TESTS=1`);
   SQLite always; BigQuery's signing and answers offline. The `database`
   scenario runs the panel and a console on SQLite.
 
@@ -1418,6 +1418,15 @@ destroying statement are there too).
 - **Tests** run against a redis-server of their own (`E2ERedisServer`: a
   free port, nothing on disk, TLS with a certificate made for it) —
   `RedisDriverTests` and the `redis` scenario; skipped without one (CI).
+
+### MariaDB
+
+MySQL's driver (MySQLNIO): the same handshake, SQL and catalog;
+backquoted names. A user signed in with MariaDB's own plugins (ed25519,
+PARSEC) is refused with what to do — MySQLNIO speaks only
+`mysql_native_password` and `caching_sha2_password`. Docker's `mariadb`
+image, Kubernetes' pods and Terraform's outputs give the MariaDB kind.
+Tested against mariadb:11.4 (`DatabaseDriverTests.testMariaDB`).
 
 ### Prometheus, Loki, Tempo (metrics, logs, traces)
 

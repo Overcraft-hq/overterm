@@ -100,6 +100,13 @@ actor MySQLDriver: DatabaseDriver {
 
     static func describe(_ error: Error) -> String {
         if case MySQLError.server(let packet) = error { return packet.errorMessage }
+        // MariaDB's own plugins (ed25519, PARSEC) aren't MySQL's: said with
+        // what to do, not as a type's name.
+        if case MySQLError.unsupportedAuthPlugin(let name) = error {
+            let plugin = name.hasPrefix("client_") ? String(name.dropFirst("client_".count)) : name
+            return
+                "The server signs this user in with \(plugin), which Overterm can't — it speaks mysql_native_password and caching_sha2_password. On MariaDB: ALTER USER … IDENTIFIED VIA mysql_native_password USING PASSWORD('…')."
+        }
         if let error = error as? MySQLError { return error.description }
         return String(describing: error)
     }
