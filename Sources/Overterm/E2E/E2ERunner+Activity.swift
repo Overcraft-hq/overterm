@@ -34,10 +34,10 @@ extension E2ERunner {
         s.bind(("127.0.0.1", 0))
         s.listen()
         open("\(portFile.path)", "w").write(str(s.getsockname()[1]))
-        time.sleep(40)
+        time.sleep(150)
         """.write(to: script, atomically: true, encoding: .utf8)
         // …and a stand-in agent: argv[0] claude, a sleep its child.
-        pane.insertText("python3 \(script.path) & sleep 47 & (exec -a claude /bin/sh -c 'sleep 45 & wait') &")
+        pane.insertText("python3 \(script.path) & sleep 150 & (exec -a claude /bin/sh -c 'sleep 150 & wait') &")
         pane.pressReturn()
         let started = await eventually(15) { FileManager.default.fileExists(atPath: portFile.path) }
         let port = (try? String(contentsOf: portFile, encoding: .utf8)).flatMap { Int($0) } ?? -1
@@ -72,6 +72,7 @@ extension E2ERunner {
         check(
             "its rows name the tab", ownRows().allSatisfy { $0.tabTitle != nil }, "\(ownRows().filter { $0.tabTitle == nil }.count) unnamed")
         await activityOwners(tab: tab)
+        await activityTable(tab: tab)
         check(
             "the header counts the Mac, the rows the run's", page.content.summary.scopedToRun && page.content.summary.processes > page.content.summary.shown,
             "\(page.content.summary.shown) of \(page.content.summary.processes)")

@@ -230,6 +230,7 @@ extension ActivityRows {
         _ rows: [ActivityProcessRow], grouping: ActivityGrouping, in snapshot: ActivitySnapshot, tabs: [UUID: ActivityTabFacts], options: Options
     ) -> [ActivityListItem] {
         var builder = ListBuilder(snapshot: snapshot, tabs: tabs, options: options)
+        builder.filtering = !ActivityFilter(options.processFilter).isEmpty
         switch grouping {
         case .checkout: builder.byTabs(rows, checkouts: true)
         case .tab: builder.byTabs(rows, checkouts: false)
@@ -246,6 +247,8 @@ extension ActivityRows {
         let tabs: [UUID: ActivityTabFacts]
         let options: Options
         var items: [ActivityListItem] = []
+        /// A filter is set: a group folded by default opens on its matches.
+        var filtering = false
 
         func folded(_ id: String, default value: Bool = false) -> Bool { options.folds[id] ?? value }
 
@@ -259,6 +262,10 @@ extension ActivityRows {
             header.memory = memory.isEmpty ? nil : memory.reduce(0, +)
             header.ports = Array(Set(rows.flatMap(\.listening))).sorted()
             if let reveal = options.reveal, header.folded, rows.contains(where: { $0.id == reveal }) { header.folded = false }
+            // Filtered, a match is never left behind a fold it didn't ask
+            // for (6.6): a group folded by default — your apps, macOS,
+            // System — opens on it; one the person folded stays folded.
+            if filtering, header.folded, options.folds[header.id] != true, rows.contains(where: { !$0.dimmed }) { header.folded = false }
             items.append(.group(header))
             guard !header.folded else { return }
             body(&self)

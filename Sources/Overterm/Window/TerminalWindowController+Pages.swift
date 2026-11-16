@@ -73,6 +73,12 @@ extension TerminalWindowController {
     /// key means something there, with no ⌘, ⌃ or ⌥ — those are menus'.
     func handlePageKey(_ event: NSEvent) -> Bool {
         if handlePageCommandKey(event) { return true }
+        if let overlay = store.showingOverlay, let press = pages[overlay]?.optionPress,
+            event.modifierFlags.intersection([.command, .control, .option, .shift]) == .option, pageListHasKeyboard(overlay, event),
+            let characters = event.charactersIgnoringModifiers
+        {
+            return press(characters)
+        }
         guard let overlay = store.showingOverlay, let press = pages[overlay]?.press, pageListHasKeyboard(overlay, event),
             WorkspacePage.isListKey(event.modifierFlags), let characters = event.characters
         else { return false }

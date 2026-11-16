@@ -17,13 +17,15 @@ extension TerminalWindowController {
                         guard !lines.isEmpty else { return }
                         NSPasteboard.general.clearContents()
                         NSPasteboard.general.setString(lines.joined(separator: "\n"), forType: .string)
-                    }))
+                    },
+                    focusList: { [weak self] in self?.focusPageList(.activity) }))
         }
         // The emitted value: `showingOverlay` isn't set yet.
         page.visibilityChanged = { [weak self] visible in self?.activityPage.visible = visible }
         page.closed = { [weak self] in self?.activityPage.close() }
         page.hasList = true
         page.press = { [weak self] characters in self?.activityPage.press(characters) ?? false }
+        page.optionPress = { [weak self] characters in self?.activityPage.pressOption(characters) ?? false }
         page.paletteItems = { [weak self] in self?.activityPaletteItems() ?? [] }
         page.occlusionChanged = { [weak self] in self?.updateActivityWindowVisible() }
         page.windowClosing = { [weak self] in self?.activityPage.close() }
@@ -37,6 +39,18 @@ extension TerminalWindowController {
         activityPage.tabFacts = { Self.activityTabFacts() }
         activityPage.currentTab = { [weak self] in self?.store.selected?.id }
         activityPage.runningApps = { Self.activityRunningApps() }
+        activityPage.voiceOverInList = { [weak self] in
+            NSWorkspace.shared.isVoiceOverEnabled && self?.pageListHasKeyboard(.activity) == true
+        }
+        activityPage.actions = ActivityPageActions(
+            goTo: { [weak self] id, pane in self?.activityGoTo(tab: id, pane: pane) },
+            open: { [weak self] url, id, external in self?.activityOpen(url, tab: id, defaultBrowser: external) },
+            tabInfo: { [weak self] id in
+                guard let self, let (window, tab) = Self.activityWindow(of: id) else { return }
+                self.activityGoTo(tab: id)
+                window.showInfo(for: tab)
+            },
+            sample: { [weak self] pid in self?.activitySample(pid) })
         activityPage.containers = { Self.activityContainers() }
         activityPage.contextFacts = { context in Self.activityContextFacts(&context) }
         let docker = ActivityDockerHold()
@@ -257,6 +271,40 @@ extension TerminalWindowController {
         }
         showActivityPage(section)
         activityPage.reveal(row.id, in: section)
+    }
+
+    /// ↩ on a row: its tab, in whichever window holds it, the page put
+    /// away in this one, and the pane whose tag placed it given the
+    /// keyboard (6.3, "its tab and pane").
+    func activityGoTo(tab id: UUID, pane: String? = nil) {
+        guard let (window, tab) = Self.activityWindow(of: id) else { return }
+        if store.showingOverlay != nil { hideOverlay(focus: false) }
+        window.reveal(tabID: id)
+        guard let pane, let terminal = tab.terminals.first(where: { $0.processTag == pane }) else { return }
+        tab.focus(terminal)
+        window.window?.makeFirstResponder(terminal)
+    }
+
+    /// `o`: a listener's URL in the owner tab's browser column — in the
+    /// window that holds the tab, brought forward — where Settings ▸
+    /// Browser says; ⌥o, or no tab, the default browser or this window's.
+    func activityOpen(_ url: URL, tab id: UUID?, defaultBrowser: Bool) {
+        if defaultBrowser {
+            if let linkRecorder { return linkRecorder(url, false) }
+            NSWorkspace.shared.open(url)
+            return
+        }
+        guard let id, let (window, tab) = Self.activityWindow(of: id) else { return openLink(url, for: store.selected) }
+        if BrowserLinks.opensInside(url, policy: Settings.shared.browserLinks) { activityGoTo(tab: id) }
+        window.openLink(url, for: tab)
+    }
+
+    /// `s`: `sample <pid> 5` in a new tab (6.3) — it only reads; the tab
+    /// goes where `NewTabGroup.placement` puts it, the page put away.
+    func activitySample(_ pid: pid_t) {
+        guard pid > 0 else { return }
+        if store.showingOverlay != nil { hideOverlay(focus: false) }
+        newTab(in: URL(fileURLWithPath: NSHomeDirectory()), running: "sample \(pid) 5")
     }
 
     /// The window holding tab `id`.

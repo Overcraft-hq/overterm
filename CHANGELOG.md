@@ -8,7 +8,7 @@ version is tagged `v<version>`.
 
 ## 1.6.1 — 2026-11-14
 
-- Activity (⌥⌘A): every process and every open port on this Mac, by checkout, tab and agent
+- Activity (⌥⌘A): every process and every open port on this Mac, by checkout, tab and agent — filtered (`name:node|bun cpu:>50 mem:>1g`), sorted with htop's keys, followed and paused, its columns picked, moved and kept, its order held while you point at it, the selected process's detail beside
 - docker: a container that couldn't start names the tab whose server holds its port — any tab, not only one you had looked at since it started; Up on Free Ports also counts a port held on one of this Mac's own addresses (a LAN or VPN one) as taken
 - tabs: every visible tab's port pills stay current — a server started in a tab you aren't looking at shows on its pill — and a pill opens where its server listens: 127.0.0.1, [::1] or the one address it is bound to, localhost only where both IPv4 and IPv6 do
 - info: Tab Info shows a split tab as a group a pane, what left a pane's terminal under it, and its memory as Activity Monitor's, real memory in the tooltip

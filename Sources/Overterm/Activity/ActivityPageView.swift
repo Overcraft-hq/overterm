@@ -48,6 +48,10 @@ struct ActivityPageView: View {
     @ObservedObject var theme: ChromeTheme
     /// ⌘C: the selection, as the window copies it.
     let copy: ([String]) -> Void
+    /// The list given the keyboard back (the filter's ↩ and Esc).
+    var focusList: () -> Void = {}
+
+    @FocusState private var filterFocused: Bool
 
     var body: some View {
         HStack(spacing: 0) {
@@ -58,9 +62,21 @@ struct ActivityPageView: View {
                 Rectangle().fill(theme.border).frame(height: 1)
                 list
             }
+            // After the list, so the list keeps its place in the view tree
+            // — the keyboard and the scroll with it — as it comes and goes.
+            if page.showsDetail, let detail = page.detail {
+                Rectangle().fill(theme.border).frame(width: 1)
+                ActivityDetailView(detail: detail, theme: theme, page: page, verbs: page.verbs(for: page.selection, copy: copy)).frame(width: 300)
+            }
         }
         .background(Color(nsColor: GhosttyRuntime.shared.backgroundColor))
         .environment(\.colorScheme, theme.isDark ? .dark : .light)
+        .overlay {
+            if page.cheatSheet {
+                ResourceKeySheet<ActivityKey>(theme: theme, identifier: "activity.keys", footnote: ActivityKey.foldHelp) { page.cheatSheet = false }
+            }
+        }
+        .onChange(of: page.focusFilter) { _ in filterFocused = true }
         // A container of its own: an identifier on the whole page would
         // otherwise be every child's, hiding the list's, the header's.
         .accessibilityElement(children: .contain)
@@ -173,15 +189,70 @@ struct ActivityPageView: View {
                 .buttonStyle(.plain)
                 .help("A tree of parents and children, or flat and sorted (t)")
             }
+            Picker("", selection: Binding(get: { page.everyone ?? Settings.shared.activityEveryone }, set: { page.everyone = $0 })) {
+                Text("Yours").tag(false)
+                Text("All").tag(true)
+            }
+            .pickerStyle(.segmented).labelsHidden().frame(width: 104).controlSize(.small)
+            .help("Your processes only, or every user's (u)")
+            .accessibilityIdentifier("activity.everyone")
+            filterField
             if Self.reading(hasRead: page.hasRead, summary) {
                 Text("Reading…").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3)
                     .accessibilityIdentifier("activity.reading")
             }
-            Text(verbatim: "every \(Self.seconds(page.interval))").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3)
-                .help("How often the page reads the Mac while it shows: Settings ▸ Activity")
+            if page.orderHeld, !page.paused {
+                Text("order held").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
+                    .help("The rows keep their places while you work the list; values still change. It lets go once the pointer rests 5 s.")
+                    .accessibilityIdentifier("activity.orderHeld")
+            }
+            if page.following {
+                Text("following").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
+                    .help("The selection stays in view as it moves (F)")
+                    .accessibilityIdentifier("activity.following")
+            }
+            Button {
+                page.paused.toggle()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: page.paused ? "play.fill" : "pause.fill").font(.system(size: ChromeMetrics.text(9)))
+                    Text(verbatim: page.paused ? "paused" : "every \(Self.seconds(page.interval))")
+                }
+                .font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(page.paused ? theme.text : theme.text3)
+            }
+            .buttonStyle(.plain)
+            .help(page.paused ? "Paused: nothing is read. Resume (Z)" : "How often the page reads the Mac while it shows: Settings ▸ Activity. Pause (Z)")
+            .accessibilityIdentifier("activity.pause")
+            Button {
+                page.cheatSheet.toggle()
+            } label: {
+                Image(systemName: "keyboard").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
+            }
+            .buttonStyle(.plain)
+            .help("Keys (?)")
         }
         .padding(.horizontal, 14)
         .frame(height: ChromeMetrics.row(40))
+    }
+
+    private var filterField: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "line.3.horizontal.decrease").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
+            TextField("Filter  /", text: Binding(get: { page.filter(page.section) }, set: { page.setFilter($0) }))
+                .textFieldStyle(.plain)
+                .font(.system(size: ChromeMetrics.text(12)))
+                .focused($filterFocused)
+                .onSubmit { focusList() }
+                .onExitCommand {
+                    page.setFilter("")
+                    focusList()
+                }
+                .accessibilityIdentifier("activity.filter")
+        }
+        .padding(.horizontal, 8)
+        .frame(width: 200, height: 24)
+        .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover.opacity(0.7)))
+        .help("name:node|bun cpu:>50 mem:>1g age:<5m port:3000 is:agent -user:root — ? lists the keys")
     }
 
     /// The header says "Reading…" until rows are made, while the churn
@@ -219,34 +290,7 @@ struct ActivityPageView: View {
         }
     }
 
-    private var columns: [ResourceColumn] {
-        switch page.section {
-        case .processes:
-            [
-                ResourceColumn(id: "name", title: "Name", width: 300, minWidth: 140),
-                ResourceColumn(id: "pid", title: "PID", width: 64),
-                ResourceColumn(id: "cpu", title: "CPU %", width: 64, help: "100% is one core, as htop and Tab Info count"),
-                ResourceColumn(id: "memory", title: "Memory", width: 84, help: "The footprint: Activity Monitor's Memory"),
-                ResourceColumn(id: "threads", title: "Threads", width: 60),
-                ResourceColumn(id: "state", title: "St", width: 36, help: "R running, S sleeping, T stopped, Z ended and not collected"),
-                ResourceColumn(id: "started", title: "Started", width: 80),
-                ResourceColumn(id: "listening", title: "Listening", width: 110, sortable: false, help: "The TCP ports it listens on"),
-                ResourceColumn(id: "user", title: "User", width: 90),
-            ]
-                + (page.grouping == .checkout || page.grouping == .tab
-                    ? [] : [ResourceColumn(id: "where", title: "Where", width: 200, help: "Its tab · checkout · agent, or who it belongs to")])
-        case .listening:
-            [
-                ResourceColumn(id: "port", title: "Port", width: 70),
-                ResourceColumn(id: "proto", title: "Proto", width: 56),
-                ResourceColumn(id: "address", title: "Reach", width: 130, help: "This Mac: loopback only. Network: whatever can route to this Mac"),
-                ResourceColumn(id: "families", title: "IP", width: 60, sortable: false),
-                ResourceColumn(id: "process", title: "Process", width: 200, minWidth: 100),
-                ResourceColumn(id: "pid", title: "PID", width: 64),
-                ResourceColumn(id: "where", title: "Where", width: 160, help: "The tab its process runs in"),
-            ]
-        }
-    }
+    private var columns: [ResourceColumn] { page.columns(page.section) }
 
     private var sort: Binding<ResourceSort?> {
         switch page.section {
@@ -274,8 +318,19 @@ struct ActivityPageView: View {
         ZStack {
             ResourceTable(
                 rows: rows, selection: $page.selection, columns: columns, sort: sort, cell: { row, column in cell(row, column) },
-                verbs: { _ in [] }, copy: { copy(page.selectedLines) }, accessibilityIdentifier: "activity.list",
-                accessibilityLabel: { $0.accessibilityLabel })
+                verbs: { [weak page, copy] ids in page?.verbs(for: ids, copy: copy) ?? [] }, copy: { copy(page.selectedLines) },
+                accessibilityIdentifier: "activity.list",
+                accessibilityLabel: { $0.accessibilityLabel }
+            )
+            .with { table in
+                let section = page.section
+                table.interacting = { [weak page] interaction in page?.interacted(interaction) }
+                table.columnsChanged = { [weak page] columns in page?.columnsChanged(columns, in: section) }
+                table.columnChoices = ActivityColumns.choices(section)
+                table.toggleColumn = { [weak page] id in page?.toggleColumn(id, in: section) }
+                table.fold = { [weak page] id, open in page?.fold(id, open: open) ?? false }
+                table.follow = page.following
+            }
             if !page.hasRead {
                 VStack(spacing: 8) {
                     ProgressView().controlSize(.small)
@@ -292,15 +347,17 @@ struct ActivityPageView: View {
         }
     }
 
-    private var emptySentence: String { Self.emptySentence(page.section, scopedToRun: summary.scopedToRun) }
+    private var emptySentence: String { Self.emptySentence(page.section, scopedToRun: summary.scopedToRun, filter: page.filter(page.section)) }
 
     /// What an empty section says: true of what was read (6.4).
-    static func emptySentence(_ section: ActivityPageModel.Section, scopedToRun: Bool) -> String {
+    static func emptySentence(_ section: ActivityPageModel.Section, scopedToRun: Bool, filter: String = "") -> String {
+        let filter = filter.trimmingCharacters(in: .whitespaces)
+        if !filter.isEmpty { return "Nothing matches “\(filter)”." }
         switch section {
         case .processes:
-            scopedToRun ? "Nothing runs in this test run's tabs." : "No processes to show."
+            return scopedToRun ? "Nothing runs in this test run's tabs." : "No processes to show."
         case .listening:
-            scopedToRun
+            return scopedToRun
                 ? "Nothing in this test run's tabs listens on a port." : "Nothing of yours listens on a port. Other users' listeners aren't read."
         }
     }
@@ -416,7 +473,7 @@ struct ActivityPageView: View {
                 }
                 Text(verbatim: row.name).font(.system(size: ChromeMetrics.text(12)))
                     .foregroundStyle(
-                        row.owner?.paneRole == .session || row.owner?.paneRole == .shell ? theme.text3 : row.isOwn ? theme.text : theme.text2
+                        row.dimmed || row.owner?.paneRole == .session || row.owner?.paneRole == .shell ? theme.text3 : row.isOwn ? theme.text : theme.text2
                     )
                     .lineLimit(1).truncationMode(.middle).layoutPriority(1)
                 ForEach(Self.chips(row), id: \.self) { chip in
@@ -446,6 +503,16 @@ struct ActivityPageView: View {
             text(Self.ports(row.listening), theme.text2)
         case "where":
             text(row.whereText, theme.text2)
+        case "rss": number(row.residentSize.map(ActivityRows.bytes) ?? "—")
+        case "time": number(row.cpuTime.map(ActivityDetail.duration) ?? "—")
+        case "nice": number("\(row.nice)")
+        case "priority": number(row.priority.map { "\($0)" } ?? "—")
+        case "ppid": number("\(row.parentPID)")
+        case "pgid": number("\(row.group)")
+        case "tty": text(row.terminal ?? "", theme.text3)
+        case "kind": text(row.translated ? "Intel" : "Apple", theme.text3)
+        case "path": text(row.path ?? "", theme.text3)
+        case "command": text(row.command ?? "", theme.text2)
         default:
             EmptyView()
         }

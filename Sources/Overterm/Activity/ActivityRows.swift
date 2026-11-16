@@ -41,6 +41,38 @@ struct ActivityProcessRow: ResourceTableRow, Sendable {
     var folded = false
     /// An agent's row: what runs under it, counted ("12 MCP · 3 shells").
     var agentCounts: String?
+    /// Kept in a filtered tree only as a match's ancestor: drawn dimmed,
+    /// so the match keeps its place (6.6).
+    var dimmed = false
+
+    // What the other columns, the filter and the detail read (6.5, 6.6):
+    // kinfo's record, the masked command, the usage beyond the footprint.
+    var parentPID: pid_t = 0
+    var group: pid_t = 0
+    var nice: Int8 = 0
+    /// Its controlling terminal's name (`ttys003`); nil without one.
+    var terminal: String?
+    /// argv masked as it was read (9.3); nil for another user's, or unread.
+    var command: String?
+    /// An interpreter's label (`ActivityText.label`).
+    var label: String?
+    var path: String?
+    var residentSize: UInt64?
+    /// User and system CPU time, ns.
+    var cpuTime: UInt64?
+    var priority: Int32?
+    /// W, an estimate.
+    var energy: Double?
+    /// Intel code under Rosetta.
+    var translated = false
+    var ignoresHangup = false
+    /// Its pane's number in its tab, from 1.
+    var pane: Int?
+    var branch: String?
+    /// The UDP ports it is bound on.
+    var boundUDP: [Int] = []
+    /// It holds an established TCP connection.
+    var connected = false
 
     var height: CGFloat { 24 }
 
@@ -76,6 +108,10 @@ struct ActivityPortRow: ResourceTableRow, Sendable {
     let tabTitle: String?
     /// Where a browser reaches it; nil when there is none to open.
     let url: URL?
+    /// Who holds it, in the filter's `owner:` words (6.6): `tab`,
+    /// `forward`, `overterm`, `container`, `app`, `macos`, `system`, or
+    /// `elsewhere`.
+    var owner = "elsewhere"
 
     var height: CGFloat { 24 }
 
@@ -116,6 +152,9 @@ struct ActivitySummary: Equatable, Sendable {
     /// or with other users' left out.
     var shown = 0
     var listening = 0
+    /// The rows the filter matched, its dimmed ancestors left out: `shown`
+    /// when there is no filter.
+    var matched = 0
     /// The user's processes' threads, summed.
     var threads = 0
     /// The five busiest rows shown, CPU first: names, pids and rates only.
@@ -143,6 +182,12 @@ struct ActivityPageContent: Sendable {
     /// Processes as the page lists them: grouped, as a tree (6.5).
     var list: [ActivityListItem] = []
     var ports: [ActivityPortRow] = []
+    /// Every listener of the rows in scope, whatever either filter says:
+    /// the detail's, `o`'s (6.6 keeps each section's filter its own).
+    var listeners: [ActivityPortRow] = []
+    /// Every process row in scope before the filter: where the detail's
+    /// tree stops (9.9 — a test run's own tabs' processes alone).
+    var identities: Set<ActivityProcessID> = []
     var summary = ActivitySummary()
 }
 
@@ -180,6 +225,9 @@ enum ActivityRows {
         var isolated = false
         var processSort: ResourceSort? = ResourceSort(column: "cpu", ascending: false)
         var portSort: ResourceSort? = ResourceSort(column: "port")
+        /// What each section's filter field says (6.6).
+        var processFilter = ""
+        var portFilter = ""
     }
 
     static func content(of snapshot: ActivitySnapshot, _ options: Options) -> ActivityPageContent {
@@ -205,6 +253,8 @@ enum ActivityRows {
             for identity in slice.placed where tabs[identity] == nil { tabs[identity] = slice.tab }
         }
         let uid = snapshot.uid
+        var panesByTab: [UUID: [String]] = [:]
+        for slice in snapshot.panes { panesByTab[slice.tab, default: []].append(slice.tag) }
         var rows: [ActivityProcessRow] = []
         rows.reserveCapacity(snapshot.table.processes.count)
         var threads = 0
@@ -229,9 +279,42 @@ enum ActivityRows {
                 user: own ? userName(uid) : userName(process.effectiveUID), isOwn: own, tab: tab, tabTitle: tab.flatMap { titles[$0] })
             row.owner = owner
             row.checkout = tab.flatMap { tabFacts[$0]?.checkout }.map(folderName)
-            row.listening = Array(Set((facts?.sockets?.listeners ?? []).filter { $0.kind == .tcp }.map { Int($0.localPort) })).sorted()
+            row.branch = tab.flatMap { tabFacts[$0]?.branch }
+            let records = facts?.sockets?.records ?? []
+            row.listening = Array(Set(records.filter(\.isListening).map { Int($0.localPort) })).sorted()
+            row.boundUDP = Array(Set(records.filter(\.isBoundUDP).map { Int($0.localPort) })).sorted()
+            row.connected = records.contains { $0.kind == .tcp && $0.state == .established }
+            row.parentPID = process.parentPID
+            row.group = process.group
+            row.nice = process.nice
+            row.terminal = process.terminal.flatMap(terminalName)
+            row.translated = process.flags.contains(.translated)
+            row.ignoresHangup = process.ignoresHangup
+            row.command = facts?.command
+            row.label = facts?.label
+            row.path = facts?.path
+            row.residentSize = facts?.usage?.residentSize
+            row.cpuTime = facts?.usage?.cpuTime
+            row.priority = facts?.usage?.priority
+            row.energy = facts?.rates?.energy
+            if case .pane(let tag)? = owner?.place, let tab = owner?.tab {
+                row.pane = panesByTab[tab]?.firstIndex(of: tag).map { $0 + 1 }
+            }
             row.whereText = whereText(row, tabs: tabFacts)
             rows.append(row)
+        }
+        // Listening, the detail and the busiest read every row in scope:
+        // Processes' filter is that section's alone (6.6).
+        let inScope = rows
+        // The filter (6.6): in a tree a match keeps its ancestors, dimmed.
+        let filter = ActivityFilter(options.processFilter)
+        var matched = rows.count
+        if !filter.isEmpty {
+            let kept = filtered(
+                rows, by: filter, now: snapshot.date, ancestorsIn: options.grouping != nil && options.tree ? snapshot.table : nil,
+                grouping: options.grouping)
+            matched = kept.filter { !$0.dimmed }.count
+            rows = kept
         }
         var content = ActivityPageContent()
         content.processes = sorted(rows, by: options.processSort)
@@ -240,17 +323,25 @@ enum ActivityRows {
             // tab's is its panes, what left them, its forwards.
             var listed = options
             if case .tab = options.scope { listed.containers = [] }
+            // A filtered list shows what matches, never a stack it didn't.
+            if !filter.isEmpty { listed.containers = [] }
             content.list = list(rows, grouping: grouping, in: snapshot, tabs: tabFacts, options: listed)
         }
-        content.ports = sorted(ports(of: rows, in: snapshot, tabs: tabs, titles: titles), by: options.portSort)
+        var ports = ports(of: inScope, in: snapshot, tabs: tabs, titles: titles, context: options.context)
+        content.listeners = ports
+        content.identities = Set(inScope.map(\.identity))
+        let portFilter = ActivityFilter(options.portFilter)
+        if !portFilter.isEmpty { ports = ports.filter { portFilter.matches($0) } }
+        content.ports = sorted(ports, by: options.portSort)
         var summary = ActivitySummary()
         summary.processes = snapshot.table.processes.count
         summary.own = snapshot.table.processes.lazy.filter { $0.isOwn(by: uid) }.count
         summary.shown = rows.count
+        summary.matched = matched
         summary.listening = content.ports.count
         summary.threads = threads
         summary.busiest = Array(
-            rows.compactMap { row in row.cpu.map { ActivitySummary.Busy(id: row.id, name: row.name, cpu: $0) } }.sorted { $0.cpu > $1.cpu }.prefix(5))
+            inScope.compactMap { row in row.cpu.map { ActivitySummary.Busy(id: row.id, name: row.name, cpu: $0) } }.sorted { $0.cpu > $1.cpu }.prefix(5))
         summary.meters = snapshot.meters
         summary.unread = snapshot.unread
         summary.firstSample = !rated
@@ -262,16 +353,98 @@ enum ActivityRows {
     /// The listening sockets of the rows' processes: TCP listeners and
     /// bound UDP, as the census's socket walk read them — the user's only;
     /// another user's sockets aren't readable.
-    static func ports(of rows: [ActivityProcessRow], in snapshot: ActivitySnapshot, tabs: [ActivityProcessID: UUID], titles: [UUID: String])
-        -> [ActivityPortRow]
-    {
+    static func ports(
+        of rows: [ActivityProcessRow], in snapshot: ActivitySnapshot, tabs: [ActivityProcessID: UUID], titles: [UUID: String],
+        context: ActivityContext = ActivityContext()
+    ) -> [ActivityPortRow] {
         let ports = ListeningPorts.of(rows.filter(\.isOwn).map(\.identity), in: snapshot, udp: true)
+        let owners = Dictionary(rows.map { ($0.identity, $0.owner) }, uniquingKeysWith: { first, _ in first })
+        let forwards = Set(context.forwards.map(\.pid).filter { $0 > 0 })
         return ports.map { port in
             let tab = port.identity.flatMap { tabs[$0] }
-            return ActivityPortRow(
+            var row = ActivityPortRow(
                 id: port.id, port: port.port, proto: port.proto, address: port.address, families: port.families, scope: port.scope, process: port.process,
                 holder: port.identity, tab: tab, tabTitle: tab.flatMap { titles[$0] }, url: port.url)
+            row.owner = ownerWord(port.identity.flatMap { owners[$0] ?? nil }, forward: port.identity.map { forwards.contains($0.pid) } ?? false)
+            return row
         }
+    }
+
+    /// The filter's `owner:` word for a listener's holder (6.6).
+    static func ownerWord(_ owner: ActivityOwner?, forward: Bool) -> String {
+        if forward { return "forward" }
+        switch owner?.place {
+        case .pane?: return "tab"
+        case .overterm?, .anotherOverterm?: return "overterm"
+        case .engine?: return "container"
+        case .app?: return "app"
+        case .macOS?: return "macos"
+        case .system?: return "system"
+        case .elsewhere?, nil: return "elsewhere"
+        }
+    }
+
+    /// The rows `filter` keeps: its matches and, with a table to read
+    /// parents from, their ancestors in the match's own tree, dimmed
+    /// (6.6) — up to the first parent another group or owner holds: a
+    /// pane's process up to the pane's login, never Overterm or launchd
+    /// pulled into their groups.
+    static func filtered(
+        _ rows: [ActivityProcessRow], by filter: ActivityFilter, now: Date, ancestorsIn table: ProcessTable?, grouping: ActivityGrouping? = nil
+    ) -> [ActivityProcessRow] {
+        var keep = Set<ActivityProcessID>()
+        var dim = Set<ActivityProcessID>()
+        let present = Dictionary(rows.map { ($0.identity, $0) }, uniquingKeysWith: { first, _ in first })
+        for row in rows where filter.matches(row, now: now) {
+            keep.insert(row.identity)
+            guard let table else { continue }
+            // Up the parents among the rows, bounded by their number.
+            var current = row.identity
+            for _ in 0..<min(rows.count, 256) {
+                guard let parent = table.parent(of: current)?.identity, let above = present[parent], sameTree(above, row, grouping: grouping) else {
+                    break
+                }
+                if !keep.contains(parent) { dim.insert(parent) }
+                current = parent
+            }
+        }
+        dim.subtract(keep)
+        return rows.compactMap { row in
+            if keep.contains(row.identity) { return row }
+            guard dim.contains(row.identity) else { return nil }
+            var dimmed = row
+            dimmed.dimmed = true
+            return dimmed
+        }
+    }
+
+    /// Whether `above` sits in `row`'s tree as the list draws it: the same
+    /// owner's place and the same group.
+    static func sameTree(_ above: ActivityProcessRow, _ row: ActivityProcessRow, grouping: ActivityGrouping?) -> Bool {
+        guard above.owner?.place == row.owner?.place else { return false }
+        switch grouping {
+        case .agent?: return above.owner?.agent == row.owner?.agent
+        case .user?: return above.user == row.user
+        case .app?:
+            // `byApp`'s key: an app's place, else the executable's name.
+            switch row.owner?.place {
+            case .app?, .engine?, .overterm?, .anotherOverterm?: return true
+            default: return above.name == row.name
+            }
+        case .checkout?, .tab?, .none?, nil: return true
+        }
+    }
+
+    private static let terminals = NSLock()
+    nonisolated(unsafe) private static var terminalNames: [dev_t: String] = [:]
+
+    /// A terminal's name (`ttys003`), `devname_r`, kept for the app's life.
+    static func terminalName(_ device: dev_t) -> String? {
+        if let known = terminals.withLock({ terminalNames[device] }) { return known.isEmpty ? nil : known }
+        var buffer = [CChar](repeating: 0, count: 64)
+        let name = devname_r(device, S_IFCHR, &buffer, Int32(buffer.count)).map { String(cString: $0) } ?? ""
+        terminals.withLock { terminalNames[device] = name }
+        return name.isEmpty ? nil : name
     }
 
     /// The processes in `sort`'s order, a column's missing values last.
@@ -287,6 +460,16 @@ enum ActivityRows {
         case "started": return sort.sorted(rows) { $0.started }
         case "user": return sort.sorted(rows) { $0.user }
         case "where": return sort.sorted(rows) { $0.tabTitle?.lowercased() }
+        case "rss": return sort.sorted(rows) { $0.residentSize }
+        case "time": return sort.sorted(rows) { $0.cpuTime }
+        case "nice": return sort.sorted(rows) { Int($0.nice) }
+        case "priority": return sort.sorted(rows) { $0.priority }
+        case "ppid": return sort.sorted(rows) { $0.parentPID }
+        case "pgid": return sort.sorted(rows) { $0.group }
+        case "tty": return sort.sorted(rows) { $0.terminal }
+        case "kind": return sort.sorted(rows) { $0.translated ? 1 : 0 }
+        case "path": return sort.sorted(rows) { $0.path }
+        case "command": return sort.sorted(rows) { $0.command }
         default: return rows
         }
     }

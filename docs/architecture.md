@@ -953,6 +953,39 @@ walks the closing panes' trees itself, on the main thread, at the close
   ladder (`ActivityScope`: tab, checkout, all tabs, the Mac; `[` and `]`,
   a chip with ✕) filters both sections; All tabs is remembered per
   section, a tab or a checkout only for the launch.
+- **The table** (design 6.3–6.7). The filter (`ActivityFilter`, pure,
+  over `ResourceFilter`) is each section's own and never remembered:
+  Activity's keys, quantities with units (`mem:>1g`, `age:<5m`), `|`
+  ORing inside a value, text matched against the masked command only; in
+  a tree a match keeps its ancestors in its own tree (up to the pane's
+  login, never another group's), dimmed, and a group folded by default
+  opens on a match. Processes' filter narrows Processes alone: Listening,
+  the detail's listeners and the busiest read every row in scope
+  (`ActivityPageContent.listeners`, `identities`). The keys (`ActivityKey`,
+  `?` lists them): htop's sorts (`P` `M` `T` `N`, `I` inverts), `u`
+  yours or everyone's, `F` follow — without it the list never scrolls to
+  a selection that moves —, `Z` pause — the census given back while
+  paused, the rows kept —, `↩` its tab and pane, Space the detail, `o`
+  in the owner tab's browser column in the window that holds it (⌥o the
+  default browser, `WorkspacePage.optionPress`), `r`, `i`, `s` (`sample
+  <pid> 5` in a new tab); ← and → fold in `ResourceTable` itself
+  (`fold`). A row's verbs are one list (`ActivityPageModel.verbs`): the
+  detail's `ResourceActionBar` and the row's right-click menu. Columns
+  (`ActivityColumns`): every one 6.5 offers, picked in the header's menu,
+  moved and resized in the header — `ResourceTable` reports them
+  (`columnsChanged`) — and kept in `AppEnvironment.defaults`
+  (`activity.page.columns.v1`); User shows while All does, Where by the
+  grouping. The order is held while the list is
+  worked (`ActivityHold`: the pointer moving over it, a press, its menu,
+  a sheet, VoiceOver's focus in it; `ResourceTable.interacting`): a
+  tick's values land in the order shown (`ActivityRows.held`), its new
+  rows wait, the header says "order held", and it lets go once the
+  pointer rests 5 s; what the person asks for — a sort, a fold, the
+  filter — shows at once. The detail (`ActivityDetail`, pure, +
+  `ActivityDetailView`) without history: the masked command, where and
+  why, its tree — only through the page's rows, so a test run's stops at
+  its own tabs' (9.9) —, its listeners and connections counted, its
+  usage.
 - **The switcher** (⌃⌘A, `ActivitySwitcher`): the palette on the
   listening ports, by number, then the ten busiest processes. It holds
   the full level every second while the palette shows it, page or no

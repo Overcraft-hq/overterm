@@ -1,5 +1,23 @@
+import AppKit
 import Combine
 import Foundation
+
+/// What the page asks of the window (6.3): the verbs that don't signal.
+struct ActivityPageActions {
+    /// Its tab brought forward in whichever window holds it, and the pane
+    /// whose tag is given focused.
+    var goTo: @MainActor (UUID, String?) -> Void = { _, _ in }
+    /// A listener's URL in its tab's browser column, in the window that
+    /// holds the tab, where Settings ▸ Browser says; true: the default
+    /// browser (⌥o).
+    var open: @MainActor (URL, UUID?, Bool) -> Void = { _, _, _ in }
+    /// Tab Info (⌃⌘I) for a tab.
+    var tabInfo: @MainActor (UUID) -> Void = { _ in }
+    /// An executable shown in Finder.
+    var reveal: @MainActor (String) -> Void = { path in NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+    /// `sample <pid> 5` in a new tab (`s`): it only reads.
+    var sample: @MainActor (pid_t) -> Void = { _ in }
+}
 
 /// The Activity page (⌥⌘A; docs/design/activity/analysis.md, 6.4): its
 /// sections, its rows from the census's full snapshots, and its want. It
@@ -40,26 +58,55 @@ final class ActivityPageModel: ObservableObject {
             guard section != oldValue else { return }
             selection = []
             updateContainers()
-            if scope(section) != scope(oldValue) { rebuild() }
+            if scope(section) != scope(oldValue) { rebuild(asked: true) }
         }
     }
     /// How Processes is grouped (`G`), and whether as a tree (`t`).
     @Published var grouping: ActivityGrouping = .checkout {
-        didSet { if grouping != oldValue { rebuild() } }
+        didSet { if grouping != oldValue { rebuild(asked: true) } }
     }
     @Published var tree = true {
-        didSet { if tree != oldValue { rebuild() } }
+        didSet { if tree != oldValue { rebuild(asked: true) } }
     }
+    /// Each section's filter field (6.6): not remembered, as Docker's isn't.
+    @Published private(set) var filters: [Section: String] = [:]
+    /// Asks the filter field for the keyboard (`/`).
+    @Published var focusFilter = 0
+    /// The keys' sheet (`?`).
+    @Published var cheatSheet = false {
+        didSet { if cheatSheet != oldValue { interacted(cheatSheet ? .menuOpened : .menuClosed, sheet: true) } }
+    }
+    /// The detail beside the list (Space).
+    @Published var showsDetail = true
+    /// `F`: the selection kept in view as its row moves.
+    @Published var following = false
+    /// `Z`: values and order frozen; the census given back while nothing
+    /// else wants it.
+    @Published var paused = false {
+        didSet { if paused != oldValue { updateWant() } }
+    }
+    /// The order is held while the person works the list (6.7): said.
+    @Published private(set) var orderHeld = false
+    /// `u`: yours only, or everyone's — `activity.everyone` until pressed.
+    @Published var everyone: Bool? {
+        didSet { if everyone != oldValue { rebuild(asked: true) } }
+    }
+    /// The selected process's detail (6.4).
+    @Published private(set) var detail: ActivityDetail?
+    /// The columns the person left: each section's, kept (6.5).
+    @Published private(set) var layout: ActivityColumns.Layout = ActivityColumns.load()
     /// The scope ladder's rung (6.5, `[` and `]`), a section each.
     @Published private(set) var scopes: [Section: ActivityScope] = [:]
     /// Folds by row id, kept in memory for the app's life (6.5).
     @Published private(set) var folds: [String: Bool] = [:]
-    @Published var selection: Set<String> = []
+    @Published var selection: Set<String> = [] {
+        didSet { if selection != oldValue { updateDetail() } }
+    }
     @Published var processSort: ResourceSort? = ResourceSort(column: "cpu", ascending: false) {
-        didSet { if processSort != oldValue { rebuild() } }
+        didSet { if processSort != oldValue { rebuild(asked: true) } }
     }
     @Published var portSort: ResourceSort? = ResourceSort(column: "port") {
-        didSet { if portSort != oldValue { rebuild() } }
+        didSet { if portSort != oldValue { rebuild(asked: true) } }
     }
     @Published private(set) var content = ActivityPageContent()
     /// A full snapshot has been made into rows since the page showed.
@@ -95,6 +142,15 @@ final class ActivityPageModel: ObservableObject {
     var runningApps: @MainActor () -> [pid_t: String] = { [:] }
     /// A test run lists only its own tabs' processes (6.4, 9.9).
     var isolated = AppEnvironment.isIsolated
+    /// The verbs that don't signal, as the window does them.
+    var actions = ActivityPageActions()
+    /// VoiceOver's focus is in the list: the order holds (6.7).
+    var voiceOverInList: @MainActor () -> Bool = { false }
+    /// How the person works the list now, and the rows a tick brought
+    /// while the order held: shown once it lets go.
+    private var hold = ActivityHold()
+    private(set) var waiting: ActivityPageContent?
+    private var release: Task<Void, Never>?
 
     let monitor: ActivityMonitor
     /// Whether it holds the monitor's full level now.
@@ -131,7 +187,7 @@ final class ActivityPageModel: ObservableObject {
         scopes[section] = scope
         let saved: String? = scope == .allTabs ? "allTabs" : nil
         AppEnvironment.defaults.set(saved, forKey: Self.scopeKey(section))
-        rebuild()
+        rebuild(asked: true)
     }
 
     /// The chip's words: "Tab: web", "Checkout: acme-shop", "All tabs";
@@ -164,31 +220,121 @@ final class ActivityPageModel: ObservableObject {
     func toggleFold(_ id: String, folded now: Bool) {
         folds[id] = !now
         revealed = nil
-        rebuild()
+        rebuild(asked: true)
+    }
+
+    /// ← (`open` false) and → on a row, as `ResourceTable` reads them:
+    /// whether it folded or unfolded.
+    func fold(_ id: String, open: Bool) -> Bool {
+        let folded: Bool
+        switch content.list.first(where: { $0.id == id }) {
+        case .group(let row)?:
+            guard row.foldable, row.kind != .container else { return false }
+            folded = row.folded
+        case .process(let row)?:
+            guard row.hasChildren else { return false }
+            folded = row.folded
+        case nil: return false
+        }
+        guard folded == open else { return false }
+        toggleFold(id, folded: folded)
+        return true
+    }
+
+    // MARK: The filter
+
+    /// What `section`'s filter field says.
+    func filter(_ section: Section) -> String { filters[section] ?? "" }
+
+    func setFilter(_ text: String, for section: Section? = nil) {
+        let section = section ?? self.section
+        guard filter(section) != text else { return }
+        filters[section] = text
+        rebuild(asked: true)
+    }
+
+    // MARK: The columns
+
+    /// `section`'s columns as shown now (6.5).
+    func columns(_ section: Section) -> [ResourceColumn] {
+        ActivityColumns.columns(section, kept: layout[section.rawValue], grouping: grouping, everyone: everyone ?? Settings.shared.activityEveryone)
+    }
+
+    /// A header moved or resized: kept for the next launch too.
+    func columnsChanged(_ columns: [ResourceColumn], in section: Section? = nil) {
+        let section = section ?? self.section
+        let kept = ActivityColumns.kept(columns)
+        guard layout[section.rawValue] != kept else { return }
+        layout[section.rawValue] = kept
+        ActivityColumns.save(layout)
+    }
+
+    /// The header's menu: a column shown or hidden.
+    func toggleColumn(_ id: String, in section: Section? = nil) {
+        let section = section ?? self.section
+        columnsChanged(ActivityColumns.toggled(id, in: columns(section), section: section), in: section)
+    }
+
+    // MARK: The hold
+
+    /// The list was worked (6.7): the order holds while it is, and lets go
+    /// once the pointer rests — the rows a tick brought meanwhile shown.
+    func interacted(_ interaction: ResourceTableInteraction, sheet: Bool = false) {
+        if sheet {
+            hold.sheet = interaction == .menuOpened
+        } else {
+            hold.note(interaction, at: .now)
+        }
+        updateHold()
+    }
+
+    private func updateHold() {
+        let held = hold.holds(at: .now, voiceOver: voiceOverInList())
+        if !held, let waiting {
+            self.waiting = nil
+            apply(waiting)
+        }
+        if orderHeld != held { orderHeld = held }
+        release?.cancel()
+        release = nil
+        if held, let rests = hold.restsAt {
+            release = Task { [weak self] in
+                try? await Task.sleep(until: rests, clock: .continuous)
+                guard !Task.isCancelled else { return }
+                self?.updateHold()
+            }
+        }
     }
 
     /// The containers' usage wanted while Processes shows.
     private func updateContainers() {
-        let wanted = wanting && section == .processes
+        let wanted = isShown && section == .processes
         guard wanted != wantsContainers else { return }
         wantsContainers = wanted
         wantContainers(wanted)
     }
 
+    /// It shows, in a window on screen, with Activity on.
+    var isShown: Bool { visible && windowVisible && Settings.shared.activityEnabled }
+
     /// Its want, as it shows and Activity is on: the full level at the
-    /// census's interval; given back otherwise.
+    /// census's interval; given back otherwise — and while paused, its rows
+    /// kept then. Hidden, the rows go and the pause with them.
     func updateWant() {
-        let wanted = visible && windowVisible && Settings.shared.activityEnabled
-        if wanted {
+        let shown = isShown
+        if shown, !paused {
             interval = monitor.interval
             monitor.want(self, .full)
-            if !wanting { follow() }
+            if !wanting { subscribe() }
             wanting = true
         } else if wanting {
             monitor.unwant(self)
             wanting = false
             snapshots = nil
+        }
+        if !shown, hasRead || latest != nil {
             forget()
+            if paused { paused = false }
         }
         updateContainers()
     }
@@ -199,14 +345,16 @@ final class ActivityPageModel: ObservableObject {
     private func forget() {
         generation += 1
         latest = nil
+        waiting = nil
         content = ActivityPageContent()
         hasRead = false
+        detail = nil
     }
 
     /// Takes each full snapshot that lands while it wants them, and one
     /// already there that is no older than two intervals: an older one
     /// would show minutes-old numbers as now.
-    private func follow() {
+    private func subscribe() {
         if let last = monitor.lastFull, monitor.age(of: last) <= 2 * ActivityMonitor.nanoseconds(monitor.interval) { take(last) }
         // @Published emits before it changes: the emitted value.
         snapshots = monitor.$snapshot.compactMap { $0 }.filter { $0.demand.full }
@@ -214,19 +362,23 @@ final class ActivityPageModel: ObservableObject {
     }
 
     func take(_ snapshot: ActivitySnapshot) {
-        guard snapshot.tick > latest?.tick ?? 0 else { return }
+        guard !paused, snapshot.tick > latest?.tick ?? 0 else { return }
         latest = snapshot
-        rebuild()
+        rebuild(asked: false)
     }
 
     /// The rows of the latest snapshot, made off the main thread (7.7); a
-    /// later rebuild wins over one still on its way.
-    private func rebuild() {
-        guard wanting, let snapshot = latest else { return }
+    /// later rebuild wins over one still on its way. `asked`: by the
+    /// person — a sort, a fold, the filter — and shown at once; a tick's
+    /// wait while the order holds (6.7).
+    private func rebuild(asked: Bool = true) {
+        guard isShown, let snapshot = latest else { return }
         generation += 1
         let generation = self.generation
         var options = ActivityRows.Options(
-            everyone: Settings.shared.activityEveryone, isolated: isolated, processSort: processSort, portSort: portSort)
+            everyone: everyone ?? Settings.shared.activityEveryone, isolated: isolated, processSort: processSort, portSort: portSort)
+        options.processFilter = filter(.processes)
+        options.portFilter = filter(.listening)
         if let facts = tabFacts() {
             options.tabs = facts.tabs
             options.checkouts = facts.checkouts
@@ -247,12 +399,42 @@ final class ActivityPageModel: ObservableObject {
         Task { [weak self] in
             let content = await Self.make(snapshot, options)
             guard let self, self.generation == generation else { return }
-            self.content = content
-            self.hasRead = true
             self.builds += 1
-            let shown = Set(content.processes.map(\.id)).union(content.list.map(\.id)).union(content.ports.map(\.id))
-            if !self.selection.isSubset(of: shown) { self.selection = self.selection.intersection(shown) }
+            let first = !self.hasRead
+            self.hasRead = true
+            if !asked, !first, self.hold.holds(at: .now, voiceOver: self.voiceOverInList()) {
+                // Values in the order shown; the rest once it lets go.
+                self.waiting = content
+                self.content = ActivityRows.held(self.content, content)
+                if !self.orderHeld { self.orderHeld = true }
+                self.updateDetail()
+                return
+            }
+            self.waiting = nil
+            self.apply(content)
         }
+    }
+
+    /// `content` shown: the selection kept to what it still lists.
+    private func apply(_ content: ActivityPageContent) {
+        self.content = content
+        let shown = Set(content.processes.map(\.id)).union(content.list.map(\.id)).union(content.ports.map(\.id))
+        if !selection.isSubset(of: shown) { selection = selection.intersection(shown) }
+        updateDetail()
+    }
+
+    /// The selected row's detail: a process's, or a listener's holder's.
+    private func updateDetail() {
+        guard let snapshot = latest, let id = selection.first, selection.count == 1 else {
+            if detail != nil { detail = nil }
+            return
+        }
+        var row = content.processes.first { $0.id == id }
+        if row == nil, let port = content.ports.first(where: { $0.id == id }), let holder = port.holder {
+            row = content.processes.first { $0.identity == holder }
+        }
+        let made = row.map { ActivityDetail.make($0, in: snapshot, rows: content.identities, ports: content.listeners) }
+        if made != detail { detail = made }
     }
 
     private nonisolated static func make(_ snapshot: ActivitySnapshot, _ options: ActivityRows.Options) async -> ActivityPageContent {
@@ -271,7 +453,7 @@ final class ActivityPageModel: ObservableObject {
             snapshots = nil
         }
         updateWant()
-        if wanting { rebuild() } else if was { forget() }
+        if isShown { rebuild(asked: true) } else if was { forget() }
     }
 
     /// The page closed: what it shows goes with it.
@@ -279,39 +461,181 @@ final class ActivityPageModel: ObservableObject {
         visible = false
         selection = []
         forget()
+        paused = false
+        hold = ActivityHold()
+        updateHold()
     }
 
-    /// A key while the list has the keyboard: the sections' digits (6.3).
+    /// A key while the list has the keyboard (`ActivityKey`, 6.3): whether
+    /// it meant something; anything else goes on to the list.
+    @discardableResult
     func press(_ characters: String) -> Bool {
-        if let section = Section.allCases.first(where: { $0.key == characters }) {
-            self.section = section
-            return true
+        guard let pressed = ActivityKey.press(characters, sheetShowing: cheatSheet) else { return false }
+        switch pressed {
+        case .closeSheet: cheatSheet = false
+        case .section(let section): self.section = section
+        case .help: cheatSheet = true
+        case .filter: focusFilter += 1
+        case .key(let key): return press(key)
         }
-        switch characters {
-        case "G" where section == .processes: grouping = grouping.next
-        case "t" where section == .processes: tree.toggle()
-        case "[": narrowScope()
-        case "]": widenScope()
+        return true
+    }
+
+    private func press(_ key: ActivityKey) -> Bool {
+        let processes = section == .processes
+        switch key {
+        case .goTo: goToSelection()
+        case .detail: showsDetail.toggle()
+        case .open: return openSelection(defaultBrowser: false)
+        case .sample where processes:
+            guard let row = selectedProcess, row.isOwn else { return false }
+            actions.sample(row.identity.pid)
+        case .reveal:
+            guard let path = selectedProcess?.path else { return false }
+            actions.reveal(path)
+        case .tabInfo:
+            guard let tab = selectedProcess?.tab else { return false }
+            actions.tabInfo(tab)
+        case .tree where processes: tree.toggle()
+        case .group where processes: grouping = grouping.next
+        case .narrower: narrowScope()
+        case .wider: widenScope()
+        case .follow: following.toggle()
+        case .pause: paused.toggle()
+        case .mine: everyone = !(everyone ?? Settings.shared.activityEveryone)
+        case .sortCPU where processes: processSort = ResourceSort(column: "cpu", ascending: false)
+        case .sortMemory where processes: processSort = ResourceSort(column: "memory", ascending: false)
+        case .sortTime where processes: processSort = ResourceSort(column: "time", ascending: false)
+        case .sortPID where processes: processSort = ResourceSort(column: "pid")
+        case .invert where processes:
+            guard var sort = processSort else { return false }
+            sort.ascending.toggle()
+            processSort = sort
         default: return false
         }
         return true
     }
 
+    /// The selected process — a listener's holder in Listening.
+    var selectedProcess: ActivityProcessRow? { selection.count == 1 ? detail?.row : nil }
+
+    /// ↩: a process to its tab and pane; a listener to its process's row;
+    /// one outside every tab to its detail.
+    private func goToSelection() {
+        guard let id = selection.first else { return }
+        if section == .listening, let holder = content.ports.first(where: { $0.id == id })?.holder {
+            return reveal(holder.id, in: .processes)
+        }
+        if let row = content.processes.first(where: { $0.id == id }), row.tab != nil { return goTo(row) }
+        showsDetail = true
+    }
+
+    /// `row`'s tab, and its pane when the pane's tag placed it.
+    private func goTo(_ row: ActivityProcessRow) {
+        guard let tab = row.tab else { return }
+        var pane: String?
+        if case .pane(let tag)? = row.owner?.place { pane = tag }
+        actions.goTo(tab, pane)
+    }
+
+    /// The listener `o` opens for `id`: a listener's own row, or a
+    /// process's first that a browser reaches — whatever a filter shows.
+    private func openable(_ id: String) -> ActivityPortRow? {
+        if let port = content.ports.first(where: { $0.id == id }) ?? content.listeners.first(where: { $0.id == id }) { return port.url == nil ? nil : port }
+        guard let row = content.processes.first(where: { $0.id == id }) else { return nil }
+        return content.listeners.first { $0.holder == row.identity && $0.url != nil }
+    }
+
+    /// `o`: a listener's URL, or the selected process's first one, in its
+    /// tab's browser column; ⌥o the default browser.
+    private func openSelection(defaultBrowser: Bool) -> Bool {
+        guard let id = selection.first, let port = openable(id), let url = port.url else { return false }
+        actions.open(url, port.tab, defaultBrowser)
+        return true
+    }
+
+    /// A key with ⌥ while the list has the keyboard: ⌥o opens in the
+    /// default browser (6.3). `characters` ignore the modifier.
+    @discardableResult
+    func pressOption(_ characters: String) -> Bool {
+        guard !cheatSheet, characters == "o" else { return false }
+        return openSelection(defaultBrowser: true)
+    }
+
     /// ⌘C: the selected rows, a line each — names, pids, ports only.
-    var selectedLines: [String] {
+    var selectedLines: [String] { lines(for: selection) }
+
+    /// `ids`' rows, a line each, as ⌘C copies them.
+    func lines(for ids: Set<String>) -> [String] {
         switch section {
         case .processes:
-            content.processes.filter { selection.contains($0.id) }.map { "\($0.name)\t\($0.identity.pid)" }
+            content.processes.filter { ids.contains($0.id) }.map { "\($0.name)\t\($0.identity.pid)" }
         case .listening:
-            content.ports.filter { selection.contains($0.id) }.map { "\($0.port)/\($0.proto)\t\($0.process)\t\($0.holder.map { String($0.pid) } ?? "")" }
+            content.ports.filter { ids.contains($0.id) }.map { "\($0.port)/\($0.proto)\t\($0.process)\t\($0.holder.map { String($0.pid) } ?? "")" }
         }
+    }
+
+    /// The verbs of `ids`' rows (6.4): one list, drawn as the detail's
+    /// `ResourceActionBar` and as the list's right-click menu. One row: Go
+    /// to Tab, Open, Reveal, Tab Info, Sample, Copy — what can't be done
+    /// greyed with why; several: Copy. `copy` puts lines on the pasteboard.
+    func verbs(for ids: Set<String>, copy: @escaping ([String]) -> Void) -> [ResourceVerb] {
+        let copyVerb = ResourceVerb(
+            title: ids.count > 1 ? "Copy \(ids.count) Rows" : "Copy", symbol: "doc.on.doc", key: "⌘C", group: 1,
+            perform: { [weak self] in
+                guard let self else { return }
+                copy(self.lines(for: ids))
+            })
+        guard ids.count == 1, let id = ids.first else { return ids.isEmpty ? [] : [copyVerb] }
+        let port = content.ports.first { $0.id == id }
+        let row = content.processes.first { $0.id == id } ?? port?.holder.flatMap { holder in content.processes.first { $0.identity == holder } }
+        var verbs: [ResourceVerb] = []
+        if let port, let holder = port.holder {
+            verbs.append(
+                ResourceVerb(
+                    title: "Show Its Process", label: "Process", symbol: "list.bullet.indent", key: "↩",
+                    perform: { [weak self] in self?.reveal(holder.id, in: .processes) }))
+        }
+        if let row {
+            verbs.append(
+                ResourceVerb(
+                    title: "Go to Tab", symbol: "arrow.right.square", place: .button, key: port == nil ? "↩" : nil,
+                    unavailable: row.tab == nil ? "It runs outside every tab" : nil, perform: { [weak self] in self?.goTo(row) }))
+        }
+        let opens = openable(id)
+        verbs.append(
+            ResourceVerb(
+                title: "Open in Browser", label: "Open", symbol: "safari", place: .button, key: "o",
+                unavailable: opens == nil ? "Nothing it listens on opens in a browser" : nil,
+                perform: { [weak self] in if let opens, let url = opens.url { self?.actions.open(url, opens.tab, false) } }))
+        verbs.append(
+            ResourceVerb(
+                title: "Open in Default Browser", symbol: "arrow.up.forward.app", key: "⌥o",
+                unavailable: opens == nil ? "Nothing it listens on opens in a browser" : nil,
+                perform: { [weak self] in if let opens, let url = opens.url { self?.actions.open(url, opens.tab, true) } }))
+        guard let row else { return verbs + [copyVerb] }
+        verbs.append(
+            ResourceVerb(
+                title: "Reveal in Finder", label: "Reveal", symbol: "folder", place: .button, key: "r",
+                unavailable: row.path == nil ? (row.isOwn ? "Its executable isn't read yet" : "Another user's: not readable") : nil,
+                perform: { [weak self] in if let path = row.path { self?.actions.reveal(path) } }))
+        verbs.append(
+            ResourceVerb(
+                title: "Tab Info", symbol: "info.circle", place: .button, key: "i", unavailable: row.tab == nil ? "It runs outside every tab" : nil,
+                perform: { [weak self] in if let tab = row.tab { self?.actions.tabInfo(tab) } }))
+        verbs.append(
+            ResourceVerb(
+                title: "Sample for 5 Seconds in a Tab", label: "Sample", symbol: "waveform.path.ecg", key: "s",
+                unavailable: row.isOwn ? nil : "Another user's: sample can't read it",
+                perform: { [weak self] in self?.actions.sample(row.identity.pid) }))
+        return verbs + [copyVerb]
     }
 
     /// The process or port shown on the page: its section, selected.
     func reveal(_ id: String, in section: Section) {
         self.section = section
         revealed = id
-        rebuild()
+        rebuild(asked: true)
         selection = [id]
         focusList += 1
     }
