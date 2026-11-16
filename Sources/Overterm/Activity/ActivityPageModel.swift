@@ -108,6 +108,11 @@ final class ActivityPageModel: ObservableObject {
     @Published var portSort: ResourceSort? = ResourceSort(column: "port") {
         didSet { if portSort != oldValue { rebuild(asked: true) } }
     }
+    /// Listening's connections (`c`, 6.8): the user's established TCP
+    /// connections, paired by the 4-tuple.
+    @Published var connections = false {
+        didSet { if connections != oldValue { rebuild(asked: true) } }
+    }
     @Published private(set) var content = ActivityPageContent()
     /// A full snapshot has been made into rows since the page showed.
     @Published private(set) var hasRead = false
@@ -131,10 +136,12 @@ final class ActivityPageModel: ObservableObject {
     var tabFacts: @MainActor () -> (tabs: [UUID: ActivityTabFacts], checkouts: [String])? = { nil }
     /// The window's selected tab: where `[` narrows to with no row selected.
     var currentTab: @MainActor () -> UUID? = { nil }
-    /// The running containers with their usage, and the want of their
-    /// usage while Processes shows (6.5): set by the window.
+    /// The running containers with their usage, and the want of Docker's
+    /// model while either section shows — their published ports are
+    /// Listening's owners (6.8) — and of their usage while Processes does
+    /// (6.5): set by the window.
     var containers: @MainActor () -> [ActivityContainer] = { [] }
-    var wantContainers: @MainActor (Bool) -> Void = { _ in }
+    var wantContainers: @MainActor (ActivityContainerWant) -> Void = { _ in }
     /// What the census's context leaves to the page (6.5, rules 2 and 6):
     /// the forwards, the containers' published ports, the bridge's port.
     var contextFacts: @MainActor (inout ActivityContext) -> Void = { _ in }
@@ -164,8 +171,8 @@ final class ActivityPageModel: ObservableObject {
     private var lastTabs: [UUID: ActivityTabFacts] = [:]
     /// A row shown by a link: its groups unfolded for it.
     private var revealed: String?
-    /// Whether it holds the containers' usage now.
-    private(set) var wantsContainers = false
+    /// What it holds of Docker's now.
+    private(set) var wantsContainers = ActivityContainerWant.none
 
     init(monitor: ActivityMonitor = .shared) {
         self.monitor = monitor
@@ -226,6 +233,11 @@ final class ActivityPageModel: ObservableObject {
     /// ← (`open` false) and → on a row, as `ResourceTable` reads them:
     /// whether it folded or unfolded.
     func fold(_ id: String, open: Bool) -> Bool {
+        if section == .listening {
+            guard let fold = content.ports.first(where: { $0.id == id && $0.kind == .folded }), fold.folded == open else { return false }
+            toggleFold(id, folded: fold.folded)
+            return true
+        }
         let folded: Bool
         switch content.list.first(where: { $0.id == id }) {
         case .group(let row)?:
@@ -306,9 +318,10 @@ final class ActivityPageModel: ObservableObject {
         }
     }
 
-    /// The containers' usage wanted while Processes shows.
+    /// Docker's model wanted while the page shows, the containers' usage
+    /// while Processes does.
     private func updateContainers() {
-        let wanted = isShown && section == .processes
+        let wanted: ActivityContainerWant = !isShown ? .none : section == .processes ? .usage : .listed
         guard wanted != wantsContainers else { return }
         wantsContainers = wanted
         wantContainers(wanted)
@@ -395,7 +408,8 @@ final class ActivityPageModel: ObservableObject {
         options.scope = scope(section)
         options.folds = folds
         options.reveal = revealed
-        options.containers = wantsContainers ? containers() : []
+        options.containers = wantsContainers == .none ? [] : containers()
+        options.connections = connections
         Task { [weak self] in
             let content = await Self.make(snapshot, options)
             guard let self, self.generation == generation else { return }
@@ -439,7 +453,14 @@ final class ActivityPageModel: ObservableObject {
 
     private nonisolated static func make(_ snapshot: ActivitySnapshot, _ options: ActivityRows.Options) async -> ActivityPageContent {
         await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async { continuation.resume(returning: ActivityRows.content(of: snapshot, options)) }
+            DispatchQueue.global(qos: .userInitiated).async {
+                // Off the main thread: the LaunchAgents' plists, read again
+                // only when their folder changed, and the ephemeral range.
+                var options = options
+                options.launchAgents = LaunchdJobs.cachedAgents(in: AppEnvironment.launchAgentsDirectory)
+                options.ephemeralFirst = ActivityPorts.ephemeralRangeFirst()
+                continuation.resume(returning: ActivityRows.content(of: snapshot, options))
+            }
         }
     }
 
@@ -503,6 +524,7 @@ final class ActivityPageModel: ObservableObject {
         case .follow: following.toggle()
         case .pause: paused.toggle()
         case .mine: everyone = !(everyone ?? Settings.shared.activityEveryone)
+        case .connections where !processes: connections.toggle()
         case .sortCPU where processes: processSort = ResourceSort(column: "cpu", ascending: false)
         case .sortMemory where processes: processSort = ResourceSort(column: "memory", ascending: false)
         case .sortTime where processes: processSort = ResourceSort(column: "time", ascending: false)
@@ -571,7 +593,9 @@ final class ActivityPageModel: ObservableObject {
         case .processes:
             content.processes.filter { ids.contains($0.id) }.map { "\($0.name)\t\($0.identity.pid)" }
         case .listening:
-            content.ports.filter { ids.contains($0.id) }.map { "\($0.port)/\($0.proto)\t\($0.process)\t\($0.holder.map { String($0.pid) } ?? "")" }
+            content.ports.filter { ids.contains($0.id) && $0.kind != .folded }.map {
+                "\($0.port)/\($0.proto)\t\($0.process)\t\($0.holder.map { String($0.pid) } ?? "")\t\($0.ownerText)"
+            }
         }
     }
 
@@ -613,6 +637,19 @@ final class ActivityPageModel: ObservableObject {
                 title: "Open in Default Browser", symbol: "arrow.up.forward.app", key: "⌥o",
                 unavailable: opens == nil ? "Nothing it listens on opens in a browser" : nil,
                 perform: { [weak self] in if let opens, let url = opens.url { self?.actions.open(url, opens.tab, true) } }))
+        if let opens, opens.kind == .listener, let secure = Self.https(opens.url) {
+            // 6.8, Open: a listener serving TLS that isn't a forward saying so.
+            verbs.append(
+                ResourceVerb(
+                    title: "Open as https", symbol: "lock", perform: { [weak self] in self?.actions.open(secure, opens.tab, false) }))
+        }
+        if let port, port.kind == .listener {
+            verbs.append(
+                ResourceVerb(
+                    title: "Copy URL", symbol: "link", unavailable: port.url == nil ? "Nothing a browser opens: UDP, or a link-local address" : nil, group: 1,
+                    perform: { if let url = port.url { copy([url.absoluteString]) } }))
+            verbs.append(ResourceVerb(title: "Copy Port", symbol: "number", group: 1, perform: { copy([String(port.port)]) }))
+        }
         guard let row else { return verbs + [copyVerb] }
         verbs.append(
             ResourceVerb(
@@ -629,6 +666,13 @@ final class ActivityPageModel: ObservableObject {
                 unavailable: row.isOwn ? nil : "Another user's: sample can't read it",
                 perform: { [weak self] in self?.actions.sample(row.identity.pid) }))
         return verbs + [copyVerb]
+    }
+
+    /// `url` as https, when it is http. Pure.
+    nonisolated static func https(_ url: URL?) -> URL? {
+        guard let url, url.scheme == "http", var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
+        parts.scheme = "https"
+        return parts.url
     }
 
     /// The process or port shown on the page: its section, selected.

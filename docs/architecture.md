@@ -986,6 +986,48 @@ walks the closing panes' trees itself, on the main thread, at the close
   why, its tree — only through the page's rows, so a test run's stops at
   its own tabs' (9.9) —, its listeners and connections counted, its
   usage.
+- **Listening** (`ActivityPorts`, pure, with the rows; design 6.8): one
+  row per holder, protocol and port — its v4 and v6 sockets together
+  ("v4 + v6"), the processes that share the very socket (`soi_so`: a
+  pre-fork server's workers, a child that inherited it) "+N holders" —,
+  bound UDP too. The owner, the first that matches: a container by its
+  published host address, port and protocol (never the number alone;
+  Docker's model is shown while the page is, `ActivityContainerWant`),
+  "via" the holder (one number published on two host addresses a row
+  each) — or, nobody in scope seen holding it, the container's own row
+  "via the engine", at the Mac or its checkout's scope, bound as it is
+  published (`0.0.0.0` IPv4's wildcard, `::` IPv6's, both for every
+  address), so its collisions are found too —; a Kubernetes forward by kubectl's pid (its https kept); a
+  database tunnel by ssh's pid and port (`SSHTunnel.listed`); Overterm's
+  MCP bridge; a pane's process; then `KnownHolders` (AirPlay Receiver on
+  5000 and 7000, Continuity, adb, the engines), a launchd job
+  (`LaunchdJobs`: `XPC_SERVICE_NAME`'s label, else a LaunchAgent plist's
+  program, resolved by `realpath` — regular files only, opened
+  `O_NOFOLLOW`, under 1 MB; `AppEnvironment.launchAgentsDirectory`, none
+  in a test run;
+  `homebrew.mxcl.<formula>` a brew service), an app, macOS, another
+  user's, the user's elsewhere. The URL follows the bound families
+  (`ListeningPorts.host`), a container's own row's the families it is
+  published on (`localhost` only for both); `o` opens it in the owner
+  tab's browser column — a container's, a tab of its checkout —, and the
+  menu adds Open as https. Collisions (`PortCollisions`,
+  pure) are said on both rows in the Note column and to VoiceOver: one
+  port split across IPv4 and IPv6 by two holders, a specific address
+  beside a wildcard, two holders' own sockets on one address and port
+  (`SO_REUSEPORT`), AirPlay Receiver beside a server. `c` (or
+  `state:established`) adds the user's established TCP connections: two
+  of the user's ends paired by the 4-tuple are one line, the server the
+  end listening on its port, counted as the listener's Clients; one
+  socket two processes hold is one end, its oldest holder's; the rest a
+  line a process and remote end, counted, ≤ 500, those past it said below
+  the list — a remote address on the page only, never in a row's id. A
+  loopback listener a tunnel client (cloudflared, ngrok, `ssh -R`…) is
+  connected to reads "forwarded by", from every pair, listed or not.
+  Apps', macOS's and known holders' listeners in the ephemeral range
+  (`net.inet.ip.portrange.first`) fold into one line; a tab's, a server
+  of the user's elsewhere and a launchd job's never do, and a filter
+  shows them. The header's count is every listener; the switcher lists
+  the folded ones too.
 - **The switcher** (⌃⌘A, `ActivitySwitcher`): the palette on the
   listening ports, by number, then the ten busiest processes. It holds
   the full level every second while the palette shows it, page or no

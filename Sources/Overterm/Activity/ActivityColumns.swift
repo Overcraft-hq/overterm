@@ -46,15 +46,24 @@ enum ActivityColumns {
     /// Shown until the person picks: 6.5's "on" — User comes with All.
     static let processDefaults: [String] = ["name", "pid", "cpu", "memory", "threads", "state", "started", "listening"]
 
+    /// Every column Listening offers, in its default order (6.8).
     static let listening: [ResourceColumn] = [
         ResourceColumn(id: "port", title: "Port", width: 70),
-        ResourceColumn(id: "proto", title: "Proto", width: 56),
-        ResourceColumn(id: "address", title: "Reach", width: 130, help: "This Mac: loopback only. Network: whatever can route to this Mac"),
-        ResourceColumn(id: "families", title: "IP", width: 60, sortable: false),
-        ResourceColumn(id: "process", title: "Process", width: 200, minWidth: 100),
+        ResourceColumn(id: "proto", title: "Proto", width: 52),
+        ResourceColumn(id: "address", title: "Scope", width: 130, help: "This Mac: loopback only. Network: whatever can route to this Mac"),
+        ResourceColumn(id: "families", title: "IP", width: 60, sortable: false, help: "The families it serves: a dual-stack socket both"),
+        ResourceColumn(id: "owner", title: "Owner", width: 190, minWidth: 90, help: "The container, forward, tunnel, tab or app it belongs to"),
+        ResourceColumn(id: "process", title: "Process", width: 170, minWidth: 90),
         ResourceColumn(id: "pid", title: "PID", width: 64),
-        ResourceColumn(id: "where", title: "Where", width: 160, help: "The tab its process runs in"),
+        ResourceColumn(id: "where", title: "Where", width: 180, help: "Its tab · checkout · branch · agent"),
+        ResourceColumn(id: "clients", title: "Clients", width: 60, help: "Your established connections to it"),
+        ResourceColumn(id: "note", title: "Note", width: 300, minWidth: 80, help: "Another holder on the same port, or what a known holder is"),
+        ResourceColumn(id: "since", title: "Since", width: 70, help: "When its holder started: a socket has no time of its own"),
+        ResourceColumn(id: "backlog", title: "Backlog", width: 80, help: "Connections waiting to be accepted, of how many it may hold"),
     ]
+
+    /// Shown until the person picks: Since and Backlog off.
+    static let listeningDefaults: [String] = ["port", "proto", "address", "families", "owner", "process", "pid", "where", "clients", "note"]
 
     /// Where's comes and goes with the grouping (6.5): shown when grouped
     /// by neither checkout nor tab, never picked.
@@ -88,7 +97,7 @@ enum ActivityColumns {
             }
             if !seen.contains("name"), section == .processes, let name = byID["name"] { shown.insert(name, at: 0) }
         } else {
-            shown = section == .processes ? processDefaults.compactMap { byID[$0] } : all
+            shown = (section == .processes ? processDefaults : listeningDefaults).compactMap { byID[$0] }
         }
         guard section == .processes else { return shown }
         if everyone {

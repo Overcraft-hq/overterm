@@ -20,14 +20,17 @@ enum ActivityListRow: ResourceTableRow {
     var height: CGFloat { 24 }
 
     var spansColumns: Bool {
-        if case .group(let row) = self { return row.spansColumns }
-        return false
+        switch self {
+        case .group(let row): row.spansColumns
+        case .port(let row): row.spansColumns
+        case .process: false
+        }
     }
 
     var reuseKind: String {
         switch self {
         case .process: "process"
-        case .port: "port"
+        case .port(let row): row.kind == .folded ? "fold" : "port"
         case .group(let row): row.kind == .container ? "container" : "group"
         }
     }
@@ -172,6 +175,14 @@ struct ActivityPageView: View {
                 .accessibilityElement(children: .combine)
                 .accessibilityIdentifier("activity.scope")
             }
+            if page.section == .listening {
+                Toggle(isOn: $page.connections) {
+                    Text("Connections").font(.system(size: ChromeMetrics.text(11.5)))
+                }
+                .toggleStyle(.checkbox).controlSize(.small)
+                .help("Your established TCP connections too, each paired end to end where both ends are yours (c)")
+                .accessibilityIdentifier("activity.connections")
+            }
             if page.section == .processes {
                 Button {
                     page.grouping = page.grouping.next
@@ -306,12 +317,19 @@ struct ActivityPageView: View {
                 // Every "none" must be true (6.4): what isn't read is said —
                 // below the list, never over its last row.
                 Rectangle().fill(theme.border).frame(height: 1)
-                Text("Your processes' listeners. Other users' — root's, macOS's — aren't read.")
+                Text(verbatim: Self.listeningNote(connections: page.connections, dropped: page.content.droppedConnections))
                     .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).padding(.horizontal, 14).padding(.vertical, 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityIdentifier("activity.listeningNote")
             }
         }
+    }
+
+    /// What isn't read, and the connections past the cap (6.8): said.
+    static func listeningNote(connections: Bool, dropped: Int) -> String {
+        guard connections else { return "Your processes' listeners. Other users' — root's, macOS's — aren't read. Connections: c" }
+        let more = dropped > 0 ? " +\(dropped) more connection\(dropped == 1 ? "" : "s") not listed." : ""
+        return "Your processes' listeners and connections. Other users' — root's, macOS's — aren't read.\(more)"
     }
 
     private var table: some View {
@@ -520,15 +538,38 @@ struct ActivityPageView: View {
 
     @ViewBuilder
     private func portCell(_ row: ActivityPortRow, _ column: String?) -> some View {
-        switch column {
-        case "port": number(":\(row.port)", theme.text)
-        case "proto": text(row.proto, theme.text2)
-        case "address": text(row.reach, row.scope == .thisMac ? theme.text2 : TabStatusStyle.signal)
-        case "families": text(row.familyWords, theme.text3)
-        case "process": text(row.process, theme.text)
-        case "pid": number(row.holder.map { "\($0.pid)" } ?? "")
-        case "where": text(row.tabTitle.map { "“\($0)”" } ?? "", theme.text2)
-        default: EmptyView()
+        if row.kind == .folded {
+            HStack(spacing: 6) {
+                disclosure(row.id, foldable: true, folded: row.folded)
+                Text(verbatim: row.process).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3).lineLimit(1)
+                Spacer(minLength: 4)
+            }
+            .padding(.horizontal, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .help("Listeners of your apps on ports in the ephemeral range: rarely ones you start. A filter shows them too.")
+        } else {
+            switch column {
+            case "port":
+                number(row.kind == .connection ? "→ :\(row.port)" : ":\(row.port)", row.kind == .connection ? theme.text2 : theme.text)
+            case "proto": text(row.proto, theme.text2)
+            case "address":
+                text(row.reach, row.scope == .thisMac && row.forwardedBy == nil ? theme.text2 : TabStatusStyle.signal)
+                    .help(row.scope == .network ? "Anything that can route to this Mac reaches it — over IPv6 that may be the internet" : "")
+            case "families": text(row.familyWords, theme.text3)
+            case "owner": text(row.ownerText, row.portOwner == .pane ? theme.text2 : theme.text)
+            case "process": text(row.processText, row.kind == .connection ? theme.text2 : theme.text)
+            case "pid": number(row.holder.map { "\($0.pid)" } ?? "")
+            case "where": text(row.whereText, theme.text2)
+            case "clients": number(row.kind == .listener && row.clients > 0 ? "\(row.clients)" : "")
+            case "note":
+                text(row.note ?? "", row.collisions.isEmpty ? theme.text3 : TabStatusStyle.signal).help(row.note ?? "")
+            case "since": text(row.sinceText, theme.text2)
+            case "backlog":
+                text(
+                    row.backlogLimit > 0 ? (row.backlogFull ? "full — not accepting" : "\(row.backlog) of \(row.backlogLimit)") : "",
+                    row.backlogFull ? TabStatusStyle.signal : theme.text3)
+            default: EmptyView()
+            }
         }
     }
 

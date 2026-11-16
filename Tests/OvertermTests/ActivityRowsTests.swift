@@ -609,20 +609,21 @@ final class ActivityRowsTests: XCTestCase {
         XCTAssertNil(groups(all.list).first { $0.kind == .more }, "unfolded: every one")
     }
 
-    /// The containers' want — Docker's model and its usage — is held while
-    /// Processes shows and given back when the window closes over it.
+    /// The containers' want: Docker's model while the page shows — its
+    /// published ports are Listening's owners —, their usage too while
+    /// Processes shows; given back when the window closes over it.
     func testTheContainersWantIsGivenBackAtTheWindowsClose() {
         let monitor = ActivityMonitor(sampler: ActivitySampler(kernel: kernel))
         let page = ActivityPageModel(monitor: monitor)
-        var wants: [Bool] = []
+        var wants: [ActivityContainerWant] = []
         page.wantContainers = { wants.append($0) }
         page.visible = true
-        XCTAssertEqual(wants, [true])
+        XCTAssertEqual(wants, [.usage])
         page.section = .listening
-        XCTAssertEqual(wants, [true, false], "only while Processes shows")
+        XCTAssertEqual(wants, [.usage, .listed], "Listening: the model, not the usage")
         page.section = .processes
         page.close()
-        XCTAssertEqual(wants, [true, false, true, false], "the window's close gives it back")
+        XCTAssertEqual(wants, [.usage, .listed, .usage, .none], "the window's close gives it back")
         monitor.stop()
     }
 

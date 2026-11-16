@@ -580,6 +580,30 @@ value, a path or an address of a process that isn't the test's.
   rate) and its hold, every second while open, its rows kept once rated,
   a masked title's secret in none of them; ⌘K's Activity tab only while
   Activity is on.
+- `ActivityPortsTests`: Listening over a fake Mac — a holder's v4 and v6
+  one row and UDP without a URL, the URL by the bound families, the
+  owners in order (a container by its published address, port and
+  protocol, never the number alone, and its own row "via the engine"
+  only at the Mac's or its checkout's scope; a forward keeping its https,
+  a database tunnel, the bridge, a pane, AirPlay Receiver, a brew service
+  by `XPC_SERVICE_NAME`, a job by a LaunchAgent plist's program — plists
+  read from a temporary folder, none under test; a link and a FIFO never
+  read, a program behind a link resolved), an engine's listener on no
+  published port its host network, one number on two host addresses two
+  containers, a container's own row bound and given its URL as published
+  (and its collision with a checkout's server), one socket's holders one
+  row, connections paired by the 4-tuple — a socket two processes hold
+  paired once, a remote address never in a row's id, those past the cap
+  counted —, a tunnel client's "forwarded by" past the cap too, apps'
+  ephemeral listeners folded (never a server of the user's elsewhere) and
+  a filter finding them, the switcher and the count reading them,
+  Listening's filter keys, Open as https.
+- `PortCollisionsTests`: a port split across IPv4 and IPv6, a specific
+  address beside a wildcard (a dual-stack `::` counting, a v6-only one
+  not), `SO_REUSEPORT`, AirPlay Receiver beside a server — each said on
+  both rows from its side —, none for one holder, one shared socket,
+  another protocol or port, or a connection; the note on a built row and
+  in its VoiceOver label, `is:collision`.
 
 **The isolated-run gate.** A unit test or an isolated run is guarded
 (`AppEnvironment.guardsSignals`), over every change Overterm makes to a

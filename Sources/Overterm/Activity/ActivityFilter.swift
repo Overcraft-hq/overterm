@@ -96,6 +96,18 @@ extension ResourceFilter where Key == ActivityFilterKey {
     }
 }
 
+extension ResourceFilter where Key == ActivityFilterKey {
+    /// It asks for Listening's connections: `state:established` or
+    /// `is:connected`, not negated (6.8).
+    var asksConnections: Bool {
+        terms.contains { term in
+            !term.negated
+                && ((term.key == .state && term.alternatives.contains { $0 == "established" || $0 == "connected" })
+                    || (term.key == .flag && term.alternatives.contains { $0 == "connected" || $0 == "connection" }))
+        }
+    }
+}
+
 extension ResourceFilter.Term where Key == ActivityFilterKey {
     /// The value's `|`-separated choices, any of which may hold (htop 3.2).
     var alternatives: [String] {
@@ -189,7 +201,8 @@ extension ResourceFilter.Term where Key == ActivityFilterKey {
     func matches(_ row: ActivityPortRow, value: String) -> Bool {
         switch key {
         case .text:
-            return [":\(row.port)", String(row.port), row.process, row.tabTitle ?? "", row.address, row.reach].contains { $0.lowercased().contains(value) }
+            return [":\(row.port)", String(row.port), row.process, row.tabTitle ?? "", row.address, row.reach, row.ownerText, row.whereText, row.note ?? ""]
+                .contains { $0.lowercased().contains(value) }
         case .port:
             if let port = Int(value) { return row.port == port }
             return number(value, Double(row.port))
@@ -207,13 +220,19 @@ extension ResourceFilter.Term where Key == ActivityFilterKey {
         case .flag:
             switch value {
             case "lan", "local": return scope(row, value)
-            case "listening": return true
+            case "listening": return row.kind == .listener
+            case "connected", "connection": return row.kind == .connection
+            case "collision", "collides": return !row.collisions.isEmpty
+            case "forwarded": return row.forwardedBy != nil
             default: return false
             }
         case .state:
-            // Listening's rows are listeners and bound UDP: connections
-            // aren't listed yet.
-            return value == "listen" || value == "listening"
+            // Listeners and bound UDP, or the user's connections (6.8).
+            switch value {
+            case "listen", "listening": return row.kind == .listener
+            case "established", "connected": return row.kind == .connection
+            default: return false
+            }
         case .owner: return row.owner == value
         default: return false
         }

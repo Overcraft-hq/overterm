@@ -93,7 +93,8 @@ final class ActivitySwitcher {
     /// Ports by number, then the ten busiest with a rate. Pure.
     nonisolated static func rows(of content: ActivityPageContent) -> [Row] {
         func place(_ title: String?) -> String { title.map { " — “\($0)”" } ?? "" }
-        let ports = content.ports.sorted { ($0.port, $0.proto) < ($1.port, $1.proto) }
+        // Every listener, the folded ephemeral ones too.
+        let ports = content.listeners.filter { $0.kind == .listener }.sorted { ($0.port, $0.proto) < ($1.port, $1.proto) }
             .map { port in
                 Row(
                     id: port.id, title: ":\(port.port) \(port.process)", subtitle: "\(port.proto) · \(port.reach)\(place(port.tabTitle))",

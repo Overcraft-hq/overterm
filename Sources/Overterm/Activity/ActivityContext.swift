@@ -80,6 +80,8 @@ struct ActivityContext: Hashable, Sendable {
         let target: String
         /// The tab that started it.
         var tab: UUID?
+        /// It serves https: its URL says so (6.8, Open).
+        var https = false
     }
 
     /// A database tunnel (`SSHTunnel`): ssh's local port.

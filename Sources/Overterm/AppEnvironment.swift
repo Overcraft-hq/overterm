@@ -199,6 +199,15 @@ enum AppEnvironment {
     /// processes during `make e2e` or `make test`.
     static var guardsSignals: Bool { isIsolated || isUnitTest }
 
+    /// The user's LaunchAgents folder, whose plists name a launchd job by
+    /// the program it runs (docs/design/activity/analysis.md, 6.8 rule 8;
+    /// `LaunchdJobs`): none in an isolated run or a unit test (9.9) — a
+    /// test hands its own fixtures to `LaunchdJobs.agents(in:)`.
+    static var launchAgentsDirectory: URL? {
+        guard !isIsolated, !isUnitTest else { return nil }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/LaunchAgents", isDirectory: true)
+    }
+
     /// The terraform Overterm runs: guarded, `OVERTERM_TERRAFORM`'s (a
     /// scenario's recording wrapper) when it is an absolute path to an
     /// executable, else none; else the user's, searched for by

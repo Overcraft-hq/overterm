@@ -12,7 +12,7 @@ enum ActivityKey: String, ResourceKey {
     case goTo, detail, filter, help
     case open, reveal, tabInfo, sample
     case tree, group, narrower, wider
-    case follow, pause, mine
+    case follow, pause, mine, connections
     case sortCPU, sortMemory, sortTime, sortPID, invert
 
     var section: ActivityPageModel.Section? {
@@ -42,6 +42,7 @@ enum ActivityKey: String, ResourceKey {
         case .follow: "F"
         case .pause: "Z"
         case .mine: "u"
+        case .connections: "c"
         case .sortCPU: "P"
         case .sortMemory: "M"
         case .sortTime: "T"
@@ -69,6 +70,7 @@ enum ActivityKey: String, ResourceKey {
         case .follow: "Follow the selection as it moves"
         case .pause: "Pause updates"
         case .mine: "Yours only, or everyone's"
+        case .connections: "Listening: your established connections too, paired end to end"
         case .sortCPU: "Sort by CPU"
         case .sortMemory: "Sort by memory"
         case .sortTime: "Sort by CPU time"

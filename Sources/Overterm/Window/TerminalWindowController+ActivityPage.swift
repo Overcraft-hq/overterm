@@ -55,22 +55,23 @@ extension TerminalWindowController {
         activityPage.contextFacts = { context in Self.activityContextFacts(&context) }
         let docker = ActivityDockerHold()
         activityPage.wantContainers = { wanted in
-            // While Processes shows: Docker's model watched — its running
-            // containers listed under their checkouts, their published ports
-            // rule 6's — and the usage monitor's own cost, one Engine call a
-            // container a round; nothing otherwise (6.5).
-            if wanted {
+            // While the page shows: Docker's model watched — its running
+            // containers' published ports Listening's owners (6.8), listed
+            // under their checkouts in Processes (6.5) —; while Processes
+            // shows, the usage monitor's own cost too, one Engine call a
+            // container a round; nothing otherwise.
+            if wanted == .usage {
                 DockerModel.shared.usage.want()
-                if Settings.shared.dockerEnabled, !docker.shown {
-                    docker.shown = true
-                    DockerModel.shared.show()
-                }
-            } else {
+            } else if docker.usage {
                 DockerModel.shared.usage.unwant()
-                if docker.shown {
-                    docker.shown = false
-                    DockerModel.shared.hide()
-                }
+            }
+            docker.usage = wanted == .usage
+            if wanted != .none, Settings.shared.dockerEnabled, !docker.shown {
+                docker.shown = true
+                DockerModel.shared.show()
+            } else if wanted == .none, docker.shown {
+                docker.shown = false
+                DockerModel.shared.hide()
             }
         }
         activitySwitcher.tabTitles = { Self.activityTabTitles() }
@@ -141,8 +142,13 @@ extension TerminalWindowController {
     /// containers publish, the bridge's port: who holds what (6.5).
     static func activityContextFacts(_ context: inout ActivityContext) {
         context.forwards = KubeForwards.shared.forwards.compactMap { forward in
-            forward.pid.map { ActivityContext.Forward(pid: $0, port: UInt16(clamping: forward.spec.localPort), target: forward.spec.target.description, tab: forward.spec.tab) }
+            forward.pid.map {
+                ActivityContext.Forward(
+                    pid: $0, port: UInt16(clamping: forward.spec.localPort), target: forward.spec.target.description, tab: forward.spec.tab,
+                    https: forward.spec.https)
+            }
         }
+        context.tunnels = SSHTunnel.listed().map { ActivityContext.Tunnel(pid: $0.pid, port: $0.port, name: $0.name) }
         context.bridgePort = BrowserBridge.shared.port
         let docker = DockerModel.shared
         guard docker.endpoint?.remoteHost == nil else { return }
@@ -349,4 +355,6 @@ extension TerminalWindowController {
 @MainActor
 final class ActivityDockerHold {
     var shown = false
+    /// It holds the usage monitor's want.
+    var usage = false
 }

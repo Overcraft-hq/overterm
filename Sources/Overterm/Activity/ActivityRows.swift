@@ -92,56 +92,6 @@ struct ActivityProcessRow: ResourceTableRow, Sendable {
     }
 }
 
-/// A listening socket's row (6.8): one process's sockets on one protocol
-/// and port, its v4 and v6 together (`ListeningPorts.of`).
-struct ActivityPortRow: ResourceTableRow, Sendable {
-    let id: String
-    let port: Int
-    let proto: String
-    /// The bound address as lsof prints it (`*`, `127.0.0.1`, `[::1]`).
-    let address: String
-    let families: SocketRecord.Families
-    let scope: ListeningPort.Scope
-    let process: String
-    let holder: ActivityProcessID?
-    let tab: UUID?
-    let tabTitle: String?
-    /// Where a browser reaches it; nil when there is none to open.
-    let url: URL?
-    /// Who holds it, in the filter's `owner:` words (6.6): `tab`,
-    /// `forward`, `overterm`, `container`, `app`, `macos`, `system`, or
-    /// `elsewhere`.
-    var owner = "elsewhere"
-
-    var height: CGFloat { 24 }
-
-    /// "This Mac" or "Network" (6.1), or the one address it is bound to.
-    var reach: String {
-        switch scope {
-        case .thisMac: "This Mac"
-        case .network: "Network"
-        case .oneAddress: address
-        }
-    }
-
-    var familyWords: String {
-        switch (families.contains(.v4), families.contains(.v6)) {
-        case (true, true): "v4, v6"
-        case (true, false): "v4"
-        case (false, true): "v6"
-        default: ""
-        }
-    }
-
-    var accessibilityLabel: String {
-        var words = [":\(port) \(proto)", process]
-        if let holder { words.append("pid \(holder.pid)") }
-        words.append(reach)
-        if let tabTitle { words.append("in “\(tabTitle)”") }
-        return words.joined(separator: ", ")
-    }
-}
-
 /// What the page says around its lists (6.4): the counts, the busiest
 /// five, the meters, whether the census is still reading.
 struct ActivitySummary: Equatable, Sendable {
@@ -185,6 +135,8 @@ struct ActivityPageContent: Sendable {
     /// Every listener of the rows in scope, whatever either filter says:
     /// the detail's, `o`'s (6.6 keeps each section's filter its own).
     var listeners: [ActivityPortRow] = []
+    /// Connection lines past Listening's cap (500): said below the list.
+    var droppedConnections = 0
     /// Every process row in scope before the filter: where the detail's
     /// tree stops (9.9 — a test run's own tabs' processes alone).
     var identities: Set<ActivityProcessID> = []
@@ -228,6 +180,11 @@ enum ActivityRows {
         /// What each section's filter field says (6.6).
         var processFilter = ""
         var portFilter = ""
+        /// Listening's connections (`c`), the LaunchAgents' programs
+        /// (`LaunchdJobs`), the ephemeral range's first port.
+        var connections = false
+        var launchAgents: [LaunchdJobs.Agent] = []
+        var ephemeralFirst = 49_152
     }
 
     static func content(of snapshot: ActivitySnapshot, _ options: Options) -> ActivityPageContent {
@@ -327,18 +284,34 @@ enum ActivityRows {
             if !filter.isEmpty { listed.containers = [] }
             content.list = list(rows, grouping: grouping, in: snapshot, tabs: tabFacts, options: listed)
         }
-        var ports = ports(of: inScope, in: snapshot, tabs: tabs, titles: titles, context: options.context)
-        content.listeners = ports
-        content.identities = Set(inScope.map(\.identity))
+        // Listening (6.8): its listeners, owners, collisions and, asked
+        // for, the user's connections.
         let portFilter = ActivityFilter(options.portFilter)
-        if !portFilter.isEmpty { ports = ports.filter { portFilter.matches($0) } }
-        content.ports = sorted(ports, by: options.portSort)
+        var portInputs = ActivityPorts.Inputs()
+        portInputs.context = options.context
+        portInputs.tabs = tabFacts
+        portInputs.containers = options.containers
+        portInputs.launchAgents = options.launchAgents
+        portInputs.ephemeralFirst = options.ephemeralFirst
+        portInputs.connections = options.connections || portFilter.asksConnections
+        portInputs.folds = options.folds
+        portInputs.unfold = !portFilter.isEmpty
+        portInputs.scope = options.scope
+        let made = ActivityPorts.make(of: inScope, in: snapshot, inputs: portInputs)
+        content.listeners = made.listeners
+        content.droppedConnections = made.droppedConnections
+        content.identities = Set(inScope.map(\.identity))
+        var ports = made.rows
+        if !portFilter.isEmpty { ports = ports.filter { $0.kind != .folded && portFilter.matches($0) } }
+        // The fold last, whatever the sort.
+        content.ports = sorted(ports.filter { $0.kind != .folded }, by: options.portSort) + ports.filter { $0.kind == .folded }
         var summary = ActivitySummary()
         summary.processes = snapshot.table.processes.count
         summary.own = snapshot.table.processes.lazy.filter { $0.isOwn(by: uid) }.count
         summary.shown = rows.count
         summary.matched = matched
-        summary.listening = content.ports.count
+        // Every listener in scope, folded or filtered away too.
+        summary.listening = made.listeners.count
         summary.threads = threads
         summary.busiest = Array(
             inScope.compactMap { row in row.cpu.map { ActivitySummary.Busy(id: row.id, name: row.name, cpu: $0) } }.sorted { $0.cpu > $1.cpu }.prefix(5))
@@ -348,40 +321,6 @@ enum ActivityRows {
         summary.scopedToRun = options.isolated
         content.summary = summary
         return content
-    }
-
-    /// The listening sockets of the rows' processes: TCP listeners and
-    /// bound UDP, as the census's socket walk read them — the user's only;
-    /// another user's sockets aren't readable.
-    static func ports(
-        of rows: [ActivityProcessRow], in snapshot: ActivitySnapshot, tabs: [ActivityProcessID: UUID], titles: [UUID: String],
-        context: ActivityContext = ActivityContext()
-    ) -> [ActivityPortRow] {
-        let ports = ListeningPorts.of(rows.filter(\.isOwn).map(\.identity), in: snapshot, udp: true)
-        let owners = Dictionary(rows.map { ($0.identity, $0.owner) }, uniquingKeysWith: { first, _ in first })
-        let forwards = Set(context.forwards.map(\.pid).filter { $0 > 0 })
-        return ports.map { port in
-            let tab = port.identity.flatMap { tabs[$0] }
-            var row = ActivityPortRow(
-                id: port.id, port: port.port, proto: port.proto, address: port.address, families: port.families, scope: port.scope, process: port.process,
-                holder: port.identity, tab: tab, tabTitle: tab.flatMap { titles[$0] }, url: port.url)
-            row.owner = ownerWord(port.identity.flatMap { owners[$0] ?? nil }, forward: port.identity.map { forwards.contains($0.pid) } ?? false)
-            return row
-        }
-    }
-
-    /// The filter's `owner:` word for a listener's holder (6.6).
-    static func ownerWord(_ owner: ActivityOwner?, forward: Bool) -> String {
-        if forward { return "forward" }
-        switch owner?.place {
-        case .pane?: return "tab"
-        case .overterm?, .anotherOverterm?: return "overterm"
-        case .engine?: return "container"
-        case .app?: return "app"
-        case .macOS?: return "macos"
-        case .system?: return "system"
-        case .elsewhere?, nil: return "elsewhere"
-        }
     }
 
     /// The rows `filter` keeps: its matches and, with a table to read
@@ -482,7 +421,12 @@ enum ActivityRows {
         case "address": return sort.sorted(rows) { $0.reach }
         case "process": return sort.sorted(rows) { $0.process.lowercased() }
         case "pid": return sort.sorted(rows) { $0.holder?.pid }
-        case "where": return sort.sorted(rows) { $0.tabTitle?.lowercased() }
+        case "where": return sort.sorted(rows) { $0.whereText.isEmpty ? nil : $0.whereText.lowercased() }
+        case "owner": return sort.sorted(rows) { $0.ownerText.lowercased() }
+        case "since": return sort.sorted(rows) { $0.since }
+        case "clients": return sort.sorted(rows) { $0.clients }
+        case "backlog": return sort.sorted(rows) { $0.backlogLimit > 0 ? $0.backlog : nil }
+        case "note": return sort.sorted(rows) { $0.note }
         default: return rows
         }
     }
