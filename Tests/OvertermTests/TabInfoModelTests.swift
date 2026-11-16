@@ -165,4 +165,16 @@ final class TabInfoModelTests: XCTestCase {
         XCTAssertTrue(ports.allSatisfy { $0.identity == identity }, "the holder's identity, for a pill's verb")
         XCTAssertTrue(ListeningPorts.of([], in: snapshot).isEmpty)
     }
+
+    func testTabInfosListeningRowSaysItsSocket() {
+        var port = ListeningPort(pid: 4242, process: "acme-server", port: 3000, address: "127.0.0.1")
+        port.families = [.v4, .v6]
+        XCTAssertEqual(TabInfoView.portWords(port), "tcp · v4 + v6 · This Mac")
+        port.families = .v4
+        port.scope = .network
+        XCTAssertEqual(TabInfoView.portWords(port), "tcp · v4 · Network")
+        var container = ListeningPort(pid: 0, process: "acme-db", port: 5432, address: "*")
+        container.container = "acme-db"
+        XCTAssertEqual(TabInfoView.portWords(container), "tcp · This Mac", "a container's families aren't read")
+    }
 }

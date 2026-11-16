@@ -188,6 +188,8 @@ struct TabInfoView: View {
                         if let address = Self.address(of: port) {
                             Text(verbatim: address).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText)
                         }
+                        Text(verbatim: Self.portWords(port)).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText)
+                            .accessibilityIdentifier("tabInfo.portWords")
                         Spacer()
                         if let url = port.url {
                             Button {
@@ -322,6 +324,21 @@ struct TabInfoView: View {
     nonisolated static func address(of port: ListeningPort) -> String? {
         if port.forward != nil { return port.scope == .thisMac ? nil : port.address }
         return port.scope == .oneAddress ? port.address : nil
+    }
+
+    /// What a Listening row says of its socket (6.12): "tcp · v4 + v6 ·
+    /// This Mac" — its families only when read (a container's and a
+    /// forward's aren't). Pure.
+    nonisolated static func portWords(_ port: ListeningPort) -> String {
+        var words = [port.proto]
+        switch (port.families.contains(.v4), port.families.contains(.v6)) {
+        case (true, true): words.append("v4 + v6")
+        case (true, false): words.append("v4")
+        case (false, true): words.append("v6")
+        default: break
+        }
+        words.append(port.scope == .thisMac ? "This Mac" : "Network")
+        return words.joined(separator: " · ")
     }
 
     /// "0 KB", never "Zero KB" (the formatter's default for 0).
