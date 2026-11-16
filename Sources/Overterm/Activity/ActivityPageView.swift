@@ -222,6 +222,11 @@ struct ActivityPageView: View {
                     .help("What became of the port after its owner's verb, watched by the census — never by binding it")
                     .accessibilityIdentifier("activity.freeing")
             }
+            if let said = page.linkSaid {
+                Text(verbatim: said).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
+                    .help("A link asked for this port, and no tick lists it — another user's isn't listed")
+                    .accessibilityIdentifier("activity.linkSaid")
+            }
             if page.following {
                 Text("following").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
                     .help("The selection stays in view as it moves (F)")

@@ -20,6 +20,24 @@ final class AgentOverviewModel: ObservableObject {
         let branch: String?
         let claude: ClaudeActivity?
         let panes: Int
+        /// The agent's process, as the census found it running: where
+        /// Show in Activity selects (6.12).
+        var agentProcess: ActivityProcessID? = nil
+        /// Its agent's CPU, footprint and servers, from the census's
+        /// snapshot the card was made from (6.2, 6.12).
+        var usage: AgentUsage? = nil
+    }
+
+    /// What an agent spends, it and everything under it (its tools, its
+    /// MCP servers, the dev servers it started), from one census — no scan
+    /// of the overview's own (docs/design/activity/analysis.md, 6.12).
+    struct AgentUsage: Equatable, Sendable {
+        /// 100 is one core; nil before a second sample gives a rate (7.5).
+        var cpu: Double?
+        /// Activity Monitor's Memory, summed.
+        var footprint: UInt64
+        /// What it listens on: pills with Open.
+        var servers: [ListeningPort]
     }
 
     @Published private(set) var cards: [Card] = []
@@ -59,13 +77,14 @@ final class AgentOverviewModel: ObservableObject {
         // read again (`PaneAgent.pairing`).
         let cards = await PaneAgent.pairing(census: census) {
             let (agents, snapshot) = PaneAgent.lookupAndSnapshot(snapshots.map { ($0.id, $0.tags) }, census: census, folders: true)
-            return (snapshots.map { Self.card(for: $0, agent: agents[$0.id]) }, snapshot)
+            return (snapshots.map { Self.card(for: $0, agent: agents[$0.id], snapshot: snapshot) }, snapshot)
         }
         self.cards = Self.ordered(cards)
     }
 
-    /// A tab's card, with the agent the census found running in it.
-    nonisolated static func card(for snapshot: Snapshot, agent running: PaneAgent?) -> Card {
+    /// A tab's card, with the agent the census found running in it — and,
+    /// from `census`, what that agent spends.
+    nonisolated static func card(for snapshot: Snapshot, agent running: PaneAgent?, snapshot census: ActivitySnapshot? = nil) -> Card {
         let agent = running?.kind ?? snapshot.agent
         let directory = running?.folder ?? snapshot.directory
         let claude =
@@ -74,7 +93,24 @@ final class AgentOverviewModel: ObservableObject {
         return Card(
             id: snapshot.id, title: snapshot.title, color: snapshot.color, agent: agent, agentRunning: running != nil,
             activity: snapshot.activity, directory: directory, branch: claude?.branch ?? directory.flatMap { Self.branch(in: $0) },
-            claude: claude, panes: snapshot.panes)
+            claude: claude, panes: snapshot.panes, agentProcess: running?.identity,
+            usage: running.flatMap { running in census.flatMap { usage(of: running.identity, in: $0) } })
+    }
+
+    /// `agent`'s usage in `snapshot`: it and its descendants (at most
+    /// 2,000), their rates summed where read, their footprints, their
+    /// listening ports. Nil when the snapshot has no such process. Pure.
+    nonisolated static func usage(of agent: ActivityProcessID, in snapshot: ActivitySnapshot) -> AgentUsage? {
+        guard snapshot.table.process(agent) != nil else { return nil }
+        let members = [agent] + snapshot.table.descendants(of: agent, limit: 2_000).map(\.identity)
+        var cpu: Double?
+        var footprint: UInt64 = 0
+        for member in members {
+            guard let facts = snapshot.facts[member] else { continue }
+            if let rate = facts.rates?.cpuPercent { cpu = (cpu ?? 0) + rate }
+            footprint += facts.usage?.footprint ?? 0
+        }
+        return AgentUsage(cpu: cpu, footprint: footprint, servers: ListeningPorts.of(members, in: snapshot))
     }
 
     nonisolated static func agent(of node: ProcessNode) -> Agent? {

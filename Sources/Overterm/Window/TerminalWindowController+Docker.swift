@@ -27,6 +27,7 @@ extension TerminalWindowController {
                 if self.store.showingOverlay != nil { self.hideOverlay(focus: tab.id == self.store.selectedID) }
                 self.store.select(tab)
             },
+            showInActivity: { [weak self] port, proto, pid, tab in self?.showInActivity(.port(port, proto: proto, pid: pid, tab: tab)) },
             edit: { [weak self] url in
                 guard let self else { return }
                 if self.store.showingOverlay != nil { self.hideOverlay(focus: false) }

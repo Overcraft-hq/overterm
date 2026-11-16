@@ -20,6 +20,8 @@ struct PaneHeaderActions {
     var openPort: (ListeningPort) -> Void
     /// A Kubernetes forward's: the page's Forwards section.
     var showForwards: () -> Void = {}
+    /// Show in Activity (6.12): Listening with the port selected.
+    var showInActivity: (ListeningPort) -> Void = { _ in }
 }
 
 /// The bar across the top of every terminal pane: what is running here,
@@ -256,6 +258,7 @@ private struct PortPill: View {
         .buttonStyle(.plain)
         .onHover { hovering = $0 }
         .help(help)
+        .accessibilityIdentifier("pill.\(port.proto).\(port.port)")
         .popover(isPresented: $showing, arrowEdge: .bottom) {
             VStack(alignment: .leading, spacing: 10) {
                 HStack(spacing: 6) {
@@ -307,6 +310,17 @@ private struct PortPill: View {
                             actions.freePort(port, pane)
                         }
                     }
+                }
+                if Settings.shared.activityEnabled {
+                    Button {
+                        showing = false
+                        actions.showInActivity(port)
+                    } label: {
+                        Label("Show in Activity", systemImage: "gauge.with.dots.needle.33percent")
+                    }
+                    .buttonStyle(.link).font(.system(size: ChromeMetrics.text(11.5)))
+                    .help("Listening with this port selected: who holds it, and whose it is (⌥⌘A)")
+                    .accessibilityIdentifier("pill.showInActivity")
                 }
                 if let freeing {
                     Text(verbatim: freeing.label)

@@ -12,6 +12,33 @@ struct ActivityTerminalRequest: Equatable, Sendable {
     var run = true
 }
 
+/// Where a link shows the page (6.12): Tab Info's header, the tab's menu
+/// and ⌘K a tab; Tab Info's rows and the overview's card a process; a pane
+/// pill, Tab Info's Listening and Docker's conflict box a port.
+enum ActivityLink: Equatable, Sendable {
+    /// Processes, scoped to the tab.
+    case tab(UUID)
+    /// Processes, that process selected and followed — in its tab's scope
+    /// when one is given.
+    case process(ActivityProcessID, tab: UUID?)
+    /// Listening, the port's row selected and followed — its holder's when
+    /// `pid` is given — in its tab's checkout's scope (6.5: where the
+    /// checkout's containers are listed too), else the tab's, else the
+    /// Mac's; widened to the Mac's when a tick doesn't list it there.
+    case port(Int, proto: String, pid: pid_t?, tab: UUID?)
+}
+
+/// A port a link asked for (6.12), selected once a tick's rows list it.
+/// `after`: the tick the link came at — only a later tick's rows say it
+/// isn't listed. `scope`: the rung it is looked for at.
+struct ActivityPendingPort: Equatable, Sendable {
+    var port: Int
+    var proto: String
+    var pid: pid_t?
+    var after: Int
+    var scope: ActivityScope
+}
+
 /// What the page asks of the window (6.3): the verbs that don't signal.
 struct ActivityPageActions {
     /// Its tab brought forward in whichever window holds it, and the pane
@@ -72,6 +99,7 @@ final class ActivityPageModel: ObservableObject {
     @Published var section: Section = .processes {
         didSet {
             guard section != oldValue else { return }
+            byHand()
             selection = []
             updateContainers()
             if scope(section) != scope(oldValue) { rebuild(asked: true) }
@@ -112,6 +140,9 @@ final class ActivityPageModel: ObservableObject {
     /// What a Free from the page said last (6.8, After the step): ":3000
     /// freeing…", then free or still held; cleared a while after.
     @Published var freeing: String?
+    /// What a link said of a port it couldn't show (6.12): ":N isn't
+    /// listed"; cleared by the next link, the person's hand, or a hide.
+    @Published private(set) var linkSaid: String?
     /// The columns the person left: each section's, kept (6.5).
     @Published private(set) var layout: ActivityColumns.Layout = ActivityColumns.load()
     /// The scope ladder's rung (6.5, `[` and `]`), a section each.
@@ -119,7 +150,11 @@ final class ActivityPageModel: ObservableObject {
     /// Folds by row id, kept in memory for the app's life (6.5).
     @Published private(set) var folds: [String: Bool] = [:]
     @Published var selection: Set<String> = [] {
-        didSet { if selection != oldValue { updateDetail() } }
+        didSet {
+            guard selection != oldValue else { return }
+            byHand()
+            updateDetail()
+        }
     }
     @Published var processSort: ResourceSort? = ResourceSort(column: "cpu", ascending: false) {
         didSet { if processSort != oldValue { rebuild(asked: true) } }
@@ -192,6 +227,12 @@ final class ActivityPageModel: ObservableObject {
     private var revealed: String?
     /// What it holds of Docker's now.
     private(set) var wantsContainers = ActivityContainerWant.none
+    /// A port a link asked for, selected once a tick's rows list it;
+    /// dropped by the person's hand, or once a tick at the Mac's scope
+    /// doesn't list it.
+    private(set) var pendingPort: ActivityPendingPort?
+    /// A link is setting the section and selection: not the person's hand.
+    private var linking = false
     /// The selection read in depth (7.3's focus level): its folder for
     /// `e` and ⌥r — the user's own process, one at a time.
     private(set) var focused: Set<ActivityProcessID> = []
@@ -384,6 +425,10 @@ final class ActivityPageModel: ObservableObject {
         content = ActivityPageContent()
         hasRead = false
         detail = nil
+        if !visible {
+            pendingPort = nil
+            linkSaid = nil
+        }
     }
 
     /// Takes each full snapshot that lands while it wants them, and one
@@ -447,13 +492,35 @@ final class ActivityPageModel: ObservableObject {
                 return
             }
             self.waiting = nil
-            self.apply(content)
+            self.apply(content, made: (snapshot.tick, options.scope))
         }
     }
 
-    /// `content` shown: the selection kept to what it still lists.
-    private func apply(_ content: ActivityPageContent) {
+    /// `content` shown: the selection kept to what it still lists. `made`:
+    /// the tick and scope its rows were made at — what says a link's port
+    /// isn't listed; a held tick's, shown later, says nothing of it.
+    private func apply(_ content: ActivityPageContent, made: (tick: Int, scope: ActivityScope)? = nil) {
         self.content = content
+        if let pending = pendingPort {
+            if let row = Self.linked(pending, in: content.ports) {
+                pendingPort = nil
+                return reveal(row.id, in: .listening)
+            }
+            if let made {
+                switch Self.unlisted(pending, tick: made.tick, scope: made.scope) {
+                case .wait: break
+                case .widen:
+                    // Not in the tab's or checkout's rows: the Mac's.
+                    pendingPort?.scope = .mac
+                    linking = true
+                    setScope(.mac, for: .listening)
+                    linking = false
+                case .drop:
+                    pendingPort = nil
+                    linkSaid = Self.unlistedSaid(pending)
+                }
+            }
+        }
         let shown = Set(content.processes.map(\.id)).union(content.list.map(\.id)).union(content.ports.map(\.id))
         if !selection.isSubset(of: shown) { selection = selection.intersection(shown) }
         updateDetail()
@@ -525,6 +592,7 @@ final class ActivityPageModel: ObservableObject {
     @discardableResult
     func press(_ characters: String) -> Bool {
         guard let pressed = ActivityKey.press(characters, sheetShowing: cheatSheet) else { return false }
+        byHand()
         switch pressed {
         case .closeSheet: cheatSheet = false
         case .section(let section): self.section = section
@@ -767,8 +835,80 @@ final class ActivityPageModel: ObservableObject {
         return parts.url
     }
 
+    /// A link's (6.12): the page on its section and scope, the row
+    /// selected and followed — a port's once a tick's rows list it.
+    func show(_ link: ActivityLink) {
+        switch link {
+        case .tab(let id):
+            section = .processes
+            setScope(.tab(id), for: .processes)
+            focusList += 1
+        case .process(let identity, let tab):
+            if let tab { setScope(.tab(tab), for: .processes) }
+            following = true
+            reveal(identity.id, in: .processes)
+        case .port(let port, let proto, let pid, let tab):
+            linking = true
+            defer { linking = false }
+            linkSaid = nil
+            let scope = Self.linkScope(tab: tab, checkout: tab.flatMap { tabFacts()?.tabs[$0]?.checkout })
+            setScope(scope, for: .listening)
+            section = .listening
+            // The link's row replaces what was selected.
+            selection = []
+            following = true
+            let pending = ActivityPendingPort(port: port, proto: proto, pid: pid, after: latest?.tick ?? 0, scope: scope)
+            pendingPort = pending
+            if let row = Self.linked(pending, in: content.ports) {
+                pendingPort = nil
+                reveal(row.id, in: .listening)
+            }
+        }
+    }
+
+    /// The person's hand — a key, a selection, a section — takes the page
+    /// from a link still waiting for its port, and from what it said.
+    private func byHand() {
+        guard !linking else { return }
+        pendingPort = nil
+        linkSaid = nil
+    }
+
+    /// The scope a port link opens Listening at (6.5): the tab's
+    /// checkout's — its stack's containers listed beside its tabs' — else
+    /// the tab's, else the Mac's. Pure.
+    nonisolated static func linkScope(tab: UUID?, checkout: String?) -> ActivityScope {
+        if let checkout { return .checkout(checkout) }
+        return tab.map { .tab($0) } ?? .mac
+    }
+
+    /// What a tick's rows that don't list a link's port mean: nothing yet
+    /// (made before the link, or at another rung), a wider look (the
+    /// Mac's), or that it isn't listed at all. Pure.
+    enum Unlisted: Equatable, Sendable { case wait, widen, drop }
+
+    nonisolated static func unlisted(_ pending: ActivityPendingPort, tick: Int, scope: ActivityScope) -> Unlisted {
+        guard tick > pending.after, scope == pending.scope else { return .wait }
+        return scope == .mac ? .drop : .widen
+    }
+
+    /// What the header says of a port a link couldn't show. Pure.
+    nonisolated static func unlistedSaid(_ pending: ActivityPendingPort) -> String {
+        ":\(pending.port)\(pending.proto == "udp" ? "/udp" : "") isn't listed (another user's?)"
+    }
+
+    /// The listener a port link names: its holder's when it says which,
+    /// else the first on that port and protocol. Pure.
+    nonisolated static func linked(_ link: ActivityPendingPort, in ports: [ActivityPortRow]) -> ActivityPortRow? {
+        let listeners = ports.filter { $0.kind == .listener && $0.port == link.port && $0.proto == link.proto }
+        if let pid = link.pid, let held = listeners.first(where: { $0.holder?.pid == pid }) { return held }
+        return listeners.first
+    }
+
     /// The process or port shown on the page: its section, selected.
     func reveal(_ id: String, in section: Section) {
+        linking = true
+        defer { linking = false }
         self.section = section
         revealed = id
         rebuild(asked: true)

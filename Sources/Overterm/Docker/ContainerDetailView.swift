@@ -138,6 +138,8 @@ struct ContainerDetailView: View {
         .padding(10)
         .frame(maxWidth: .infinity, alignment: .leading)
         .background(RoundedRectangle(cornerRadius: 8).fill(TabStatusStyle.failed.opacity(0.12)))
+        // An element of its own: its buttons keep their identifiers.
+        .accessibilityElement(children: .contain)
         .accessibilityIdentifier("docker.conflict")
     }
 
@@ -157,6 +159,24 @@ struct ContainerDetailView: View {
             Button("Show the Tab") { actions.showTab(id) }
         case .process, .unknown:
             EmptyView()
+        }
+        // 6.12: who holds it, on Activity's Listening — a local engine's
+        // port only: a remote one's is its host's.
+        if Settings.shared.activityEnabled, session.docker.publishedHost == nil {
+            switch conflict.holder {
+            case .tab, .process, .unknown:
+                Button("Show Holder in Activity") {
+                    switch conflict.holder {
+                    case .process(let pid, _): actions.showInActivity(conflict.port, conflict.proto, pid, nil)
+                    case .tab(let id, _, _): actions.showInActivity(conflict.port, conflict.proto, nil, id)
+                    case .container, .unknown: actions.showInActivity(conflict.port, conflict.proto, nil, nil)
+                    }
+                }
+                .help("Activity's Listening with :\(conflict.port) selected: who holds it, whose it is, and how to free it")
+                .accessibilityIdentifier("docker.conflict.activity")
+            case .container:
+                EmptyView()
+            }
         }
         // Its stack beside the other: on ports of its own — or why
         // not (its files elsewhere, an older Compose), as its verb.

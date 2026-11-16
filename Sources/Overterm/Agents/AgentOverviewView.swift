@@ -7,6 +7,10 @@ struct AgentOverviewView: View {
     @ObservedObject var worktrees: WorktreeModel
     @ObservedObject var theme: ChromeTheme
     let onChoose: (Tab.ID) -> Void
+    /// Show in Activity (6.12): the page at the card's agent.
+    var onActivity: ((AgentOverviewModel.Card) -> Void)? = nil
+    /// A server's pill: its URL opened as a link in that tab is (6.12).
+    var onOpen: ((AgentOverviewModel.Card, URL) -> Void)? = nil
     let onDismiss: () -> Void
 
     var body: some View {
@@ -17,8 +21,16 @@ struct AgentOverviewView: View {
                 ScrollView {
                     LazyVGrid(columns: [GridItem(.adaptive(minimum: 280, maximum: 420), spacing: 12, alignment: .top)], alignment: .leading, spacing: 12) {
                         ForEach(model.cards) { card in
-                            AgentCard(card: card, pullRequest: card.branch.flatMap { worktrees.pullRequests[$0] }, theme: theme)
-                                .onTapGesture { onChoose(card.id) }
+                            AgentCard(
+                                card: card, pullRequest: card.branch.flatMap { worktrees.pullRequests[$0] }, theme: theme,
+                                onActivity: Settings.shared.activityEnabled ? onActivity.map { act in { act(card) } } : nil,
+                                onOpen: onOpen.map { open in { open(card, $0) } }
+                            )
+                            .onTapGesture { onChoose(card.id) }
+                            .contextMenu {
+                                Button("Go to Tab") { onChoose(card.id) }
+                                if Settings.shared.activityEnabled, let onActivity { Button("Show in Activity") { onActivity(card) } }
+                            }
                         }
                     }
                 }
@@ -62,6 +74,8 @@ private struct AgentCard: View {
     let card: AgentOverviewModel.Card
     let pullRequest: PullRequestSummary?
     @ObservedObject var theme: ChromeTheme
+    var onActivity: (() -> Void)?
+    var onOpen: ((URL) -> Void)?
     @State private var hovering = false
 
     var body: some View {
@@ -79,6 +93,14 @@ private struct AgentCard: View {
                     Image(systemName: agent.symbol).font(.system(size: ChromeMetrics.text(11)))
                         .foregroundStyle(card.agentRunning ? theme.text : theme.dimText)
                         .help(card.agentRunning ? "\(agent.name) is running" : "\(agent.name) tab — not running")
+                }
+                if let onActivity {
+                    Button(action: onActivity) {
+                        Image(systemName: "gauge.with.dots.needle.33percent").font(.system(size: ChromeMetrics.text(11)))
+                    }
+                    .buttonStyle(.borderless).foregroundStyle(theme.dimText)
+                    .help(card.agentProcess == nil ? "Show the tab in Activity (⌥⌘A)" : "Show its agent in Activity (⌥⌘A): its processes, CPU and ports")
+                    .accessibilityIdentifier("overview.showInActivity")
                 }
             }
             HStack(spacing: 5) {
@@ -120,6 +142,7 @@ private struct AgentCard: View {
             } else if card.agent == nil {
                 Text(card.activity.isWorking ? "A command is running" : "Shell").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
             }
+            if let usage = card.usage { usageRow(usage) }
         }
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
@@ -131,6 +154,35 @@ private struct AgentCard: View {
         )
         .contentShape(Rectangle())
         .onHover { hovering = $0 }
+    }
+
+    /// Its agent's CPU and footprint, it and what it started, and its
+    /// servers as pills with Open (6.12) — from the census.
+    private func usageRow(_ usage: AgentOverviewModel.AgentUsage) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: "cpu").font(.system(size: ChromeMetrics.text(10)))
+            Text(verbatim: "\(TabInfoView.cpu(usage.cpu)) · \(TabInfoView.memory(usage.footprint))")
+                .help("Its agent and every process under it: CPU (100% is one core) and memory, as Activity Monitor counts it")
+                .accessibilityIdentifier("overview.usage")
+            ForEach(usage.servers.prefix(4)) { server in
+                Button {
+                    if let url = server.url { onOpen?(url) }
+                } label: {
+                    Text(verbatim: ":\(server.port)").font(.system(size: ChromeMetrics.text(10.5), weight: .semibold, design: .monospaced))
+                        .padding(.horizontal, 6).padding(.vertical, 1)
+                        .background(Capsule().fill(TabStatusStyle.done.opacity(0.16)))
+                }
+                .buttonStyle(.plain)
+                .disabled(server.url == nil || onOpen == nil)
+                .help(server.url.map { "Open \($0.absoluteString)" } ?? "\(server.process) on :\(server.port)")
+                .accessibilityIdentifier("overview.server.\(server.port)")
+            }
+            if usage.servers.count > 4 {
+                Text(verbatim: "+\(usage.servers.count - 4)")
+            }
+        }
+        .font(.system(size: ChromeMetrics.text(11)))
+        .foregroundStyle(theme.dimText)
     }
 
     @ViewBuilder private var status: some View {

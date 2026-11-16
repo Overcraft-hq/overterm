@@ -182,7 +182,13 @@ extension TerminalWindowController {
         let docker = DockerModel.shared
         guard docker.endpoint?.remoteHost == nil else { return [] }
         var containers: [ActivityContainer] = []
-        let folders = Dictionary(docker.projects.map { ($0.name, $0.workingDir) }, uniquingKeysWith: { first, _ in first })
+        // A project's folder in its checkout's spelling: Compose writes the
+        // path it was run from, the tab's checkout is said without its
+        // symlinks resolved (`/var` against `/private/var`).
+        let checkouts = activityTabFacts().checkouts
+        let folders = Dictionary(
+            docker.projects.map { ($0.name, $0.workingDir.map { activityFolder($0, checkouts: checkouts, real: { FileTreeModel.realPath(URL(fileURLWithPath: $0)) }) }) },
+            uniquingKeysWith: { first, _ in first })
         for container in docker.containers where container.State == "running" {
             let project = container.Labels?["com.docker.compose.project"]
             let usage = docker.usage.byContainer[container.Id]
@@ -193,6 +199,15 @@ extension TerminalWindowController {
                     memory: usage.map { UInt64(max($0.memoryBytes, 0)) }))
         }
         return containers
+    }
+
+    /// `folder` as `checkouts` spell it when one of them is the same
+    /// folder by its real path — what scopes compare by string — else as
+    /// it is. Pure but for `real`, asked only when the spelling differs.
+    nonisolated static func activityFolder(_ folder: String, checkouts: [String], real: (String) -> String) -> String {
+        if checkouts.contains(folder) || checkouts.isEmpty { return folder }
+        let resolved = real(folder)
+        return checkouts.first { real($0) == resolved } ?? folder
     }
 
     /// View ▸ Activity (⌥⌘A): the page, or back to the terminal from it.
@@ -207,6 +222,17 @@ extension TerminalWindowController {
         guard Settings.shared.activityEnabled else { return openSettings(.activity) }
         if let section { activityPage.section = section }
         if store.showingOverlay != .activity { togglePage(.activity) }
+    }
+
+    /// Show in Activity (6.12): the page in this window at the link's row
+    /// — a tab's scope, a process or a port selected and followed. With
+    /// Activity off, its settings.
+    func showInActivity(_ link: ActivityLink) {
+        guard Settings.shared.activityEnabled else { return openSettings(.activity) }
+        infoPopover?.close()
+        if overviewView?.isHidden == false { hideAgentOverview() }
+        showActivityPage()
+        activityPage.show(link)
     }
 
     /// The page reads only while its window is on screen at all (7.9). An
@@ -340,7 +366,15 @@ extension TerminalWindowController {
                 symbol: { if case .port = row.target { return "dot.radiowaves.left.and.right" } else { return "cpu" } }()
             ) { [weak self] run, _ in self?.pickActivityRow(row, run: run) }
         }
-        return rows + [
+        var tab: [PaletteItem] = []
+        if let selected = store.selected {
+            tab.append(
+                PaletteItem(
+                    id: "a.activity.tab", group: .action, title: "Activity: This Tab", subtitle: "“\(ActivityText.title(selected.title))”'s processes and ports",
+                    symbol: "gauge.with.dots.needle.33percent"
+                ) { [weak self, weak selected] _, _ in if let selected { self?.showInActivity(.tab(selected.id)) } })
+        }
+        return rows + tab + [
             PaletteItem(id: "a.activity", group: .action, title: "Activity", subtitle: "Every process and port on this Mac  ⌥⌘A  ·  ⌃⌘A its switcher", symbol: "cpu") {
                 [weak self] _, _ in self?.showActivityPage(.processes)
             },

@@ -910,6 +910,16 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             rootView: AgentOverviewView(
                 model: overview, worktrees: worktrees, theme: theme,
                 onChoose: { [weak self] in self?.chooseOverviewCard($0) },
+                onActivity: { [weak self] card in
+                    // 6.12: the page at the card's agent, else its tab.
+                    self?.showInActivity(card.agentProcess.map { .process($0, tab: card.id) } ?? .tab(card.id))
+                },
+                onOpen: { [weak self] card, url in
+                    guard let self else { return }
+                    let tab = self.store.tabs.first { $0.id == card.id }
+                    self.hideAgentOverview()
+                    self.openLink(url, for: tab)
+                },
                 onDismiss: { [weak self] in self?.hideAgentOverview() }))
         overviewView.onEscape = { [weak self] in self?.hideAgentOverview() }
         overviewView.translatesAutoresizingMaskIntoConstraints = false
@@ -1235,7 +1245,11 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 guard let url = port.url else { return }
                 self?.openLink(url, for: tab)
             },
-            showForwards: { [weak self] in self?.showKubernetesForwards() })
+            showForwards: { [weak self] in self?.showKubernetesForwards() },
+            showInActivity: { [weak self, weak tab] port in
+                // 6.12: Listening with that port selected — its holder's row.
+                self?.showInActivity(.port(port.port, proto: port.proto, pid: port.pid > 0 ? port.pid : nil, tab: tab?.id))
+            })
     }
 
     /// Takes `pane` out of `tab` — the tab itself when it was its last pane.
@@ -2596,6 +2610,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             menu.addItem(ClosureMenuItem("Reset Name") { tab.customTitle = nil })
         }
         menu.addItem(ClosureMenuItem("Show Info…") { [weak self] in self?.showInfo(for: tab) })
+        if Settings.shared.activityEnabled {
+            // 6.12: the page, scoped to the tab.
+            menu.addItem(ClosureMenuItem("Show in Activity") { [weak self] in self?.showInActivity(.tab(tab.id)) })
+        }
         if let askWhy = kubernetesAttentionMenuItem(for: tab) { menu.addItem(askWhy) }
         menu.addItem(
             tab.isSuspended
@@ -2657,7 +2675,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 openURL: { [weak self, weak tab] url in
                     self?.infoPopover?.close()
                     self?.openLink(url, for: tab)
-                }))
+                },
+                showInActivity: Settings.shared.activityEnabled ? { [weak self] link in self?.showInActivity(link) } : nil))
         popover.delegate = self
         // Strip frames are top-left; the host is flipped, so that is its space.
         var rect = frame

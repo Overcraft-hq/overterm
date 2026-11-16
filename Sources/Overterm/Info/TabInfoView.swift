@@ -7,6 +7,22 @@ struct TabInfoView: View {
     @ObservedObject var theme: ChromeTheme
     /// A port's Open: the window's browser when Settings ▸ Browser says so.
     var openURL: (URL) -> Void = { NSWorkspace.shared.open($0) }
+    /// Show in Activity (6.12): the page at the tab, a process or a port;
+    /// nil with Activity off. Tab Info itself signals nothing.
+    var showInActivity: ((ActivityLink) -> Void)? = nil
+
+    /// A process row's Show in Activity (6.12): Processes, it selected
+    /// and followed, in its tab's scope. Pure.
+    nonisolated static func processLink(_ node: ProcessNode, tab: UUID) -> ActivityLink {
+        .process(node.identity, tab: tab)
+    }
+
+    /// A port row's Show in Activity (6.12): Listening at the tab's
+    /// checkout, its holder's row when a process holds it — a container's
+    /// or a forward's has none. Pure.
+    nonisolated static func portLink(_ port: ListeningPort, tab: UUID) -> ActivityLink {
+        .port(port.port, proto: port.proto, pid: port.pid > 0 ? port.pid : nil, tab: tab)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -29,6 +45,16 @@ struct TabInfoView: View {
             Image(systemName: model.tab.agent?.symbol ?? "terminal").font(.system(size: ChromeMetrics.text(13)))
             Text(model.tab.title).font(.system(size: ChromeMetrics.text(14), weight: .semibold)).lineLimit(1)
             Spacer()
+            if let showInActivity {
+                Button {
+                    showInActivity(.tab(model.tab.id))
+                } label: {
+                    Image(systemName: "gauge.with.dots.needle.33percent").font(.system(size: ChromeMetrics.text(13)))
+                }
+                .buttonStyle(.borderless)
+                .help("Show in Activity (⌥⌘A): this tab's processes and ports, with every verb")
+                .accessibilityIdentifier("tabInfo.showInActivity")
+            }
         }
     }
 
@@ -86,6 +112,11 @@ struct TabInfoView: View {
                             PaneLabelRow(label: label, theme: theme)
                         case .process(let node, let depth, let isShell, let leftTerminal):
                             ProcessRow(node: node, depth: depth, isShell: isShell, leftTerminal: leftTerminal, theme: theme)
+                                .contextMenu {
+                                    if let showInActivity {
+                                        Button("Show in Activity") { showInActivity(Self.processLink(node, tab: model.tab.id)) }
+                                    }
+                                }
                         }
                     }
                 }
@@ -167,6 +198,22 @@ struct TabInfoView: View {
                             .controlSize(.small)
                             .help(url.absoluteString)
                         }
+                        Menu {
+                            Button(port.url == nil ? "Copy Address" : "Copy URL") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(port.url?.absoluteString ?? port.endpoint, forType: .string)
+                            }
+                            if let showInActivity {
+                                Button("Show in Activity") {
+                                    showInActivity(Self.portLink(port, tab: model.tab.id))
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                        }
+                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                        .help("Copy its URL, or show it in Activity")
+                        .accessibilityIdentifier("tabInfo.port.\(port.proto).\(port.port)")
                     }
                     .font(.system(size: ChromeMetrics.text(12)))
                 }

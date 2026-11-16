@@ -16,6 +16,9 @@ struct DockerPortConflict: Equatable, Sendable {
 
     var port: Int
     var holder: Holder
+    /// The protocol its host port is published for: Docker's words say
+    /// only "Bind for …", the same for a UDP port.
+    var proto = "tcp"
 }
 
 /// Pure.
@@ -47,6 +50,16 @@ enum PortConflicts {
         case .process(let pid, let command): return "\(command) (pid \(pid)) listens on it, outside Overterm's tabs."
         case .unknown: return "Something else holds it."
         }
+    }
+
+    /// The protocol `detail` publishes host `port` for: "udp" when only
+    /// a UDP binding names it, else "tcp". Pure.
+    static func proto(of port: Int, in detail: ContainerDetail) -> String {
+        let bound = (detail.HostConfig?.PortBindings ?? [:]).filter { _, bindings in
+            (bindings ?? []).contains { $0.HostPort.flatMap(Int.init) == port }
+        }
+        let protos = Set(bound.keys.map { $0.split(separator: "/").last.map(String.init) ?? "tcp" })
+        return protos == ["udp"] ? "udp" : "tcp"
     }
 
     /// The running container, other than `except`, publishing `port`.

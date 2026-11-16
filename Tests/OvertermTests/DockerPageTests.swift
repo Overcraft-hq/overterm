@@ -1301,6 +1301,21 @@ final class PortConflictsTests: XCTestCase {
         XCTAssertNil(PortConflicts.port(in: "OCI runtime create failed: exec: \"nope\": executable file not found"))
     }
 
+    /// Docker's words are the same for a UDP port: its bindings say which,
+    /// what Activity's link selects by (6.12).
+    func testAConflictsProtocolFromItsBindings() throws {
+        func detail(_ bindings: String) throws -> ContainerDetail {
+            let json =
+                #"{"Id":"c1","Name":"/acme-dns","State":{"Status":"created"},"Config":{},"HostConfig":{"PortBindings":"#
+                + bindings + "}}"
+            return try JSONDecoder().decode(ContainerDetail.self, from: Data(json.utf8))
+        }
+        XCTAssertEqual(PortConflicts.proto(of: 5353, in: try detail(#"{"53/udp":[{"HostPort":"5353"}]}"#)), "udp")
+        XCTAssertEqual(PortConflicts.proto(of: 5432, in: try detail(#"{"5432/tcp":[{"HostPort":"5432"}],"53/udp":[{"HostPort":"5353"}]}"#)), "tcp")
+        XCTAssertEqual(PortConflicts.proto(of: 53, in: try detail(#"{"53/tcp":[{"HostPort":"53"}],"53/udp":[{"HostPort":"53"}]}"#)), "tcp", "both: TCP's")
+        XCTAssertEqual(PortConflicts.proto(of: 9000, in: try detail("null")), "tcp", "nothing bound: TCP, as the engine's words read")
+    }
+
     func testTheContainerHoldingIt() {
         func container(_ id: String, state: String, port: Int?) -> ContainerSummary {
             ContainerSummary(

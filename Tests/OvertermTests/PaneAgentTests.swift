@@ -136,6 +136,7 @@ final class PaneAgentTests: XCTestCase {
         XCTAssertEqual(card.agent, .codex)
         XCTAssertTrue(card.agentRunning)
         XCTAssertEqual(card.directory, "/tmp/fake-acme")
+        XCTAssertEqual(card.agentProcess, ActivityProcessID(pid: 1202, start: 1), "Show in Activity selects it (6.12)")
         let opened = AgentOverviewModel.Snapshot(
             id: tab, title: "acme", color: nil, agent: .codex, activity: TabActivity(), directory: "/tmp/fake-elsewhere", tags: [],
             panes: 1)
@@ -143,6 +144,34 @@ final class PaneAgentTests: XCTestCase {
         XCTAssertEqual(idle.agent, .codex)
         XCTAssertFalse(idle.agentRunning)
         XCTAssertEqual(idle.directory, "/tmp/fake-elsewhere")
+        XCTAssertNil(idle.agentProcess, "none running: the link shows the tab")
+    }
+
+    /// A card's agent's numbers (6.12): it and everything under it, from
+    /// the census's snapshot — CPU none before a second sample, the
+    /// footprints summed, its server's port — no scan of the overview's.
+    func testACardSaysWhatItsAgentSpends() throws {
+        let panes = [pane("pane-a1", login: 1100, tab: tab)]
+        let agent = add(1102, parent: 1101, name: "node", words: ["claude"])
+        var server = FakeActivityKernel.Process(record: FakeActivityKernel.record(pid: 1103, start: 1_103_000, parent: 1102, uid: 501, name: "acme-dev"))
+        server.name = "acme-dev"
+        server.path = "/opt/acme/bin/acme-dev"
+        server.usage = FakeActivityKernel.usage(footprint: 48 << 20)
+        server.descriptors = [FakeActivityKernel.descriptor(3)]
+        server.sockets = [3: FakeActivityKernel.tcp(local: "127.0.0.1", port: 5179, handle: 1103)]
+        kernel.add(server)
+        let sampler = census(panes)
+        let snapshot = try XCTUnwrap(sampler.tickNow(ActivityDemand(.light(tabs: [tab])), context: sampler.appContext))
+        let usage = try XCTUnwrap(AgentOverviewModel.usage(of: agent, in: snapshot))
+        XCTAssertNil(usage.cpu, "no rate before a second sample, never 0")
+        XCTAssertEqual(usage.footprint, 48 << 20, "it and what it started")
+        XCTAssertEqual(usage.servers.map(\.port), [5179])
+        XCTAssertNil(AgentOverviewModel.usage(of: ActivityProcessID(pid: 4999, start: 1), in: snapshot), "gone: nothing said")
+        let card = AgentOverviewModel.card(
+            for: AgentOverviewModel.Snapshot(
+                id: tab, title: "acme", color: nil, agent: nil, activity: TabActivity(), directory: nil, tags: ["pane-a1"], panes: 1),
+            agent: PaneAgent(identity: agent, kind: .claude, command: "claude", folder: nil), snapshot: snapshot)
+        XCTAssertEqual(card.usage, usage)
     }
 
     /// Sessions' Claude: the first Claude, past a Codex in an earlier pane,

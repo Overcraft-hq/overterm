@@ -187,7 +187,9 @@ final class ActivityPortHolderTests: XCTestCase {
 
     // MARK: The page
 
-    func testFOnThePageFreesThroughTheOwner() async throws {
+    /// A page over a fake Mac: a tab's server on 5173 (pid 1102), and
+    /// acme-db's published 5432 held by a proxy outside every tab.
+    private func page(visible: Bool = true) async throws -> (ActivityPageModel, ActivityMonitor) {
         func add(_ pid: pid_t, parent: pid_t, uid: uid_t = 501, name: String, port: UInt16? = nil) -> ActivityProcessID {
             let start = UInt64(pid) * 1_000
             var process = FakeActivityKernel.Process(
@@ -211,7 +213,6 @@ final class ActivityPortHolderTests: XCTestCase {
         _ = add(1102, parent: 1101, name: "acme-server", port: 5173)
         _ = add(2000, parent: 1, name: "acme-proxy", port: 5432)
         let monitor = ActivityMonitor(sampler: ActivitySampler(kernel: kernel))
-        defer { monitor.stop() }
         monitor.setContext(ActivityContext(panes: [ActivityContext.Pane(tag: "pane-a", tab: tab, login: login)], appPID: app))
         monitor.interval = .milliseconds(300)
         let page = ActivityPageModel(monitor: monitor)
@@ -220,6 +221,17 @@ final class ActivityPortHolderTests: XCTestCase {
         page.contextFacts = { context in
             context.published = [ActivityContext.PublishedPort(container: "acme-db", project: "shop", address: "127.0.0.1", port: 5432, proto: "tcp")]
         }
+        if visible {
+            page.visible = true
+            let read = await eventually { page.hasRead }
+            XCTAssertTrue(read)
+        }
+        return (page, monitor)
+    }
+
+    func testFOnThePageFreesThroughTheOwner() async throws {
+        let (page, monitor) = try await page(visible: false)
+        defer { monitor.stop() }
         final class Box { var freed: [ActivityPortRow] = [] }
         let box = Box()
         page.actions.free = { box.freed.append($0) }
@@ -244,6 +256,152 @@ final class ActivityPortHolderTests: XCTestCase {
         XCTAssertEqual(box.freed.count, 1)
         page.section = .processes
         XCTAssertFalse(page.press("f"), "Processes has no f")
+    }
+
+    // MARK: Links (6.12)
+
+    func testALinkShowsItsRow() async throws {
+        let (page, monitor) = try await page()
+        defer { monitor.stop() }
+        let read = await eventually { page.content.ports.contains { $0.port == 5173 } }
+        XCTAssertTrue(read)
+        // A port: Listening, in its tab's scope, its holder's row selected
+        // and followed.
+        page.show(.port(5173, proto: "tcp", pid: 1102, tab: tab))
+        XCTAssertEqual(page.section, .listening)
+        XCTAssertEqual(page.scope(.listening), .tab(tab))
+        let port = await eventually { page.selection.count == 1 && page.content.ports.first { page.selection.contains($0.id) }?.port == 5173 }
+        XCTAssertTrue(port, "the port's row selected")
+        XCTAssertTrue(page.following)
+        XCTAssertNil(page.pendingPort)
+        // A process: Processes, in its tab, selected.
+        page.following = false
+        let server = ActivityProcessID(pid: 1102, start: 1_102_000)
+        page.show(.process(server, tab: tab))
+        XCTAssertEqual(page.section, .processes)
+        XCTAssertEqual(page.scope(.processes), .tab(tab))
+        let process = await eventually { page.selection == [server.id] && page.detail?.row.identity == server }
+        XCTAssertTrue(process, "the process selected, its detail shown")
+        XCTAssertTrue(page.following)
+        // A tab: Processes in its scope.
+        page.setScope(.mac, for: .processes)
+        page.show(.tab(tab))
+        XCTAssertEqual(page.scope(.processes), .tab(tab))
+        // Docker's conflict box for a process in no tab: the Mac.
+        page.show(.port(5432, proto: "tcp", pid: nil, tab: nil))
+        XCTAssertEqual(page.scope(.listening), .mac)
+        let held = await eventually { page.content.ports.first { page.selection.contains($0.id) }?.port == 5432 }
+        XCTAssertTrue(held)
+    }
+
+    /// A tab's container port (Tab Info and the pill list the checkout's):
+    /// the link opens at the tab's checkout, where its stack is listed — a
+    /// tab's own scope lists no container.
+    func testAContainerPortLinkOpensAtTheTabsCheckout() async throws {
+        let checkout = "/Users/fake/src/acme-shop"
+        let (page, monitor) = try await page(visible: false)
+        defer { monitor.stop() }
+        page.tabFacts = { [tab] in ([tab: ActivityTabFacts(id: tab, title: "web", checkout: checkout)], [checkout]) }
+        page.containers = { [ActivityContainer(id: "c1", name: "acme-db", project: "shop", folder: checkout)] }
+        page.contextFacts = { context in
+            context.published = [ActivityContext.PublishedPort(container: "acme-db", project: "shop", address: "0.0.0.0", port: 6543, proto: "tcp")]
+        }
+        page.visible = true
+        let read = await eventually { page.hasRead }
+        XCTAssertTrue(read)
+        page.show(.port(6543, proto: "tcp", pid: nil, tab: tab))
+        XCTAssertEqual(page.scope(.listening), .checkout(checkout))
+        let shown = await eventually { page.content.ports.first { page.selection.contains($0.id) }?.port == 6543 }
+        XCTAssertTrue(shown, "the container's row selected")
+        XCTAssertNil(page.pendingPort)
+    }
+
+    /// A port nothing lists (another user's, before stage 4): widened to
+    /// the Mac's once, then given up and said — never left to take the
+    /// selection later. The person's hand drops a link still waiting.
+    func testAPortNoTickListsIsGivenUp() async throws {
+        let (page, monitor) = try await page()
+        defer { monitor.stop() }
+        page.show(.port(6001, proto: "tcp", pid: nil, tab: tab))
+        XCTAssertEqual(page.scope(.listening), .tab(tab))
+        let said = await eventually { page.linkSaid != nil }
+        XCTAssertTrue(said)
+        XCTAssertEqual(page.linkSaid, ":6001 isn't listed (another user's?)")
+        XCTAssertEqual(page.scope(.listening), .mac, "looked for on the Mac's first")
+        XCTAssertNil(page.pendingPort)
+        XCTAssertTrue(page.selection.isEmpty)
+        // Waiting, then the person's hand: dropped.
+        page.show(.port(6002, proto: "tcp", pid: nil, tab: nil))
+        XCTAssertNil(page.linkSaid)
+        XCTAssertNotNil(page.pendingPort)
+        let row = try XCTUnwrap(page.content.ports.first { $0.port == 5173 })
+        page.selection = [row.id]
+        XCTAssertNil(page.pendingPort, "a row picked by hand drops the link")
+        page.show(.port(6003, proto: "tcp", pid: nil, tab: nil))
+        XCTAssertTrue(page.press("1"))
+        XCTAssertNil(page.pendingPort, "and so does a key")
+    }
+
+    func testAPortLinkBeforeTheFirstRowsWaitsForThem() async throws {
+        let (page, monitor) = try await page(visible: false)
+        defer { monitor.stop() }
+        page.visible = true
+        page.show(.port(5173, proto: "tcp", pid: nil, tab: nil))
+        XCTAssertNotNil(page.pendingPort, "nothing listed yet: it waits")
+        let shown = await eventually { page.content.ports.first { page.selection.contains($0.id) }?.port == 5173 }
+        XCTAssertTrue(shown, "selected once a tick's rows list it")
+        XCTAssertNil(page.pendingPort)
+        page.show(.port(6001, proto: "tcp", pid: nil, tab: nil))
+        page.close()
+        XCTAssertNil(page.pendingPort, "hidden, a link nobody saw goes")
+    }
+
+    func testWhichListenerALinkNames() {
+        func listener(_ id: String, port: Int, pid: pid_t?) -> ActivityPortRow {
+            ActivityPortRow(
+                id: id, port: port, proto: "tcp", address: "127.0.0.1", families: .v4, scope: .thisMac, process: "acme",
+                holder: pid.map { ActivityProcessID(pid: $0, start: 1) })
+        }
+        let rows = [listener("a", port: 3000, pid: 10), listener("b", port: 3000, pid: 20), listener("c", port: 3001, pid: 30)]
+        func link(_ port: Int, _ proto: String, _ pid: pid_t?) -> ActivityPendingPort {
+            ActivityPendingPort(port: port, proto: proto, pid: pid, after: 0, scope: .mac)
+        }
+        XCTAssertEqual(ActivityPageModel.linked(link(3000, "tcp", 20), in: rows)?.id, "b", "its holder's")
+        XCTAssertEqual(ActivityPageModel.linked(link(3000, "tcp", nil), in: rows)?.id, "a")
+        XCTAssertEqual(ActivityPageModel.linked(link(3000, "tcp", 99), in: rows)?.id, "a", "a holder gone: the port's first")
+        XCTAssertNil(ActivityPageModel.linked(link(3000, "udp", nil), in: rows))
+    }
+
+    /// Tab Info's port ⋯ ▸ Show in Activity: the holder's pid when a
+    /// process holds it, none for a container's (pid 0), its protocol.
+    func testTabInfosPortLink() {
+        let server = ListeningPort(pid: 4242, process: "acme-server", port: 3000, address: "127.0.0.1")
+        XCTAssertEqual(TabInfoView.portLink(server, tab: tab), .port(3000, proto: "tcp", pid: 4242, tab: tab))
+        var container = ListeningPort(pid: 0, process: "acme-db", port: 5353, address: "*")
+        container.proto = "udp"
+        XCTAssertEqual(TabInfoView.portLink(container, tab: tab), .port(5353, proto: "udp", pid: nil, tab: tab))
+    }
+
+    func testTabInfosProcessLink() {
+        let node = ProcessNode(
+            identity: ActivityProcessID(pid: 4242, start: 7), parent: 1, name: "acme-server", maskedCommand: "acme-server", cpuPercent: 0, memory: 0,
+            workingDirectory: nil)
+        XCTAssertEqual(TabInfoView.processLink(node, tab: tab), .process(ActivityProcessID(pid: 4242, start: 7), tab: tab))
+    }
+
+    func testAPortLinksScopeAndWhenItGivesUp() {
+        let checkout = "/Users/fake/src/acme-shop"
+        XCTAssertEqual(ActivityPageModel.linkScope(tab: tab, checkout: checkout), .checkout(checkout), "a tab's checkout: its stack's containers too")
+        XCTAssertEqual(ActivityPageModel.linkScope(tab: tab, checkout: nil), .tab(tab))
+        XCTAssertEqual(ActivityPageModel.linkScope(tab: nil, checkout: nil), .mac)
+        let pending = ActivityPendingPort(port: 6001, proto: "tcp", pid: nil, after: 7, scope: .checkout(checkout))
+        XCTAssertEqual(ActivityPageModel.unlisted(pending, tick: 7, scope: .checkout(checkout)), .wait, "rows of a tick before the link say nothing")
+        XCTAssertEqual(ActivityPageModel.unlisted(pending, tick: 8, scope: .tab(tab)), .wait, "rows of another rung say nothing")
+        XCTAssertEqual(ActivityPageModel.unlisted(pending, tick: 8, scope: .checkout(checkout)), .widen, "not in the checkout's: the Mac's")
+        var widened = pending
+        widened.scope = .mac
+        XCTAssertEqual(ActivityPageModel.unlisted(widened, tick: 8, scope: .mac), .drop, "not on the Mac's either: given up")
+        XCTAssertEqual(ActivityPageModel.unlistedSaid(widened), ":6001 isn't listed (another user's?)")
     }
 
     private func eventually(_ seconds: Double = 10, _ condition: @MainActor () -> Bool) async -> Bool {
