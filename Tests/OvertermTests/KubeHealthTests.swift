@@ -811,8 +811,12 @@ final class KubeHealthTests: XCTestCase {
         let compared = await eventually { shown.count == 1 }
         XCTAssertTrue(compared, page.compareStatus?.text ?? "")
         XCTAssertEqual(shown.first?.title, "deployment/web: fake-dev/shop ↔ fake-prod/shop")
-        XCTAssertEqual(dev.requests.map(\.path), ["/apis/apps/v1/namespaces/shop/deployments/web"], "one GET a side")
-        XCTAssertEqual(prod.requests.map(\.path), ["/apis/apps/v1/namespaces/shop/deployments/web"])
+        // The page's own reads (its namespaces, the CRDs) may land late on a
+        // slow machine: they aren't the compare's.
+        let pageReads: Set<String> = ["/api/v1/namespaces", "/apis/apiextensions.k8s.io/v1/customresourcedefinitions"]
+        let compareReads = { (api: FakeKubeAPI) in api.requests.map(\.path).filter { !pageReads.contains($0) } }
+        XCTAssertEqual(compareReads(dev), ["/apis/apps/v1/namespaces/shop/deployments/web"], "one GET a side")
+        XCTAssertEqual(compareReads(prod), ["/apis/apps/v1/namespaces/shop/deployments/web"])
         XCTAssertTrue(shown.first?.diff.items.first?.diff.contains("nginx:1.27") == true)
         XCTAssertTrue(confirms.isEmpty, "a Deployment asks nothing")
 
@@ -824,7 +828,7 @@ final class KubeHealthTests: XCTestCase {
         XCTAssertEqual(confirms.count, 1)
         XCTAssertTrue(confirms.first?.0.contains("PRODUCTION · fake-prod") == true, confirms.first?.0 ?? "")
         try await Task.sleep(for: .milliseconds(150))
-        XCTAssertEqual(dev.requests + prod.requests, [], "nothing read before the button")
+        XCTAssertEqual(compareReads(dev) + compareReads(prod), [], "nothing read before the button")
         confirms.first?.1()
         let secretShown = await eventually { shown.count == 2 }
         XCTAssertTrue(secretShown, page.compareStatus?.text ?? "")
