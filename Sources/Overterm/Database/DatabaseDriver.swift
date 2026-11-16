@@ -26,6 +26,8 @@ struct CatalogTable: Equatable, Hashable, Sendable {
     var schema: String
     var name: String
     var isView = false
+    /// What the tree says beside it: an index's documents, an alias's index.
+    var detail: String?
 }
 
 struct CatalogColumn: Equatable, Hashable, Sendable {
@@ -89,8 +91,7 @@ enum DatabaseDrivers {
         case .mongodb: PendingDriver(kind: .mongodb)
         case .documentdb: PendingDriver(kind: .documentdb)
         case .mariadb: PendingDriver(kind: .mariadb)
-        case .elasticsearch: PendingDriver(kind: .elasticsearch)
-        case .opensearch: PendingDriver(kind: .opensearch)
+        case .elasticsearch, .opensearch: SearchDriver(connection, password: password)
         case .dynamodb: PendingDriver(kind: .dynamodb)
         case .influxdb: PendingDriver(kind: .influxdb)
         case .neo4j: PendingDriver(kind: .neo4j)

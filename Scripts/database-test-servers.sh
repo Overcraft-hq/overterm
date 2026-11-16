@@ -4,10 +4,53 @@
 # user `ot`, password `otpass`, database `shop`. Then:
 #   OVERTERM_DB_TESTS=1 swift test --filter DatabaseDriverTests
 # `Scripts/database-test-servers.sh stop` removes them.
+#
+# The search engines are large (~1.3 GB each) and apart:
+#   Scripts/database-test-servers.sh search [elasticsearch|opensearch]
+# Elasticsearch 8 on :59200 — security on, TLS with its own certificate,
+# user `ot` / `otpass` (a superuser made through `elastic`); OpenSearch 2 on
+# :59210, its security plugin off (plain http, no user: its admin password
+# must pass a policy `otpass` doesn't). Then:
+#   OVERTERM_DB_TESTS=1 swift test --filter SearchDriverTests
+# `… search stop` removes them; `docker rmi` the images when done.
 set -euo pipefail
 
+if [[ "${1:-}" == "search" ]]; then
+  which="${2:-both}"
+  if [[ "$which" == "stop" ]]; then
+    docker rm -f ot-elasticsearch ot-opensearch >/dev/null 2>&1 || true
+    echo "==> stopped"
+    exit 0
+  fi
+  if [[ "$which" == "both" || "$which" == "elasticsearch" ]]; then
+    docker rm -f ot-elasticsearch >/dev/null 2>&1 || true
+    docker run -d --name ot-elasticsearch -e discovery.type=single-node -e ELASTIC_PASSWORD=otpass \
+      -e ES_JAVA_OPTS="-Xms512m -Xmx512m" -e xpack.ml.enabled=false -p 59200:9200 elasticsearch:8.15.3 >/dev/null
+    for _ in $(seq 1 120); do
+      if curl -sfk -u elastic:otpass "https://127.0.0.1:59200/_cluster/health" >/dev/null 2>&1; then break; fi
+      sleep 1
+    done
+    curl -sfk -u elastic:otpass -X POST "https://127.0.0.1:59200/_security/user/ot" -H 'Content-Type: application/json' \
+      -d '{"password": "otpass", "roles": ["superuser"]}' >/dev/null
+    echo "==> Elasticsearch :59200 (https, ot/otpass)"
+  fi
+  if [[ "$which" == "both" || "$which" == "opensearch" ]]; then
+    docker rm -f ot-opensearch >/dev/null 2>&1 || true
+    docker run -d --name ot-opensearch -e discovery.type=single-node -e DISABLE_SECURITY_PLUGIN=true \
+      -e DISABLE_INSTALL_DEMO_CONFIG=true -e OPENSEARCH_JAVA_OPTS="-Xms512m -Xmx512m" -p 59210:9200 \
+      opensearchproject/opensearch:2.18.0 >/dev/null
+    for _ in $(seq 1 120); do
+      if curl -sf "http://127.0.0.1:59210/_cluster/health" >/dev/null 2>&1; then break; fi
+      sleep 1
+    done
+    curl -sf "http://127.0.0.1:59210/_cluster/health" >/dev/null || { echo "error: OpenSearch didn't come up" >&2; exit 1; }
+    echo "==> OpenSearch :59210 (http)"
+  fi
+  exit 0
+fi
+
 if [[ "${1:-}" == "stop" ]]; then
-  docker rm -f ot-pg ot-mysql ot-ch ot-minio ot-ssh >/dev/null 2>&1 || true
+  docker rm -f ot-pg ot-mysql ot-ch ot-minio ot-ssh ot-elasticsearch ot-opensearch >/dev/null 2>&1 || true
   docker network rm ot-net >/dev/null 2>&1 || true
   echo "==> stopped"
   exit 0

@@ -229,7 +229,7 @@ private struct ConnectionTree: View {
     @ViewBuilder private func tableTree(_ table: CatalogTable) -> some View {
         let key = "\(self.key)/\(table.schema)/\(table.name)"
         TreeRow(
-            depth: 2, open: model.expanded.contains(key), symbol: table.isView ? "eye" : "tablecells", title: table.name, detail: nil,
+            depth: 2, open: model.expanded.contains(key), symbol: table.isView ? "eye" : "tablecells", title: table.name, detail: table.detail,
             dot: nil, theme: theme
         ) {
             toggle(key) { await session.loadColumns(table.schema) }
@@ -253,6 +253,7 @@ private struct ConnectionTree: View {
 
     private func qualified(_ table: CatalogTable) -> String {
         switch connection.kind {
+        case .elasticsearch, .opensearch: return table.name
         case .sqlite: return quote(table.name)
         case .bigquery: return "`\(connection.project).\(table.schema).\(table.name)`"
         default: return "\(quote(table.schema)).\(quote(table.name))"
@@ -267,7 +268,9 @@ private struct ConnectionTree: View {
     }
 
     private func select(_ table: CatalogTable, limit: Int) -> String {
-        "SELECT * FROM \(qualified(table)) LIMIT \(limit);"
+        // An index's documents, as Kibana's Dev Tools asks for them.
+        if connection.kind.isSearch { return "GET /\(table.name)/_search\n{\n  \"size\": \(limit)\n}" }
+        return "SELECT * FROM \(qualified(table)) LIMIT \(limit);"
     }
 
     private func toggle(_ key: String, load: @escaping () async -> Void) {

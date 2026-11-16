@@ -36,7 +36,7 @@ struct DatabaseConnectionForm: View {
                 .onChange(of: connection.kind) { kind in
                     connection.port = kind.defaultPort
                     // Redis doesn't negotiate TLS: Prefer would be plain, said as Off.
-                    if (kind == .redis || kind.isObservability), connection.sslMode == .prefer { connection.sslMode = .disable }
+                    if (kind == .redis || kind.isObservability || kind.isSearch), connection.sslMode == .prefer { connection.sslMode = .disable }
                     if kind == .s3 { connection.apply(connection.provider) }
                     if kind == .gcs { connection.bigQueryAuth = .gcloud }
                     tested = nil
@@ -48,6 +48,7 @@ struct DatabaseConnectionForm: View {
                 case .gcs: gcsFields
                 case .redis: redisFields
                 case .prometheus, .loki, .tempo: observabilityFields
+                case .elasticsearch, .opensearch: searchFields
                 default: serverFields
                 }
                 Toggle("Read-only — refuse anything that writes", isOn: $connection.readOnly)
@@ -136,6 +137,61 @@ struct DatabaseConnectionForm: View {
         .onAppear { if connection.sslMode == .prefer { connection.sslMode = .disable } }
         Toggle("Through an SSH tunnel", isOn: $connection.sshEnabled)
         if connection.sshEnabled { sshFields }
+    }
+
+    /// Elasticsearch's and OpenSearch's: an address or an Elastic Cloud ID
+    /// pasted fills them; a user for Basic auth, or without one an API key
+    /// (or `Bearer …`) in the password's place; OpenSearch on AWS signed by
+    /// an AWS profile instead.
+    @ViewBuilder private var searchFields: some View {
+        TextField(
+            "URL", text: Binding(get: { "" }, set: { fillSearch(from: $0) }),
+            prompt: Text(verbatim: "Paste https://elastic:password@host:9200, or a Cloud ID"))
+        TextField("Host", text: $connection.host)
+        TextField(
+            "Port",
+            text: Binding(
+                get: { connection.port.map(String.init) ?? "" },
+                set: { connection.port = Int($0.filter(\.isNumber)) }))
+        TextField("Path", text: $connection.basePath, prompt: Text(verbatim: "/ — or where a proxy serves it"))
+        let profiles = connection.kind == .opensearch ? AWSProfile.names() : []
+        if !profiles.isEmpty || !connection.awsProfile.isEmpty {
+            Picker("Sign in with", selection: $connection.awsProfile) {
+                Text("User, API key or token").tag("")
+                ForEach(profiles, id: \.self) { Text("AWS profile: \($0) (SigV4)").tag($0) }
+            }
+        }
+        if connection.awsProfile.isEmpty {
+            TextField("User (optional — Basic auth)", text: $connection.user)
+            SecureField(
+                hasSavedPassword
+                    ? "Password or key (saved — empty keeps it)" : connection.user.isEmpty ? "API key, or Bearer <token> (optional)" : "Password",
+                text: $password)
+        } else {
+            TextField("Region", text: $connection.location, prompt: Text(verbatim: "from the endpoint's name, else the profile's"))
+        }
+        Picker("TLS", selection: $connection.sslMode) {
+            Text("Off — http").tag(DatabaseSSLMode.disable)
+            Text("On — don't check the certificate").tag(DatabaseSSLMode.require)
+            Text("On — verify the certificate").tag(DatabaseSSLMode.verifyFull)
+        }
+        .onAppear { if connection.sslMode == .prefer { connection.sslMode = .disable } }
+        Toggle("Through an SSH tunnel", isOn: $connection.sshEnabled)
+        if connection.sshEnabled { sshFields }
+    }
+
+    /// An address or a Cloud ID, spread over the fields; its password typed
+    /// in, kept only if the connection is saved — then in the keychain.
+    private func fillSearch(from text: String) {
+        guard let address = SearchAddress(text) else { return }
+        connection.host = address.host
+        connection.port = address.port
+        connection.basePath = address.path
+        connection.sslMode = address.tls ? .verifyFull : .disable
+        if !address.user.isEmpty { connection.user = address.user }
+        if let secret = address.password { password = secret }
+        if connection.name.isEmpty || connection.name == connection.kind.title { connection.name = address.host }
+        tested = nil
     }
 
     /// `https://user:token@host:port/path`, spread over the fields.
@@ -338,7 +394,7 @@ struct DatabaseConnectionForm: View {
                     let schemas = (try? await driver.schemas())?.count ?? 0
                     await driver.close()
                     let through = tunnel == nil ? "" : " through \(connection.sshHost)"
-                    let noun = connection.kind.isRedis ? "database" : connection.kind.isObservability ? "folder" : "schema"
+                    let noun = connection.kind.isRedis ? "database" : connection.kind.isObservability || connection.kind.isSearch ? "folder" : "schema"
                     tested = .success(
                         "Connected\(through) in \(Int(Date().timeIntervalSince(started) * 1000)) ms — \(schemas) \(noun)\(schemas == 1 ? "" : "s")")
                 }

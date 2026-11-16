@@ -88,6 +88,10 @@ enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable {
     /// series, log lines or traces; they only read.
     var isObservability: Bool { self == .prometheus || self == .loki || self == .tempo }
 
+    /// Elasticsearch, OpenSearch: requests as Kibana's Dev Tools writes
+    /// them (`SearchText`), answered in JSON.
+    var isSearch: Bool { self == .elasticsearch || self == .opensearch }
+
     /// Its glyph in the panel.
     var symbol: String {
         switch self {
@@ -95,6 +99,7 @@ enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable {
         case .prometheus: "chart.xyaxis.line"
         case .loki: "text.alignleft"
         case .tempo: "point.3.connected.trianglepath.dotted"
+        case .elasticsearch, .opensearch: "magnifyingglass"
         default: "cylinder"
         }
     }

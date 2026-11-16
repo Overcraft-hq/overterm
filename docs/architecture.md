@@ -1333,7 +1333,7 @@ in it, and `.obsidian/` is read for where things go, never written.
 
 A database client beside the terminal, DataGrip's work in the sidebar and
 the editor: PostgreSQL, MySQL, SQLite, Redshift, ClickHouse, BigQuery,
-Redis, and Prometheus, Loki and Tempo (Settings ▸ Database turns it off; its rows fetched and asking before a
+Redis, Prometheus, Loki and Tempo, and Elasticsearch and OpenSearch (Settings ▸ Database turns it off; its rows fetched and asking before a
 destroying statement are there too).
 
 - **Connections** (`DatabaseConnection`, `DatabaseStore`): a name, a kind,
@@ -1451,6 +1451,58 @@ destroying statement are there too).
 - **Tested** against `E2EObservabilityServer`, a fake answering in each
   API's documented shapes (`ObservabilityTests`, the `observability`
   scenario) — no servers are run here.
+
+### Elasticsearch, OpenSearch (search engines)
+
+- **One driver** (`SearchDriver`): their shared REST API over URLSession —
+  a base URL (TLS as the other HTTP kinds, `ClickHouseTrust`: Require
+  takes Elasticsearch 8's own certificate, Verify Full checks it;
+  `basePath` behind a proxy; an SSH tunnel's local end). Basic auth with a
+  user; without one the password field holds an API key (`ApiKey`,
+  Elastic's encoded form, or `id:key` encoded here) or `Bearer …`
+  (`SearchAuth`). OpenSearch on AWS signs with SigV4 (`S3Signer`, service
+  `es`, or `aoss` for Serverless) from an AWS profile, the region from the
+  endpoint's name. A URL or an Elastic Cloud ID pasted in the form fills it
+  (`SearchAddress`).
+- **The console** (`SearchText`, `SearchRequest`, pure): Kibana Dev
+  Tools' syntax — `GET /orders/_search`, its JSON body below; a request
+  ends at the next method line, or a blank line once its braces close (a
+  blank line inside a body doesn't end it); `#` and `//` comments;
+  `"""…"""` as a JSON string; `_bulk`/`_msearch` bodies compacted to a
+  line an object. URLSession sends no body with a GET, so a GET with one
+  to an API that reads by POST too (`_search`, `_count`…) goes as that
+  POST; to any other it is refused, never sent without its body.
+- **What came back** (`SearchResults`, pure): a search's hits as rows —
+  `_index`, `_id`, `_score` (not when sorted), then `_source`'s top-level
+  fields, nested ones as JSON — the total and took in the message; with
+  no hits, one aggregation of buckets as rows (key, doc_count, each
+  sub-aggregation's value), else the aggregations' JSON; `_cat/*` with
+  `format=json` added, as rows in the server's column order; SQL's,
+  OpenSearch SQL/PPL's and ES|QL's columns as theirs; a count; anything
+  else its JSON pretty in one cell, `acknowledged`/`result`/`deleted`
+  said in the message. An error is the server's `type: reason — cause`.
+- **Reads and writes**: GET and HEAD read, and a POST only to the APIs
+  that read (`_search`, `_count`, `_msearch`, `_cat`, `_sql`, `_query`,
+  `_eql`, `_field_caps`…) — never a POST to `_mapping` (it changes it),
+  `_pit` or `_async_search` (they keep something). Agents read the same
+  but not the security APIs. Asked first: DELETE of an index (a pattern
+  or `_all` said so) or a data stream, `_delete_by_query`,
+  `_update_by_query`.
+- **The catalog**: folders for indices (hidden ones, `.`-named, left
+  out; each with its documents counted, or closed), data streams and
+  aliases (only the folders that have any); an index's mapping as its
+  columns — dotted (`address.city`), multi-fields (`note.keyword`), the
+  type as the column's — a data stream's from its newest backing index,
+  an alias's from its first. One `GET /_mapping` a catalog read.
+- **Docker**: `elasticsearch` and `opensearch` images (not Dashboards,
+  Kibana or an exporter) open as a connection — `elastic` and TLS
+  unless the env turns security off; `admin` and its demo certificate for
+  OpenSearch unless `DISABLE_SECURITY_PLUGIN`.
+- **Tested**: the pure parts always (`SearchTextTests`); the driver
+  against Elasticsearch 8 (security on, user `ot`, an API key, a wrong
+  password, Verify Full refused) and OpenSearch 2 (security off) with
+  `Scripts/database-test-servers.sh search` and `OVERTERM_DB_TESTS=1`
+  (`SearchDriverTests`).
 
 ### Saved queries
 

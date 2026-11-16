@@ -148,6 +148,16 @@ enum DatabaseMCP {
             guard !tables.isEmpty else { return "No \(what.lowercased()) in the last 6 hours." }
             return "\(what) (\(tables.count)):\n" + tables.prefix(2000).map { "- \($0.name)" }.joined(separator: "\n")
         }
+        if session.connection.kind.isSearch {
+            guard !tables.isEmpty else { return "No \(schema). Folders: \(session.schemas.joined(separator: ", "))" }
+            var out = "\(schema.prefix(1).uppercased() + schema.dropFirst()) (\(tables.count); others: \(session.schemas.filter { $0 != schema }.joined(separator: ", ")))\n"
+            for table in tables.prefix(300) {
+                let fields = session.columns(of: table.name, in: schema).prefix(100).map { "\($0.name) \($0.type)" }
+                out += "\n\(table.name)\(table.detail.map { " [\($0)]" } ?? "")(\(fields.joined(separator: ", ")))"
+            }
+            if tables.count > 300 { out += "\n… \(tables.count - 300) more; db_schema with “table” for one." }
+            return out
+        }
         if session.connection.kind.isRedis {
             guard !tables.isEmpty else { return "\(schema) has no keys. Databases with keys: \(session.schemas.joined(separator: ", "))" }
             return "Keys in \(schema) (first \(tables.count), by SCAN; `VIEW key` reads one):\n" + tables.map { "- \($0.name)" }.joined(separator: "\n")
@@ -192,15 +202,19 @@ enum DatabaseMCP {
             "A database's schema: its tables with their columns — or, with “table”, one table's columns. Without “schema”, the connection's default.",
             [
                 "connection": ["type": "string", "description": "Its name, from db_connections (optional when there is one)."],
-                "schema": ["type": "string", "description": "The schema (dataset in BigQuery, database in MySQL/ClickHouse, db0… in Redis — its keys, up to 1000)."],
+                "schema": [
+                    "type": "string",
+                    "description":
+                        "The schema (dataset in BigQuery, database in MySQL/ClickHouse, db0… in Redis — its keys, up to 1000; indices, data streams or aliases in Elasticsearch/OpenSearch, each with its mapping's fields).",
+                ],
                 "table": ["type": "string", "description": "One table's columns."],
             ]),
         tool(
             "db_query",
-            "Run one SQL statement — or, on a Redis connection, one Redis command as redis-cli takes it (`HGETALL user:1`, `SCAN 0 MATCH user:* COUNT 100`; `VIEW key` reads any key whatever its type), or PromQL / LogQL / TraceQL on Prometheus, Loki, Tempo (over the window the user picked in the console, an hour unless changed; a 32-hex trace id reads that trace; `.targets` and `.alerts` on Prometheus) — on a saved connection and get its rows as a Markdown table. Reads only, unless the user allows agents to write in Settings — then they are asked each time.",
+            "Run one SQL statement — or, on a Redis connection, one Redis command as redis-cli takes it (`HGETALL user:1`, `SCAN 0 MATCH user:* COUNT 100`; `VIEW key` reads any key whatever its type), or on Elasticsearch / OpenSearch one request as Kibana's Dev Tools writes it (`GET /orders/_search` then its JSON body on the lines below; a search's hits come back as rows, `_cat/indices` too; `POST /_sql` and ES|QL `POST /_query` as their columns), or PromQL / LogQL / TraceQL on Prometheus, Loki, Tempo (over the window the user picked in the console, an hour unless changed; a 32-hex trace id reads that trace; `.targets` and `.alerts` on Prometheus) — on a saved connection and get its rows as a Markdown table. Reads only, unless the user allows agents to write in Settings — then they are asked each time.",
             [
                 "connection": ["type": "string", "description": "Its name, from db_connections (optional when there is one)."],
-                "sql": ["type": "string", "description": "One statement, or one Redis command."],
+                "sql": ["type": "string", "description": "One statement, one Redis command, or one Elasticsearch/OpenSearch request."],
                 "limit": ["type": "integer", "description": "Rows to return (default 100, at most 1000)."],
             ], required: ["sql"]),
         tool("storage_connections", "The user's saved S3 / GCS connections: name, kind, bucket.", [:]),
