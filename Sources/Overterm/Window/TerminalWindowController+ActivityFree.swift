@@ -1,15 +1,5 @@
 import AppKit
 
-/// What the Activity page opens in a new tab (6.10: Terminal in Its
-/// Folder, Sample, Open Files, the service's stop, the read route): a
-/// folder, and a command typed into its shell — run, or left for the person
-/// to run (Return theirs).
-struct ActivityTerminalRequest: Equatable, Sendable {
-    var directory: String
-    var command: String?
-    var run = true
-}
-
 /// Free :N on the Activity page (docs/design/activity/analysis.md, 6.8,
 /// Free :N): through the owner's own verb, asked first — every step asks,
 /// the owners' too, though Docker's Stop and Kubernetes' Stop Forward act

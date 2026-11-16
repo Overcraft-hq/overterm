@@ -26,6 +26,16 @@ struct ActivityDetailView: View {
                     if let path = row.path {
                         Text(verbatim: path).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).lineLimit(2).truncationMode(.middle)
                     }
+                    if let folder = detail.folderPath {
+                        Label {
+                            Text(verbatim: (folder as NSString).abbreviatingWithTildeInPath).lineLimit(2).truncationMode(.middle)
+                        } icon: {
+                            Image(systemName: "folder")
+                        }
+                        .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
+                        .help("Its working folder: Terminal in Its Folder (e), Reveal Its Folder (⌥r)")
+                        .accessibilityIdentifier("activity.detail.folder")
+                    }
                 }
                 block("Where and why") {
                     Text(verbatim: whereWords).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)

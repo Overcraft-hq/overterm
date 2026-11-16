@@ -31,6 +31,9 @@ struct ActivityDetail: Equatable, Sendable {
     var bounded = false
     var rates: ActivityRates?
     var interruptWakeups: UInt64?
+    /// Where it works: read only for the selection, at the focus level
+    /// (7.2) — the user's own process, a tick or two after it is selected.
+    var folder: ProcessFolders.Folder?
 
     static let ancestorLimit = 12
     static let childLimit = 50
@@ -59,8 +62,27 @@ struct ActivityDetail: Equatable, Sendable {
             detail.bounded = sockets.bound != nil
         }
         detail.rates = facts?.rates
+        detail.folder = facts?.folder
         detail.interruptWakeups = facts?.usage?.interruptWakeups
         return detail
+    }
+
+    /// Its working folder, when read.
+    var folderPath: String? {
+        if case .path(let path)? = folder { return path }
+        return nil
+    }
+
+    /// Why its folder can't be had: another user's, not read yet, or a
+    /// share that stopped answering. Nil when it can.
+    var folderUnavailable: String? {
+        guard row.isOwn else { return "Another user's: its folder isn't read" }
+        switch folder {
+        case .path?: return nil
+        case .notAnswering?: return "Its folder isn't answering (a share that stopped)"
+        case .unknown?: return "Its folder can't be read"
+        case nil: return "Its folder isn't read yet"
+        }
     }
 
     /// The header's line: user, state, started.

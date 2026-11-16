@@ -51,7 +51,8 @@ extension TerminalWindowController {
                 window.showInfo(for: tab)
             },
             sample: { [weak self] pid in self?.activitySample(pid) },
-            free: { [weak self] row in self?.activityFree(row) })
+            free: { [weak self] row in self?.activityFree(row) },
+            terminal: { [weak self] request in self?.activityTerminal(request) })
         activityPage.containers = { Self.activityContainers() }
         activityPage.contextFacts = { context in Self.activityContextFacts(&context) }
         let docker = ActivityDockerHold()
@@ -306,12 +307,12 @@ extension TerminalWindowController {
         window.openLink(url, for: tab)
     }
 
-    /// `s`: `sample <pid> 5` in a new tab (6.3) — it only reads; the tab
-    /// goes where `NewTabGroup.placement` puts it, the page put away.
+    /// `s`: `sample <pid> 5` in a new tab (6.3) — it only reads, its
+    /// report to the tab; the tab goes where `NewTabGroup.placement` puts
+    /// it, the page put away (`activityTerminal`).
     func activitySample(_ pid: pid_t) {
         guard pid > 0 else { return }
-        if store.showingOverlay != nil { hideOverlay(focus: false) }
-        newTab(in: URL(fileURLWithPath: NSHomeDirectory()), running: "sample \(pid) 5")
+        activityTerminal(ActivityTerminalRequest(directory: NSHomeDirectory(), command: ActivityPageModel.sampleCommand(pid)))
     }
 
     /// The window holding tab `id`.

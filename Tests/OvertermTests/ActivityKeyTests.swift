@@ -30,6 +30,7 @@ final class ActivityKeyTests: XCTestCase {
         process.codeSigning = ActivityCodeSigning(flags: ActivityCodeSigning.valid)
         process.usage = FakeActivityKernel.usage(cpuTime: cpu, footprint: UInt64(pid) << 20, threads: 2)
         process.arguments = FakeActivityKernel.arguments(executable: process.path ?? name, [name])
+        process.folder = "/tmp/acme-shop/\(name)"
         kernel.add(process)
         return ActivityProcessID(pid: pid, start: start)
     }
@@ -204,7 +205,10 @@ final class ActivityKeyTests: XCTestCase {
         let verbs = page.verbs(for: [server.id]) { box.copied.append($0) }
         XCTAssertEqual(
             verbs.map(\.title),
-            ["Go to Tab", "Open in Browser", "Open in Default Browser", "Reveal in Finder", "Tab Info", "Sample for 5 Seconds in a Tab", "Copy"])
+            [
+                "Go to Tab", "Open in Browser", "Open in Default Browser", "Reveal in Finder", "Reveal Its Folder in Finder", "Terminal in Its Folder",
+                "Tab Info", "Sample for 5 Seconds in a Tab", "Open Files in a Tab", "Copy PID", "Copy Command", "Copy",
+            ])
         XCTAssertEqual(verbs.filter { $0.place == .button }.map(\.title), ["Go to Tab", "Open in Browser", "Reveal in Finder", "Tab Info"])
         XCTAssertNotNil(verbs.first { $0.title == "Open in Browser" }?.unavailable, "it listens on nothing: greyed, with why")
         XCTAssertNil(verbs.first { $0.title == "Go to Tab" }?.unavailable)
@@ -220,6 +224,52 @@ final class ActivityKeyTests: XCTestCase {
         XCTAssertEqual(box.copied.last, ["acme-server\t1102"])
         XCTAssertEqual(page.verbs(for: [other.id]) { _ in }.first { $0.title == "Go to Tab" }?.unavailable, "It runs outside every tab")
         XCTAssertEqual(page.verbs(for: [server.id, other.id]) { _ in }.map(\.title), ["Copy 2 Rows"])
+    }
+
+    /// The verbs that don't signal (6.10): its folder read at the focus
+    /// level for the selection alone, then Terminal in Its Folder (`e`)
+    /// and ⌥r; Open Files and Sample typed into a tab, read only; Copy PID
+    /// and the masked command.
+    func testTheVerbsThatDontSignal() async throws {
+        let (page, monitor) = try await page()
+        defer { monitor.stop() }
+        final class Box {
+            var terminals: [ActivityTerminalRequest] = []
+            var revealed: [String] = []
+            var copied: [[String]] = []
+        }
+        let box = Box()
+        page.actions.terminal = { box.terminals.append($0) }
+        page.actions.reveal = { box.revealed.append($0) }
+        let server = try XCTUnwrap(page.content.processes.first { $0.name == "acme-server" })
+        page.selection = [server.id]
+        XCTAssertEqual(page.focused, [server.identity], "the selection read in depth")
+        XCTAssertTrue(monitor.demand.focus.contains(server.identity))
+        let read = await eventually { page.selectedFolder == "/tmp/acme-shop/acme-server" }
+        XCTAssertTrue(read, "its folder, a tick or two later")
+        XCTAssertTrue(page.press("e"))
+        XCTAssertEqual(box.terminals.last, ActivityTerminalRequest(directory: "/tmp/acme-shop/acme-server"))
+        XCTAssertTrue(page.pressOption("r"))
+        XCTAssertEqual(box.revealed.last, "/tmp/acme-shop/acme-server")
+        let verbs = page.verbs(for: [server.id]) { box.copied.append($0) }
+        verbs.first { $0.title == "Open Files in a Tab" }?.perform()
+        XCTAssertEqual(box.terminals.last?.command, "lsof -nP -p 1102")
+        XCTAssertEqual(ActivityPageModel.sampleCommand(1102), "sample 1102 5 -file /dev/stdout", "its report to the tab, none left in /tmp")
+        verbs.first { $0.title == "Copy PID" }?.perform()
+        XCTAssertEqual(box.copied.last, ["1102"])
+        verbs.first { $0.title == "Copy Command" }?.perform()
+        XCTAssertEqual(box.copied.last, [server.command ?? "-"], "the command as it was masked")
+        // Another user's: no folder, no lsof.
+        let login = try XCTUnwrap(page.content.processes.first { $0.name == "login" })
+        page.selection = [login.id]
+        XCTAssertEqual(page.focused, [], "another user's isn't read in depth")
+        let theirs = page.verbs(for: [login.id]) { _ in }
+        XCTAssertNotNil(theirs.first { $0.title == "Terminal in Its Folder" }?.unavailable)
+        XCTAssertNotNil(theirs.first { $0.title == "Open Files in a Tab" }?.unavailable)
+        XCTAssertFalse(page.press("e"))
+        page.selection = []
+        XCTAssertEqual(page.focused, [])
+        XCTAssertFalse(monitor.demand.focus.contains(server.identity), "the focus given back")
     }
 
     // MARK: ← →

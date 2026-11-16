@@ -5,13 +5,14 @@ import Foundation
 /// `d` and `D` are. ← and → aren't here: `ResourceTable` folds and unfolds
 /// with them itself. The verbs' keys (`k`, `K`, `x`, `p`, `b`, `n`, `f`,
 /// `a`) come with the verbs (stage 2) — `f` frees a port through its
-/// owner's own verb now (`ActivityPortHolder`); Terminal in Its Folder (`e`) and
-/// Open Files (`l`) with the folder and descriptor reads they need. ⌥o is
+/// owner's own verb now (`ActivityPortHolder`); Open Files (`l`), the
+/// detail's Files tab, with stage 4's. `e` opens a terminal in the
+/// selection's folder, read at the focus level. ⌥o and ⌥r are
 /// `ActivityPageModel.pressOption`'s. Pure.
 enum ActivityKey: String, ResourceKey {
     case processes, listening
     case goTo, detail, filter, help
-    case open, reveal, tabInfo, sample
+    case open, reveal, tabInfo, sample, terminal
     case tree, group, narrower, wider
     case follow, pause, mine, connections, free
     case sortCPU, sortMemory, sortTime, sortPID, invert
@@ -36,6 +37,7 @@ enum ActivityKey: String, ResourceKey {
         case .reveal: "r"
         case .tabInfo: "i"
         case .sample: "s"
+        case .terminal: "e"
         case .tree: "t"
         case .group: "G"
         case .narrower: "["
@@ -62,9 +64,10 @@ enum ActivityKey: String, ResourceKey {
         case .filter: "Filter — name:node|bun cpu:>50 mem:>1g age:<5m port:3000 is:agent -user:root"
         case .help: "These keys"
         case .open: "Open its port in its tab's browser column — ⌥o the default browser"
-        case .reveal: "Reveal its executable in Finder"
+        case .reveal: "Reveal its executable in Finder — ⌥r its folder"
         case .tabInfo: "Tab Info for its tab"
         case .sample: "Sample it in a new tab: sample <pid> 5"
+        case .terminal: "A terminal in its folder, a new tab"
         case .tree: "Tree or flat"
         case .group: "Group by checkout, tab, agent, app, user or none"
         case .narrower: "Narrower: all tabs, the checkout, the tab"

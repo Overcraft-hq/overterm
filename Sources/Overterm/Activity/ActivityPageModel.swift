@@ -2,6 +2,16 @@ import AppKit
 import Combine
 import Foundation
 
+/// What the Activity page opens in a new tab (6.10: Terminal in Its
+/// Folder, Sample, Open Files, the service's stop, the read route): a
+/// folder, and a command typed into its shell — run, or left for the person
+/// to run (Return theirs).
+struct ActivityTerminalRequest: Equatable, Sendable {
+    var directory: String
+    var command: String?
+    var run = true
+}
+
 /// What the page asks of the window (6.3): the verbs that don't signal.
 struct ActivityPageActions {
     /// Its tab brought forward in whichever window holds it, and the pane
@@ -20,6 +30,9 @@ struct ActivityPageActions {
     /// Free :N (`f`) through the row's owner's own verb, asked first
     /// (`ActivityPortHolder`).
     var free: @MainActor (ActivityPortRow) -> Void = { _ in }
+    /// A new tab: Terminal in Its Folder (`e`), Open Files in a Tab — it
+    /// only reads.
+    var terminal: @MainActor (ActivityTerminalRequest) -> Void = { _ in }
 }
 
 /// The Activity page (⌥⌘A; docs/design/activity/analysis.md, 6.4): its
@@ -179,6 +192,9 @@ final class ActivityPageModel: ObservableObject {
     private var revealed: String?
     /// What it holds of Docker's now.
     private(set) var wantsContainers = ActivityContainerWant.none
+    /// The selection read in depth (7.3's focus level): its folder for
+    /// `e` and ⌥r — the user's own process, one at a time.
+    private(set) var focused: Set<ActivityProcessID> = []
 
     init(monitor: ActivityMonitor = .shared) {
         self.monitor = monitor
@@ -343,7 +359,7 @@ final class ActivityPageModel: ObservableObject {
         let shown = isShown
         if shown, !paused {
             interval = monitor.interval
-            monitor.want(self, .full)
+            monitor.want(self, .full, .focus(focused))
             if !wanting { subscribe() }
             wanting = true
         } else if wanting {
@@ -447,6 +463,7 @@ final class ActivityPageModel: ObservableObject {
     private func updateDetail() {
         guard let snapshot = latest, let id = selection.first, selection.count == 1 else {
             if detail != nil { detail = nil }
+            updateFocus()
             return
         }
         var row = content.processes.first { $0.id == id }
@@ -455,6 +472,16 @@ final class ActivityPageModel: ObservableObject {
         }
         let made = row.map { ActivityDetail.make($0, in: snapshot, rows: content.identities, ports: content.listeners) }
         if made != detail { detail = made }
+        updateFocus()
+    }
+
+    /// The selection, the user's own, read at the focus level while the
+    /// page wants: its folder comes a tick or two later — never waited for.
+    private func updateFocus() {
+        let wanted: Set<ActivityProcessID> = detail.flatMap { $0.row.isOwn ? [$0.row.identity] : nil } ?? []
+        guard wanted != focused else { return }
+        focused = wanted
+        if wanting { monitor.want(self, .full, .focus(focused)) }
     }
 
     private nonisolated static func make(_ snapshot: ActivitySnapshot, _ options: ActivityRows.Options) async -> ActivityPageContent {
@@ -520,6 +547,9 @@ final class ActivityPageModel: ObservableObject {
         case .reveal:
             guard let path = selectedProcess?.path else { return false }
             actions.reveal(path)
+        case .terminal:
+            guard let folder = selectedFolder else { return false }
+            actions.terminal(ActivityTerminalRequest(directory: folder))
         case .tabInfo:
             guard let tab = selectedProcess?.tab else { return false }
             actions.tabInfo(tab)
@@ -551,6 +581,9 @@ final class ActivityPageModel: ObservableObject {
 
     /// The selected process — a listener's holder in Listening.
     var selectedProcess: ActivityProcessRow? { selection.count == 1 ? detail?.row : nil }
+
+    /// The selected process's working folder, once the focus level read it.
+    var selectedFolder: String? { selectedProcess == nil ? nil : detail?.folderPath }
 
     /// ↩: a process to its tab and pane; a listener to its process's row;
     /// one outside every tab to its detail.
@@ -591,8 +624,15 @@ final class ActivityPageModel: ObservableObject {
     /// default browser (6.3). `characters` ignore the modifier.
     @discardableResult
     func pressOption(_ characters: String) -> Bool {
-        guard !cheatSheet, characters == "o" else { return false }
-        return openSelection(defaultBrowser: true)
+        guard !cheatSheet else { return false }
+        switch characters {
+        case "o": return openSelection(defaultBrowser: true)
+        case "r":
+            guard let folder = selectedFolder else { return false }
+            actions.reveal(folder)
+            return true
+        default: return false
+        }
     }
 
     /// ⌘C: the selected rows, a line each — names, pids, ports only.
@@ -675,6 +715,18 @@ final class ActivityPageModel: ObservableObject {
                 title: "Reveal in Finder", label: "Reveal", symbol: "folder", place: .button, key: "r",
                 unavailable: row.path == nil ? (row.isOwn ? "Its executable isn't read yet" : "Another user's: not readable") : nil,
                 perform: { [weak self] in if let path = row.path { self?.actions.reveal(path) } }))
+        // Its folder, read at the focus level for the selection alone.
+        let shown = detail?.row.identity == row.identity ? detail : nil
+        let folder = shown?.folderPath
+        let noFolder = shown?.folderUnavailable ?? (row.isOwn ? "Select it alone: its folder is read for the selection" : "Another user's: its folder isn't read")
+        verbs.append(
+            ResourceVerb(
+                title: "Reveal Its Folder in Finder", symbol: "folder.badge.gearshape", key: "⌥r", unavailable: folder == nil ? noFolder : nil,
+                perform: { [weak self] in if let folder { self?.actions.reveal(folder) } }))
+        verbs.append(
+            ResourceVerb(
+                title: "Terminal in Its Folder", symbol: "terminal", key: "e", unavailable: folder == nil ? noFolder : nil,
+                perform: { [weak self] in if let folder { self?.actions.terminal(ActivityTerminalRequest(directory: folder)) } }))
         verbs.append(
             ResourceVerb(
                 title: "Tab Info", symbol: "info.circle", place: .button, key: "i", unavailable: row.tab == nil ? "It runs outside every tab" : nil,
@@ -684,8 +736,29 @@ final class ActivityPageModel: ObservableObject {
                 title: "Sample for 5 Seconds in a Tab", label: "Sample", symbol: "waveform.path.ecg", key: "s",
                 unavailable: row.isOwn ? nil : "Another user's: sample can't read it",
                 perform: { [weak self] in self?.actions.sample(row.identity.pid) }))
+        verbs.append(
+            ResourceVerb(
+                title: "Open Files in a Tab", symbol: "doc.text.magnifyingglass", unavailable: row.isOwn ? nil : "Another user's: lsof can't read it",
+                perform: { [weak self] in
+                    self?.actions.terminal(ActivityTerminalRequest(directory: NSHomeDirectory(), command: Self.openFilesCommand(row.identity.pid)))
+                }))
+        verbs.append(ResourceVerb(title: "Copy PID", symbol: "number", group: 1, perform: { copy([String(row.identity.pid)]) }))
+        verbs.append(
+            ResourceVerb(
+                title: "Copy Command", symbol: "text.quote", unavailable: row.command == nil ? "Its command isn't read" : nil, group: 1,
+                // Masked as it was read (9.3): a password on a command
+                // line never reaches the pasteboard.
+                perform: { if let command = row.command { copy([command]) } }))
         return verbs + [copyVerb]
     }
+
+    /// Open Files in a Tab's line (6.10): `lsof` of the one process, read
+    /// only. Pure.
+    nonisolated static func openFilesCommand(_ pid: pid_t) -> String { "lsof -nP -p \(pid)" }
+
+    /// Sample in a Tab's (6.10): its report to the tab, never left in /tmp
+    /// as `sample` does without `-file`. Pure.
+    nonisolated static func sampleCommand(_ pid: pid_t) -> String { "sample \(pid) 5 -file /dev/stdout" }
 
     /// `url` as https, when it is http. Pure.
     nonisolated static func https(_ url: URL?) -> URL? {
