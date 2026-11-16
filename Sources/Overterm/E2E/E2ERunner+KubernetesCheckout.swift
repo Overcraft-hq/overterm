@@ -36,6 +36,13 @@ extension E2ERunner {
         var crashing = FakeKubeAPI.Pod(status: "CrashLoopBackOff", phase: "Running", ready: 0, containers: 1, restarts: 3, lastRestart: "20s")
         crashing.image = "ghcr.io/acme/shop-api:\(short)"
         fake.addPod("shop-api-1", namespace: "shop", crashing, labels: part)
+        // The pulse's: a warning there, a normal event beside it, a warning elsewhere.
+        func ours() -> KubeClusterOverview.Warning? {
+            panel.pulse.warnings.first { $0.reason == "BackOff" && $0.message == "Back-off restarting failed container" }
+        }
+        fake.addEvent(about: "pods", "shop-api-1", namespace: "shop", type: "Warning", reason: "BackOff", message: "Back-off restarting failed container", count: 7)
+        fake.addEvent(about: "pods", "shop-api-1", namespace: "shop", reason: "Pulled", message: "Container image pulled")
+        fake.addEvent(about: "pods", "other-1", namespace: "other", type: "Warning", reason: "FailedMount", message: "not here")
 
         // An agent tab in the checkout, its agent not started, and a shell tab there selected.
         let previous = app.store.selected
@@ -60,7 +67,19 @@ extension E2ERunner {
             "unbound, it guesses from the checkout's files",
             await eventually(10) { panel.guess?.namespace == "shop" && panel.guess?.selector == "app.kubernetes.io/part-of=ot-shop" },
             "\(String(describing: panel.guess))")
-        check("and the guess asked no cluster", fake.requests.isEmpty, "\(fake.requests)")
+        // The guess asks no cluster; the pulse reads its warnings and nodes — nothing else.
+        check(
+            "and the guess asked no cluster — only the pulse reads the namespace's warnings",
+            fake.requests.allSatisfy { $0.path.hasSuffix("/namespaces/shop/events") }, "\(fake.requests.map(\.path))")
+        check(
+            "unbound, the rail shows the warnings of the page's context in the namespace the files name",
+            await eventually(10) { ours() != nil && panel.pulse.scope?.hasSuffix("· shop") == true },
+            "\(panel.pulse.warnings.map(\.reason)) \(panel.pulse.scope ?? "-") \(panel.pulse.problem ?? "")")
+        check("a warning's count said", ours()?.count == 7)
+        check(
+            "only Warnings, only the namespace's", !panel.pulse.warnings.contains { $0.reason == "Pulled" || $0.reason == "FailedMount" },
+            "\(panel.pulse.warnings.map(\.reason))")
+        check("drawn", await shownText(15) { $0.contains("WARNINGS") } != nil)
         check("it says what it found, and offers to bind", await shownText(15) { $0.contains("Bind to a") } != nil)
 
         panel.beginEdit()
@@ -79,6 +98,10 @@ extension E2ERunner {
             await eventually(15) { panel.state == .live && panel.workloads.map(\.id) == ["deploy/shop-api"] && panel.pods.map(\.id.name) == ["shop-api-1"] },
             "\(panel.state) \(panel.workloads.map(\.id)) \(panel.pods.map(\.id.name))")
         check("its health said", panel.workloads.first?.failing == true && panel.pods.first?.summary.status == "CrashLoopBackOff")
+        check(
+            "bound, the pulse is the binding's namespace", await eventually(10) { panel.pulse.scope == "fake-dev · shop" && ours() != nil },
+            "\(panel.pulse.scope ?? "-") \(panel.pulse.warnings.map(\.reason))")
+        check("an image's tag when no commit is known", KubernetesPanelView.tag("ghcr.io/acme/shop-api:v1.4.2") == ":v1.4.2" && KubernetesPanelView.tag("api") == nil)
         check(
             "asked of the server by the binding's selector, in its namespace",
             fake.requests.contains {

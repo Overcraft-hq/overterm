@@ -378,7 +378,9 @@ extension E2ERunner {
         _ = await eventually(5) { fake.openWatches == 0 }
         fake.forgetRequests()
         await pause(1)
-        check("unbound, the rail asks nothing", fake.requests.isEmpty, "\(fake.requests.map(\.path))")
+        check(
+            "unbound, the rail asks only for the namespace's warnings", fake.requests.allSatisfy { $0.path.hasSuffix("/namespaces/shop/events") },
+            "\(fake.requests.map(\.path))")
         check("and shows no GitOps part", !gitOps.shows)
         panel.bind(KubeBinding(checkout: real, context: "kind-fake", namespace: "shop", selector: "app.kubernetes.io/part-of=ot-shop"))
         _ = await eventually(20) { match("Kustomization", "acme-apps") != nil }

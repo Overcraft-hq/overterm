@@ -247,7 +247,8 @@ final class KubePanelGitOpsTests: XCTestCase {
         panel.checkout = repo
         panel.panelVisible = true
         try await Task.sleep(for: .milliseconds(400))
-        XCTAssertTrue(api.requests.isEmpty, "\(api.requests)")
+        // Unbound, the rail reads one thing: the namespace's warnings (KubePanelPulse).
+        XCTAssertTrue(api.requests.allSatisfy { $0.method == "GET" && $0.path.hasSuffix("/namespaces/shop/events") }, "\(api.requests)")
         XCTAssertFalse(panel.gitOps.shows)
         panel.panelVisible = false
     }

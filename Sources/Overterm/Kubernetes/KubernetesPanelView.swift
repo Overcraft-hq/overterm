@@ -44,7 +44,7 @@ struct KubernetesPanelView: View {
 
     // MARK: Unbound
 
-    private var unbound: some View {
+    @ViewBuilder private var unbound: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("This checkout isn't bound to a cluster.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
             if panel.guessing {
@@ -75,6 +75,14 @@ struct KubernetesPanelView: View {
         }
         .padding(.horizontal, 12)
         .padding(.top, 8)
+        // What the rail had room for: the forwards running, and the pulse
+        // of the page's context in the namespace the files name.
+        let running = panel.forwards(forwards.forwards)
+        if !running.isEmpty {
+            section("Forwards")
+            ForEach(running) { forward in forwardRow(forward) }
+        }
+        KubePulseSection(pulse: panel.pulse, theme: theme, openPage: openPage)
     }
 
     private func fact(_ label: String, _ value: String) -> some View {
@@ -129,6 +137,7 @@ struct KubernetesPanelView: View {
                         section("Forwards")
                         ForEach(here) { forward in forwardRow(forward) }
                     }
+                    KubePulseSection(pulse: panel.pulse, theme: theme, openPage: openPage)
                 }
             }
             .padding(.bottom, 8)
@@ -213,6 +222,9 @@ struct KubernetesPanelView: View {
                     Text(verbatim: workload.health).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(workload.failing ? TabStatusStyle.failed : theme.text3)
                     if let found = panel.deployed[workload.id]?.found {
                         Text(verbatim: found.short).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text3)
+                    } else if let tag = Self.tag(workload.images.first) {
+                        // What runs, when no commit is known: its image's tag.
+                        Text(verbatim: tag).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text3)
                     }
                 }
                 .lineLimit(1)
@@ -222,6 +234,15 @@ struct KubernetesPanelView: View {
         .frame(height: 30)
         .padding(.horizontal, 12)
         .help(workload.images.joined(separator: "\n"))
+    }
+
+    /// `ghcr.io/acme/api:v1.4.2` → `:v1.4.2`; a digest → its first 12.
+    static func tag(_ image: String?) -> String? {
+        guard let image else { return nil }
+        if let at = image.firstIndex(of: "@") { return "@" + image[image.index(after: at)...].replacingOccurrences(of: "sha256:", with: "").prefix(12) }
+        let name = image.split(separator: "/").last.map(String.init) ?? image
+        guard let colon = name.lastIndex(of: ":") else { return nil }
+        return String(name[colon...])
     }
 
     private func podRow(_ pod: KubernetesPanelModel.Pod) -> some View {
@@ -422,5 +443,72 @@ private struct KubeSlotPodView: View {
                 .padding(12)
             }
         }
+    }
+}
+
+/// The rail's pulse: the nodes' readiness on one line, then the last hour's
+/// Warning events, newest first — a reason, what it is about, how often.
+struct KubePulseSection: View {
+    @ObservedObject var pulse: KubePanelPulse
+    @ObservedObject var theme: ChromeTheme
+    let openPage: () -> Void
+
+    var body: some View {
+        if pulse.scope != nil {
+            VStack(alignment: .leading, spacing: 0) {
+                HStack(spacing: 6) {
+                    Text("WARNINGS").font(.system(size: ChromeMetrics.text(10), weight: .semibold)).foregroundStyle(theme.text3)
+                    if !pulse.warnings.isEmpty {
+                        Text(verbatim: "\(pulse.warnings.count)").font(.system(size: ChromeMetrics.text(10), weight: .semibold))
+                            .foregroundStyle(theme.orangeText)
+                    }
+                    Spacer(minLength: 4)
+                }
+                .padding(.horizontal, 12).padding(.top, 14).padding(.bottom, 2)
+                if let scope = pulse.scope {
+                    Text(verbatim: scope + " · last hour").font(.system(size: ChromeMetrics.text(10), design: .monospaced)).foregroundStyle(theme.text3)
+                        .lineLimit(1).truncationMode(.middle).padding(.horizontal, 12).padding(.bottom, 4)
+                }
+                if let problem = pulse.problem {
+                    Text(verbatim: problem).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).lineLimit(3)
+                        .fixedSize(horizontal: false, vertical: true).padding(.horizontal, 12)
+                } else if pulse.warnings.isEmpty {
+                    Text("None — quiet.").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).padding(.horizontal, 12)
+                }
+                ForEach(pulse.warnings.prefix(KubePanelPulse.shown)) { warning in row(warning) }
+                if pulse.warnings.count > KubePanelPulse.shown {
+                    Button(action: openPage) {
+                        Text(verbatim: "and \(pulse.warnings.count - KubePanelPulse.shown) more on the page…").font(.system(size: ChromeMetrics.text(11.5)))
+                    }
+                    .buttonStyle(.plain).foregroundStyle(theme.accentText).padding(.horizontal, 12).padding(.vertical, 2)
+                }
+            }
+            .accessibilityIdentifier("kubernetes.panel.warnings")
+        }
+    }
+
+    private func row(_ warning: KubeClusterOverview.Warning) -> some View {
+        Button(action: openPage) {
+            VStack(alignment: .leading, spacing: 1) {
+                HStack(spacing: 6) {
+                    Text(verbatim: warning.reason).font(.system(size: ChromeMetrics.text(11.5), weight: .medium)).foregroundStyle(theme.orangeText)
+                        .lineLimit(1)
+                    if let count = warning.count, count > 1 {
+                        Text(verbatim: "×\(count)").font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3)
+                    }
+                    Spacer(minLength: 4)
+                    if let age = warning.age {
+                        Text(verbatim: KubeAge.format(age)).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3)
+                    }
+                }
+                Text(verbatim: warning.object).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text2)
+                    .lineLimit(1).truncationMode(.middle)
+                Text(verbatim: warning.message).font(.system(size: ChromeMetrics.text(10.5))).foregroundStyle(theme.text3).lineLimit(2)
+            }
+            .padding(.horizontal, 12).padding(.vertical, 4)
+            .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(warning.message)
     }
 }
