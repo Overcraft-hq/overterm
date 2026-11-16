@@ -65,6 +65,9 @@ struct ActivityPageActions {
     var act: @MainActor (ActivityVerb, ActivityProcessID) -> Void = { _, _ in }
     /// Send a Signal (`x`): which one, asked first.
     var chooseSignal: @MainActor (ActivityProcessID) -> Void = { _ in }
+    /// `k`: what its class asks (`ActivityPageModel.stopVerb`), decided on
+    /// the process read again as its sheet opens.
+    var stop: @MainActor (ActivityProcessID) -> Void = { _ in }
 }
 
 /// The Activity page (⌥⌘A; docs/design/activity/analysis.md, 6.4): its
@@ -142,6 +145,10 @@ final class ActivityPageModel: ObservableObject {
     }
     /// The selected process's detail (6.4).
     @Published private(set) var detail: ActivityDetail?
+    /// The selected process as its verbs see it (6.10), read off the main
+    /// thread with every owner — with the rows, or for a selection made
+    /// between two publishes; nil while it is read.
+    @Published private(set) var verbSubject: ActivityVerbSubject?
     /// What a Free or a Stop from the page said last (6.8, After the step;
     /// 6.10 step 10): ":3000 freeing…", then free or still held; "Stopping
     /// “x”…", then stopped, still running or came back as pid N.
@@ -232,6 +239,10 @@ final class ActivityPageModel: ObservableObject {
     private(set) var builds = 0
     private(set) var latest: ActivitySnapshot?
     private var generation = 0
+    /// The last rows' options: a selection's subject between two publishes
+    /// is read with them; and the read on its way, a later one winning.
+    private var lastOptions: ActivityRows.Options?
+    private var subjectGeneration = 0
     private var snapshots: AnyCancellable?
     /// The tabs' facts the last rows were made with.
     private var lastTabs: [UUID: ActivityTabFacts] = [:]
@@ -437,6 +448,8 @@ final class ActivityPageModel: ObservableObject {
         content = ActivityPageContent()
         hasRead = false
         detail = nil
+        subjectGeneration += 1
+        verbSubject = nil
         if !visible {
             pendingPort = nil
             linkSaid = nil
@@ -489,6 +502,12 @@ final class ActivityPageModel: ObservableObject {
         options.reveal = revealed
         options.containers = wantsContainers == .none ? [] : containers()
         options.connections = connections
+        if let selected = selectedProcess?.identity {
+            options.subjectOf = selected
+            options.known = known()
+            options.known.runningApps = options.runningApps
+        }
+        lastOptions = options
         Task { [weak self] in
             let content = await Self.make(snapshot, options)
             guard let self, self.generation == generation else { return }
@@ -543,6 +562,7 @@ final class ActivityPageModel: ObservableObject {
         guard let snapshot = latest, let id = selection.first, selection.count == 1 else {
             if detail != nil { detail = nil }
             updateFocus()
+            updateSubject()
             return
         }
         var row = content.processes.first { $0.id == id }
@@ -552,6 +572,47 @@ final class ActivityPageModel: ObservableObject {
         let made = row.map { ActivityDetail.make($0, in: snapshot, rows: content.identities, ports: content.listeners) }
         if made != detail { detail = made }
         updateFocus()
+        updateSubject()
+    }
+
+    /// The selection's subject (6.10): the rows' when they read it, else
+    /// read off the main thread from the latest snapshot — what the list's
+    /// verbs say, never classed from the rows a scope or filter left.
+    private func updateSubject() {
+        guard let identity = selectedProcess?.identity, let snapshot = latest else {
+            subjectGeneration += 1
+            if verbSubject != nil { verbSubject = nil }
+            return
+        }
+        if let made = content.subject, made.signal.identity == identity {
+            subjectGeneration += 1
+            verbSubject = made
+            return
+        }
+        // Read already for this selection: kept until the next rows'.
+        if verbSubject?.signal.identity == identity { return }
+        if verbSubject != nil { verbSubject = nil }
+        subjectGeneration += 1
+        let generation = subjectGeneration
+        var options = lastOptions ?? ActivityRows.Options()
+        options.known = known()
+        options.known.runningApps = options.runningApps
+        let attribution = content.attribution
+        Task { [weak self] in
+            let made = await Self.readSubject(identity, snapshot, options, attribution: attribution)
+            guard let self, self.subjectGeneration == generation else { return }
+            self.verbSubject = made
+        }
+    }
+
+    private nonisolated static func readSubject(
+        _ identity: ActivityProcessID, _ snapshot: ActivitySnapshot, _ options: ActivityRows.Options, attribution: ActivityAttribution?
+    ) async -> ActivityVerbSubject? {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async {
+                continuation.resume(returning: ActivityRows.subject(identity, of: snapshot, options, attribution: attribution))
+            }
+        }
     }
 
     /// The selection, the user's own, read at the focus level while the

@@ -141,6 +141,13 @@ struct ActivityPageContent: Sendable {
     /// tree stops (9.9 — a test run's own tabs' processes alone).
     var identities: Set<ActivityProcessID> = []
     var summary = ActivitySummary()
+    /// The selection's process as a verb sees it (6.10): read here, off the
+    /// main thread, with every owner of the snapshot — not only the rows
+    /// a scope or a filter left —, so the list and the sheet class it alike.
+    var subject: ActivityVerbSubject?
+    /// The snapshot's owners when they were read: a selection made between
+    /// two publishes is read with them (`ActivityRows.subject`).
+    var attribution: ActivityAttribution?
 }
 
 enum ActivityRows {
@@ -177,6 +184,10 @@ enum ActivityRows {
         var isolated = false
         var processSort: ResourceSort? = ResourceSort(column: "cpu", ascending: false)
         var portSort: ResourceSort? = ResourceSort(column: "port")
+        /// The process the page lists verbs for — the selection's —, and
+        /// what the main actor knows of stopped and backgrounded ones.
+        var subjectOf: ActivityProcessID?
+        var known = ActivityVerbSubject.Known()
         /// What each section's filter field says (6.6).
         var processFilter = ""
         var portFilter = ""
@@ -187,22 +198,42 @@ enum ActivityRows {
         var ephemeralFirst = 49_152
     }
 
-    static func content(of snapshot: ActivitySnapshot, _ options: Options) -> ActivityPageContent {
-        // A tab's title is often the command running in it: masked as every
-        // command is, wherever it leaves the strip (9.3).
+    /// The tabs' facts as the rows read them: a title made into facts, each
+    /// title masked — a tab's title is often the command running in it,
+    /// masked as every command is wherever it leaves the strip (9.3).
+    private static func tabFacts(_ options: Options) -> [UUID: ActivityTabFacts] {
         var tabFacts = options.tabs
         for (id, title) in options.titles where tabFacts[id] == nil { tabFacts[id] = ActivityTabFacts(id: id, title: title) }
         for (id, tab) in tabFacts { tabFacts[id]?.title = ActivityText.title(tab.title) }
+        return tabFacts
+    }
+
+    /// Every owner of `snapshot` (6.5), with the main actor's facts.
+    private static func owners(of snapshot: ActivitySnapshot, _ options: Options, tabs tabFacts: [UUID: ActivityTabFacts]) -> ActivityAttribution {
+        ActivityAttribution.of(
+            snapshot, context: options.context,
+            inputs: ActivityAttribution.Inputs(
+                tabs: tabFacts, checkouts: options.checkouts + tabFacts.values.compactMap(\.checkout), runningApps: options.runningApps))
+    }
+
+    /// `identity` as a verb sees it (6.10) in `snapshot`, with every owner:
+    /// `attribution` when the rows read it, else read here. Off the main
+    /// thread — the page's selection between two publishes.
+    static func subject(_ identity: ActivityProcessID, of snapshot: ActivitySnapshot, _ options: Options, attribution: ActivityAttribution?)
+        -> ActivityVerbSubject?
+    {
+        let owners = attribution ?? owners(of: snapshot, options, tabs: tabFacts(options))
+        return ActivityVerbSubject.read(identity, in: snapshot, owners: owners, known: options.known)
+    }
+
+    static func content(of snapshot: ActivitySnapshot, _ options: Options) -> ActivityPageContent {
+        let tabFacts = tabFacts(options)
         let titles = tabFacts.mapValues(\.title)
         // The owners only where something reads them: the switcher's flat
-        // rows over the whole Mac are ranked by CPU and port alone.
+        // rows over the whole Mac are ranked by CPU and port alone — unless
+        // a selection's verbs are listed.
         let attribution =
-            options.grouping == nil && options.scope == .mac
-            ? nil
-            : ActivityAttribution.of(
-                snapshot, context: options.context,
-                inputs: ActivityAttribution.Inputs(
-                    tabs: tabFacts, checkouts: options.checkouts + tabFacts.values.compactMap(\.checkout), runningApps: options.runningApps))
+            options.grouping == nil && options.scope == .mac && options.subjectOf == nil ? nil : owners(of: snapshot, options, tabs: tabFacts)
         let today = Calendar.current.startOfDay(for: snapshot.date)
         // Where each process runs: the first pane that places it.
         var tabs: [ActivityProcessID: UUID] = [:]
@@ -274,6 +305,10 @@ enum ActivityRows {
             rows = kept
         }
         var content = ActivityPageContent()
+        content.attribution = attribution
+        if let identity = options.subjectOf, let attribution {
+            content.subject = ActivityVerbSubject.read(identity, in: snapshot, owners: attribution, known: options.known)
+        }
         content.processes = sorted(rows, by: options.processSort)
         if let grouping = options.grouping {
             // A checkout's containers are its scope's and wider's (6.5): a

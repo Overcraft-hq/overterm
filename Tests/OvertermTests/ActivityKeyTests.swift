@@ -199,15 +199,20 @@ final class ActivityKeyTests: XCTestCase {
             var copied: [[String]] = []
             var acted: [(ActivityVerb, ActivityProcessID)] = []
             var chosen: [ActivityProcessID] = []
+            var stopped: [ActivityProcessID] = []
         }
         let box = Box()
         page.actions.act = { verb, identity in box.acted.append((verb, identity)) }
         page.actions.chooseSignal = { box.chosen.append($0) }
+        page.actions.stop = { box.stopped.append($0) }
         page.actions.goTo = { tab, pane in box.goTo.append((tab, pane)) }
         page.actions.sample = { box.sampled.append($0) }
         let server = try XCTUnwrap(page.content.processes.first { $0.name == "acme-server" })
         let other = try XCTUnwrap(page.content.processes.first { $0.name == "globex-tool" })
         page.selection = [server.id]
+        // Its verbs once its process is read off the main thread.
+        let read = await eventually { page.verbSubject?.signal.identity == server.identity }
+        XCTAssertTrue(read)
         let verbs = page.verbs(for: [server.id]) { box.copied.append($0) }
         XCTAssertEqual(
             verbs.map(\.title),
@@ -227,12 +232,11 @@ final class ActivityKeyTests: XCTestCase {
         XCTAssertTrue(page.press("s"))
         XCTAssertEqual(box.sampled, [1102])
         XCTAssertFalse(page.pressOption("o"), "nothing to open")
-        // k, K, x: the verb its class asks, Force Quit, Send a Signal —
-        // each handed to the window, which reads it again and asks.
-        let subject = try XCTUnwrap(page.subject(for: server))
+        // k, K, x: the verb its class asks — decided by the window on its
+        // read again —, Force Quit, Send a Signal — each handed to the
+        // window, which reads it again and asks.
         XCTAssertTrue(page.press("k"))
-        XCTAssertEqual(box.acted.last?.0, ActivityPageModel.stopVerb(for: subject.target))
-        XCTAssertEqual(box.acted.last?.1, server.identity)
+        XCTAssertEqual(box.stopped, [server.identity])
         XCTAssertTrue(page.press("K"))
         XCTAssertEqual(box.acted.last?.0, .forceQuit)
         XCTAssertTrue(page.press("x"))
@@ -243,6 +247,34 @@ final class ActivityKeyTests: XCTestCase {
         XCTAssertEqual(box.copied.last, ["acme-server\t1102"])
         XCTAssertEqual(page.verbs(for: [other.id]) { _ in }.first { $0.title == "Go to Tab" }?.unavailable, "It runs outside every tab")
         XCTAssertEqual(page.verbs(for: [server.id, other.id]) { _ in }.map(\.title), ["Copy 2 Rows"])
+    }
+
+    /// The selection's verbs read its process with every owner of the
+    /// snapshot, off the main thread — not only the rows a filter left: its
+    /// parent, the pane's shell filtered away, is still the pane's shell,
+    /// never a supervisor elsewhere; before it is read, they say so.
+    func testTheVerbsReadEveryOwnerWhateverTheRowsLeave() async throws {
+        let (page, monitor) = try await page()
+        defer { monitor.stop() }
+        page.grouping = .none
+        page.tree = false
+        page.setFilter("acme-server")
+        let filtered = await eventually { page.content.processes.map(\.name) == ["acme-server"] }
+        XCTAssertTrue(filtered, "the shell is no row")
+        let server = try XCTUnwrap(page.content.processes.first)
+        XCTAssertTrue(page.signalVerbs(for: server).filter(\.children.isEmpty).allSatisfy { $0.unavailable == ActivityPageModel.reading }, "not read yet: greyed, said")
+        page.selection = [server.id]
+        let read = await eventually { page.verbSubject?.signal.identity == server.identity }
+        XCTAssertTrue(read)
+        let subject = try XCTUnwrap(page.subject(for: server))
+        XCTAssertEqual(subject.target.kind, .paneJob)
+        XCTAssertEqual(subject.parentTarget?.kind, .paneSession, "its parent the pane's shell, filtered out of the rows")
+        XCTAssertNil(subject.supervisor, "so nobody is named as what may start it again")
+        XCTAssertEqual(
+            ActivitySignalCheck.rule(.stopParent, for: subject.target, parent: subject.parentTarget, user: 501), .route(.closePane, confirm: true),
+            "Stop Its Parent is the pane's close, never a plain Stop")
+        page.selection = []
+        XCTAssertNil(page.verbSubject)
     }
 
     /// The verbs that don't signal (6.10): its folder read at the focus

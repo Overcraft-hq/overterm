@@ -7,13 +7,11 @@ import Foundation
 /// where it can't be done. What the list says is decided on the latest
 /// snapshot; the sheet reads the process again, and the button again.
 extension ActivityPageModel {
-    /// `row`'s process as a verb sees it, in the latest snapshot: its
-    /// owners the rows' own. Nil once it is gone from the table.
+    /// `row`'s process as a verb sees it: the selection's, read off the
+    /// main thread with every owner of the snapshot (`verbSubject`). Nil
+    /// while it is read, or once it is gone from the table.
     func subject(for row: ActivityProcessRow) -> ActivityVerbSubject? {
-        guard let latest else { return nil }
-        var owners: [ActivityProcessID: ActivityOwner] = [:]
-        for each in content.processes { if let owner = each.owner { owners[each.identity] = owner } }
-        return ActivityVerbSubject.read(row.identity, in: latest, owners: ActivityAttribution(owners: owners), known: known())
+        verbSubject?.signal.identity == row.identity ? verbSubject : nil
     }
 
     /// What `k` does to it: Stop Agent on an agent, Interrupt on a
@@ -40,24 +38,24 @@ extension ActivityPageModel {
         stoppedAt[identity] = now
     }
 
-    /// The stage 2 verbs of one process row.
+    /// The stage 2 verbs of one process row; greyed, "being read", until
+    /// its subject is read.
     func signalVerbs(for row: ActivityProcessRow) -> [ResourceVerb] {
-        guard let subject = subject(for: row) else { return [] }
-        let target = subject.target
+        let subject = subject(for: row)
         let identity = row.identity
-        func rule(_ verb: ActivityVerb) -> ActivityRule {
-            ActivitySignalCheck.rule(verb, for: target, parent: verb == .stopParent ? subject.parentTarget : nil)
+        func rule(_ verb: ActivityVerb) -> ActivityRule? {
+            subject.map { ActivitySignalCheck.rule(verb, for: $0.target, parent: verb == .stopParent ? $0.parentTarget : nil) }
         }
-        func reason(_ verb: ActivityVerb) -> String? { Self.unavailable(rule(verb)) }
+        func reason(_ verb: ActivityVerb) -> String? { rule(verb).map(Self.unavailable) ?? Self.reading }
         let act: (ActivityVerb) -> @MainActor () -> Void = { verb in { [weak self] in self?.actions.act(verb, identity) } }
-        let primary = Self.stopVerb(for: target)
+        let primary = subject.map { Self.stopVerb(for: $0.target) } ?? .stop
         var verbs: [ResourceVerb] = []
         func add(_ verb: ActivityVerb, _ title: String, symbol: String, key: String? = nil, place: ResourceVerb.Place = .more) {
             verbs.append(ResourceVerb(title: title, symbol: symbol, place: place, key: key, unavailable: reason(verb), perform: act(verb)))
         }
-        if case .route(.closePane, _) = rule(.stop) {
+        if case .route(.closePane, _)? = rule(.stop) {
             add(.stop, "Close Its Pane…", symbol: "xmark.square", key: "k", place: .remove)
-        } else if target.kind == .agent {
+        } else if subject?.target.kind == .agent {
             add(.interruptTurn, "Interrupt Turn…", symbol: "pause.circle", place: .button)
             add(.stopAgent, "Stop Agent…", symbol: "stop.circle", key: "k", place: .remove)
         } else {
@@ -80,6 +78,7 @@ extension ActivityPageModel {
     /// The routes the page takes from a row now: the pane's close, Suspend
     /// and Resume Tab.
     nonisolated static let routes: Set<ActivityRoute> = [.closePane, .suspendTab, .resumeTab]
+    nonisolated static let reading = "Being read…"
     nonisolated static let routeElsewhere = "Its owner's own verb: on its own page."
     nonisolated static let appVerbsLater = "An app: quit it from its menu — Activity's Quit comes with its own check."
     nonisolated static let suspendLater =
@@ -101,11 +100,12 @@ extension ActivityPageModel {
         }
     }
 
-    /// `k`, `K`, `x` on the selected process.
+    /// `k`, `K`, `x` on the selected process: `k`'s verb decided on the
+    /// process read again as its sheet opens.
     func pressSignalKey(_ key: ActivityKey) -> Bool {
-        guard let row = selectedProcess, let subject = subject(for: row) else { return false }
+        guard let row = selectedProcess else { return false }
         switch key {
-        case .stop: actions.act(Self.stopVerb(for: subject.target), row.identity)
+        case .stop: actions.stop(row.identity)
         case .forceQuit: actions.act(.forceQuit, row.identity)
         case .signal: actions.chooseSignal(row.identity)
         default: return false

@@ -25,6 +25,18 @@ extension TerminalWindowController {
         }
     }
 
+    /// `k`: what the process's class asks (`ActivityPageModel.stopVerb`),
+    /// decided on the process read again now — never on the list's read.
+    func activityStop(_ identity: ActivityProcessID) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            guard let subject = await self.activitySubject(identity) else {
+                return self.tell("It has ended", "pid \(identity.pid) is no longer the process listed: nothing was asked, nothing sent.")
+            }
+            self.ask(ActivityPageModel.stopVerb(for: subject.target), subject)
+        }
+    }
+
     /// Send a Signal (`x`): which signal, then that signal's own question.
     func activityChooseSignal(_ identity: ActivityProcessID) {
         guard let window else { return }

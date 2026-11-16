@@ -54,7 +54,8 @@ extension TerminalWindowController {
             free: { [weak self] row in self?.activityFree(row) },
             terminal: { [weak self] request in self?.activityTerminal(request) },
             act: { [weak self] verb, identity in self?.activityAct(verb, identity) },
-            chooseSignal: { [weak self] identity in self?.activityChooseSignal(identity) })
+            chooseSignal: { [weak self] identity in self?.activityChooseSignal(identity) },
+            stop: { [weak self] identity in self?.activityStop(identity) })
         activityPage.known = { Self.activityKnown() }
         activityPage.containers = { Self.activityContainers() }
         activityPage.contextFacts = { context in Self.activityContextFacts(&context) }

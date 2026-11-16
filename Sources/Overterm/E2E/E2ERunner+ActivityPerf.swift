@@ -108,6 +108,24 @@ extension E2ERunner {
             "held, the table neither reloads nor moves a row (12 ticks)", heldMoves == (0, 0),
             "\(heldMoves.0) reloads, \(heldMoves.1) in-place moves")
 
+        // A selected row's verbs (6.10, 7.7): its process read off the main
+        // thread with every owner, with the rows; on the main thread only
+        // the list — what the detail's bar and the menu draw each update.
+        var verbsListed: [Double] = []
+        if let selected = page.content.processes.first {
+            page.selection = [selected.id]
+            let read = await eventually(10) { page.verbSubject?.signal.identity == selected.identity }
+            check("a selected row's process is read for its verbs, off the main thread", read)
+            await tick(held: false)
+            check("and read again with the next tick's rows", page.content.subject?.signal.identity == selected.identity)
+            for _ in 0..<50 {
+                let start = CACurrentMediaTime()
+                _ = page.verbs(for: page.selection) { _ in }
+                verbsListed.append((CACurrentMediaTime() - start) * 1000)
+            }
+            page.selection = []
+        }
+
         // The light tick on the same fake Mac: eight panes' trees and the
         // table, the sampler's own CPU (10.4's light p90 ≤ 5 ms).
         var lightCPU: [Double] = []
@@ -160,6 +178,7 @@ extension E2ERunner {
         Self.fakeMac(crowded, count: 5_000, pids: &crowdedPIDs)
         let sampler = ActivitySampler(kernel: crowded)
         var crowdedRows: [Double] = []
+        var crowdedSubject: [Double] = []
         // Read whole first: the churn budget reads 200 new identities a tick.
         for _ in 0..<60 {
             crowded.advance(1_000_000_000)
@@ -174,8 +193,19 @@ extension E2ERunner {
                 _ = ActivityRows.content(of: snapshot, options)
                 crowdedRows.append((CACurrentMediaTime() - start) * 1000)
             }
+            // A selection made between two publishes: its process read
+            // with every owner, off the main thread.
+            if let identity = snapshot.table.processes.last?.identity {
+                for _ in 0..<7 {
+                    let start = CACurrentMediaTime()
+                    _ = ActivityRows.subject(identity, of: snapshot, options, attribution: nil)
+                    crowdedSubject.append((CACurrentMediaTime() - start) * 1000)
+                }
+            }
         }
         let crowd = Self.summary(crowdedRows)
+        let verbs = Self.summary(verbsListed)
+        let subject = Self.summary(crowdedSubject)
         let census = Self.summary(censusCPU)
         let rows = Self.summary(rowsMade)
         let update = Self.summary(shown)
@@ -188,6 +218,7 @@ extension E2ERunner {
         note("activityPerf: the sampler's CPU a tick, p90: full \(p90(fullP90)), light (8 panes) \(p90(lightP90)), \(lightCPU.count) light ticks")
         note("activityPerf: a tick's rows shown \(update), each \(shown.map { Int($0.rounded()) }); held \(held); scrolled \(scrolled.count) steps, \(scroll)")
         note("activityPerf: 5,000 processes' rows, grouped by checkout, made \(crowd)")
+        note("activityPerf: a selected row's verbs listed on the main thread \(verbs); its process read off it among 5,000, every owner \(subject)")
         // 10.4's 15 ms isn't met yet — the owners' cost, open (design 15):
         // the gate holds what is, so it can only get better.
         check("5,000 processes' rows are made in under 100 ms (median)", !crowdedRows.isEmpty && crowd.median < 100, "\(crowd)")
@@ -202,6 +233,10 @@ extension E2ERunner {
         check("a tick's rows are shown in under 100 ms (median)", !shown.isEmpty && update.median < 100, "\(update)")
         check("held, a tick is shown in under 100 ms (median)", !heldShown.isEmpty && held.median < 100, "\(held)")
         check("the list scrolls in under 35 ms a step (p95)", !scrolled.isEmpty && scroll.p95 < 35, "\(scroll)")
+        // 7.7: the main thread's part of a publish ≤ 4 ms — the verbs' list
+        // is all of theirs that stays on it.
+        check("a selected row's verbs are listed on the main thread in under 4 ms (median)", !verbsListed.isEmpty && verbs.median < 4, "\(verbs)")
+        check("its process is read among 5,000 off the main thread in under 100 ms (median)", !crowdedSubject.isEmpty && subject.median < 100, "\(subject)")
     }
 
     /// The 90th percentile of `samples`, 0 for none.

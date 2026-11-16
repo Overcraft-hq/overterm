@@ -35,6 +35,12 @@ extension E2ERunner {
         func ended(_ identity: ActivityProcessID) async -> Bool {
             await eventually(10) { kernel.process(identity.pid).map { $0.identity != identity || $0.isZombie } ?? true }
         }
+        /// `row` selected, and its verbs once its process is read off the
+        /// main thread: greyed "being read" until then.
+        func select(_ row: ActivityProcessRow) async {
+            page.selection = [row.id]
+            _ = await eventually(10) { page.verbSubject?.signal.identity == row.identity }
+        }
         /// `title`'s verb of `row` pressed — a child of Send a Signal by its
         /// title too —, and its sheet's words once it shows.
         func asked(_ title: String, of row: ActivityProcessRow, child: String? = nil) async -> (texts: [String], buttons: [String])? {
@@ -44,7 +50,7 @@ extension E2ERunner {
                 answerActivitySheet(.alertSecondButtonReturn)
                 _ = await eventually(5) { self.window.attachedSheet == nil }
             }
-            page.selection = [row.id]
+            await select(row)
             var verb = page.verbs(for: [row.id]) { _ in }.first { $0.title == title }
             if let child { verb = verb?.children.first { $0.title == child } }
             guard let verb, verb.unavailable == nil else { return nil }
@@ -74,7 +80,7 @@ extension E2ERunner {
         let rawRow = await listed("activity-raw.py")
         check("a raw-mode program runs in the pane's foreground", raw && rawRow != nil)
         if let rawRow {
-            page.selection = [rawRow.id]
+            await select(rawRow)
             let k = page.verbs(for: [rawRow.id]) { _ in }.first { $0.key == "k" }
             check("k on the pane's foreground job is Interrupt…", k?.title == "Interrupt…" && k?.unavailable == nil, k?.title ?? "none")
             _ = page.press("k")
@@ -242,7 +248,7 @@ extension E2ERunner {
         // A zombie: refused; Stop Its Parent ends what doesn't collect it.
         let zombie = await eventually(15) { page.content.processes.contains { $0.tab == tab.id && $0.state == .zombie } }
         if zombie, let dead = page.content.processes.first(where: { $0.tab == tab.id && $0.state == .zombie }) {
-            page.selection = [dead.id]
+            await select(dead)
             let stop = page.verbs(for: [dead.id]) { _ in }.first { $0.title == "Stop…" }
             check("a zombie's Stop is greyed: it has ended", stop?.unavailable == ActivitySignalCheck.ended)
             let parent = page.content.processes.first { $0.identity.pid == dead.parentPID }
@@ -260,7 +266,7 @@ extension E2ERunner {
         // The agent's verbs: Interrupt Turn greyed while it isn't the
         // pane's foreground job; Stop Agent critical, with its resume line.
         if let agent = page.content.processes.first(where: { $0.tab == tab.id && $0.owner?.paneRole == .agent }) {
-            page.selection = [agent.id]
+            await select(agent)
             let verbs = page.verbs(for: [agent.id]) { _ in }
             check(
                 "an agent's row: Interrupt Turn greyed in the background, Stop Agent its k",
@@ -297,7 +303,7 @@ extension E2ERunner {
         }
         _ = await eventually(15) { foregroundAgent() != nil }
         if turnRuns, let agent = foregroundAgent() {
-            page.selection = [agent.id]
+            await select(agent)
             let offered = await eventually(10) { page.verbs(for: [agent.id]) { _ in }.first { $0.title == "Interrupt Turn…" }?.unavailable == nil }
             check("Interrupt Turn… is offered for the agent in the pane's foreground", offered)
             let sheet = await asked("Interrupt Turn…", of: agent)
@@ -315,7 +321,7 @@ extension E2ERunner {
 
         // The pane's shell: its close route, asked — cancelled here.
         if let shell = page.content.processes.first(where: { $0.tab == tab.id && $0.owner?.paneRole == .shell }) {
-            page.selection = [shell.id]
+            await select(shell)
             let k = page.verbs(for: [shell.id]) { _ in }.first { $0.key == "k" }
             check("the pane's shell: Close Its Pane…, never a signal", k?.title == "Close Its Pane…")
             let sheet = await asked("Close Its Pane…", of: shell)
