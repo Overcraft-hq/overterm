@@ -74,7 +74,7 @@ enum ActivityColumns {
     /// and with All.
     static func choices(_ section: ActivityPageModel.Section) -> [ResourceColumn] {
         switch section {
-        case .processes: processes.filter { $0.id != "name" && $0.id != "where" && $0.id != "user" }
+        case .processes, .leftBehind: processes.filter { $0.id != "name" && $0.id != "where" && $0.id != "user" }
         case .listening: listening.filter { $0.id != "port" }
         }
     }
@@ -85,7 +85,7 @@ enum ActivityColumns {
     /// same user) and Where by the grouping, each at its kept place or
     /// last.
     static func columns(_ section: ActivityPageModel.Section, kept: [Kept]?, grouping: ActivityGrouping, everyone: Bool) -> [ResourceColumn] {
-        let all = section == .processes ? processes : listening
+        let all = section == .listening ? listening : processes
         let byID = Dictionary(uniqueKeysWithValues: all.map { ($0.id, $0) })
         var shown: [ResourceColumn]
         if let kept, !kept.isEmpty {

@@ -320,4 +320,66 @@ final class LeftBehindTests: XCTestCase {
         let item = LeftBehindItem(identity: ActivityProcessID(pid: 4242, start: 1), name: "acme-sleep")
         XCTAssertEqual(LeftBehind.note(.claude, left: [item]), "Claude finished — left acme-sleep running")
     }
+
+    func testEveryLeftBehindStopAsksThePolicyAgainAtTheButton() throws {
+        var context = base()
+        context.retired = [retired("pane-gone")]
+        let server = add(1800, parent: 1, name: "acme-server", environment: ["OVERTERM_TAB_ID=pane-gone"])
+        let apply = add(1801, parent: 1, name: "terraform", words: ["terraform", "apply"], environment: ["OVERTERM_TAB_ID=pane-gone"])
+        let nohup = add(1802, parent: 1, name: "acme-worker", environment: ["OVERTERM_TAB_ID=pane-gone"], ignoresHangup: true)
+        let kept = add(1803, parent: 1, name: "acme-keep", environment: ["OVERTERM_TAB_ID=pane-gone"])
+        context.kept = [kept]
+        let snapshot = try snapshot(context)
+        let owners = owners(snapshot, context)
+        let ended = ActivitySignalTarget(ActivityProcessID(pid: 1899, start: 1), path: nil)
+        let targets = [server, apply, nohup, kept].map { ActivitySignalTarget($0, path: snapshot.facts[$0]?.path) } + [ended]
+        func check(_ pick: LeftBehindStop.Pick) -> LeftBehindStop.Checked {
+            LeftBehindStop.check(targets, pick: pick, in: snapshot, owners: owners, known: ActivityVerbSubject.Known(appPID: app), kept: context.kept)
+        }
+        let bulk = check(.bulk)
+        XCTAssertEqual(bulk.send.map(\.identity), [server])
+        let reasons = Dictionary(uniqueKeysWithValues: bulk.refused.map { ($0.target.identity, $0.reason) })
+        XCTAssertTrue(reasons[apply]?.contains("terraform") == true)
+        XCTAssertNotNil(reasons[nohup], "what chose to outlive its terminal is picked alone")
+        XCTAssertEqual(reasons[kept], LeftBehindStop.keptWords)
+        XCTAssertEqual(reasons[ended.identity], LeftBehindStop.endedWords)
+        XCTAssertEqual(check(.certain).send.map(\.identity), [server])
+        // Ticked one by one in a close sheet: the Stop rule alone — the
+        // nohup'd one may go, a terraform write never.
+        let picked = check(.picked)
+        XCTAssertEqual(Set(picked.send.map(\.identity)), [server, nohup])
+        XCTAssertTrue(picked.refused.contains { $0.target.identity == apply && $0.reason.contains("terraform") })
+    }
+
+    // MARK: The section
+
+    func testTheSectionGroupsByCheckoutAndCountsTheCertain() throws {
+        var context = base()
+        context.retired = [retired("pane-gone")]
+        let server = add(1800, parent: 1, name: "acme-server", environment: ["OVERTERM_TAB_ID=pane-gone"], port: 3001)
+        let nohup = add(1801, parent: 1, name: "acme-worker", environment: ["OVERTERM_TAB_ID=pane-gone"], ignoresHangup: true)
+        let earlier = add(1900, parent: 1, name: "acme-proxy", environment: ["OVERTERM_RUN=release.77.123"])
+        let snapshot = try snapshot(context)
+        var options = ActivityRows.Options()
+        options.context = context
+        options.tabs = [tab: ActivityTabFacts(id: tab, title: "web", checkout: checkout)]
+        options.checkouts = [checkout]
+        options.grouping = .checkout
+        let content = ActivityRows.content(of: snapshot, options)
+        XCTAssertEqual(content.summary.leftBehind, 3)
+        let headers = content.leftBehind.compactMap { item -> ActivityGroupRow? in if case .group(let row) = item { row } else { nil } }
+        XCTAssertEqual(headers.map(\.title), ["acme-shop", "Left by an earlier Overterm"], "checkouts first, then the fixed groups")
+        XCTAssertEqual(headers.first?.count, 2)
+        XCTAssertEqual(headers.first?.detail, "1 certain")
+        XCTAssertEqual(headers.first?.ports, [3001])
+        let rows = content.processes
+        let serverRow = try XCTUnwrap(rows.first { $0.identity == server })
+        XCTAssertTrue(serverRow.bulkEligible)
+        XCTAssertFalse(try XCTUnwrap(rows.first { $0.identity == nohup }).bulkEligible, "ignoring SIGHUP: picked by hand")
+        XCTAssertEqual(ActivityRows.certainInGroup(of: serverRow, in: rows, tabs: options.tabs).map(\.identity), [server])
+        let earlierRow = try XCTUnwrap(rows.first { $0.identity == earlier })
+        XCTAssertEqual(ActivityRows.certainInGroup(of: earlierRow, in: rows, tabs: options.tabs).map(\.identity), [earlier], "its own group's")
+        // Processes lists them in a group of their own, unfolded.
+        XCTAssertTrue(content.list.contains { if case .group(let row) = $0 { row.id == ActivityRows.Fixed.leftBehind.id && !row.folded } else { false } })
+    }
 }

@@ -60,7 +60,9 @@ extension TerminalWindowController {
             lower: { [weak self] identity, step in self?.activityLower(identity, step) },
             chooseLower: { [weak self] identity in self?.activityChooseLower(identity) },
             resumeAll: { [weak self] in self?.activityResumeAll() },
-            ask: { [weak self] brief, tab in self?.presentActivityBrief(brief, tab: tab) })
+            ask: { [weak self] brief, tab in self?.presentActivityBrief(brief, tab: tab) },
+            keep: { identity in LeftBehindLedger.shared.keep([identity]) },
+            stopAll: { [weak self] rows, group in self?.leftBehindStopAll(rows, group: group) })
         activityPage.known = { Self.activityKnown() }
         activityPage.containers = { Self.activityContainers() }
         activityPage.contextFacts = { context in Self.activityContextFacts(&context) }

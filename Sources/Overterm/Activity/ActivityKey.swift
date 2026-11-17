@@ -13,7 +13,7 @@ import Foundation
 /// selection's folder, read at the focus level. ⌥o and ⌥r are
 /// `ActivityPageModel.pressOption`'s. Pure.
 enum ActivityKey: String, ResourceKey {
-    case processes, listening
+    case processes, listening, leftBehind
     case goTo, detail, filter, help
     case open, reveal, tabInfo, sample, terminal
     case tree, group, narrower, wider
@@ -25,6 +25,7 @@ enum ActivityKey: String, ResourceKey {
         switch self {
         case .processes: .processes
         case .listening: .listening
+        case .leftBehind: .leftBehind
         default: nil
         }
     }
@@ -33,6 +34,7 @@ enum ActivityKey: String, ResourceKey {
         switch self {
         case .processes: "1"
         case .listening: "2"
+        case .leftBehind: "3"
         case .goTo: "↩"
         case .detail: "Space"
         case .filter: "/"
@@ -70,6 +72,7 @@ enum ActivityKey: String, ResourceKey {
         switch self {
         case .processes: "Processes"
         case .listening: "Listening"
+        case .leftBehind: "Left Behind: what outlived its tab, its agent or an earlier Overterm"
         case .goTo: "Go to its tab and pane — a port: its process's row"
         case .detail: "Show or hide the detail"
         case .filter: "Filter — name:node|bun cpu:>50 mem:>1g age:<5m port:3000 is:agent -user:root"

@@ -77,6 +77,9 @@ struct ActivityProcessRow: ResourceTableRow, Sendable {
     /// are said so — the background state can't be read back (3.9).
     var stoppedHere = false
     var backgroundHere = false
+    /// Left Behind (6.9): a bulk Stop may take it — certain, not ignoring
+    /// SIGHUP, detached, an app nor a terraform write, nor kept.
+    var bulkEligible = false
 
     var height: CGFloat { 24 }
 
@@ -105,6 +108,8 @@ struct ActivitySummary: Equatable, Sendable {
     /// The rows shown: fewer than `processes` in a test run (its own tabs')
     /// or with other users' left out.
     var shown = 0
+    /// Left Behind's rows in scope (6.9).
+    var leftBehind = 0
     var listening = 0
     /// The rows the filter matched, its dimmed ancestors left out: `shown`
     /// when there is no filter.
@@ -135,6 +140,8 @@ struct ActivityPageContent: Sendable {
     var processes: [ActivityProcessRow] = []
     /// Processes as the page lists them: grouped, as a tree (6.5).
     var list: [ActivityListItem] = []
+    /// Left Behind's section (6.9): its rows by checkout, by the same filter.
+    var leftBehind: [ActivityListItem] = []
     var ports: [ActivityPortRow] = []
     /// Every listener of the rows in scope, whatever either filter says:
     /// the detail's, `o`'s (6.6 keeps each section's filter its own).
@@ -305,6 +312,11 @@ enum ActivityRows {
             row.whereText = whereText(row, tabs: tabFacts)
             row.stoppedHere = process.isStopped && options.known.stoppedHere.contains(identity)
             row.backgroundHere = options.known.backgroundHere.contains(identity)
+            if let owner, owner.place == .leftBehind {
+                let terraform = TerraformCommandLine.tools.contains(ActivityPaneSet.executableName(process, facts: facts))
+                row.bulkEligible = LeftBehind.isBulkEligible(
+                    owner, process: process, terraformWrite: terraform, kept: options.context.kept.contains(identity))
+            }
             rows.append(row)
         }
         // Listening, the detail and the busiest read every row in scope:
@@ -335,6 +347,7 @@ enum ActivityRows {
             if !filter.isEmpty { listed.containers = [] }
             content.list = list(rows, grouping: grouping, in: snapshot, tabs: tabFacts, options: listed)
         }
+        content.leftBehind = leftBehindList(rows, tabs: tabFacts, options: options)
         // Listening (6.8): its listeners, owners, collisions and, asked
         // for, the user's connections.
         let portFilter = ActivityFilter(options.portFilter)
@@ -360,6 +373,7 @@ enum ActivityRows {
         summary.processes = snapshot.table.processes.count
         summary.own = snapshot.table.processes.lazy.filter { $0.isOwn(by: uid) }.count
         summary.shown = rows.count
+        summary.leftBehind = inScope.count { $0.owner?.place == .leftBehind }
         summary.matched = matched
         // Every listener in scope, folded or filtered away too.
         summary.listening = made.listeners.count

@@ -103,7 +103,7 @@ struct ActivityPageView: View {
                         Text(section.title)
                         Spacer()
                         if page.hasRead {
-                            Text(verbatim: "\(section == .processes ? summary.shown : summary.listening)")
+                            Text(verbatim: "\(section == .processes ? summary.shown : section == .listening ? summary.listening : summary.leftBehind)")
                                 .foregroundStyle(theme.text3).font(.system(size: ChromeMetrics.text(11), design: .monospaced))
                         }
                     }
@@ -320,6 +320,13 @@ struct ActivityPageView: View {
                 }
             }
         case .listening: page.content.ports.map(ActivityListRow.port)
+        case .leftBehind:
+            page.content.leftBehind.map { item in
+                switch item {
+                case .group(let row): ActivityListRow.group(row)
+                case .process(let row): ActivityListRow.process(row)
+                }
+            }
         }
     }
 
@@ -327,7 +334,7 @@ struct ActivityPageView: View {
 
     private var sort: Binding<ResourceSort?> {
         switch page.section {
-        case .processes: $page.processSort
+        case .processes, .leftBehind: $page.processSort
         case .listening: $page.portSort
         }
     }
@@ -399,6 +406,8 @@ struct ActivityPageView: View {
         case .listening:
             return scopedToRun
                 ? "Nothing in this test run's tabs listens on a port." : "Nothing of yours listens on a port. Other users' listeners aren't read."
+        case .leftBehind:
+            return "Nothing was left behind: no closed tab's, ended agent's or earlier Overterm's process runs."
         }
     }
 

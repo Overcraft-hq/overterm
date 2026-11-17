@@ -77,6 +77,10 @@ struct ActivityPageActions {
     var resumeAll: @MainActor () -> Void = {}
     /// Ask an Agent About It (`a`, ⌘L): the Ask Agent sheet with its brief.
     var ask: @MainActor (ActivityBrief, UUID?) -> Void = { _, _ in }
+    /// Keep (6.9): never in a bulk Stop, never Left Behind again.
+    var keep: @MainActor (ActivityProcessID) -> Void = { _ in }
+    /// Stop All Certain in This Checkout… (6.9): one sheet listing each.
+    var stopAll: @MainActor (_ rows: [ActivityProcessRow], _ group: String) -> Void = { _, _ in }
 }
 
 /// The Activity page (⌥⌘A; docs/design/activity/analysis.md, 6.4): its
@@ -86,7 +90,7 @@ struct ActivityPageActions {
 @MainActor
 final class ActivityPageModel: ObservableObject {
     enum Section: String, CaseIterable, Identifiable {
-        case processes, listening
+        case processes, listening, leftBehind
 
         var id: String { rawValue }
 
@@ -94,6 +98,7 @@ final class ActivityPageModel: ObservableObject {
             switch self {
             case .processes: "Processes"
             case .listening: "Listening"
+            case .leftBehind: "Left Behind"
             }
         }
 
@@ -101,6 +106,7 @@ final class ActivityPageModel: ObservableObject {
             switch self {
             case .processes: "list.bullet.indent"
             case .listening: "dot.radiowaves.left.and.right"
+            case .leftBehind: "arrow.uturn.backward.circle"
             }
         }
 
@@ -109,6 +115,7 @@ final class ActivityPageModel: ObservableObject {
             switch self {
             case .processes: "1"
             case .listening: "2"
+            case .leftBehind: "3"
             }
         }
     }
@@ -119,7 +126,8 @@ final class ActivityPageModel: ObservableObject {
             byHand()
             selection = []
             updateContainers()
-            if scope(section) != scope(oldValue) { rebuild(asked: true) }
+            // Left Behind lists Processes' rows by its own filter (6.9).
+            if scope(section) != scope(oldValue) || section == .leftBehind || oldValue == .leftBehind { rebuild(asked: true) }
         }
     }
     /// How Processes is grouped (`G`), and whether as a tree (`t`).
@@ -258,6 +266,8 @@ final class ActivityPageModel: ObservableObject {
     private var snapshots: AnyCancellable?
     /// The tabs' facts the last rows were made with.
     private var lastTabs: [UUID: ActivityTabFacts] = [:]
+    /// The tabs' facts the last rows were made with, for Left Behind's verbs.
+    var lastTabsForVerbs: [UUID: ActivityTabFacts] { lastTabs }
     /// A row shown by a link: its groups unfolded for it.
     private var revealed: String?
     /// What it holds of Docker's now.
@@ -497,7 +507,7 @@ final class ActivityPageModel: ObservableObject {
         let generation = self.generation
         var options = ActivityRows.Options(
             everyone: everyone ?? Settings.shared.activityEveryone, isolated: isolated, processSort: processSort, portSort: portSort)
-        options.processFilter = filter(.processes)
+        options.processFilter = filter(section == .leftBehind ? .leftBehind : .processes)
         options.portFilter = filter(.listening)
         if let facts = tabFacts() {
             options.tabs = facts.tabs
@@ -815,7 +825,7 @@ final class ActivityPageModel: ObservableObject {
     /// `ids`' rows, a line each, as ⌘C copies them.
     func lines(for ids: Set<String>) -> [String] {
         switch section {
-        case .processes:
+        case .processes, .leftBehind:
             content.processes.filter { ids.contains($0.id) }.map { "\($0.name)\t\($0.identity.pid)" }
         case .listening:
             content.ports.filter { ids.contains($0.id) && $0.kind != .folded }.map {
@@ -922,6 +932,7 @@ final class ActivityPageModel: ObservableObject {
                 unavailable: detail?.row.identity == row.identity ? nil : "Select it alone: the brief is made from its detail",
                 perform: { [weak self] in self?.askAboutSelection() }))
         verbs += signalVerbs(for: row)
+        verbs += leftBehindVerbs(for: row)
         verbs.append(ResourceVerb(title: "Copy PID", symbol: "number", group: 1, perform: { copy([String(row.identity.pid)]) }))
         verbs.append(
             ResourceVerb(
