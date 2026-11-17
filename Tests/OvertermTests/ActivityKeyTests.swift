@@ -68,7 +68,10 @@ final class ActivityKeyTests: XCTestCase {
         XCTAssertEqual(ActivityKey.of("\r"), .goTo)
         XCTAssertEqual(ActivityKey.of(" "), .detail)
         XCTAssertEqual(ActivityKey.of("P"), .sortCPU)
-        XCTAssertNil(ActivityKey.of("p"), "case matters: p is Suspend's, a stage 2 verb")
+        XCTAssertEqual(ActivityKey.of("p"), .suspend, "case matters: P sorts by CPU, p suspends")
+        XCTAssertEqual(ActivityKey.of("b"), .background)
+        XCTAssertEqual(ActivityKey.of("n"), .lower)
+        XCTAssertEqual(ActivityKey.of("N"), .sortPID, "case matters")
         XCTAssertEqual(ActivityKey.of("k"), .stop)
         XCTAssertEqual(ActivityKey.of("K"), .forceQuit, "case matters")
         XCTAssertEqual(ActivityKey.of("x"), .signal)
@@ -200,11 +203,13 @@ final class ActivityKeyTests: XCTestCase {
             var acted: [(ActivityVerb, ActivityProcessID)] = []
             var chosen: [ActivityProcessID] = []
             var stopped: [ActivityProcessID] = []
+            var lowered: [ActivityProcessID] = []
         }
         let box = Box()
         page.actions.act = { verb, identity in box.acted.append((verb, identity)) }
         page.actions.chooseSignal = { box.chosen.append($0) }
         page.actions.stop = { box.stopped.append($0) }
+        page.actions.chooseLower = { box.lowered.append($0) }
         page.actions.goTo = { tab, pane in box.goTo.append((tab, pane)) }
         page.actions.sample = { box.sampled.append($0) }
         let server = try XCTUnwrap(page.content.processes.first { $0.name == "acme-server" })
@@ -219,8 +224,12 @@ final class ActivityKeyTests: XCTestCase {
             [
                 "Go to Tab", "Open in Browser", "Open in Default Browser", "Reveal in Finder", "Reveal Its Folder in Finder", "Terminal in Its Folder",
                 "Tab Info", "Sample for 5 Seconds in a Tab", "Open Files in a Tab", "Interrupt…", "Stop…", "Force Quit…", "Send a Signal",
-                "Stop Its Tree…", "Stop Its Group…", "Stop Its Parent…", "Copy PID", "Copy Command", "Copy",
+                "Stop Its Tree…", "Stop Its Group…", "Stop Its Parent…", "Suspend", "Run in Background", "Lower Priority", "Copy PID",
+                "Copy Command", "Copy",
             ])
+        XCTAssertEqual(
+            verbs.first { $0.title == "Lower Priority" }?.children.map(\.title), ["+5 — nice 5…", "+10 — nice 10…", "20 — nice 20…"],
+            "each step names the nice it gives")
         XCTAssertEqual(verbs.filter { $0.place == .button }.map(\.title), ["Go to Tab", "Open in Browser", "Reveal in Finder", "Tab Info"])
         XCTAssertNotNil(verbs.first { $0.title == "Open in Browser" }?.unavailable, "it listens on nothing: greyed, with why")
         XCTAssertNil(verbs.first { $0.title == "Go to Tab" }?.unavailable)
@@ -241,12 +250,70 @@ final class ActivityKeyTests: XCTestCase {
         XCTAssertEqual(box.acted.last?.0, .forceQuit)
         XCTAssertTrue(page.press("x"))
         XCTAssertEqual(box.chosen, [server.identity])
+        // p, b, n: Suspend (it runs), Run in Background (Activity put it
+        // nowhere), Lower Priority's steps.
+        XCTAssertTrue(page.press("p"))
+        XCTAssertEqual(box.acted.last?.0, .suspend)
+        XCTAssertTrue(page.press("b"))
+        XCTAssertEqual(box.acted.last?.0, .background)
+        XCTAssertTrue(page.press("n"))
+        XCTAssertEqual(box.lowered, [server.identity])
         verbs.first { $0.title == "Stop Its Tree…" }?.perform()
         XCTAssertEqual(box.acted.last?.0, .stopTree)
         verbs.first { $0.title == "Copy" }?.perform()
         XCTAssertEqual(box.copied.last, ["acme-server\t1102"])
         XCTAssertEqual(page.verbs(for: [other.id]) { _ in }.first { $0.title == "Go to Tab" }?.unavailable, "It runs outside every tab")
         XCTAssertEqual(page.verbs(for: [server.id, other.id]) { _ in }.map(\.title), ["Copy 2 Rows"])
+    }
+
+    /// A process Activity stopped reads as Activity's stop on its verbs once
+    /// a tick lists it stopped: Resume offered, `p` its key; put in the
+    /// background, Run Normally at once — nothing can read that back.
+    func testWhatActivityHoldsIsSaidOnTheVerbs() async throws {
+        let (page, monitor) = try await page()
+        defer { monitor.stop() }
+        let held = ActivityHeld()
+        page.held = held
+        page.known = { [app] in ActivityVerbSubject.Known(appPID: app, stoppedHere: held.stopped, backgroundHere: held.backgroundHere) }
+        let worker = try XCTUnwrap(page.content.processes.first { $0.name == "acme-worker" })
+        page.selection = [worker.id]
+        let read = await eventually { page.verbSubject?.signal.identity == worker.identity }
+        XCTAssertTrue(read)
+        XCTAssertEqual(page.verbs(for: [worker.id]) { _ in }.first { $0.key == "p" }?.title, "Suspend")
+        kernel.update(1103) { $0.record = FakeActivityKernel.record($0.record, status: SSTOP) }
+        let target = ActivitySignalTarget(worker.identity, path: "/opt/acme/bin/acme-worker")
+        held.suspended(root: target, name: "acme-worker", members: [target], names: [:])
+        let resume = await eventually {
+            page.verbs(for: [worker.id]) { _ in }.first { $0.key == "p" }.map { $0.title == "Resume" && $0.unavailable == nil } == true
+        }
+        XCTAssertTrue(resume, "Resume, offered: \(page.verbSubject?.target.stopped.map { "\($0)" } ?? "nobody")")
+        held.backgrounded(worker.identity)
+        page.refreshVerbs()
+        let normally = await eventually { page.verbs(for: [worker.id]) { _ in }.first { $0.key == "b" }?.title == "Run Normally" }
+        XCTAssertTrue(normally)
+    }
+
+    /// The rows' "suspended here" and "background" are the rows' own: said
+    /// with nothing selected, as with a row selected.
+    func testTheHeldChipsWithNothingSelected() async throws {
+        let (page, monitor) = try await page()
+        defer { monitor.stop() }
+        let held = ActivityHeld()
+        page.held = held
+        page.known = { [app] in ActivityVerbSubject.Known(appPID: app, stoppedHere: held.stopped, backgroundHere: held.backgroundHere) }
+        let worker = try XCTUnwrap(page.content.processes.first { $0.name == "acme-worker" })
+        page.selection = []
+        kernel.update(1103) { $0.record = FakeActivityKernel.record($0.record, status: SSTOP) }
+        let target = ActivitySignalTarget(worker.identity, path: "/opt/acme/bin/acme-worker")
+        held.suspended(root: target, name: "acme-worker", members: [target], names: [:])
+        held.backgrounded(worker.identity)
+        page.refreshVerbs()
+        let said = await eventually {
+            let row = page.content.processes.first { $0.id == worker.id }
+            return row?.stoppedHere == true && row?.backgroundHere == true
+        }
+        XCTAssertTrue(said, "both chips, no selection")
+        XCTAssertNil(page.verbSubject)
     }
 
     /// The selection's verbs read its process with every owner of the

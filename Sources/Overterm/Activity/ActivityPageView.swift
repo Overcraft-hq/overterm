@@ -49,6 +49,8 @@ enum ActivityListRow: ResourceTableRow {
 struct ActivityPageView: View {
     @ObservedObject var page: ActivityPageModel
     @ObservedObject var theme: ChromeTheme
+    /// What Activity stopped: the header's "2 stopped here — Resume All".
+    @ObservedObject var held = ActivityHeld.shared
     /// ⌘C: the selection, as the window copies it.
     let copy: ([String]) -> Void
     /// The list given the keyboard back (the filter's ↩ and Esc).
@@ -221,6 +223,16 @@ struct ActivityPageView: View {
                 Text(verbatim: freeing).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.orangeText)
                     .help("What became of the port after its owner's verb, watched by the census — never by binding it")
                     .accessibilityIdentifier("activity.freeing")
+            }
+            if held.stoppedCount > 0 {
+                HStack(spacing: 6) {
+                    Text(verbatim: "\(held.stoppedCount) stopped here").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.signal)
+                    Button("Resume All") { page.actions.resumeAll() }.controlSize(.small)
+                        .accessibilityIdentifier("activity.resumeAll")
+                }
+                .help("Processes you suspended from Activity, still stopped: Resume All continues each, by the process it was stopped as")
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("activity.stoppedHere")
             }
             if let said = page.linkSaid {
                 Text(verbatim: said).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
@@ -470,8 +482,10 @@ struct ActivityPageView: View {
 
     /// The chips beside a process's name (6.5): its role, what it did.
     static func chips(_ row: ActivityProcessRow) -> [String] {
-        guard let owner = row.owner else { return [] }
         var chips: [String] = []
+        if row.stoppedHere { chips.append("suspended here") }
+        if row.backgroundHere { chips.append("background") }
+        guard let owner = row.owner else { return chips }
         if let counts = row.agentCounts, !counts.isEmpty { chips.append(counts) }
         if owner.paneRole != .agent {
             switch owner.role {

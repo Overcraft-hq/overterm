@@ -134,7 +134,15 @@ extension TerminalWindowController {
     /// (`pairWaiting`); the lookup runs off it too; a Resume in between
     /// wins.
     func suspendTab(_ tab: Tab) {
-        let panes = tab.terminals.filter { !$0.isSuspended }
+        suspendPanes(tab.terminals, of: tab)
+    }
+
+    /// Stops `panes` of `tab`, each with its whole set — the shell too, or
+    /// it takes the terminal back (Activity's Suspend of a pane's job,
+    /// docs/design/activity/analysis.md, 6.10). Resume Tab, or the cover's
+    /// Resume, continues them.
+    func suspendPanes(_ chosen: [TerminalView], of tab: Tab) {
+        let panes = chosen.filter { !$0.isSuspended }
         guard !panes.isEmpty else { return }
         // A `.app` inside one of these stays the pane's: a dev build.
         let checkouts = Array(Set(store.tabs.compactMap { $0.checkoutSource?.root.path }))

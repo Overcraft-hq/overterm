@@ -1,4 +1,35 @@
+import Darwin
 import Foundation
+
+/// Lower Priority's steps (6.10): its nice raised by 5 or 10, or to 20 —
+/// never past 20, never down.
+enum ActivityNiceStep: CaseIterable, Hashable, Sendable {
+    case five, ten, lowest
+
+    var title: String {
+        switch self {
+        case .five: "+5…"
+        case .ten: "+10…"
+        case .lowest: "20…"
+        }
+    }
+
+    /// The nice a process at `nice` is given.
+    func value(from nice: Int8) -> Int32 {
+        switch self {
+        case .five: min(Int32(nice) + 5, ActivityPriorityChange.lowest)
+        case .ten: min(Int32(nice) + 10, ActivityPriorityChange.lowest)
+        case .lowest: ActivityPriorityChange.lowest
+        }
+    }
+
+    /// Why this step gives a process at `nice` nothing — it is there
+    /// already, and nice is only ever raised —; nil when it raises it.
+    /// The row menu's step and `n`'s chooser both grey it with this.
+    func already(from nice: Int8) -> String? {
+        value(from: nice) <= Int32(nice) ? "Its nice is already \(nice): nice can only be raised." : nil
+    }
+}
 
 /// The page's verbs that change a process (docs/design/activity/
 /// analysis.md, 6.10): Stop, Interrupt, Interrupt Turn and Stop Agent,
@@ -11,7 +42,33 @@ extension ActivityPageModel {
     /// main thread with every owner of the snapshot (`verbSubject`). Nil
     /// while it is read, or once it is gone from the table.
     func subject(for row: ActivityProcessRow) -> ActivityVerbSubject? {
-        verbSubject?.signal.identity == row.identity ? verbSubject : nil
+        guard let subject = verbSubject, subject.signal.identity == row.identity else { return nil }
+        return Self.overlaid(subject, known: known())
+    }
+
+    /// `subject` with what the main actor knows now laid over the
+    /// snapshot it was read from: what Activity stopped and put in the
+    /// background (`ActivityHeld`), what Suspend Tab stopped. Those change
+    /// here, at once, and a snapshot read before says otherwise for a tick
+    /// or more — so Suspend says Resume as soon as it has stopped, and
+    /// Resume says Suspend again — a stop a census begun before the
+    /// continue still lists isn't read as ⌃Z's. A traced stop, and any
+    /// other, stays the snapshot's.
+    /// Pure.
+    nonisolated static func overlaid(_ subject: ActivityVerbSubject, known: ActivityVerbSubject.Known) -> ActivityVerbSubject {
+        var subject = subject
+        let identity = subject.signal.identity
+        subject.target.backgroundedHere = known.backgroundHere.contains(identity)
+        if subject.target.stopped == .traced { return subject }
+        if known.stoppedHere.contains(identity) {
+            subject.target.stopped = .activity
+        } else if known.suspendedTab.contains(identity) {
+            subject.target.stopped = .suspendTab
+        } else if subject.target.stopped == .activity || subject.target.stopped == .suspendTab || known.resumedHere.contains(identity) {
+            // Continued here since that snapshot.
+            subject.target.stopped = nil
+        }
+        return subject
     }
 
     /// What `k` does to it: Stop Agent on an agent, Interrupt on a
@@ -72,35 +129,53 @@ extension ActivityPageModel {
         add(.stopTree, "Stop Its Tree…", symbol: "list.bullet.indent")
         add(.stopGroup, "Stop Its Group…", symbol: "square.stack.3d.up")
         add(.stopParent, "Stop Its Parent…", symbol: "arrow.up.circle")
+        // Suspend or Resume (`p`), by whether it is stopped now.
+        if subject?.target.stopped != nil {
+            add(.resume, "Resume", symbol: "play.circle", key: "p")
+        } else {
+            add(.suspend, "Suspend", symbol: "pause.rectangle", key: "p")
+        }
+        // Run in Background or Normally (`b`): Normally only for what
+        // Activity put there (3.9).
+        if subject?.target.backgroundedHere == true {
+            add(.runNormally, "Run Normally", symbol: "tortoise.fill", key: "b")
+        } else {
+            add(.background, "Run in Background", symbol: "tortoise", key: "b")
+        }
+        let lower = reason(.lowerPriority)
+        verbs.append(
+            ResourceVerb(
+                title: "Lower Priority", symbol: "arrow.down.circle", key: "n",
+                children: ActivityNiceStep.allCases.map { step in
+                    var why = lower
+                    if why == nil, let subject { why = step.already(from: subject.nice) }
+                    let title = subject.map { "\(step.title.dropLast()) — nice \(step.value(from: $0.nice))…" } ?? step.title
+                    return ResourceVerb(
+                        title: title, symbol: "arrow.down", unavailable: why, perform: { [weak self] in self?.actions.lower(identity, step) })
+                }))
         return verbs
     }
 
     /// The routes the page takes from a row now: the pane's close, Suspend
-    /// and Resume Tab.
-    nonisolated static let routes: Set<ActivityRoute> = [.closePane, .suspendTab, .resumeTab]
+    /// and Resume Tab, a pane's job suspended with its pane.
+    nonisolated static let routes: Set<ActivityRoute> = [.closePane, .suspendTab, .resumeTab, .suspendPane]
     nonisolated static let reading = "Being read…"
     nonisolated static let routeElsewhere = "Its owner's own verb: on its own page."
     nonisolated static let appVerbsLater = "An app: quit it from its menu — Activity's Quit comes with its own check."
-    nonisolated static let suspendLater =
-        "SIGSTOP and SIGCONT are Suspend and Resume, which come with their own step — with Activity's own record of what it stopped. Not from here yet."
 
     /// Why the page doesn't do what `rule` says now; nil when it does. A
     /// refusal, an owner's verb on another page, and what comes with its
-    /// own step: an app's Quit, Suspend and Resume (Send a Signal ▸ STOP and
-    /// CONT, a pane's job suspended with its pane), the priorities. Pure.
+    /// own step: an app's Quit. Pure.
     nonisolated static func unavailable(_ rule: ActivityRule) -> String? {
         switch rule {
         case .refused(let why): return why
         case .allowed(.quitApp, _, _), .allowed(.forceQuitApp, _, _): return appVerbsLater
-        case .allowed(.suspend, _, _), .allowed(.resume, _, _), .allowed(.background, _, _), .allowed(.normalPriority, _, _),
-            .allowed(.lowerPriority, _, _), .route(.suspendPane, _):
-            return suspendLater
         case .route(let route, _): return routes.contains(route) ? nil : routeElsewhere
         case .allowed: return nil
         }
     }
 
-    /// `k`, `K`, `x` on the selected process: `k`'s verb decided on the
+    /// `k`, `K`, `x`, `p`, `b`, `n` on the selected process: `k`'s verb decided on the
     /// process read again as its sheet opens.
     func pressSignalKey(_ key: ActivityKey) -> Bool {
         guard let row = selectedProcess else { return false }
@@ -108,6 +183,13 @@ extension ActivityPageModel {
         case .stop: actions.stop(row.identity)
         case .forceQuit: actions.act(.forceQuit, row.identity)
         case .signal: actions.chooseSignal(row.identity)
+        case .suspend:
+            guard let subject = subject(for: row) else { return false }
+            actions.act(subject.target.stopped != nil ? .resume : .suspend, row.identity)
+        case .background:
+            guard let subject = subject(for: row) else { return false }
+            actions.act(subject.target.backgroundedHere ? .runNormally : .background, row.identity)
+        case .lower: actions.chooseLower(row.identity)
         default: return false
         }
         return true

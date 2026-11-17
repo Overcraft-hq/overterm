@@ -171,6 +171,89 @@ enum ActivityVerbQuestion {
         return lines
     }
 
+    // MARK: Suspend, Resume, Lower Priority (6.10)
+
+    /// Suspend's sheet, asked for an app, a helper inside one, a helm or
+    /// pulumi write, Send a Signal ▸ STOP, and whenever more than one
+    /// process is stopped: each listed, what is left out with why.
+    static func suspend(_ subject: ActivityVerbSubject, members: [ActivitySignalTarget], scope: String?, timeZone: TimeZone = .current)
+        -> ActivityPortFree.Question
+    {
+        let pid = subject.signal.identity.pid
+        let quoted = "“\(DockerMCP.displayed(subject.name))” (pid \(pid))"
+        let names = subject.memberNames
+        var lines = ["SIGSTOP by each one's own audit token, parents first: nothing is lost, and it uses no CPU until resumed."]
+        if members.count > 1 {
+            lines.append("Stopped with its tree:")
+            lines += members.dropFirst().map { "  pid \($0.identity.pid) \(DockerMCP.displayed(names[$0.identity] ?? ""))" }
+        }
+        let left = subject.tree.filter { $0.refusal != nil || $0.target.terraformWrite != nil }
+        if !left.isEmpty {
+            lines.append("Left running:")
+            lines += left.map { "  pid \($0.signal.identity.pid) \(DockerMCP.displayed($0.name)) — \($0.refusal ?? ActivitySignalCheck.terraformSuspend)" }
+        }
+        if subject.target.isApp || subject.target.insideApp {
+            lines.append("A stopped app stops answering — its windows, its menus, and any app that waits on a helper of it.")
+        }
+        if let write = subject.target.releaseWrite {
+            lines.append("A running \(DockerMCP.displayed(write)): stopped, it holds its release where it is until resumed.")
+        }
+        lines += identityLines(subject, timeZone: timeZone)
+        if !subject.listening.isEmpty {
+            lines.append("It listens on \(subject.listening.map { ":\($0)" }.joined(separator: ", ")): connections to it wait while it is stopped.")
+        }
+        lines.append("Resume it here, or with Resume All in the page's header; quitting Overterm asks first.")
+        lines.append("The command it equals: kill -STOP \(members.map { "\($0.identity.pid)" }.joined(separator: " "))")
+        let many = members.count > 1
+        return ActivityPortFree.Question(
+            title: many ? "Suspend \(quoted) and its tree — \(members.count) processes?" : "Suspend \(quoted)?", scope: scope,
+            detail: lines.joined(separator: "\n"), button: many ? "Suspend \(members.count) Processes" : "Suspend",
+            critical: members.count > criticalAbove)
+    }
+
+    /// Send a Signal ▸ STOP to a pane's job or agent: Suspend's own route —
+    /// the pane suspended with it, its shell first —, asked as every Send a
+    /// Signal is. `tab`: the tab's title.
+    static func suspendPane(_ subject: ActivityVerbSubject, tab: String, scope: String?, timeZone: TimeZone = .current) -> ActivityPortFree.Question {
+        let pid = subject.signal.identity.pid
+        let quoted = "“\(DockerMCP.displayed(subject.name))” (pid \(pid))"
+        var lines = [
+            "It runs in a pane of “\(DockerMCP.displayed(tab))”: the pane is suspended with it — its shell first, or the shell takes the terminal back, then every process in it —, as Suspend Tab does.",
+            "Resume it with the tab's Resume, or the pane's.",
+        ]
+        lines += identityLines(subject, timeZone: timeZone)
+        lines.append("The command it equals: kill -STOP to the pane's shell, then kill -STOP \(pid) and the rest of the pane")
+        return ActivityPortFree.Question(
+            title: "Suspend \(quoted) with its pane?", scope: scope, detail: lines.joined(separator: "\n"), button: "Suspend Pane")
+    }
+
+    /// Resume's sheet — and Resume All's —, asked for an app and whenever
+    /// more than one process is continued: `members` parents first, with
+    /// the names they were stopped as.
+    static func resume(title: String, members: [(target: ActivitySignalTarget, name: String)], scope: String?) -> ActivityPortFree.Question {
+        var lines = ["SIGCONT by each one's own audit token, children first, only while it is still the process Activity stopped:"]
+        lines += members.map { "  pid \($0.target.identity.pid) \(DockerMCP.displayed($0.name))" }
+        lines.append("The command it equals: kill -CONT \(members.reversed().map { "\($0.target.identity.pid)" }.joined(separator: " "))")
+        return ActivityPortFree.Question(
+            title: title, scope: scope, detail: lines.joined(separator: "\n"), button: members.count > 1 ? "Resume \(members.count) Processes" : "Resume")
+    }
+
+    /// Lower Priority's sheet: asked every time, since it can't be undone
+    /// without an administrator.
+    static func lower(_ subject: ActivityVerbSubject, to nice: Int32, scope: String?, timeZone: TimeZone = .current) -> ActivityPortFree.Question {
+        let pid = subject.signal.identity.pid
+        var lines = [
+            "Its nice goes from \(subject.nice) to \(nice): it gets the CPU after what runs at a lower nice.",
+            "It can't be raised back without an administrator (sudo renice): macOS lets you only lower a process's priority.",
+        ]
+        if subject.children > 0 { lines.append("Only this process: its children keep their own priority; what it starts from now on inherits it.") }
+        lines += identityLines(subject, timeZone: timeZone)
+        lines.append("The command it equals: \(ActivityPriorityChange.nice(nice).command(for: pid))")
+        return ActivityPortFree.Question(
+            title: "Lower the priority of “\(DockerMCP.displayed(subject.name))” (pid \(pid)) to nice \(nice)?", scope: scope,
+            detail: lines.joined(separator: "\n"), button: "Lower Priority")
+    }
+
     /// "Stop it first?" (D-11): `K` with no Stop before it.
     static func stopFirst(_ subject: ActivityVerbSubject) -> (title: String, detail: String) {
         (

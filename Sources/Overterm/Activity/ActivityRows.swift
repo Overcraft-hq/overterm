@@ -73,6 +73,10 @@ struct ActivityProcessRow: ResourceTableRow, Sendable {
     var boundUDP: [Int] = []
     /// It holds an established TCP connection.
     var connected = false
+    /// Activity stopped it, or put it in the background (6.10): only those
+    /// are said so — the background state can't be read back (3.9).
+    var stoppedHere = false
+    var backgroundHere = false
 
     var height: CGFloat { 24 }
 
@@ -289,6 +293,8 @@ enum ActivityRows {
                 row.pane = panesByTab[tab]?.firstIndex(of: tag).map { $0 + 1 }
             }
             row.whereText = whereText(row, tabs: tabFacts)
+            row.stoppedHere = process.isStopped && options.known.stoppedHere.contains(identity)
+            row.backgroundHere = options.known.backgroundHere.contains(identity)
             rows.append(row)
         }
         // Listening, the detail and the busiest read every row in scope:

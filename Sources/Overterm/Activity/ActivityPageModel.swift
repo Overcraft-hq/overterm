@@ -68,6 +68,13 @@ struct ActivityPageActions {
     /// `k`: what its class asks (`ActivityPageModel.stopVerb`), decided on
     /// the process read again as its sheet opens.
     var stop: @MainActor (ActivityProcessID) -> Void = { _ in }
+    /// Lower Priority ▸ +5, +10, 20: asked, saying it can't be undone.
+    var lower: @MainActor (ActivityProcessID, ActivityNiceStep) -> Void = { _, _ in }
+    /// `n`: which step, then its question.
+    var chooseLower: @MainActor (ActivityProcessID) -> Void = { _ in }
+    /// The header's Resume All: every process Activity stopped, asked when
+    /// more than one.
+    var resumeAll: @MainActor () -> Void = {}
 }
 
 /// The Activity page (⌥⌘A; docs/design/activity/analysis.md, 6.4): its
@@ -159,6 +166,9 @@ final class ActivityPageModel: ObservableObject {
     /// The main actor's facts a verb's target is read with (running apps,
     /// what Activity and Suspend Tab stopped): set by the window.
     var known: @MainActor () -> ActivityVerbSubject.Known = { ActivityVerbSubject.Known() }
+    /// What Activity stopped and put in the background (6.10): the
+    /// header's "2 stopped here — Resume All", the rows' chips.
+    var held = ActivityHeld.shared
     /// What a link said of a port it couldn't show (6.12): ":N isn't
     /// listed"; cleared by the next link, the person's hand, or a hide.
     @Published private(set) var linkSaid: String?
@@ -469,6 +479,9 @@ final class ActivityPageModel: ObservableObject {
     func take(_ snapshot: ActivitySnapshot) {
         guard !paused, snapshot.tick > latest?.tick ?? 0 else { return }
         latest = snapshot
+        // What Activity stopped or put in the background and has since
+        // ended, or been continued elsewhere, is let go.
+        held.prune(at: snapshot.date) { snapshot.table.process($0) }
         rebuild(asked: false)
     }
 
@@ -502,11 +515,12 @@ final class ActivityPageModel: ObservableObject {
         options.reveal = revealed
         options.containers = wantsContainers == .none ? [] : containers()
         options.connections = connections
-        if let selected = selectedProcess?.identity {
-            options.subjectOf = selected
-            options.known = known()
-            options.known.runningApps = options.runningApps
-        }
+        // What Activity stopped and put in the background, always: every
+        // row's "suspended here" and "background" chips read it, selected
+        // or not.
+        options.known = known()
+        options.known.runningApps = options.runningApps
+        if let selected = selectedProcess?.identity { options.subjectOf = selected }
         lastOptions = options
         Task { [weak self] in
             let content = await Self.make(snapshot, options)
@@ -556,6 +570,11 @@ final class ActivityPageModel: ObservableObject {
         if !selection.isSubset(of: shown) { selection = selection.intersection(shown) }
         updateDetail()
     }
+
+    /// The rows made again from the latest snapshot with what the main
+    /// actor knows now: a verb that changed what Activity holds (a process
+    /// put in the background) is said at once, not a tick later.
+    func refreshVerbs() { rebuild(asked: true) }
 
     /// The selected row's detail: a process's, or a listener's holder's.
     private func updateDetail() {
@@ -707,7 +726,7 @@ final class ActivityPageModel: ObservableObject {
                 ActivityPortHolder.unavailable(row) == nil
             else { return false }
             actions.free(row)
-        case .stop, .forceQuit, .signal: return pressSignalKey(key)
+        case .stop, .forceQuit, .signal, .suspend, .background, .lower: return pressSignalKey(key)
         case .sortCPU where processes: processSort = ResourceSort(column: "cpu", ascending: false)
         case .sortMemory where processes: processSort = ResourceSort(column: "memory", ascending: false)
         case .sortTime where processes: processSort = ResourceSort(column: "time", ascending: false)

@@ -201,26 +201,129 @@ final class ActivityVerbsTests: XCTestCase {
         XCTAssertEqual(page.stoppedAt.count, 1, "what is past its two minutes goes as the next is noted")
     }
 
-    /// Send a Signal ▸ STOP and CONT, a pane's job's Suspend, the
-    /// priorities: greyed with the step they come with — never offered and
-    /// then refused as an owner's verb on another page.
-    func testSuspendAndPrioritiesAreGreyedWithTheirOwnStep() throws {
+    /// Send a Signal ▸ STOP and CONT, Suspend, Resume and the priorities
+    /// are the page's own now: a pane's job's Suspend with its pane, the
+    /// rest as the policy says — offered, never greyed for a later step. An
+    /// app's Quit still comes with its own.
+    func testSuspendAndPrioritiesAreOffered() throws {
         let job = add(1180, parent: 1101, group: 1180, terminal: tty, foreground: 1101, name: "acme-job")
         let elsewhere = add(1181, parent: 1, group: 1181, name: "acme-daemon")
         for identity in [job, elsewhere] {
             let read = try subject(identity)
             for verb in [ActivityVerb.send(.stop), .suspend, .background, .lowerPriority] {
                 let rule = ActivitySignalCheck.rule(verb, for: read.target, user: 501)
-                XCTAssertEqual(ActivityPageModel.unavailable(rule), ActivityPageModel.suspendLater, "\(verb) of \(read.target.kind)")
+                XCTAssertNil(ActivityPageModel.unavailable(rule), "\(verb) of \(read.target.kind)")
             }
         }
-        var stopped = try subject(elsewhere).target
-        stopped.stopped = .activity
-        XCTAssertEqual(ActivityPageModel.unavailable(ActivitySignalCheck.rule(.send(.cont), for: stopped, user: 501)), ActivityPageModel.suspendLater)
-        let read = try subject(elsewhere)
-        XCTAssertNil(ActivityPageModel.unavailable(ActivitySignalCheck.rule(.send(.hup), for: read.target, user: 501)), "SIGHUP is offered")
+        XCTAssertEqual(ActivitySignalCheck.rule(.suspend, for: try subject(job).target, user: 501), .route(.suspendPane, confirm: false))
+        XCTAssertEqual(ActivitySignalCheck.rule(.suspend, for: try subject(elsewhere).target, user: 501), .allowed(.suspend, confirm: false, critical: false))
+        let stopped = try subject(elsewhere, known: .init(appPID: 1000, stoppedHere: [elsewhere]))
+        XCTAssertEqual(stopped.target.stopped, nil, "running: nobody stopped it, whatever is kept")
+        var target = try subject(elsewhere).target
+        target.stopped = .activity
+        XCTAssertNil(ActivityPageModel.unavailable(ActivitySignalCheck.rule(.send(.cont), for: target, user: 501)))
+        XCTAssertEqual(ActivityPageModel.unavailable(.allowed(.quitApp, confirm: true, critical: false)), ActivityPageModel.appVerbsLater)
         let shell = try subject(ActivityProcessID(pid: 1101, start: 1_101_000))
         XCTAssertNil(ActivityPageModel.unavailable(ActivitySignalCheck.rule(.stop, for: shell.target, user: 501)), "the pane's close is the page's own route")
+    }
+
+    /// Who stopped a stopped process, as the subject reads it: what
+    /// Activity kept is Activity's, Resume offered; any other is its
+    /// shell's or nobody known.
+    func testAStoppedProcessIsActivitysOnlyWhenKept() throws {
+        let daemon = add(1182, parent: 1, group: 1182, status: SSTOP, name: "acme-daemon")
+        XCTAssertEqual(try subject(daemon).target.stopped, .unknown)
+        let kept = try subject(daemon, known: .init(appPID: 1000, stoppedHere: [daemon]))
+        XCTAssertEqual(kept.target.stopped, .activity)
+        XCTAssertEqual(ActivitySignalCheck.rule(.resume, for: kept.target, user: 501), .allowed(.resume, confirm: false, critical: false))
+        XCTAssertEqual(ActivitySignalCheck.rule(.resume, for: try subject(daemon).target, user: 501), .refused(ActivitySignalCheck.notStoppedHere))
+        let background = try subject(daemon, known: .init(appPID: 1000, backgroundHere: [daemon]))
+        XCTAssertTrue(background.target.backgroundedHere)
+        XCTAssertEqual(ActivitySignalCheck.rule(.runNormally, for: background.target, user: 501), .allowed(.normalPriority, confirm: false, critical: false))
+    }
+
+    /// What the main actor knows now laid over a subject read from an older
+    /// snapshot: Activity's stop and Suspend Tab's said at once, and gone
+    /// at once once continued here; a background kept; a ⌃Z or a
+    /// debugger's stop the snapshot's.
+    func testTheVerbsSayWhatActivityHoldsAtOnce() throws {
+        let daemon = add(1188, parent: 1, group: 1188, name: "acme-daemon")
+        let running = try subject(daemon)
+        let held = ActivityPageModel.overlaid(running, known: .init(appPID: 1000, stoppedHere: [daemon], backgroundHere: [daemon]))
+        XCTAssertEqual(held.target.stopped, .activity)
+        XCTAssertTrue(held.target.backgroundedHere)
+        XCTAssertEqual(ActivityPageModel.overlaid(running, known: .init(appPID: 1000, suspendedTab: [daemon])).target.stopped, .suspendTab)
+        XCTAssertEqual(ActivityPageModel.overlaid(held, known: .init(appPID: 1000)).target.stopped, nil, "continued here since")
+        XCTAssertFalse(ActivityPageModel.overlaid(held, known: .init(appPID: 1000)).target.backgroundedHere)
+        var job = running
+        job.target.stopped = .jobControl
+        XCTAssertEqual(ActivityPageModel.overlaid(job, known: .init(appPID: 1000)).target.stopped, .jobControl)
+        XCTAssertEqual(
+            ActivityPageModel.overlaid(job, known: .init(appPID: 1000, resumedHere: [daemon])).target.stopped, nil,
+            "continued here a moment ago: a census begun before still lists it stopped")
+        job.target.stopped = .traced
+        XCTAssertEqual(ActivityPageModel.overlaid(job, known: .init(appPID: 1000, stoppedHere: [daemon])).target.stopped, .traced)
+    }
+
+    /// Suspend outside the panes: the process and its subtree, parents
+    /// first — less what a bulk leaves out, a terraform write and what is
+    /// stopped already —, asked once more than one, each listed.
+    func testSuspendStopsItsTreeAsked() throws {
+        let root = add(1183, parent: 1, group: 1183, name: "acme-runner")
+        let worker = add(1184, parent: 1183, group: 1183, name: "acme-worker")
+        add(1185, parent: 1183, group: 1183, status: SSTOP, name: "acme-held")
+        add(1186, parent: 1183, group: 1183, name: "terraform", argv: ["terraform", "apply"])
+        let read = try subject(root)
+        XCTAssertEqual(read.suspendMembers.map(\.identity), [root, worker], "itself first, then what a bulk may reach and runs")
+        let sheet = ActivityVerbQuestion.suspend(read, members: read.suspendMembers, scope: "Outside every tab", timeZone: utc)
+        XCTAssertEqual(sheet.title, "Suspend “acme-runner” (pid 1183) and its tree — 2 processes?")
+        XCTAssertEqual(sheet.button, "Suspend 2 Processes")
+        XCTAssertTrue(sheet.detail.contains("pid 1184 acme-worker"), sheet.detail)
+        XCTAssertTrue(sheet.detail.contains("pid 1186 terraform — "), "the terraform write left running, with why")
+        XCTAssertTrue(sheet.detail.contains("kill -STOP 1183 1184"), sheet.detail)
+        let alone = try subject(worker)
+        XCTAssertEqual(ActivityVerbQuestion.suspend(alone, members: alone.suspendMembers, scope: nil, timeZone: utc).title, "Suspend “acme-worker” (pid 1184)?")
+    }
+
+    /// Lower Priority's steps and sheet: upward only, never past 20, its
+    /// words saying only an administrator undoes it.
+    func testLowerPriorityStepsAndSheet() throws {
+        XCTAssertEqual(ActivityNiceStep.five.value(from: 0), 5)
+        XCTAssertEqual(ActivityNiceStep.ten.value(from: 15), 20)
+        XCTAssertEqual(ActivityNiceStep.lowest.value(from: 3), 20)
+        XCTAssertEqual(ActivityNiceStep.five.value(from: 20), 20, "never past 20: no higher, so refused")
+        let read = try subject(add(1187, parent: 1, group: 1187, name: "acme-batch"))
+        let sheet = ActivityVerbQuestion.lower(read, to: 10, scope: nil, timeZone: utc)
+        XCTAssertEqual(sheet.title, "Lower the priority of “acme-batch” (pid 1187) to nice 10?")
+        XCTAssertEqual(sheet.button, "Lower Priority")
+        XCTAssertTrue(sheet.detail.contains("without an administrator"), sheet.detail)
+        XCTAssertTrue(sheet.detail.contains("renice 10 -p 1187"), sheet.detail)
+        XCTAssertEqual(ActivitySignalCheck.rule(.lowerPriority, for: read.target, user: 501), .allowed(.lowerPriority, confirm: true, critical: false))
+    }
+
+    /// A step that gives nothing is greyed with why — in the row menu and
+    /// `n`'s chooser alike —; one that raises the nice isn't.
+    func testANiceStepThatGivesNothingIsGreyed() {
+        XCTAssertNil(ActivityNiceStep.five.already(from: 0))
+        XCTAssertNil(ActivityNiceStep.lowest.already(from: 19))
+        XCTAssertEqual(ActivityNiceStep.five.already(from: 20), "Its nice is already 20: nice can only be raised.")
+        XCTAssertNotNil(ActivityNiceStep.ten.already(from: 20))
+        XCTAssertNotNil(ActivityNiceStep.lowest.already(from: 20))
+    }
+
+    /// Send a Signal ▸ STOP to a pane's job: Suspend's route with its pane,
+    /// but asked — Send a Signal always asks —, its sheet naming the pane
+    /// and the kill -STOP it equals. Suspend itself goes unasked.
+    func testSendStopToAPanesJobAsksWithItsPane() throws {
+        let job = add(1189, parent: 1101, group: 1189, terminal: tty, foreground: 1101, name: "acme-job")
+        let read = try subject(job)
+        XCTAssertEqual(ActivitySignalCheck.rule(.send(.stop), for: read.target, user: 501), .route(.suspendPane, confirm: true))
+        XCTAssertEqual(ActivitySignalCheck.rule(.suspend, for: read.target, user: 501), .route(.suspendPane, confirm: false))
+        let sheet = ActivityVerbQuestion.suspendPane(read, tab: "acme-web", scope: "Tab “acme-web”", timeZone: utc)
+        XCTAssertEqual(sheet.title, "Suspend “acme-job” (pid 1189) with its pane?")
+        XCTAssertEqual(sheet.button, "Suspend Pane")
+        XCTAssertTrue(sheet.detail.contains("a pane of “acme-web”"), sheet.detail)
+        XCTAssertTrue(sheet.detail.contains("kill -STOP 1189"), sheet.detail)
     }
 
     /// Stop Its Tree at the button: the members as the sheet listed them —

@@ -55,7 +55,10 @@ extension TerminalWindowController {
             terminal: { [weak self] request in self?.activityTerminal(request) },
             act: { [weak self] verb, identity in self?.activityAct(verb, identity) },
             chooseSignal: { [weak self] identity in self?.activityChooseSignal(identity) },
-            stop: { [weak self] identity in self?.activityStop(identity) })
+            stop: { [weak self] identity in self?.activityStop(identity) },
+            lower: { [weak self] identity, step in self?.activityLower(identity, step) },
+            chooseLower: { [weak self] identity in self?.activityChooseLower(identity) },
+            resumeAll: { [weak self] in self?.activityResumeAll() })
         activityPage.known = { Self.activityKnown() }
         activityPage.containers = { Self.activityContainers() }
         activityPage.contextFacts = { context in Self.activityContextFacts(&context) }

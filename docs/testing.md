@@ -542,7 +542,11 @@ value, a path or an address of a process that isn't the test's.
   a `ProcessSignals` was handed a gate that registered it; a
   `ManagedProcess`'s member let go to launchd, a helper's by its group; an
   apply's group while a run has it; a sleep
-  stopped, continued and ended by its token. A group's send (6.10 step 9)
+  stopped, continued and ended by its token; its priority — Run in
+  Background and back, a nice raised a step then to 20, never lowered — and
+  the real kernel's `setpriority` refused for what isn't the run's own. A
+  priority over the fake Mac is checked as a signal is (refusals, the
+  gate, a reused pid, an exec, no token, a nice no higher). A group's send (6.10 step 9)
   over the fake Mac: one `killpg` once the leader is pinned and every
   member checked; refused for a member that started before the leader, is
   in another session, isn't the user's alone or is a helper's, for a
@@ -554,6 +558,9 @@ value, a path or an address of a process that isn't the test's.
   nothing and is said, never terraform alone instead; no start read by
   `find` reaches nobody; with no token call terraform alone still goes by
   its pid and its own group is refused and said.
+- `ActivityHeldTests`: a Suspend's tree stopped only once its root was, a Resume planned again at its button; what Activity stopped and put in the background,
+  kept by identity — resumed as kept, a Suspension whole from its root;
+  let go only by a census read after the change.
 - `ActivitySignalCheckTests`: the pane pill's Free… over every class a pill
   can name — the owners' own verbs, the never-list (what runs as the user
   only for now among it), a terraform write interrupted wherever it runs,

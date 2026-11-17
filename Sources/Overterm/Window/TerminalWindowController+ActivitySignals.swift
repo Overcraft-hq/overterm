@@ -76,13 +76,17 @@ extension TerminalWindowController {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async { @Sendable in
                 let owners = ActivityAttribution.of(snapshot, context: context2, inputs: inputs)
-                continuation.resume(returning: ActivityVerbSubject.read(identity, in: snapshot, owners: owners, known: known2))
+                // What the main actor changed itself is laid over the census,
+                // which may be a tick that started before that change.
+                let read = ActivityVerbSubject.read(identity, in: snapshot, owners: owners, known: known2)
+                continuation.resume(returning: read.map { ActivityPageModel.overlaid($0, known: known2) })
             }
         }
     }
 
     /// What the main actor knows of stopped processes: what Suspend Tab
-    /// stopped, in every window.
+    /// stopped, in every window; what Activity stopped and put in the
+    /// background (`ActivityHeld`).
     static func activityKnown() -> ActivityVerbSubject.Known {
         var suspended: Set<ActivityProcessID> = []
         for window in (NSApp as NSApplication?)?.windows ?? [] {
@@ -91,7 +95,10 @@ extension TerminalWindowController {
                 for pane in tab.terminals { suspended.formUnion((pane.suspended ?? []).map(\.identity)) }
             }
         }
-        return ActivityVerbSubject.Known(suspendedTab: suspended)
+        let held = ActivityHeld.shared
+        var known = ActivityVerbSubject.Known(stoppedHere: held.stopped, suspendedTab: suspended, backgroundHere: held.backgroundHere)
+        known.resumedHere = held.recentlyResumed()
+        return known
     }
 
     /// The pane whose tag is `tag`, in whichever window, with its tab and
@@ -125,8 +132,11 @@ extension TerminalWindowController {
             guard let parent = subject.parent else { return tell("Overterm doesn't do that to \(name)", ActivitySignalCheck.parentUnknown) }
             return activityAct(.stop, parent)
         }
-        // What comes with its own step (an app's Quit, Suspend, the
-        // priorities) and an owner's verb on its own page: said, not asked.
+        // Suspend, Resume, a pane's job with its pane, the priorities:
+        // their own questions (`+ActivitySuspend`).
+        if askHeld(verb, rule, subject) { return }
+        // What comes with its own step (an app's Quit) and an owner's verb
+        // on its own page: said, not asked.
         if let why = ActivityPageModel.unavailable(rule) { return tell("Overterm doesn't do that to \(name)", why) }
         // D-11: Force Quit with no Stop before it asks "Stop it first?";
         // its Force Quit then asks with Force Quit's own sheet.

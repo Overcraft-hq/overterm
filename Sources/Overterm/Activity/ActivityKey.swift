@@ -5,8 +5,9 @@ import Foundation
 /// `d` and `D` are. ← and → aren't here: `ResourceTable` folds and unfolds
 /// with them itself. `k` stops the selection the way its class asks
 /// (Interrupt, Stop Agent, Stop), `K` force-quits it, `x` sends a signal
-/// (`ActivityPageModel+Verbs`); `p`, `b`, `n` and `a` come with the rest of
-/// stage 2's verbs — `f` frees a port through its owner's own verb
+/// (`ActivityPageModel+Verbs`), `p` suspends or resumes it, `b` runs it in
+/// the background or normally, `n` lowers its priority; `a` comes with the
+/// rest of stage 2's verbs — `f` frees a port through its owner's own verb
 /// (`ActivityPortHolder`); Open Files (`l`), the
 /// detail's Files tab, with stage 4's. `e` opens a terminal in the
 /// selection's folder, read at the focus level. ⌥o and ⌥r are
@@ -17,7 +18,7 @@ enum ActivityKey: String, ResourceKey {
     case open, reveal, tabInfo, sample, terminal
     case tree, group, narrower, wider
     case follow, pause, mine, connections, free
-    case stop, forceQuit, signal
+    case stop, forceQuit, signal, suspend, background, lower
     case sortCPU, sortMemory, sortTime, sortPID, invert
 
     var section: ActivityPageModel.Section? {
@@ -53,6 +54,9 @@ enum ActivityKey: String, ResourceKey {
         case .stop: "k"
         case .forceQuit: "K"
         case .signal: "x"
+        case .suspend: "p"
+        case .background: "b"
+        case .lower: "n"
         case .sortCPU: "P"
         case .sortMemory: "M"
         case .sortTime: "T"
@@ -86,6 +90,9 @@ enum ActivityKey: String, ResourceKey {
         case .stop: "Stop it as its class asks: Interrupt a pane's foreground job (⌃C typed), Stop Agent, Stop — asked"
         case .forceQuit: "Force Quit: SIGKILL to it alone — asked, and \"Stop it first?\" unless a Stop didn't end it"
         case .signal: "Send a signal: HUP, INT, QUIT, TERM, USR1, USR2, KILL, STOP or CONT — asked"
+        case .suspend: "Suspend it — a pane's job with its pane, else with its tree — or Resume what Activity stopped"
+        case .background: "Run in Background, or Normally again — only what Activity put there"
+        case .lower: "Lower Priority: nice +5, +10 or 20 — asked, since only an administrator raises it back"
         case .sortCPU: "Sort by CPU"
         case .sortMemory: "Sort by memory"
         case .sortTime: "Sort by CPU time"

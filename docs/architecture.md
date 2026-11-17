@@ -1062,8 +1062,33 @@ walks the closing panes' trees itself, on the main thread, at the close
   a key. `K` with no Stop in the last two minutes asks "Stop it first?".
   After a Stop the header says stopped, still running — Force Quit…, or
   came back as pid N (`ActivityStopWatch`, pure; five reads a second
-  apart). Suspend, Resume, the priorities, an app's Quit and Ask an
-  Agent are the policy's already and come with their own steps.
+  apart). An app's Quit and Ask an Agent are the policy's already and
+  come with their own steps.
+- **The verbs that hold a process** (design 6.10;
+  `TerminalWindowController+ActivitySuspend`, `ActivityHeld`): `p`
+  Suspend — a pane's job with its pane, through Suspend Tab's own path
+  (`suspendPanes`: the shell stopped first, the cover, Resume Tab), what
+  runs outside the panes with its subtree, parents first, less what a bulk
+  leaves out (`ActivityVerbSubject.suspendMembers`) — the root alone
+  first, the rest only once it stopped (`ActivityHeld.stopTree`) —, asked
+  for an app, a helper inside one, a helm or pulumi write, Send a Signal ▸
+  STOP (a pane's job's too, its sheet naming the pane) and more than one
+  process — and Resume, only of what Activity stopped: a Suspension
+  continued whole from its root, children first, each by the identity it
+  was stopped as, planned again at the button (`stillHeld`: one let go
+  while its sheet was up is left alone); a ⌃Z job's is its shell's `fg`,
+  Suspend Tab's is Resume Tab. `ActivityHeld` (one for the app, memory only)
+  keeps what Activity stopped and put in the background, let go once a
+  census read after the change says it ended or runs again; the header
+  says "2 stopped here — Resume All". `b`
+  Run in Background and Run Normally — the latter only for what Activity
+  put there, since nothing reads that state back — unasked for one
+  process; `n` Lower Priority ▸ +5, +10, 20, asked every time, upward
+  only — a step that gives nothing greyed with why, in the menu and `n`'s
+  chooser alike (`ActivityNiceStep.already`). The rows' "suspended here"
+  and "background" read `ActivityHeld` whatever is selected. Both through `ProcessSignals.setPriority`: checked as a signal is,
+  the token first, then `setpriority` by the pid, the gate in the
+  kernel's own call.
 - **Links** (`ActivityLink`, `showInActivity`): Tab Info's header, a
   process's and a port's menu, a pane pill, the tab's menu, ⌘K's
   Activity: This Tab, an Agents card and Docker's port-conflict box open

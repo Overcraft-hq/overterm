@@ -45,6 +45,8 @@ struct ActivityVerbSubject: Sendable {
     var tree: [Member]
     /// Its process group's other members, when it leads one.
     var groupMembers: [Member]
+    /// Its nice (`p_nice`): Lower Priority only raises it.
+    var nice: Int8 = 0
 
     /// What the main actor knows that the census doesn't: running apps, the
     /// identities Activity stopped and put in the background, what Suspend
@@ -55,11 +57,15 @@ struct ActivityVerbSubject: Sendable {
         var stoppedHere: Set<ActivityProcessID> = []
         var suspendedTab: Set<ActivityProcessID> = []
         var backgroundHere: Set<ActivityProcessID> = []
+        /// What Activity continued a moment ago: a census begun before
+        /// still lists it stopped (`ActivityHeld.recentlyResumed`).
+        var resumedHere: Set<ActivityProcessID> = []
 
         init(
             appPID: pid_t = getpid(), runningApps: [pid_t: String] = [:], stoppedHere: Set<ActivityProcessID> = [],
-            suspendedTab: Set<ActivityProcessID> = [], backgroundHere: Set<ActivityProcessID> = []
+            suspendedTab: Set<ActivityProcessID> = [], backgroundHere: Set<ActivityProcessID> = [], resumedHere: Set<ActivityProcessID> = []
         ) {
+            self.resumedHere = resumedHere
             self.appPID = appPID
             self.runningApps = runningApps
             self.stoppedHere = stoppedHere
@@ -99,13 +105,15 @@ struct ActivityVerbSubject: Sendable {
                 supervisor = (parent.pid, reader.name(parent))
             }
         }
-        return ActivityVerbSubject(
+        var subject = ActivityVerbSubject(
             target: target, signal: ActivitySignalTarget(identity, path: facts?.path), name: reader.name(process), command: facts?.command, pane: pane,
             tab: owner?.tab, agent: owner?.agentKind, group: process.group, parent: parent?.identity, parentName: parent.map(reader.name),
             parentTarget: parent.map(reader.target),
             children: table.children(of: identity).filter { !$0.isZombie }.count,
             listening: facts?.sockets?.records.filter(\.isListening).map { Int($0.localPort) }.uniqued() ?? [], supervisor: supervisor,
             tree: descendants.filter { !$0.isZombie }.map(reader.member), groupMembers: groupMembers)
+        subject.nice = process.nice
+        return subject
     }
 
     /// Stop Its Tree's members at the button (6.10 step 4), parents first:
@@ -117,6 +125,22 @@ struct ActivityVerbSubject: Sendable {
     static func treeSend(asked: ActivityVerbSubject, fresh: ActivityVerbSubject) -> [ActivitySignalTarget] {
         let now = Set(fresh.tree.filter { $0.refusal == nil }.map(\.signal.identity))
         return [asked.signal] + asked.tree.filter { $0.refusal == nil && now.contains($0.signal.identity) }.map(\.signal)
+    }
+
+    /// What Suspend stops (6.10: "a process outside the panes is suspended
+    /// with its subtree"), parents first, itself first: its subtree's
+    /// members that a bulk may reach and aren't stopped already — a
+    /// terraform write, an app, what chose to outlive its terminal, a
+    /// shell or an agent are left out, as a bulk Stop leaves them. Pure.
+    var suspendMembers: [ActivitySignalTarget] {
+        [signal] + tree.filter { $0.refusal == nil && $0.target.stopped == nil && $0.target.terraformWrite == nil }.map(\.signal)
+    }
+
+    /// Each member's name, by identity, itself included.
+    var memberNames: [ActivityProcessID: String] {
+        var names = [signal.identity: name]
+        for member in tree { names[member.signal.identity] = member.name }
+        return names
     }
 
     /// Each process's class and facts, by its owner (6.5) and its record.
