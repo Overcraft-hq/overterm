@@ -161,6 +161,13 @@ extension E2ERunner {
         Settings.shared.set("activity.enabled", nil)
         app.hideOverlay()
         check("on, ⌘K offers the page", app.activityPaletteItems().contains { $0.title == "Activity" })
+
+        // Last, so the server the checks above follow still runs for them:
+        // Free :N of the run's own, an app's Quit, Ask an Agent.
+        app.toggleActivityPage(nil)
+        _ = await eventually(15) { page.hasRead }
+        await activityStageTwoChecks(tab: tab)
+        app.toggleActivityPage(nil)
     }
 
     /// Owners, groups and the scope (6.5) over the run's own children: the
