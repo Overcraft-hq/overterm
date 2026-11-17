@@ -168,6 +168,8 @@ extension E2ERunner {
         _ = await eventually(15) { page.hasRead }
         await activityStageTwoChecks(tab: tab)
         app.toggleActivityPage(nil)
+        // Stage 3: Left Behind, the close sheet, the next launch.
+        await activityLeftBehindChecks()
     }
 
     /// Owners, groups and the scope (6.5) over the run's own children: the

@@ -766,6 +766,14 @@ What makes it end-to-end without being dangerous:
   run are read, and nothing of one that isn't the run's is said. The
   harness also drops an inherited `OVERTERM_RUN`/`OVERTERM_HELPER` from
   the app's environment.
+- **Left Behind's checks** (`E2ERunner+ActivityLeftBehind`, in the
+  `activity` scenario) make every survivor a detached python of the run's
+  own that writes its pid and ends itself at the part's stop file (written
+  in a `defer`), so the leftover check finds none; a survivor ticked in a
+  close sheet, and the stand-in stopped for D-29's Resume offer, are
+  registered with the gate by pid and start before anything is sent. The
+  launch check (D-14) lists the Mac's processes and never runs in an
+  isolated run: `LeftBehindTests` checks it over a fake Mac instead.
 
 Scenarios: `terminal`, `tabs`, `rename`, `pin`, `close`, `editor`, `diff`,
 `branchDiff`, `why`, `diffStyle`, `layout`, `session`, `task`, `snippets`, `attention`,
