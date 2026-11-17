@@ -174,7 +174,7 @@ notification and on the Dock; Claude Code needs no setup for it.
 | **⌘L** | The selection to an agent, with the command it came from, its exit code and the diff. |
 | **New Task** <kbd>⇧⌘N</kbd> | A worktree, a branch and an agent tab in one go — and its compose stack, on free ports if another worktree's has them. |
 | **Search** <kbd>⌘F</kbd> | The scrollback, the checkout's file names and their contents; ⌘-click a `path:line` to open it. |
-| **Agents over MCP** | Claude Code started here reaches the browser, the notes, the API client, the databases, Docker, Kubernetes (`k8s_get`, `k8s_logs`, `k8s_why`, `k8s_metrics`…) and Terraform (`tf_roots`, `tf_validate`, `tf_plan`, `tf_outputs`…) — reads freely, asks you before anything writes. |
+| **Agents over MCP** | Claude Code started here reaches the browser, the notes, the API client, the databases, Docker, Kubernetes (`k8s_get`, `k8s_logs`, `k8s_why`, `k8s_metrics`…) Terraform (`tf_roots`, `tf_validate`, `tf_plan`, `tf_outputs`…) and this Mac's processes and ports (`port_holder`, `proc_mine`, `proc_left_behind`…) — reads freely, asks you before anything writes. |
 | **Restored** | Tabs, names, splits and islands come back on relaunch: shells with their last 2000 lines, agent tabs resuming their conversation. |
 
 How each works, in detail: [docs/architecture.md](docs/architecture.md).

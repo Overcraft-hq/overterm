@@ -889,6 +889,11 @@ enum SettingsSchema {
             help:
                 "When an agent finishes and leaves processes running — a server its tool started — the tab says so (\"Claude finished — left node :3001 running\"), in the Inbox too, with Show for Activity's Left Behind. Nothing is ever stopped on its own.",
             kind: .toggle, defaultValue: .bool(true)),
+        SettingSpec(
+            key: "activity.agentAccess", section: .activity, group: "Agents", title: "Agents can read processes and ports",
+            help:
+                "Agents started from Overterm can ask who holds a port, which of their checkout's servers are theirs and what was left running, through MCP (port_holder, port_list, proc_mine, proc_left_behind, proc_list) — read only, masked; outside their own checkout, only a folder's name and processes' names, pids, owners and ports, other apps as totals.",
+            kind: .toggle, defaultValue: .bool(true), requires: "activity.enabled", heldWhenEditedOutside: true),
     ]
 
     private static let terraform: [SettingSpec] = [

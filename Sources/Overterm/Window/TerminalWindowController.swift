@@ -777,6 +777,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         wireDockerAttention()
         wireKubernetesAttention()
         wireTerraformAgents()
+        wireActivityMCP()
         wireTerraformPlan()
         watchDockerPalette().store(in: &cancellables)
         watchKubernetesPalette().store(in: &cancellables)

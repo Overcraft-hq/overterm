@@ -1206,6 +1206,25 @@ walks the closing panes' trees itself, on the main thread, at the close
   earlier run's record), offers Resume for what is still
   stopped, and 10 s on lists what an earlier Overterm left
   (`LeftBehindAtLaunch`), with a Stop All that asks again.
+- **Agents' reads** (stage 3; 8.2–8.5, D-18). `ActivityMCP` serves
+  `port_holder`, `port_list`, `proc_mine`, `proc_left_behind` and
+  `proc_list` on the bridge, routed by prefix (`port_`, `proc_`) in
+  `BrowserMCP.handle` behind `activity.agentAccess` (on, held when edited
+  outside; off with the page); `BrowserBridge.wanted` serves for it alone.
+  Read only: no tool signals (D-19, stage 5). Every call is its pane's —
+  `ActivityMCP.scene`, which the window answers
+  (`TerminalWindowController+ActivityMCP`: the pane's tab, its checkout by
+  `paneCheckout`, the rows' options as the page makes them, every window's
+  tabs) — and a pane no window has gets nothing. The answer comes from
+  `ActivityMonitor.forAgents` (a full snapshot at most one interval old:
+  one census an interval for the app), made into rows and JSON off the
+  main thread (`ActivityMCPAnswer`, pure): inside the caller's checkout
+  masked commands with its folder said `./`, tab titles, branches, CPU and
+  memory; outside it the folder's name and each process's name, pid,
+  class and ports; other apps summed by class; a collision in Overterm's
+  words only; another program's text through `ActivityText.forAgents`,
+  capped at 120 characters; a port nobody of the user's holds "not
+  listed", never "free". An isolated run's answers are its own tabs'.
 - **The switcher** (⌃⌘A, `ActivitySwitcher`): the palette on the
   listening ports, by number, then the ten busiest processes. It holds
   the full level every second while the palette shows it, page or no
