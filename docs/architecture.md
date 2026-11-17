@@ -1128,6 +1128,33 @@ walks the closing panes' trees itself, on the main thread, at the close
   later. An Agents card also says its agent's CPU and memory — it and
   everything under it, from the census the card was made from
   (`AgentOverviewModel.usage`) — and its servers as pills that open.
+- **Whose run it was** (stage 3's groundwork; 6.9, D-15). `OvertermRun`
+  names this run — `<kind>.<pid>.<start µs>`, the kind `release` (the
+  installed `Overterm.app`), `dev` (any other build) or `isolated` — and
+  goes in every pane's environment as `OVERTERM_RUN` beside
+  `OVERTERM_TAB_ID` (`TerminalView.paneMarkers`), and with
+  `OVERTERM_HELPER=<kind>` on every child Overterm spawns, set over any
+  inherited one where each spawn path builds its child's environment:
+  `ManagedProcess.Launch.helper` (kubectl's proxy and port-forward,
+  Docker's ssh), `KubeProcessRun` (kubectl, helm), `TerraformRun`'s and
+  `TerraformStreamRun`'s `childEnvironment`, a detached apply's
+  `launchedEnvironment`, `Git.environment`, Docker's CLI (`env`'s words
+  over Git's), the login shell `ShellEnvironment` asks — its printed
+  answer unmarked before another child gets it —, a language server's
+  `processEnvironment`, the tunnel's ssh and Claude's usage ask. Apple's
+  ssh and perl hide their environment, so they name the run in their
+  argv by pid **and start** (`ArgvSign`): the kubectl socket folder
+  `/tmp/ot-kube-<uid>-<pid>-<start36>` (a folder whose pid now runs
+  another process swept as dead), Docker's `ot-docker-<pid>-<start36>-<key>.sock`,
+  the database tunnel's `ControlMaster=no` and `ControlPath=<user temp>/ot-run-<pid>-<start36>/db-<id>`
+  — a path nothing makes, ssh trying it only as a client, under
+  `_CS_DARWIN_USER_TEMP_DIR` (never `$TMPDIR`) and only while that folder
+  is this user's alone (`SSHTunnel.isPrivateFolder`), else `none` — and a
+  scenario's stand-in by its scratch folder. `RunLeftovers` is the rule
+  a run's leftovers are found by (never a pid alone, never what doesn't
+  descend from the run or launchd — `lineage`); the E2E harness
+  checks it at each scenario's end and after its app quits
+  (docs/testing.md).
 - **The switcher** (⌃⌘A, `ActivitySwitcher`): the palette on the
   listening ports, by number, then the ten busiest processes. It holds
   the full level every second while the palette shows it, page or no
