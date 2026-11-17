@@ -103,6 +103,7 @@ extension E2ERunner {
         }
         check("and below the list, what Listening doesn't read", noted)
         await activityListening(tab: tab, server: row)
+        await activityAgentReadChecks(tab: tab, port: port)
         await activityVerbAndLinkChecks(tab: tab, server: row)
         await activitySignalChecks(tab: tab)
         await activitySuspendChecks(tab: tab)
