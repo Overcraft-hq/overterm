@@ -99,8 +99,13 @@ extension E2ERunner {
         // The run's own jobs, in the background.
         pane.insertText(
             "/bin/sleep 151 & /bin/sleep 153 & sh -c 'trap \"\" TERM; exec /bin/sleep 152' & sh -c '/bin/sleep 154 & /bin/sleep 154 & wait' & "
-                + "/bin/sleep 155 | /bin/sleep 156 & /bin/sleep 158 & kill -STOP $! ; /bin/sleep 159 & "
+                + "/bin/sleep 155 | /bin/sleep 156 & /bin/sleep 159 & "
                 + "sh -c 'while true; do /bin/sleep 157; done' & python3 -c 'import os,time; os.fork() or os._exit(0); time.sleep(160)' &")
+        pane.pressReturn()
+        // A job stopped by a signal, on a line of its own: `$!` at the
+        // line's end, where zsh never reads its `!` as history.
+        _ = await eventually(5) { pane.foregroundGroup == nil || kernel.process(pane.foregroundGroup ?? 0)?.shortName.hasSuffix("sh") == true }
+        pane.insertText("/bin/sleep 158 & kill -STOP $!")
         pane.pressReturn()
 
         // Stop, asked: Cancel sends nothing; the button sends TERM by token.
