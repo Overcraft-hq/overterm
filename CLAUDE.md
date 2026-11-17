@@ -2,7 +2,7 @@
 
 macOS terminal for agent-driven work — Swift/AppKit around libghostty
 (`GhosttyKit`), built for several worktrees at once, each with an agent
-(Claude Code, Codex) in it. Repository: `Overcraft-hq/overterm` (private).
+(Claude Code, Codex, opencode, pi, Gemini CLI) in it. Repository: `Overcraft-hq/overterm` (private).
 
 ## Quick reference
 
@@ -32,7 +32,7 @@ make app dmg                 # dist/Overterm-<VERSION>.dmg; a release is the Rel
 | Path | What |
 |---|---|
 | `Sources/Overterm/Ghostty/` | libghostty embedding: `GhosttyRuntime` (app + C callbacks + actions), `TerminalView` (one surface: keys, IME, mouse, drops), `GhosttyInput`, `TerminalDrop` (what a drop types in) |
-| `Sources/Overterm/Tabs/` | `Tab`, `TabStore` (order, selection, pin invariant), tab strip, `TabKind` (what a tab's icon says it is; `.pod` for `kubectl exec`/`attach -it`), `TabActivity` (needs-you flags), `AttentionChip` ("N need you"), `Agent`, tab context menu, `TabSuspension` (Suspend Tab: SIGSTOP the shell first, SIGCONT it last), `StripPress` (the AppKit view each tab and chip takes its press with) |
+| `Sources/Overterm/Tabs/` | `Tab`, `TabStore` (order, selection, pin invariant), tab strip, `TabKind` (what a tab's icon says it is; `.pod` for `kubectl exec`/`attach -it`), `TabActivity` (needs-you flags), `Agent` (each agent CLI: commands, recognising its process) + `AgentLaunch` (what one launch gets: the bridge each its own way, its attention switch; `AgentLaunchFiles`), `AttentionChip` ("N need you"), `Agent`, tab context menu, `TabSuspension` (Suspend Tab: SIGSTOP the shell first, SIGCONT it last), `StripPress` (the AppKit view each tab and chip takes its press with) |
 | `Sources/Overterm/Groups/` | tab groups: `TabGroup`/`TabStrip`, `TabStore+Groups` (the contiguous-run invariant), `NewTabGroup` (which island a new tab joins), `GroupFocus` (holding other groups' notices), `BroadcastModel`, the island views, the ⌃⌘G switcher |
 | `Sources/Overterm/Window/` | `TerminalWindowController` (owns everything below; layout; menu actions), `ChromeTheme` (the chrome's colour vocabulary), `CardColumn`/`GapSplitView` (the columns as cards on the window), `AttentionNotifier`, split controllers, `WorkspacePages` (the pages over the body — Settings, Docker, Kubernetes — each declared as a `WorkspacePage`: its view, visibility, list keys, palette items) |
 | `Sources/Overterm/Sidebar/` | Files / Overgit / Sessions / Snippets panels, `SidebarModel` (which one shows), `FileTreeModel`, `WorktreeModel`, `DirectoryWatcher` (FSEvents: folders, or each file with its flags — `fileEvents:`) |
@@ -53,7 +53,7 @@ make app dmg                 # dist/Overterm-<VERSION>.dmg; a release is the Rel
 | `Sources/Overterm/Overgit/` | the git panel in the sidebar (⌥⌘G) — docs/architecture.md, Overgit: `OvergitModel` (lazy per section), `OvergitView`/`OvergitRows`, `GraphGutter`, `OvergitMark`, `CommitDetailModel`/`View` (the commit in the right-hand pane) |
 | `Sources/Overterm/Tasks/` | New Task: worktree + branch + agent |
 | `Sources/Overterm/Info/` | Tab Info (⌘I): processes, ports, Claude tokens, disk — see docs/architecture.md |
-| `Sources/Overterm/Agents/` | ⇧⌘A agent overview: `AgentOverviewModel` (cards, ordering), view; `Info/ClaudeActivity` reads what a session is doing |
+| `Sources/Overterm/Agents/` | ⇧⌘A agent overview: `AgentOverviewModel` (cards, ordering), view; `Info/ClaudeActivity` reads what a session is doing; `AgentScreenCheck` (pure: a question on a background agent's screen when it sends no signal — `TerminalWindowController+AgentScreen`) |
 | `Sources/Overterm/Review/` | review tabs (⇧⌘R) — docs/architecture.md, Review tabs: `ReviewSource` (branch, range, commits, pull request, paths; `ReviewPatch` cuts a patch into files, `SplitDiff` lays a diff side by side — pure), `ReviewModel` (one review, read lazily), `ReviewView` (+ `ReviewHostingView`, the page's keys) |
 | `Sources/Overterm/GitHub/` | PRs and CI via `gh`: parsers (`PullRequest.swift`), the Pull Request pane (`PullRequestModel`/`View`) |
 | `Sources/Overterm/Usage/` | what the agents have spent: `UsageTailScanner` (logs read backwards, bounded by the window), `ClaudeUsageSource` / `CodexUsageSource` (quota meters off the files each agent writes), `ModelPricing`, the pane and the strip's gauge |
@@ -116,7 +116,7 @@ More: `docs/architecture.md`, `docs/ghostty.md`, `docs/testing.md`, `docs/debugg
 - **A checkout's compose files are the repository's**: Overterm writes none of them. A stack's own ports are an override under the support folder's `Compose/Ports` (`ComposePortStore`), passed with `-f`; every compose command that reads files (`up`, `pull`, `build`, `config`, `run`, `watch`) is made by `ComposePortStore.command` (or `DockerPageModel.composeCommand`) — one built from `configFiles` directly passes a forgotten override's path, still in the containers' labels, and breaks. A command that reads the files first brings the override up to date with them (`ComposePortStore.refresh`, or `DockerPageModel.runCompose`): Compose refuses one naming a service the files no longer have. An Up goes through `DockerPageModel.startUp`/`up`, which looks at the ports first.
 - **A database secret is never written to disk**: a password or a service account key goes to the keychain (`DatabaseSecrets`, keyed by the connection's id) and nowhere else — not `connections.json`, not a log, not the history. `DatabaseStoreTests` checks the file never holds one.
 - **A driver gives values as text** (`QueryResult`), whatever their type: the grid, the exports and completion read one shape. PostgresNIO answers binary even for a simple query — a new type goes through `PostgresText`, said as psql would. Drivers are tested against real servers (`Scripts/database-test-servers.sh`, `OVERTERM_DB_TESTS=1`), not mocks.
-- Keep features built-in (Claude, Codex); no plugin slots.
+- Keep features built-in (the agents are `Agent`'s cases — Claude Code, Codex, opencode, pi, Gemini CLI); no plugin slots.
 - **Tests are part of the change**: unit/integration in `Tests/OvertermTests` (tabs are real but surfaceless there — never `ghostty_init` in unit tests), and an E2E scenario in `E2ERunner` for anything a person would see; a bug found by hand gets a check. `make test && make e2e` before calling it done. docs/testing.md.
 - **Tests never reach the user's Docker.** Unit tests and scenarios run against `FakeDockerEngine` on a socket of their own (as a remote one through `FakeSSHHost`, which reads nothing of ~/.ssh), an isolated run reaches no engine unless `OVERTERM_DOCKER_HOST` names one, and a scenario records rather than types any command that would reach a real `docker` (compose down against the user's own project of the same name). `OVERTERM_DOCKER_TESTS=1` reads, and makes only containers and volumes of its own (labelled `overterm.test`, from an image already there), removed after.
 - **Nobody is asked about usage over the network.** Both agents write their

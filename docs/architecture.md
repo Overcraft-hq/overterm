@@ -54,7 +54,7 @@ libghostty's own threads and git calls.
 
 "That checkout" is `Tab.checkoutSource`, in order: an **attached** checkout
 (Worktrees → Attach to This Tab), else where the tab's **agent** works
-(`Tab.agentDirectory`, polled every 2 s from the claude/codex process's cwd —
+(`Tab.agentDirectory`, polled every 2 s from the agent process's cwd —
 Claude Code chdirs into a worktree on EnterWorktree), else the **shell's**
 directory (OSC 7 → `Tab.workingDirectory`). Each is turned into a root by
 `FileTreeModel.treeRoot(for:)`: the nearest ancestor with a `.git` (a file in a
@@ -571,7 +571,10 @@ something different is the one mistake this must not make. "Deny" and
 "don't ask again" are found by their words, never by their position.
 
 A tab reaches the inbox only when `TabActivity` says it needs you; the
-inbox is the attention list, not a screen scraper. It polls (1.5 s) only
+inbox is the attention list, not a screen scraper — for an agent that
+sends no signal, the screen check (Agents) is what marks it. Gemini CLI
+takes the digit alone (`confirmsOnKey`); opencode's dialog, with no
+numbers, is said and never answered. It polls (1.5 s) only
 while it is open, because reading a question means reading the screen.
 
 Also the Dock badge (as before) and, while anything waits, a menu bar
@@ -800,12 +803,113 @@ other processes, so the env tag alone can't find a shell — hence the tree.
 
 ## Agents
 
-`Agent` is a closed enum (Claude, Codex). An agent starts by typing its command
-into a fresh login shell (`initial_input`), so quitting it leaves a shell.
-Restore types `resumeCommand` (`claude --continue`, `codex resume --last`).
-Claude Code needs no configuration for tab flags: with `TERM_PROGRAM=ghostty`
-its default notification channel is OSC 777 and its progress bar (OSC 9;4) is
-on by default (checked against 2.1.280).
+`Agent` is a closed enum — Claude Code, Codex, opencode, pi, Gemini CLI —
+and adding one is that enum: its name, command and resume, symbol, Settings
+key (`agents.<agent>Arguments`), how its process is recognised, whether it
+reads a clipboard image on ⌃V (`ImagePaste`; not opencode, unestablished),
+and its launch's handoffs (`AgentLaunch`). The menus (File, the arrow by +,
+Overgit's worktree menu), ⌘K, New Task's picker and Settings list
+`Agent.allCases`. An agent starts by typing its command into a fresh login
+shell (`initial_input`), so quitting it leaves a shell. Restore types
+`resumeCommand`, each CLI's own: `claude --continue`, `codex resume --last`,
+`opencode --continue`, `pi --continue` (the directory's newest session),
+`gemini --resume latest` (sessions are per project).
+
+**Recognised** (`Agent.of(processName:)`, `Agent.of(arguments:)`, pure) by
+process name — `claude`, `codex` (its npm wrapper execs the native binary),
+`opencode` (a compiled Bun binary, no child), `pi` (it sets
+`process.title`) — or by argv: the first word's base name, or under `node`
+the script past the interpreter's flags. Gemini CLI is `node
+/opt/homebrew/bin/gemini`, and relaunches itself as `node
+--max-old-space-size=… …/@google/gemini-cli/bundle/gemini.js`; both are it.
+
+**The bridge, per agent** (`AgentLaunch`, pure; Browser has the server).
+Each the way the CLI takes a server for one launch, nothing written into
+its configuration, the pane's token only in the pane's environment, by
+name: a pane has `OVERTERM_MCP_CONFIG` (its Claude file),
+`OVERTERM_MCP_TOKEN` and `OVERTERM_MCP_URL` (its own path).
+- Claude Code: `--mcp-config "$OVERTERM_MCP_CONFIG"`.
+- Codex: `-c "mcp_servers.overterm-browser.url=\"$OVERTERM_MCP_URL\""
+  -c 'mcp_servers.overterm-browser.bearer_token_env_var="OVERTERM_MCP_TOKEN"'`
+  — a `-c` overrides that key path only (`config_override.rs`), and
+  `bearer_token_env_var` names the variable Codex sends as the bearer.
+- opencode: `OPENCODE_CONFIG_CONTENT='{"mcp":{"overterm-browser":{"type":
+  "remote","url":"{env:OVERTERM_MCP_URL}","headers":{"Authorization":
+  "Bearer {env:OVERTERM_MCP_TOKEN}"}}}}'` — inline config merged last over
+  the user's ("settings that do not conflict are preserved"), `{env:…}`
+  substituted. One text for every pane; a user's own
+  `OPENCODE_CONFIG_CONTENT` is replaced for that launch.
+- Gemini CLI: `GEMINI_CLI_SYSTEM_DEFAULTS_PATH=<Overterm's file>` — the
+  lowest settings layer, its `mcpServers` shallow-merged with the user's;
+  the server an `httpUrl` of `${OVERTERM_MCP_URL}` and a header `Bearer
+  ${OVERTERM_MCP_TOKEN}` (Gemini expands `$VAR`/`${VAR}` in every layer).
+  Not where a real system defaults file is installed, or the variable is
+  already set: that would be replaced. `mcp.allowed` or
+  `--allowed-mcp-server-names` in the user's own settings can still leave
+  it out.
+- pi: none — no MCP, by design (its README).
+The files of Overterm's an agent's launch names (`AgentLaunchFiles`, the
+support folder's `agents/`, 0600): Gemini's two defaults files, pi's
+extension, Gemini's Terraform policy — the same text for every pane, no
+token and no URL (those are the pane's variables), so nothing a pane owns
+is left behind when it closes; the pane's Claude file goes with the pane
+as before.
+
+**Saying when they wait.** Claude Code needs no configuration for tab
+flags: with `TERM_PROGRAM=ghostty` its default notification channel is
+OSC 777 and its progress bar (OSC 9;4) is on by default (checked against
+2.1.280). Codex sends OSC 9 on an approval and at a turn's end by default
+(`tui.notifications`, its auto method picks OSC 9 for Ghostty), while the
+terminal isn't focused. Gemini CLI's are off by default
+(`general.enableNotifications`): its defaults file above turns them on, as
+OSC 777. pi has none: `-e <Overterm's extension>` (pi's own `notify.ts`
+example, its OSC 777 branch) says "Ready for input" at `agent_end`.
+opencode's are off by default and live in its TUI config
+(`OPENCODE_TUI_CONFIG`, whose merge wasn't established): left alone.
+For any of them that sends nothing — opencode, an agent typed in a shell —
+the screen check (`AgentScreenCheck`, below).
+
+**The screen check** (`AgentScreenCheck`, pure;
+`TerminalWindowController+AgentScreen`). Every 3 s a window looks at the
+panes of its tabs that aren't in front of you, where something runs (an
+agent tab, or the ledger's running command), that haven't sent a
+notification or progress since their last command began. Which agent is
+in a pane's foreground group is a process walk off the main thread, at
+most every 10 s a pane; only a pane with an agent has its screen read —
+the viewport's text, on the main thread (a `ghostty_surface_read_text`,
+under a millisecond for a screenful) — and parsed off it. A question
+there — an approval in numbers (`AgentPrompt.isApproval`: a question, one
+choice marked, one that says no — never an answer's numbered list), or
+opencode's `△ Permission required` dialog with its Allow once / Reject —
+marks the tab waiting with its words (`TabActivity.agentAsked`), and
+notifies as an agent's notification would; gone from the screen, the
+mark goes (`agentAnswered`), unless something else marked the tab since.
+A tab in front of you is read only while such a question stands, to see
+it go. The cost, then: nothing for a tab you look at or one at its
+prompt; for a background agent that signals, one walk at its start; for
+one that doesn't, a walk every 10 s and a screen read every 3 s.
+
+**Their questions** (`AgentPrompt`): Claude Code's `❯ 1. Yes`, Codex's
+`› 1. Yes, proceed (y)` with the command between the question and the
+choices (the question is the nearest line above ending in "?"), Gemini
+CLI's `● 1. Allow once` inside its round box (`│ … │` taken off), whose
+list takes the digit with no Return (`Choice.confirmsOnKey`: a Return
+would reach its prompt). opencode's dialog has no numbers: the Inbox says
+it and offers no answer. pi asks nothing.
+
+**Terraform's guard** (`TerraformAgentGuard.launch(for:)`): Claude Code's
+`--disallowedTools`; opencode's `OPENCODE_PERMISSION` (its `bash` rules,
+merged after the user's; the last match wins); Gemini CLI's
+`--admin-policy <Overterm's policy file>` — admin tier, the user's own
+policies kept (`--policy` would replace them), not where an
+administrator's policies are installed (Gemini then ignores it: said).
+Codex and pi: not guarded, said on the pane.
+
+What each was checked against: Claude Code 2.1, Codex at
+openai/codex `c08843a` (its docs and source; not installed here),
+opencode 1.18.31 (its `--help` and the strings of its binary), pi 0.73.1
+(its npm package's README, docs and dist), Gemini CLI 0.40.1 (`--help` and
+its installed bundle). None was run: a session reaches its model provider.
 
 ## Usage
 
@@ -1071,7 +1175,10 @@ driving it are in the same window as the code.
   tools — the window's confirmation naming B's checkout (Terraform
   analysis, D-15). The file's header is `Bearer ${OVERTERM_MCP_TOKEN}`,
   which Claude Code expands, and `OVERTERM_MCP_TOKEN` is in that pane's
-  environment only (`BrowserBridge.environment(forPane:)`). Every write an
+  environment only (`BrowserBridge.environment(forPane:)`), with
+  `OVERTERM_MCP_URL`, the pane's own address, for the agents that take a
+  server another way — Codex, opencode, Gemini CLI (Agents, the bridge per
+  agent); pi has no MCP. Every write an
   MCP call asks about says who asks — "Asked through MCP by Claude in the
   tab “…”" (`MCPAsker`: the call's pane as a task-local, its tab by
   `tab.terminals`, the agent by `tab.agent` or its process) — in that
@@ -1183,7 +1290,11 @@ MCP Inspector's work beside the editor. Servers come from the agents'
 configs, read never written (`MCPServerConfig.discover`): the checkout's
 `.mcp.json`, Claude Code's `~/.claude.json` (the user's, and this
 checkout's under `projects`), Codex's `~/.codex/config.toml` (`TOMLLine`,
-as much TOML as those tables use); `${VAR}` and `${VAR:-default}` expanded.
+as much TOML as those tables use); `${VAR}` and `${VAR:-default}` expanded;
+opencode's `$XDG_CONFIG_HOME/opencode/opencode.json(c)` (`mcp`: `local`
+with its `command` array, `remote` with `url` and `headers`; `{env:VAR}`),
+Gemini CLI's `~/.gemini/settings.json` (`mcpServers`: `httpUrl`, `url`,
+`command`; `$VAR` and `${VAR}`, an unset one left as written).
 Servers added here are Overterm's (`MCPAddedServers`, `API/MCPServers.json`
 in its folder), their headers' and env's values in the keychain — and
 nothing goes into a Bruno collection, which has no MCP request.
@@ -2654,7 +2765,8 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   Tab" verbs stay in the image's Docker Scout menu (`quickview`, `cves`,
   `recommendations`), when the plugin is there (`DockerCLI.hasPlugin`).
 - **MCP Toolkit** (`DockerMCPToolkit`, pure but for `read`): whether
-  Claude Code and Codex reach Docker's MCP gateway — `docker mcp client
+  Claude Code, Codex, opencode and Gemini CLI (the Toolkit's
+  `claude-code`, `codex`, `opencode`, `gemini`) reach Docker's MCP gateway — `docker mcp client
   ls --global --json`, which reads their config files and nothing else,
   each time the page shows (an isolated run asks only a scenario's stub).
   Connect and Disconnect are `docker mcp client connect|disconnect
@@ -8626,8 +8738,9 @@ stage 2e, force unlock, and stage 2f, a review's Terraform section.
     guarded. Each launch starts a read again off the main thread (one
     `git ls-files`, `decide`, once at a time a checkout), so a production
     root merged into a worktree the panel never shows reaches the next
-    launch; no walk or file read on the main thread. Codex has no
-    per-command deny: `.notGuarded`, a "terraform writes not guarded"
+    launch; no walk or file read on the main thread. opencode and Gemini
+    CLI are guarded their own way (Agents, Terraform's guard). Codex and
+    pi have no per-command deny: `.notGuarded`, a "terraform writes not guarded"
     chip on its pane's header for as long as it runs
     (`TerminalView.terraformAgentGuard`). Nothing is written to the
     agent's settings, no shim on PATH (D-8). **The rules are unverified

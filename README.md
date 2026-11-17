@@ -26,7 +26,10 @@ Swift/AppKit app, so your `~/.config/ghostty/config` — font, theme, keybinds �
 applies as it is. Everything around it is built for one thing: keeping five or
 ten agent sessions straight. Each tab says what it is and what it wants —
 **working**, **done**, **failed**, **needs you** — in the strip, in a
-notification and on the Dock; Claude Code needs no setup for it.
+notification and on the Dock. Claude Code, Codex, opencode, pi and Gemini CLI
+are built in: started, resumed and recognised, Gemini's and pi's own
+notifications turned on for the launch, and a question on screen from one
+that says nothing (opencode) still marks its tab.
 
 ---
 
@@ -55,7 +58,7 @@ notification and on the Dock; Claude Code needs no setup for it.
       <code>.bru</code> you commit. GraphQL with its schema browsed and the query
       completed from it; gRPC — methods by reflection or your <code>.proto</code>
       files, unary and streaming calls. MCP servers — your agents'
-      <code>.mcp.json</code>, Claude Code's and Codex's — inspected: tools called,
+      <code>.mcp.json</code>, Claude Code's, Codex's, opencode's and Gemini's — inspected: tools called,
       resources read, every message logged. Imports OpenAPI, Postman,
       <code>.http</code> and cURL; agents send requests over MCP.
     </td>
@@ -181,7 +184,7 @@ notification and on the Dock; Claude Code needs no setup for it.
 | **⌘L** | The selection to an agent, with the command it came from, its exit code and the diff. |
 | **New Task** <kbd>⇧⌘N</kbd> | A worktree, a branch and an agent tab in one go — and its compose stack, on free ports if another worktree's has them. |
 | **Search** <kbd>⌘F</kbd> | The scrollback, the checkout's file names and their contents; ⌘-click a `path:line` to open it. |
-| **Agents over MCP** | Claude Code started here reaches the browser, the notes, the API client, the databases, Docker, Kubernetes (`k8s_get`, `k8s_logs`, `k8s_why`, `k8s_metrics`…) and Terraform (`tf_roots`, `tf_validate`, `tf_plan`, `tf_outputs`…) — reads freely, asks you before anything writes. |
+| **Agents over MCP** | Claude Code, Codex, opencode and Gemini CLI started here (each for that launch only, nothing written to their configs; pi has no MCP) reach the browser, the notes, the API client, the databases, Docker, Kubernetes (`k8s_get`, `k8s_logs`, `k8s_why`, `k8s_metrics`…) and Terraform (`tf_roots`, `tf_validate`, `tf_plan`, `tf_outputs`…) — reads freely, asks you before anything writes. |
 | **Restored** | Tabs, names, splits and islands come back on relaunch: shells with their last 2000 lines, agent tabs resuming their conversation. |
 
 How each works, in detail: [docs/architecture.md](docs/architecture.md).
