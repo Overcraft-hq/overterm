@@ -1155,6 +1155,57 @@ walks the closing panes' trees itself, on the main thread, at the close
   descend from the run or launchd — `lineage`); the E2E harness
   checks it at each scenario's end and after its app quits
   (docs/testing.md).
+- **Left Behind** (stage 3; 6.9, D-14, D-16, D-17, D-29). What outlived
+  its tab, its agent or an earlier Overterm is placed by rules 8 and 11 of
+  6.5 (`LeftBehind`, pure: `LeftBehindSign` — a closed pane's tag, an
+  agent run's window, an earlier run's marker or argv sign, a test run's,
+  a dead group leader's orphan in a checkout no tab shows, "probably" —;
+  never one detached on purpose, an app, a launchd job, nor one the person
+  kept, which is theirs, "kept running — …"). `LeftBehindLedger` (one for
+  the app, memory only) keeps this run's retired panes (`retireForLeftBehind`
+  at every pane's close), the agents' runs the census sees in each pane
+  (`ActivityAgentRuns`, pure: the agent's identity first seen — its own
+  start —, the tick that found it gone; a pane not read says nothing) and
+  the kept identities, and fills the census's context with them. 2 s after
+  a run ends, one one-off census says what it left: the tab's `.done` note
+  (`TabActivity.leftBehind`, `fromLeftBehind`; `activity.leftBehindNotice`),
+  the Inbox's Show, the Agents card's "left N behind". The page's third
+  section (3) lists Processes' rows that are left behind by checkout
+  (`ActivityRows+LeftBehind`), with Keep and Stop All Certain in This
+  Checkout… — certain rows only, never one ignoring SIGHUP, detached, an
+  app, a terraform write or kept (`LeftBehind.isBulkEligible`), one sheet
+  listing each, SIGTERM by identity (`TerminalWindowController+LeftBehind`).
+  Every Left Behind send — that Stop All, a close sheet's ticked rows, a
+  worktree's removal, the launch's Stop All — reads each target again at
+  the button and asks the policy (`LeftBehindStop`, pure): kept ones and
+  what they started out, the bulk rule for a bulk, and only what
+  `ActivitySignalCheck`'s Stop answers with a plain SIGTERM sent — a
+  terraform write, an agent, an app or a release write named with why.
+  An agent's run ends where the census found it gone; found long after its
+  last sighting (a window off screen), its sign is only probably. Runs are
+  followed in the off-screen rounds' lookups too, and a finished command in
+  a pane with an agent brings one census 2 s on.
+  Closing a tab or a split pane reads a fresh census (≤ 1 s) and names what
+  will keep running and what its shell decides (`ActivitySurvivors`, pure),
+  a checkbox each, all unticked: ticked ones stopped by identity after the
+  close, unticked ones kept; under "only when something is running" a
+  tagged survivor counts (`hasSurvivors`), and the window's close and the
+  quit question name what goes on running (`survivorsListed`); a terraform
+  tool is named, never a checkbox. Removing a worktree lists what
+  runs in it by folder or open file (`WorktreeProcesses`: one census, then
+  each process's folder and its descriptors' paths — the kernel's
+  `vnodePath` — off the main thread in one sweep of both paths under a 3 s
+  deadline, waited for at most 4 s; a listing cut short says so), with
+  Cancel (the default), Remove Anyway, and Stop N and Remove…, asked again
+  in a `WriteConfirmation`; kept ones and terraform are never stopped there,
+  and an isolated run lists only its own; Clean Up Merged keeps such a
+  worktree, or one it couldn't read.
+  At launch — never in an isolated run — `ActivityPersistence` reads back
+  the kept and stopped identities (`ActivityPersisted`: pid and start only,
+  0600, never through a link, swept; until then every write keeps the
+  earlier run's record), offers Resume for what is still
+  stopped, and 10 s on lists what an earlier Overterm left
+  (`LeftBehindAtLaunch`), with a Stop All that asks again.
 - **The switcher** (⌃⌘A, `ActivitySwitcher`): the palette on the
   listening ports, by number, then the ten busiest processes. It holds
   the full level every second while the palette shows it, page or no

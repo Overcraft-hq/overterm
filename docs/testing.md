@@ -771,7 +771,10 @@ What makes it end-to-end without being dangerous:
   own that writes its pid and ends itself at the part's stop file (written
   in a `defer`), so the leftover check finds none; a survivor ticked in a
   close sheet, and the stand-in stopped for D-29's Resume offer, are
-  registered with the gate by pid and start before anything is sent. The
+  registered with the gate by pid and start before anything is sent. D-29
+  is checked through Activity's own Suspend and the writer: the file's bytes
+  (pid and start only, 0600), then the app forgetting while the file stays,
+  for the next launch's Resume offer. The
   launch check (D-14) lists the Mac's processes and never runs in an
   isolated run: `LeftBehindTests` checks it over a fake Mac instead.
 
