@@ -1036,9 +1036,19 @@ walks the closing panes' trees itself, on the main thread, at the close
   route (`sudo lsof`, typed with no Return) for another user's —, each
   asked (`WriteConfirmation`), the holder read again from a one-off census
   as the sheet opens; afterwards the port is watched as a pill's is, never
-  by a bind, and the header says what became of it. The user's own
-  processes are freed by their own Stop or Interrupt (`k`) or by their
-  pane pill. Every new tab the page opens — Terminal in Its Folder (`e`,
+  by a bind (`watchPort`: the census's sockets; `ListeningPorts.bindProbes`
+  lets a test say so), and the header says what became of it. A port the
+  user's own process holds is Activity's own verb (`ActivityPortHolder.Plan`):
+  `.freePort`'s rule on the holder read from a fresh census — ⌃C typed for
+  a pane's foreground job, Stop for a background job, an agent's child or
+  one elsewhere, Stop Agent, an app's Quit, and for a terraform write that
+  runs the holder (its provider plugin) terraform interrupted, never the
+  plugin (`subject(of:)`); the sheet names every other holder of the port
+  and the supervisor, which is never sent to; the plan is made again at
+  the button, and the watch says free, came back as pid N, still held by
+  the one freed (Force Quit offered — never of a write's plugin, said
+  "still stopping" instead) or by one that held it with it
+  (`PortFreeing.State.inherited`). Every new tab the page opens — Terminal in Its Folder (`e`,
   the selection's folder read at the focus level), Open Files, Sample, a
   service's stop, the read route — goes through `activityTerminal`.
 - **The verbs that change a process** (design 6.10; `ActivityPageModel+Verbs`,
@@ -1062,8 +1072,20 @@ walks the closing panes' trees itself, on the main thread, at the close
   a key. `K` with no Stop in the last two minutes asks "Stop it first?".
   After a Stop the header says stopped, still running — Force Quit…, or
   came back as pid N (`ActivityStopWatch`, pure; five reads a second
-  apart). An app's Quit and Ask an Agent are the policy's already and
-  come with their own steps.
+  apart). An app's `k` is Quit… and its `K` Force Quit
+  (`ProcessSignals.quitApp`: checked as a signal is, the token first, then
+  `NSRunningApplication.terminate`/`forceTerminate` by its pid only while
+  the app runs the executable the token names; what LaunchServices
+  doesn't list, can't be asked, runs another image than its bundle's
+  executable, or has no executable to read gets its verb's signal by the
+  token — D-23's fallback; a stopped app quit is continued after).
+  **Ask an Agent** (`a`, ⌘L; `ActivityBrief`, pure): the selected
+  process's detail as a brief — where and why, its state ("yours", never
+  the account's name) and usage now, its ports and its children by name,
+  its own text masked in a fenced block said to be data — offered only to
+  the agents of its own tab and checkout; one in no tab is offered to
+  every agent as `outside` (name, pid, ports, usage: never its command,
+  folder, tab or branch; design 8.4).
 - **The verbs that hold a process** (design 6.10;
   `TerminalWindowController+ActivitySuspend`, `ActivityHeld`): `p`
   Suspend — a pane's job with its pane, through Suspend Tab's own path

@@ -617,8 +617,9 @@ value, a path or an address of a process that isn't the test's.
 
 **The isolated-run gate.** A unit test or an isolated run is guarded
 (`AppEnvironment.guardsSignals`), over every change Overterm makes to a
-process it didn't spawn — every signal today, a priority and a quit when
-stage 2 brings their verbs, each through the same gate: Activity changes
+process it didn't spawn — every signal, a priority (`setpriority`) and an
+app's Quit and Force Quit (`terminate`/`forceTerminate`, which the live
+kernel's `quitApp` checks the gate for itself), each through the same gate: Activity changes
 only what the run registered as its own (`ActivitySignalGate.register`, a child's pid and
 start read at spawn) and what runs under a `login` its own panes spawned.
 `ProcessSignals` refuses anything else before a token is taken, and the
@@ -628,7 +629,10 @@ real kernel's sends refuse it again before their call, by the app's gate
 registers them in `.shared` for the test's length. A real process that
 isn't the test's — the runner's parent — is only ever asked about through
 `RecordingKernel`, whose signals reach nothing but the test's own
-children, so not even a broken gate could signal it.
+children, so not even a broken gate could signal it. The E2E scenario
+quits only applets it made and launched itself (`createsNewApplicationInstance`),
+registered with the gate, and takes each out of LaunchServices' database
+(`lsregister -u`) before its scratch folder goes.
 
 `ActivityProbeTests` is opt-in, run on each new macOS and on the oldest
 supported one (the support matrix of docs/design/activity/analysis.md,
