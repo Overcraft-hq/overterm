@@ -801,8 +801,12 @@ extension E2ERunner {
             }
 
             """#
+        // Recorded at spawn, by itself: its pid in the run's scratch folder
+        // (the harness's leftover check, `RunLeftovers.recorded`); perl keeps it.
+        let scratch = folder.deletingLastPathComponent()
         let text = """
             #!/bin/sh
+            \(RunLeftovers.recordLine(in: scratch))
             printf '%s|%s\\n' "$KUBECONFIG" "$*" >> '\(log.path)'
             pod="${2#pod/}"
             ports="$3"

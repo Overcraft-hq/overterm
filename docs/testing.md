@@ -614,6 +614,30 @@ value, a path or an address of a process that isn't the test's.
   both rows from its side —, none for one holder, one shared socket,
   another protocol or port, or a connection; the note on a built row and
   in its VoiceOver label, `is:collision`.
+- `RunMarkersTests` (stage 3's groundwork, 6.9 and D-15): the run's
+  marker, its kind from the bundle's place, set over an inherited one
+  and taken off a login shell's answer; every argv sign spelt and read
+  back, through the masking too, and nothing that only looks like one;
+  the leftover check's rules — never the pid alone, a start before the
+  run's another's, a record younger than its process the pid taken again
+  — over a fake Mac, only the run's said and nothing of an environment
+  but the marker; lineage first — a person's `tail` or `grep` naming the
+  scratch folder under a shell older than the run never found, an
+  orphan's child found, a registry's pid and what is still under the app
+  only inside it —; and a real child of the test's (perl, its argv a
+  ControlPath) found by the live kernel; every spawn path's markers —
+  where each builds its child's environment, and printed by a real child
+  of the test's at the spawn through `ManagedProcess`, `KubeProcessRun`,
+  `TerraformRun`, `TerraformStreamRun` (both ways it starts), a detached
+  apply's launcher, `Git.run`, `env` as Docker's CLI runs it,
+  `DockerCLI.lines`, `SSHTunnel.open` (a stand-in ssh) and the login
+  shell's run; a pane's tag and run, never a helper; the tunnel's
+  ControlPath (short, under `_CS_DARWIN_USER_TEMP_DIR`, never made,
+  `none` when too long or expandable, or when its folder is a link or
+  another user could write in it); the kubectl socket folder named by pid and start, a
+  folder whose pid runs another process swept. `SSHTunnelTests`' spike:
+  the tunnel's own ssh through `FakeSSHHost` to a listener of the test's,
+  forwarded, its stderr silent about the path, nothing made there.
 
 **The isolated-run gate.** A unit test or an isolated run is guarded
 (`AppEnvironment.guardsSignals`), over every change Overterm makes to a
@@ -716,6 +740,32 @@ What makes it end-to-end without being dangerous:
   they find there — the API panel once found a real Bruno collection.
 - **Scratch files** in a temp dir removed at the end; repos are created with
   a throwaway git identity.
+- **Nothing of a run is left running** (docs/design/activity/analysis.md,
+  10.5). Every scenario's app prints `E2E RUN <OVERTERM_RUN> <scratch>`
+  first, and at its end — once what quitting ends was ended — looks for
+  its own processes still there (`RunLeftovers`, `E2ERunner+Leftovers`):
+  the run's `OVERTERM_RUN` in their environment, a stand-in's record of
+  its own pid in the scratch folder's `spawned/` (written before it
+  `exec`s; `RunLeftovers.recordLine`), or an argv sign naming the run's
+  pid **and start** — the kubectl socket folder, Docker's ssh socket, the
+  tunnel's `ControlPath` — or its scratch folder (`ArgvSign`; Apple's perl
+  and ssh hide their environment), a helper registry's pid, or anything
+  still under the app — and only when its parents, each started since the
+  run, lead to the run or launchd (`RunLeftovers.lineage`): what the
+  person runs meanwhile, a `grep` naming the scratch folder, is never
+  found, said or signalled. Each is a failure (`at the end,
+  nothing of the run's is left running`, by pid and name), then is
+  stopped by its identity through `ProcessSignals`, the gate admitting it
+  as the run's own. Once the app has quit the harness looks again from
+  outside by the same rules, lineage too (`Tests/OvertermE2ETests/E2ELeftovers.swift`:
+  its own `KERN_PROC_ALL` and `KERN_PROCARGS2`, the marker matched as
+  bytes at an entry's start, the region cleared), against the start it
+  read of the app it launched — never a pid alone: a relaunched Overterm
+  can get the same pid — and ends what it finds, TERM then KILL, each
+  read again just before. Only this user's processes started since the
+  run are read, and nothing of one that isn't the run's is said. The
+  harness also drops an inherited `OVERTERM_RUN`/`OVERTERM_HELPER` from
+  the app's environment.
 
 Scenarios: `terminal`, `tabs`, `rename`, `pin`, `close`, `editor`, `diff`,
 `branchDiff`, `why`, `diffStyle`, `layout`, `session`, `task`, `snippets`, `attention`,

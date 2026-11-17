@@ -94,6 +94,127 @@ final class RunMarkersTests: XCTestCase {
         XCTAssertEqual(ArgvSign.signs(in: ActivityText.command(["kubectl", "proxy", "--unix-socket=\(socket)"])), [.kubectl(id)])
     }
 
+    // MARK: The leftover check
+
+    func testARunsProcessIsKnownOnlyByItsStartAndWhatSaysItIsTheRuns() {
+        let later = ActivityProcessID(pid: 5000, start: run.start + 1)
+        let earlier = ActivityProcessID(pid: 5000, start: run.start - 1)
+        func why(_ id: ActivityProcessID, marker: String? = nil, command: String? = nil, recorded: UInt64? = nil, scratch: String? = nil) -> RunLeftover.Why? {
+            RunLeftovers.why(id, run: run, scratch: scratch, marker: marker, command: command, recordedBy: recorded)
+        }
+        XCTAssertEqual(why(later, marker: run.marker), .marker)
+        XCTAssertNil(why(earlier, marker: run.marker), "started before the run: another's, whatever it carries")
+        XCTAssertNil(why(run.identity, marker: run.marker), "the run itself")
+        XCTAssertNil(why(later, marker: "release.4242.1"), "a run with the same pid, another start")
+        XCTAssertNil(why(later), "nothing says it is the run's: never the pid alone")
+        XCTAssertEqual(why(later, recorded: later.start), .recorded)
+        XCTAssertNil(why(later, recorded: later.start - 1), "started after its record: the pid taken again")
+        let kube = "/tmp/" + ArgvSign.kubeFolder(uid: 501, run: run.identity) + "/a.sock"
+        XCTAssertEqual(why(later, command: "kubectl proxy --unix-socket=\(kube)"), .sign(.kubectl(run.identity)))
+        let other = "/tmp/" + ArgvSign.kubeFolder(uid: 501, run: ActivityProcessID(pid: 4242, start: 9)) + "/a.sock"
+        XCTAssertNil(why(later, command: "kubectl proxy --unix-socket=\(other)"), "the same pid, an earlier run's folder")
+        let id = UUID().uuidString
+        let script = "/usr/bin/perl /var/folders/xy/T/overterm-e2e-\(id)/stand-in-bin/port-forward.pl"
+        XCTAssertEqual(why(later, command: script, scratch: id), .sign(.testScratch(id)))
+        XCTAssertNil(why(later, command: script, scratch: UUID().uuidString), "another test run's")
+    }
+
+    func testTheCheckReadsOnlyTheUsersOwnAndSaysOnlyTheRunsOwn() {
+        let mac = FakeActivityKernel(uid: 501)
+        func add(_ pid: pid_t, start: UInt64, uid: uid_t = 501, name: String, words: [String], environment: [String] = [], status: Int32 = SRUN) {
+            mac.add(
+                FakeActivityKernel.Process(
+                    record: FakeActivityKernel.record(pid: pid, start: start, parent: 1, uid: uid, status: status, name: name),
+                    arguments: FakeActivityKernel.arguments(executable: "/usr/local/bin/\(name)", words, environment: environment)))
+        }
+        let after = run.start + 10
+        add(6001, start: after, name: "acme-server", words: ["acme-server"], environment: ["OVERTERM_RUN=\(run.marker)", "AWS_SECRET_ACCESS_KEY=x"])
+        add(6002, start: after, name: "globex-tool", words: ["globex-tool"], environment: ["OVERTERM_RUN=release.1.2"])
+        add(6003, start: run.start - 10, name: "acme-old", words: ["acme-old"], environment: ["OVERTERM_RUN=\(run.marker)"])
+        add(6004, start: after, uid: 0, name: "fake-root", words: ["fake-root"], environment: ["OVERTERM_RUN=\(run.marker)"])
+        add(6005, start: after, name: "acme-zombie", words: [], environment: ["OVERTERM_RUN=\(run.marker)"], status: SZOMB)
+        let kube = "/tmp/" + ArgvSign.kubeFolder(uid: 501, run: run.identity)
+        add(6006, start: after, name: "kubectl", words: ["kubectl", "proxy", "--unix-socket=\(kube)/a-1.sock"])
+        let left = RunLeftovers.find(run: run, scratch: nil, kernel: mac)
+        XCTAssertEqual(left.map(\.identity.pid), [6001, 6006])
+        XCTAssertEqual(left.map(\.why), [.marker, .sign(.kubectl(run.identity))])
+        XCTAssertEqual(left.first?.said, "acme-server (pid 6001): carries the run's OVERTERM_RUN — acme-server")
+        XCTAssertFalse(left.map(\.said).joined().contains("AWS"), "nothing of its environment but the marker")
+    }
+
+    /// Lineage before any match counts: an argv naming the run's scratch
+    /// folder or socket folder is the run's only when its parents lead to
+    /// the run or launchd, each started since — a person's own `grep`,
+    /// under a shell older than the run, is never found, nor said.
+    func testOnlyWhatDescendsFromTheRunOrLaunchdIsFound() {
+        let mac = FakeActivityKernel(uid: 501)
+        func add(_ pid: pid_t, start: UInt64, parent: pid_t, name: String, words: [String] = [], environment: [String] = []) {
+            mac.add(
+                FakeActivityKernel.Process(
+                    record: FakeActivityKernel.record(pid: pid, start: start, parent: parent, uid: 501, status: SRUN, name: name),
+                    arguments: FakeActivityKernel.arguments(executable: "/usr/local/bin/\(name)", words, environment: environment)))
+        }
+        let after = run.start + 10
+        let id = UUID().uuidString
+        let scratch = URL(fileURLWithPath: "/var/folders/xy/T/overterm-e2e-\(id)")
+        let named = "/var/folders/xy/T/overterm-e2e-\(id)/stand-in-forwards.log"
+        let kube = "/tmp/" + ArgvSign.kubeFolder(uid: 501, run: run.identity) + "/"
+        add(4242, start: run.start, parent: 1, name: "Overterm")
+        // The person's: a terminal and its shell older than the run.
+        add(7000, start: run.start - 100, parent: 1, name: "acme-term")
+        add(7001, start: run.start - 50, parent: 7000, name: "zsh")
+        add(7002, start: after, parent: 7001, name: "tail", words: ["tail", "-f", named])
+        add(7003, start: after, parent: 7001, name: "ls", words: ["ls", kube])
+        add(7004, start: after, parent: 7002, name: "grep", words: ["grep", "x", named], environment: ["OVERTERM_RUN=\(run.marker)"])
+        // The run's: under it, an orphan, an orphan's child; and one whose parent's pid was taken again.
+        add(7010, start: after, parent: 4242, name: "perl", words: ["perl", named])
+        add(7011, start: after, parent: 1, name: "kubectl", words: ["kubectl", "proxy", "--unix-socket=\(kube)a.sock"])
+        add(7012, start: after + 1, parent: 7011, name: "acme-plugin", environment: ["OVERTERM_RUN=\(run.marker)"])
+        add(7013, start: after + 5, parent: 1, name: "acme-late")
+        add(7014, start: after, parent: 7013, name: "perl", words: ["perl", named])
+        // Under the run with nothing to say: only while the app lives, and
+        // a helper registry's pid.
+        add(7020, start: after, parent: 4242, name: "sleep", words: ["/bin/sleep", "152"])
+        add(7021, start: after, parent: 1, name: "terraform", words: ["terraform", "validate"])
+        add(7022, start: after, parent: 7001, name: "terraform", words: ["terraform", "plan"])
+
+        let outside = RunLeftovers.find(run: run, scratch: scratch, kernel: mac)
+        XCTAssertEqual(outside.map(\.identity.pid).sorted(), [7010, 7011, 7012])
+        let inside = RunLeftovers.find(run: run, scratch: scratch, kernel: mac, registered: [7021, 7022], descendants: true)
+        XCTAssertEqual(inside.map(\.identity.pid).sorted(), [7010, 7011, 7012, 7020, 7021])
+        XCTAssertEqual(inside.first { $0.identity.pid == 7020 }?.why, .descendant)
+        XCTAssertEqual(inside.first { $0.identity.pid == 7021 }?.why, .registered)
+        let said = inside.map(\.said).joined(separator: " ")
+        for theirs in ["tail", "ls", "grep", "acme-term", "zsh"] { XCTAssertFalse(said.contains(theirs), theirs) }
+        XCTAssertFalse(said.contains("pid 7022"), "a registry's pid under the person's shell: its pid taken again")
+    }
+
+    func testAStandInsRecordIsItsPidAndTheTimeItWroteIt() throws {
+        let scratch = dir.appendingPathComponent("overterm-e2e-\(UUID().uuidString)")
+        let line = RunLeftovers.recordLine(in: scratch)
+        let shell = Process()
+        shell.executableURL = URL(fileURLWithPath: "/bin/sh")
+        shell.arguments = ["-c", line]
+        try shell.run()
+        shell.waitUntilExit()
+        let recorded = RunLeftovers.recorded(in: scratch)
+        XCTAssertEqual(Array(recorded.keys), [shell.processIdentifier])
+        XCTAssertNotNil(recorded[shell.processIdentifier])
+        XCTAssertEqual(RunLeftovers.scratchID(of: scratch).map { UUID(uuidString: $0) != nil }, true)
+    }
+
+    /// A real child of the test's whose argv names this run: found, by the
+    /// live kernel, among the Mac's processes — its parent the run.
+    func testTheLiveCheckFindsARealChildBySign() throws {
+        let run = OvertermRun.current
+        let controlPath = SSHTunnel.controlPath(for: UUID(), run: run.identity, folder: dir)
+        // perl keeps its arguments in its argv: the path stays there.
+        let child = try TestChild("/usr/bin/perl", ["-e", "sleep 30", controlPath])
+        defer { child.stop() }
+        let left = RunLeftovers.find(run: run, scratch: nil)
+        XCTAssertEqual(left.filter { $0.identity == child.identity }.map(\.why), [.sign(.databaseTunnel(run.identity))])
+    }
+
     // MARK: Every spawn path's markers
 
     private func expectMarked(_ environment: [String: String]?, _ helper: OvertermRun.Helper, file: StaticString = #filePath, line: UInt = #line) {

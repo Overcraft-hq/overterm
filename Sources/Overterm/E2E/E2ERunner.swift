@@ -136,6 +136,7 @@ final class E2ERunner {
         let runner = E2ERunner(app: app)
         Task { @MainActor in
             try? FileManager.default.createDirectory(at: runner.scratch, withIntermediateDirectories: true)
+            runner.announceRun()
             // Photographing (README's pictures): every scenario in one
             // fixed frame, so the pictures match whichever scenario took them.
             if ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"]?.isEmpty == false { await runner.photoFrame() }
@@ -180,6 +181,8 @@ final class E2ERunner {
                 "at the end, every child it started is gone", gone,
                 "running: \(started.filter(\.isRunning).map(\.pid) + ManagedProcess.livePIDs + KubeProcessRun.livePIDs)")
         }
+        // And nothing else of the run's: its marker, a stand-in's record, a sign (10.5).
+        await checkNothingLeftRunning()
         if AppEnvironment.ownsSupportDirectory {
             try? FileManager.default.removeItem(at: AppEnvironment.supportDirectory)
         }
