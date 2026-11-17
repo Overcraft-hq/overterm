@@ -79,6 +79,9 @@ extension E2ERunner {
         let rated = await eventually(10) { ownRows().contains { $0.cpu != nil } && page.content.summary.meters?.cores.isEmpty == false }
         check("CPU once two ticks have read, and the meters a core each", rated, "\(page.content.summary.meters?.cores.count ?? -1) cores")
         check("memory as Activity Monitor counts it", (page.content.summary.meters?.used ?? 0) > 0 && ownRows().contains { ($0.memory ?? 0) > 0 })
+        // Stage 4: the history — strips, the meters' and the detail's charts,
+        // new and ended rows.
+        await activityHistoryChecks(tab: tab)
 
         // VoiceOver: each row's label names the process, its pid and its tab.
         let labels = await eventually(5) { !self.activityRowLabels().isEmpty }

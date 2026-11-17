@@ -82,9 +82,28 @@ extension E2ERunner {
             let took = frame.last
             if held { heldShown.append(took) } else { shown.append(took) }
         }
+        // An agent's pane: a login, its shell, Claude Code and three
+        // children — a selected agent's detail charts its subtree too.
+        let agent = Self.fakeAgent(kernel, pids: &pids)
+        monitor.setContext(ActivityContext(panes: [ActivityContext.Pane(tag: "fake-pane-agent", tab: UUID(), login: agent.login)], appPID: 0))
         burn()
         _ = await monitor.tick()
         check("rated after a second tick", await eventually(10) { !page.content.summary.firstSample })
+        // With history (6.11, stage 4): fifteen minutes of 2 s ticks first,
+        // so every strip is full and what is timed below draws them.
+        var merged: [Double] = []
+        var lastHistory = ActivityRing()
+        for _ in 0..<450 {
+            burn()
+            guard let snapshot = await monitor.tick() else { continue }
+            merged.append(Double(snapshot.cost.history) / 1_000_000)
+            lastHistory = snapshot.history
+        }
+        check(
+            "fifteen minutes of history: a strip each of the user's, 60 cells read",
+            lastHistory.keyCount >= pids.count && (lastHistory.cpuStrip(.process(ActivityProcessID(pid: pids[0], start: UInt64(pids[0]) * 1_000 + 1)))?.allSatisfy { $0 != nil } ?? false),
+            "\(lastHistory.keyCount) keys")
+        _ = await eventually(10) { page.content.processes.contains { $0.strip != nil } }
         // The window's first drawing — every cell on screen made — apart:
         // a tick's is what is timed, not the page's first appearance.
         host.layoutSubtreeIfNeeded()
@@ -124,6 +143,24 @@ extension E2ERunner {
                 verbsListed.append((CACurrentMediaTime() - start) * 1000)
             }
             page.selection = []
+        }
+
+        // The agent selected (7.7, 10.4): its charts and its subtree's made
+        // off the main thread with the rows; the main thread's part of each
+        // publish — the detail assigned — timed by the page.
+        var detailCost: [Double] = []
+        if let row = page.content.processes.first(where: { $0.identity == agent.agent }) {
+            page.selection = [row.id]
+            let charted = await eventually(10) { !(page.detail?.charts.isEmpty ?? true) && !(page.detail?.subtreeCharts.isEmpty ?? true) }
+            check("a selected agent's detail charts it and everything under it", charted)
+            for _ in 0..<12 {
+                await tick(held: false)
+                detailCost.append(page.detailCost)
+            }
+            check("its charts come with each tick's rows", page.content.detailHistory?.identity == agent.agent)
+            page.selection = []
+        } else {
+            check("the agent's row", false)
         }
 
         // The light tick on the same fake Mac: eight panes' trees and the
@@ -203,6 +240,28 @@ extension E2ERunner {
                 }
             }
         }
+        // The crowded Mac's fifteen minutes: the ring at its fullest.
+        var crowdedMerged: [Double] = []
+        var crowdedHistory = ActivityRing()
+        for _ in 0..<450 {
+            crowded.advance(2_000_000_000)
+            guard let snapshot = sampler.tickNow(ActivityDemand(.full), context: ActivityContext()) else { continue }
+            crowdedMerged.append(Double(snapshot.cost.history) / 1_000_000)
+            crowdedHistory = snapshot.history
+        }
+        let history = Self.summary(merged)
+        let crowdedMerge = Self.summary(crowdedMerged)
+        let megabytes = { (ring: ActivityRing) in
+            String(format: "%.2f MB a copy, %.2f MB held", locale: Locale(identifier: "en_US_POSIX"), Double(ring.bytes) / 1_048_576, Double(ring.heldBytes) / 1_048_576)
+        }
+        note(
+            "activityPerf: history merged a tick \(history), \(lastHistory.keyCount) keys, \(megabytes(lastHistory)); at 5,000 \(crowdedMerge), \(crowdedHistory.keyCount) keys, \(megabytes(crowdedHistory))"
+        )
+        check("a tick merges into the history in under 5 ms (median)", !merged.isEmpty && history.median < 5, "\(history)")
+        check("at 5,000 processes, under 15 ms (median)", !crowdedMerged.isEmpty && crowdedMerge.median < 15, "\(crowdedMerge)")
+        check(
+            "the history stays under its 4 MB cap, both copies counted",
+            lastHistory.heldBytes <= ActivityRing.defaultByteCap && crowdedHistory.heldBytes <= ActivityRing.defaultByteCap)
         let crowd = Self.summary(crowdedRows)
         let verbs = Self.summary(verbsListed)
         let subject = Self.summary(crowdedSubject)
@@ -211,6 +270,7 @@ extension E2ERunner {
         let update = Self.summary(shown)
         let held = Self.summary(heldShown)
         let scroll = Self.summary(scrolled)
+        let detail = Self.summary(detailCost)
         let fullP90 = Self.p90(censusCPU)
         let lightP90 = Self.p90(lightCPU)
         let p90 = { (value: Double) in String(format: "%.1f ms", locale: Locale(identifier: "en_US_POSIX"), value) }
@@ -219,6 +279,7 @@ extension E2ERunner {
         note("activityPerf: a tick's rows shown \(update), each \(shown.map { Int($0.rounded()) }); held \(held); scrolled \(scrolled.count) steps, \(scroll)")
         note("activityPerf: 5,000 processes' rows, grouped by checkout, made \(crowd)")
         note("activityPerf: a selected row's verbs listed on the main thread \(verbs); its process read off it among 5,000, every owner \(subject)")
+        note("activityPerf: a selected agent's detail, its charts made off the main thread: on it \(detail), p90 \(p90(Self.p90(detailCost)))")
         // 10.4's 15 ms isn't met yet — the owners' cost, open (design 15):
         // the gate holds what is, so it can only get better.
         check("5,000 processes' rows are made in under 100 ms (median)", !crowdedRows.isEmpty && crowd.median < 100, "\(crowd)")
@@ -237,6 +298,34 @@ extension E2ERunner {
         // is all of theirs that stays on it.
         check("a selected row's verbs are listed on the main thread in under 4 ms (median)", !verbsListed.isEmpty && verbs.median < 4, "\(verbs)")
         check("its process is read among 5,000 off the main thread in under 100 ms (median)", !crowdedSubject.isEmpty && subject.median < 100, "\(subject)")
+        check(
+            "a selected agent's detail takes the main thread under 4 ms a publish (p90)", detailCost.count == 12 && Self.p90(detailCost) < 4,
+            "\(detail)")
+    }
+
+    /// An agent's pane on the fake Mac: `login` (root's), `zsh`, Claude
+    /// Code (`node` with `claude` in its argv) and three helpers under it,
+    /// each burning with the rest (`pids`).
+    static func fakeAgent(_ kernel: FakeActivityKernel, pids: inout [pid_t]) -> (login: ActivityProcessID, agent: ActivityProcessID) {
+        func add(_ pid: pid_t, parent: pid_t, uid: uid_t, name: String, words: [String]) -> ActivityProcessID {
+            let start = UInt64(pid) * 1_000 + 1
+            var process = FakeActivityKernel.Process(record: FakeActivityKernel.record(pid: pid, start: start, parent: parent, uid: uid, name: name))
+            process.name = name
+            process.path = "/opt/fake/bin/\(name)"
+            process.codeSigning = ActivityCodeSigning(flags: ActivityCodeSigning.valid)
+            if uid != 0 {
+                process.usage = FakeActivityKernel.usage(cpuTime: 0, footprint: 64 << 20, threads: 4)
+                process.arguments = FakeActivityKernel.arguments(executable: "/opt/fake/bin/\(name)", words)
+                pids.append(pid)
+            }
+            kernel.add(process)
+            return ActivityProcessID(pid: pid, start: start)
+        }
+        let login = add(90_000, parent: 1, uid: 0, name: "login", words: ["login"])
+        _ = add(90_001, parent: 90_000, uid: 501, name: "zsh", words: ["-zsh"])
+        let agent = add(90_002, parent: 90_001, uid: 501, name: "node", words: ["claude"])
+        for child in 0..<3 { _ = add(90_003 + pid_t(child), parent: 90_002, uid: 501, name: "fake-mcp-\(child)", words: ["fake-mcp-\(child)"]) }
+        return (login, agent)
     }
 
     /// The 90th percentile of `samples`, 0 for none.
