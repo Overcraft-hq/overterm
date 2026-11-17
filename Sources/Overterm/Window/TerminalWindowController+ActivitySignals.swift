@@ -135,8 +135,7 @@ extension TerminalWindowController {
         // Suspend, Resume, a pane's job with its pane, the priorities:
         // their own questions (`+ActivitySuspend`).
         if askHeld(verb, rule, subject) { return }
-        // What comes with its own step (an app's Quit) and an owner's verb
-        // on its own page: said, not asked.
+        // An owner's verb on its own page: said, not asked.
         if let why = ActivityPageModel.unavailable(rule) { return tell("Overterm doesn't do that to \(name)", why) }
         // D-11: Force Quit with no Stop before it asks "Stop it first?";
         // its Force Quit then asks with Force Quit's own sheet.
@@ -235,6 +234,20 @@ extension TerminalWindowController {
                     if let said = ActivityPortFree.answer(answer, pid: target.identity.pid) { return self.tell("Not sent", said) }
                     if signal == .term || signal == .int { self.activityPage.noteStopped(target.identity) }
                     if [.term, .int, .kill, .hup, .quit].contains(signal) { self.watchStop(asked, sentAt: sentAt) }
+                }
+            }
+        case .allowed(.quitApp, _, _), .allowed(.forceQuitApp, _, _):
+            // An app (D-23): asked to quit, or ended, by the process listed —
+            // its token first; SIGTERM or SIGKILL by it when it can't be asked.
+            let force: Bool
+            if case .allowed(.forceQuitApp, _, _) = rule { force = true } else { force = false }
+            DispatchQueue.global(qos: .userInitiated).async { @Sendable in
+                let answer = ProcessSignals().quitApp(target, force: force)
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    if let said = ActivityPortFree.answer(answer, pid: target.identity.pid) { return self.tell("Not sent", said) }
+                    if !force { self.activityPage.noteStopped(target.identity) }
+                    self.watchStop(asked, sentAt: sentAt)
                 }
             }
         case .allowed(.signalTree(let signal), _, _):

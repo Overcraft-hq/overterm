@@ -203,8 +203,8 @@ final class ActivityVerbsTests: XCTestCase {
 
     /// Send a Signal ▸ STOP and CONT, Suspend, Resume and the priorities
     /// are the page's own now: a pane's job's Suspend with its pane, the
-    /// rest as the policy says — offered, never greyed for a later step. An
-    /// app's Quit still comes with its own.
+    /// rest as the policy says — offered, never greyed for a later step;
+    /// an app's Quit and Force Quit too.
     func testSuspendAndPrioritiesAreOffered() throws {
         let job = add(1180, parent: 1101, group: 1180, terminal: tty, foreground: 1101, name: "acme-job")
         let elsewhere = add(1181, parent: 1, group: 1181, name: "acme-daemon")
@@ -222,9 +222,54 @@ final class ActivityVerbsTests: XCTestCase {
         var target = try subject(elsewhere).target
         target.stopped = .activity
         XCTAssertNil(ActivityPageModel.unavailable(ActivitySignalCheck.rule(.send(.cont), for: target, user: 501)))
-        XCTAssertEqual(ActivityPageModel.unavailable(.allowed(.quitApp, confirm: true, critical: false)), ActivityPageModel.appVerbsLater)
+        XCTAssertNil(ActivityPageModel.unavailable(.allowed(.quitApp, confirm: true, critical: false)))
+        XCTAssertNil(ActivityPageModel.unavailable(.allowed(.forceQuitApp, confirm: true, critical: true)))
         let shell = try subject(ActivityProcessID(pid: 1101, start: 1_101_000))
         XCTAssertNil(ActivityPageModel.unavailable(ActivitySignalCheck.rule(.stop, for: shell.target, user: 501)), "the pane's close is the page's own route")
+    }
+
+    /// An app (D-23): its Stop is Quit…, asked plainly, its sheet saying
+    /// what a Quit does and the signal it falls back to; Force Quit
+    /// critical; a helper inside an app stopped with a warning; neither in
+    /// a bulk Stop.
+    func testAnAppsQuitAndForceQuit() throws {
+        let app = add(1190, parent: 1, group: 1190, name: "Acme")
+        let helper = add(1191, parent: 1190, group: 1190, name: "Acme Helper")
+        kernel.update(1191) { $0.path = "/Applications/Acme.app/Contents/Frameworks/Acme Helper" }
+        let known = ActivityVerbSubject.Known(appPID: 1000, runningApps: [1190: "Acme"])
+        let read = try subject(app, known: known)
+        XCTAssertTrue(read.target.isApp)
+        XCTAssertEqual(ActivityPageModel.stopVerb(for: read.target), .stop)
+        let quit = ActivitySignalCheck.rule(.stop, for: read.target, user: 501)
+        XCTAssertEqual(quit, .allowed(.quitApp, confirm: true, critical: false))
+        XCTAssertEqual(ActivitySignalCheck.rule(.send(.term), for: read.target, user: 501), quit, "SIGTERM is its Quit")
+        let force = ActivitySignalCheck.rule(.forceQuit, for: read.target, user: 501)
+        XCTAssertEqual(force, .allowed(.forceQuitApp, confirm: true, critical: true))
+        XCTAssertEqual(ActivitySignalCheck.rule(.send(.kill), for: read.target, user: 501), force)
+        let asked = try XCTUnwrap(ActivityVerbQuestion.question(.stop, quit, subject: read, scope: "Outside every tab", timeZone: utc))
+        XCTAssertEqual(asked.title, "Quit “Acme” (pid 1190)?")
+        XCTAssertEqual(asked.button, "Quit")
+        XCTAssertFalse(asked.critical)
+        XCTAssertTrue(asked.detail.contains("as its Quit menu item does"))
+        XCTAssertTrue(asked.detail.contains("Runs /opt/acme/bin/Acme"), "the executable proc_pidpath gave")
+        XCTAssertTrue(asked.detail.contains("Its child keeps running"), "its helper outlives a Quit it doesn't take with it")
+        XCTAssertTrue(asked.detail.hasSuffix("kill -TERM 1190 if it can't be asked"))
+        let ends = try XCTUnwrap(ActivityVerbQuestion.question(.forceQuit, force, subject: read, scope: nil, timeZone: utc))
+        XCTAssertEqual(ends.title, "Force Quit “Acme” (pid 1190)?")
+        XCTAssertEqual(ends.button, "Force Quit")
+        XCTAssertTrue(ends.critical)
+        XCTAssertTrue(ends.detail.contains("what it hasn't saved is lost"))
+        XCTAssertTrue(ends.detail.hasSuffix("kill -KILL 1190 if it can't be asked"))
+        let words = ActivityPageModel.unavailable(force)
+        XCTAssertNil(words, "offered: no step left to wait for")
+        // Its helper: a plain Stop, warned; neither of them in a tree's Stop.
+        let inside = try subject(helper, known: known)
+        XCTAssertTrue(inside.target.insideApp)
+        XCTAssertEqual(ActivitySignalCheck.rule(.stop, for: inside.target, user: 501), .allowed(.signal(.term), confirm: true, critical: false))
+        let warned = try XCTUnwrap(
+            ActivityVerbQuestion.question(.stop, .allowed(.signal(.term), confirm: true, critical: false), subject: inside, scope: nil, timeZone: utc))
+        XCTAssertTrue(warned.detail.contains("It runs inside an app"))
+        XCTAssertEqual(ActivitySignalCheck.rule(.stopTree, for: read.target, user: 501).refusal, ActivitySignalCheck.appBulk)
     }
 
     /// Who stopped a stopped process, as the subject reads it: what

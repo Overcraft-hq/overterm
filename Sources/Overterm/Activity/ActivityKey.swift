@@ -87,7 +87,7 @@ enum ActivityKey: String, ResourceKey {
         case .mine: "Yours only, or everyone's"
         case .connections: "Listening: your established connections too, paired end to end"
         case .free: "Listening: free the port through its owner — Stop Container, Stop Forward, Disconnect, Stop the Service, AirPlay's switch"
-        case .stop: "Stop it as its class asks: Interrupt a pane's foreground job (⌃C typed), Stop Agent, Stop — asked"
+        case .stop: "Stop it as its class asks: Interrupt a pane's foreground job (⌃C typed), Stop Agent, an app's Quit, Stop — asked"
         case .forceQuit: "Force Quit: SIGKILL to it alone — asked, and \"Stop it first?\" unless a Stop didn't end it"
         case .signal: "Send a signal: HUP, INT, QUIT, TERM, USR1, USR2, KILL, STOP or CONT — asked"
         case .suspend: "Suspend it — a pane's job with its pane, else with its tree — or Resume what Activity stopped"

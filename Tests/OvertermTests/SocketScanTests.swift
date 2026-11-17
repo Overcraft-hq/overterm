@@ -338,4 +338,5 @@ private final class CountingKernel: ActivityKernel, @unchecked Sendable {
     func session(of pid: pid_t) -> pid_t? { base.session(of: pid) }
     func signal(_ signal: Int32, group: pid_t) -> Int32 { EPERM }
     func setPriority(_ change: ActivityPriorityChange, pid: pid_t) -> Int32 { EPERM }
+    func quitApp(pid: pid_t, executable: String?, force: Bool) -> Int32 { EPERM }
 }

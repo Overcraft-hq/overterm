@@ -90,8 +90,17 @@ enum ActivityVerbQuestion {
                 }
                 lines.append("killpg(\(subject.group), SIG\(signal.rawValue)), once every member is checked again just before:")
                 lines += subject.groupMembers.map { "  pid \($0.signal.identity.pid) \(DockerMCP.displayed($0.name))" }
+            case .quitApp:
+                title = "Quit \(quoted)?"
+                button = "Quit"
+                lines.append(
+                    "The app is asked to quit, as its Quit menu item does: it may ask to save its documents first, or refuse. If it can't be asked, it is sent SIGTERM by the process Overterm listed.")
+            case .forceQuitApp:
+                title = "Force Quit \(quoted)?"
+                button = "Force Quit"
+                lines.append("It ends at once, as the Force Quit window ends an app: what it hasn't saved is lost.")
             default:
-                // Suspend, priority and an app's Quit ask with their own verbs.
+                // Suspend and the priorities ask with their own verbs.
                 return nil
             }
             if let write = subject.target.terraformWrite {
@@ -103,7 +112,13 @@ enum ActivityVerbQuestion {
             if subject.target.insideApp { lines.append("It runs inside an app: stopping a helper can leave its app broken, or start it again.") }
             lines += identityLines(subject, timeZone: timeZone)
             if !subject.listening.isEmpty { lines.append("It listens on \(subject.listening.map { ":\($0)" }.joined(separator: ", ")).") }
-            if case .signal(let signal) = action, signal != .stop, signal != .cont, subject.children > 0 {
+            let ends: Bool
+            switch action {
+            case .signal(let signal): ends = signal != .stop && signal != .cont
+            case .quitApp, .forceQuitApp: ends = true
+            default: ends = false
+            }
+            if ends, subject.children > 0 {
                 lines.append(
                     subject.children == 1 ? "Its child keeps running — Stop Its Tree… ends it too." : "Its \(subject.children) children keep running — Stop Its Tree… ends them too.")
             }

@@ -388,6 +388,77 @@ struct ProcessSignals: Sendable {
         return .sent(pinned: true)
     }
 
+    /// Quit… or Force Quit… for an app (6.10's apps row, D-23): checked
+    /// as `send` checks a signal — the refusals before anything is read,
+    /// its structure read now, Overterm's helpers and the gate, the token
+    /// taken first and the identity checked through it —, then the app is
+    /// asked by its pid (`NSRunningApplication.terminate`, or
+    /// `forceTerminate`), which has no token form: the kernel asks only
+    /// the app whose executable is the one the token named, so a pid taken
+    /// again in between is never asked. One LaunchServices doesn't list,
+    /// that can't be asked, whose running image isn't its bundle's
+    /// executable, or whose executable can't be read is sent SIGTERM
+    /// (Force Quit: SIGKILL) by its token instead — D-23's fallback. A
+    /// stopped app asked to Quit is continued after, as a TERM is. No token: a Quit is a single Stop,
+    /// which may go by its pid (`unpinned`); a Force Quit never does.
+    func quitApp(_ target: ActivitySignalTarget, force: Bool) -> ActivitySignalAnswer {
+        let identity = target.identity
+        let signal: ActivitySignal = force ? .kill : .term
+        if let refusal = Self.refusal(before: identity, app: app) { return .refused(refusal) }
+        switch read(identity) {
+        case .ended(let now): return .ended(now: now)
+        case .live(let process):
+            guard process.isWhollyOwn(by: kernel.uid) else { return .refused(.notYours) }
+            if let refusal = refusal(for: process) { return .refused(refusal) }
+        }
+        guard let token = kernel.auditToken(of: identity.pid) else { return unpinned(signal, to: target, alone: !force) }
+        guard token.pid == identity.pid, token.effectiveUID == kernel.uid, token.realUID == kernel.uid else { return .refused(.notYours) }
+        let checked: ActivityProcess
+        switch read(identity) {
+        case .ended(let now): return .ended(now: now)
+        case .live(let process): checked = process
+        }
+        guard checked.isWhollyOwn(by: kernel.uid) else { return .refused(.notYours) }
+        if let changed = changedImage(target, token: token) { return changed }
+        // The executable the token names now: the app asked must run it.
+        // None readable, LaunchServices isn't asked by a bare pid: the
+        // signal its verb equals goes by the token instead.
+        guard let executable = kernel.path(of: token) ?? target.path else { return bySignal(signal, token: token, target, checked) }
+        switch kernel.quitApp(pid: identity.pid, executable: executable, force: force) {
+        case 0:
+            // A stopped app gets its Apple Event only once it runs again.
+            if Self.continues(after: signal, checked) { _ = kernel.signal(SIGCONT, by: token) }
+            return .sent(pinned: true)
+        case ESRCH:
+            return whatBecame(of: target, token: token) ?? .ended(now: nil)
+        case ESTALE:
+            // LaunchServices' executable at the pid isn't the token's:
+            // ended or exec'd since, or the app runs an image that isn't
+            // its bundle's executable (a launcher that exec'd a runtime) —
+            // the token still names the listed image, so its signal by it.
+            if let became = whatBecame(of: target, token: token) { return became }
+            return bySignal(signal, token: token, target, checked)
+        case ENOENT, EAGAIN:
+            // Not an app LaunchServices lists, or it couldn't be asked:
+            // the signal its verb equals, by its token.
+            return bySignal(signal, token: token, target, checked)
+        case let answer:
+            return .failed(answer)
+        }
+    }
+
+    /// D-23's fallback: a Quit's SIGTERM or a Force Quit's SIGKILL by the
+    /// token `quitApp` checked, a stopped app continued after the TERM.
+    private func bySignal(
+        _ signal: ActivitySignal, token: ActivityAuditToken, _ target: ActivitySignalTarget, _ checked: ActivityProcess
+    ) -> ActivitySignalAnswer {
+        guard kernel.signalsByToken else { return unpinned(signal, to: target, alone: signal != .kill) }
+        let answer = kernel.signal(signal.number, by: token)
+        guard answer == 0 else { return answer == ESRCH ? whatBecame(of: target, token: token) ?? .ended(now: nil) : .failed(answer) }
+        if Self.continues(after: signal, checked) { _ = kernel.signal(SIGCONT, by: token) }
+        return .sent(pinned: true)
+    }
+
     /// How many members a group's send lists: process groups aren't this
     /// big, and one that is is refused rather than half checked.
     static let groupLimit = 256

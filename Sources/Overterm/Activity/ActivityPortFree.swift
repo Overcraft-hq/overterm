@@ -272,8 +272,8 @@ enum ActivityPortFree {
         case .background: "taskpolicy -b -p \(pid)"
         case .normalPriority: "taskpolicy -B -p \(pid)"
         case .lowerPriority: "renice +10 -p \(pid)"
-        case .quitApp: "Quit, as its menu's Quit does"
-        case .forceQuitApp: "Force Quit, as the Force Quit window does"
+        case .quitApp: "Quit, as its menu's Quit does — kill -TERM \(pid) if it can't be asked"
+        case .forceQuitApp: "Force Quit, as the Force Quit window does — kill -KILL \(pid) if it can't be asked"
         }
     }
 

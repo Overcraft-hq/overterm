@@ -1,3 +1,4 @@
+import AppKit
 import Darwin
 import Foundation
 import Security
@@ -97,6 +98,18 @@ protocol ActivityKernel: Sendable {
     /// checks it through its token just before. Never a pid ≤ 1 nor this
     /// process; in an isolated run or a unit test, the run's own only.
     func setPriority(_ change: ActivityPriorityChange, pid: pid_t) -> Int32
+    /// An app asked to quit (`NSRunningApplication.terminate`), or ended
+    /// without asking (`forceTerminate`), by its pid (6.10, D-23): 0 when
+    /// asked; ESRCH when nothing holds `pid`; ESTALE when the app holding
+    /// it now runs another executable than `executable` (what
+    /// `ProcessSignals` checked through its token: a pid taken again in
+    /// between is never asked); ENOENT when it is no app LaunchServices
+    /// lists, or no `executable` to hold it to (nothing asked); EAGAIN
+    /// when the app couldn't be asked. No token form:
+    /// `ProcessSignals.quitApp` pins the process first, and falls back to
+    /// a signal by its token. Never a pid ≤ 1 nor this process; in an
+    /// isolated run or a unit test, the run's own only.
+    func quitApp(pid: pid_t, executable: String?, force: Bool) -> Int32
     /// The system's own counters for the meters (`SystemMeterCounters`):
     /// read in the full tick; nil when they can't be read.
     func meterCounters() -> SystemMeterCounters?
@@ -430,6 +443,20 @@ struct LiveActivityKernel: ActivityKernel {
         }
         return answer == 0 ? 0 : errno
     }
+
+    func quitApp(pid: pid_t, executable: String?, force: Bool) -> Int32 {
+        guard pid > 1, pid != getpid() else { return EPERM }
+        // The isolated-run gate, as the sends make it (6.10 step 11).
+        if let refused = ActivitySignalGate.shared.refusal(of: pid, kernel: self) { return refused }
+        // No executable to hold it to: never asked by a bare pid.
+        guard let executable else { return process(pid) == nil ? ESRCH : ENOENT }
+        // Thread safe (NSRunningApplication's own documentation): asked
+        // off the main thread, as every send is.
+        guard let app = NSRunningApplication(processIdentifier: pid) else { return process(pid) == nil ? ESRCH : ENOENT }
+        let listed = URL(fileURLWithPath: executable).resolvingSymlinksInPath().path
+        guard app.executableURL?.resolvingSymlinksInPath().path == listed else { return ESTALE }
+        return (force ? app.forceTerminate() : app.terminate()) ? 0 : EAGAIN
+    }
 }
 
 /// A Mac a test makes (10.1): processes of any user — another user's,
@@ -484,10 +511,22 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
         let change: ActivityPriorityChange
     }
 
+    /// An app the fake was asked to quit.
+    struct Quit: Hashable, Sendable {
+        let pid: pid_t
+        let force: Bool
+    }
+
     let uid: uid_t
     private let lock = NSLock()
     private var table: [pid_t: Process] = [:]
     private var reniced: [Priority] = []
+    private var quits: [Quit] = []
+    /// The pids LaunchServices lists as apps, and those that won't be asked.
+    private var apps: Set<pid_t> = []
+    /// An app's bundle executable where it isn't its running image.
+    private var bundleExecutables: [pid_t: String] = [:]
+    private var unaskable: Set<pid_t> = []
     private var clock: UInt64 = 1_000_000_000
     private var counts: [String: Int] = [:]
     private var csops = true
@@ -541,6 +580,18 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     /// Without `proc_signal_with_audittoken`, as a system that lacks it.
     func dropTokenSignal() { lock.withLock { tokenCall = false } }
 
+    /// `pid` an app LaunchServices lists; `asked`: false when it can't be
+    /// asked to quit (`terminate` answering false); `executable`: its
+    /// bundle's, where the image it runs is another (a launcher that
+    /// exec'd a runtime).
+    func app(_ pid: pid_t, asked: Bool = true, executable: String? = nil) {
+        lock.withLock {
+            apps.insert(pid)
+            bundleExecutables[pid] = executable
+            if asked { unaskable.remove(pid) } else { unaskable.insert(pid) }
+        }
+    }
+
     /// Without the responsibility call, as a system that lacks it or where
     /// it turned itself off (D-31): it answers nothing.
     func dropResponsibilityCall() { lock.withLock { responsibility = false } }
@@ -564,6 +615,9 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
 
     /// The priorities it was asked to set, in order.
     var priorities: [Priority] { lock.withLock { reniced } }
+
+    /// The apps it was asked to quit, in order.
+    var quitsAsked: [Quit] { lock.withLock { quits } }
 
     /// `record` with another state, or another name.
     static func record(_ record: ActivityProcess, status: Int32, shortName: String? = nil) -> ActivityProcess {
@@ -859,6 +913,20 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
                 table[pid] = process
             }
             reniced.append(Priority(pid: pid, change: change))
+            return 0
+        }
+    }
+
+    /// Recorded for an app it lists, its executable the one named — none
+    /// named, nothing asked (ENOENT); a Force Quit ends it at once.
+    func quitApp(pid: pid_t, executable: String?, force: Bool) -> Int32 {
+        asked("quit") {
+            guard pid > 1, let process = table[pid], !process.record.isZombie else { return ESRCH }
+            guard apps.contains(pid), let executable else { return ENOENT }
+            guard (bundleExecutables[pid] ?? process.path) == executable else { return ESTALE }
+            guard !unaskable.contains(pid) else { return EAGAIN }
+            quits.append(Quit(pid: pid, force: force))
+            if force { table.removeValue(forKey: pid) }
             return 0
         }
     }

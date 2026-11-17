@@ -117,7 +117,9 @@ extension ActivityPageModel {
             add(.stopAgent, "Stop Agent…", symbol: "stop.circle", key: "k", place: .remove)
         } else {
             add(.interrupt, "Interrupt…", symbol: "pause.circle", key: primary == .interrupt ? "k" : nil, place: primary == .interrupt ? .remove : .more)
-            add(.stop, "Stop…", symbol: "stop.circle", key: primary == .stop ? "k" : nil, place: primary == .stop ? .remove : .more)
+            // An app's Stop is its Quit (D-23): asked to quit, as its menu does.
+            let quits = subject?.target.isApp == true
+            add(.stop, quits ? "Quit…" : "Stop…", symbol: "stop.circle", key: primary == .stop ? "k" : nil, place: primary == .stop ? .remove : .more)
         }
         add(.forceQuit, "Force Quit…", symbol: "bolt.circle", key: "K")
         verbs.append(
@@ -161,15 +163,12 @@ extension ActivityPageModel {
     nonisolated static let routes: Set<ActivityRoute> = [.closePane, .suspendTab, .resumeTab, .suspendPane]
     nonisolated static let reading = "Being read…"
     nonisolated static let routeElsewhere = "Its owner's own verb: on its own page."
-    nonisolated static let appVerbsLater = "An app: quit it from its menu — Activity's Quit comes with its own check."
 
-    /// Why the page doesn't do what `rule` says now; nil when it does. A
-    /// refusal, an owner's verb on another page, and what comes with its
-    /// own step: an app's Quit. Pure.
+    /// Why the page doesn't do what `rule` says now; nil when it does: a
+    /// refusal, or an owner's verb on another page. Pure.
     nonisolated static func unavailable(_ rule: ActivityRule) -> String? {
         switch rule {
         case .refused(let why): return why
-        case .allowed(.quitApp, _, _), .allowed(.forceQuitApp, _, _): return appVerbsLater
         case .route(let route, _): return routes.contains(route) ? nil : routeElsewhere
         case .allowed: return nil
         }

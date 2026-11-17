@@ -688,6 +688,180 @@ final class ProcessSignalsTests: XCTestCase {
         XCTAssertEqual(touched, 0)
     }
 
+    // MARK: An app's Quit and Force Quit (6.10, D-23)
+
+    /// An app asked to quit, or ended, checked as a signal is: the token
+    /// first, the identity through it, then `terminate` or `forceTerminate`
+    /// by the pid — asked only of the app running the executable the token
+    /// named. No signal goes while the app is asked.
+    func testAnAppIsAskedToQuitCheckedAsASignalIs() {
+        mac()
+        let app = add(700, parent: 1, name: "Acme")
+        kernel.app(700)
+        kernel.resetCounts()
+        XCTAssertEqual(sender().quitApp(app, force: false), .sent(pinned: true))
+        XCTAssertEqual(kernel.quitsAsked, [FakeActivityKernel.Quit(pid: 700, force: false)])
+        XCTAssertEqual(kernel.count("token"), 1, "pinned first")
+        XCTAssertEqual(kernel.sent, [], "asked, not signalled")
+        XCTAssertEqual(sender().quitApp(app, force: true), .sent(pinned: true))
+        XCTAssertEqual(kernel.quitsAsked.last, FakeActivityKernel.Quit(pid: 700, force: true))
+        XCTAssertNil(kernel.process(700), "Force Quit ended it")
+        XCTAssertEqual(sender().quitApp(app, force: false), .ended(now: nil), "gone: nothing asked")
+        XCTAssertEqual(kernel.quitsAsked.count, 2)
+    }
+
+    /// The refusals and the gate, before any call: launchd, Overterm, a
+    /// helper, another user's, a setuid program the user started, and in
+    /// a guarded run what isn't the run's own — a Quit and a Force Quit
+    /// alike.
+    func testAQuitsRefusalsMakeNoCall() {
+        mac()
+        add(710, parent: 1, uid: 0, realUID: 501, name: "AcmeRoot")
+        add(711, parent: 1, uid: 0, name: "GlobexRoot")
+        for pid: pid_t in [700, 710, 711, 220] { kernel.app(pid) }
+        add(700, parent: 1, name: "Acme")
+        kernel.resetCounts()
+        for force in [false, true] {
+            XCTAssertEqual(sender().quitApp(target(1), force: force), .refused(.system))
+            XCTAssertEqual(sender().quitApp(ActivitySignalTarget(app, path: nil), force: force), .refused(.overterm))
+            XCTAssertEqual(sender().quitApp(target(220), force: force), .refused(.helper))
+            XCTAssertEqual(sender().quitApp(target(710), force: force), .refused(.notYours))
+            XCTAssertEqual(sender().quitApp(target(711), force: force), .refused(.notYours))
+            XCTAssertEqual(sender(guards: true).quitApp(target(700), force: force), .refused(.gate))
+        }
+        XCTAssertEqual(touched + kernel.count("quit"), 0, "refused before any call")
+        let gate = ActivitySignalGate(guards: true)
+        gate.register(target(700).identity)
+        XCTAssertEqual(sender(gate: gate).quitApp(target(700), force: false), .sent(pinned: true), "the run's own")
+    }
+
+    /// D-23's fallback: what LaunchServices doesn't list as an app, or an
+    /// app that can't be asked, is sent the signal its verb equals by its
+    /// token — SIGTERM for Quit, SIGKILL for Force Quit; a stopped one
+    /// continued after a TERM.
+    func testAQuitThatCantBeAskedIsItsSignalByToken() {
+        mac()
+        let plain = add(720, parent: 1, name: "acme-tool")
+        let stuck = add(721, parent: 1, status: SSTOP, name: "Acme")
+        kernel.app(721, asked: false)
+        XCTAssertEqual(sender().quitApp(plain, force: false), .sent(pinned: true))
+        XCTAssertEqual(sender().quitApp(stuck, force: false), .sent(pinned: true))
+        XCTAssertEqual(sender().quitApp(stuck, force: true), .sent(pinned: true))
+        XCTAssertEqual(
+            kernel.sent,
+            [
+                FakeActivityKernel.Sent(pid: 720, signal: SIGTERM, pinned: true), FakeActivityKernel.Sent(pid: 721, signal: SIGTERM, pinned: true),
+                FakeActivityKernel.Sent(pid: 721, signal: SIGCONT, pinned: true), FakeActivityKernel.Sent(pid: 721, signal: SIGKILL, pinned: true),
+            ])
+        XCTAssertEqual(kernel.quitsAsked, [])
+    }
+
+    /// The pid reused since it was listed, the app exec'd since, or
+    /// between the token and the ask (the kernel's executable check):
+    /// nothing asked of what holds the pid now. Without a token a Quit is
+    /// a single Stop, which may go by its pid; a Force Quit never does.
+    func testAQuitNeedsTheListedApp() {
+        mac()
+        let listed = add(730, parent: 1, name: "Acme")
+        kernel.app(730)
+        add(730, start: 9_000_000, parent: 1, name: "Globex")
+        XCTAssertEqual(sender().quitApp(listed, force: false), .ended(now: "Globex"))
+        let app = add(731, parent: 1, name: "Acme")
+        kernel.app(731)
+        kernel.exec(731, path: "/opt/acme/bin/acme-updater", name: "acme-updater")
+        XCTAssertEqual(sender().quitApp(app, force: false), .ranAnotherProgram(path: "/opt/acme/bin/acme-updater"))
+        let racing = add(732, parent: 1, name: "Acme")
+        kernel.app(732)
+        let fake = kernel
+        fake.onCall { call in
+            if call == "quit" { fake.exec(732, path: "/opt/acme/bin/acme-updater", name: "acme-updater") }
+        }
+        XCTAssertEqual(sender().quitApp(racing, force: true), .ranAnotherProgram(path: "/opt/acme/bin/acme-updater"))
+        kernel.onCall(nil)
+        XCTAssertEqual(kernel.quitsAsked, [], "never asked of another")
+        XCTAssertEqual(kernel.sent, [])
+        let unpinned = add(733, parent: 1, name: "Acme")
+        kernel.app(733)
+        kernel.refuseTokens(true)
+        XCTAssertEqual(sender().quitApp(unpinned, force: true), .refused(.unpinned))
+        XCTAssertEqual(sender().quitApp(unpinned, force: false), .sent(pinned: false))
+        XCTAssertEqual(kernel.sent, [FakeActivityKernel.Sent(pid: 733, signal: SIGTERM, pinned: false)])
+    }
+
+    /// A launcher that exec'd a runtime: LaunchServices names the bundle's
+    /// executable, the token the image it runs. The token still names the
+    /// listed image, so it is sent its verb's signal by it — never said to
+    /// have ended while it runs.
+    func testAnAppRunningAnotherImageThanItsBundlesIsSignalledByToken() {
+        mac()
+        let app = add(740, parent: 1, name: "java", path: "/opt/acme/runtime/bin/java")
+        kernel.app(740, executable: "/Applications/Acme.app/Contents/MacOS/Acme")
+        XCTAssertEqual(sender().quitApp(app, force: false), .sent(pinned: true))
+        XCTAssertEqual(sender().quitApp(app, force: true), .sent(pinned: true))
+        XCTAssertEqual(kernel.quitsAsked, [], "LaunchServices' app isn't the token's image: not asked")
+        XCTAssertEqual(
+            kernel.sent,
+            [FakeActivityKernel.Sent(pid: 740, signal: SIGTERM, pinned: true), FakeActivityKernel.Sent(pid: 740, signal: SIGKILL, pinned: true)])
+    }
+
+    /// A stopped app asked to Quit is continued right after (6.10 step 7):
+    /// its Apple Event waits in a stopped process otherwise. A Force Quit
+    /// isn't; a traced one isn't.
+    func testAStoppedAppAskedToQuitIsContinued() {
+        mac()
+        let stopped = add(750, parent: 1, status: SSTOP, name: "Acme")
+        kernel.app(750)
+        XCTAssertEqual(sender().quitApp(stopped, force: false), .sent(pinned: true))
+        XCTAssertEqual(kernel.quitsAsked, [FakeActivityKernel.Quit(pid: 750, force: false)])
+        XCTAssertEqual(kernel.sent, [FakeActivityKernel.Sent(pid: 750, signal: SIGCONT, pinned: true)])
+        XCTAssertEqual(kernel.process(750)?.isStopped, false)
+        let traced = add(751, parent: 1, status: SSTOP, flags: .traced, name: "Globex")
+        kernel.app(751)
+        let forced = add(752, parent: 1, status: SSTOP, name: "Acme")
+        kernel.app(752)
+        XCTAssertEqual(sender().quitApp(traced, force: false), .sent(pinned: true))
+        XCTAssertEqual(sender().quitApp(forced, force: true), .sent(pinned: true))
+        XCTAssertEqual(kernel.sent.count, 1, "a traced one and a Force Quit aren't continued")
+    }
+
+    /// No executable to be read — through the token nor listed: the app
+    /// isn't asked by its bare pid; its signal goes by the token.
+    func testAQuitWithNoExecutableIsNeverAskedByPid() {
+        mac()
+        var process = FakeActivityKernel.Process(record: FakeActivityKernel.record(pid: 760, start: 760_000, parent: 1, name: "Acme"))
+        process.name = "Acme"
+        process.path = nil
+        kernel.add(process)
+        kernel.app(760)
+        let unread = ActivitySignalTarget(ActivityProcessID(pid: 760, start: 760_000), path: nil)
+        kernel.resetCounts()
+        XCTAssertEqual(sender().quitApp(unread, force: false), .sent(pinned: true))
+        XCTAssertEqual(kernel.count("quit"), 0, "never asked by a bare pid")
+        XCTAssertEqual(kernel.quitsAsked, [])
+        XCTAssertEqual(kernel.sent, [FakeActivityKernel.Sent(pid: 760, signal: SIGTERM, pinned: true)])
+    }
+
+    /// The real kernel's Quit makes the gate's check itself: the test's own
+    /// child, not registered, is asked nothing — EPERM, no call.
+    func testTheRealKernelsQuitKeepsToTheRunsOwn() throws {
+        let child = try TestChild("/bin/sleep", ["30"])
+        defer { child.stop() }
+        let real = LiveActivityKernel()
+        XCTAssertEqual(real.quitApp(pid: child.pid, executable: "/bin/sleep", force: false), EPERM)
+        XCTAssertEqual(real.quitApp(pid: child.pid, executable: "/bin/sleep", force: true), EPERM)
+        XCTAssertEqual(real.quitApp(pid: 1, executable: nil, force: true), EPERM)
+        XCTAssertEqual(real.quitApp(pid: getpid(), executable: nil, force: true), EPERM)
+        XCTAssertNotNil(real.process(child.pid), "still running")
+        // Registered, a plain process is no app LaunchServices lists: the
+        // signal path's fallback takes it, by its token.
+        own(child.identity)
+        XCTAssertEqual(real.quitApp(pid: child.pid, executable: "/bin/sleep", force: false), ENOENT)
+        XCTAssertEqual(real.quitApp(pid: child.pid, executable: nil, force: true), ENOENT, "no executable to hold it to: nothing asked")
+        let target = ActivitySignalTarget(child.identity, path: real.path(of: child.pid))
+        XCTAssertEqual(ProcessSignals(kernel: real).quitApp(target, force: false), .sent(pinned: true))
+        XCTAssertNotNil(child.exited(), "ended by the SIGTERM it fell back to")
+    }
+
     // MARK: Priority (6.10's Run in Background, Lower Priority)
 
     /// Run in Background, Normally and a nice raised: checked as a signal
@@ -1156,6 +1330,14 @@ private final class RecordingKernel: ActivityKernel, @unchecked Sendable {
         record("priority")
         guard isOwn(pid) else { return EPERM }
         let answer = real.setPriority(change, pid: pid)
+        lock.withLock { results.append(answer) }
+        return answer
+    }
+
+    func quitApp(pid: pid_t, executable: String?, force: Bool) -> Int32 {
+        record("quit")
+        guard isOwn(pid) else { return EPERM }
+        let answer = real.quitApp(pid: pid, executable: executable, force: force)
         lock.withLock { results.append(answer) }
         return answer
     }
