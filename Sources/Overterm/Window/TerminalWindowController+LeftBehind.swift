@@ -130,3 +130,96 @@ extension TerminalWindowController {
         }
     }
 }
+
+/// The close sheet's survivors (6.9, D-16): what closing tabs or a pane
+/// leaves running, read from a fresh one-off census taken off the main
+/// thread — bounded: none in time, none said — and listed with a checkbox
+/// each, all unticked. A ticked one is stopped by its identity after the
+/// close; an unticked one is kept.
+extension TerminalWindowController {
+    /// How long a close waits for its census.
+    static let closeCensusLimit: Duration = .seconds(1)
+
+    func closeSurvivors(_ panes: [TerminalView]) async -> ActivitySurvivors {
+        guard let snapshot = await Self.census(within: Self.closeCensusLimit) else { return ActivitySurvivors() }
+        return Self.survivors(of: panes, in: snapshot)
+    }
+
+    static func survivors(of panes: [TerminalView], in snapshot: ActivitySnapshot) -> ActivitySurvivors {
+        var terminals: [String: dev_t] = [:]
+        for pane in panes { terminals[pane.processTag] = pane.terminalDevice }
+        return ActivitySurvivors.of(
+            panes.map(\.processTag), in: snapshot, terminals: terminals, checkouts: activityTabFacts().checkouts, kept: LeftBehindLedger.shared.kept)
+    }
+
+    /// Whether the latest census says something of `panes` will keep
+    /// running: under "only when something is running" that counts (D-16).
+    static func hasSurvivors(_ panes: [TerminalView]) -> Bool {
+        guard let snapshot = ActivityMonitor.shared.snapshot else { return false }
+        return survivors(of: panes, in: snapshot).anyKeepRunning
+    }
+
+    /// What the latest census says goes on running after closing `panes`,
+    /// for a sheet with no checkboxes — a window's close, quitting: named,
+    /// so a question asked for it alone says why. Empty when nothing does.
+    static func survivorsListed(_ panes: [TerminalView]) -> String {
+        guard let snapshot = ActivityMonitor.shared.snapshot else { return "" }
+        let survivors = survivors(of: panes, in: snapshot)
+        guard !survivors.isEmpty else { return "" }
+        return survivors.listed + "\nActivity ▸ Left Behind lists them once closed."
+    }
+
+    /// A one-off census, or nil when none lands within `limit`.
+    static func census(within limit: Duration) async -> ActivitySnapshot? {
+        let once = CensusOnce()
+        return await withCheckedContinuation { continuation in
+            Task { @MainActor in
+                let snapshot = await ActivityMonitor.shared.census()
+                if once.take() { continuation.resume(returning: snapshot) }
+            }
+            Task { @MainActor in
+                try? await Task.sleep(for: limit)
+                if once.take() { continuation.resume(returning: nil) }
+            }
+        }
+    }
+
+    /// The checkboxes under a close sheet, one a survivor, all unticked.
+    static func survivorBoxes(_ survivors: ActivitySurvivors) -> (NSView, [(NSButton, ActivitySurvivors.Survivor)])? {
+        guard !survivors.all.isEmpty else { return nil }
+        let stack = NSStackView()
+        stack.orientation = .vertical
+        stack.alignment = .leading
+        stack.spacing = 4
+        var boxes: [(NSButton, ActivitySurvivors.Survivor)] = []
+        for survivor in survivors.all {
+            let box = NSButton(checkboxWithTitle: "Also stop \(DockerMCP.displayed(survivor.label))", target: nil, action: nil)
+            box.state = .off
+            box.setAccessibilityIdentifier("close.survivor.\(survivor.identity.pid)")
+            stack.addArrangedSubview(box)
+            boxes.append((box, survivor))
+        }
+        stack.frame = NSRect(x: 0, y: 0, width: 420, height: stack.fittingSize.height)
+        return (stack, boxes)
+    }
+
+    /// After a close: the ticked stopped by identity, the unticked kept.
+    func settleSurvivors(_ boxes: [(NSButton, ActivitySurvivors.Survivor)]) {
+        let ticked = boxes.filter { $0.0.state == .on }.map(\.1)
+        let unticked = boxes.filter { $0.0.state != .on }.map(\.1)
+        LeftBehindLedger.shared.keep(unticked.map(\.identity))
+        // Each picked alone: the policy's Stop rule, not the bulk one (6.10).
+        if !ticked.isEmpty { leftBehindStop(ticked.map { ActivitySignalTarget($0.identity, path: $0.path) }, pick: .picked) }
+    }
+}
+
+/// One answer of two.
+@MainActor
+private final class CensusOnce {
+    private var taken = false
+
+    func take() -> Bool {
+        defer { taken = true }
+        return !taken
+    }
+}

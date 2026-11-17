@@ -1218,15 +1218,25 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             self.removePane(pane, from: tab)
         }
         if guarded { return }
-        guard pane.needsConfirmClose, let window else { return removePane(pane, from: tab) }
-        let alert = NSAlert()
-        alert.messageText = "Close this pane?"
-        alert.informativeText = "Something is still running in it. Closing kills it."
-        alert.addButton(withTitle: "Close Pane")
-        alert.addButton(withTitle: "Cancel")
-        alert.beginSheetModal(for: window) { [weak self, weak tab, weak pane] response in
-            guard response == .alertFirstButtonReturn, let self, let tab, let pane else { return }
-            self.removePane(pane, from: tab)
+        // A pane with tagged survivors counts as needing the question (D-16).
+        guard pane.needsConfirmClose || Self.hasSurvivors([pane]), let window else { return removePane(pane, from: tab) }
+        Task { @MainActor [weak self, weak tab, weak pane] in
+            guard let self, let tab, let pane else { return }
+            let survivors = await self.closeSurvivors([pane])
+            guard tab.splits.contains(pane) else { return }
+            let alert = NSAlert()
+            alert.messageText = "Close this pane?"
+            alert.informativeText = [pane.needsConfirmClose ? "Something is still running in it. Closing kills it." : "", survivors.said]
+                .filter { !$0.isEmpty }.joined(separator: "\n\n")
+            alert.addButton(withTitle: "Close Pane")
+            alert.addButton(withTitle: "Cancel")
+            let boxes = Self.survivorBoxes(survivors)
+            alert.accessoryView = boxes?.0
+            alert.beginSheetModal(for: window) { [weak self, weak tab, weak pane] response in
+                guard response == .alertFirstButtonReturn, let self, let tab, let pane else { return }
+                self.removePane(pane, from: tab)
+                self.settleSurvivors(boxes?.1 ?? [])
+            }
         }
     }
 
@@ -3559,15 +3569,29 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         // Settings ▸ General ▸ Ask before closing: only when something runs.
         if !Self.needsCloseConfirmation(tabs) { return tabs.forEach { removeTab($0) } }
         if tabs.count == 1 { store.select(tabs[0]) }
+        // What closing leaves running, from a fresh census (6.9, D-16).
+        let panes = tabs.flatMap(\.terminals)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let survivors = await self.closeSurvivors(panes)
+            self.askToClose(tabs.filter { tab in self.store.tabs.contains { $0 === tab } }, survivors: survivors, on: window)
+        }
+    }
+
+    private func askToClose(_ tabs: [Tab], survivors: ActivitySurvivors, on window: NSWindow) {
+        guard !tabs.isEmpty else { return }
         let alert = NSAlert()
         alert.messageText = tabs.count == 1 ? "Close “\(tabs[0].title)”?" : "Close \(tabs.count) tabs?"
-        alert.informativeText = Self.closeWarning(for: tabs)
+        alert.informativeText = [Self.closeWarning(for: tabs), survivors.said].filter { !$0.isEmpty }.joined(separator: "\n\n")
         alert.addButton(withTitle: tabs.count == 1 ? "Close Tab" : "Close \(tabs.count) Tabs")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
+        let boxes = Self.survivorBoxes(survivors)
+        alert.accessoryView = boxes?.0
         alert.beginSheetModal(for: window) { [weak self] response in
-            guard response == .alertFirstButtonReturn else { return }
-            tabs.forEach { self?.removeTab($0) }
+            guard response == .alertFirstButtonReturn, let self else { return }
+            tabs.forEach { self.removeTab($0) }
+            self.settleSurvivors(boxes?.1 ?? [])
         }
     }
 
@@ -3582,6 +3606,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     ) -> Bool {
         confirmClose == .always || tabs.contains { $0.terminals.contains { $0.needsConfirmClose } }
             || !runningForwards(of: tabs, in: forwards, quitting: quitting).isEmpty
+            // What carries their tags and will keep running counts (D-16).
+            || hasSurvivors(tabs.flatMap(\.terminals))
     }
 
     /// The forwards closing these tabs (or quitting) is about: those not
@@ -4246,7 +4272,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         }
         let alert = NSAlert()
         alert.messageText = store.tabs.count == 1 ? "Close the window?" : "Close the window and its \(store.tabs.count) tabs?"
-        alert.informativeText = Self.closeWarning(for: store.tabs, quitting: last)
+        // What goes on running is named: under "only when something is running" it may be why this asks (D-16).
+        alert.informativeText = [Self.closeWarning(for: store.tabs, quitting: last), Self.survivorsListed(store.tabs.flatMap(\.terminals))]
+            .filter { !$0.isEmpty }.joined(separator: "\n\n")
         alert.addButton(withTitle: "Close Window")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning

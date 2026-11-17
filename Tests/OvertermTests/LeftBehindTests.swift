@@ -382,4 +382,63 @@ final class LeftBehindTests: XCTestCase {
         // Processes lists them in a group of their own, unfolded.
         XCTAssertTrue(content.list.contains { if case .group(let row) = $0 { row.id == ActivityRows.Fixed.leftBehind.id && !row.folded } else { false } })
     }
+
+    // MARK: The close sheet (D-16)
+
+    func testTheCloseSheetNeverOffersATerraformACheckbox() throws {
+        let context = base()
+        let apply = add(1700, parent: 1, name: "terraform", words: ["terraform", "apply"], environment: ["OVERTERM_TAB_ID=pane-a"])
+        let snapshot = try snapshot(context)
+        let survivors = ActivitySurvivors.of(["pane-a"], in: snapshot, terminals: ["pane-a": pty], checkouts: [checkout])
+        XCTAssertEqual(survivors.interruptOnly.map(\.identity), [apply])
+        XCTAssertTrue(survivors.all.isEmpty, "no checkbox")
+        XCTAssertTrue(survivors.anyKeepRunning)
+        XCTAssertTrue(survivors.listed.contains("Terraform goes on: terraform (pid 1700)"))
+        XCTAssertFalse(survivors.said.contains("Tick what to stop"), "nothing to tick")
+    }
+
+    private func foreground(_ pid: pid_t, is group: pid_t) {
+        kernel.update(pid) { process in
+            let record = process.record
+            process.record = ActivityProcess(
+                identity: record.identity, parentPID: record.parentPID, group: record.group, terminal: record.terminal, terminalGroup: group,
+                effectiveUID: record.effectiveUID, realUID: record.realUID, savedUID: record.savedUID, status: record.status, flags: record.flags,
+                ignoredSignals: record.ignoredSignals, caughtSignals: record.caughtSignals, nice: record.nice, shortName: record.shortName)
+        }
+    }
+
+    func testTheCloseSheetNamesWhatKeepsRunningAndWhatItsShellDecides() throws {
+        let context = base()
+        // A foreground job: the close ends it, not listed.
+        add(1110, parent: 1101, name: "acme-build", terminal: pty, group: 1110)
+        // A background job: its shell decides.
+        let background = add(1120, parent: 1101, name: "acme-watch", terminal: pty, group: 1120)
+        foreground(1120, is: 1110)
+        foreground(1101, is: 1110)
+        // setsid'd under the shell, no terminal: keeps running.
+        let detached = add(1130, parent: 1101, name: "acme-daemon", group: 1130, port: 4000)
+        // Left the terminal carrying the tag: keeps running.
+        let left = add(1700, parent: 1, name: "acme-server", environment: ["OVERTERM_TAB_ID=pane-a"], port: 3001)
+        // nohup'd in the tree: keeps running, listed.
+        let nohup = add(1140, parent: 1101, name: "acme-worker", terminal: pty, group: 1140, ignoresHangup: true)
+        foreground(1140, is: 1110)
+        // tmux and an app started here: not affected.
+        add(1300, parent: 1, name: "tmux", environment: ["OVERTERM_TAB_ID=pane-a"])
+        add(
+            1400, parent: 1, name: "Fake Editor", path: "/Applications/Fake Editor.app/Contents/MacOS/Fake Editor",
+            environment: ["OVERTERM_TAB_ID=pane-a"])
+        let snapshot = try snapshot(context)
+        let survivors = ActivitySurvivors.of(["pane-a"], in: snapshot, terminals: ["pane-a": pty], checkouts: [checkout])
+        XCTAssertEqual(Set(survivors.keepRunning.map(\.identity)), [detached, left, nohup])
+        XCTAssertEqual(survivors.shellDecides.map(\.identity), [background])
+        XCTAssertEqual(Set(survivors.unaffected), ["tmux", "Fake Editor"])
+        XCTAssertEqual(survivors.keepRunning.first { $0.identity == left }?.label, "acme-server (pid 1700) :3001")
+        XCTAssertTrue(survivors.keepRunning.first { $0.identity == nohup }?.nohup == true)
+        XCTAssertTrue(survivors.said.contains("Will keep running: "))
+        XCTAssertTrue(survivors.said.contains("Its shell decides: acme-watch (pid 1120)"))
+        XCTAssertTrue(survivors.said.contains("started here, are not affected."))
+        let kept = ActivitySurvivors.of(["pane-a"], in: snapshot, terminals: ["pane-a": pty], checkouts: [checkout], kept: [left])
+        XCTAssertFalse(kept.keepRunning.contains { $0.identity == left }, "one kept isn't asked about again")
+        XCTAssertTrue(ActivitySurvivors.of(["pane-b"], in: snapshot).isEmpty, "a pane the census didn't read says nothing")
+    }
 }

@@ -166,6 +166,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         alert.messageText = tabs.count == 1 ? "Quit Overterm?" : "Quit Overterm and close \(tabs.count) tabs?"
         alert.informativeText =
             TerminalWindowController.closeWarning(for: tabs, quitting: true) + " Tabs come back on the next launch; agents resume their conversation."
+            + {
+                // What goes on running is named: it may be why this asks (D-16).
+                let listed = TerminalWindowController.survivorsListed(tabs.flatMap(\.terminals))
+                return listed.isEmpty ? "" : "\n\n" + listed
+            }()
         alert.addButton(withTitle: "Quit")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
