@@ -363,3 +363,42 @@ extension TerminalWindowController {
         }
     }
 }
+
+/// The launch check (6.9, D-14): 10 s after launch — never in an isolated
+/// run — one census lists what an earlier Overterm left, with one asked
+/// Stop All, Show and Later. Nothing is stopped automatically.
+extension TerminalWindowController {
+    static let launchCheckDelay: Duration = .seconds(10)
+
+    func leftBehindAtLaunch() async {
+        guard Settings.shared.activityEnabled, let snapshot = await Self.census(within: .seconds(5)) else { return }
+        let context = ActivityMonitor.shared.context
+        let facts = Self.activityTabFacts()
+        let found = await PaneAgent.offMain {
+            LeftBehindAtLaunch.of(
+                snapshot, owners: ActivityAttribution.of(snapshot, context: context, inputs: ActivityAttribution.Inputs(tabs: facts.tabs, checkouts: facts.checkouts)))
+        }
+        guard !found.isEmpty, let window else { return }
+        let stops = found.all.filter(\.stops)
+        let alert = NSAlert()
+        alert.messageText = DockerMCP.displayed(found.title)
+        alert.informativeText = DockerMCP.displayed(found.detail)
+        alert.addButton(withTitle: stops.isEmpty ? "Show" : "Stop \(stops.count)…")
+        if !stops.isEmpty { alert.addButton(withTitle: "Show") }
+        alert.addButton(withTitle: "Later")
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self else { return }
+            let show = stops.isEmpty ? response == .alertFirstButtonReturn : response == .alertSecondButtonReturn
+            if show { return self.showActivityPage(.leftBehind) }
+            guard !stops.isEmpty, response == .alertFirstButtonReturn else { return }
+            let confirmation = WriteConfirmation(
+                title: "Stop \(stops.count == 1 ? "1 process" : "\(stops.count) processes") an earlier Overterm left?",
+                detail: stops.prefix(20).map { "\(DockerMCP.displayed($0.name)) (pid \($0.identity.pid))" }.joined(separator: "\n")
+                    + "\n\nEach gets SIGTERM, by the process listed.",
+                button: stops.count == 1 ? "Stop Process" : "Stop \(stops.count) Processes")
+            confirmation.present(on: window) { [weak self] _ in
+                self?.leftBehindStop(stops.map { ActivitySignalTarget($0.identity, path: $0.path) })
+            }
+        }
+    }
+}

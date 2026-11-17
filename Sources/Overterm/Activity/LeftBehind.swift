@@ -333,3 +333,66 @@ extension LeftBehind {
         return "\(agent.name) finished — left \(named)\(more) running"
     }
 }
+
+/// The launch check (6.9, D-14): what an earlier Overterm left, listed with
+/// one asked Stop All, a test run's apart; what ignores SIGHUP listed but
+/// never in the Stop All; kept identities left out (their owner says kept).
+/// Nothing is stopped automatically. Pure.
+struct LeftBehindAtLaunch: Hashable, Sendable {
+    struct Item: Hashable, Sendable {
+        let identity: ActivityProcessID
+        let name: String
+        let path: String?
+        /// In the Stop All: certain, not ignoring SIGHUP, not detached, not
+        /// a terraform tool.
+        let stops: Bool
+    }
+
+    var earlier: [Item] = []
+    var test: [Item] = []
+
+    var isEmpty: Bool { earlier.isEmpty && test.isEmpty }
+    var all: [Item] { earlier + test }
+
+    static func of(_ snapshot: ActivitySnapshot, owners: ActivityAttribution) -> LeftBehindAtLaunch {
+        var found = LeftBehindAtLaunch()
+        for process in snapshot.table.processes {
+            guard let owner = owners[process.identity], owner.place == .leftBehind, let sign = owner.leftBehind, sign.isEarlierRun else { continue }
+            // The Stop All's rule is a bulk Stop's: never a terraform tool
+            // (Interrupt only), nor what chose to outlive its terminal.
+            let terraform = TerraformCommandLine.tools.contains(ActivityPaneSet.executableName(process, facts: snapshot.facts[process.identity]))
+            let item = Item(
+                identity: process.identity, name: snapshot.name(of: process.identity) ?? process.shortName, path: snapshot.facts[process.identity]?.path,
+                stops: LeftBehind.isBulkEligible(owner, process: process, terraformWrite: terraform, kept: owner.kept))
+            if sign == .testRun { found.test.append(item) } else { found.earlier.append(item) }
+        }
+        return found
+    }
+
+    /// "9 kubectl, 2 acme-server": by name, most first.
+    static func counted(_ items: [Item]) -> String {
+        var counts: [String: Int] = [:]
+        for item in items { counts[item.name, default: 0] += 1 }
+        let named = counts.sorted { ($1.value, $0.key) < ($0.value, $1.key) }.prefix(4).map { "\($0.value) \($0.key)" }
+        let more = counts.count > 4 ? " and \(counts.count - 4) more names" : ""
+        return named.joined(separator: ", ") + more
+    }
+
+    /// The sheet's title: "Overterm's earlier run left 9 kubectl".
+    var title: String {
+        if !earlier.isEmpty { return "Overterm’s earlier run left \(Self.counted(earlier))" }
+        return "A test run left \(Self.counted(test))"
+    }
+
+    /// The sheet's words: each group, what Stop All leaves.
+    var detail: String {
+        var lines: [String] = []
+        if !earlier.isEmpty, !test.isEmpty { lines.append("Left by a test run: \(Self.counted(test)).") }
+        let unstopped = all.filter { !$0.stops }
+        if !unstopped.isEmpty {
+            lines.append("Not in Stop All — they ignore SIGHUP, are terraform's or are only probably its: \(Self.counted(unstopped)). Activity ▸ Left Behind lists them.")
+        }
+        lines.append("Nothing is stopped unless you say so; Activity ▸ Left Behind (3) lists each with its reason.")
+        return lines.joined(separator: "\n")
+    }
+}

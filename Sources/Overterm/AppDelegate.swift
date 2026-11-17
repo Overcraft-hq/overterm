@@ -68,7 +68,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if let scenario = AppEnvironment.e2eScenario { E2ERunner.start(scenario, app: controller) }
         // What Activity kept and stopped before the last quit or crash (D-29).
         ActivityPersistence.shared.start()
-        if !AppEnvironment.isIsolated { Task { await controller.activityRestoreAtLaunch() } }
+        // …and, 10 s on, what an earlier Overterm left (D-14): never in an isolated run.
+        if !AppEnvironment.isIsolated {
+            Task { [weak controller] in
+                await controller?.activityRestoreAtLaunch()
+                try? await Task.sleep(for: TerminalWindowController.launchCheckDelay)
+                await controller?.leftBehindAtLaunch()
+            }
+        }
 
         // An isolated run stays in the background: it must not take the
         // keyboard from whatever the user is doing.

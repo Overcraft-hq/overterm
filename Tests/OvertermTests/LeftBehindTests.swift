@@ -511,4 +511,36 @@ final class LeftBehindTests: XCTestCase {
         let late = WorktreeProcesses.read(worktree, in: snapshot, kernel: kernel, app: app, deadline: 0)
         XCTAssertFalse(late.complete, "past its deadline it says so")
     }
+
+    // MARK: The launch check (D-14)
+
+    func testTheLaunchsStopAllLeavesTerraformOut() throws {
+        let context = base()
+        let terraform = add(
+            1940, parent: 1, name: "terraform", words: ["terraform", "apply", "-auto-approve"], environment: ["OVERTERM_RUN=release.77.123"])
+        let proxy = add(1941, parent: 1, name: "kubectl", environment: ["OVERTERM_RUN=release.77.123"])
+        let snapshot = try snapshot(context)
+        let found = LeftBehindAtLaunch.of(snapshot, owners: owners(snapshot, context))
+        XCTAssertEqual(found.earlier.first { $0.identity == terraform }?.stops, false, "Interrupt only, never in a Stop All")
+        XCTAssertEqual(found.earlier.first { $0.identity == proxy }?.stops, true)
+    }
+
+    func testTheLaunchListsAnEarlierRunsAndATestRunsApartAndStopsNothingUnasked() throws {
+        var context = base()
+        let proxies = (0..<3).map { add(1900 + Int32($0), parent: 1, name: "kubectl", environment: ["OVERTERM_RUN=release.77.123"]) }
+        let nohup = add(1910, parent: 1, name: "acme-worker", environment: ["OVERTERM_RUN=release.77.123"], ignoresHangup: true)
+        let standIn = add(1920, parent: 1, name: "perl", environment: ["OVERTERM_RUN=isolated.78.456"])
+        let kept = add(1930, parent: 1, name: "acme-keep", environment: ["OVERTERM_RUN=release.77.123"])
+        context.kept = [kept]
+        let snapshot = try snapshot(context)
+        let found = LeftBehindAtLaunch.of(snapshot, owners: owners(snapshot, context))
+        XCTAssertEqual(Set(found.earlier.map(\.identity)), Set(proxies + [nohup]))
+        XCTAssertEqual(found.test.map(\.identity), [standIn])
+        XCTAssertFalse(found.all.contains { $0.identity == kept }, "kept: left out")
+        XCTAssertEqual(found.all.filter(\.stops).count, 4, "what ignores SIGHUP is listed, never in the Stop All")
+        XCTAssertEqual(found.title, "Overterm’s earlier run left 3 kubectl, 1 acme-worker")
+        XCTAssertTrue(found.detail.contains("Left by a test run: 1 perl."))
+        XCTAssertTrue(found.detail.contains("Not in Stop All — they ignore SIGHUP, are terraform's or are only probably its: 1 acme-worker."))
+        XCTAssertTrue(LeftBehindAtLaunch().isEmpty)
+    }
 }
