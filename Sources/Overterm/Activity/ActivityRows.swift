@@ -63,6 +63,13 @@ struct ActivityProcessRow: ResourceTableRow, Sendable {
     var priority: Int32?
     /// W, an estimate.
     var energy: Double?
+    /// Idle wake-ups a second (`ri_pkg_idle_wkups`, Activity Monitor's).
+    var idleWakeups: Double?
+    /// Bytes a second.
+    var diskRead: Double?
+    var diskWritten: Double?
+    /// What its power assertions keep awake; nil where nothing was read.
+    var sleepHold: ActivitySleepHold?
     /// Intel code under Rosetta.
     var translated = false
     var ignoresHangup = false
@@ -306,6 +313,10 @@ enum ActivityRows {
             row.cpuTime = facts?.usage?.cpuTime
             row.priority = facts?.usage?.priority
             row.energy = facts?.rates?.energy
+            row.idleWakeups = facts?.rates?.idleWakeupsPerSecond
+            row.diskRead = facts?.rates?.diskReadPerSecond
+            row.diskWritten = facts?.rates?.diskWrittenPerSecond
+            row.sleepHold = snapshot.sleepHolds.map { $0[process.pid] ?? [] }
             if case .pane(let tag)? = owner?.place, let tab = owner?.tab {
                 row.pane = panesByTab[tab]?.firstIndex(of: tag).map { $0 + 1 }
             }
@@ -474,6 +485,11 @@ enum ActivityRows {
         case "kind": return sort.sorted(rows) { $0.translated ? 1 : 0 }
         case "path": return sort.sorted(rows) { $0.path }
         case "command": return sort.sorted(rows) { $0.command }
+        case "energy": return sort.sorted(rows) { $0.energy }
+        case "wakeups": return sort.sorted(rows) { $0.idleWakeups }
+        case "diskRead": return sort.sorted(rows) { $0.diskRead }
+        case "diskWritten": return sort.sorted(rows) { $0.diskWritten }
+        case "sleep": return sort.sorted(rows) { $0.sleepHold.flatMap { $0.isEmpty ? nil : $0.rawValue } }
         default: return rows
         }
     }

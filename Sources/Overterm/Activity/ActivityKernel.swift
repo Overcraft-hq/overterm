@@ -127,6 +127,9 @@ protocol ActivityKernel: Sendable {
     /// Whether `responsiblePID` answers at all: false when the call is
     /// missing or turned itself off, so its nil is unread, never "none".
     var readsResponsibility: Bool { get }
+    /// Who holds a sleep assertion now, by pid: what it keeps awake — every
+    /// user's (6.5's Preventing Sleep). Nil when it can't be read.
+    func sleepAssertions() -> [pid_t: ActivitySleepHold]?
 }
 
 /// A process's audit token (`TASK_AUDIT_TOKEN`, 3.9): it names one
@@ -179,6 +182,7 @@ extension ActivityKernel {
     func meterCounters() -> SystemMeterCounters? { nil }
     func responsiblePID(of pid: pid_t) -> pid_t? { nil }
     var readsResponsibility: Bool { false }
+    func sleepAssertions() -> [pid_t: ActivitySleepHold]? { nil }
 
     /// `pid`'s code signing: `csops`, else Security.framework's answer
     /// while `fallbacks` lasts (each over a millisecond); nil is unknown — never
@@ -204,6 +208,8 @@ struct LiveActivityKernel: ActivityKernel {
     func continuousTime() -> UInt64 { clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW) }
 
     func meterCounters() -> SystemMeterCounters? { readMeterCounters() }
+
+    func sleepAssertions() -> [pid_t: ActivitySleepHold]? { ActivitySleepHold.read() }
 
     func processes() -> [ActivityProcess]? {
         func call(_ buffer: UnsafeMutableRawPointer?, _ size: inout Int) -> Int32 {
@@ -564,6 +570,7 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     private var lastImage: UInt32 = 0
     private var meters: SystemMeterCounters?
     private var responsibility = true
+    private var sleepHolds: [pid_t: ActivitySleepHold]? = [:]
 
     init(uid: uid_t = 501) { self.uid = uid }
 
@@ -793,6 +800,11 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     func continuousTime() -> UInt64 { lock.withLock { clock + slept } }
 
     func meterCounters() -> SystemMeterCounters? { asked("meters") { meters } }
+
+    func sleepAssertions() -> [pid_t: ActivitySleepHold]? { asked("sleepAssertions") { sleepHolds } }
+
+    /// Who holds a sleep assertion next (nil: unreadable).
+    func setSleepHolds(_ holds: [pid_t: ActivitySleepHold]?) { lock.withLock { sleepHolds = holds } }
 
     /// What the meters read next (nil: unreadable).
     func setMeters(_ counters: SystemMeterCounters?) { lock.withLock { meters = counters } }

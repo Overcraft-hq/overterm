@@ -512,6 +512,13 @@ struct ActivityPageView: View {
         return chips
     }
 
+    /// A rate as the page writes it: "—" unread.
+    static func rate(_ value: Double?, unit: String) -> String {
+        guard let value else { return "—" }
+        if unit == "B/s" { return ActivityRows.bytes(UInt64(max(value, 0).rounded())) + "/s" }
+        return String(format: value >= 100 ? "%.0f %@" : "%.1f %@", locale: Locale(identifier: "en_US_POSIX"), value, unit)
+    }
+
     @ViewBuilder
     private func processCell(_ row: ActivityProcessRow, _ column: String?) -> some View {
         switch column {
@@ -564,6 +571,11 @@ struct ActivityPageView: View {
         case "kind": text(row.translated ? "Intel" : "Apple", theme.text3)
         case "path": text(row.path ?? "", theme.text3)
         case "command": text(row.command ?? "", theme.text2)
+        case "energy": number(Self.rate(row.energy, unit: "W"))
+        case "wakeups": number(row.idleWakeups.map { String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), $0) } ?? "—")
+        case "diskRead": number(Self.rate(row.diskRead, unit: "B/s"))
+        case "diskWritten": number(Self.rate(row.diskWritten, unit: "B/s"))
+        case "sleep": text(row.sleepHold.map { $0.isEmpty ? "No" : $0.text } ?? "—", row.sleepHold?.isEmpty == false ? theme.text : theme.text3)
         default:
             EmptyView()
         }

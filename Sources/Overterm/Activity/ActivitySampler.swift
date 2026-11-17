@@ -502,6 +502,9 @@ final class ActivitySampler: @unchecked Sendable {
             tick: tick, demand: demand, time: now, date: date, uid: uid, table: table, facts: facts, panes: slices, helpers: helpers,
             appChildren: appChildren, unclaimedLogins: unclaimed, unread: unread.count, cost: cost, isStretched: cadence.isStretched,
             meters: meters)
+        // Who holds a sleep assertion (6.5's Preventing Sleep), at the full
+        // level: one IOKit call, about 0.25 ms.
+        if demand.full { snapshot.sleepHolds = kernel.sleepAssertions() }
         // The history (6.11): what this tick rated, merged here, on the
         // sampler's queue; the snapshot carries it on, a value.
         snapshot.historyTime = continuous

@@ -225,6 +225,9 @@ struct ActivitySnapshot: Sendable {
     /// The system's meters, read at the full level (6.4); nil at the others
     /// and where they can't be read.
     var meters: SystemMeters? = nil
+    /// Who holds a sleep assertion, by pid (`IOPMCopyAssertionsByProcess`),
+    /// read at the full level; nil where it wasn't read.
+    var sleepHolds: [pid_t: ActivitySleepHold]? = nil
     /// Every tick's history to this one (6.11): strips, the details.
     var history = ActivityRing()
     /// When the table was read on the continuous clock
