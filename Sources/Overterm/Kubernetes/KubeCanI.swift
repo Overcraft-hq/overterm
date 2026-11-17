@@ -281,10 +281,11 @@ enum KubeProcessRun {
 
     /// `input`, when given, is its stdin — written through a pipe, never a
     /// file (a release's values for `helm template --values -`); else stdin
-    /// is /dev/null.
+    /// is /dev/null. `helper`: which of Overterm's children it is, said in
+    /// its environment beside the run's marker (D-15).
     static func run(
         _ executable: URL, _ arguments: [String], environment: [String: String], timeout: TimeInterval, outputLimit: Int = 64 * 1024,
-        input: Data? = nil
+        input: Data? = nil, helper: OvertermRun.Helper = .kubectl
     ) -> Result? {
         let out = Pipe()
         let err = Pipe()
@@ -294,7 +295,7 @@ enum KubeProcessRun {
         let pid = lock.withLock { () -> pid_t? in
             guard
                 let pid = try? ProcessGroup.spawn(
-                    executable, arguments, environment, stdout: out.fileHandleForWriting.fileDescriptor,
+                    executable, arguments, OvertermRun.current.marking(environment, helper: helper), stdout: out.fileHandleForWriting.fileDescriptor,
                     stderr: err.fileHandleForWriting.fileDescriptor, stdin: stdin?.fileHandleForReading.fileDescriptor
                 ).get()
             else { return nil }

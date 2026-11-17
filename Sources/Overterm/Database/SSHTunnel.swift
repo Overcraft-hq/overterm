@@ -57,6 +57,8 @@ final class SSHTunnel: @unchecked Sendable {
     /// Tests keep their hosts and keys out of ~/.ssh: `-F`, `-i`, before
     /// the destination (`FakeSSHHost.options`).
     nonisolated(unsafe) static var testOptions: [String] = []
+    /// The ssh it runs: a test's stand-in, to see what it was started with.
+    nonisolated(unsafe) static var executable = URL(fileURLWithPath: "/usr/bin/ssh")
 
     /// The ControlPath its ssh is given: `<user temp>/ot-run-<pid>-<start36>/db-<id>`,
     /// a path nothing creates. With `ControlMaster=no`, ssh only tries it as
@@ -131,14 +133,21 @@ final class SSHTunnel: @unchecked Sendable {
         return arguments
     }
 
+    /// What its ssh is given before a secret: the app's environment, marked
+    /// as this run's (D-15) — unseen while it runs, `/usr/bin/ssh` being a
+    /// platform binary: its `ControlPath` says the run (`controlPath`).
+    static func environment(_ inherited: [String: String]) -> [String: String] {
+        OvertermRun.current.marking(inherited, helper: .databaseTunnel)
+    }
+
     /// Opens it, and returns once the local end takes connections — or
     /// throws what ssh said.
     static func open(_ connection: DatabaseConnection, secret: String?) async throws -> SSHTunnel {
         let port = try freePort()
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+        process.executableURL = executable
         process.arguments = arguments(connection, localPort: port, batch: secret == nil)
-        var environment = ProcessInfo.processInfo.environment
+        var environment = Self.environment(ProcessInfo.processInfo.environment)
         if let secret {
             environment["SSH_ASKPASS"] = try askpass().path
             environment["SSH_ASKPASS_REQUIRE"] = "force"

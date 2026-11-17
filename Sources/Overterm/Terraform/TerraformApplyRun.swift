@@ -170,6 +170,12 @@ enum TerraformApplyLaunch {
         recorded.filter { name, _ in !TerraformEnvironment.isAlwaysRemoved(name) || name == "TF_WORKSPACE" || name == "TF_DATA_DIR" }
     }
 
+    /// What the launcher is started with, and the terraform it starts:
+    /// `environment`, marked as this run's apply (D-15).
+    static func launchedEnvironment(_ recorded: [String: String]) -> [String: String] {
+        OvertermRun.current.marking(environment(recorded), helper: .terraformApply)
+    }
+
     /// The launcher's argv: its script, the status file, the binary, the apply.
     static func arguments(status: URL, binary: URL) -> [String] {
         ["-p", "-c", launcher, status.path, binary.path] + TerraformCommands.apply
@@ -208,7 +214,7 @@ enum TerraformApplyLaunch {
         _ = fcntl(writing, F_SETNOSIGPIPE, 1)
         defer { close(writing) }
         let spawned = ProcessGroup.spawn(
-            URL(fileURLWithPath: shell), arguments(status: status, binary: binary), environment(recorded), directory: root, stdout: out, stderr: err,
+            URL(fileURLWithPath: shell), arguments(status: status, binary: binary), launchedEnvironment(recorded), directory: root, stdout: out, stderr: err,
             descriptors: [3: descriptor, 4: reading], newSession: true)
         close(reading)
         let pid: pid_t

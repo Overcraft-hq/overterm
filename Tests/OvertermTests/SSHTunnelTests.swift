@@ -188,7 +188,7 @@ final class SSHTunnelTests: XCTestCase {
         let ssh = Process()
         ssh.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
         ssh.arguments = SSHTunnel.arguments(connection, localPort: local, batch: true)
-        ssh.environment = ProcessInfo.processInfo.environment
+        ssh.environment = SSHTunnel.environment(ProcessInfo.processInfo.environment)
         ssh.standardInput = FileHandle.nullDevice
         ssh.standardOutput = FileHandle.nullDevice
         let errors = Pipe()

@@ -46,6 +46,13 @@ final class TerminalView: NSView {
     /// them (ProcessInspector).
     let processTag = UUID().uuidString
 
+    /// What every pane's environment carries first: its tag
+    /// (`OVERTERM_TAB_ID`) and this run's marker (`OVERTERM_RUN`) — never
+    /// `OVERTERM_HELPER`: a pane is no helper.
+    nonisolated static func paneMarkers(tag: String, run: OvertermRun = .current) -> [(key: String, value: String)] {
+        [(ProcessInspector.tagVariable, tag), (OvertermRun.variable, run.marker)]
+    }
+
     /// What Suspend Tab stopped in this pane, parents first, each by the
     /// identity it was listed with (TabSuspension); nil while it runs.
     var suspended: [ActivitySignalTarget]?
@@ -178,13 +185,16 @@ final class TerminalView: NSView {
         }
         config.working_directory = UnsafePointer(cwdC)
         config.initial_input = inputC.flatMap { UnsafePointer($0) }
-        let tagKey = strdup(ProcessInspector.tagVariable)
-        let tagValue = strdup(processTag)
+        // The pane's tag, and beside it the run that made the pane
+        // (`OVERTERM_RUN`, D-15): what outlives the pane says whose it was.
+        let markers = Self.paneMarkers(tag: processTag).map { (strdup($0.key), strdup($0.value)) }
         defer {
-            free(tagKey)
-            free(tagValue)
+            for (key, value) in markers {
+                free(key)
+                free(value)
+            }
         }
-        var env = [ghostty_env_var_s(key: tagKey, value: tagValue)]
+        var env = markers.map { ghostty_env_var_s(key: $0.0, value: $0.1) }
         // The bridge's MCP config and this pane's token, for an agent
         // started here (BrowserBridge): the token in this environment only.
         let mcp = (BrowserBridge.shared.environment(forPane: processTag) ?? [:]).sorted { $0.key < $1.key }.map { (strdup($0.key), strdup($0.value)) }

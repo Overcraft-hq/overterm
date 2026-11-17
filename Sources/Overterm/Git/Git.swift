@@ -120,7 +120,8 @@ enum Git {
         var environment = inherited.filter { !repositoryVariables.contains($0.key) }
         environment["GIT_TERMINAL_PROMPT"] = "0"
         environment["GIT_OPTIONAL_LOCKS"] = "0"
-        return environment
+        // Which run it is, and that it is a helper (D-15).
+        return OvertermRun.current.marking(environment, helper: .git)
     }
 
     static func runBlocking(

@@ -93,7 +93,8 @@ enum TerraformStreamRun {
         let err = Pipe()
         let launched = planFile != nil
         let spawned = ProcessGroup.spawn(
-            launched ? URL(fileURLWithPath: "/bin/sh") : binary, launched ? ["-c", umaskLauncher, binary.path] + arguments : arguments, environment,
+            launched ? URL(fileURLWithPath: "/bin/sh") : binary, launched ? ["-c", umaskLauncher, binary.path] + arguments : arguments,
+            TerraformRun.childEnvironment(environment),
             directory: folder, stdout: out.fileHandleForWriting.fileDescriptor, stderr: err.fileHandleForWriting.fileDescriptor)
         try? out.fileHandleForWriting.close()
         try? err.fileHandleForWriting.close()

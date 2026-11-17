@@ -204,7 +204,8 @@ final class DockerSSHForward: ManagedResource {
     static func launch(_ target: DockerSSHTarget, localSocket: String, remoteSocket: String) -> ManagedProcess.Launch {
         ManagedProcess.Launch(
             executable: ssh, arguments: arguments(target, localSocket: localSocket, remoteSocket: remoteSocket),
-            readiness: .socket(localSocket), timeout: 20, removing: [localSocket])
+            readiness: .socket(localSocket), timeout: 20, removing: [localSocket],
+            helper: .dockerSSH)
     }
 
     /// The host's real name, as ~/.ssh/config makes it (`ssh -G`, which

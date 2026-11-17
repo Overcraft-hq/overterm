@@ -32,6 +32,15 @@ final class ManagedProcess: @unchecked Sendable {
         /// Files it makes (its socket): removed before it starts — one left
         /// by a process that died is no use — and when it is closed.
         var removing: [String] = []
+        /// Which of Overterm's children it is: `OVERTERM_HELPER`, beside the
+        /// run's `OVERTERM_RUN` (docs/design/activity/analysis.md, D-15).
+        var helper: OvertermRun.Helper = .managed
+
+        /// The environment it is started with: the launch's, or this
+        /// process's, marked as this run's `helper`.
+        var markedEnvironment: [String: String] {
+            OvertermRun.current.marking(environment ?? ProcessInfo.processInfo.environment, helper: helper)
+        }
     }
 
     enum Failure: Error, Equatable {
@@ -176,7 +185,7 @@ final class ManagedProcess: @unchecked Sendable {
         let null = open("/dev/null", O_WRONLY)
         defer { if null >= 0 { Darwin.close(null) } }
         let spawned = ProcessGroup.spawn(
-            launch.executable, launch.arguments, launch.environment ?? ProcessInfo.processInfo.environment, directory: launch.directory,
+            launch.executable, launch.arguments, launch.markedEnvironment, directory: launch.directory,
             stdout: output?.fileHandleForWriting.fileDescriptor ?? null, stderr: errors.fileHandleForWriting.fileDescriptor)
         // The child has its own: ours closed, or the readers never see EOF.
         try? errors.fileHandleForWriting.close()

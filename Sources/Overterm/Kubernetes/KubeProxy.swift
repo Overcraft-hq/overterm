@@ -347,7 +347,7 @@ struct KubeProxySpec: Hashable, Sendable {
     var launch: ManagedProcess.Launch {
         ManagedProcess.Launch(
             executable: kubectl, arguments: arguments, environment: environment, readiness: .line(KubeProxyFlags.isReady), timeout: 20,
-            removing: [socket])
+            removing: [socket], helper: .kubectlProxy)
     }
 }
 

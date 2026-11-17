@@ -18,6 +18,8 @@ final class RunMarkersTests: XCTestCase {
 
     override func tearDown() {
         ManagedProcess.closeAll()
+        SSHTunnel.executable = URL(fileURLWithPath: "/usr/bin/ssh")
+        SSHTunnel.closeAll()
         try? FileManager.default.removeItem(at: dir)
     }
 
@@ -90,6 +92,165 @@ final class RunMarkersTests: XCTestCase {
         let id = run.identity
         let socket = "/tmp/" + ArgvSign.kubeFolder(uid: 501, run: id) + "/0a1b2c3d4e5f-1.sock"
         XCTAssertEqual(ArgvSign.signs(in: ActivityText.command(["kubectl", "proxy", "--unix-socket=\(socket)"])), [.kubectl(id)])
+    }
+
+    // MARK: Every spawn path's markers
+
+    private func expectMarked(_ environment: [String: String]?, _ helper: OvertermRun.Helper, file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertEqual(environment?["OVERTERM_RUN"], OvertermRun.current.marker, file: file, line: line)
+        XCTAssertEqual(environment?["OVERTERM_HELPER"], helper.rawValue, file: file, line: line)
+    }
+
+    /// What a child prints of its own two markers.
+    private static let printMarkers = #"printf '%s|%s' "$OVERTERM_RUN" "$OVERTERM_HELPER""#
+    private var expected: String { "\(OvertermRun.current.marker)|" }
+
+    func testAPanesEnvironmentCarriesItsTagAndTheRunNeverAHelper() {
+        let markers = TerminalView.paneMarkers(tag: "acme-tag")
+        XCTAssertEqual(markers.map(\.key), ["OVERTERM_TAB_ID", "OVERTERM_RUN"])
+        XCTAssertEqual(markers.map(\.value), ["acme-tag", OvertermRun.current.marker])
+    }
+
+    func testManagedProcessesAreMarkedByTheirKind() async throws {
+        let target = DockerSSHTarget(user: "deploy", host: "acme-build", port: 2222)
+        XCTAssertEqual(DockerSSHForward.launch(target, localSocket: "/tmp/ot.sock", remoteSocket: "/var/run/docker.sock").helper, .dockerSSH)
+        let forward = KubePortForwardCommand.launch(kubectl: URL(fileURLWithPath: "/usr/local/bin/kubectl"), arguments: [], environment: ["PATH": "/usr/bin"])
+        XCTAssertEqual(forward.helper, .kubectlPortForward)
+        expectMarked(forward.markedEnvironment, .kubectlPortForward)
+        XCTAssertEqual(forward.markedEnvironment["PATH"], "/usr/bin")
+        // A real one: what it was started with.
+        let process = try await ManagedProcess.start(
+            ManagedProcess.Launch(
+                executable: URL(fileURLWithPath: "/bin/sh"), arguments: ["-c", Self.printMarkers + "; echo; echo ready; exec /bin/sleep 30"],
+                readiness: .line { $0 == "ready" }, helper: .kubectlProxy))
+        defer { process.close() }
+        XCTAssertTrue(process.stdout.text.contains("\(OvertermRun.current.marker)|kubectl-proxy"), process.stdout.text)
+    }
+
+    func testAKubectlProxyIsMarked() throws {
+        let spec = KubeProxySpec(
+            context: "fake-dev", readOnly: true, kubectl: URL(fileURLWithPath: "/usr/local/bin/kubectl"), socket: "/tmp/ot-x.sock",
+            environment: ["PATH": "/usr/bin"], cacheDirectory: nil, signIn: .none)
+        XCTAssertEqual(spec.launch.helper, .kubectlProxy)
+        expectMarked(spec.launch.markedEnvironment, .kubectlProxy)
+    }
+
+    func testAShortKubectlOrHelmIsMarkedOnItsChild() throws {
+        let kubectl = try XCTUnwrap(KubeProcessRun.run(URL(fileURLWithPath: "/bin/sh"), ["-c", Self.printMarkers], environment: ["PATH": "/usr/bin"], timeout: 10))
+        XCTAssertEqual(kubectl.stdout, expected + "kubectl")
+        let helm = try XCTUnwrap(
+            KubeProcessRun.run(URL(fileURLWithPath: "/bin/sh"), ["-c", Self.printMarkers], environment: [:], timeout: 10, helper: .helm))
+        XCTAssertEqual(helm.stdout, expected + "helm")
+    }
+
+    func testTerraformsChildrenAreMarked() throws {
+        let script = dir.appendingPathComponent("terraform")
+        try "#!/bin/sh\n\(Self.printMarkers)\n".write(to: script, atomically: true, encoding: .utf8)
+        chmod(script.path, 0o755)
+        let result = try TerraformRun.runBlocking(script, TerraformCommands.validate, in: dir, environment: ["PATH": "/usr/bin:/bin"], input: nil, timeout: 10)
+        XCTAssertEqual(String(decoding: result.stdout, as: UTF8.self), expected + "terraform")
+        expectMarked(TerraformRun.childEnvironment(["HOME": "/tmp/acme"]), .terraform)
+        let apply = TerraformApplyLaunch.launchedEnvironment(["HOME": "/tmp/acme", "TF_LOG": "trace"])
+        expectMarked(apply, .terraformApply)
+        XCTAssertNil(apply["TF_LOG"], "still stripped of what logs values")
+    }
+
+    /// A stand-in executable of the test's: `body` after a shebang.
+    private func standIn(_ name: String, _ body: String) throws -> URL {
+        let url = dir.appendingPathComponent("bin/\(name)")
+        try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "#!/bin/sh\n\(body)\n".write(to: url, atomically: true, encoding: .utf8)
+        chmod(url.path, 0o700)
+        return url
+    }
+
+    /// A plan's stream, at its spawn: both ways it starts (straight, and
+    /// through the umask launcher) hand terraform the run's markers.
+    func testATerraformStreamIsMarkedOnItsChild() throws {
+        let terraform = try standIn("terraform", Self.printMarkers + " >&2")
+        let folder = try TerraformRunFolder.makeRun(base: dir.appendingPathComponent("runs"))
+        let plan = try XCTUnwrap(TerraformCommands.plan(out: folder.appendingPathComponent("plan").path))
+        for planFile in [nil, folder.appendingPathComponent("plan")] {
+            let outcome = try TerraformStreamRun.run(terraform, plan, in: dir, environment: ["PATH": "/usr/bin:/bin"], planFile: planFile, batch: { _ in })
+            XCTAssertEqual(outcome.stderr, expected + "terraform", "\(String(describing: planFile))")
+        }
+    }
+
+    /// A detached apply, at its spawn: the launcher and the terraform it
+    /// starts carry the run's markers.
+    func testADetachedApplyIsMarkedOnItsChild() async throws {
+        let terraform = try standIn("terraform", Self.printMarkers)
+        let folder = dir.appendingPathComponent("runs/apply", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let planURL = dir.appendingPathComponent("plan")
+        try Data("PK\u{3}\u{4}acme-plan".utf8).write(to: planURL)
+        let plan = open(planURL.path, O_RDONLY | O_CLOEXEC)
+        defer { close(plan) }
+        let made = try TerraformApplyLaunch.spawn(
+            binary: terraform, root: dir, environment: ["PATH": "/usr/bin:/bin"], plan: plan, folder: folder,
+            marker: { pid, started in
+                TerraformApplyMarker(
+                    pid: pid, started: started, executable: TerraformApplyLaunch.shell, checkout: "/acme", root: "envs/dev", name: "envs/dev",
+                    workspace: "default", rootClass: "local", identity: nil, at: TerraformApplyMarker.now)
+            })
+        // Reaped once it exits.
+        _ = ProcessGroup.Child(pid: made.pid)
+        let end = Date().addingTimeInterval(10)
+        while TerraformApplyLaunch.status(in: folder) == nil, Date() < end { try await Task.sleep(nanoseconds: 50_000_000) }
+        XCTAssertEqual(TerraformApplyLaunch.status(in: folder), 0)
+        let printed = try String(contentsOf: folder.appendingPathComponent(TerraformApplyMarker.stdout), encoding: .utf8)
+        XCTAssertEqual(printed, expected + "terraform-apply")
+    }
+
+    /// Docker's CLI followed line by line, at its spawn.
+    func testDockersStreamedCLIIsMarkedOnItsChild() async throws {
+        let docker = try standIn("docker", Self.printMarkers + "; echo")
+        var lines: [String] = []
+        for try await batch in DockerCLI(executable: docker, endpoint: nil).lines([], from: .stdout) { lines += batch }
+        XCTAssertEqual(lines, [expected + "docker-cli"])
+    }
+
+    /// The database tunnel's ssh, at its spawn: a stand-in that says what
+    /// it was started with, then fails, which the tunnel reports.
+    func testTheTunnelsSSHIsMarkedOnItsChild() async throws {
+        SSHTunnel.executable = try standIn("ssh", Self.printMarkers + " >&2; echo >&2; exit 1")
+        do {
+            _ = try await SSHTunnel.open(tunnelled(), secret: nil)
+            XCTFail("the stand-in never forwards")
+        } catch {
+            XCTAssertEqual(error.localizedDescription, "SSH: " + expected + "database-tunnel")
+        }
+    }
+
+    func testGitAndDockersCLIAreMarked() async throws {
+        expectMarked(Git.environment(from: ["PATH": "/usr/bin"]), .git)
+        let printed = try await Git.run(URL(fileURLWithPath: "/bin/sh"), ["-c", Self.printMarkers], in: dir)
+        XCTAssertEqual(printed, expected + "git")
+        let docker = URL(fileURLWithPath: "/usr/local/bin/docker")
+        let words = DockerCLI.environment(for: nil, executable: docker)
+        XCTAssertEqual(words.last, "OVERTERM_HELPER=docker-cli", "over Git.run's: env sets it")
+        // The way DockerCLI runs it: env with those words before the tool.
+        let viaEnv = try await Git.run(URL(fileURLWithPath: "/usr/bin/env"), words + ["/bin/sh", "-c", Self.printMarkers], in: dir)
+        XCTAssertEqual(viaEnv, expected + "docker-cli")
+    }
+
+    func testTheLoginShellIsMarkedAndItsAnswerUnmarked() throws {
+        let launched = ShellEnvironment.launchEnvironment(["PATH": "/usr/bin:/bin"])
+        expectMarked(launched, .loginShell)
+        let data = try XCTUnwrap(ShellEnvironment.run(URL(fileURLWithPath: "/bin/sh"), ["-c", Self.printMarkers], environment: launched, timeout: 10))
+        XCTAssertEqual(String(decoding: data, as: UTF8.self), expected + "login-shell")
+        let answer = "\(ShellEnvironment.marker)\0PATH=/usr/bin\0OVERTERM_RUN=\(OvertermRun.current.marker)\0OVERTERM_HELPER=login-shell\0"
+        let parsed = try XCTUnwrap(ShellEnvironment.parse(Data(answer.utf8)))
+        XCTAssertEqual(OvertermRun.unmarked(parsed), ["PATH": "/usr/bin"], "the next child sets its own")
+    }
+
+    func testALanguageServerTheTunnelAndTheUsageAskAreMarked() {
+        let server = LanguageServer(
+            name: "fake", command: LanguageServer.Command(executable: URL(fileURLWithPath: "/usr/local/bin/fake-ls")), root: dir,
+            environmentRemoved: ["OVERTERM_*"])
+        expectMarked(server.processEnvironment(["PATH": "/usr/bin"]), .languageServer)
+        expectMarked(SSHTunnel.environment(["PATH": "/usr/bin"]), .databaseTunnel)
+        expectMarked(AgentUsageCommand.environment(["PATH": "/usr/bin"]), .agentUsage)
     }
 
     // MARK: The tunnel's ControlPath

@@ -202,6 +202,12 @@ enum KubeForwardAddress {
 /// kubectl and credentials, never the proxy's socket, which refuses
 /// port-forward on every context. Pure.
 enum KubePortForwardCommand {
+    /// The forward as a process: ready when kubectl says it forwards — pure.
+    static func launch(kubectl: URL, arguments: [String], environment: [String: String]?) -> ManagedProcess.Launch {
+        ManagedProcess.Launch(
+            executable: kubectl, arguments: arguments, environment: environment, readiness: .line(isReady), timeout: 30, helper: .kubectlPortForward)
+    }
+
     static func arguments(
         pod: String, localPort: Int, remotePort: Int, context: String, namespace: String, address: String, cacheDirectory: String? = nil
     ) -> [String] {
