@@ -1225,6 +1225,54 @@ walks the closing panes' trees itself, on the main thread, at the close
   words only; another program's text through `ActivityText.forAgents`,
   capped at 120 characters; a port nobody of the user's holds "not
   listed", never "free". An isolated run's answers are its own tabs'.
+- **History** (stage 4; design 6.7, 6.11, D-21). `ActivityRing` (pure,
+  after `KubeUsageRing`) is merged into by the sampler at the end of each
+  tick, on its own queue, and each snapshot carries it on as a value
+  (`ActivitySnapshot.history`; `cost.history` the merge's time): a strip of
+  60 cells of 15 s for every rated process of the user's, each pane's
+  agent's subtree summed, each tab and the Mac — a cell's highest and
+  lowest CPU and its last footprint, 8 bytes, all ones where nothing was
+  read, so a gap is drawn as a gap; every strip's cells one flat buffer
+  written in place, so a tick copies it once (the last snapshot still holds
+  the old one), never an array a key. For at most 50 keys, picked once a
+  merge (`detailKeys`: the selection, the Mac, the agents, then the
+  busiest tabs — a key the merge feeds never pushes out another it feeds),
+  every sample for 15 minutes with breaks past
+  `ProcessUsage.maximumInterval`, and the minutes folded for an hour.
+  Times are the continuous clock (`ActivitySnapshot.historyTime`,
+  `CLOCK_MONOTONIC_RAW`, which runs while the Mac sleeps — a sleep is a
+  gap, never minutes moved up to now; a fake kernel's `sleep` drives it),
+  the rates still uptime's; `ActivitySnapshot.date(of:)` turns them into
+  the wall clock's. What is fed is what a level read: the visible windows'
+  tabs on every light tick, everything only while the page shows. A
+  process's history goes 15 minutes after it ends, a tab's when nothing fed
+  it for as long; both copies alive at once stay under 4 MB as `heldBytes`
+  counts them — ended strips first, then the quietest, then the details.
+  The rows draw their strip with `KubeHeatStripView.draw` (CPU, 15 min, on
+  by default); the detail and the meters draw `Charts/`' `TimeChartView`
+  (`ActivityHistoryCharts`, `activity.chart.<subject>.<measure>`, Copy
+  Values as CSV in their menu). The selection's charts and the summary Ask
+  an Agent sends (`ActivityDetailHistory`: CPU over 15 minutes and the
+  hour, least, mean and most, the footprint's trend, an agent's subtree's
+  too) are made off the main thread with the rows (`Options.historyOf`),
+  or on their own queue for a row just selected, from its strip's cells
+  until its own samples come. The same ticks give the Energy, Idle
+  Wake-ups, Disk Read and Write columns — the meters' Energy, the user's
+  processes' summed, shown while the Energy column is — and Preventing
+  Sleep from `IOPMCopyAssertionsByProcess` at the full level
+  (`ActivitySleepHold`, the assertions' types only). New and ended rows: a
+  process absent from the rows shown last (`ActivityRows.Options.previous`)
+  that started after their census (`shownAt`) is tinted for a tick, or 3 s
+  when ticks are faster, whatever its age at the tick; one gone since is
+  shown once more, dimmed, "ended" — never counted (a group's header, an
+  agent's counts, Left Behind's and a bulk Stop's), never in Listening, the
+  detail or its verbs but Copy and Copy PID. Chips (`ActivityChips`, pure):
+  a process of the user's that held a core (every cell's lowest 90% or more
+  for 5 minutes), an agent burning 50% or more for 5 minutes while its tab
+  waits — counted from the later of the two (`ActivityTabFacts.waitingSince`,
+  `TabActivity.waitingSince`, the agent's own waiting mark) —, and a moved
+  server (`ActivityMovedServers`: asked for P and listens on P+1…P+10, or
+  the later of two checkouts of one repository running the same server).
 - **The switcher** (⌃⌘A, `ActivitySwitcher`): the palette on the
   listening ports, by number, then the ten busiest processes. It holds
   the full level every second while the palette shows it, page or no

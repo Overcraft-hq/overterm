@@ -577,6 +577,13 @@ struct ActivityPageView: View {
                     Text(verbatim: chip).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3).lineLimit(1)
                         .padding(.horizontal, 5).background(Capsule().stroke(theme.border))
                 }
+                ForEach(row.chips, id: \.self) { chip in
+                    Text(verbatim: chip.text(now: Date())).font(.system(size: ChromeMetrics.text(10), weight: chip.warns ? .semibold : .regular))
+                        .foregroundStyle(chip.warns ? TabStatusStyle.signal : theme.text2).lineLimit(1)
+                        .padding(.horizontal, 5).background(Capsule().fill((chip.warns ? TabStatusStyle.signal : theme.text3).opacity(0.12)))
+                        .help(chip.help)
+                        .accessibilityIdentifier("activity.chip")
+                }
                 if row.ended {
                     Text(verbatim: "ended").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3).lineLimit(1)
                         .padding(.horizontal, 5).background(Capsule().stroke(theme.border))

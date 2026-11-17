@@ -41,7 +41,18 @@ struct TabActivity: Equatable {
     }
 
     private(set) var isWorking = false
-    private(set) var mark: Mark = .none
+    private(set) var mark: Mark = .none {
+        didSet {
+            if mark != .waiting {
+                waitingSince = nil
+            } else if oldValue != .waiting {
+                waitingSince = Date()
+            }
+        }
+    }
+    /// Since when the tab waits for you (`.waiting`): what Activity's "idle
+    /// but burning" counts from (docs/design/activity/analysis.md, 6.11).
+    private(set) var waitingSince: Date?
     /// What to say about it, when there is something specific.
     private(set) var note: String?
     /// The mark is a cluster's (`clusterFailed`): it goes on its own once

@@ -130,6 +130,12 @@ extension TerminalWindowController {
                 let worktree = checkout.flatMap { path in worktrees.first { $0.path.standardizedFileURL.path == path } }
                 var facts = ActivityTabFacts(id: tab.id, title: tab.title, checkout: checkout, branch: worktree?.branch, order: order, agent: tab.agent)
                 if worktree != nil { facts.repository = repository }
+                // The agent's own waiting mark: a bell or its notification,
+                // not a cluster's, a Terraform ask's or Left Behind's.
+                let activity = tab.activity
+                facts.waiting =
+                    tab.agent != nil && activity.mark == .waiting && !activity.fromCluster && !activity.fromTerraform && !activity.fromLeftBehind
+                if facts.waiting { facts.waitingSince = activity.waitingSince }
                 tabs[tab.id] = facts
                 order += 1
             }

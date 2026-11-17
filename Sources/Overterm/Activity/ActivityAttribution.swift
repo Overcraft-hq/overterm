@@ -98,6 +98,12 @@ struct ActivityTabFacts: Hashable, Sendable {
     var order = 0
     /// The agent it was opened for.
     var agent: Agent?
+    /// Its agent waits for the person (`TabActivity`'s waiting mark, the
+    /// agent's own): what "idle but burning" asks (6.11).
+    var waiting = false
+    /// Since when it waits (`TabActivity.waitingSince`): the burn counts
+    /// from then.
+    var waitingSince: Date?
 }
 
 /// Each process's owner, reason and certainty (6.5): pure, one snapshot,

@@ -81,6 +81,8 @@ struct ActivityProcessRow: ResourceTableRow, Sendable {
     var newSince: Date?
     /// Gone since the last census: shown once more, dimmed, "ended".
     var ended = false
+    /// What changed, on this row (6.11).
+    var chips: [ActivityRowChip] = []
     /// Intel code under Rosetta.
     var translated = false
     var ignoresHangup = false
@@ -313,6 +315,8 @@ enum ActivityRows {
         let uid = snapshot.uid
         var panesByTab: [UUID: [String]] = [:]
         for slice in snapshot.panes { panesByTab[slice.tab, default: []].append(slice.tag) }
+        var agentTabs: [ActivityProcessID: UUID] = [:]
+        for slice in snapshot.panes { if let agent = slice.agent { agentTabs[agent] = slice.tab } }
         let before = options.marksNew ? Dictionary(options.previous.map { ($0.identity, $0) }, uniquingKeysWith: { first, _ in first }) : [:]
         var rows: [ActivityProcessRow] = []
         rows.reserveCapacity(snapshot.table.processes.count)
@@ -367,6 +371,9 @@ enum ActivityRows {
             if own {
                 row.strip = snapshot.history.cpuStrip(.process(identity), now: snapshot.historyNow)
                 row.stripSince = snapshot.history.since(.process(identity), now: snapshot.historyNow).map { snapshot.date(of: $0) }
+                let agentTab = agentTabs[identity]
+                let waiting = agentTab.flatMap { tabFacts[$0] }.flatMap { $0.waiting ? $0.waitingSince : nil }
+                row.chips = ActivityChips.of(identity, agentWaitingSince: waiting, isAgent: agentTab != nil, in: snapshot)
             }
             if options.marksNew {
                 if let was = before[identity] {
@@ -393,6 +400,10 @@ enum ActivityRows {
             }
             rows.append(row)
         }
+        // A server not where it asked to be (6.8, 6.11).
+        for (id, chip) in ActivityMovedServers.find(rows, tabs: tabFacts) {
+            if let index = rows.firstIndex(where: { $0.id == id }) { rows[index].chips.append(chip) }
+        }
         // Listening, the detail and the busiest read every row in scope:
         // Processes' filter is that section's alone (6.6).
         let inScope = rows
@@ -403,6 +414,7 @@ enum ActivityRows {
             gone.isNew = false
             gone.newSince = nil
             gone.cpu = nil
+            gone.chips = []
             gone.listening = []
             rows.append(gone)
         }
