@@ -71,10 +71,9 @@ final class AgentOverviewModel: ObservableObject {
             claude: claude, panes: snapshot.panes)
     }
 
-    /// By process name or argv[0] (`argvAgent`: `command` is masked).
+    /// By process name or argv (`argvAgent`: `command` is masked).
     nonisolated static func agent(of node: ProcessNode) -> Agent? {
-        for agent in Agent.allCases where node.name == agent.rawValue || node.argvAgent == agent { return agent }
-        return nil
+        Agent.of(processName: node.name) ?? node.argvAgent
     }
 
     /// The checked-out branch, read from .git/HEAD (no git process per card

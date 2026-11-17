@@ -54,6 +54,12 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     private(set) var spotlightView: NSView?
     /// Polls where the selected tab's agent works (see Tab.agentDirectory).
     private var agentPoll: Timer?
+    /// The screen check's loop (`TerminalWindowController+AgentScreen`).
+    var agentScreenLoop: Task<Void, Never>?
+    /// Its per-pane state, by `processTag`.
+    var agentScreenPanes: [String: AgentScreenPane] = [:]
+    /// A round still reading: the next one skips.
+    var agentScreenInFlight = false
     /// Shared across Tab Info popovers so CPU deltas and env reads carry over.
     private let inspector = ProcessInspector()
     /// The strip's width in the toolbar (`sizeStrip`).
@@ -775,6 +781,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         installTabRightClick()
         installTabDragging()
         startAgentPoll()
+        startAgentScreenCheck()
 
         let content = NSView()
         let body = split.view
@@ -1104,6 +1111,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         pane.onEvent = { [weak self, weak tab, weak pane] event in
             guard let self, let tab else { return }
             self.blocks(of: pane).handle(event)
+            self.noteAttentionSignal(event, from: pane)
             if tab.activity.handle(event, visible: self.isVisible(tab)) {
                 // While focusing on one island, another group's notice waits
                 // — unless its agent is blocked on you.
@@ -1294,7 +1302,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// (`TerraformAgentGuard`, analysis 3.4).
     func agentCommand(_ agent: Agent, base: String? = nil, in directory: URL) -> (command: String, launch: TerraformAgentGuard.Launch) {
         let launch = TerraformAgentGuards.shared.launch(for: agent, in: directory)
-        return (TerraformAgentGuard.command(base ?? agent.command(arguments: Settings.shared.arguments(for: agent)), launch: launch), launch)
+        let command = base ?? agent.command(Settings.shared.launch(for: agent))
+        let policy = agent == .gemini && launch == .denied ? AgentLaunchFiles.geminiPolicy() : nil
+        return (TerraformAgentGuard.command(command, launch: launch, agent: agent, geminiPolicy: policy), launch)
     }
 
     /// An agent's tab (or a shell's), pinned as Terminal in this context
@@ -1334,7 +1344,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     // MARK: Attention
 
     /// Actually in front of you: selected, in the key window, app active.
-    private func isVisible(_ tab: Tab) -> Bool {
+    func isVisible(_ tab: Tab) -> Bool {
         NSApp.isActive && window?.isKeyWindow == true && store.selectedID == tab.id
     }
 
@@ -1390,7 +1400,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// A cluster mark came or went: the Dock badge, the menu bar, the Inbox.
     func kubernetesAttentionChanged() { updateAttentionBadge() }
 
-    private func updateAttentionBadge() {
+    func updateAttentionBadge() {
         AttentionNotifier.updateBadge(count: store.tabs.filter { $0.activity.needsAttention }.count)
         updateMenuBarItem(count: store.tabs.count { $0.activity.needsAttention })
         if inboxItem?.isCollapsed == false { refreshInbox() }
@@ -1447,7 +1457,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             focusSelectedTerminal()
             return
         }
-        guard let command = Agent.claudeResume(session: session.id, arguments: Settings.shared.arguments(for: .claude)) else { return }
+        guard let command = Agent.claudeResume(session: session.id, launch: Settings.shared.launch(for: .claude)) else { return }
         newTab(in: URL(fileURLWithPath: session.directory), agent: .claude, startAgent: start, command: command)
     }
 
@@ -1606,7 +1616,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         func resuming(_ agent: Agent?, in path: String?) -> (input: String?, launch: TerraformAgentGuard.Launch) {
             guard let agent else { return (nil, .none) }
             let folder = URL(fileURLWithPath: path ?? FileManager.default.homeDirectoryForCurrentUser.path, isDirectory: true)
-            let made = agentCommand(agent, base: agent.resumeCommand(arguments: Settings.shared.arguments(for: agent)), in: folder)
+            let made = agentCommand(agent, base: agent.resumeCommand(Settings.shared.launch(for: agent)), in: folder)
             return (made.command + "\n", made.launch)
         }
         // The islands first, so each tab can point at one as it is made.
@@ -1827,7 +1837,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     // MARK: Following the agent
 
-    /// Every 2 s, where the selected tab's agent process (claude, codex)
+    /// Every 2 s, where the selected tab's agent process (any `Agent`)
     /// works. Claude Code moves its process into a worktree on
     /// EnterWorktree (and back on exit); the sidebar and diff follow.
     private func startAgentPoll() {
@@ -1919,11 +1929,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         return nil
     }
 
-    /// Claude Code or Codex, by process name or argv[0] (`argvAgent`, read
+    /// A known agent (`Agent`), by process name or argv (`argvAgent`, read
     /// off the raw words: `command` is masked).
     nonisolated static func isAgent(_ node: ProcessNode) -> Bool {
-        let names = ["claude", "codex"]
-        return names.contains(node.name) || node.argvAgent != nil
+        AgentOverviewModel.agent(of: node) != nil
     }
 
     /// Pins the selected tab's sidebar and diff to `worktree`.
@@ -3170,7 +3179,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         // the screen changed since the card was made.
         guard !terraformAsking(tab) else { return NSSound.beep() }
         tab.terminal.insertText(choice.key)
-        tab.terminal.pressReturn()
+        // Gemini CLI takes the digit alone; a Return would reach its prompt.
+        if !choice.confirmsOnKey { tab.terminal.pressReturn() }
         refreshInbox()
     }
 
@@ -3980,6 +3990,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     @objc func newTab(_ sender: Any?) { newTab(from: store.selected?.terminal) }
     @objc func newClaudeTab(_ sender: Any?) { newAgentTab(.claude) }
     @objc func newCodexTab(_ sender: Any?) { newAgentTab(.codex) }
+    @objc func newOpencodeTab(_ sender: Any?) { newAgentTab(.opencode) }
+    @objc func newPiTab(_ sender: Any?) { newAgentTab(.pi) }
+    @objc func newGeminiTab(_ sender: Any?) { newAgentTab(.gemini) }
     /// ⌘W: the focused pane of a split tab, else the tab.
     @objc func closeSelectedTab(_ sender: Any?) {
         if let overlay = store.showingOverlay { return closeOverlay(overlay) }
@@ -4297,6 +4310,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         peek.close()
         saveFinalSession()
         agentPoll?.invalidate()
+        agentScreenLoop?.cancel()
         usage.stop()
         pullRequestPoll?.invalidate()
         overviewPoll?.invalidate()

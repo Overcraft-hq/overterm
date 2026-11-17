@@ -332,6 +332,7 @@ final class E2ETests: XCTestCase {
     func testSessionGroups() throws { try run("sessionGroups") }
     func testFullScreen() throws { try run("fullScreen") }
     func testImagePaste() throws { try run("imagePaste") }
+    func testAgents() throws { try run("agents") }
     func testSidebarPanels() throws { try run("sidebarPanels") }
     func testCloseKeys() throws { try run("closeKeys") }
     func testEditorZed() throws { try run("editorZed") }

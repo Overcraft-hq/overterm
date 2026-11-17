@@ -62,8 +62,8 @@ enum MCPAsker {
         return nil
     }
 
-    /// The agent running in the pane, read off the main thread: Claude or
-    /// Codex, by its process.
+    /// The agent running in the pane, read off the main thread, by its
+    /// process.
     nonisolated private static func agent(root: pid_t?, tag: String) async -> String? {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
@@ -74,9 +74,9 @@ enum MCPAsker {
         }
     }
 
-    /// "Claude" or "Codex" for an agent's process (by name, else argv[0]:
-    /// `argvAgent`, as `command` is masked).
+    /// "Claude", "Codex", "Gemini"… for an agent's process (by name, else
+    /// argv: `argvAgent`, as `command` is masked).
     nonisolated static func agentName(_ node: ProcessNode) -> String? {
-        (Agent(rawValue: node.name) ?? node.argvAgent)?.name
+        AgentOverviewModel.agent(of: node)?.name
     }
 }

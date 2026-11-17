@@ -247,6 +247,10 @@ enum KeyCommands {
         .init("tabs.new", "New Tab", group: "Tabs", key: "cmd+t", ghostty: "new_tab"),
         .init("tabs.newClaude", "New Claude Tab", group: "Tabs", key: "alt+cmd+c"),
         .init("tabs.newCodex", "New Codex Tab", group: "Tabs", key: "alt+cmd+x"),
+        // No default key: ⌥⌘O, ⌥⌘I and ⌥⌘G are taken; keybindings.json can give one.
+        .init("tabs.newOpencode", "New opencode Tab", group: "Tabs"),
+        .init("tabs.newPi", "New pi Tab", group: "Tabs"),
+        .init("tabs.newGemini", "New Gemini Tab", group: "Tabs"),
         .init("tasks.new", "New Task…", group: "Tabs", key: "shift+cmd+n"),
         .init("tabs.close", "Close (the pane, or the tab)", group: "Tabs", key: "cmd+w", ghostty: "close_surface"),
         .init("tabs.next", "Show Next Tab", group: "Tabs", key: "shift+cmd+]", ghostty: "next_tab"),

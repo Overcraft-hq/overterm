@@ -1,8 +1,9 @@
 import AppKit
 import GhosttyKit
 
-/// ⌘V with a picture on the clipboard, into an agent: Claude Code and Codex
-/// read a clipboard image themselves, on ⌃V — a terminal can't send them a
+/// ⌘V with a picture on the clipboard, into an agent: Claude Code, Codex,
+/// pi and Gemini CLI read a clipboard image themselves, on ⌃V
+/// (`Agent.takesClipboardImage`) — a terminal can't send them a
 /// picture, and with no text to paste Ghostty sends nothing at all, so ⌘V
 /// just did nothing. In a pane an agent has the keyboard of, the paste key
 /// with only an image on the clipboard is handed over as ⌃V. Anywhere else
@@ -21,7 +22,7 @@ enum ImagePaste {
         return !types.isDisjoint(with: [.png, .tiff, NSPasteboard.PasteboardType("public.jpeg"), NSPasteboard.PasteboardType("public.heic")])
     }
 
-    /// Whether Claude Code or Codex is in the pane's foreground. Blocking (a
+    /// Whether an agent that reads a clipboard image is in the pane's foreground. Blocking (a
     /// scan of the pane's processes): a few milliseconds, once a paste.
     nonisolated static func agentHasKeyboard(login: pid_t?) -> Bool {
         guard let login else { return false }
@@ -32,7 +33,7 @@ enum ImagePaste {
     /// Pure: an agent's process in the terminal's foreground group.
     nonisolated static func agentHasKeyboard(among nodes: [ProcessNode], foreground: pid_t?, groupOf: (pid_t) -> pid_t?) -> Bool {
         guard let foreground else { return false }
-        return nodes.contains { AgentOverviewModel.agent(of: $0) != nil && groupOf($0.pid) == foreground }
+        return nodes.contains { AgentOverviewModel.agent(of: $0)?.takesClipboardImage == true && groupOf($0.pid) == foreground }
     }
 
     /// The ⌃V an agent reads the clipboard on, for `window`.

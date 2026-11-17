@@ -56,6 +56,6 @@ final class AgentTests: XCTestCase {
         XCTAssertEqual(Agent.claude.resumeCommand, "claude --continue")
         XCTAssertEqual(Agent.codex.command, "codex")
         XCTAssertEqual(Agent.codex.resumeCommand, "codex resume --last")
-        XCTAssertEqual(Set(Agent.allCases.map(\.rawValue)), ["claude", "codex"], "the session file stores these")
+        XCTAssertEqual(Set(Agent.allCases.map(\.rawValue)), ["claude", "codex", "opencode", "pi", "gemini"], "the session file stores these")
     }
 }

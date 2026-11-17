@@ -194,7 +194,7 @@ final class DockerPageModel: ObservableObject {
     @Published var models: ModelRunner.Contents?
     @Published var modelsError: String?
     @Published var modelSelection: Set<String> = []
-    /// Claude Code and Codex as Docker's MCP Toolkit sees them, read each
+    /// The agents as Docker's MCP Toolkit sees them, read each
     /// time the page shows; nil without the Toolkit.
     @Published var mcpClients: [MCPToolkitClient]?
     /// Whether `docker scout` is there, for the images' menu.

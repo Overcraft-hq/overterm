@@ -24,7 +24,7 @@ final class Tab: ObservableObject, Identifiable {
     /// The shell's current directory, as last reported.
     @Published var workingDirectory: String?
 
-    /// Where the tab's agent (claude, codex) is working, when that differs
+    /// Where the tab's agent is working, when that differs
     /// from the shell — Claude Code chdirs into a worktree on EnterWorktree.
     /// Polled by the window for the selected tab.
     @Published var agentDirectory: String?
@@ -70,6 +70,9 @@ final class Tab: ObservableObject, Identifiable {
     /// One of its panes asks for a Terraform write (TerraformPrompt, 3.3):
     /// its tab's mark and the Inbox's card; never answered by Overterm.
     @Published var terraformAsk: TerraformAsk?
+    /// What an agent that sent no signal asks on one of its panes' screens
+    /// (`AgentScreenCheck`), as last read; nil when nothing.
+    var screenAsk: String?
 
     /// The island this tab belongs to, if any. The group is looked up in
     /// `TabStore.groups`; the store keeps a group's tabs contiguous.

@@ -4,7 +4,7 @@ import Foundation
 /// the Toolkit's gateway (`docker mcp gateway run`) — and through it every
 /// MCP server the user turned on in Docker.
 struct MCPToolkitClient: Equatable, Identifiable, Sendable {
-    /// The Toolkit's name for it: `claude-code`, `codex`.
+    /// The Toolkit's name for it: `claude-code`, `codex`, `opencode`, `gemini`.
     var id: String
     var name: String
     var connected: Bool
@@ -12,13 +12,14 @@ struct MCPToolkitClient: Equatable, Identifiable, Sendable {
 }
 
 /// Docker's MCP Toolkit (`docker mcp`), for the agents Overterm runs:
-/// `docker mcp client ls --global --json` says whether Claude Code and
-/// Codex are connected — it reads their config files, nothing else — and
+/// `docker mcp client ls --global --json` says whether Claude Code,
+/// Codex, opencode and Gemini CLI are connected (the Toolkit's own list
+/// has them; pi has no MCP) — it reads their config files, nothing else — and
 /// connecting or disconnecting one is a terminal tab, where the user sees
 /// it change that agent's config. Pure but for `read`.
 enum DockerMCPToolkit {
     /// The agents Overterm has, in its order.
-    static let agents = ["claude-code", "codex"]
+    static let agents = ["claude-code", "codex", "opencode", "gemini"]
 
     static func parse(_ output: String) -> [MCPToolkitClient]? {
         guard let json = try? JSONSerialization.jsonObject(with: Data(output.utf8)) as? [String: Any] else { return nil }

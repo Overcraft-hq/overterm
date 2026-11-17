@@ -50,6 +50,9 @@ struct TabActivity: Equatable {
     /// The mark is a Terraform ask's (`terraformAsked`): it goes once the
     /// ask has left the screen (`terraformAnswered`).
     private(set) var fromTerraform = false
+    /// The mark is the screen check's (`agentAsked`, `AgentScreenCheck`):
+    /// it goes once the question has left the screen (`agentAnswered`).
+    private(set) var fromScreen = false
 
     /// Anything to tell you — the Dock badge counts these.
     var needsAttention: Bool { mark != .none }
@@ -100,6 +103,7 @@ struct TabActivity: Equatable {
         note = text
         fromCluster = false
         fromTerraform = false
+        fromScreen = false
         return true
     }
 
@@ -115,6 +119,7 @@ struct TabActivity: Equatable {
         note = text
         fromCluster = false
         fromTerraform = true
+        fromScreen = false
         return changed && !visible
     }
 
@@ -123,6 +128,30 @@ struct TabActivity: Equatable {
     @discardableResult
     mutating func terraformAnswered() -> Bool {
         guard fromTerraform, mark == .waiting else { return false }
+        seen()
+        return true
+    }
+
+    /// An agent that sent no signal asks something on a pane's screen
+    /// (`AgentScreenCheck`): marked waiting with its question, unless the
+    /// tab is in front of you. True when the mark or its words just
+    /// changed (the moment to notify).
+    @discardableResult
+    mutating func agentAsked(_ text: String, visible: Bool) -> Bool {
+        guard !visible, mark < .waiting || (mark == .waiting && fromScreen && note != text) else { return false }
+        mark = .waiting
+        note = text
+        fromCluster = false
+        fromTerraform = false
+        fromScreen = true
+        return true
+    }
+
+    /// The question left the screen (answered, in the tab): its mark goes,
+    /// unless something else has marked the tab since.
+    @discardableResult
+    mutating func agentAnswered() -> Bool {
+        guard fromScreen, mark == .waiting else { return false }
         seen()
         return true
     }
@@ -137,6 +166,7 @@ struct TabActivity: Equatable {
         note = text
         fromCluster = false
         fromTerraform = false
+        fromScreen = false
         return true
     }
 
@@ -152,6 +182,7 @@ struct TabActivity: Equatable {
         note = text
         fromCluster = true
         fromTerraform = false
+        fromScreen = false
         return true
     }
 
@@ -179,5 +210,6 @@ struct TabActivity: Equatable {
         note = nil
         fromCluster = false
         fromTerraform = false
+        fromScreen = false
     }
 }

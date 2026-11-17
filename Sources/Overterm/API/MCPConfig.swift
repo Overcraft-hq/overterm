@@ -3,7 +3,9 @@ import Foundation
 /// An MCP server the API client can open: how it is reached, and where it
 /// was found. The agents' own configs are read, never written — the
 /// checkout's `.mcp.json`, Claude Code's `~/.claude.json` (the user's and
-/// this checkout's), Codex's `~/.codex/config.toml` — and servers added
+/// this checkout's), Codex's `~/.codex/config.toml`, opencode's
+/// `~/.config/opencode/opencode.json(c)` and Gemini CLI's
+/// `~/.gemini/settings.json` — and servers added
 /// here are Overterm's, in its own folder: nothing goes into a Bruno
 /// collection, which has no MCP request (Bruno would refuse the file).
 struct MCPServerConfig: Equatable, Hashable, Identifiable, Sendable {
@@ -33,7 +35,7 @@ struct MCPServerConfig: Equatable, Hashable, Identifiable, Sendable {
     }
 
     enum Source: String, Sendable, CaseIterable {
-        case project, claudeLocal, claudeUser, codex, overterm
+        case project, claudeLocal, claudeUser, codex, opencode, gemini, overterm
 
         var title: String {
             switch self {
@@ -41,6 +43,8 @@ struct MCPServerConfig: Equatable, Hashable, Identifiable, Sendable {
             case .claudeLocal: "Claude Code — this checkout"
             case .claudeUser: "Claude Code"
             case .codex: "Codex"
+            case .opencode: "opencode"
+            case .gemini: "Gemini CLI"
             case .overterm: "Added here"
             }
         }
@@ -80,7 +84,82 @@ struct MCPServerConfig: Equatable, Hashable, Identifiable, Sendable {
         if let text = try? String(contentsOf: home.appendingPathComponent(".codex/config.toml"), encoding: .utf8) {
             out += codex(text, environment: environment)
         }
+        let config = environment["XDG_CONFIG_HOME"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? home.appendingPathComponent(".config")
+        for name in ["opencode.json", "opencode.jsonc"] {
+            if let text = try? String(contentsOf: config.appendingPathComponent("opencode/\(name)"), encoding: .utf8) {
+                out += opencode(text, environment: environment)
+                break
+            }
+        }
+        if let text = try? String(contentsOf: home.appendingPathComponent(".gemini/settings.json"), encoding: .utf8) {
+            out += gemini(text, environment: environment)
+        }
         return out
+    }
+
+    /// opencode's `mcp` object (JSONC): `{"type": "local", "command":
+    /// [program, args…], "environment": {…}}` or `{"type": "remote",
+    /// "url": …, "headers": {…}}`; `{env:VAR}` substituted, as opencode does.
+    static func opencode(_ text: String, environment: [String: String]) -> [MCPServerConfig] {
+        guard let object = try? SettingsJSON.object(from: text), let servers = object["mcp"] as? [String: Any] else { return [] }
+        func expand(_ any: Any?) -> String? {
+            guard var text = any as? String else { return nil }
+            while let start = text.range(of: "{env:"), let end = text[start.upperBound...].firstIndex(of: "}") {
+                text.replaceSubrange(start.lowerBound...end, with: environment[String(text[start.upperBound..<end])] ?? "")
+            }
+            return text
+        }
+        func strings(_ any: Any?) -> [String: String] { (any as? [String: Any] ?? [:]).compactMapValues { expand($0) } }
+        return servers.keys.sorted().compactMap { name in
+            guard let entry = servers[name] as? [String: Any] else { return nil }
+            if let url = expand(entry["url"]) {
+                return MCPServerConfig(name: name, source: .opencode, transport: .http(url: url, headers: strings(entry["headers"])))
+            }
+            let command = (entry["command"] as? [Any] ?? []).compactMap { expand($0) }
+            guard let program = command.first else { return nil }
+            return MCPServerConfig(
+                name: name, source: .opencode, transport: .stdio(command: program, args: Array(command.dropFirst()), env: strings(entry["environment"])))
+        }
+    }
+
+    /// Gemini CLI's `mcpServers` (JSON with comments): `command`/`args`/
+    /// `env`, `httpUrl` (streamable HTTP) or `url` (SSE, unless `type` says
+    /// http), `headers`; `$VAR` and `${VAR}` expanded, as Gemini does.
+    static func gemini(_ text: String, environment: [String: String]) -> [MCPServerConfig] {
+        guard let object = try? SettingsJSON.object(from: text), let servers = object["mcpServers"] as? [String: Any] else { return [] }
+        func expand(_ any: Any?) -> String? { (any as? String).map { expandDollar($0, environment) } }
+        func strings(_ any: Any?) -> [String: String] { (any as? [String: Any] ?? [:]).compactMapValues { expand($0) } }
+        return servers.keys.sorted().compactMap { name in
+            guard let entry = servers[name] as? [String: Any] else { return nil }
+            let transport: Transport
+            if let url = expand(entry["httpUrl"]) {
+                transport = .http(url: url, headers: strings(entry["headers"]))
+            } else if let url = expand(entry["url"]) {
+                transport =
+                    (entry["type"] as? String)?.lowercased() == "http"
+                    ? .http(url: url, headers: strings(entry["headers"])) : .sse(url: url, headers: strings(entry["headers"]))
+            } else if let command = expand(entry["command"]) {
+                transport = .stdio(command: command, args: (entry["args"] as? [Any] ?? []).compactMap { expand($0) }, env: strings(entry["env"]))
+            } else {
+                return nil
+            }
+            return MCPServerConfig(name: name, source: .gemini, transport: transport, directory: expand(entry["cwd"]))
+        }
+    }
+
+    /// `$VAR`, `${VAR}` and `${VAR:-default}`; an unset one left as written.
+    static func expandDollar(_ text: String, _ environment: [String: String]) -> String {
+        guard text.contains("$") else { return text }
+        let pattern = /\$(?:(?<bare>\w+)|\{(?<name>[^}:]+?)(?::-(?<fallback>[^}]*))?\})/
+        var out = ""
+        var rest = Substring(text)
+        while let match = rest.firstMatch(of: pattern) {
+            out += rest[..<match.range.lowerBound]
+            let name = String(match.output.bare ?? match.output.name ?? "")
+            out += environment[name] ?? match.output.fallback.map(String.init) ?? String(match.output.0)
+            rest = rest[match.range.upperBound...]
+        }
+        return out + rest
     }
 
     /// `{"mcpServers": {name: {...}}}` — Claude Code's and Claude Desktop's shape.

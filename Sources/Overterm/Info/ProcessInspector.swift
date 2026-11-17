@@ -13,8 +13,9 @@ struct ProcessNode: Identifiable, Equatable {
     /// is taken first (`argvAgent`, `resumes`), since masking can change a
     /// word they read.
     fileprivate(set) var command: String
-    /// The agent argv's first word names by its base name (`claude`,
-    /// `/opt/homebrew/bin/codex`): with `name`, which agent this is.
+    /// The agent argv names (`Agent.of(arguments:)`): its first word by
+    /// base name (`claude`, `/opt/homebrew/bin/codex`), or the script
+    /// `node` runs (Gemini CLI). With `name`, which agent this is.
     let argvAgent: Agent?
     /// The session a Claude's `--resume <id>` or `-r <id>` picks back up,
     /// an id's hex and dashes only — Sessions' match. Masked, the `-r` of
@@ -47,13 +48,8 @@ struct ProcessNode: Identifiable, Equatable {
         pid: pid_t, parent: pid_t, name: String, arguments: [String], shown command: String, cpuPercent: Double, memory: UInt64,
         workingDirectory: String?, children: [ProcessNode] = []
     ) {
-        // The line's first word: no word holds the space joining two.
-        var first: Substring?
-        for word in arguments {
-            first = word.split(separator: " ").first
-            if first != nil { break }
-        }
-        let agent = first.flatMap { Agent(rawValue: (String($0) as NSString).lastPathComponent) }
+        // The line's first word, or the script an interpreter runs.
+        let agent = Agent.of(arguments: arguments)
         self.pid = pid
         self.parent = parent
         self.name = name

@@ -40,7 +40,7 @@ struct MCPServersSection: View {
                 ScrollView {
                     LazyVStack(alignment: .leading, spacing: 0) {
                         if inspector.servers.isEmpty {
-                            Text("None configured — .mcp.json, Claude Code's and Codex's servers show here; + adds one.")
+                            Text("None configured — .mcp.json and the agents' own servers (Claude Code, Codex, opencode, Gemini CLI) show here; + adds one.")
                                 .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                                 .fixedSize(horizontal: false, vertical: true).padding(.horizontal, 12).padding(.vertical, 4)
                         }

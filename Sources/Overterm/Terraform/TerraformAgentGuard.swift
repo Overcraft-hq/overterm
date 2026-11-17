@@ -16,8 +16,24 @@ import Foundation
 ///   linter takes a `*` anywhere in a `Bash` rule. Whether each rule
 ///   matches at run time, and holds under `--dangerously-skip-permissions`,
 ///   is its documentation's word only — said in Settings and the docs.
-/// - Codex: no per-command deny flag (its approval policy is all or
-///   nothing): not guarded, and its pane says so (`.notGuarded`).
+/// - opencode: `OPENCODE_PERMISSION` — JSON merged into its permission
+///   rules after every config layer — with `bash` patterns set to `deny`
+///   (`opencodePermission`), the same three forms. Its matcher anchors
+///   the whole command, `*` any run, and checks each command of a chain;
+///   the last matching rule wins, and ours are merged after the user's.
+/// - Gemini CLI: `--admin-policy <file>` — a policy file of Overterm's
+///   (`geminiPolicy`, `AgentLaunchFiles`) whose `deny` rules for
+///   `run_shell_command` hold at the admin tier, over any approval; it
+///   leaves the user's own policies in place (`--policy` would replace
+///   them). Gemini ignores it where an administrator's policies are
+///   installed (`/Library/Application Support/GeminiCli/policies`): then
+///   not guarded, and said.
+/// - Codex: no per-command deny for one launch (its rules files live in
+///   its home, none named by a flag): not guarded, and its pane says so
+///   (`.notGuarded`).
+/// - pi: no approvals and no deny of its own (an extension would be
+///   code of ours running in it): not guarded, said.
+/// opencode's and Gemini's are checked against their source, not run.
 ///
 /// It writes nothing to the user's agent configuration and puts no shim on
 /// PATH (a shim stays rejected, D-8); a script, `bash -c` or `make apply`
@@ -54,23 +70,69 @@ enum TerraformAgentGuard {
     }
 
     static let codexNote = "Codex has no per-command deny: its terraform writes aren't blocked — the header and the Inbox still show them"
+    static let piNote = "pi asks before nothing and has no per-command deny: its terraform writes aren't blocked — the header still shows them"
+    static let geminiAdminNote =
+        "Gemini CLI ignores Overterm's deny policy where an administrator's policies are installed: its terraform writes aren't blocked by Overterm"
 
     /// What `agent` gets in a checkout where a guard applies.
-    static func launch(for agent: Agent, applies: Bool) -> Launch {
+    /// `geminiAdminPolicies`: an administrator's Gemini policies are in
+    /// place, so `--admin-policy` would be ignored.
+    static func launch(for agent: Agent, applies: Bool, geminiAdminPolicies: Bool = false) -> Launch {
         guard applies else { return .none }
         switch agent {
-        case .claude: return .denied
+        case .claude, .opencode: return .denied
+        case .gemini: return geminiAdminPolicies ? .notGuarded(geminiAdminNote) : .denied
         case .codex: return .notGuarded(codexNote)
+        case .pi: return .notGuarded(piNote)
         }
     }
 
-    /// `base` (the agent's command with Settings ▸ Agents' arguments) with
-    /// the deny rules last — `--disallowedTools` takes every word after it,
-    /// so nothing may follow it. One word, single-quoted for the shell.
-    static func command(_ base: String, launch: Launch) -> String {
+    /// `base` (the agent's command with what its launch adds) with the
+    /// deny rules: Claude Code's last — `--disallowedTools` takes every
+    /// word after it, so nothing may follow it; opencode's in front, its
+    /// variable; Gemini's `--admin-policy` last. One word each,
+    /// single-quoted for the shell. `geminiPolicy`: the policy file's path.
+    static func command(_ base: String, launch: Launch, agent: Agent = .claude, geminiPolicy: String? = nil) -> String {
         guard launch == .denied else { return base }
-        return base + " --disallowedTools '" + claudeRules.joined(separator: ",") + "'"
+        switch agent {
+        case .claude: return base + " --disallowedTools '" + claudeRules.joined(separator: ",") + "'"
+        case .opencode: return "OPENCODE_PERMISSION=" + AgentLaunch.quoted(opencodePermission) + " " + base
+        case .gemini: return geminiPolicy.map { base + " --admin-policy " + AgentLaunch.quoted($0) } ?? base
+        case .codex, .pi: return base
+        }
     }
+
+    /// opencode's `permission.bash` rules: each Claude rule's pattern, as
+    /// opencode's wildcard reads it (`*` any run, the whole command).
+    static let opencodeRules: [String] = tools.flatMap { tool in
+        deniedOperations.flatMap { ["\(tool) \($0)*", "*\(tool) * \($0)*", "* \(tool) \($0)*"] } + deniedFlags.map { "*\(tool) *\($0)*" }
+    }
+
+    static let opencodePermission: String = {
+        // Keys in order: opencode takes the last rule that matches.
+        let rules = opencodeRules.map { "\(AgentLaunch.json([$0]).dropFirst().dropLast()):\"deny\"" }.joined(separator: ",")
+        return "{\"bash\":{" + rules + "}}"
+    }()
+
+    /// Gemini CLI's policy: `deny` for `run_shell_command` by prefix
+    /// (`commandPrefix`, a word boundary after it) and, for the two other
+    /// forms and the flags, by `commandRegex` — matched from the start of
+    /// the command's JSON value, so `[^"]*` stays inside it.
+    static let geminiPolicy: String = {
+        func literal(_ text: String) -> String { "'" + text + "'" }
+        let prefixes = tools.flatMap { tool in deniedOperations.map { "\(tool) \($0)" } }
+        var regexes = tools.flatMap { tool in
+            deniedOperations.flatMap { ["[^\"]*\(tool) [^\"]* \($0)", "[^\"]* \(tool) \($0)"] }
+        }
+        regexes += tools.flatMap { tool in deniedFlags.map { "[^\"]*\(tool) [^\"]*\($0)" } }
+        var text = "# Overterm: Terraform's writes denied for this launch (--admin-policy). Written by Overterm.\n"
+        text += "[[rule]]\ntoolName = \"run_shell_command\"\ncommandPrefix = [" + prefixes.map(literal).joined(separator: ", ")
+        text += "]\ndecision = \"deny\"\npriority = 900\n"
+        for regex in regexes {
+            text += "\n[[rule]]\ntoolName = \"run_shell_command\"\ncommandRegex = " + literal(regex) + "\ndecision = \"deny\"\npriority = 900\n"
+        }
+        return text
+    }()
 
     /// Whether `command` (a typed line) carries the deny rules.
     static func carriesRules(_ command: String) -> Bool {
@@ -198,6 +260,7 @@ final class TerraformAgentGuards {
                 self?.deciding.remove(key)
             }
         }
-        return TerraformAgentGuard.launch(for: agent, applies: applies)
+        return TerraformAgentGuard.launch(
+            for: agent, applies: applies, geminiAdminPolicies: agent == .gemini && applies && AgentLaunchFiles.geminiAdminPoliciesDefined())
     }
 }

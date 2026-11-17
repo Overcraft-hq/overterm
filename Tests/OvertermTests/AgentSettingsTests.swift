@@ -7,9 +7,9 @@ final class AgentSettingsTests: XCTestCase {
     func testArgumentsGoWhereverTheAgentStarts() {
         XCTAssertEqual(Agent.claude.command(arguments: " --model opus "), "claude --model opus")
         XCTAssertEqual(Agent.claude.command(arguments: ""), "claude")
-        XCTAssertEqual(Agent.codex.resumeCommand(arguments: "-m gpt-5"), "codex resume --last -m gpt-5")
+        XCTAssertEqual(Agent.codex.resumeCommand(AgentLaunch(arguments: "-m gpt-5")), "codex resume --last -m gpt-5")
         XCTAssertEqual(
-            Agent.claudeResume(session: "8f2c1e0a-1b2c-4d3e-9f00-aa11bb22cc33", arguments: "--model opus"),
+            Agent.claudeResume(session: "8f2c1e0a-1b2c-4d3e-9f00-aa11bb22cc33", launch: AgentLaunch(arguments: "--model opus")),
             "claude --resume 8f2c1e0a-1b2c-4d3e-9f00-aa11bb22cc33 --model opus")
         XCTAssertEqual(Agent.claude.command(arguments: "--a\n--b"), "claude --a --b", "one line: typed into a shell")
     }

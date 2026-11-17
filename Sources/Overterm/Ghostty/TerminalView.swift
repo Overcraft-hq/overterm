@@ -635,7 +635,7 @@ final class TerminalView: NSView {
         guard event.type == .keyDown, focused, let surface else { return false }
 
         // The paste key with only a picture to paste, into an agent: ⌃V,
-        // which is how Claude Code and Codex take an image (ImagePaste).
+        // which is how Claude Code, Codex, pi and Gemini CLI take an image (ImagePaste).
         if isPasteKey(event), ImagePaste.clipboardHasOnlyImage(),
             ImagePaste.agentHasKeyboard(login: SurfaceProcesses.shared.loginPID(of: self)),
             let down = ImagePaste.controlV(like: event, .keyDown), let up = ImagePaste.controlV(like: event, .keyUp)
