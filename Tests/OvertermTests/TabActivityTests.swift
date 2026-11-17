@@ -81,4 +81,23 @@ final class TabActivityTests: XCTestCase {
         XCTAssertNil(activity.note)
         XCTAssertTrue(activity.handle(.bell, visible: false), "can be marked again after being seen")
     }
+
+    /// Left Behind's note (docs/design/activity/analysis.md, 6.9, D-17).
+    func testAnAgentsLeftoversAreADoneNoteWithItsProvenance() {
+        var activity = TabActivity()
+        XCTAssertTrue(activity.leftBehind("Claude finished — left acme-server :3001 running", visible: false))
+        XCTAssertEqual(activity.mark, .done, "done, never failed: the agent did finish")
+        XCTAssertTrue(activity.fromLeftBehind)
+        XCTAssertEqual(activity.note, "Claude finished — left acme-server :3001 running")
+        XCTAssertFalse(activity.leftBehind("Claude finished — left acme-server :3001 running", visible: false), "the same note isn't news twice")
+        XCTAssertTrue(activity.leftBehind("Claude finished — left acme-server :3001 and 1 more running", visible: false), "a newer one says itself")
+        XCTAssertTrue(activity.handle(.bell, visible: false))
+        XCTAssertFalse(activity.fromLeftBehind, "a higher mark is someone else's")
+        XCTAssertFalse(activity.leftBehind("Codex finished — left acme-sleep running", visible: false), "under a higher mark the mark stays")
+        XCTAssertEqual(activity.mark, .waiting)
+        activity.seen()
+        XCTAssertFalse(activity.leftBehind("Codex finished — left acme-sleep running", visible: true), "looked at: marked, not told")
+        XCTAssertEqual(activity.mark, .done, "what it left isn't on the screen")
+        XCTAssertTrue(activity.fromLeftBehind)
+    }
 }

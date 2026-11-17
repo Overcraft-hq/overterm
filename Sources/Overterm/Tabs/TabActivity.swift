@@ -50,6 +50,9 @@ struct TabActivity: Equatable {
     /// The mark is a Terraform ask's (`terraformAsked`): it goes once the
     /// ask has left the screen (`terraformAnswered`).
     private(set) var fromTerraform = false
+    /// The mark is Left Behind's (`leftBehind`): an agent run that ended
+    /// left processes running (docs/design/activity/analysis.md, 6.9, D-17).
+    private(set) var fromLeftBehind = false
 
     /// Anything to tell you — the Dock badge counts these.
     var needsAttention: Bool { mark != .none }
@@ -100,7 +103,26 @@ struct TabActivity: Equatable {
         note = text
         fromCluster = false
         fromTerraform = false
+        fromLeftBehind = false
         return true
+    }
+
+    /// An agent run in the tab ended and left processes running (6.9,
+    /// D-17): "Claude finished — left node :3001 running". `.done`, never
+    /// `.failed` — the agent did finish —, looked at or not: what it left
+    /// isn't on the screen. Under a higher mark the mark stays; a newer
+    /// Left Behind note says itself over the last. True when the mark or
+    /// its words just changed and nobody is looking (the moment to notify).
+    @discardableResult
+    mutating func leftBehind(_ text: String, visible: Bool) -> Bool {
+        guard mark < .done || (mark == .done && (fromLeftBehind || note != text)) else { return false }
+        let changed = mark != .done || note != text
+        mark = .done
+        note = text
+        fromCluster = false
+        fromTerraform = false
+        fromLeftBehind = true
+        return changed && !visible
     }
 
     /// A pane of the tab asks for a Terraform write (TerraformPrompt,
@@ -115,6 +137,7 @@ struct TabActivity: Equatable {
         note = text
         fromCluster = false
         fromTerraform = true
+        fromLeftBehind = false
         return changed && !visible
     }
 
@@ -137,6 +160,7 @@ struct TabActivity: Equatable {
         note = text
         fromCluster = false
         fromTerraform = false
+        fromLeftBehind = false
         return true
     }
 
@@ -152,6 +176,7 @@ struct TabActivity: Equatable {
         note = text
         fromCluster = true
         fromTerraform = false
+        fromLeftBehind = false
         return true
     }
 
@@ -179,5 +204,6 @@ struct TabActivity: Equatable {
         note = nil
         fromCluster = false
         fromTerraform = false
+        fromLeftBehind = false
     }
 }

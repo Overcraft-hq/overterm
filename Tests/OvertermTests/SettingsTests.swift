@@ -28,14 +28,15 @@ final class SettingsTests: XCTestCase {
     }
 
     /// Settings ▸ Activity (docs/design/activity/analysis.md, 6.13): its
-    /// four entries, on by default, the census every 2 s; the interval's
+    /// five entries, on by default, the census every 2 s; the interval's
     /// choices, an unknown one 2 s; everyone's and the apps' services off
-    /// with the page.
+    /// with the page; the left-behind note not (6.9: it reads only the
+    /// tabs' own processes).
     func testActivitysSettings() {
         let settings = Settings(url: url, watch: false)
         XCTAssertEqual(
-            SettingsSchema.specs(in: .activity).map(\.key), ["activity.enabled", "activity.interval", "activity.everyone", "activity.appServices"])
-        XCTAssertTrue(settings.activityEnabled && settings.activityEveryone && settings.activityAppServices)
+            SettingsSchema.specs(in: .activity).map(\.key), ["activity.enabled", "activity.interval", "activity.everyone", "activity.appServices", "activity.leftBehindNotice"])
+        XCTAssertTrue(settings.activityEnabled && settings.activityEveryone && settings.activityAppServices && settings.activityLeftBehindNotice)
         XCTAssertEqual(settings.activityInterval, .seconds(2))
         settings.set("activity.interval", .string("1"))
         XCTAssertEqual(settings.activityInterval, .seconds(1))
@@ -43,6 +44,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(settings.activityInterval, .seconds(5))
         settings.set("activity.enabled", .bool(false))
         XCTAssertFalse(settings.activityEveryone || settings.activityAppServices)
+        XCTAssertTrue(settings.activityLeftBehindNotice)
         XCTAssertTrue(SettingsSection.activity.matches("activity.interval"))
     }
 

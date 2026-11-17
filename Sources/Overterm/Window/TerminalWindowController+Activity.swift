@@ -61,6 +61,11 @@ extension TerminalWindowController {
         // Left Behind follows the agents' runs in whatever lands (6.9).
         let ledger = LeftBehindLedger.shared
         ledger.checkouts = { activityTabFacts().checkouts }
+        // An agent's run that left processes: its tab's note (D-17).
+        ledger.onLeft = { id, run, left in
+            guard let (controller, tab) = activityWindow(of: id) else { return }
+            controller.markLeftBehind(LeftBehind.note(run.agent, left: left), on: tab)
+        }
         ledger.start()
         // `activity.interval`; a change is taken by each window
         // (`activityIntervalChanged`).
@@ -418,5 +423,16 @@ extension TerminalWindowController {
             ActivityContext.Pane(
                 tag: pane.processTag, tab: tab.id, window: window?.windowNumber, title: ActivityText.title(tab.title),
                 checkout: Self.activityCheckout(of: tab), agent: ActivityMonitor.shared.snapshot?.pane(pane.processTag)?.agentKind ?? tab.agent))
+    }
+}
+
+extension TerminalWindowController {
+    /// The Inbox's Show on a Left Behind note: Activity's Left Behind, the
+    /// tab's (6.9).
+    func showLeftBehind(of id: UUID) {
+        guard Settings.shared.activityEnabled else { return openSettings(.activity) }
+        if let (controller, _) = Self.activityWindow(of: id), controller !== self { return controller.showLeftBehind(of: id) }
+        showActivityPage(.leftBehind)
+        activityPage.setScope(.tab(id), for: .leftBehind)
     }
 }

@@ -884,6 +884,11 @@ enum SettingsSchema {
             help:
                 "Count apps' helper services and virtual machines (WebKit content, Docker's VM) under the app responsible for them — a private interface; turns itself off if it fails.",
             kind: .toggle, defaultValue: .bool(true), requires: "activity.enabled"),
+        SettingSpec(
+            key: "activity.leftBehindNotice", section: .activity, group: "Activity", title: "Say what an agent left running",
+            help:
+                "When an agent finishes and leaves processes running — a server its tool started — the tab says so (\"Claude finished — left node :3001 running\"), in the Inbox too, with Show for Activity's Left Behind. Nothing is ever stopped on its own.",
+            kind: .toggle, defaultValue: .bool(true)),
     ]
 
     private static let terraform: [SettingSpec] = [

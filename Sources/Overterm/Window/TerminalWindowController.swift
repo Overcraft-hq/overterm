@@ -726,6 +726,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                         guard let self, let tab = self.store.tabs.first(where: { $0.id == id }) else { return }
                         self.askWhy(onMarkOf: tab)
                     },
+                    showLeftBehind: { [weak self] id in self?.showLeftBehind(of: id) },
                     close: { [weak self] in self?.toggleInbox(nil) })))
         inboxView.onKey = { [weak self] key in self?.inboxKey(key) ?? false }
         let inboxPanel = NSViewController()
@@ -1405,6 +1406,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             clusterNotices += 1
             notifyUnlessHeld(tab, note: note, mark: .failed)
         }
+        updateAttentionBadge()
+    }
+
+    /// An agent run in `tab` ended and left processes running (6.9, D-17):
+    /// the tab's note, told while you are elsewhere — off with
+    /// `activity.leftBehindNotice`.
+    func markLeftBehind(_ note: String, on tab: Tab) {
+        guard Settings.shared.activityLeftBehindNotice else { return }
+        if tab.activity.leftBehind(note, visible: isVisible(tab)) { notifyUnlessHeld(tab) }
         updateAttentionBadge()
     }
 

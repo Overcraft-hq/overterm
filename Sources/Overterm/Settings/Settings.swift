@@ -526,6 +526,8 @@ final class Settings: ObservableObject {
     }
     var activityEveryone: Bool { activityEnabled && bool("activity.everyone") }
     var activityAppServices: Bool { activityEnabled && bool("activity.appServices") }
+    /// A tab's note when an agent left processes running (6.9, D-17).
+    var activityLeftBehindNotice: Bool { bool("activity.leftBehindNotice") }
     var kubernetesEnabled: Bool { bool("kubernetes.enabled") }
     /// Agents' `k8s_` read tools (KubeMCP).
     var kubernetesAgentAccess: Bool { kubernetesEnabled && bool("kubernetes.agentAccess") }

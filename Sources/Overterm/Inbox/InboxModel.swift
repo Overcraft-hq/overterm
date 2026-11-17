@@ -31,6 +31,9 @@ final class InboxModel: ObservableObject {
         /// the card says what and where, and offers no answer — the
         /// person answers in the tab.
         var terraform: TerraformAsk? = nil
+        /// An agent run left processes running (6.9, D-17): Show opens
+        /// Activity's Left Behind.
+        var leftBehind = false
 
         /// What the card is called: the tab, and what it is asking for.
         var headline: String {
@@ -41,6 +44,7 @@ final class InboxModel: ObservableObject {
 
         static func == (a: Entry, b: Entry) -> Bool {
             a.id == b.id && a.mark == b.mark && a.note == b.note && a.prompt == b.prompt && a.asksWhy == b.asksWhy && a.terraform == b.terraform
+                && a.leftBehind == b.leftBehind
         }
     }
 
@@ -76,7 +80,8 @@ final class InboxModel: ObservableObject {
                 // Terraform write's is never offered as choices (3.3).
                 prompt: tab.activity.mark == .waiting && tab.terraformAsk == nil
                     ? screen(tab).flatMap { TerraformPrompt.parse($0) == nil ? AgentPrompt.parse($0) : nil } : nil,
-                since: tab.activity.mark == .waiting ? now : nil, asksWhy: !tab.kubeAlerts.isEmpty, terraform: tab.terraformAsk)
+                since: tab.activity.mark == .waiting ? now : nil, asksWhy: !tab.kubeAlerts.isEmpty, terraform: tab.terraformAsk,
+                leftBehind: tab.activity.fromLeftBehind)
         }
         if built != entries { entries = built }
         if highlighted == nil || !built.contains(where: { $0.id == highlighted }) { highlighted = built.first?.id }
