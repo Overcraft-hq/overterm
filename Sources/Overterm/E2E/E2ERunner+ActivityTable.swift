@@ -89,9 +89,15 @@ extension E2ERunner {
         let started = Set(job().map(\.id))
         page.processSort = ResourceSort(column: "pid")
         page.selection = [server.id]
+        // The selection shown — the row the table selected is the server's
+        // — and its verbs read, so no update for either is still to come
+        // once the list is scrolled away.
         let tall = await eventually(10) {
-            table.selectedRow >= 0 && table.numberOfRows > 0 && table.bounds.height > table.visibleRect.height * 1.5
+            table.selectedRow >= 0 && page.content.list.firstIndex { $0.id == server.id } == table.selectedRow
+                && page.verbSubject?.signal.identity == server.identity && table.numberOfRows > 0
+                && table.bounds.height > table.visibleRect.height * 1.5
         }
+        await pause(0.3)
         check("a list taller than its view", many && tall, "\(table.numberOfRows) rows")
         table.scrollRowToVisible(table.numberOfRows - 1)
         let away = !table.rows(in: table.visibleRect).contains(table.selectedRow)
