@@ -9,7 +9,7 @@ struct ActivityProcessRow: ResourceTableRow, Sendable {
     let id: String
     let identity: ActivityProcessID
     let name: String
-    let cpu: Double?
+    var cpu: Double?
     /// The footprint, Activity Monitor's Memory; nil for another user's.
     let memory: UInt64?
     let threads: Int32?
@@ -75,6 +75,12 @@ struct ActivityProcessRow: ResourceTableRow, Sendable {
     /// that is inside the 15 minutes.
     var strip: [Double?]?
     var stripSince: Date?
+    /// New since the rows shown last (6.7): tinted for a tick, or 3 s
+    /// when ticks are faster — since `newSince`.
+    var isNew = false
+    var newSince: Date?
+    /// Gone since the last census: shown once more, dimmed, "ended".
+    var ended = false
     /// Intel code under Rosetta.
     var translated = false
     var ignoresHangup = false
@@ -107,6 +113,7 @@ struct ActivityProcessRow: ResourceTableRow, Sendable {
         } else if !isOwn {
             words.append(user)
         }
+        if ended { words.append("ended") } else if isNew { words.append("new") }
         return words.joined(separator: ", ")
     }
 }
@@ -173,6 +180,9 @@ struct ActivityPageContent: Sendable {
     /// main thread, with every owner of the snapshot — not only the rows
     /// a scope or a filter left —, so the list and the sheet class it alike.
     var subject: ActivityVerbSubject?
+    /// When its census was read: a process started after it is new to
+    /// the next rows (6.7).
+    var madeAt: Date?
     /// The selection's history (`Options.historyOf`), made with the rows.
     var detailHistory: ActivityDetailHistory?
     /// The snapshot's owners when they were read: a selection made between
@@ -181,6 +191,10 @@ struct ActivityPageContent: Sendable {
 }
 
 enum ActivityRows {
+    /// How long a new process is tinted at least (6.7): 3 s, and never
+    /// less than a tick.
+    static let newFor: TimeInterval = 3
+
     /// What the page lists of `snapshot`.
     struct Options: Sendable {
         /// Tabs' titles, by id, every window's.
@@ -229,6 +243,21 @@ enum ActivityRows {
         var connections = false
         var launchAgents: [LaunchdJobs.Agent] = []
         var ephemeralFirst = 49_152
+        /// The rows shown before this census: what has gone since is shown
+        /// once more, "ended" (6.7); one absent from them is new. Empty on
+        /// a first build.
+        var previous: [ActivityProcessRow] = []
+        /// Rows were shown before: a process absent from them that started
+        /// after `shownAt` is new to the person, not merely to a page just
+        /// opened.
+        var marksNew = false
+        /// When the census `previous` was made of was read: a process
+        /// started before it was there to be shown — a wider scope, a
+        /// filter cleared, isn't new.
+        var shownAt: Date?
+        /// The same census made again (a sort, a fold): `previous`'s ended
+        /// rows stay as they were, still once.
+        var repeatsEnded = false
     }
 
     /// The tabs' facts as the rows read them: a title made into facts, each
@@ -284,6 +313,7 @@ enum ActivityRows {
         let uid = snapshot.uid
         var panesByTab: [UUID: [String]] = [:]
         for slice in snapshot.panes { panesByTab[slice.tab, default: []].append(slice.tag) }
+        let before = options.marksNew ? Dictionary(options.previous.map { ($0.identity, $0) }, uniquingKeysWith: { first, _ in first }) : [:]
         var rows: [ActivityProcessRow] = []
         rows.reserveCapacity(snapshot.table.processes.count)
         var threads = 0
@@ -338,6 +368,18 @@ enum ActivityRows {
                 row.strip = snapshot.history.cpuStrip(.process(identity), now: snapshot.historyNow)
                 row.stripSince = snapshot.history.since(.process(identity), now: snapshot.historyNow).map { snapshot.date(of: $0) }
             }
+            if options.marksNew {
+                if let was = before[identity] {
+                    // Tinted on: a tick at least, 3 s at least.
+                    if was.isNew, let since = was.newSince, snapshot.date.timeIntervalSince(since) < ActivityRows.newFor {
+                        row.isNew = true
+                        row.newSince = since
+                    }
+                } else if let shownAt = options.shownAt, started > shownAt {
+                    row.isNew = true
+                    row.newSince = snapshot.date
+                }
+            }
             if case .pane(let tag)? = owner?.place, let tab = owner?.tab {
                 row.pane = panesByTab[tab]?.firstIndex(of: tag).map { $0 + 1 }
             }
@@ -354,17 +396,28 @@ enum ActivityRows {
         // Listening, the detail and the busiest read every row in scope:
         // Processes' filter is that section's alone (6.6).
         let inScope = rows
+        // What has gone since the rows shown last: once more, dimmed (6.7)
+        // — never into what the detail, Listening or the busiest read.
+        for var gone in options.previous where (options.repeatsEnded || !gone.ended) && snapshot.table.process(gone.identity) == nil {
+            gone.ended = true
+            gone.isNew = false
+            gone.newSince = nil
+            gone.cpu = nil
+            gone.listening = []
+            rows.append(gone)
+        }
         // The filter (6.6): in a tree a match keeps its ancestors, dimmed.
         let filter = ActivityFilter(options.processFilter)
-        var matched = rows.count
+        var matched = rows.count { !$0.ended }
         if !filter.isEmpty {
             let kept = filtered(
                 rows, by: filter, now: snapshot.date, ancestorsIn: options.grouping != nil && options.tree ? snapshot.table : nil,
                 grouping: options.grouping)
-            matched = kept.filter { !$0.dimmed }.count
+            matched = kept.count { !$0.dimmed && !$0.ended }
             rows = kept
         }
         var content = ActivityPageContent()
+        content.madeAt = snapshot.date
         content.attribution = attribution
         if let identity = options.subjectOf, let attribution {
             content.subject = ActivityVerbSubject.read(identity, in: snapshot, owners: attribution, known: options.known)
@@ -407,7 +460,7 @@ enum ActivityRows {
         var summary = ActivitySummary()
         summary.processes = snapshot.table.processes.count
         summary.own = snapshot.table.processes.lazy.filter { $0.isOwn(by: uid) }.count
-        summary.shown = rows.count
+        summary.shown = rows.count { !$0.ended }
         summary.leftBehind = inScope.count { $0.owner?.place == .leftBehind }
         summary.matched = matched
         // Every listener in scope, folded or filtered away too.

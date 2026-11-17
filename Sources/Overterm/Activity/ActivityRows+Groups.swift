@@ -264,14 +264,16 @@ extension ActivityRows {
         func folded(_ id: String, default value: Bool = false) -> Bool { options.folds[id] ?? value }
 
         /// A header with its rows' totals; its rows follow unless folded.
+        /// An ended row (6.7) is shown, never counted.
         mutating func group(_ row: ActivityGroupRow, rows: [ActivityProcessRow], containers: [ActivityContainer] = [], body: (inout ListBuilder) -> Void) {
             var header = row
-            header.count = rows.count
-            let rated = rows.compactMap(\.cpu) + containers.compactMap(\.cpu)
+            let counted = rows.filter { !$0.ended }
+            header.count = counted.count
+            let rated = counted.compactMap(\.cpu) + containers.compactMap(\.cpu)
             header.cpu = rated.isEmpty ? nil : rated.reduce(0, +)
-            let memory = rows.compactMap(\.memory) + containers.compactMap(\.memory)
+            let memory = counted.compactMap(\.memory) + containers.compactMap(\.memory)
             header.memory = memory.isEmpty ? nil : memory.reduce(0, +)
-            header.ports = Array(Set(rows.flatMap(\.listening))).sorted()
+            header.ports = Array(Set(counted.flatMap(\.listening))).sorted()
             if let reveal = options.reveal, header.folded, rows.contains(where: { $0.id == reveal }) { header.folded = false }
             // Filtered, a match is never left behind a fold it didn't ask
             // for (6.6): a group folded by default — your apps, macOS,
@@ -335,7 +337,7 @@ extension ActivityRows {
 
         func checkoutDetail(_ rows: [ActivityProcessRow], tabs its: [UUID]) -> String {
             var words: [String] = []
-            let agents = Set(rows.compactMap { $0.owner?.paneRole == .agent ? $0.owner?.agentKind : nil })
+            let agents = Set(rows.compactMap { $0.owner?.paneRole == .agent && !$0.ended ? $0.owner?.agentKind : nil })
             for agent in Agent.allCases where agents.contains(agent) { words.append("✳ \(agent.name)") }
             words.append(its.count == 1 ? "1 tab" : "\(its.count) tabs")
             return words.joined(separator: "  ")
@@ -348,7 +350,7 @@ extension ActivityRows {
             let id = "group:tab:\(tab.uuidString)"
             let shown = rows.filter { $0.owner?.marks.contains(.leftTerminal) != true }
             var header = ActivityGroupRow(id: id, kind: .tab, depth: depth, title: "“\(tabs[tab]?.title ?? "")”", folded: folded(id))
-            if let agentRow = shown.first(where: { $0.owner?.paneRole == .agent }), let agent = agentRow.owner?.agentKind {
+            if let agentRow = shown.first(where: { $0.owner?.paneRole == .agent && !$0.ended }), let agent = agentRow.owner?.agentKind {
                 header.agent = agent
                 header.detail = ([agent == .claude ? "Claude Code" : "Codex"] + [agentRow.agentCounts ?? roleCounts(agentRow, in: rows)].filter { !$0.isEmpty })
                     .joined(separator: "  ")
@@ -376,7 +378,8 @@ extension ActivityRows {
             let left = rows.filter { $0.owner?.marks.contains(.leftTerminal) == true }
             guard !left.isEmpty else { return }
             let id = "group:left:\(parent)"
-            group(ActivityGroupRow(id: id, kind: .left, depth: depth, title: "Left its terminal (\(left.count))", folded: folded(id)), rows: left) {
+            let counted = left.count { !$0.ended }
+            group(ActivityGroupRow(id: id, kind: .left, depth: depth, title: "Left its terminal (\(counted))", folded: folded(id)), rows: left) {
                 builder in builder.items += builder.tree(left, depth: depth + 1, group: id)
             }
         }
@@ -400,9 +403,10 @@ extension ActivityRows {
             }
         }
 
-        /// An agent row's counts: what runs under it, by role.
+        /// An agent row's counts: what runs under it, by role — what ended
+        /// not counted.
         func roleCounts(_ agent: ActivityProcessRow, in rows: [ActivityProcessRow]) -> String {
-            let under = rows.filter { $0.owner?.agent == agent.identity && $0.identity != agent.identity }
+            let under = rows.filter { $0.owner?.agent == agent.identity && $0.identity != agent.identity && !$0.ended }
             var counts: [String] = []
             for role in [ProcessRole.mcp, .shell, .server] {
                 let count = under.filter { $0.owner?.role == role }.count
@@ -417,7 +421,8 @@ extension ActivityRows {
             for fixed in Fixed.allCases {
                 guard let members = byGroup[fixed], !members.isEmpty else { continue }
                 let header = ActivityGroupRow(
-                    id: fixed.id, kind: .fixed, title: "\(fixed.title) (\(members.count))", folded: folded(fixed.id, default: fixed.foldedByDefault))
+                    id: fixed.id, kind: .fixed, title: "\(fixed.title) (\(members.count { !$0.ended }))",
+                    folded: folded(fixed.id, default: fixed.foldedByDefault))
                 group(header, rows: members) { builder in
                     if fixed == .apps {
                         builder.apps(members, depth: 1)
@@ -453,7 +458,7 @@ extension ActivityRows {
         // MARK: Agent, app, user
 
         mutating func byAgent(_ rows: [ActivityProcessRow]) {
-            let agents = rows.filter { $0.owner?.paneRole == .agent }.sorted { lhs, rhs in
+            let agents = rows.filter { $0.owner?.paneRole == .agent && !$0.ended }.sorted { lhs, rhs in
                 (lhs.owner?.tab.flatMap { tabs[$0]?.order } ?? .max, lhs.identity) < (rhs.owner?.tab.flatMap { tabs[$0]?.order } ?? .max, rhs.identity)
             }
             var claimed = Set<ActivityProcessID>()
@@ -497,7 +502,8 @@ extension ActivityRows {
                     }
                 }
                 let id = "group:app:\(key)"
-                let title = isApp || members.count == 1 ? key : "\(key) ×\(members.count)"
+                let live = members.count { !$0.ended }
+                let title = isApp || live <= 1 ? key : "\(key) ×\(live)"
                 group(ActivityGroupRow(id: id, kind: .app, title: title, folded: folded(id)), rows: members) { builder in
                     builder.items += builder.tree(members, depth: 1, group: id)
                 }

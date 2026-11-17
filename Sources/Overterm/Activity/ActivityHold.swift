@@ -67,6 +67,9 @@ extension ActivityRows {
         out.ports = shown.ports.map { ports[$0.id] ?? $0 }
         let processes = Dictionary(next.processes.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         out.processes = shown.processes.map { processes[$0.id] ?? $0 }
+        // The rows shown are the older census's: what came since is new
+        // once it lets go (6.7).
+        out.madeAt = shown.madeAt
         return out
     }
 }

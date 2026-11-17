@@ -515,6 +515,14 @@ struct ActivityPageView: View {
         return chips
     }
 
+    /// A process's cell: tinted while new, dimmed once ended (6.7).
+    private func processCell(_ row: ActivityProcessRow, _ column: String?) -> some View {
+        processCellContent(row, column)
+            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
+            .opacity(row.ended ? 0.45 : 1)
+            .background(row.isNew ? TabStatusStyle.done.opacity(0.14) : Color.clear)
+    }
+
     /// The row's 15 minutes, a cell each 15 s (6.11): `KubeHeatStripView`'s
     /// drawing, CPU capped at 100 for the colour; a gap a faint tick.
     private func strip(_ row: ActivityProcessRow) -> some View {
@@ -551,7 +559,7 @@ struct ActivityPageView: View {
     }
 
     @ViewBuilder
-    private func processCell(_ row: ActivityProcessRow, _ column: String?) -> some View {
+    private func processCellContent(_ row: ActivityProcessRow, _ column: String?) -> some View {
         switch column {
         case "name":
             HStack(spacing: 4) {
@@ -568,6 +576,11 @@ struct ActivityPageView: View {
                 ForEach(Self.chips(row), id: \.self) { chip in
                     Text(verbatim: chip).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3).lineLimit(1)
                         .padding(.horizontal, 5).background(Capsule().stroke(theme.border))
+                }
+                if row.ended {
+                    Text(verbatim: "ended").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3).lineLimit(1)
+                        .padding(.horizontal, 5).background(Capsule().stroke(theme.border))
+                        .accessibilityIdentifier("activity.ended")
                 }
                 Spacer(minLength: 0)
             }

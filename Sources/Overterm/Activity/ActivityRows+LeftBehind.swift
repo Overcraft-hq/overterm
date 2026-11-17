@@ -40,14 +40,16 @@ extension ActivityRows {
             let members = sorted(groups[key] ?? [], by: options.processSort)
             let id = "group:left:\(key)"
             var header = ActivityGroupRow(id: id, kind: .left, title: leftBehindTitle(key), folded: options.folds[id] ?? false)
-            header.count = members.count
-            let rated = members.compactMap(\.cpu)
+            // An ended row (6.7) is shown, never counted.
+            let counted = members.filter { !$0.ended }
+            header.count = counted.count
+            let rated = counted.compactMap(\.cpu)
             header.cpu = rated.isEmpty ? nil : rated.reduce(0, +)
-            let memory = members.compactMap(\.memory)
+            let memory = counted.compactMap(\.memory)
             header.memory = memory.isEmpty ? nil : memory.reduce(0, +)
-            header.ports = Array(Set(members.flatMap(\.listening))).sorted()
-            let certain = members.count { $0.bulkEligible }
-            header.detail = certain == members.count ? "all certain" : "\(certain) certain"
+            header.ports = Array(Set(counted.flatMap(\.listening))).sorted()
+            let certain = counted.count { $0.bulkEligible }
+            header.detail = certain == counted.count ? "all certain" : "\(certain) certain"
             items.append(.group(header))
             guard !header.folded else { continue }
             for var row in members {
@@ -64,7 +66,7 @@ extension ActivityRows {
     /// detached, an app or a terraform write — a probably row is picked by hand.
     static func certainInGroup(of row: ActivityProcessRow, in rows: [ActivityProcessRow], tabs: [UUID: ActivityTabFacts]) -> [ActivityProcessRow] {
         let key = leftBehindGroup(row, tabs: tabs)
-        return rows.filter { $0.owner?.place == .leftBehind && $0.bulkEligible && leftBehindGroup($0, tabs: tabs) == key }
+        return rows.filter { $0.owner?.place == .leftBehind && $0.bulkEligible && !$0.ended && leftBehindGroup($0, tabs: tabs) == key }
     }
 }
 

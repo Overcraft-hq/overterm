@@ -542,6 +542,14 @@ final class ActivityPageModel: ObservableObject {
         options.known.runningApps = options.runningApps
         if let selected = selectedProcess?.identity { options.subjectOf = selected }
         if let selected = selectedProcess, selected.isOwn { options.historyOf = selected.identity }
+        // New and ended (6.7): against the rows shown, from the second build;
+        // the same census made again keeps its ended rows as they were.
+        options.marksNew = hasRead
+        if hasRead {
+            options.previous = content.processes
+            options.shownAt = content.madeAt
+            options.repeatsEnded = asked
+        }
         lastOptions = options
         Task { [weak self] in
             let content = await Self.make(snapshot, options)
@@ -610,6 +618,8 @@ final class ActivityPageModel: ObservableObject {
         if row == nil, let port = content.ports.first(where: { $0.id == id }), let holder = port.holder {
             row = content.processes.first { $0.identity == holder }
         }
+        // An ended row (6.7) is shown once more, never in the detail.
+        if row?.ended == true { row = nil }
         let made = row.map { ActivityDetail.make($0, in: snapshot, rows: content.identities, ports: content.listeners, history: history(of: $0, snapshot)) }
         if made != detail { detail = made }
         detailCost = Double(clock_gettime_nsec_np(CLOCK_UPTIME_RAW) &- started) / 1_000_000
@@ -882,6 +892,11 @@ final class ActivityPageModel: ObservableObject {
         guard ids.count == 1, let id = ids.first else { return ids.isEmpty ? [] : [copyVerb] }
         let port = content.ports.first { $0.id == id }
         let row = content.processes.first { $0.id == id } ?? port?.holder.flatMap { holder in content.processes.first { $0.identity == holder } }
+        // Ended (6.7): its pid may be another's already — copied, never
+        // acted on.
+        if let row, row.ended {
+            return [ResourceVerb(title: "Copy PID", symbol: "number", group: 1, perform: { copy([String(row.identity.pid)]) }), copyVerb]
+        }
         var verbs: [ResourceVerb] = []
         if let port, let holder = port.holder {
             verbs.append(
