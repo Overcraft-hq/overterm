@@ -87,7 +87,7 @@ extension TerminalWindowController {
 extension TerminalWindowController {
     /// The launch's read (and a scenario's "next launch").
     func activityRestoreAtLaunch() async {
-        guard let snapshot = await ActivityMonitor.shared.census() else { return }
+        guard let snapshot = await ActivityMonitor.shared.census(within: 0) else { return }
         let stopped = ActivityPersistence.shared.restore(from: snapshot)
         guard !stopped.isEmpty else { return }
         offerResume(stopped, in: snapshot)
