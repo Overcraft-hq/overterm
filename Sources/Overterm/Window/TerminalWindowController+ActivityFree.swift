@@ -3,19 +3,23 @@ import AppKit
 /// Free :N on the Activity page (docs/design/activity/analysis.md, 6.8,
 /// Free :N): through the owner's own verb, asked first — every step asks,
 /// the owners' too, though Docker's Stop and Kubernetes' Stop Forward act
-/// at once when called. The holder is read again from a fresh census as
-/// the sheet opens: a port that changed hands since the row was drawn is
-/// said, never asked about as it was. After a Stop Container, Stop Forward
-/// or Disconnect the port is watched and the page's header says what
-/// became of it.
+/// at once when called —, and for the user's own process Activity's own
+/// verb, as its class asks (`ActivityPortHolder.Plan`). The holder is read
+/// again from a fresh census as the sheet opens: a port that changed hands
+/// since the row was drawn is said, never asked about as it was; and again
+/// at the button. After the step the port is watched with the census's
+/// socket walk — never a bind, which would break a supervisor's rebind —
+/// and the page's header says what became of it.
 extension TerminalWindowController {
     /// `f` on `row`, or its Free verb.
     func activityFree(_ row: ActivityPortRow) {
         guard let step = ActivityPortHolder.step(for: row) else { return NSSound.beep() }
         switch step {
-        case .refused(let reason), .notYet(let reason):
+        case .refused(let reason):
             let said = ActivityPortFree.refusal(reason, port: row.port)
             return tell(said.title, said.detail)
+        case .stopHolder:
+            return freeOwn(row, step)
         default:
             break
         }
@@ -86,8 +90,78 @@ extension TerminalWindowController {
         case .airPlay:
             guard !recorded else { return }
             NSWorkspace.shared.open(ActivityPortHolder.airPlaySettings)
-        case .refused, .notYet:
+        case .refused, .stopHolder:
             break
+        }
+    }
+
+    // MARK: The user's own process (6.8's rows a process of the user's holds)
+
+    /// What a fresh read makes of a Free of the user's own holder.
+    enum OwnFree: Sendable {
+        case plan(ActivityPortHolder.Plan, holders: [ActivityProcessID])
+        /// Nothing to ask: the port changed hands, or is free, or its holder
+        /// is gone.
+        case said(String)
+    }
+
+    /// The plan made from a fresh census (6.8: "made again when its sheet
+    /// opens"), off the main thread: every holder of the port now, the
+    /// listed one among them, read as the policy sees it.
+    func ownFree(_ row: ActivityPortRow, _ step: ActivityPortHolder.Step) async -> OwnFree? {
+        await activityRead { snapshot, owners, known in
+            let holders = ListeningPorts.holders(of: row.port, proto: row.proto, in: snapshot)
+            if let changed = ActivityPortHolder.changed(row, step: step, holders: holders, snapshot: snapshot) { return .said(changed) }
+            guard let holder = row.holder,
+                let subject = ActivityPortHolder.subject(of: holder, in: snapshot, owners: owners, known: known)
+            else { return .said(":\(row.port)'s holder ended: nothing was asked, nothing done.") }
+            let plan = ActivityPortHolder.plan(
+                row, subject: ActivityPageModel.overlaid(subject, known: known), holders: holders, snapshot: snapshot, user: snapshot.uid)
+            return .plan(plan, holders: holders)
+        }
+    }
+
+    private func freeOwn(_ row: ActivityPortRow, _ step: ActivityPortHolder.Step) {
+        Task { @MainActor [weak self] in
+            guard let self, let window = self.window else { return }
+            let read = await self.ownFree(row, step)
+            guard case .plan(let plan, _)? = read else {
+                if case .said(let said)? = read { return self.tell("Not freed", said) }
+                return self.tell("Not freed", "The processes couldn't be read now: nothing was asked, nothing done.")
+            }
+            if let reason = plan.rule.refusal {
+                let said = ActivityPortFree.refusal(reason, port: row.port)
+                return self.tell(said.title, said.detail)
+            }
+            var pane: (title: String, isSplit: Bool)?
+            if let (_, tab, _) = Self.activityPane(tag: plan.subject.pane) { pane = (tab.title, tab.isSplit) }
+            guard let question = ActivityPortHolder.question(plan, scope: self.activityScope(plan.subject), pane: pane) else {
+                let said = ActivityPortFree.refusal(ActivityPageModel.unavailable(plan.rule) ?? ActivityPageModel.routeElsewhere, port: row.port)
+                return self.tell(said.title, said.detail)
+            }
+            // Every Free asks (D-10): no setting skips it.
+            self.confirmation(question).present(on: window) { [weak self] _ in self?.freeOwnAtButton(row, step, asked: plan) }
+        }
+    }
+
+    /// The button (6.10 step 4): the plan made again — the holder still on
+    /// the port, read again, and the policy saying what it said — then
+    /// what was asked, by the identity listed; the port watched after.
+    private func freeOwnAtButton(_ row: ActivityPortRow, _ step: ActivityPortHolder.Step, asked: ActivityPortHolder.Plan) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            var now: ActivityPortHolder.Plan?
+            var holders: [ActivityProcessID] = []
+            if case .plan(let plan, let held)? = await self.ownFree(row, step) {
+                now = plan
+                holders = held
+            }
+            if let changed = ActivityPortHolder.changedAtButton(asked, now: now, holders: holders) { return self.tell("Not freed", changed) }
+            guard let now else { return }
+            // A write over the holder is interrupted, never its plugin: the
+            // watch then offers no Force Quit of the one it follows.
+            let write = asked.holder == asked.subject.signal.identity ? nil : asked.subject.name
+            self.activityPerform(.freePort, now.rule, now.subject, asked: asked.subject, after: .port(row, freed: asked.holder, write: write))
         }
     }
 
@@ -107,21 +181,34 @@ extension TerminalWindowController {
         }
     }
 
-    /// The port watched after an owner's verb, the page's header saying
-    /// what became of it.
-    private func watchActivityFree(_ row: ActivityPortRow, freed: ActivityProcessID?) {
+    /// The port watched after a Free's step, the page's header saying
+    /// what became of it. `sentAt`: taken before the step went — what
+    /// started after it came back.
+    func watchActivityFree(_ row: ActivityPortRow, freed: ActivityProcessID?, write: String? = nil, sentAt: UInt64 = PortFreeing.now()) {
         let page = activityPage
         let freeing = PortFreeing.label(.freeing, port: row.port)
         page.freeing = freeing
-        let sentAt = PortFreeing.now()
         Task { @MainActor [weak page] in
             let state = await Self.watchPort(row.port, proto: row.proto, freed: freed, sentAt: sentAt)
-            let said = PortFreeing.label(state, port: row.port)
+            let said = Self.freeSaid(state, port: row.port, freed: freed, write: write)
             guard let page, page.freeing == freeing else { return }
             page.freeing = said
             try? await Task.sleep(for: Self.freeSaid)
             if page.freeing == said { page.freeing = nil }
         }
+    }
+
+    /// What the page's header says once the watch ends: the pill's words,
+    /// and Force Quit offered while the one freed still holds it (6.8:
+    /// "still listening after 5 s — Force Quit…"). `write`: the
+    /// terraform write interrupted over the one freed, its plugin — never
+    /// Force Quit, which would SIGKILL into the write: it is said to be
+    /// still stopping instead. Pure.
+    nonisolated static func freeSaid(_ state: PortFreeing.State, port: Int, freed: ActivityProcessID?, write: String? = nil) -> String {
+        let said = PortFreeing.label(state, port: port)
+        guard case .stillHeld(let pid?) = state, pid == freed?.pid else { return said }
+        if let write { return said + " — “\(DockerMCP.displayed(write))” is still stopping" }
+        return said + " — Force Quit… (K)"
     }
 
     /// A new tab for the page (6.10): in `request`'s folder, its command

@@ -218,16 +218,19 @@ extension TerminalWindowController {
     /// process started since the Free does ("came back as pid N"), or the
     /// watch ends with it still held — never a bind of the port (6.8).
     /// `freed`: the process listed on the port, nil for one an owner holds.
-    static func watchPort(_ port: Int, proto: String, freed: ActivityProcessID?, sentAt: UInt64) async -> PortFreeing.State {
+    /// `monitor` and `watch`: the census read and how long — a test's own.
+    static func watchPort(
+        _ port: Int, proto: String, freed: ActivityProcessID?, sentAt: UInt64, monitor: ActivityMonitor = .shared, watch: Duration = freeWatch
+    ) async -> PortFreeing.State {
         let clock = ContinuousClock()
-        let deadline = clock.now + Self.freeWatch
+        let deadline = clock.now + watch
         var state = PortFreeing.State.freeing
         var last: [ActivityProcessID] = []
         // Bounded however the census answers: 500 ms apart, past the deadline.
         for _ in 0..<40 where state == .freeing {
             try? await Task.sleep(for: .milliseconds(500))
             let final = clock.now >= deadline
-            guard let snapshot = await ActivityMonitor.shared.census() else {
+            guard let snapshot = await monitor.census() else {
                 if final { break }
                 continue
             }

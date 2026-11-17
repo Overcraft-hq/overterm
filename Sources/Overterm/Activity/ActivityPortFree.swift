@@ -374,6 +374,11 @@ struct PortFreeing: Hashable, Sendable {
         /// Held again, by a process started since the Free: "came back as
         /// pid N".
         case cameBack(pid: pid_t)
+        /// The one freed has let go, and another that held the port with it
+        /// before the Free still does — a child that inherited the socket,
+        /// a pre-fork server's worker (6.8): named, never Force Quit as the
+        /// one that is gone.
+        case inherited(pid: pid_t)
     }
 
     /// The pane whose pill freed it.
@@ -393,6 +398,7 @@ struct PortFreeing: Hashable, Sendable {
         case .stillHeld(let pid?): ":\(port) still held — pid \(pid)"
         case .stillHeld(nil): ":\(port) still held"
         case .cameBack(let pid): ":\(port) came back as pid \(pid)"
+        case .inherited(let pid): ":\(port) still held by pid \(pid), which held it with the one freed"
         }
     }
 
@@ -406,7 +412,8 @@ struct PortFreeing: Hashable, Sendable {
         guard !holders.isEmpty else { return .free }
         if let freed, holders.contains(freed) { return final ? .stillHeld(pid: freed.pid) : .freeing }
         if let new = holders.filter({ $0.start > sentAt }).min(by: { $0.start < $1.start }) { return .cameBack(pid: new.pid) }
-        return final ? .stillHeld(pid: holders.min(by: { $0.start < $1.start })?.pid) : .freeing
+        guard final, let oldest = holders.min(by: { $0.start < $1.start }) else { return .freeing }
+        return freed == nil ? .stillHeld(pid: oldest.pid) : .inherited(pid: oldest.pid)
     }
 
     /// Now, µs since 1970: what `sentAt` and a process's start count in.

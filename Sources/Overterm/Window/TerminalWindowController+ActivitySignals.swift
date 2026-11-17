@@ -63,6 +63,19 @@ extension TerminalWindowController {
     /// `identity` read from a fresh census, as the policy sees it: its owners
     /// made off the main thread with the page's facts. Nil once it ended.
     func activitySubject(_ identity: ActivityProcessID) async -> ActivityVerbSubject? {
+        await activityRead { snapshot, owners, known in
+            // What the main actor changed itself is laid over the census,
+            // which may be a tick that started before that change.
+            ActivityVerbSubject.read(identity, in: snapshot, owners: owners, known: known).map { ActivityPageModel.overlaid($0, known: known) }
+        }
+    }
+
+    /// `read` over a fresh census and its owners, made off the main thread
+    /// with the page's facts and what the main actor knows (`known`). Nil
+    /// when there is no census, or `read` says nil.
+    func activityRead<T: Sendable>(
+        _ read: @escaping @Sendable (ActivitySnapshot, ActivityAttribution, ActivityVerbSubject.Known) -> T?
+    ) async -> T? {
         guard let snapshot = await ActivityMonitor.shared.census(within: 0) else { return nil }
         let page = activityPage
         var context = page.monitor.context
@@ -76,10 +89,7 @@ extension TerminalWindowController {
         return await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async { @Sendable in
                 let owners = ActivityAttribution.of(snapshot, context: context2, inputs: inputs)
-                // What the main actor changed itself is laid over the census,
-                // which may be a tick that started before that change.
-                let read = ActivityVerbSubject.read(identity, in: snapshot, owners: owners, known: known2)
-                continuation.resume(returning: read.map { ActivityPageModel.overlaid($0, known: known2) })
+                continuation.resume(returning: read(snapshot, owners, known2))
             }
         }
     }
@@ -115,7 +125,7 @@ extension TerminalWindowController {
     }
 
     /// "Tab “web” · feature-x · Claude", or where it runs outside every tab.
-    private func activityScope(_ subject: ActivityVerbSubject) -> String? {
+    func activityScope(_ subject: ActivityVerbSubject) -> String? {
         if let tab = subject.tab, let (_, found) = Self.activityWindow(of: tab) {
             return ActivityPortFree.scope(tab: found.title, checkout: found.checkoutSource?.root.lastPathComponent, agent: subject.agent ?? found.agent)
         }
@@ -201,11 +211,15 @@ extension TerminalWindowController {
                 return self.tell(
                     "Not sent", "What “\(DockerMCP.displayed(asked.name))” is changed while you were asked: nothing was sent — ask again to be asked about what it is now.")
             }
-            self.perform(verb, rule, fresh, asked: asked)
+            self.activityPerform(verb, rule, fresh, asked: asked)
         }
     }
 
-    private func perform(_ verb: ActivityVerb, _ rule: ActivityRule, _ subject: ActivityVerbSubject, asked: ActivityVerbSubject) {
+    /// What `rule` does to `subject` — read at the button — as the sheet
+    /// asked it of `asked`; `after`, what is watched once it went.
+    func activityPerform(
+        _ verb: ActivityVerb, _ rule: ActivityRule, _ subject: ActivityVerbSubject, asked: ActivityVerbSubject, after: ActivityAfterSend = .stopWatch
+    ) {
         let target = asked.signal
         // Before anything is sent: a supervisor starts its child again
         // within a millisecond, and only what started after this came back.
@@ -225,7 +239,7 @@ extension TerminalWindowController {
             }
             pane.pressControlC()
             activityPage.noteStopped(target.identity)
-            watchStop(asked, sentAt: sentAt)
+            watchAfter(after, asked, sentAt: sentAt)
         case .allowed(.signal(let signal), _, _):
             DispatchQueue.global(qos: .userInitiated).async { @Sendable in
                 let answer = ProcessSignals().send(signal, to: target, alone: true)
@@ -233,7 +247,7 @@ extension TerminalWindowController {
                     guard let self else { return }
                     if let said = ActivityPortFree.answer(answer, pid: target.identity.pid) { return self.tell("Not sent", said) }
                     if signal == .term || signal == .int { self.activityPage.noteStopped(target.identity) }
-                    if [.term, .int, .kill, .hup, .quit].contains(signal) { self.watchStop(asked, sentAt: sentAt) }
+                    if [.term, .int, .kill, .hup, .quit].contains(signal) { self.watchAfter(after, asked, sentAt: sentAt) }
                 }
             }
         case .allowed(.quitApp, _, _), .allowed(.forceQuitApp, _, _):
@@ -247,7 +261,7 @@ extension TerminalWindowController {
                     guard let self else { return }
                     if let said = ActivityPortFree.answer(answer, pid: target.identity.pid) { return self.tell("Not sent", said) }
                     if !force { self.activityPage.noteStopped(target.identity) }
-                    self.watchStop(asked, sentAt: sentAt)
+                    self.watchAfter(after, asked, sentAt: sentAt)
                 }
             }
         case .allowed(.signalTree(let signal), _, _):
@@ -264,7 +278,7 @@ extension TerminalWindowController {
                         self.tell("Sent to \(answers.count - unsent.count) of \(answers.count)", lines.joined(separator: "\n"))
                     }
                     self.activityPage.noteStopped(target.identity)
-                    self.watchStop(asked, sentAt: sentAt)
+                    self.watchAfter(after, asked, sentAt: sentAt)
                 }
             }
         case .allowed(.signalGroup(let signal), _, _):
@@ -277,7 +291,7 @@ extension TerminalWindowController {
                     guard let self else { return }
                     if let said = ActivityPortFree.answer(answer, pid: target.identity.pid) { return self.tell("Not sent", said) }
                     self.activityPage.noteStopped(target.identity)
-                    self.watchStop(asked, sentAt: sentAt)
+                    self.watchAfter(after, asked, sentAt: sentAt)
                 }
             }
         case .route(.closePane, _):
@@ -291,6 +305,14 @@ extension TerminalWindowController {
             controller.resumeTab(tab)
         default:
             tell("Not sent", ActivityPageModel.routeElsewhere)
+        }
+    }
+
+    /// What follows a send: the process watched, or the port a Free freed.
+    private func watchAfter(_ after: ActivityAfterSend, _ subject: ActivityVerbSubject, sentAt: UInt64) {
+        switch after {
+        case .stopWatch: watchStop(subject, sentAt: sentAt)
+        case .port(let row, let freed, let write): watchActivityFree(row, freed: freed, write: write, sentAt: sentAt)
         }
     }
 
@@ -322,4 +344,15 @@ extension TerminalWindowController {
             if page.freeing == said { page.freeing = nil }
         }
     }
+}
+
+/// What a page verb watches once it went: the process (stopped, still
+/// running, came back as pid N), or — Free :N's — the port the process the
+/// row listed held, until nothing of the user's holds it (6.8, After the
+/// step). `write`: the terraform write interrupted when it isn't the one
+/// freed (its provider plugin holds the port) — then no Force Quit is
+/// offered of the plugin, which SIGKILL would take from under the write.
+enum ActivityAfterSend {
+    case stopWatch
+    case port(ActivityPortRow, freed: ActivityProcessID, write: String?)
 }

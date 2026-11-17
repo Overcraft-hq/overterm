@@ -3,14 +3,16 @@ import Foundation
 
 /// Free :N on the page (docs/design/activity/analysis.md, 6.8, Free :N;
 /// 6.10): what a Listening row's owner decides — its own verb, asked here
-/// first. Stage 1 frees a port only through the owners' verbs: Stop
-/// Container (Docker's page), Stop Forward (`KubeForwards`), Disconnect (the
-/// database's tunnel), Stop the Service (`launchctl bootout` or `brew
-/// services stop`, typed into a new tab — never a SIGTERM, which KeepAlive
-/// undoes), AirPlay Receiver's switch in System Settings (opened, never
-/// changed by the app), and the read route for another user's (`sudo lsof`
-/// typed with no Return). Stopping the user's own processes is the verbs'
-/// stage (2): a pane's port pill frees those now. Pure.
+/// first: Stop Container (Docker's page), Stop Forward (`KubeForwards`),
+/// Disconnect (the database's tunnel), Stop the Service (`launchctl
+/// bootout` or `brew services stop`, typed into a new tab — never a
+/// SIGTERM, which KeepAlive undoes), AirPlay Receiver's switch in System
+/// Settings (opened, never changed by the app), and the read route for
+/// another user's (`sudo lsof` typed with no Return). The user's own
+/// process — a tab's, an app's, one elsewhere — is Activity's own verb,
+/// as its class asks (`ActivitySignalCheck`'s `.freePort`): its plan
+/// (`Plan`) made again from a fresh read as the sheet opens, every holder
+/// listed, its supervisor named and never added. Pure.
 enum ActivityPortHolder {
     /// What freeing a row's port takes.
     enum Step: Hashable, Sendable {
@@ -28,9 +30,10 @@ enum ActivityPortHolder {
         case readRoute(user: String)
         /// Nothing here frees it; why.
         case refused(String)
-        /// The user's own process: Activity's own Stop comes with its
-        /// verbs (stage 2); why, and where it is freed now.
-        case notYet(String)
+        /// The user's own process holds it: Activity's own verb, as its
+        /// class asks — decided on the process read again as the sheet
+        /// opens (`plan`).
+        case stopHolder(ActivityProcessID)
     }
 
     /// The step for `row`'s port, by the owner Listening found (6.8): its
@@ -61,7 +64,7 @@ enum ActivityPortHolder {
                 return .refused("\(holder.name) holds every container's ports: stop a container, or quit the engine from its menu.")
             }
             if holder.word == "macos" { return .refused("Part of macOS; it would start again.") }
-            return .notYet("\(holder.note).")
+            return own(row)
         case .service(let job):
             // Typed and run as keystrokes: a label any process can set
             // through its environment runs nothing but launchd's own.
@@ -71,20 +74,22 @@ enum ActivityPortHolder {
             return .refused("Part of macOS; it would start again.")
         case .system(let user):
             return .readRoute(user: user)
-        case .pane:
-            return .notYet("A tab's process: its pane's port pill frees it (Free…). Activity's own Stop comes with its verbs.")
-        case .app:
-            return .notYet("An app's: quit the app. Activity's own Quit comes with its verbs.")
-        case .elsewhere:
-            return .notYet("Started outside Overterm's tabs: stop it where it runs. Activity's own Stop comes with its verbs.")
+        case .pane, .app, .elsewhere:
+            return own(row)
         }
+    }
+
+    /// The user's own holder: Activity's verb, by the identity listed.
+    private static func own(_ row: ActivityPortRow) -> Step {
+        guard let holder = row.holder, holder.pid > 1 else { return .refused("No process holds it now: list it again in a moment.") }
+        return .stopHolder(holder)
     }
 
     /// Why the Free verb is greyed for `row`; nil when it can run.
     static func unavailable(_ row: ActivityPortRow) -> String? {
         switch step(for: row) {
         case nil: return "Only a listening port is freed"
-        case .refused(let reason)?, .notYet(let reason)?: return reason
+        case .refused(let reason)?: return reason
         default: return nil
         }
     }
@@ -98,7 +103,7 @@ enum ActivityPortHolder {
         case .stopService: "Stop the Service…"
         case .airPlay: "Turn Off AirPlay Receiver…"
         case .readRoute: "Who Holds :\(port)…"
-        case .refused, .notYet: "Free :\(port)…"
+        case .refused, .stopHolder: "Free :\(port)…"
         }
     }
 
@@ -194,7 +199,8 @@ enum ActivityPortHolder {
                 detail:
                     "Overterm signals only your own processes, and never asks for a password. To see who holds :\(port), this is typed into a new tab — Return is yours to press:\n\(command)",
                 button: "Type It in a New Tab")
-        case .refused, .notYet:
+        case .refused, .stopHolder:
+            // Activity's own verb asks with its plan (`question(_ plan:)`).
             return nil
         }
     }
@@ -221,5 +227,140 @@ enum ActivityPortHolder {
             return ":\(row.port) is now held by \(DockerMCP.displayed(name)) (pid \(now.pid)): nothing was asked — free it again to be asked about what it is now."
         }
         return ":\(row.port) is free now: nothing was asked, nothing done."
+    }
+}
+
+// MARK: The user's own holder (6.8's rows a process of the user's holds)
+
+extension ActivityPortHolder {
+    /// Free :N's plan when the user's own process holds the port (6.8):
+    /// the holder as the policy sees it and what `.freePort` does to it —
+    /// Interrupt for a pane's foreground job with no agent in its group,
+    /// Stop Agent for the agent, Stop for an agent's child, a background
+    /// job or one elsewhere, Interrupt only for a terraform write, an app's
+    /// Quit, the pane's close for its shell — and every other holder of
+    /// the port: a socket inherited by several processes stays open until
+    /// each has ended, and a Free ends one of them only. Made from the
+    /// read as the sheet opens, and again at the button. Pure.
+    struct Plan: Sendable {
+        /// Another process of the user's holding the port.
+        struct Other: Hashable, Sendable {
+            let identity: ActivityProcessID
+            let name: String
+            /// It holds the very socket the holder does (`soi_so`): one it
+            /// inherited — a child's, a pre-fork server's worker.
+            let sharesSocket: Bool
+        }
+
+        let port: Int
+        let proto: String
+        /// Who the verb is for: the holder, or the terraform write it runs
+        /// under — a provider plugin holds terraform's ports, and is never
+        /// the one stopped (`subject(of:in:owners:known:)`).
+        var subject: ActivityVerbSubject
+        var rule: ActivityRule
+        /// The process the row listed on the port, and its name: the one
+        /// the watch follows.
+        var holder: ActivityProcessID
+        var holderName: String
+        /// Every other holder, oldest first.
+        var others: [Other]
+    }
+
+    /// How far up a holder's parents are looked at for a write it runs under.
+    static let ancestorLimit = 64
+
+    /// `holder` as the policy sees it, read in `snapshot`: itself — or, when
+    /// it runs under a terraform, tofu or terragrunt write, that write,
+    /// which only Interrupt may reach (a provider plugin holds terraform's
+    /// ports); under a helm or pulumi write, itself marked as that write's,
+    /// its sheet critical (6.10). Nil once it is gone.
+    static func subject(
+        of holder: ActivityProcessID, in snapshot: ActivitySnapshot, owners: ActivityAttribution, known: ActivityVerbSubject.Known
+    ) -> ActivityVerbSubject? {
+        guard var subject = ActivityVerbSubject.read(holder, in: snapshot, owners: owners, known: known) else { return nil }
+        guard subject.target.terraformWrite == nil else { return subject }
+        var current = snapshot.table.parent(of: holder)
+        for _ in 0..<ancestorLimit {
+            guard let parent = current, parent.pid > 1, parent.pid != known.appPID, parent.isWhollyOwn(by: snapshot.uid) else { break }
+            guard let above = ActivityVerbSubject.read(parent.identity, in: snapshot, owners: owners, known: known) else { break }
+            if above.target.terraformWrite != nil { return above }
+            if subject.target.releaseWrite == nil, let write = above.target.releaseWrite { subject.target.releaseWrite = write }
+            current = snapshot.table.parent(of: parent.identity)
+        }
+        return subject
+    }
+
+    /// The plan for `row`'s port, its holder read as `subject`; `holders`,
+    /// every process of the user's holding the port in `snapshot`, read as
+    /// the sheet opens (`ListeningPorts.holders`).
+    static func plan(
+        _ row: ActivityPortRow, subject: ActivityVerbSubject, holders: [ActivityProcessID], snapshot: ActivitySnapshot, user: uid_t = getuid()
+    ) -> Plan {
+        let identity = row.holder ?? subject.signal.identity
+        let udp = row.proto == "udp"
+        func sockets(_ holder: ActivityProcessID) -> Set<UInt64> {
+            Set(
+                snapshot.facts[holder]?.sockets?.records.filter { Int($0.localPort) == row.port && (udp ? $0.isBoundUDP : $0.isListening) }.map(\.socket)
+                    ?? [])
+        }
+        let own = sockets(identity)
+        let others = holders.filter { $0 != identity && $0 != subject.signal.identity }.sorted { ($0.start, $0.pid) < ($1.start, $1.pid) }.map { other in
+            Plan.Other(
+                identity: other, name: snapshot.name(of: other) ?? snapshot.table.process(other)?.shortName ?? "a process",
+                sharesSocket: !own.isDisjoint(with: sockets(other)))
+        }
+        return Plan(
+            port: row.port, proto: row.proto, subject: subject, rule: ActivitySignalCheck.rule(.freePort, for: subject.target, user: user),
+            holder: identity, holderName: snapshot.name(of: identity) ?? snapshot.table.process(identity)?.shortName ?? row.process, others: others)
+    }
+
+    /// The question before `plan` (6.8's table): the verb's own sheet
+    /// (`ActivityVerbQuestion`) — "Stop “node” (pid 5150)?", its
+    /// executable, its command, its children, the supervisor that may
+    /// start it again, the command it equals — with the port it holds and
+    /// every other holder, which a Free doesn't end. Nil for a refusal or
+    /// a route the page doesn't take, which ask nothing. `pane`: for the
+    /// close route, its tab's title and whether it is split.
+    static func question(
+        _ plan: Plan, scope: String?, pane: (title: String, isSplit: Bool)? = nil, timeZone: TimeZone = .current
+    ) -> ActivityPortFree.Question? {
+        guard ActivityPageModel.unavailable(plan.rule) == nil,
+            var question = ActivityVerbQuestion.question(.freePort, plan.rule, subject: plan.subject, scope: scope, pane: pane, timeZone: timeZone)
+        else { return nil }
+        let port = ":\(plan.port)\(plan.proto == "udp" ? "/udp" : "")"
+        var lines = question.detail.components(separatedBy: "\n")
+        let equals = lines.last?.hasPrefix("The command it equals") == true ? lines.removeLast() : nil
+        if plan.holder == plan.subject.signal.identity {
+            lines.insert("It holds \(port).", at: 0)
+        } else {
+            lines.insert(
+                "It runs “\(DockerMCP.displayed(plan.holderName))” (pid \(plan.holder.pid)), which holds \(port): the write is interrupted, never what it runs.",
+                at: 0)
+        }
+        if !plan.others.isEmpty {
+            lines.append("Also holding \(port) — a Free ends none of them, and the port stays open until each has ended:")
+            lines += plan.others.map { other in
+                let how = other.sharesSocket ? "the same socket, inherited" : "a socket of its own"
+                return "  pid \(other.identity.pid) \(DockerMCP.displayed(other.name)) — \(how)"
+            }
+        }
+        if let equals { lines.append(equals) }
+        question.detail = lines.joined(separator: "\n")
+        return question
+    }
+
+    /// Why the button refuses what the sheet asked (6.10 step 4, 6.8's
+    /// plan made again): the holder read again is gone, another holds the
+    /// port, or the policy says something else of it now. Nil: do it.
+    static func changedAtButton(_ asked: Plan, now: Plan?, holders: [ActivityProcessID]) -> String? {
+        let port = ":\(asked.port)"
+        guard let now, now.subject.signal.identity == asked.subject.signal.identity, now.holder == asked.holder, holders.contains(asked.holder) else {
+            return "What held \(port) ended or let it go while you were asked: nothing was sent."
+        }
+        guard now.rule == asked.rule else {
+            return "What holds \(port) changed while you were asked: nothing was sent — free it again to be asked about what it is now."
+        }
+        return nil
     }
 }

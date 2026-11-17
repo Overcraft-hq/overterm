@@ -48,11 +48,15 @@ final class ActivityPortHolderTests: XCTestCase {
         XCTAssertEqual(ActivityPortHolder.unavailable(row(.bridge)), "Overterm's agent bridge: it closes when no agent setting needs it (Settings ▸ Agents).")
         let continuity = KnownHolders.holder("rapportd", port: 49152)!
         guard case .refused? = ActivityPortHolder.step(for: row(.known(continuity))) else { return XCTFail("macOS's own") }
-        // The user's own processes: the verbs' stage, never a signal here.
-        for owner in [ActivityPortOwner.pane, .app("Acme.app"), .elsewhere] {
-            guard case .notYet? = ActivityPortHolder.step(for: row(owner)) else { return XCTFail("\(owner) waits for the verbs") }
+        // The user's own processes: Activity's own verb, decided on the
+        // holder read again as the sheet opens.
+        for owner in [ActivityPortOwner.pane, .app("Acme.app"), .elsewhere, .known(KnownHolders.holder("adb", port: 5037)!)] {
+            XCTAssertEqual(ActivityPortHolder.step(for: row(owner)), .stopHolder(ActivityProcessID(pid: 4242, start: 4_242_000)), "\(owner)")
+            XCTAssertNil(ActivityPortHolder.unavailable(row(owner)))
+            XCTAssertNil(ActivityPortHolder.question(.stopHolder(ActivityProcessID(pid: 4242, start: 4_242_000)), row: row(owner)), "asked with its plan")
         }
-        XCTAssertTrue(ActivityPortHolder.unavailable(row(.pane))?.contains("port pill") == true, "says where it is freed now")
+        XCTAssertEqual(ActivityPortHolder.title(.stopHolder(ActivityProcessID(pid: 4242, start: 1)), port: 5432), "Free :5432…")
+        guard case .refused? = ActivityPortHolder.step(for: row(.pane, holder: nil)) else { return XCTFail("no holder to name") }
         // A forward restarting has no kubectl to name.
         guard case .refused? = ActivityPortHolder.step(for: row(.forward(target: "svc/acme-api:80"), holder: nil)) else { return XCTFail("no pid") }
         // No port to free: a connection, the fold.
@@ -185,6 +189,254 @@ final class ActivityPortHolderTests: XCTestCase {
         XCTAssertNil(ActivityPortHolder.changed(row(.system(user: "_acme")), step: .readRoute(user: "_acme"), holders: [], snapshot: moved))
     }
 
+    // MARK: The user's own holder (6.8's plans)
+
+    /// A fake Mac of the user's: launchd, the app, a pane's `login` and
+    /// shell on a terminal; what each test adds, with the ports it holds.
+    private final class OwnMac {
+        let kernel = FakeActivityKernel(uid: 501)
+        let tty: dev_t = 0x1000_0009
+        let tab = UUID()
+        var apps: [pid_t: String] = [:]
+
+        init() {
+            add(1, parent: 0, uid: 0, name: "launchd")
+            add(1000, parent: 1, name: "Overterm")
+            add(1100, parent: 1000, uid: 0, terminal: tty, name: "login")
+            add(1101, parent: 1100, group: 1101, terminal: tty, foreground: 1101, name: "zsh")
+        }
+
+        /// `listens`: a port and its socket's handle — the same handle in
+        /// two processes is one socket, inherited.
+        @discardableResult
+        func add(
+            _ pid: pid_t, parent: pid_t, uid: uid_t = 501, group: pid_t? = nil, terminal: dev_t? = nil, foreground: pid_t? = nil, name: String,
+            argv: [String]? = nil, listens: [(port: UInt16, handle: UInt64)] = [], ignoresHangup: Bool = false
+        ) -> ActivityProcessID {
+            let start = UInt64(pid) * 1_000
+            var record = FakeActivityKernel.record(
+                pid: pid, start: start, parent: parent, uid: uid, realUID: uid == 0 ? 501 : nil, group: group, terminal: terminal,
+                ignoredSignals: ignoresHangup ? UInt32(1) << UInt32(SIGHUP - 1) : 0, name: name)
+            if let foreground {
+                record = ActivityProcess(
+                    identity: record.identity, parentPID: record.parentPID, group: record.group, terminal: record.terminal, terminalGroup: foreground,
+                    effectiveUID: record.effectiveUID, realUID: record.realUID, savedUID: record.savedUID, status: record.status, flags: record.flags,
+                    ignoredSignals: record.ignoredSignals, caughtSignals: record.caughtSignals, nice: record.nice, shortName: record.shortName)
+            }
+            var process = FakeActivityKernel.Process(record: record)
+            let executable = "/opt/acme/bin/\(name)"
+            process.name = name
+            process.path = executable
+            process.usage = FakeActivityKernel.usage(footprint: 8 << 20, threads: 2)
+            process.arguments = FakeActivityKernel.arguments(executable: executable, argv ?? [name])
+            for (index, listen) in listens.enumerated() {
+                let descriptor = Int32(3 + index)
+                process.descriptors.append(FakeActivityKernel.descriptor(descriptor))
+                process.sockets[descriptor] = FakeActivityKernel.tcp(local: "127.0.0.1", port: listen.port, handle: listen.handle)
+            }
+            kernel.add(process)
+            return ActivityProcessID(pid: pid, start: start)
+        }
+
+        /// The plan for the listener on `port` that `holder` holds, read as
+        /// the sheet's census reads it.
+        func plan(_ port: Int, holder: ActivityProcessID, known: ActivityVerbSubject.Known? = nil) throws -> ActivityPortHolder.Plan {
+            let context = ActivityContext(
+                panes: [ActivityContext.Pane(tag: "pane-a", tab: tab, login: ActivityProcessID(pid: 1100, start: 1_100_000))], appPID: 1000)
+            let snapshot = try XCTUnwrap(ActivitySampler(kernel: kernel).tickNow(ActivityDemand(.full), context: context))
+            let owners = ActivityAttribution.of(
+                snapshot, context: context, inputs: .init(tabs: [tab: ActivityTabFacts(id: tab, title: "web")], runningApps: apps))
+            let known = known ?? ActivityVerbSubject.Known(appPID: 1000, runningApps: apps)
+            var row = ActivityPortRow(
+                id: "row", port: port, proto: "tcp", address: "127.0.0.1", families: .v4, scope: .thisMac, process: "acme", holder: holder)
+            row.portOwner = .pane
+            let subject = try XCTUnwrap(ActivityPortHolder.subject(of: holder, in: snapshot, owners: owners, known: known))
+            return ActivityPortHolder.plan(
+                row, subject: subject, holders: ListeningPorts.holders(of: port, in: snapshot), snapshot: snapshot, user: 501)
+        }
+    }
+
+    private let utc = TimeZone(identifier: "UTC")!
+
+    /// Each class of 6.8's table a process of the user's can be: the
+    /// pane's foreground job interrupted with ⌃C typed, a background one
+    /// stopped, the agent stopped in a critical sheet, one elsewhere and
+    /// one that chose to outlive its terminal stopped (picked alone), an
+    /// app quit — each asked; the pane's own shell refused, its close is
+    /// its row's.
+    func testEachClassOfHolderHasItsPlan() throws {
+        let mac = OwnMac()
+        let fg = mac.add(1102, parent: 1101, group: 1102, terminal: mac.tty, foreground: 1102, name: "acme-dev", listens: [(3000, 1)])
+        let bg = mac.add(1103, parent: 1101, group: 1103, terminal: mac.tty, foreground: 1102, name: "acme-api", listens: [(3001, 2)])
+        let elsewhere = mac.add(2000, parent: 1, name: "globex-server", listens: [(3003, 4)])
+        let detached = mac.add(2001, parent: 1, name: "acme-daemon", listens: [(3006, 7)], ignoresHangup: true)
+        let app = mac.add(2100, parent: 1, name: "Acme", listens: [(3004, 5)])
+        mac.apps = [2100: "Acme"]
+        mac.kernel.update(1101) { process in
+            process.descriptors = [FakeActivityKernel.descriptor(3)]
+            process.sockets = [3: FakeActivityKernel.tcp(local: "127.0.0.1", port: 3005, handle: 6)]
+        }
+        let shell = ActivityProcessID(pid: 1101, start: 1_101_000)
+
+        let interrupt = try mac.plan(3000, holder: fg)
+        XCTAssertEqual(interrupt.rule, .allowed(.interruptPane, confirm: true, critical: false))
+        let asked = try XCTUnwrap(ActivityPortHolder.question(interrupt, scope: "Tab “web”", timeZone: utc))
+        XCTAssertEqual(asked.title, "Interrupt “acme-dev” (pid 1102)?")
+        XCTAssertTrue(asked.detail.hasPrefix("It holds :3000.\n⌃C is typed into its pane"), asked.detail)
+        XCTAssertTrue(asked.detail.hasSuffix("The command it equals: ⌃C in the pane"))
+
+        let stop = try mac.plan(3001, holder: bg)
+        XCTAssertEqual(stop.rule, .allowed(.signal(.term), confirm: true, critical: false))
+        let stopAsked = try XCTUnwrap(ActivityPortHolder.question(stop, scope: nil, timeZone: utc))
+        XCTAssertEqual(stopAsked.title, "Stop “acme-api” (pid 1103)?")
+        XCTAssertEqual(stopAsked.button, "Stop Process")
+        XCTAssertTrue(stopAsked.detail.contains("Runs /opt/acme/bin/acme-api"))
+        XCTAssertTrue(stopAsked.detail.hasSuffix("The command it equals: kill -TERM 1103"))
+
+        for (holder, port) in [(elsewhere, 3003), (detached, 3006)] {
+            XCTAssertEqual(try mac.plan(port, holder: holder).rule, .allowed(.signal(.term), confirm: true, critical: false), "picked alone: stopped")
+        }
+        XCTAssertTrue(try mac.plan(3006, holder: detached).subject.target.detached)
+
+        let quit = try mac.plan(3004, holder: app)
+        XCTAssertEqual(quit.rule, .allowed(.quitApp, confirm: true, critical: false))
+        XCTAssertEqual(try XCTUnwrap(ActivityPortHolder.question(quit, scope: nil)).button, "Quit")
+
+        // The pane's own shell: no Free of its own (6.10's class table) —
+        // its pane's or tab's close, from its row.
+        let shellPlan = try mac.plan(3005, holder: shell)
+        XCTAssertEqual(shellPlan.rule, .refused(ActivitySignalCheck.paneSession))
+        XCTAssertNil(ActivityPortHolder.question(shellPlan, scope: nil), "a refusal asks nothing")
+    }
+
+    /// The agent holding a port is Stop Agent, critical; a stand-in
+    /// `claude` leading the pane's foreground group while its child holds
+    /// the port is Stop of the child by token — never Interrupt: ⌃C or a
+    /// SIGINT would reach the agent too (Codex's children keep its group).
+    func testAnAgentsChildOnThePortIsStoppedNeverInterrupted() throws {
+        let mac = OwnMac()
+        let agent = mac.add(1110, parent: 1101, group: 1110, terminal: mac.tty, foreground: 1110, name: "claude", argv: ["claude"], listens: [(3002, 3)])
+        let child = mac.add(1111, parent: 1110, group: 1110, terminal: mac.tty, foreground: 1110, name: "node", listens: [(5150, 9)])
+        let stopAgent = try mac.plan(3002, holder: agent)
+        XCTAssertEqual(stopAgent.rule, .allowed(.signal(.term), confirm: true, critical: true))
+        let asked = try XCTUnwrap(ActivityPortHolder.question(stopAgent, scope: nil))
+        XCTAssertEqual(asked.title, "Stop Claude (pid 1110)?")
+        XCTAssertTrue(asked.critical)
+        let plan = try mac.plan(5150, holder: child)
+        XCTAssertTrue(plan.subject.target.inForeground, "the pane's foreground group")
+        XCTAssertTrue(plan.subject.target.groupHoldsAgent)
+        XCTAssertEqual(plan.rule, .allowed(.signal(.term), confirm: true, critical: false), "Stop, by token: never ⌃C")
+        let childAsked = try XCTUnwrap(ActivityPortHolder.question(plan, scope: nil))
+        XCTAssertEqual(childAsked.title, "Stop “node” (pid 1111)?")
+        XCTAssertFalse(childAsked.detail.contains("⌃C"))
+    }
+
+    /// Every holder of the port listed — one that inherited the very
+    /// socket, one on a socket of its own —, none of them stopped by the
+    /// Free; the supervisor named, never added to what is sent.
+    func testEveryHolderIsListedAndTheSupervisorNamedNeverAdded() throws {
+        let mac = OwnMac()
+        mac.add(1130, parent: 1101, group: 1130, terminal: mac.tty, foreground: 1101, name: "acme-supervisor")
+        let server = mac.add(1131, parent: 1130, group: 1130, terminal: mac.tty, foreground: 1101, name: "acme-server", listens: [(4000, 77)])
+        mac.add(1132, parent: 1131, group: 1130, terminal: mac.tty, foreground: 1101, name: "acme-worker", listens: [(4000, 77)])
+        mac.add(2300, parent: 1, name: "globex-server", listens: [(4000, 78)])
+        let plan = try mac.plan(4000, holder: server)
+        XCTAssertEqual(plan.subject.supervisor?.pid, 1130)
+        XCTAssertEqual(plan.others.map(\.identity.pid), [1132, 2300])
+        XCTAssertEqual(plan.others.map(\.sharesSocket), [true, false])
+        let asked = try XCTUnwrap(ActivityPortHolder.question(plan, scope: nil, timeZone: utc))
+        XCTAssertTrue(asked.detail.contains("Also holding :4000 — a Free ends none of them"), asked.detail)
+        XCTAssertTrue(asked.detail.contains("  pid 1132 acme-worker — the same socket, inherited"))
+        XCTAssertTrue(asked.detail.contains("  pid 2300 globex-server — a socket of its own"))
+        XCTAssertTrue(asked.detail.contains("“acme-supervisor” (pid 1130), its parent, may start it again"))
+        XCTAssertTrue(asked.detail.hasSuffix("The command it equals: kill -TERM 1131"), "the supervisor is never added")
+    }
+
+    /// A terraform write's provider plugin on the port: the write is the
+    /// one interrupted — ⌃C typed where it is the pane's foreground job —,
+    /// never the plugin, and never stopped; the plugin is what the watch
+    /// follows. A helm write's plugin is stopped in a critical sheet.
+    func testAWriteRunningThePortsHolderIsInterrupted() throws {
+        let mac = OwnMac()
+        mac.add(1120, parent: 1101, group: 1120, terminal: mac.tty, foreground: 1120, name: "terraform", argv: ["terraform", "apply"])
+        let plugin = mac.add(1121, parent: 1120, group: 1120, terminal: mac.tty, foreground: 1120, name: "terraform-provider-acme", listens: [(3010, 11)])
+        let plan = try mac.plan(3010, holder: plugin)
+        XCTAssertEqual(plan.subject.signal.identity.pid, 1120)
+        XCTAssertEqual(plan.holder, plugin)
+        XCTAssertEqual(plan.rule, .allowed(.interruptPane, confirm: true, critical: false))
+        let asked = try XCTUnwrap(ActivityPortHolder.question(plan, scope: nil))
+        XCTAssertTrue(asked.detail.hasPrefix("It runs “terraform-provider-acme” (pid 1121), which holds :3010"), asked.detail)
+        XCTAssertTrue(asked.detail.contains("SIGTERM or SIGKILL could leave its state locked"))
+        mac.add(1140, parent: 1101, group: 1140, terminal: mac.tty, foreground: 1120, name: "helm", argv: ["helm", "upgrade", "acme"])
+        let helmPlugin = mac.add(1141, parent: 1140, group: 1140, terminal: mac.tty, foreground: 1120, name: "acme-plugin", listens: [(3011, 12)])
+        let helm = try mac.plan(3011, holder: helmPlugin)
+        XCTAssertEqual(helm.subject.signal.identity, helmPlugin)
+        XCTAssertEqual(helm.rule, .allowed(.signal(.term), confirm: true, critical: true), "a release stopped mid-upgrade stays pending")
+    }
+
+    /// The plan made again at the button (6.10 step 4): the holder gone,
+    /// no longer on the port, or another rule for it now refuses; the
+    /// same plan goes.
+    func testThePlanIsMadeAgainAtTheButton() throws {
+        let mac = OwnMac()
+        let job = mac.add(1103, parent: 1101, group: 1103, terminal: mac.tty, foreground: 1101, name: "acme-api", listens: [(3001, 2)])
+        let asked = try mac.plan(3001, holder: job)
+        XCTAssertNil(ActivityPortHolder.changedAtButton(asked, now: asked, holders: [job]))
+        XCTAssertEqual(
+            ActivityPortHolder.changedAtButton(asked, now: nil, holders: []), "What held :3001 ended or let it go while you were asked: nothing was sent.")
+        XCTAssertNotNil(ActivityPortHolder.changedAtButton(asked, now: asked, holders: []), "no longer on the port")
+        // Moved to the pane's foreground while the sheet was up: ⌃C now, not
+        // the Stop asked about.
+        mac.add(1103, parent: 1101, group: 1103, terminal: mac.tty, foreground: 1103, name: "acme-api", listens: [(3001, 2)])
+        let now = try mac.plan(3001, holder: job)
+        XCTAssertEqual(now.rule, .allowed(.interruptPane, confirm: true, critical: false))
+        XCTAssertEqual(
+            ActivityPortHolder.changedAtButton(asked, now: now, holders: [job]),
+            "What holds :3001 changed while you were asked: nothing was sent — free it again to be asked about what it is now.")
+    }
+
+    /// The watch's last word on the page (6.8, After the step): Force
+    /// Quit offered only while the one freed still holds the port; one
+    /// that inherited the socket named, never Force Quit as the one gone.
+    func testTheWatchsLastWord() {
+        let freed = ActivityProcessID(pid: 4242, start: 1)
+        XCTAssertEqual(
+            TerminalWindowController.freeSaid(.stillHeld(pid: 4242), port: 3000, freed: freed), ":3000 still held — pid 4242 — Force Quit… (K)")
+        XCTAssertEqual(
+            TerminalWindowController.freeSaid(.inherited(pid: 4243), port: 3000, freed: freed),
+            ":3000 still held by pid 4243, which held it with the one freed")
+        XCTAssertEqual(TerminalWindowController.freeSaid(.free, port: 3000, freed: freed), ":3000 is free")
+        XCTAssertEqual(TerminalWindowController.freeSaid(.cameBack(pid: 4300), port: 3000, freed: freed), ":3000 came back as pid 4300")
+        XCTAssertEqual(TerminalWindowController.freeSaid(.stillHeld(pid: 4243), port: 3000, freed: nil), ":3000 still held — pid 4243")
+        // A terraform write interrupted over its plugin, which holds the
+        // port: never Force Quit of the plugin — SIGKILL into the write.
+        let plugin = TerminalWindowController.freeSaid(.stillHeld(pid: 4242), port: 3000, freed: freed, write: "terraform")
+        XCTAssertEqual(plugin, ":3000 still held — pid 4242 — “terraform” is still stopping")
+        XCTAssertFalse(plugin.contains("Force Quit"))
+    }
+
+    /// The watch after a Free reads the census's sockets — never a bind,
+    /// which would break a supervisor's rebind (6.8, After the step): not
+    /// while it watches, nor at its end, held or freed.
+    func testTheWatchNeverBinds() async {
+        let port = 47_321
+        let mac = OwnMac()
+        let server = mac.add(2000, parent: 1, name: "globex-server", listens: [(UInt16(port), 11)])
+        let before = ListeningPorts.bindProbes(of: port)
+        let held = await TerminalWindowController.watchPort(
+            port, proto: "tcp", freed: server, sentAt: PortFreeing.now(), monitor: ActivityMonitor(sampler: ActivitySampler(kernel: mac.kernel)),
+            watch: .seconds(1))
+        XCTAssertEqual(held, .stillHeld(pid: 2000), "held to its deadline")
+        mac.kernel.remove(2000)
+        let freed = await TerminalWindowController.watchPort(
+            port, proto: "tcp", freed: server, sentAt: PortFreeing.now(), monitor: ActivityMonitor(sampler: ActivitySampler(kernel: mac.kernel)),
+            watch: .seconds(1))
+        XCTAssertEqual(freed, .free)
+        XCTAssertEqual(ListeningPorts.bindProbes(of: port), before, "the port was never bound to see")
+        _ = ListeningPorts.isBound(port)
+        XCTAssertEqual(ListeningPorts.bindProbes(of: port), before + 1, "the count sees a probe")
+    }
+
     // MARK: The page
 
     /// A page over a fake Mac: a tab's server on 5173 (pid 1102), and
@@ -250,10 +502,11 @@ final class ActivityPortHolderTests: XCTestCase {
         XCTAssertTrue(page.press("f"))
         XCTAssertEqual(box.freed.map(\.port), [5432], "f hands the row to the window, which asks")
         page.selection = [pane.id]
-        let greyed = try XCTUnwrap(page.verbs(for: [pane.id]) { _ in }.first { $0.key == "f" })
-        XCTAssertNotNil(greyed.unavailable, "a tab's process: the verbs' stage, greyed with why")
-        XCTAssertFalse(page.press("f"), "and f does nothing")
-        XCTAssertEqual(box.freed.count, 1)
+        let own = try XCTUnwrap(page.verbs(for: [pane.id]) { _ in }.first { $0.key == "f" })
+        XCTAssertEqual(own.title, "Free :5173…", "a tab's process: Activity's own verb, decided as the sheet opens")
+        XCTAssertNil(own.unavailable)
+        XCTAssertTrue(page.press("f"))
+        XCTAssertEqual(box.freed.map(\.port), [5432, 5173])
         page.section = .processes
         XCTAssertFalse(page.press("f"), "Processes has no f")
     }

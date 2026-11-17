@@ -319,14 +319,15 @@ final class ActivityPortFreeTests: XCTestCase {
 
     /// What held the socket before the Free beside the one freed — a
     /// pre-fork server's workers, a child that inherited it — didn't come
-    /// back: it is waited for, then said still held. Only a process
+    /// back: it is waited for, then named as what still holds it. Only a process
     /// started since the Free came back.
     func testOnlyAProcessStartedSinceTheFreeCameBack() {
         let freed = ActivityProcessID(pid: 4242, start: 1_000)
         let worker = ActivityProcessID(pid: 4243, start: 1_500)
         let sentAt: UInt64 = 9_000
         XCTAssertEqual(PortFreeing.state(holders: [worker], freed: freed, sentAt: sentAt, final: false), .freeing)
-        XCTAssertEqual(PortFreeing.state(holders: [worker], freed: freed, sentAt: sentAt, final: true), .stillHeld(pid: 4243))
+        XCTAssertEqual(PortFreeing.state(holders: [worker], freed: freed, sentAt: sentAt, final: true), .inherited(pid: 4243))
+        XCTAssertEqual(PortFreeing.label(.inherited(pid: 4243), port: 3000), ":3000 still held by pid 4243, which held it with the one freed")
         let new = ActivityProcessID(pid: 4400, start: 9_500)
         XCTAssertEqual(PortFreeing.state(holders: [worker, new], freed: freed, sentAt: sentAt, final: false), .cameBack(pid: 4400))
         // A container's or a forward's port names no process: free or held.

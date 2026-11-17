@@ -170,15 +170,15 @@ extension E2ERunner {
             check("and nothing is done", steps.count + typed.count == before)
         }
 
-        // Refused, and not yet: nothing asked.
+        // Refused: nothing asked.
         var bridge = base
         bridge.portOwner = .bridge
         words = await activityFreeAsked(bridge)
         check("Overterm's bridge: refused, said", words?.texts.contains("Overterm doesn't free :\(split) from here") == true && words?.buttons == ["OK"])
         answerActivitySheet(.alertFirstButtonReturn)
         page.selection = [base.id]
-        let greyed = page.verbs(for: [base.id]) { _ in }.first { $0.key == "f" }
-        check("a tab's own process: Free greyed, its pill named", greyed?.unavailable?.contains("port pill") == true && !page.press("f"))
+        let own = page.verbs(for: [base.id]) { _ in }.first { $0.key == "f" }
+        check("a tab's own process: Free :N…, offered — Activity's own verb", own?.title == "Free :\(split)…" && own?.unavailable == nil, own?.title ?? "none")
         check("nothing at all reached a real owner", steps.count == 5 && typed.count == 2, "\(steps.count) steps, \(typed.count) typed")
         // The watch after the container's Stop runs one-off censuses: done
         // before the checks that want no full tick and no hold go on.

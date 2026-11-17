@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// A port a tab's process is listening on — typically a dev server —
 /// or one a container of the tab's checkout publishes (Docker's own
@@ -141,9 +142,17 @@ enum ListeningPorts {
     /// socket walk (`holder(of:)`).
     static func isBound(_ port: Int, proto: String = "tcp", probing addresses: [ProbeAddress] = probeAddresses()) -> Bool {
         guard (1...65535).contains(port) else { return false }
+        probed.withLock { $0[port, default: 0] += 1 }
         let type = proto == "udp" ? SOCK_DGRAM : SOCK_STREAM
         return addresses.contains { refusesBind($0, port: port, type: type) }
     }
+
+    /// How many bind probes each port has had in this process: what lets
+    /// a test say a Free's watch never binds the port it watches (6.8).
+    private static let probed = OSAllocatedUnfairLock<[Int: Int]>(initialState: [:])
+
+    /// The bind probes `port` has had in this process.
+    static func bindProbes(of port: Int) -> Int { probed.withLock { $0[port] ?? 0 } }
 
     /// One address a bind probe tries: its family, its text, and the
     /// interface a link-local one is scoped to.

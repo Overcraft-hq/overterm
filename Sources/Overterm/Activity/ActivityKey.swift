@@ -7,8 +7,8 @@ import Foundation
 /// (Interrupt, Stop Agent, Stop), `K` force-quits it, `x` sends a signal
 /// (`ActivityPageModel+Verbs`), `p` suspends or resumes it, `b` runs it in
 /// the background or normally, `n` lowers its priority; `a` comes with the
-/// rest of stage 2's verbs — `f` frees a port through its owner's own verb
-/// (`ActivityPortHolder`); Open Files (`l`), the
+/// rest of stage 2's verbs — `f` frees a port through its owner's own verb,
+/// or its holder's own (`ActivityPortHolder`); Open Files (`l`), the
 /// detail's Files tab, with stage 4's. `e` opens a terminal in the
 /// selection's folder, read at the focus level. ⌥o and ⌥r are
 /// `ActivityPageModel.pressOption`'s. Pure.
@@ -86,7 +86,7 @@ enum ActivityKey: String, ResourceKey {
         case .pause: "Pause updates"
         case .mine: "Yours only, or everyone's"
         case .connections: "Listening: your established connections too, paired end to end"
-        case .free: "Listening: free the port through its owner — Stop Container, Stop Forward, Disconnect, Stop the Service, AirPlay's switch"
+        case .free: "Listening: free the port through its owner — Stop Container, Stop Forward, Disconnect, Stop the Service, AirPlay's switch — or your process's own verb (Interrupt, Stop, Quit)"
         case .stop: "Stop it as its class asks: Interrupt a pane's foreground job (⌃C typed), Stop Agent, an app's Quit, Stop — asked"
         case .forceQuit: "Force Quit: SIGKILL to it alone — asked, and \"Stop it first?\" unless a Stop didn't end it"
         case .signal: "Send a signal: HUP, INT, QUIT, TERM, USR1, USR2, KILL, STOP or CONT — asked"
