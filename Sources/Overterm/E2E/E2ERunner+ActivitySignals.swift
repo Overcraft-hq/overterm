@@ -286,16 +286,11 @@ extension E2ERunner {
         // mode as Claude Code's prompt is, reads the ⌃C typed as a key.
         let turnReady = out("activity-turn.ready")
         let turnGot = out("activity-turn.got")
-        let turnScript = out("activity-turn.py")
-        try? """
-        import os, sys, tty
-        tty.setraw(0)
-        open("\(turnReady.path)", "w").write("ready")
-        byte = os.read(0, 1)
-        open("\(turnGot.path)", "w").write(str(byte[0]))
-        """.write(to: turnScript, atomically: true, encoding: .utf8)
+        // A shell, not python3: Xcode's python3 is a shim that execs the
+        // real one, and argv[0] — what names the agent — goes with it.
+        let turnLine = "stty raw -echo; echo ready > \(turnReady.path); dd bs=1 count=1 2>/dev/null | od -An -tu1 > \(turnGot.path); stty sane"
         _ = await eventually(5) { pane.foregroundGroup == nil || kernel.process(pane.foregroundGroup ?? 0)?.shortName.hasSuffix("sh") == true }
-        pane.insertText("(exec -a claude python3 \(turnScript.path))")
+        pane.insertText("(exec -a claude /bin/sh -c '\(turnLine)')")
         pane.pressReturn()
         let turnRuns = await eventually(15) { FileManager.default.fileExists(atPath: turnReady.path) }
         func foregroundAgent() -> ActivityProcessRow? {
@@ -312,11 +307,14 @@ extension E2ERunner {
                 sheet?.buttons.contains("Interrupt Turn") == true && sheet?.texts.contains("Interrupt Claude's turn?") == true
                     && saying(sheet, "⌃C is typed into Claude's pane"), "\(sheet?.buttons ?? [])")
             answerActivitySheet(.alertFirstButtonReturn)
-            let got = await eventually(10) { (try? String(contentsOf: turnGot, encoding: .utf8)) == "3" }
+            let got = await eventually(10) {
+                (try? String(contentsOf: turnGot, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) == "3"
+            }
             check("the agent read ⌃C as the byte 3: its turn interrupted, its own way", got)
             check("and the stand-in ended its own way", await ended(agent.identity))
         } else {
-            check("a stand-in agent runs in the pane's foreground", false)
+            let agents = page.content.processes.filter { $0.tab == tab.id && $0.owner?.paneRole == .agent }.count
+            check("a stand-in agent runs in the pane's foreground", false, "ready \(turnRuns), \(agents) agent rows")
         }
 
         // The pane's shell: its close route, asked — cancelled here.
