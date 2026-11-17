@@ -181,6 +181,7 @@ struct ActivityVerbSubject: Sendable {
             case .engine: return .engine
             case .macOS: return .macOS
             case .app, .system, .elsewhere: return .elsewhere
+            case .leftBehind: return .leftBehind
             case .pane:
                 switch owner.paneRole {
                 case .session?, .shell?: return .paneSession

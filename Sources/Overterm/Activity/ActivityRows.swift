@@ -212,6 +212,14 @@ enum ActivityRows {
         return tabFacts
     }
 
+    /// Whether `owner` is Left Behind by this run's own pane or agent (6.9).
+    static func isRunsOwnLeftover(_ owner: ActivityOwner?) -> Bool {
+        switch owner?.leftBehind {
+        case .closedPane?, .agentRun?: true
+        default: false
+        }
+    }
+
     /// Every owner of `snapshot` (6.5), with the main actor's facts.
     private static func owners(of snapshot: ActivitySnapshot, _ options: Options, tabs tabFacts: [UUID: ActivityTabFacts]) -> ActivityAttribution {
         ActivityAttribution.of(
@@ -257,7 +265,9 @@ enum ActivityRows {
             let facts = snapshot.facts[identity]
             if own, let usage = facts?.usage { threads += Int(usage.threads) }
             if facts?.rates != nil { rated = true }
-            if options.isolated, tabs[identity] == nil { continue }
+            // A test run's: its tabs' processes, and what its own closed
+            // panes and agents' runs left (6.9).
+            if options.isolated, tabs[identity] == nil, !isRunsOwnLeftover(attribution?[identity]) { continue }
             if !own, !options.everyone { continue }
             let owner = attribution?[identity]
             guard inScope(owner, options.scope, tabs: tabFacts, context: options.context, identity: identity) else { continue }

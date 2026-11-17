@@ -114,10 +114,13 @@ struct ActivityContext: Hashable, Sendable {
     /// responsible for each process.
     var appServices = true
 
-    // Seams: empty until their stage fills them.
+    // Left Behind's (6.9: `LeftBehindLedger`) and Activity's own holds.
 
-    /// This run's closed panes (stage 3).
+    /// This run's closed panes (6.9), oldest first.
     var retired: [RetiredPane] = []
+    /// The agents' runs that have ended in live panes, their windows from
+    /// the census (6.9, rule 8).
+    var agentRuns: [ActivityAgentRun] = []
     /// Overterm's registries of its children by identity, each with what
     /// it is ("kubectl proxy", "the database tunnel"): stage 1's rule 2.
     var registered: [ActivityProcessID: String] = [:]

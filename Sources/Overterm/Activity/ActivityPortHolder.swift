@@ -74,7 +74,7 @@ enum ActivityPortHolder {
             return .refused("Part of macOS; it would start again.")
         case .system(let user):
             return .readRoute(user: user)
-        case .pane, .app, .elsewhere:
+        case .pane, .app, .elsewhere, .leftBehind:
             return own(row)
         }
     }

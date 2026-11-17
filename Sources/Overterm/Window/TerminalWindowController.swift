@@ -1044,6 +1044,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         let blocks = PaneBlocks()
         blocks.onCommandFinished = { [weak self, weak pane] block in
             self?.history.record(block, folder: pane?.workingDirectory)
+            // An agent's command ending: 2 s on, one census says whether it went (6.9).
+            if let pane { LeftBehindLedger.shared.commandFinished(in: pane.processTag) }
         }
         paneBlocks[key] = blocks
         return blocks
@@ -1293,6 +1295,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         guard tab.splits.contains(pane) else { return }
         guard tab.isSplit, let rest = tab.splits.removing(pane) else { return removeTab(tab) }
         let wasFocused = tab.terminal === pane
+        retireForLeftBehind(pane, of: tab)
         pane.close()
         pane.removeFromSuperview()
         tab.setSplits(rest)
@@ -3828,6 +3831,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         focus.forget(tab.id)
         broadcast.forget(tab)
         for pane in tab.terminals {
+            retireForLeftBehind(pane, of: tab)
             pane.close()
             pane.removeFromSuperview()
         }
@@ -4283,7 +4287,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         forgetKubernetesCheckouts()
         for page in pages.all { page.windowClosing?() }
         updateMenuBarItem(count: 0)
-        for tab in store.tabs { tab.terminals.forEach { $0.close() } }
+        for tab in store.tabs {
+            for pane in tab.terminals {
+                // What its panes leave is a closed pane's, as a tab's close says (6.9).
+                retireForLeftBehind(pane, of: tab)
+                pane.close()
+            }
+        }
     }
 }
 

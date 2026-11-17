@@ -136,6 +136,14 @@ extension ActivityRows {
         // A forward Overterm started is its tab's.
         let forwardTab = context.forwards.first { $0.pid == identity.pid && $0.pid > 0 }?.tab
         let tab = paneTab(owner) ?? forwardTab
+        // Left Behind (6.9): the tab or checkout it came from.
+        if owner.place == .leftBehind {
+            switch scope {
+            case .mac, .allTabs: return true
+            case .checkout(let path): return owner.leftBehind?.checkout == path || owner.tab.flatMap { tabs[$0]?.checkout } == path
+            case .tab(let id): return owner.tab == id
+            }
+        }
         switch scope {
         case .mac: return true
         case .allTabs:
@@ -167,6 +175,7 @@ extension ActivityRows {
         case .engine(let name): "\(name)’s engine"
         case .app(let name): name
         case .macOS: "macOS"
+        case .leftBehind: "Left Behind"
         case .system, .elsewhere, .pane: nil
         }
     }
@@ -182,7 +191,7 @@ extension ActivityRows {
         guard let owner = row.owner else { return "" }
         switch owner.place {
         case .system: return row.user
-        case .elsewhere: return owner.reason ?? "elsewhere"
+        case .elsewhere, .leftBehind: return owner.reason ?? "elsewhere"
         default: return ownerLabel(owner) ?? ""
         }
     }
@@ -190,14 +199,15 @@ extension ActivityRows {
     // MARK: The list
 
     /// The fixed groups after the tabs (6.5), in order: Overterm, another
-    /// Overterm, your apps, yours elsewhere, macOS, other users'.
+    /// Overterm, Left Behind (6.9), your apps, yours elsewhere, macOS, other users'.
     enum Fixed: String, CaseIterable {
-        case overterm, anotherOverterm, apps, elsewhere, macOS, system
+        case overterm, anotherOverterm, leftBehind, apps, elsewhere, macOS, system
 
         var title: String {
             switch self {
             case .overterm: "Overterm (the app and its helpers)"
             case .anotherOverterm: "Another Overterm"
+            case .leftBehind: "Left Behind"
             case .apps: "Your apps"
             case .elsewhere: "Yours elsewhere"
             case .macOS: "macOS"
@@ -214,6 +224,7 @@ extension ActivityRows {
             switch owner?.place {
             case .overterm?: .overterm
             case .anotherOverterm?: .anotherOverterm
+            case .leftBehind?: .leftBehind
             case .app?, .engine?: .apps
             case .macOS?: .macOS
             case .system?: .system

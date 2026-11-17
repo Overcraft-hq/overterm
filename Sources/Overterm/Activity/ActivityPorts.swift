@@ -23,6 +23,8 @@ enum ActivityPortOwner: Hashable, Sendable {
     case macOS
     case system(user: String)
     case elsewhere
+    /// Left Behind (6.9): its reason.
+    case leftBehind
 
     /// The filter's `owner:` word (6.6).
     var word: String {
@@ -38,6 +40,7 @@ enum ActivityPortOwner: Hashable, Sendable {
         case .macOS: "macos"
         case .system: "system"
         case .elsewhere: "elsewhere"
+        case .leftBehind: "left"
         }
     }
 
@@ -359,6 +362,10 @@ enum ActivityPorts {
         case .engine(let engine)?:
             row.portOwner = .engine(engine)
             row.ownerText = "\(engine)’s engine — host network"
+        case .leftBehind?:
+            // 7. Left Behind (6.8, Left behind): its reason.
+            row.portOwner = .leftBehind
+            row.ownerText = owner?.reason ?? "left behind"
         default:
             let facts = snapshot.facts[holder]
             if let known {

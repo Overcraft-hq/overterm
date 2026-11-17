@@ -254,6 +254,7 @@ final class ActivityProbeTests: XCTestCase {
             case .macOS: place = "macOS"
             case .system: place = "system"
             case .elsewhere: place = "elsewhere"
+            case .leftBehind: place = "leftBehind"
             }
             places[place, default: 0] += 1
         }

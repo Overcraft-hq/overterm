@@ -20,6 +20,8 @@ extension TerminalWindowController {
         context.appServices = Settings.shared.activityAppServices
         // This run's marker: another Overterm's panes are told apart by theirs (6.5 rule 10).
         context.run = OvertermRun.current.marker
+        // What Left Behind remembers: closed panes, ended agent runs, kept (6.9).
+        LeftBehindLedger.shared.fill(&context)
         for controller in windows.compactMap({ $0.windowController as? TerminalWindowController }) {
             let window = controller.window?.windowNumber
             for tab in controller.store.tabs {
@@ -56,6 +58,10 @@ extension TerminalWindowController {
     static func wireActivityCensus() -> AnyCancellable {
         let monitor = ActivityMonitor.shared
         monitor.contextSource = { activityContext() }
+        // Left Behind follows the agents' runs in whatever lands (6.9).
+        let ledger = LeftBehindLedger.shared
+        ledger.checkouts = { activityTabFacts().checkouts }
+        ledger.start()
         // `activity.interval`; a change is taken by each window
         // (`activityIntervalChanged`).
         monitor.interval = Settings.shared.activityInterval
@@ -341,6 +347,8 @@ extension TerminalWindowController {
         for (window, tab) in tabs where fresh || !window.lightTickShown {
             if let agent = agents[tab.id] { window.follow(agent, of: tab) }
         }
+        // The agents' runs of windows off screen: no tick reads them (6.9).
+        LeftBehindLedger.shared.observe(snapshot)
     }
 
     /// The lookup and the agents it read, off the main thread: a GCD
@@ -398,5 +406,17 @@ extension TerminalWindowController {
             if let tab = controller.store.tabs.first(where: { $0.terminals.contains { $0.processTag == tag } }) { return (controller, tab) }
         }
         return nil
+    }
+}
+
+/// Left Behind's retired panes (docs/design/activity/analysis.md, 6.9).
+extension TerminalWindowController {
+    /// `pane` of `tab` closes: its tag, title, checkout and agent kept in
+    /// memory, so what still carries the tag says whose it was.
+    func retireForLeftBehind(_ pane: TerminalView, of tab: Tab) {
+        LeftBehindLedger.shared.retire(
+            ActivityContext.Pane(
+                tag: pane.processTag, tab: tab.id, window: window?.windowNumber, title: ActivityText.title(tab.title),
+                checkout: Self.activityCheckout(of: tab), agent: ActivityMonitor.shared.snapshot?.pane(pane.processTag)?.agentKind ?? tab.agent))
     }
 }

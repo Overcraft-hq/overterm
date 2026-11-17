@@ -22,6 +22,9 @@ struct ActivityOwner: Hashable, Sendable {
         case system
         /// Anything else of the user's (rule 16; 5 once its pane is gone).
         case elsewhere
+        /// What outlived its tab, its agent or an earlier Overterm (rules
+        /// 8 and 11, 6.9): `ActivityOwner.leftBehind` says why.
+        case leftBehind
     }
 
     enum Certainty: Hashable, Sendable {
@@ -73,6 +76,11 @@ struct ActivityOwner: Hashable, Sendable {
     var agent: ActivityProcessID?
     var agentKind: Agent?
     var role = ProcessRole.other
+    /// Rules 8 and 11: the sign that put it in Left Behind (6.9).
+    var leftBehind: LeftBehindSign?
+    /// The person kept it (Keep, or unticked in a close sheet): never in a
+    /// bulk Stop, never Left Behind again for its life (6.9).
+    var kept = false
 }
 
 /// What the main actor says of a tab, for owners and rows (6.5): the place
@@ -162,7 +170,13 @@ struct ActivityAttribution: Sendable {
             table = snapshot.table
             logins = Set(snapshot.panes.compactMap(\.login)).union(context.panes.compactMap(\.login))
             helpers = Set(snapshot.helpers)
+            liveTags = Set(context.panes.map(\.tag))
+            openCheckouts = Set(inputs.tabs.values.compactMap(\.checkout))
         }
+
+        /// The live panes' tags, and the checkouts a tab shows (6.9's signs).
+        let liveTags: Set<String>
+        let openCheckouts: Set<String>
 
         func title(of tab: UUID) -> String { inputs.tabs[tab]?.title ?? "" }
 
@@ -218,11 +232,69 @@ struct ActivityAttribution: Sendable {
                             owners[identity] = owner
                             continue
                         }
+                        // 8. What carries the pane's tag outside its tree and
+                        // started inside one of its agent's ended runs — or
+                        // under one that did: left by the agent.
+                        if pass == 1, reason == nil || reason == .ignoresHangup, !isKept(identity),
+                            let left = agentRunOwner(process, slice)
+                        {
+                            owners[identity] = left
+                            continue
+                        }
                         owners[identity] = paneOwner(process, slice, inTree: inTree.contains(identity), exclusion: reason)
                     }
                 }
             }
         }
+
+        /// Rule 8 (6.9): `process`, outside `slice`'s tree with its tag,
+        /// started inside an ended run of the pane's agent, or under a
+        /// process that did.
+        func agentRunOwner(_ process: ActivityProcess, _ slice: ActivityPaneSlice) -> ActivityOwner? {
+            var sign: LeftBehindSign?
+            if let run = LeftBehind.agentRun(process.identity, tag: slice.tag, runs: context.agentRuns) {
+                sign = .agentRun(run, title: title(of: slice.tab))
+            } else if let parent = table.parent(of: process.identity), let owner = owners[parent.identity], owner.place == .leftBehind,
+                case .agentRun? = owner.leftBehind
+            {
+                sign = owner.leftBehind
+            }
+            guard let sign else { return nil }
+            return leftBehindOwner(process, sign, rule: 8)
+        }
+
+        func leftBehindOwner(_ process: ActivityProcess, _ sign: LeftBehindSign, rule: Int) -> ActivityOwner {
+            var owner = ActivityOwner(place: .leftBehind, rule: rule, reason: sign.reason, certainty: sign.certainty)
+            if process.ignoresHangup { owner.marks.insert(.nohup) }
+            if process.flags.contains(.sessionLeader), process.terminal == nil { owner.marks.insert(.setsid) }
+            owner.leftBehind = sign
+            owner.tab = sign.tab
+            return owner
+        }
+
+        /// Rule 11 (6.9): a closed pane's tag, an earlier Overterm's
+        /// marker or argv sign, a dead group leader. One the person kept is
+        /// theirs, elsewhere, "kept running".
+        func leftBehind(_ process: ActivityProcess, _ facts: ActivityFacts?) -> ActivityOwner? {
+            guard process.isOwn(by: snapshot.uid) else { return nil }
+            guard
+                let sign = LeftBehind.sign(
+                    of: process, facts: facts, table: table, context: context, live: liveTags, checkouts: inputs.checkouts,
+                    openCheckouts: openCheckouts)
+            else { return nil }
+            if isKept(process.identity) {
+                var owner = ActivityOwner(place: .elsewhere, rule: 11, reason: "kept running — \(sign.reason)", certainty: sign.certainty)
+                owner.kept = true
+                owner.leftBehind = sign
+                return owner
+            }
+            return leftBehindOwner(process, sign, rule: 11)
+        }
+
+        /// Whether the person kept `identity` or one of its ancestors: what
+        /// a kept server started — its workers, a database's backends — is
+        /// kept with it, never in a bulk Stop (6.9). Bounded.
+        func isKept(_ identity: ActivityProcessID) -> Bool { LeftBehind.isKept(identity, kept: context.kept, table: table) }
 
         /// The reason of the nearest ancestor left out for itself.
         func rootReason(of identity: ActivityProcessID, _ reasons: [ActivityProcessID: ActivityPaneSet.Exclusion]) -> ActivityPaneSet.Exclusion? {
@@ -299,6 +371,8 @@ struct ActivityAttribution: Sendable {
             if let engine = engine(of: process) { return engine }
             // 10. Another Overterm, by its run's marker or its own executable.
             if let other = anotherOverterm(process, facts) { return other }
+            // 11. Left Behind by another sign (6.9).
+            if let left = leftBehind(process, facts) { return left }
             // 12. An app, by the outermost `.app` on its path.
             if let app = app(of: process, facts) { return app }
             // 13. Responsibility (D-31): an XPC service's or a VM's only —
@@ -436,7 +510,7 @@ struct ActivityAttribution: Sendable {
                 // A service of the Finder, the Dock, ControlCenter: macOS's.
                 let known = ActivityAttribution.appleAgents[self.name(responsible)] ?? self.name(responsible)
                 return ActivityOwner(place: .macOS, rule: 13, reason: "a service of \(known)")
-            case .system, .elsewhere:
+            case .system, .elsewhere, .leftBehind:
                 return nil
             }
         }
@@ -453,6 +527,12 @@ struct ActivityAttribution: Sendable {
                 var child = ActivityOwner(place: owner.place, rule: owner.rule, reason: owner.reason)
                 child.tab = owner.marks.contains(.fromPane) ? owner.tab : nil
                 if owner.marks.contains(.fromPane) { child.marks = .fromPane }
+                return child
+            case .leftBehind:
+                // What a left-behind process started is left with it.
+                var child = owner
+                child.marks = []
+                child.paneRole = nil
                 return child
             case .pane, .system, .elsewhere:
                 return nil
