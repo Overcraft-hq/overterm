@@ -75,6 +75,8 @@ struct ActivityPageActions {
     /// The header's Resume All: every process Activity stopped, asked when
     /// more than one.
     var resumeAll: @MainActor () -> Void = {}
+    /// Ask an Agent About It (`a`, ⌘L): the Ask Agent sheet with its brief.
+    var ask: @MainActor (ActivityBrief, UUID?) -> Void = { _, _ in }
 }
 
 /// The Activity page (⌥⌘A; docs/design/activity/analysis.md, 6.4): its
@@ -727,6 +729,7 @@ final class ActivityPageModel: ObservableObject {
             else { return false }
             actions.free(row)
         case .stop, .forceQuit, .signal, .suspend, .background, .lower: return pressSignalKey(key)
+        case .ask: return askAboutSelection()
         case .sortCPU where processes: processSort = ResourceSort(column: "cpu", ascending: false)
         case .sortMemory where processes: processSort = ResourceSort(column: "memory", ascending: false)
         case .sortTime where processes: processSort = ResourceSort(column: "time", ascending: false)
@@ -742,6 +745,16 @@ final class ActivityPageModel: ObservableObject {
 
     /// The selected process — a listener's holder in Listening.
     var selectedProcess: ActivityProcessRow? { selection.count == 1 ? detail?.row : nil }
+
+    /// Ask an Agent About It (`a`, ⌘L; 8.6): the selected process's brief,
+    /// from its detail, to the window's Ask Agent sheet. False when no one
+    /// process is selected.
+    @discardableResult
+    func askAboutSelection() -> Bool {
+        guard selection.count == 1, let detail else { return false }
+        actions.ask(ActivityBrief.make(detail), detail.row.tab)
+        return true
+    }
 
     /// The selected process's working folder, once the focus level read it.
     var selectedFolder: String? { selectedProcess == nil ? nil : detail?.folderPath }
@@ -903,6 +916,11 @@ final class ActivityPageModel: ObservableObject {
                 perform: { [weak self] in
                     self?.actions.terminal(ActivityTerminalRequest(directory: NSHomeDirectory(), command: Self.openFilesCommand(row.identity.pid)))
                 }))
+        verbs.append(
+            ResourceVerb(
+                title: "Ask an Agent About It…", label: "Ask", symbol: "bubble.left.and.text.bubble.right", place: .button, key: "a",
+                unavailable: detail?.row.identity == row.identity ? nil : "Select it alone: the brief is made from its detail",
+                perform: { [weak self] in self?.askAboutSelection() }))
         verbs += signalVerbs(for: row)
         verbs.append(ResourceVerb(title: "Copy PID", symbol: "number", group: 1, perform: { copy([String(row.identity.pid)]) }))
         verbs.append(

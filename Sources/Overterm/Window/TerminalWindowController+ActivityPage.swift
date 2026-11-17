@@ -25,6 +25,7 @@ extension TerminalWindowController {
         page.closed = { [weak self] in self?.activityPage.close() }
         page.hasList = true
         page.press = { [weak self] characters in self?.activityPage.press(characters) ?? false }
+        page.askAboutSelection = { [weak self] in self?.activityPage.askAboutSelection() ?? false }
         page.optionPress = { [weak self] characters in self?.activityPage.pressOption(characters) ?? false }
         page.paletteItems = { [weak self] in self?.activityPaletteItems() ?? [] }
         page.occlusionChanged = { [weak self] in self?.updateActivityWindowVisible() }
@@ -58,7 +59,8 @@ extension TerminalWindowController {
             stop: { [weak self] identity in self?.activityStop(identity) },
             lower: { [weak self] identity, step in self?.activityLower(identity, step) },
             chooseLower: { [weak self] identity in self?.activityChooseLower(identity) },
-            resumeAll: { [weak self] in self?.activityResumeAll() })
+            resumeAll: { [weak self] in self?.activityResumeAll() },
+            ask: { [weak self] brief, tab in self?.presentActivityBrief(brief, tab: tab) })
         activityPage.known = { Self.activityKnown() }
         activityPage.containers = { Self.activityContainers() }
         activityPage.contextFacts = { context in Self.activityContextFacts(&context) }
@@ -400,4 +402,27 @@ final class ActivityDockerHold {
     var shown = false
     /// It holds the usage monitor's want.
     var usage = false
+}
+
+extension TerminalWindowController {
+    /// Ask an Agent About It (8.6): the Ask Agent sheet, the whole brief
+    /// shown before it is sent. Only the agents of the process's own tab
+    /// and checkout are offered the whole brief, its own tab's first, and
+    /// a new one opens in its tab's folder; a process in no tab every agent
+    /// may be asked about, by `outside` alone — never another checkout's
+    /// command (8.4, `ActivityBrief.audience`).
+    func presentActivityBrief(_ brief: ActivityBrief, tab id: UUID?) {
+        guard window?.attachedSheet == nil else { return NSSound.beep() }
+        let agents = store.tabs.filter { $0.agent != nil }
+        let processTab = id.flatMap { id in Self.activityWindow(of: id)?.1 }
+        let checkout = processTab.flatMap { Self.activityCheckout(of: $0) }
+        let audience = ActivityBrief.audience(
+            tab: processTab?.id, checkout: checkout, agents: agents.map { (id: $0.id, checkout: Self.activityCheckout(of: $0)) })
+        let targets = audience.targets.compactMap { id in agents.first { $0.id == id } }
+        let shown = audience.inside ? brief : brief.outside
+        let folder = processTab?.workingDirectory ?? store.selected?.workingDirectory
+        presentAskAgent(
+            text: shown.text, command: nil, folder: folder, targets: targets, message: shown.message, subject: shown.subject, parts: shown.parts,
+            diff: false, showsBrief: true)
+    }
 }

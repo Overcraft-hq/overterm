@@ -6,8 +6,8 @@ import Foundation
 /// with them itself. `k` stops the selection the way its class asks
 /// (Interrupt, Stop Agent, Stop), `K` force-quits it, `x` sends a signal
 /// (`ActivityPageModel+Verbs`), `p` suspends or resumes it, `b` runs it in
-/// the background or normally, `n` lowers its priority; `a` comes with the
-/// rest of stage 2's verbs — `f` frees a port through its owner's own verb,
+/// the background or normally, `n` lowers its priority, `a` asks an agent
+/// about it (`ActivityBrief`) — `f` frees a port through its owner's own verb,
 /// or its holder's own (`ActivityPortHolder`); Open Files (`l`), the
 /// detail's Files tab, with stage 4's. `e` opens a terminal in the
 /// selection's folder, read at the focus level. ⌥o and ⌥r are
@@ -18,7 +18,7 @@ enum ActivityKey: String, ResourceKey {
     case open, reveal, tabInfo, sample, terminal
     case tree, group, narrower, wider
     case follow, pause, mine, connections, free
-    case stop, forceQuit, signal, suspend, background, lower
+    case stop, forceQuit, signal, suspend, background, lower, ask
     case sortCPU, sortMemory, sortTime, sortPID, invert
 
     var section: ActivityPageModel.Section? {
@@ -57,6 +57,7 @@ enum ActivityKey: String, ResourceKey {
         case .suspend: "p"
         case .background: "b"
         case .lower: "n"
+        case .ask: "a"
         case .sortCPU: "P"
         case .sortMemory: "M"
         case .sortTime: "T"
@@ -93,6 +94,7 @@ enum ActivityKey: String, ResourceKey {
         case .suspend: "Suspend it — a pane's job with its pane, else with its tree — or Resume what Activity stopped"
         case .background: "Run in Background, or Normally again — only what Activity put there"
         case .lower: "Lower Priority: nice +5, +10 or 20 — asked, since only an administrator raises it back"
+        case .ask: "Ask an agent about it — where it runs, its usage, its ports and children, its command masked (⌘L too)"
         case .sortCPU: "Sort by CPU"
         case .sortMemory: "Sort by memory"
         case .sortTime: "Sort by CPU time"

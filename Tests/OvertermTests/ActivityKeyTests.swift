@@ -75,6 +75,7 @@ final class ActivityKeyTests: XCTestCase {
         XCTAssertEqual(ActivityKey.of("k"), .stop)
         XCTAssertEqual(ActivityKey.of("K"), .forceQuit, "case matters")
         XCTAssertEqual(ActivityKey.of("x"), .signal)
+        XCTAssertEqual(ActivityKey.of("a"), .ask)
         XCTAssertNil(ActivityKey.of(String(Character(UnicodeScalar(NSLeftArrowFunctionKey)!))), "← is the table's own")
         XCTAssertEqual(ActivityKey.press("?", sheetShowing: false).map { if case .help = $0 { true } else { false } }, true)
         XCTAssertEqual(ActivityKey.press("x", sheetShowing: true).map { if case .closeSheet = $0 { true } else { false } }, true)
@@ -204,8 +205,10 @@ final class ActivityKeyTests: XCTestCase {
             var chosen: [ActivityProcessID] = []
             var stopped: [ActivityProcessID] = []
             var lowered: [ActivityProcessID] = []
+            var asked: [(ActivityBrief, UUID?)] = []
         }
         let box = Box()
+        page.actions.ask = { brief, tab in box.asked.append((brief, tab)) }
         page.actions.act = { verb, identity in box.acted.append((verb, identity)) }
         page.actions.chooseSignal = { box.chosen.append($0) }
         page.actions.stop = { box.stopped.append($0) }
@@ -223,14 +226,15 @@ final class ActivityKeyTests: XCTestCase {
             verbs.map(\.title),
             [
                 "Go to Tab", "Open in Browser", "Open in Default Browser", "Reveal in Finder", "Reveal Its Folder in Finder", "Terminal in Its Folder",
-                "Tab Info", "Sample for 5 Seconds in a Tab", "Open Files in a Tab", "Interrupt…", "Stop…", "Force Quit…", "Send a Signal",
+                "Tab Info", "Sample for 5 Seconds in a Tab", "Open Files in a Tab", "Ask an Agent About It…", "Interrupt…", "Stop…", "Force Quit…", "Send a Signal",
                 "Stop Its Tree…", "Stop Its Group…", "Stop Its Parent…", "Suspend", "Run in Background", "Lower Priority", "Copy PID",
                 "Copy Command", "Copy",
             ])
         XCTAssertEqual(
             verbs.first { $0.title == "Lower Priority" }?.children.map(\.title), ["+5 — nice 5…", "+10 — nice 10…", "20 — nice 20…"],
             "each step names the nice it gives")
-        XCTAssertEqual(verbs.filter { $0.place == .button }.map(\.title), ["Go to Tab", "Open in Browser", "Reveal in Finder", "Tab Info"])
+        XCTAssertEqual(
+            verbs.filter { $0.place == .button }.map(\.title), ["Go to Tab", "Open in Browser", "Reveal in Finder", "Tab Info", "Ask an Agent About It…"])
         XCTAssertNotNil(verbs.first { $0.title == "Open in Browser" }?.unavailable, "it listens on nothing: greyed, with why")
         XCTAssertNil(verbs.first { $0.title == "Go to Tab" }?.unavailable)
         verbs.first { $0.title == "Go to Tab" }?.perform()
@@ -258,6 +262,11 @@ final class ActivityKeyTests: XCTestCase {
         XCTAssertEqual(box.acted.last?.0, .background)
         XCTAssertTrue(page.press("n"))
         XCTAssertEqual(box.lowered, [server.identity])
+        // a: Ask an Agent About It, its brief from the detail, its tab's.
+        XCTAssertNil(verbs.first { $0.title == "Ask an Agent About It…" }?.unavailable)
+        XCTAssertTrue(page.press("a"))
+        XCTAssertEqual(box.asked.last?.0.subject, "“acme-server” (pid 1102)")
+        XCTAssertEqual(box.asked.last?.1, tab)
         verbs.first { $0.title == "Stop Its Tree…" }?.perform()
         XCTAssertEqual(box.acted.last?.0, .stopTree)
         verbs.first { $0.title == "Copy" }?.perform()
