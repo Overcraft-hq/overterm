@@ -79,6 +79,8 @@ final class ActivitySampler: @unchecked Sendable {
     private var known: [ActivityProcessID: Known] = [:]
     private var baselines: UsageBaselines
     private var socketScan = SocketScan()
+    /// The history every tick merges into (6.11).
+    private var ring = ActivityRing()
     private var cadence = ActivityCadence()
     private var ticks = 0
     /// The meters' counters at the last full tick, and when: CPU a core is
@@ -292,6 +294,7 @@ final class ActivitySampler: @unchecked Sendable {
         let started = kernel.uptime()
         guard let table = ProcessTable.read(kernel) else { return nil }
         let now = kernel.uptime()
+        let continuous = kernel.continuousTime()
         let date = Date()
         ticks += 1
         let tick = ticks
@@ -495,10 +498,18 @@ final class ActivitySampler: @unchecked Sendable {
         cost.wall = ended >= started ? ended - started : 0
         cost.cpu = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) &- cpuStart
         if paced { cadence.record(cost: cost.wall, full: demand.full, members: cost.usageRead, at: now) }
-        let snapshot = ActivitySnapshot(
+        var snapshot = ActivitySnapshot(
             tick: tick, demand: demand, time: now, date: date, uid: uid, table: table, facts: facts, panes: slices, helpers: helpers,
             appChildren: appChildren, unclaimedLogins: unclaimed, unread: unread.count, cost: cost, isStretched: cadence.isStretched,
             meters: meters)
+        // The history (6.11): what this tick rated, merged here, on the
+        // sampler's queue; the snapshot carries it on, a value.
+        snapshot.historyTime = continuous
+        let merging = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
+        ring.merge(snapshot, detail: demand.focus)
+        let merged = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
+        snapshot.cost.history = merged >= merging ? merged - merging : 0
+        snapshot.history = ring
         shared.withLock { lastSnapshot = snapshot }
         return snapshot
     }

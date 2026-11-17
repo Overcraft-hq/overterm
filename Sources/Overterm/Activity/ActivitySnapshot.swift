@@ -179,6 +179,9 @@ struct ActivityTickCost: Hashable, Sendable {
     var usageRead = 0
     /// Processes whose sockets were walked this tick.
     var socketsRead = 0
+    /// Merging the tick into the history, ns of the Mac's own clock
+    /// (`CLOCK_UPTIME_RAW`, a fake kernel's too: the work itself) (6.11).
+    var history: UInt64 = 0
 }
 
 /// One census (7.1): what one tick read, as values the main actor takes in
@@ -192,7 +195,7 @@ struct ActivitySnapshot: Sendable {
     /// When the table was read: `CLOCK_UPTIME_RAW`, ns, on the kernel's
     /// clock — an age is measured against it — and the wall clock then.
     let time: UInt64
-    let date: Date
+    var date: Date
     /// The user it read for.
     let uid: uid_t
     let table: ProcessTable
@@ -216,15 +219,30 @@ struct ActivitySnapshot: Sendable {
     /// New identities its level wanted read and the churn budget left for
     /// a later tick: named from `p_comm` until then (7.3).
     let unread: Int
-    let cost: ActivityTickCost
+    var cost: ActivityTickCost
     /// The cadence is stretched to 5 s: a busy Mac (7.3).
     let isStretched: Bool
     /// The system's meters, read at the full level (6.4); nil at the others
     /// and where they can't be read.
     var meters: SystemMeters? = nil
+    /// Every tick's history to this one (6.11): strips, the details.
+    var history = ActivityRing()
+    /// When the table was read on the continuous clock
+    /// (`CLOCK_MONOTONIC_RAW`, ns, which runs while the Mac sleeps): the
+    /// history's times. Nil where it wasn't read: `time` then.
+    var historyTime: UInt64? = nil
+
+    /// The history's now (6.11): a sleep lies between two of its times.
+    var historyNow: UInt64 { historyTime ?? time }
 
     /// Whether this reads everything `demand` asks.
     func covers(_ demand: ActivityDemand) -> Bool { self.demand.covers(demand) }
+
+    /// A time on the history's clock (`historyNow`'s) as the wall clock's,
+    /// by this snapshot's own pair: a time before a sleep keeps its date.
+    func date(of history: UInt64) -> Date {
+        date.addingTimeInterval(-(Double(historyNow) - Double(history)) / 1e9)
+    }
 
     func pane(_ tag: String) -> ActivityPaneSlice? { panes.first { $0.tag == tag } }
 

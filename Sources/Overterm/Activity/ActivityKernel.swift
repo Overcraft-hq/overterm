@@ -16,6 +16,9 @@ protocol ActivityKernel: Sendable {
     var uid: uid_t { get }
     /// `CLOCK_UPTIME_RAW`, ns: what every rate divides by.
     func uptime() -> UInt64
+    /// `CLOCK_MONOTONIC_RAW`, ns: it runs while the Mac sleeps — the
+    /// history's clock (6.11), where a sleep is a gap.
+    func continuousTime() -> UInt64
     /// `KERN_PROC_ALL`: every process; nil when sysctl fails.
     func processes() -> [ActivityProcess]?
     /// The user's process's usage, read now (`ActivityUsage.time` is when);
@@ -171,6 +174,8 @@ enum CodeSigningAnswer: Hashable, Sendable {
 }
 
 extension ActivityKernel {
+    /// A kernel that knows no sleep: its uptime.
+    func continuousTime() -> UInt64 { uptime() }
     func meterCounters() -> SystemMeterCounters? { nil }
     func responsiblePID(of pid: pid_t) -> pid_t? { nil }
     var readsResponsibility: Bool { false }
@@ -195,6 +200,8 @@ struct LiveActivityKernel: ActivityKernel {
     let uid = getuid()
 
     func uptime() -> UInt64 { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) }
+
+    func continuousTime() -> UInt64 { clock_gettime_nsec_np(CLOCK_MONOTONIC_RAW) }
 
     func meterCounters() -> SystemMeterCounters? { readMeterCounters() }
 
@@ -545,6 +552,8 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     private var bundleExecutables: [pid_t: String] = [:]
     private var unaskable: Set<pid_t> = []
     private var clock: UInt64 = 1_000_000_000
+    /// How long the fake Mac slept: the continuous clock's lead on uptime.
+    private var slept: UInt64 = 0
     private var counts: [String: Int] = [:]
     private var csops = true
     private var tableRefused = false
@@ -583,6 +592,9 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
 
     /// Moves the clock on.
     func advance(_ nanoseconds: UInt64) { lock.withLock { clock += nanoseconds } }
+
+    /// The Mac slept for `nanoseconds`: the continuous clock moves, uptime doesn't.
+    func sleep(_ nanoseconds: UInt64) { lock.withLock { slept += nanoseconds } }
 
     /// Without `csops`, as a system that dropped it.
     func dropCodeSigningCall() { lock.withLock { csops = false } }
@@ -777,6 +789,8 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
     // MARK: ActivityKernel
 
     func uptime() -> UInt64 { lock.withLock { clock } }
+
+    func continuousTime() -> UInt64 { lock.withLock { clock + slept } }
 
     func meterCounters() -> SystemMeterCounters? { asked("meters") { meters } }
 
