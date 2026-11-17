@@ -20,6 +20,7 @@ version is tagged `v<version>`.
 - tabs: every visible tab's port pills stay current — a server started in a tab you aren't looking at shows on its pill — and a pill opens where its server listens: 127.0.0.1, [::1] or the one address it is bound to, localhost only where both IPv4 and IPv6 do
 - info: Tab Info shows a split tab as a group a pane, what left a pane's terminal under it, and its memory as Activity Monitor's, real memory in the tooltip; its ports say their protocol, IPv4 or IPv6 and This Mac or Network, with Copy URL under ⋯
 - tabs: a port pill's Stop… is Free…, decided by what holds the port — a pane's foreground job interrupted with ⌃C, an agent stopped only in a critical sheet, a terraform write only interrupted — containers' and forwards' Stop included, and says when the port is free; its Open follows Settings ▸ Browser, as a link in the terminal does
+- database: a tunnel's ssh opens its own connection and no longer rides a ControlMaster from your ssh config — a bastion behind a second factor needs a key or agent the tunnel can use on its own
 - tabs: Suspend Tab stops only the tab's own processes — never a tmux server and its sessions, an ssh-agent, an app started with `code .`, a nohup'd job or anything on another terminal that carries its tag — and Resume continues only what it stopped, never a pid another process holds since
 
 ## 1.6.0 — 2026-11-13

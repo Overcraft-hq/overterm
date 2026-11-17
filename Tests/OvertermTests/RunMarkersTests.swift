@@ -92,6 +92,64 @@ final class RunMarkersTests: XCTestCase {
         XCTAssertEqual(ArgvSign.signs(in: ActivityText.command(["kubectl", "proxy", "--unix-socket=\(socket)"])), [.kubectl(id)])
     }
 
+    // MARK: The tunnel's ControlPath
+
+    private func tunnelled() -> DatabaseConnection {
+        var connection = DatabaseConnection(name: "Behind", kind: .postgres)
+        connection.host = "acme-db"
+        connection.port = 5432
+        connection.sshEnabled = true
+        connection.sshHost = "acme-bastion"
+        return connection
+    }
+
+    func testTheTunnelsControlPathNamesTheRunAndIsNeverMade() throws {
+        let connection = tunnelled()
+        let words = SSHTunnel.arguments(connection, localPort: 61000, batch: true)
+        XCTAssertTrue(words.contains("ControlMaster=no"), "only ever a client, of a master nothing makes")
+        let path = SSHTunnel.controlPath(for: connection.id)
+        XCTAssertTrue(words.contains("ControlPath=\(path)"))
+        XCTAssertLessThan(path.utf8.count, 104, "a unix socket's path")
+        XCTAssertTrue(path.hasPrefix(try XCTUnwrap(SSHTunnel.userTemporaryDirectory).path), "the system's temporary folder for this user")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: (path as NSString).deletingLastPathComponent), "nothing creates it")
+        // Folders of the test's own, private: only the path itself refused.
+        let long = dir.appendingPathComponent(String(repeating: "d", count: 90))
+        let expanded = dir.appendingPathComponent("a%b")
+        for made in [long, expanded] {
+            try FileManager.default.createDirectory(at: made, withIntermediateDirectories: true)
+            chmod(made.path, 0o700)
+        }
+        XCTAssertEqual(SSHTunnel.controlPath(for: connection.id, folder: long), "none", "too long for ssh: no path rather than a refusal")
+        XCTAssertEqual(SSHTunnel.controlPath(for: connection.id, folder: expanded), "none", "ssh would expand it")
+        // Its sign, through the masking every reader sees argv by.
+        XCTAssertEqual(ArgvSign.signs(in: ActivityText.command(["/usr/bin/ssh"] + words)), [.databaseTunnel(OvertermRun.current.identity)])
+    }
+
+    /// ssh never checks who made a master's socket: a folder another user
+    /// could write in — a world-writable or sticky one, as `/tmp` is — or
+    /// a link to one gives no ControlPath at all.
+    func testTheControlPathIsOnlyInAFolderNoOneElseCanWrite() throws {
+        let id = UUID()
+        let own = dir.appendingPathComponent("own")
+        try FileManager.default.createDirectory(at: own, withIntermediateDirectories: true)
+        chmod(own.path, 0o700)
+        XCTAssertTrue(SSHTunnel.controlPath(for: id, folder: own).hasPrefix(own.path + "/ot-run-"))
+        let open = dir.appendingPathComponent("open")
+        try FileManager.default.createDirectory(at: open, withIntermediateDirectories: true)
+        chmod(open.path, 0o777)
+        XCTAssertEqual(SSHTunnel.controlPath(for: id, folder: open), "none", "world-writable")
+        chmod(open.path, 0o1777)
+        XCTAssertEqual(SSHTunnel.controlPath(for: id, folder: open), "none", "sticky, as /tmp is")
+        chmod(open.path, 0o770)
+        XCTAssertEqual(SSHTunnel.controlPath(for: id, folder: open), "none", "its group's to write")
+        let link = dir.appendingPathComponent("link")
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: own)
+        XCTAssertEqual(SSHTunnel.controlPath(for: id, folder: link), "none", "a link, whatever it points at")
+        XCTAssertEqual(SSHTunnel.controlPath(for: id, folder: URL(fileURLWithPath: "/tmp")), "none")
+        XCTAssertEqual(SSHTunnel.controlPath(for: id, folder: nil), "none")
+        XCTAssertEqual(SSHTunnel.controlPath(for: id, folder: dir.appendingPathComponent("missing")), "none")
+    }
+
     // MARK: The kubectl socket folder
 
     func testTheSocketFolderNamesTheStartAndASweepKeepsOnlyLiveRuns() throws {
