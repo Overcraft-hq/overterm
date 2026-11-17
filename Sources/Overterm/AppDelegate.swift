@@ -125,6 +125,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 return .terminateCancel
             }
         }
+        // What Activity suspended stays stopped once Overterm is gone: asked,
+        // Resume and Quit the default (docs/design/activity/analysis.md, 6.10).
+        // The answer is kept: nothing is continued until every later question
+        // has let the quit go (`quitting`), or a Cancel there would leave the
+        // app open with what was suspended running again.
+        var resumeAtQuit = false
+        if let alert = TerminalWindowController.activityQuitAlert() {
+            switch alert.runModal() {
+            case .alertFirstButtonReturn: resumeAtQuit = true
+            case .alertSecondButtonReturn: break
+            default: return .terminateCancel
+            }
+        }
+        /// The quit, once nothing else holds it: Resume and Quit's resumes
+        /// now — any not continued asked about again, Don't Quit the default.
+        func quitting() -> NSApplication.TerminateReply {
+            guard resumeAtQuit, let again = TerminalWindowController.activityResumeAtQuit() else { return .terminateNow }
+            return again.runModal() == .alertSecondButtonReturn ? .terminateNow : .terminateCancel
+        }
         // Overterm's own applies go on, detached (4.7): said, never waited for.
         let applies = TerraformRunRegistry.shared.goingApplies.map { (name: $0.marker.name, since: $0.started) }
         if let question = TerraformCloseGuard.quitQuestion(applies) {
@@ -138,7 +157,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         guard let controller = windowController, !controller.closeConfirmed, !controller.store.tabs.isEmpty,
             TerminalWindowController.needsCloseConfirmation(controller.store.tabs, quitting: true)
-        else { return .terminateNow }
+        else { return quitting() }
         let tabs = controller.store.tabs
         let alert = NSAlert()
         alert.messageText = tabs.count == 1 ? "Quit Overterm?" : "Quit Overterm and close \(tabs.count) tabs?"
@@ -147,7 +166,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         alert.addButton(withTitle: "Quit")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
-        return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+        return alert.runModal() == .alertFirstButtonReturn ? quitting() : .terminateCancel
     }
 
     func applicationWillTerminate(_ notification: Notification) {

@@ -560,7 +560,10 @@ value, a path or an address of a process that isn't the test's.
   its pid and its own group is refused and said.
 - `ActivityHeldTests`: a Suspend's tree stopped only once its root was, a Resume planned again at its button; what Activity stopped and put in the background,
   kept by identity — resumed as kept, a Suspension whole from its root;
-  let go only by a census read after the change.
+  let go only by a census read after the change; the quit question's
+  count read now and its Resume and Quit, children first by token, a pid
+  another process holds since never sent anything, one it couldn't
+  continue still held and asked about again.
 - `ActivitySignalCheckTests`: the pane pill's Free… over every class a pill
   can name — the owners' own verbs, the never-list (what runs as the user
   only for now among it), a terraform write interrupted wherever it runs,

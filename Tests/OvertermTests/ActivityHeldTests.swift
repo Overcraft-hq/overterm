@@ -6,7 +6,8 @@ import XCTest
 /// What Activity stopped and put in the background (docs/design/activity/
 /// analysis.md, 6.10, 3.9): kept by identity, resumed only as kept — a
 /// Suspension whole from its root, a member alone —, let go once a census
-/// read after the change says it ended or runs again. Over a fake Mac:
+/// read after the change says it ended or runs again, read now for the quit
+/// question, and continued children first by Resume All. Over a fake Mac:
 /// nothing real is signalled.
 @MainActor
 final class ActivityHeldTests: XCTestCase {
@@ -111,5 +112,60 @@ final class ActivityHeldTests: XCTestCase {
         held.backgrounded(root.identity, at: at)
         held.prune(at: at + 4) { self.kernel.process($0.pid) }
         XCTAssertTrue(held.backgroundHere.isEmpty, "the background kept only while it lives")
+    }
+
+    /// The quit question counts what is still stopped now, and Resume and
+    /// Quit continues each, children first, by its token.
+    func testTheQuitQuestionAndResumeAll() {
+        let (held, root, child, other) = stopped()
+        kernel.update(other.identity.pid) { $0.record = FakeActivityKernel.record($0.record, status: SRUN) }
+        let still = held.stillStopped(kernel: kernel)
+        XCTAssertEqual(still, [root, child], "running again: not asked about")
+        let question = ActivityHeld.quitQuestion(stopped: still.count)
+        XCTAssertEqual(question?.title, "2 processes you suspended from Activity are still stopped")
+        XCTAssertTrue(question?.detail.contains("Resume and Quit continues each first") == true)
+        XCTAssertEqual(ActivityHeld.quitQuestion(stopped: 1)?.title, "A process you suspended from Activity is still stopped")
+        XCTAssertNil(ActivityHeld.quitQuestion(stopped: 0))
+        XCTAssertEqual(ActivityHeld.quitButtons, ["Resume and Quit", "Quit", "Cancel"])
+
+        let failed = held.resumeAll(signals: signals())
+        XCTAssertTrue(failed.isEmpty)
+        XCTAssertEqual(kernel.sent.map(\.pid), [501, 500, 600], "children first, each Suspension")
+        XCTAssertTrue(kernel.sent.allSatisfy { $0.signal == SIGCONT && $0.pinned })
+        XCTAssertEqual(held.stoppedCount, 0)
+        XCTAssertEqual(kernel.process(500)?.isStopped, false)
+    }
+
+    /// Resume All continues only what is still the process stopped: a pid
+    /// taken again since is never sent anything.
+    func testResumeAllKeepsToTheIdentities() {
+        let (held, _, child, _) = stopped()
+        kernel.remove(child.identity.pid)
+        add(child.identity.pid, parent: 1, name: "globex-stranger")
+        kernel.update(child.identity.pid) {
+            $0.record = FakeActivityKernel.record(FakeActivityKernel.record(pid: child.identity.pid, start: 999_999, parent: 1), status: SSTOP)
+        }
+        _ = held.resumeAll(signals: signals())
+        XCTAssertFalse(kernel.sent.contains { $0.pid == child.identity.pid }, "the stranger holding its pid is left stopped")
+        XCTAssertEqual(kernel.process(child.identity.pid)?.isStopped, true)
+    }
+
+    /// Resume and Quit lets go only what continued or ended: one refused
+    /// — no token to continue it by — stays held, and the quit asks again.
+    func testWhatResumeAllCouldntContinueStaysHeld() {
+        let (held, root, child, other) = stopped()
+        kernel.refuseTokens(true)
+        let failed = held.resumeAll(signals: signals())
+        XCTAssertEqual(Set(failed.map(\.target)), [root, child, other])
+        XCTAssertEqual(held.stoppedCount, 3, "still Activity's: not let go")
+        XCTAssertTrue(kernel.sent.isEmpty)
+        let question = ActivityHeld.notResumedQuestion(failed.map { (pid: $0.target.identity.pid, name: held.name(of: $0.target.identity), why: "refused") })
+        XCTAssertEqual(question?.title, "3 processes you suspended couldn't be resumed")
+        XCTAssertTrue(question?.detail.contains("pid 501 acme-worker: refused") == true, question?.detail ?? "")
+        XCTAssertNil(ActivityHeld.notResumedQuestion([]))
+        XCTAssertEqual(ActivityHeld.notResumedButtons, ["Don't Quit", "Quit Anyway"])
+        kernel.refuseTokens(false)
+        XCTAssertTrue(held.resumeAll(signals: signals()).isEmpty)
+        XCTAssertEqual(held.stoppedCount, 0)
     }
 }

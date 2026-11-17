@@ -8,7 +8,7 @@ import Foundation
 /// resumed by Resume and Resume All, or put back by Run Normally: a ⌃Z
 /// job is its shell's, Suspend Tab's is Resume Tab's, and the background
 /// state can't be read back for another process (3.9), so nothing else is
-/// said to be in it.
+/// said to be in it. Quitting with any still stopped asks (`quitQuestion`).
 @MainActor
 final class ActivityHeld: ObservableObject {
     static let shared = ActivityHeld()
@@ -148,6 +148,43 @@ final class ActivityHeld: ObservableObject {
         if kept != background { background = kept }
     }
 
+    /// What is still stopped now, read through `kernel` — each member's
+    /// structure, microseconds: the quit question's count. Parents first.
+    func stillStopped(kernel: any ActivityKernel = LiveActivityKernel()) -> [ActivitySignalTarget] {
+        suspensions.flatMap(\.members).filter { member in
+            guard let process = kernel.process(member.identity.pid) else { return false }
+            return process.identity == member.identity && !process.isZombie && process.isStopped
+        }
+    }
+
+    /// Continues every held process — each Suspension's members children
+    /// first, by the identity it was stopped with — and lets each go: the
+    /// quit question's Resume and Quit, on the main thread at quit
+    /// (microseconds a member: `ProcessSignals`' reads at a decision).
+    /// What wasn't continued, with why — refused or failed, still held:
+    /// only what continued or ended is let go.
+    @discardableResult
+    func resumeAll(signals: ProcessSignals = ProcessSignals()) -> [(target: ActivitySignalTarget, answer: ActivitySignalAnswer)] {
+        let answers = Self.continueAll(suspensions, signals: signals)
+        resumed(Set(answers.filter { Self.letGo($0.answer) }.map(\.target.identity)))
+        return answers.filter { !Self.letGo($0.answer) }
+    }
+
+    /// After Resume and Quit, when some weren't continued: they stay
+    /// stopped once Overterm is gone, so the quit is asked again — each
+    /// listed with why. Its buttons: Don't Quit (the default), Quit Anyway.
+    nonisolated static func notResumedQuestion(_ failed: [(pid: pid_t, name: String?, why: String)]) -> (title: String, detail: String)? {
+        guard !failed.isEmpty else { return nil }
+        let title = failed.count == 1 ? "A process you suspended couldn't be resumed" : "\(failed.count) processes you suspended couldn't be resumed"
+        let lines = failed.map { "pid \($0.pid)\($0.name.map { " " + DockerMCP.displayed($0) } ?? ""): \($0.why)" }
+        let detail =
+            lines.joined(separator: "\n")
+            + "\n\(failed.count == 1 ? "It stays" : "They stay") stopped once Overterm is gone. Resume All on the Activity page tries again."
+        return (title, detail)
+    }
+
+    nonisolated static let notResumedButtons = ["Don't Quit", "Quit Anyway"]
+
     /// Each of `suspensions` continued, children first: every answer.
     /// Blocking; any thread.
     nonisolated static func continueAll(_ suspensions: [Suspension], signals: ProcessSignals) -> [(target: ActivitySignalTarget, answer: ActivitySignalAnswer)] {
@@ -162,4 +199,19 @@ final class ActivityHeld: ObservableObject {
         case .refused, .failed: false
         }
     }
+
+    /// Quitting with processes Activity stopped (6.10, Escalation,
+    /// suspension, priority): nil when none is still stopped. Its buttons
+    /// are `quitButtons`; the first, the default, resumes them and quits.
+    nonisolated static func quitQuestion(stopped count: Int) -> (title: String, detail: String)? {
+        guard count > 0 else { return nil }
+        let title =
+            count == 1 ? "A process you suspended from Activity is still stopped" : "\(count) processes you suspended from Activity are still stopped"
+        let detail =
+            "Nothing continues \(count == 1 ? "it" : "them") once Overterm is gone: \(count == 1 ? "it stays" : "they stay") stopped, holding \(count == 1 ? "its" : "their") memory and ports. "
+            + "Resume and Quit continues each first, by the process it was stopped as."
+        return (title, detail)
+    }
+
+    nonisolated static let quitButtons = ["Resume and Quit", "Quit", "Cancel"]
 }

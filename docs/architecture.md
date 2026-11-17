@@ -1080,7 +1080,11 @@ walks the closing panes' trees itself, on the main thread, at the close
   Suspend Tab's is Resume Tab. `ActivityHeld` (one for the app, memory only)
   keeps what Activity stopped and put in the background, let go once a
   census read after the change says it ended or runs again; the header
-  says "2 stopped here — Resume All". `b`
+  says "2 stopped here — Resume All", and quitting asks
+  (`activityQuitAlert`: Resume and Quit, the default, Quit, Cancel) —
+  first, but its Resume and Quit continues them only once every later
+  question has let the quit go; any not continued stays held and the
+  quit asks again (`notResumedQuestion`: Don't Quit, the default). `b`
   Run in Background and Run Normally — the latter only for what Activity
   put there, since nothing reads that state back — unasked for one
   process; `n` Lower Priority ▸ +5, +10, 20, asked every time, upward

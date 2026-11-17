@@ -310,4 +310,38 @@ extension TerminalWindowController {
             }
         }
     }
+
+    // MARK: Quitting
+
+    /// The quit question (6.10): nil when nothing Activity suspended is
+    /// still stopped, read now — each member's structure, microseconds.
+    /// Resume and Quit (the default), Quit, Cancel.
+    static func activityQuitAlert(kernel: any ActivityKernel = LiveActivityKernel()) -> NSAlert? {
+        guard let question = ActivityHeld.quitQuestion(stopped: ActivityHeld.shared.stillStopped(kernel: kernel).count) else { return nil }
+        let alert = NSAlert()
+        alert.messageText = question.title
+        alert.informativeText = question.detail
+        alert.alertStyle = .warning
+        for title in ActivityHeld.quitButtons { alert.addButton(withTitle: title) }
+        return alert
+    }
+
+    /// Resume and Quit, once every other question has let the quit go:
+    /// each continued, children first, by the identity it was stopped with
+    /// — on the main thread, since the quit waits on it. Nil when each was
+    /// continued (or ended); else the question that asks again, those not
+    /// continued still held and listed.
+    static func activityResumeAtQuit() -> NSAlert? {
+        let held = ActivityHeld.shared
+        let failed = held.resumeAll().map {
+            (pid: $0.target.identity.pid, name: held.name(of: $0.target.identity), why: ActivityPortFree.answer($0.answer, pid: $0.target.identity.pid) ?? "not continued")
+        }
+        guard let question = ActivityHeld.notResumedQuestion(failed) else { return nil }
+        let alert = NSAlert()
+        alert.messageText = question.title
+        alert.informativeText = question.detail
+        alert.alertStyle = .critical
+        for title in ActivityHeld.notResumedButtons { alert.addButton(withTitle: title) }
+        return alert
+    }
 }
