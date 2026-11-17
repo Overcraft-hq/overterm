@@ -3,8 +3,9 @@ import Foundation
 
 /// What Activity itself stopped and put in the background (docs/design/
 /// activity/analysis.md, 6.10, 3.9): kept by identity — pid and start, and
-/// the executable each was listed with —, in memory only (D-29 decides in
-/// stage 3 whether the stopped ones outlive a crash). Only what is here is
+/// the executable each was listed with —, in memory; the stopped ones'
+/// identities alone are also written down (`ActivityPersistence`, D-29), so
+/// the next launch after a crash offers to resume them. Only what is here is
 /// resumed by Resume and Resume All, or put back by Run Normally: a ⌃Z
 /// job is its shell's, Suspend Tab's is Resume Tab's, and the background
 /// state can't be read back for another process (3.9), so nothing else is
