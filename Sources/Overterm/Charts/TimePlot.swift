@@ -2,11 +2,11 @@ import CoreGraphics
 import Foundation
 
 // A chart's data and its geometry, pure (docs/design/kubernetes/metrics.md,
-// 5.1, 5.2): `KubeChartData` is what a chart shows — its series with their
-// roles, the window, the unit —, `KubePlot` what it draws at a size, built
+// 5.1, 5.2; shared since Activity's stage 4, D-21): `TimeChartData` is what a chart shows — its series with their
+// roles, the window, the unit —, `TimePlot` what it draws at a size, built
 // off the main thread, cached by `(data.version, size, hidden series)`.
-// `KubeChartView` draws a plot's paths in one Canvas pass; the crosshair,
-// the hovered points and the tooltip are `KubeChartOverlay`'s, which alone
+// `TimeChartView` draws a plot's paths in one Canvas pass; the crosshair,
+// the hovered points and the tooltip are `TimeChartOverlay`'s, which alone
 // redraws while the mouse moves.
 
 /// What a series is to its chart: usage is drawn as a line (a band when
@@ -17,7 +17,7 @@ import Foundation
 /// usage, never stacked, never summed into it. A projection (V1's fill
 /// forecast) is a reference drawn straight from the last point to where
 /// the trend reaches at the right edge, dotted — never stepped.
-enum KubeChartRole: String, Sendable, CaseIterable {
+enum TimeChartRole: String, Sendable, CaseIterable {
     case usage, request, limit, allocatable, capacity, quota, guide, peak, projection
 
     var isReference: Bool { self != .usage && self != .peak }
@@ -52,7 +52,7 @@ enum KubeChartRole: String, Sendable, CaseIterable {
 }
 
 /// A chart's unit: how its values are said.
-enum KubeChartUnit: String, Sendable {
+enum TimeChartUnit: String, Sendable {
     /// CPU cores, said in millicores as kubectl top does (`750m`).
     case cores
     case bytes
@@ -121,86 +121,29 @@ enum KubeChartUnit: String, Sendable {
     }
 }
 
-/// A moment marked on a time chart: a tick on the plot's bottom edge with
-/// a faint line the whole height, its colour by kind, hover saying what it
-/// was, a click its popover — what opens it, "Show ±30 min" — and ⌥-click
-/// the window around it (metrics.md, 3.2). `KubeChartMarkers` joins them
-/// from what the detail already holds: a workload's History, the detail's
-/// events, its pods' `lastState` and the restarts seen between reads.
-struct KubeChartMarker: Equatable, Sendable, Identifiable {
-    enum Kind: String, Sendable, CaseIterable {
-        /// A new pod template, a rollout restart, a rollback: blue.
-        case rollout
-        /// A Helm revision: blue.
-        case helm
-        /// Replicas changed: grey.
-        case scale
-        /// A container ended and was started again: orange.
-        case restart
-        /// It was OOMKilled: red.
-        case oom
-        /// A Warning event: yellow.
-        case warning
-
-        /// What the popover calls it.
-        var label: String {
-            switch self {
-            case .rollout: "Rollout"
-            case .helm: "Helm revision"
-            case .scale: "Scaled"
-            case .restart: "Restart"
-            case .oom: "OOMKilled"
-            case .warning: "Warning"
-            }
-        }
-    }
-
-    /// What a click on it opens.
-    enum Opens: Equatable, Sendable {
-        /// A container's previous instance's log: the pod shown's (`pod` nil), or a workload's pod's.
-        case previousLog(pod: String?, container: String)
-        /// A History entry, and the diff it has.
-        case history(entry: String, change: KubeTimelineChange?)
-        /// One of the detail's events, in its Events tab.
-        case event(String)
-
-        /// What the popover's button says.
-        var title: String {
-            switch self {
-            case .previousLog(let pod, _): pod == nil ? "Previous Log" : "Open Pod's Previous Log"
-            case .history(_, let change): change == nil ? "Show in History" : "Show Diff"
-            case .event: "Show in Events"
-            }
-        }
-    }
-
-    var id: String
-    var kind: Kind
-    var time: Date
-    /// What hover says: "OOMKilled at 14:11 (exit 137)".
-    var title: String
-    /// The container it is of, where it is one's: a click opens its previous log.
-    var container: String?
-    /// The popover's second line: what changed, the event's message.
-    var detail: String?
-    var opens: Opens?
-}
 /// A stretch marked across a chart's plot — a node's pressure or its
 /// cordon (K5), an HPA's ScalingLimited (H1): a faint band, hover saying it.
-struct KubeChartBand: Equatable, Sendable, Identifiable {
+struct TimeChartBand: Equatable, Sendable, Identifiable {
     var id: String
     var title: String
     var start: Date
     var end: Date
 }
 
+/// One point of a series: Kubernetes' answers' (`KubeSeriesPoint`) and
+/// Activity's history's alike.
+struct TimeChartPoint: Equatable, Sendable {
+    var time: Date
+    var value: Double
+}
+
 /// One series: its points in time order, broken where they are more than
 /// two steps apart.
-struct KubeChartSeries: Equatable, Sendable, Identifiable {
+struct TimeChartSeries: Equatable, Sendable, Identifiable {
     var id: String
     var name: String
-    var role: KubeChartRole = .usage
-    var points: [KubeSeriesPoint]
+    var role: TimeChartRole = .usage
+    var points: [TimeChartPoint]
     /// The points that start again after a break their source recorded
     /// (`KubeUsageRing`'s): a run ends before each, whatever the step.
     var breaks: Set<Date> = []
@@ -210,13 +153,13 @@ struct KubeChartSeries: Equatable, Sendable, Identifiable {
 }
 
 /// What one chart shows: its series over a window, in one unit.
-struct KubeChartData: Equatable, Sendable {
-    /// The chart's identifier part: `kubernetes.chart.<id>` (`<subject>.<measure>`,
+struct TimeChartData: Equatable, Sendable {
+    /// The chart's identifier part: `<scope>.chart.<id>` (`<subject>.<measure>`,
     /// the subject naming its object: `cluster`, `pod.shop.web-8k2`, `volume.shop.data-db-0`).
     var id: String
     var title: String
-    var unit: KubeChartUnit
-    var series: [KubeChartSeries]
+    var unit: TimeChartUnit
+    var series: [TimeChartSeries]
     var start: Date
     var end: Date
     /// The points' spacing: two points further apart than two steps are a gap.
@@ -234,7 +177,7 @@ struct KubeChartData: Equatable, Sendable {
     /// the points, it splits no run — the source's rule is the one.
     var breaksMarked = false
     /// Stretches marked across it, oldest first.
-    var bands: [KubeChartBand] = []
+    var bands: [TimeChartBand] = []
     /// Its usage lines are counts that hold until the next reading (replicas, pods): drawn stepped.
     var stepped = false
     /// Markers in the window past `KubeChartMarkers.cap`, the oldest: "+N earlier" at the left edge.
@@ -244,29 +187,32 @@ struct KubeChartData: Equatable, Sendable {
     /// The queries a Prometheus chart was drawn from, as sent: what "Copy
     /// PromQL" gives (`KubeChartExport`); none for a sampled one.
     var queries: [KubeChartQuery] = []
+    /// The feature whose chart it is: its identifier's first part —
+    /// `kubernetes`, `activity`.
+    var scope = "kubernetes"
 
-    var identifier: String { "kubernetes.chart." + id }
+    var identifier: String { scope + ".chart." + id }
     /// The markers inside the window: the ones drawn.
     var shownMarkers: [KubeChartMarker] { markers.filter { $0.time >= start && $0.time <= end } }
-    var usage: [KubeChartSeries] { series.filter { $0.role == .usage } }
+    var usage: [TimeChartSeries] { series.filter { $0.role == .usage } }
     /// Its peak bands (C1's): drawn behind the usage, in the legend beside it.
-    var peaks: [KubeChartSeries] { series.filter { $0.role == .peak } }
+    var peaks: [TimeChartSeries] { series.filter { $0.role == .peak } }
     /// What the legend lists: the usage, then the peaks.
-    var legendSeries: [KubeChartSeries] { usage + peaks }
+    var legendSeries: [TimeChartSeries] { usage + peaks }
     /// The series hidden until clicked.
     var hiddenByDefault: Set<String> { Set(series.filter(\.offByDefault).map(\.id)) }
-    var references: [KubeChartSeries] { series.filter(\.role.isReference) }
+    var references: [TimeChartSeries] { series.filter(\.role.isReference) }
 }
 
 /// An immutable path, handed from the queue that built it to the main thread.
-struct KubePlotPath: @unchecked Sendable {
+struct TimePlotPath: @unchecked Sendable {
     let cgPath: CGPath
 }
 
 /// A chart's geometry at one size: the scales, the ticks, a path per series
 /// and per stacked band, the reference steps and the points hover searches.
-/// Pure; built off the main thread (`KubeChartState`).
-struct KubePlot: Sendable {
+/// Pure; built off the main thread (`TimeChartState`).
+struct TimePlot: Sendable {
     struct Key: Hashable, Sendable {
         var version: Int
         var width: Int
@@ -278,19 +224,19 @@ struct KubePlot: Sendable {
     struct Line: Sendable {
         var id: String
         var name: String
-        var role: KubeChartRole
+        var role: TimeChartRole
         /// Its place in the palette (usage series, in legend order).
         var colour: Int
-        var stroke: KubePlotPath
-        var fill: KubePlotPath?
+        var stroke: TimePlotPath
+        var fill: TimePlotPath?
         var points: Int
     }
 
     struct Reference: Sendable {
         var id: String
         var name: String
-        var role: KubeChartRole
-        var stroke: KubePlotPath
+        var role: TimeChartRole
+        var stroke: TimePlotPath
         var last: Double
         /// Where its label sits: the line's right end.
         var labelAt: CGPoint
@@ -335,7 +281,7 @@ struct KubePlot: Sendable {
 
     /// A band where it is drawn.
     struct Band: Sendable {
-        var band: KubeChartBand
+        var band: TimeChartBand
         var minX: CGFloat
         var maxX: CGFloat
     }
@@ -350,7 +296,7 @@ struct KubePlot: Sendable {
     struct Track: Sendable {
         var id: String
         var name: String
-        var role: KubeChartRole
+        var role: TimeChartRole
         var colour: Int
         var times: [Double]
         var values: [Double]
@@ -366,7 +312,7 @@ struct KubePlot: Sendable {
     var frame: CGRect
     var start: Date
     var end: Date
-    var unit: KubeChartUnit
+    var unit: TimeChartUnit
     var top: Double
     var yTicks: [Double]
     var timeTicks: [Date]
@@ -383,7 +329,7 @@ struct KubePlot: Sendable {
 
     // MARK: Building
 
-    init(_ data: KubeChartData, size: CGSize, hidden: Set<String> = [], hideReferences: Bool = false, timeZone: TimeZone = .current) {
+    init(_ data: TimeChartData, size: CGSize, hidden: Set<String> = [], hideReferences: Bool = false, timeZone: TimeZone = .current) {
         key = Key(version: data.version, width: Int(size.width.rounded()), height: Int(size.height.rounded()), hidden: hidden, hideReferences: hideReferences)
         self.size = size
         frame = CGRect(
@@ -403,17 +349,17 @@ struct KubePlot: Sendable {
         let span = end.timeIntervalSince1970 - startTime
 
         // The values drawn: each series' own, or stacked — each band's top is the sum of those under it.
-        var drawn: [(series: KubeChartSeries, lower: [Double]?, upper: [KubeSeriesPoint])] = []
+        var drawn: [(series: TimeChartSeries, lower: [Double]?, upper: [TimeChartPoint])] = []
         if data.stacked {
             var below: [Double: Double] = [:]
             for series in shown {
                 var lower: [Double] = []
-                var upper: [KubeSeriesPoint] = []
+                var upper: [TimeChartPoint] = []
                 for point in series.points {
                     let t = point.time.timeIntervalSince1970
                     let base = below[t] ?? 0
                     lower.append(base)
-                    upper.append(KubeSeriesPoint(time: point.time, value: base + point.value))
+                    upper.append(TimeChartPoint(time: point.time, value: base + point.value))
                     below[t] = base + point.value
                 }
                 drawn.append((series, lower, upper))
@@ -454,7 +400,7 @@ struct KubePlot: Sendable {
                 guard let first = points.first, let last = points.last, points.count >= 2 else { continue }
                 fill.move(to: CGPoint(x: x(first.time.timeIntervalSince1970), y: y(0)))
                 // Its edges as the stroke draws them: stepped, a value held up to the next point's time.
-                func edge(_ edgePoints: [KubeSeriesPoint], reversed: Bool) {
+                func edge(_ edgePoints: [TimeChartPoint], reversed: Bool) {
                     let ordered = reversed ? Array(edgePoints.reversed()) : edgePoints
                     for (index, point) in ordered.enumerated() {
                         let p = CGPoint(x: x(point.time.timeIntervalSince1970), y: y(point.value))
@@ -481,8 +427,8 @@ struct KubePlot: Sendable {
             let filled = data.stacked || shown.count == 1
             lines.append(
                 Line(
-                    id: series.id, name: series.name, role: series.role, colour: colours[series.id] ?? 0, stroke: KubePlotPath(cgPath: stroke.copy() ?? stroke),
-                    fill: filled ? KubePlotPath(cgPath: fill.copy() ?? fill) : nil, points: count))
+                    id: series.id, name: series.name, role: series.role, colour: colours[series.id] ?? 0, stroke: TimePlotPath(cgPath: stroke.copy() ?? stroke),
+                    fill: filled ? TimePlotPath(cgPath: fill.copy() ?? fill) : nil, points: count))
         }
         self.lines = lines
         peaks = peakSeries.map { series in
@@ -497,7 +443,7 @@ struct KubePlot: Sendable {
                 fill.addLine(to: CGPoint(x: x(last.time.timeIntervalSince1970), y: y(0)))
                 fill.closeSubpath()
             }
-            let path = KubePlotPath(cgPath: fill.copy() ?? fill)
+            let path = TimePlotPath(cgPath: fill.copy() ?? fill)
             return Line(id: series.id, name: series.name, role: .peak, colour: colours[series.id] ?? 0, stroke: path, fill: path, points: count)
         }
 
@@ -514,9 +460,9 @@ struct KubePlot: Sendable {
                 }
                 let end = CGPoint(x: x(lastPoint.time.timeIntervalSince1970), y: y(lastPoint.value))
                 return Reference(
-                    id: series.id, name: series.name, role: series.role, stroke: KubePlotPath(cgPath: path.copy() ?? path), last: lastPoint.value, labelAt: end)
+                    id: series.id, name: series.name, role: series.role, stroke: TimePlotPath(cgPath: path.copy() ?? path), last: lastPoint.value, labelAt: end)
             }
-            let points = series.points.count == 1 ? [KubeSeriesPoint(time: data.start, value: lastPoint.value)] : series.points
+            let points = series.points.count == 1 ? [TimeChartPoint(time: data.start, value: lastPoint.value)] : series.points
             for (index, point) in points.enumerated() {
                 let px = index == 0 ? frame.minX : x(point.time.timeIntervalSince1970)
                 let py = y(point.value)
@@ -530,7 +476,7 @@ struct KubePlot: Sendable {
             let endY = y(lastPoint.value)
             path.addLine(to: CGPoint(x: frame.maxX, y: endY))
             return Reference(
-                id: series.id, name: series.name, role: series.role, stroke: KubePlotPath(cgPath: path.copy() ?? path), last: lastPoint.value,
+                id: series.id, name: series.name, role: series.role, stroke: TimePlotPath(cgPath: path.copy() ?? path), last: lastPoint.value,
                 labelAt: CGPoint(x: frame.maxX, y: endY))
         }
 
@@ -566,11 +512,11 @@ struct KubePlot: Sendable {
     /// A series' runs, broken where two points are more than two steps
     /// apart (no step: never) and before each of `breaks`, with the band's base beside each.
     static func runs(
-        _ upper: [KubeSeriesPoint], lower: [Double]?, step: TimeInterval, breaks: Set<Date> = []
-    ) -> [(upper: [KubeSeriesPoint], lower: [KubeSeriesPoint]?)] {
-        var out: [(upper: [KubeSeriesPoint], lower: [KubeSeriesPoint]?)] = []
+        _ upper: [TimeChartPoint], lower: [Double]?, step: TimeInterval, breaks: Set<Date> = []
+    ) -> [(upper: [TimeChartPoint], lower: [TimeChartPoint]?)] {
+        var out: [(upper: [TimeChartPoint], lower: [TimeChartPoint]?)] = []
         for (index, point) in upper.enumerated() {
-            let base = lower.map { KubeSeriesPoint(time: point.time, value: $0[index]) }
+            let base = lower.map { TimeChartPoint(time: point.time, value: $0[index]) }
             if let last = out.last?.upper.last, !breaks.contains(point.time), step <= 0 || point.time.timeIntervalSince(last.time) <= 2 * step {
                 out[out.count - 1].upper.append(point)
                 if let base { out[out.count - 1].lower?.append(base) }
@@ -585,13 +531,13 @@ struct KubePlot: Sendable {
 
     /// Min/max decimation: past one point a pixel column, each column keeps
     /// its lowest and its highest in time order — two a column, peaks kept.
-    static func decimate(_ points: [KubeSeriesPoint], columns: Int, start: Double, span: Double) -> [KubeSeriesPoint] {
+    static func decimate(_ points: [TimeChartPoint], columns: Int, start: Double, span: Double) -> [TimeChartPoint] {
         guard columns > 0, points.count > columns, span > 0 else { return points }
-        var out: [KubeSeriesPoint] = []
+        var out: [TimeChartPoint] = []
         out.reserveCapacity(2 * columns + 2)
         var column = -1
-        var low: KubeSeriesPoint?
-        var high: KubeSeriesPoint?
+        var low: TimeChartPoint?
+        var high: TimeChartPoint?
         var lowIndex = 0
         var highIndex = 0
         func flush() {
@@ -632,7 +578,7 @@ struct KubePlot: Sendable {
 
     /// The axis's top rounded up to a nice value and its 3–5 ticks from 0;
     /// bytes in steps of a binary unit (Ki, Mi, Gi, Ti).
-    static func niceScale(_ highest: Double, unit: KubeChartUnit) -> (top: Double, ticks: [Double]) {
+    static func niceScale(_ highest: Double, unit: TimeChartUnit) -> (top: Double, ticks: [Double]) {
         let highest = highest.isFinite && highest > 0 ? highest : unit.emptyTop
         var scale = 1.0
         if unit == .bytes || unit == .bytesPerSecond {
@@ -723,12 +669,12 @@ struct KubePlot: Sendable {
 
 /// The tooltip at a time: the time with its zone, each series by value,
 /// then the reference lines with the usage's share of each (metrics.md, 3.1).
-struct KubeChartTooltip: Equatable, Sendable {
+struct TimeChartTooltip: Equatable, Sendable {
     struct Row: Equatable, Sendable {
         var name: String
         var value: String
         var colour: Int?
-        var role: KubeChartRole
+        var role: TimeChartRole
     }
 
     var time: String
@@ -736,7 +682,7 @@ struct KubeChartTooltip: Equatable, Sendable {
 
     var text: String { ([time] + rows.map { "\($0.name) \($0.value)" }).joined(separator: "\n") }
 
-    static func at(_ time: Date, plot: KubePlot, step: TimeInterval, timeZone: TimeZone = .current) -> KubeChartTooltip {
+    static func at(_ time: Date, plot: TimePlot, step: TimeInterval, timeZone: TimeZone = .current) -> TimeChartTooltip {
         let values = plot.values(at: time, step: step)
         let usage = values.filter { $0.track.role == .usage }.sorted { $0.value > $1.value }
         // Stacked, a band's own value is what it adds, not the sum under it.
@@ -750,12 +696,12 @@ struct KubeChartTooltip: Equatable, Sendable {
             let share = KubeMetricsFormat.percent(total, of: value).map { " · \($0)%" } ?? ""
             rows.append(Row(name: track.name, value: plot.unit.format(value) + share, colour: nil, role: track.role))
         }
-        return KubeChartTooltip(time: KubeChartTime.full(time, timeZone: timeZone), rows: rows)
+        return TimeChartTooltip(time: TimeChartTime.full(time, timeZone: timeZone), rows: rows)
     }
 }
 
 /// Times as the charts say them: local, the zone in the tooltip (decision 14).
-enum KubeChartTime {
+enum TimeChartTime {
     private static let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
     private static func parts(_ date: Date, _ timeZone: TimeZone) -> DateComponents {
@@ -799,13 +745,13 @@ enum KubeChartTime {
 
 /// A chart said in a sentence, for VoiceOver and the dump:
 /// "CPU, last 1h: 120m now, peak 480m at 14:10, request 250m, limit 1000m".
-enum KubeChartSummary {
-    static func of(_ data: KubeChartData, span: String, timeZone: TimeZone = .current) -> String {
+enum TimeChartSummary {
+    static func of(_ data: TimeChartData, span: String, timeZone: TimeZone = .current) -> String {
         let total = totals(data)
         var parts: [String] = []
         if let last = total.last { parts.append("\(data.unit.format(last.value)) now") }
         if let peak = total.max(by: { $0.value < $1.value }) {
-            parts.append("peak \(data.unit.format(peak.value)) at \(KubeChartTime.clock(peak.time, timeZone: timeZone))")
+            parts.append("peak \(data.unit.format(peak.value)) at \(TimeChartTime.clock(peak.time, timeZone: timeZone))")
         }
         if total.isEmpty { parts.append("no samples") }
         for reference in data.references {
@@ -815,17 +761,17 @@ enum KubeChartSummary {
     }
 
     /// The usage series summed at each time they share (one series: itself).
-    static func totals(_ data: KubeChartData) -> [KubeSeriesPoint] {
+    static func totals(_ data: TimeChartData) -> [TimeChartPoint] {
         let usage = data.usage.filter { !$0.offByDefault }
         guard usage.count > 1 else { return usage.first?.points ?? [] }
         var sums: [Double: Double] = [:]
         for series in usage { for point in series.points { sums[point.time.timeIntervalSince1970, default: 0] += point.value } }
-        return sums.keys.sorted().map { KubeSeriesPoint(time: Date(timeIntervalSince1970: $0), value: sums[$0] ?? 0) }
+        return sums.keys.sorted().map { TimeChartPoint(time: Date(timeIntervalSince1970: $0), value: sums[$0] ?? 0) }
     }
 
     /// What `OVERTERM_DUMP_LAYOUT` and the scenarios read of a chart: its
     /// series and points, the axis's top, the references, the markers, the source and the tier.
-    static func dump(_ data: KubeChartData, plot: KubePlot?) -> String {
+    static func dump(_ data: TimeChartData, plot: TimePlot?) -> String {
         let references = data.references.map { "\($0.role.label)=\(data.unit.format($0.points.last?.value ?? 0))" }
         let points = data.usage.reduce(0) { $0 + $1.points.count }
         return "chart \(data.identifier) series=\(data.usage.count) points=\(points)"
@@ -840,7 +786,7 @@ enum KubeChartSummary {
 /// The charts' categorical colours, ten a theme, each at least 3:1
 /// against its card (WCAG's non-text contrast), checked in both
 /// appearances (`KubePlotTests`); and the reference lines' fixed ones.
-enum KubeChartPalette {
+enum TimeChartPalette {
     struct RGB: Hashable, Sendable {
         var red: Double
         var green: Double
@@ -881,7 +827,7 @@ enum KubeChartPalette {
     }
 
     /// A reference line's colour by meaning: request green, limit red, allocatable and capacity grey, quota purple.
-    static func reference(_ role: KubeChartRole, dark: Bool) -> RGB {
+    static func reference(_ role: TimeChartRole, dark: Bool) -> RGB {
         switch role {
         case .request: RGB(dark ? 0x4CC774 : 0x1C7F3C)
         case .limit: RGB(dark ? 0xFF6B6B : 0xC62828)

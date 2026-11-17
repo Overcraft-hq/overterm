@@ -6082,7 +6082,9 @@ raw tier is: the rule keeps kube-state-metrics' `instance`. The fake's Prometheu
 node-exporter, kube-state-metrics 1.x, containerd, agent mode) answer the
 probe as fixtures; `refusePrometheusProxy` answers as the apiserver
 would (a 403, a 429 with its `Retry-After`).
-**A chart** (`KubePlot` (pure), `KubeChartView`; metrics.md 3, 5) is
+**A chart** (`KubePlot` (pure), `KubeChartView`; metrics.md 3, 5 —
+since Activity's stage 4 `Charts/`'s `TimePlot` and `TimeChartView`,
+which Kubernetes calls by these names, `KubeChartNames`) is
 `KubeChartData` — its series, each with a role (usage, or a reference
 line: request, limit, allocatable, capacity, quota, guide), the window,
 the unit, the step, a `version` its maker changes with the data — drawn

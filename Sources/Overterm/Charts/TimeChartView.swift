@@ -5,10 +5,10 @@ import os
 
 /// The hovered time a scope's charts share — a Metrics tab, an Overview,
 /// an expanded chart: every chart in it draws the crosshair there, the one
-/// under the mouse its tooltip (metrics.md, 3.1). Only `KubeChartOverlay`
+/// under the mouse its tooltip (metrics.md, 3.1). Only `TimeChartOverlay`
 /// observes it, so a move redraws the overlays and nothing else.
 @MainActor
-final class KubeChartCursor: ObservableObject {
+final class TimeChartCursor: ObservableObject {
     struct Hover: Equatable {
         var time: Date
         /// The chart under the mouse (its identifier): the one that shows the tooltip.
@@ -47,13 +47,13 @@ final class KubeChartCursor: ObservableObject {
 
 /// How often each chart's two layers were drawn, by identifier and by
 /// the window it is in (its `ChromeTheme`, one a window): the series layer
-/// (`KubeChartView`'s Canvas), the overlay, the tooltip (the overlay
+/// (`TimeChartView`'s Canvas), the overlay, the tooltip (the overlay
 /// drawn on the chart under the mouse), and the body of the view that
 /// holds the cursor (`KubePrometheusChartView`) — what `kubernetesPerf`
 /// and `kubernetesPrometheus` read to show a hover redraws only the
 /// overlays, and the tooltip only on the chart hovered.
-final class KubeChartDraws: Sendable {
-    static let shared = KubeChartDraws()
+final class TimeChartDraws: Sendable {
+    static let shared = TimeChartDraws()
 
     struct Counts: Equatable, Sendable {
         var series = 0
@@ -98,11 +98,11 @@ final class KubeChartDraws: Sendable {
 /// whenever the key (`data.version`, the size, the series hidden) changes,
 /// published in one assignment.
 @MainActor
-final class KubeChartState: ObservableObject {
-    @Published private(set) var plot: KubePlot?
-    private var wanted: KubePlot.Key?
+final class TimeChartState: ObservableObject {
+    @Published private(set) var plot: TimePlot?
+    private var wanted: TimePlot.Key?
     private var building: Task<Void, Never>?
-    /// Its chart's entry in `KubeChartRegistry`.
+    /// Its chart's entry in `TimeChartRegistry`.
     let token = UUID()
     /// Between its chart's appearing and its disappearing: only then is it
     /// in the registry. A view a `LazyVStack` built ahead, or kept after it
@@ -111,9 +111,9 @@ final class KubeChartState: ObservableObject {
     /// a lookup by identifier could find before the one on screen.
     private(set) var onScreen = false
     /// The registry it is listed in: the app's, or a test's.
-    let registry: KubeChartRegistry
+    let registry: TimeChartRegistry
 
-    init(registry: KubeChartRegistry = .shared) { self.registry = registry }
+    init(registry: TimeChartRegistry = .shared) { self.registry = registry }
 
     deinit {
         // Gone without its disappearing (its hosting view torn down): its entry goes too.
@@ -122,7 +122,7 @@ final class KubeChartState: ObservableObject {
     }
 
     /// Its chart appeared: listed from now, as it is.
-    func appear(_ data: KubeChartData, window: ObjectIdentifier, cursor: KubeChartCursor, size: CGSize) {
+    func appear(_ data: TimeChartData, window: ObjectIdentifier, cursor: TimeChartCursor, size: CGSize) {
         onScreen = true
         register(data, window: window, cursor: cursor, size: size)
     }
@@ -136,14 +136,14 @@ final class KubeChartState: ObservableObject {
 
     /// Its entry brought up to date — only while it is on screen. `plot`:
     /// the one `$plot` is emitting, before the property holds it.
-    func register(_ data: KubeChartData, plot: KubePlot? = nil, window: ObjectIdentifier, cursor: KubeChartCursor, size: CGSize) {
+    func register(_ data: TimeChartData, plot: TimePlot? = nil, window: ObjectIdentifier, cursor: TimeChartCursor, size: CGSize) {
         guard onScreen else { return }
         registry.show(data, plot: plot ?? self.plot, token: token, window: window, cursor: cursor, size: size)
     }
 
-    func want(_ data: KubeChartData, size: CGSize, hidden: Set<String>, hideReferences: Bool) {
+    func want(_ data: TimeChartData, size: CGSize, hidden: Set<String>, hideReferences: Bool) {
         guard size.width > 1, size.height > 1 else { return }
-        let key = KubePlot.Key(
+        let key = TimePlot.Key(
             version: data.version, width: Int(size.width.rounded()), height: Int(size.height.rounded()), hidden: hidden, hideReferences: hideReferences)
         guard key != wanted else { return }
         wanted = key
@@ -156,38 +156,38 @@ final class KubeChartState: ObservableObject {
         }
     }
 
-    nonisolated static func build(_ data: KubeChartData, size: CGSize, hidden: Set<String>, hideReferences: Bool) async -> KubePlot {
+    nonisolated static func build(_ data: TimeChartData, size: CGSize, hidden: Set<String>, hideReferences: Bool) async -> TimePlot {
         await Task.detached(priority: .userInitiated) {
-            KubePlot(data, size: size, hidden: hidden, hideReferences: hideReferences)
+            TimePlot(data, size: size, hidden: hidden, hideReferences: hideReferences)
         }.value
     }
 }
 
 /// The charts on screen with their plots: what `OVERTERM_DUMP_LAYOUT`
-/// prints of a window's (`KubeChartSummary.dump`) and what the scenarios
+/// prints of a window's (`TimeChartSummary.dump`) and what the scenarios
 /// read — a chart is in it from its appearing to its disappearing. Each
 /// chart view is its own entry (its token): two windows' Overviews both
 /// show `kubernetes.chart.cluster.cpu`, and on a detail switch SwiftUI may
 /// show the new view before the old one goes — one's going never takes
 /// the other's entry with it.
 @MainActor
-final class KubeChartRegistry {
-    static let shared = KubeChartRegistry()
+final class TimeChartRegistry {
+    static let shared = TimeChartRegistry()
 
     struct Shown {
-        var data: KubeChartData
-        var plot: KubePlot?
+        var data: TimeChartData
+        var plot: TimePlot?
         /// The window it is in, by its `ChromeTheme` (one a window).
         var window: ObjectIdentifier
         /// The crosshair it shares with its scope's other charts.
-        var cursor: KubeChartCursor
+        var cursor: TimeChartCursor
         /// The plot's size as the view last had it laid out; zero, never laid out.
         var size: CGSize = .zero
     }
 
     private var entries: [UUID: Shown] = [:]
 
-    func show(_ data: KubeChartData, plot: KubePlot?, token: UUID, window: ObjectIdentifier, cursor: KubeChartCursor, size: CGSize = .zero) {
+    func show(_ data: TimeChartData, plot: TimePlot?, token: UUID, window: ObjectIdentifier, cursor: TimeChartCursor, size: CGSize = .zero) {
         entries[token] = Shown(data: data, plot: plot, window: window, cursor: cursor, size: size)
     }
 
@@ -207,38 +207,38 @@ final class KubeChartRegistry {
     func lines(in window: ObjectIdentifier? = nil) -> [String] {
         entries.values.filter { window == nil || $0.window == window }
             .sorted { $0.data.identifier < $1.data.identifier }
-            .map { KubeChartSummary.dump($0.data, plot: $0.plot) + " size=\(Int($0.size.width))x\(Int($0.size.height))" }
+            .map { TimeChartSummary.dump($0.data, plot: $0.plot) + " size=\(Int($0.size.width))x\(Int($0.size.height))" }
     }
 
     /// The tooltip a chart would show at `time`.
-    func tooltip(_ identifier: String, in window: ObjectIdentifier? = nil, at time: Date) -> KubeChartTooltip? {
+    func tooltip(_ identifier: String, in window: ObjectIdentifier? = nil, at time: Date) -> TimeChartTooltip? {
         guard let shown = chart(identifier, in: window), let plot = shown.plot else { return nil }
-        return KubeChartTooltip.at(time, plot: plot, step: shown.data.step)
+        return TimeChartTooltip.at(time, plot: plot, step: shown.data.step)
     }
 }
 
-extension KubeChartPalette.RGB {
+extension TimeChartPalette.RGB {
     var color: Color { Color(.sRGB, red: red, green: green, blue: blue, opacity: 1) }
 }
 
 /// One chart: its header (title, latest value, legend), the plot drawn in
-/// one Canvas pass from a `KubePlot`, the y labels in its gutter, the
+/// one Canvas pass from a `TimePlot`, the y labels in its gutter, the
 /// reference lines' labels at their right ends, the time axis under it,
 /// and the overlay over it. It doesn't observe the cursor; hovering it
 /// moves the cursor (`onContinuousHover`, the nearest point by binary
 /// search). The legend isolates a series with a click, adds or removes
 /// one with ⌘-click, dims the others while hovered; "Lines" toggles the
 /// reference lines together (metrics.md, 3.6, 5.2).
-struct KubeChartView: View {
-    var data: KubeChartData
-    let cursor: KubeChartCursor
+struct TimeChartView: View {
+    var data: TimeChartData
+    let cursor: TimeChartCursor
     /// How it is said beside the title; nil, the latest value.
     var headline: String?
     /// "last 1h", for its accessibility summary.
     var span: String
     var height: CGFloat = 120
     /// What the header says beside the value: `48% of request`, red when it warns.
-    var chips: [KubeChartChip] = []
+    var chips: [TimeChartChip] = []
     /// A marker's popover's button: what it opens (a restart's previous log,
     /// a change's diff, an event); nil, its popover only says what it is.
     var openMarker: ((KubeChartMarker) -> Void)? = nil
@@ -260,10 +260,10 @@ struct KubeChartView: View {
     /// `k8s_metrics` says it, in the Ask Agent sheet; nil, not offered.
     var ask: (() -> Void)? = nil
     @ObservedObject var theme: ChromeTheme
-    @StateObject private var state = KubeChartState()
+    @StateObject private var state = TimeChartState()
     /// Where the mouse last was over the plot: the context menu's time —
     /// the hover has ended by the time its item is picked. Held, not observed.
-    @State private var lastHover = KubeChartHoverMemo()
+    @State private var lastHover = TimeChartHoverMemo()
     @State private var hidden: Set<String> = []
     @State private var hideReferences = false
     @State private var highlighted: String?
@@ -296,8 +296,8 @@ struct KubeChartView: View {
     /// The window it is in, as the registry and the draw counter know it.
     private var window: ObjectIdentifier { ObjectIdentifier(theme) }
 
-    /// Its entry brought up to date — only while it is on screen (`KubeChartState.register`).
-    private func register(plot: KubePlot? = nil, size: CGSize? = nil) {
+    /// Its entry brought up to date — only while it is on screen (`TimeChartState.register`).
+    private func register(plot: TimePlot? = nil, size: CGSize? = nil) {
         state.register(data, plot: plot, window: window, cursor: cursor, size: size ?? self.size)
     }
 
@@ -305,7 +305,7 @@ struct KubeChartView: View {
 
     private var colours: [Color] { theme.chartPalette }
 
-    private func referenceColour(_ role: KubeChartRole) -> Color { KubeChartPalette.reference(role, dark: theme.isDark).color }
+    private func referenceColour(_ role: TimeChartRole) -> Color { TimeChartPalette.reference(role, dark: theme.isDark).color }
 
     // MARK: Header and legend
 
@@ -315,7 +315,7 @@ struct KubeChartView: View {
         return VStack(alignment: .leading, spacing: 3) {
             HStack(alignment: .firstTextBaseline, spacing: 8) {
                 Text(verbatim: data.title).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
-                if let value = headline ?? KubeChartSummary.totals(data).last.map({ data.unit.format($0.value) }) {
+                if let value = headline ?? TimeChartSummary.totals(data).last.map({ data.unit.format($0.value) }) {
                     Text(verbatim: value).font(.system(size: ChromeMetrics.text(12), weight: .medium, design: .monospaced)).foregroundStyle(theme.text)
                 }
                 ForEach(chips, id: \.text) { chip in
@@ -344,7 +344,7 @@ struct KubeChartView: View {
 
     @ViewBuilder private var legend: some View {
         let usage = data.legendSeries
-        KubeFlowLayout(spacing: 8, lineSpacing: 3) {
+        ChartFlowLayout(spacing: 8, lineSpacing: 3) {
             if usage.count > 1 {
                 ForEach(Array(usage.enumerated()), id: \.element.id) { index, series in
                     legendItem(series, colour: colours[index % colours.count])
@@ -378,7 +378,7 @@ struct KubeChartView: View {
         }
     }
 
-    private func legendItem(_ series: KubeChartSeries, colour: Color) -> some View {
+    private func legendItem(_ series: TimeChartSeries, colour: Color) -> some View {
         Button {
             let ids = data.legendSeries.map(\.id)
             if NSEvent.modifierFlags.contains(.command) {
@@ -415,13 +415,13 @@ struct KubeChartView: View {
             ZStack(alignment: .topLeading) {
                 Canvas(
                     renderer: Self.renderer(
-                        data.identifier, window: window, plot: plot, colours: colours, references: Dictionary(uniqueKeysWithValues: KubeChartRole.allCases.map { ($0, referenceColour($0)) }),
-                        markers: Dictionary(uniqueKeysWithValues: KubeChartMarker.Kind.allCases.map { ($0, KubeChartPalette.marker($0, dark: theme.isDark).color) }),
+                        data.identifier, window: window, plot: plot, colours: colours, references: Dictionary(uniqueKeysWithValues: TimeChartRole.allCases.map { ($0, referenceColour($0)) }),
+                        markers: Dictionary(uniqueKeysWithValues: KubeChartMarker.Kind.allCases.map { ($0, TimeChartPalette.marker($0, dark: theme.isDark).color) }),
                         grid: theme.border, highlighted: highlighted))
                 if let plot {
                     labels(plot)
                 }
-                KubeChartOverlay(cursor: cursor, id: data.identifier, plot: plot, step: data.step, colours: colours, theme: theme)
+                TimeChartOverlay(cursor: cursor, id: data.identifier, plot: plot, step: data.step, colours: colours, theme: theme)
                 if let plot, !plot.markers.isEmpty { markerTicks(plot) }
                 if let plot, data.earlierMarkers > 0 { earlier(plot) }
                 if let plot, !plot.bands.isEmpty { bandTips(plot) }
@@ -486,14 +486,14 @@ struct KubeChartView: View {
         .frame(height: height)
         .clipped()
         .accessibilityElement(children: .ignore)
-        .accessibilityLabel(Text(verbatim: KubeChartSummary.of(data, span: span)))
+        .accessibilityLabel(Text(verbatim: TimeChartSummary.of(data, span: span)))
         .accessibilityIdentifier(data.identifier)
-        .accessibilityChartDescriptor(KubeChartDescriptor(data: data))
+        .accessibilityChartDescriptor(TimeChartDescriptor(data: data))
     }
 
     /// Each marker's tick, hit where it sits on the bottom edge: hover says
     /// what it was, a click opens its popover, ⌥-click the window around it.
-    private func markerTicks(_ plot: KubePlot) -> some View {
+    private func markerTicks(_ plot: TimePlot) -> some View {
         ForEach(plot.markers, id: \.marker.id) { placed in
             let marker = placed.marker
             Button {
@@ -519,10 +519,10 @@ struct KubeChartView: View {
     private func markerPopover(_ marker: KubeChartMarker) -> some View {
         VStack(alignment: .leading, spacing: 6) {
             HStack(spacing: 6) {
-                RoundedRectangle(cornerRadius: 2).fill(KubeChartPalette.marker(marker.kind, dark: theme.isDark).color).frame(width: 8, height: 8)
+                RoundedRectangle(cornerRadius: 2).fill(TimeChartPalette.marker(marker.kind, dark: theme.isDark).color).frame(width: 8, height: 8)
                 Text(verbatim: marker.kind.label).font(.system(size: ChromeMetrics.text(11), weight: .semibold)).foregroundStyle(theme.text2)
                 Spacer(minLength: 8)
-                Text(verbatim: KubeChartTime.full(marker.time)).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text3)
+                Text(verbatim: TimeChartTime.full(marker.time)).font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text3)
             }
             Text(verbatim: marker.title).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).fixedSize(horizontal: false, vertical: true)
                 .textSelection(.enabled)
@@ -556,7 +556,7 @@ struct KubeChartView: View {
     }
 
     /// The markers past the cap, the oldest, folded at the left edge.
-    private func earlier(_ plot: KubePlot) -> some View {
+    private func earlier(_ plot: TimePlot) -> some View {
         Text(verbatim: "+\(data.earlierMarkers) earlier")
             .font(.system(size: ChromeMetrics.text(9), weight: .medium)).foregroundStyle(theme.text3)
             .fixedSize()
@@ -568,30 +568,30 @@ struct KubeChartView: View {
     }
 
     /// Each band's name along its top edge, hover saying since when.
-    private func bandTips(_ plot: KubePlot) -> some View {
+    private func bandTips(_ plot: TimePlot) -> some View {
         ForEach(plot.bands, id: \.band.id) { placed in
             Text(verbatim: placed.band.title)
                 .font(.system(size: ChromeMetrics.text(9), weight: .medium)).foregroundStyle(Color.orange).lineLimit(1)
                 .frame(width: max(placed.maxX - placed.minX, 1), height: 12, alignment: .leading)
                 .clipped()
-                .help("\(placed.band.title) since \(KubeChartTime.clock(placed.band.start))")
+                .help("\(placed.band.title) since \(TimeChartTime.clock(placed.band.start))")
                 .position(x: (placed.minX + placed.maxX) / 2, y: plot.frame.minY + 6)
                 .accessibilityIdentifier(data.identifier + ".band")
         }
     }
 
     /// The y ticks in the gutter, the reference lines' names at their right ends.
-    private func labels(_ plot: KubePlot) -> some View {
+    private func labels(_ plot: TimePlot) -> some View {
         ZStack(alignment: .topLeading) {
             ForEach(plot.yTicks, id: \.self) { tick in
                 Text(verbatim: plot.unit.format(tick))
                     .font(.system(size: ChromeMetrics.text(9), design: .monospaced)).foregroundStyle(theme.text3)
                     .lineLimit(1).minimumScaleFactor(0.6)
-                    .frame(width: KubePlot.gutter - 6, alignment: .trailing)
-                    .position(x: (KubePlot.gutter - 6) / 2, y: min(max(plot.y(of: tick), 6), plot.size.height - 6))
+                    .frame(width: TimePlot.gutter - 6, alignment: .trailing)
+                    .position(x: (TimePlot.gutter - 6) / 2, y: min(max(plot.y(of: tick), 6), plot.size.height - 6))
             }
             // Above its line, or under it at the very top, never over
-            // another's; lines that coincide said once (`KubePlot.labelled`).
+            // another's; lines that coincide said once (`TimePlot.labelled`).
             ForEach(plot.references.filter { !$0.label.isEmpty }, id: \.id) { reference in
                 Text(verbatim: reference.label)
                     .font(.system(size: ChromeMetrics.text(9))).foregroundStyle(referenceColour(reference.role))
@@ -609,7 +609,7 @@ struct KubeChartView: View {
                 let interval = plot.timeTicks.count > 1 ? plot.timeTicks[1].timeIntervalSince(plot.timeTicks[0]) : 3600
                 ZStack(alignment: .topLeading) {
                     ForEach(plot.timeTicks, id: \.self) { tick in
-                        Text(verbatim: KubeChartTime.tick(tick, interval: interval))
+                        Text(verbatim: TimeChartTime.tick(tick, interval: interval))
                             .font(.system(size: ChromeMetrics.text(9), design: .monospaced)).foregroundStyle(theme.text3)
                             .fixedSize()
                             .position(x: min(max(plot.x(of: tick), 16), plot.size.width - 16), y: 6)
@@ -624,11 +624,11 @@ struct KubeChartView: View {
     /// The series layer: grid, bands, lines, references — one pass. Made
     /// outside the view's isolation: SwiftUI calls it while drawing.
     nonisolated static func renderer(
-        _ id: String, window: ObjectIdentifier, plot: KubePlot?, colours: [Color], references: [KubeChartRole: Color], markers: [KubeChartMarker.Kind: Color] = [:],
+        _ id: String, window: ObjectIdentifier, plot: TimePlot?, colours: [Color], references: [TimeChartRole: Color], markers: [KubeChartMarker.Kind: Color] = [:],
         grid: Color, highlighted: String?, bandColour: Color = .orange
     ) -> (inout GraphicsContext, CGSize) -> Void {
         { context, _ in
-            KubeChartDraws.shared.drew(id, window: window, overlay: false)
+            TimeChartDraws.shared.drew(id, window: window, overlay: false)
             guard let plot, !colours.isEmpty else { return }
             for tick in plot.yTicks {
                 var path = Path()
@@ -674,13 +674,13 @@ struct KubeChartView: View {
 
 /// The time the mouse was last over a chart at: a class held in `@State`,
 /// so writing it on every move redraws nothing.
-final class KubeChartHoverMemo {
+final class TimeChartHoverMemo {
     var time: Date?
 }
 
 /// A number a chart's header says beside its value — `48% of request`,
 /// `working set 93% of limit · OOM risk` — red when it warns.
-struct KubeChartChip: Equatable, Sendable {
+struct TimeChartChip: Equatable, Sendable {
     var text: String
     var alert = false
 }
@@ -688,10 +688,15 @@ struct KubeChartChip: Equatable, Sendable {
 /// Over a chart: the crosshair at the cursor's time, the hovered points,
 /// and on the chart under the mouse the tooltip. The only part that
 /// observes the cursor.
-struct KubeChartOverlay: View {
-    @ObservedObject var cursor: KubeChartCursor
+struct TimeChartOverlay: View {
+    /// A chart identifier's scope: `kubernetes` of `kubernetes.chart.cluster.cpu`.
+    static func scope(of identifier: String) -> String {
+        identifier.range(of: ".chart.").map { String(identifier[..<$0.lowerBound]) } ?? "kubernetes"
+    }
+
+    @ObservedObject var cursor: TimeChartCursor
     var id: String
-    var plot: KubePlot?
+    var plot: TimePlot?
     var step: TimeInterval
     var colours: [Color]
     @ObservedObject var theme: ChromeTheme
@@ -708,13 +713,13 @@ struct KubeChartOverlay: View {
         )
         .overlay(alignment: .topLeading) {
             if let plot, let hover, hover.owner == id {
-                tooltip(KubeChartTooltip.at(hover.time, plot: plot, step: step), x: plot.x(of: hover.time), plot: plot)
+                tooltip(TimeChartTooltip.at(hover.time, plot: plot, step: step), x: plot.x(of: hover.time), plot: plot)
             }
         }
         .allowsHitTesting(false)
     }
 
-    private func tooltip(_ tip: KubeChartTooltip, x: CGFloat, plot: KubePlot) -> some View {
+    private func tooltip(_ tip: TimeChartTooltip, x: CGFloat, plot: TimePlot) -> some View {
         let right = x > plot.frame.midX
         // As many rows as the plot's height holds; the rest counted.
         let room = max(1, Int((plot.size.height - 30) / 14))
@@ -726,7 +731,7 @@ struct KubeChartOverlay: View {
                     if let colour = row.colour {
                         Circle().fill(colours[colour % max(colours.count, 1)]).frame(width: 6, height: 6)
                     } else {
-                        Rectangle().fill(KubeChartPalette.reference(row.role, dark: theme.isDark).color).frame(width: 6, height: 1)
+                        Rectangle().fill(TimeChartPalette.reference(row.role, dark: theme.isDark).color).frame(width: 6, height: 1)
                     }
                     Text(verbatim: row.name).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3).lineLimit(1)
                     Spacer(minLength: 6)
@@ -742,7 +747,7 @@ struct KubeChartOverlay: View {
         .overlay(RoundedRectangle(cornerRadius: 5).stroke(theme.menuEdge, lineWidth: 0.5))
         .fixedSize()
         .accessibilityElement(children: .combine)
-        .accessibilityIdentifier("kubernetes.chart.tooltip")
+        .accessibilityIdentifier(Self.scope(of: id) + ".chart.tooltip")
         // Beside the crosshair, on whichever side has the room.
         return Group {
             if right {
@@ -755,12 +760,12 @@ struct KubeChartOverlay: View {
     }
 
     nonisolated static func renderer(
-        _ id: String, window: ObjectIdentifier, plot: KubePlot?, time: Date?, owns: Bool, step: TimeInterval, colours: [Color], line: Color,
+        _ id: String, window: ObjectIdentifier, plot: TimePlot?, time: Date?, owns: Bool, step: TimeInterval, colours: [Color], line: Color,
         band: (CGFloat, CGFloat)? = nil
     ) -> (inout GraphicsContext, CGSize) -> Void {
         { context, _ in
             // `owns`: the chart under the mouse, the one whose tooltip shows.
-            KubeChartDraws.shared.drew(id, window: window, overlay: true, tooltip: owns && plot != nil && time != nil)
+            TimeChartDraws.shared.drew(id, window: window, overlay: true, tooltip: owns && plot != nil && time != nil)
             // A drag's band, on every chart of the scope.
             if let plot, let band {
                 let from = max(band.0, plot.frame.minX)
@@ -789,20 +794,20 @@ struct KubeChartOverlay: View {
 
 /// A chart for VoiceOver's Audio Graph (`AXChartDescriptor`): the series
 /// a Canvas otherwise hides behind its one label (metrics.md, 5.2).
-struct KubeChartDescriptor: AXChartDescriptorRepresentable {
-    var data: KubeChartData
+struct TimeChartDescriptor: AXChartDescriptorRepresentable {
+    var data: TimeChartData
 
     func makeChartDescriptor() -> AXChartDescriptor { Self.make(data) }
 
-    nonisolated static func make(_ data: KubeChartData) -> AXChartDescriptor {
+    nonisolated static func make(_ data: TimeChartData) -> AXChartDescriptor {
         let unit = data.unit
         let values = data.series.flatMap { $0.points.map(\.value) }
-        let top = KubePlot.niceScale(values.max() ?? 0, unit: unit).top
+        let top = TimePlot.niceScale(values.max() ?? 0, unit: unit).top
         let start = data.start.timeIntervalSince1970
         let end = max(data.end.timeIntervalSince1970, start + 1)
         let x = AXNumericDataAxisDescriptor(
             title: "Time", range: start...end, gridlinePositions: [],
-            valueDescriptionProvider: { KubeChartTime.full(Date(timeIntervalSince1970: $0)) })
+            valueDescriptionProvider: { TimeChartTime.full(Date(timeIntervalSince1970: $0)) })
         let y = AXNumericDataAxisDescriptor(
             title: data.title, range: 0...max(top, 1e-9), gridlinePositions: [], valueDescriptionProvider: { unit.format($0) })
         let series = data.series.map { series in
@@ -811,13 +816,13 @@ struct KubeChartDescriptor: AXChartDescriptorRepresentable {
                 dataPoints: series.points.map { AXDataPoint(x: $0.time.timeIntervalSince1970, y: $0.value) })
         }
         return AXChartDescriptor(
-            title: data.title, summary: KubeChartSummary.of(data, span: ""), xAxis: x, yAxis: y, additionalAxes: [], series: series)
+            title: data.title, summary: TimeChartSummary.of(data, span: ""), xAxis: x, yAxis: y, additionalAxes: [], series: series)
     }
 }
 
 /// Views laid left to right, wrapping onto the next line when the width
 /// runs out: a legend of many series.
-struct KubeFlowLayout: Layout {
+struct ChartFlowLayout: Layout {
     var spacing: CGFloat = 8
     var lineSpacing: CGFloat = 3
 
