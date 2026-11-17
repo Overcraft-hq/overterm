@@ -441,4 +441,74 @@ final class LeftBehindTests: XCTestCase {
         XCTAssertFalse(kept.keepRunning.contains { $0.identity == left }, "one kept isn't asked about again")
         XCTAssertTrue(ActivitySurvivors.of(["pane-b"], in: snapshot).isEmpty, "a pane the census didn't read says nothing")
     }
+
+    // MARK: Removing a worktree
+
+    func testAWorktreesKeptAndTerraformAreNeverStoppedAndBothPathsAreOneSweep() throws {
+        var context = base()
+        let worktree = "/Users/fake/src/acme-shop/.worktrees/feature-y"
+        let resolved = "/private/fake/acme-shop/.worktrees/feature-y"
+        let kept = add(1700, parent: 1, name: "acme-server")
+        kernel.update(1700) { $0.folder = worktree }
+        let worker = add(1701, parent: 1700, name: "acme-worker")
+        kernel.update(1701) { $0.folder = resolved + "/web" }
+        let apply = add(1710, parent: 1, name: "terraform", words: ["terraform", "apply"])
+        kernel.update(1710) { $0.folder = worktree + "/infra" }
+        let other = add(1720, parent: 1, name: "acme-watch")
+        kernel.update(1720) { $0.folder = worktree }
+        context.kept = [kept]
+        let snapshot = try snapshot(context)
+        let read = WorktreeProcesses.read([worktree, resolved], in: snapshot, kernel: kernel, app: app, deadline: .max, kept: context.kept)
+        XCTAssertTrue(read.complete)
+        XCTAssertEqual(read.found.map(\.identity).sorted(), [kept, worker, apply, other].sorted(), "each once")
+        let excluded = Dictionary(uniqueKeysWithValues: read.found.map { ($0.identity, $0.excluded) })
+        XCTAssertEqual(excluded[kept] ?? nil, "you kept it")
+        XCTAssertEqual(excluded[worker] ?? nil, "you kept it", "what a kept one started")
+        XCTAssertEqual(excluded[apply] ?? nil, "terraform: Interrupt it alone, from Activity")
+        XCTAssertNil(excluded[other] ?? nil)
+        // A test run lists only its own (9.9).
+        let own = WorktreeProcesses.runsOwn(in: snapshot, tags: ["pane-a"], run: context.run, gate: ActivitySignalGate(guards: true))
+        let scoped = WorktreeProcesses.read([worktree, resolved], in: snapshot, kernel: kernel, app: app, deadline: .max, only: own)
+        XCTAssertTrue(scoped.found.isEmpty, "none of them is the run's")
+        let gate = ActivitySignalGate(guards: true)
+        gate.register(other)
+        let registered = WorktreeProcesses.runsOwn(in: snapshot, tags: ["pane-a"], run: context.run, gate: gate)
+        XCTAssertEqual(
+            WorktreeProcesses.read([worktree], in: snapshot, kernel: kernel, app: app, deadline: .max, only: registered).found.map(\.identity), [other])
+    }
+
+    func testAWorktreesProcessesByFolderAndOpenFile() throws {
+        let context = base()
+        let worktree = "/Users/fake/src/acme-shop/.worktrees/feature-x"
+        let server = add(1700, parent: 1, name: "acme-server")
+        kernel.update(1700) { $0.folder = worktree + "/web" }
+        let database = add(1710, parent: 1, name: "acme-db")
+        kernel.update(1710) { process in
+            process.folder = "/Users/fake"
+            process.descriptors = [FakeActivityKernel.descriptor(3, socket: false), FakeActivityKernel.descriptor(4, socket: false)]
+            process.files = [3: "/Users/fake/notes.txt", 4: worktree + "/data/pg.pid"]
+        }
+        let nohup = add(1720, parent: 1, name: "acme-watch", ignoresHangup: true)
+        kernel.update(1720) { $0.folder = worktree }
+        let tmux = add(1730, parent: 1, name: "tmux")
+        kernel.update(1730) { $0.folder = worktree }
+        // Elsewhere, and one beside it whose name only starts the same.
+        add(1740, parent: 1, name: "acme-other")
+        kernel.update(1740) { $0.folder = worktree + "-old" }
+        // Overterm's own helper there: never listed.
+        add(1750, parent: app, name: "git", path: "/usr/bin/git", platform: true)
+        kernel.update(1750) { $0.folder = worktree }
+        let snapshot = try snapshot(context)
+        let read = WorktreeProcesses.read(worktree, in: snapshot, kernel: kernel, app: app, deadline: .max)
+        XCTAssertTrue(read.complete)
+        XCTAssertEqual(Set(read.found.map(\.identity)), [server, database, nohup, tmux])
+        XCTAssertEqual(read.found.first { $0.identity == server }?.via, .folder)
+        XCTAssertEqual(read.found.first { $0.identity == database }?.via, .file)
+        XCTAssertNil(read.found.first { $0.identity == server }?.excluded)
+        XCTAssertEqual(read.found.first { $0.identity == nohup }?.excluded, "it ignores SIGHUP")
+        XCTAssertEqual(read.found.first { $0.identity == tmux }?.excluded, "detached on purpose")
+        XCTAssertEqual(read.found.first { $0.identity == database }?.line, "acme-db (pid 1710) — a file open inside")
+        let late = WorktreeProcesses.read(worktree, in: snapshot, kernel: kernel, app: app, deadline: 0)
+        XCTAssertFalse(late.complete, "past its deadline it says so")
+    }
 }

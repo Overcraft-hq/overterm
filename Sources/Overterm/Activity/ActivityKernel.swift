@@ -50,6 +50,11 @@ protocol ActivityKernel: Sendable {
     /// for the mount's timeout (7.2): `ProcessFolders` calls it on a queue
     /// of its own, never a tick.
     func workingDirectory(of pid: pid_t) -> String?
+    /// `PROC_PIDFDVNODEPATHINFO`: the path of the file `descriptor` holds
+    /// open; nil when it holds none now, or refused. It asks the file
+    /// system too: only a worktree removal's one read calls it, off the
+    /// main thread, under a deadline (6.9).
+    func vnodePath(of pid: pid_t, descriptor: Int32) -> String?
 
     // MARK: What ProcessSignals asks (6.10), at the button
 
@@ -343,6 +348,14 @@ struct LiveActivityKernel: ActivityKernel {
         return proc_pidfdinfo(pid, descriptor, PROC_PIDFDSOCKETINFO, &info, size) == size ? info : nil
     }
 
+    func vnodePath(of pid: pid_t, descriptor: Int32) -> String? {
+        var info = vnode_fdinfowithpath()
+        let size = Int32(MemoryLayout<vnode_fdinfowithpath>.size)
+        guard proc_pidfdinfo(pid, descriptor, PROC_PIDFDVNODEPATHINFO, &info, size) == size else { return nil }
+        let path = withUnsafeBytes(of: info.pvip.vip_path) { raw in String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self) }
+        return path.isEmpty ? nil : path
+    }
+
     func workingDirectory(of pid: pid_t) -> String? {
         var info = proc_vnodepathinfo()
         let size = Int32(MemoryLayout<proc_vnodepathinfo>.size)
@@ -486,6 +499,10 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
         var sockets: [Int32: socket_fdinfo] = [:]
         /// Its working folder (`PROC_PIDVNODEPATHINFO`).
         var folder: String?
+        /// The files its descriptors hold open, by descriptor
+        /// (`PROC_PIDFDVNODEPATHINFO`): list them in `descriptors` too, as
+        /// vnodes (`descriptor(_:socket: false)`).
+        var files: [Int32: String] = [:]
         /// The pid's version, as an audit token carries it: each image's own,
         /// as the kernel's are — `add` gives a process one, `exec` the next.
         var image: UInt32 = 0
@@ -834,6 +851,10 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
 
     func socket(of pid: pid_t, descriptor: Int32) -> socket_fdinfo? {
         asked("socket") { table[pid].flatMap { $0.record.effectiveUID == uid ? $0.sockets[descriptor] : nil } }
+    }
+
+    func vnodePath(of pid: pid_t, descriptor: Int32) -> String? {
+        asked("vnodePath") { table[pid].flatMap { $0.record.effectiveUID == uid ? $0.files[descriptor] : nil } }
     }
 
     func workingDirectory(of pid: pid_t) -> String? {

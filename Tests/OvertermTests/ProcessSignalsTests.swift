@@ -1286,6 +1286,7 @@ private final class RecordingKernel: ActivityKernel, @unchecked Sendable {
     func descriptors(of pid: pid_t) -> [proc_fdinfo]? { real.descriptors(of: pid) }
     func socket(of pid: pid_t, descriptor: Int32) -> socket_fdinfo? { real.socket(of: pid, descriptor: descriptor) }
     func workingDirectory(of pid: pid_t) -> String? { real.workingDirectory(of: pid) }
+    func vnodePath(of pid: pid_t, descriptor: Int32) -> String? { real.vnodePath(of: pid, descriptor: descriptor) }
     func process(_ pid: pid_t) -> ActivityProcess? { real.process(pid) }
     func groupMembers(_ group: pid_t, limit: Int) -> [pid_t]? { real.groupMembers(group, limit: limit) }
     func path(of token: ActivityAuditToken) -> String? { real.path(of: token) }

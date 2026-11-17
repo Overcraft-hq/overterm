@@ -1952,6 +1952,20 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 "“\(worktree.displayName)” has \(open.count) open tab\(open.count == 1 ? "" : "s"). Close \(open.count == 1 ? "it" : "them") before removing the worktree.")
             return
         }
+        // What runs in it outside every tab, by folder or open file (6.9).
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let read = await self.worktreeProcesses(worktree.path)
+            if read.found.isEmpty, read.complete {
+                self.confirmRemoveWorktree(worktree, force: force, repo: repo, on: window)
+            } else {
+                // A listing cut short is said, never taken for "nothing runs".
+                self.askAboutWorktreeProcesses(read.found, complete: read.complete, in: worktree, force: force, repo: repo, on: window)
+            }
+        }
+    }
+
+    private func confirmRemoveWorktree(_ worktree: Worktree, force: Bool, repo: URL, on window: NSWindow) {
         let alert = NSAlert()
         alert.messageText = force ? "Force-remove “\(worktree.displayName)”?" : "Remove worktree “\(worktree.displayName)”?"
         alert.informativeText =
@@ -1963,18 +1977,23 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         alert.alertStyle = force ? .critical : .warning
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                do {
-                    _ = try await Git.run(["worktree", "remove"] + (force ? ["--force"] : []) + [worktree.path.path], in: repo)
-                    await self.worktrees.refresh()
-                } catch {
-                    // git refuses a dirty worktree without --force; offer it.
-                    if !force, (error as? GitError)?.stderr.contains("--force") == true {
-                        self.removeWorktree(worktree, force: true)
-                    } else {
-                        self.showAlert("Couldn’t remove the worktree", error.localizedDescription)
-                    }
+            self?.performRemoveWorktree(worktree, force: force, repo: repo)
+        }
+    }
+
+    /// `git worktree remove`, the dirty case offered with --force.
+    func performRemoveWorktree(_ worktree: Worktree, force: Bool, repo: URL) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await Git.run(["worktree", "remove"] + (force ? ["--force"] : []) + [worktree.path.path], in: repo)
+                await self.worktrees.refresh()
+            } catch {
+                // git refuses a dirty worktree without --force; offer it.
+                if !force, (error as? GitError)?.stderr.contains("--force") == true {
+                    self.removeWorktree(worktree, force: true)
+                } else {
+                    self.showAlert("Couldn’t remove the worktree", error.localizedDescription)
                 }
             }
         }
@@ -1998,6 +2017,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     kept.append((worktree, "locked"))
                 } else if !self.tabs(in: worktree).isEmpty {
                     kept.append((worktree, "open in a tab"))
+                } else if let running = await self.runningInWorktree(worktree) {
+                    // 6.9: never removed under what runs in it, nor when
+                    // that couldn't be read; removing it alone lists them.
+                    kept.append((worktree, running))
                 } else if await Self.hasChanges(worktree.path) {
                     kept.append((worktree, "uncommitted changes"))
                 } else {
@@ -2006,6 +2029,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             }
             self.confirmCleanUp(removable: removable, kept: kept, repo: repo)
         }
+    }
+
+    /// Why Clean Up Merged keeps `worktree` for what runs in it; nil when
+    /// nothing does, as a complete read says.
+    private func runningInWorktree(_ worktree: Worktree) async -> String? {
+        let read = await worktreeProcesses(worktree.path)
+        if !read.found.isEmpty { return "processes run in it" }
+        return read.complete ? nil : "what runs in it couldn’t be read"
     }
 
     private static func hasChanges(_ path: URL) async -> Bool {

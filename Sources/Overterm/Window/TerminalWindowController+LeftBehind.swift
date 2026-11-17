@@ -223,3 +223,143 @@ private final class CensusOnce {
         return !taken
     }
 }
+
+/// Removing a worktree (6.9): what runs in it outside every tab, listed —
+/// Stop Them and Remove (asked again in a `WriteConfirmation` listing each;
+/// each stoppable one by its identity, through the policy, the removal only
+/// once every one is gone), Remove Anyway, Cancel — Cancel the default.
+extension TerminalWindowController {
+    /// How long the removal waits for what it stopped to end.
+    static let worktreeStopWait: TimeInterval = 5
+    /// The read's deadline between processes, and the wait for it as a
+    /// whole — a folder's read can block for a mount's timeout.
+    static let worktreeReadDeadline: UInt64 = 3_000_000_000
+    static let worktreeReadLimit: Duration = .seconds(4)
+
+    /// `folder`'s processes: one census, then one sweep off the main thread
+    /// under a 3 s deadline, waited for at most 4 s. `complete` false when
+    /// either cut it short, or there was no census: then the listing may
+    /// miss some, and says so. An isolated run lists only its own (9.9).
+    func worktreeProcesses(_ folder: URL) async -> (found: [WorktreeProcess], complete: Bool) {
+        guard let snapshot = await Self.census(within: .seconds(2)) else { return ([], false) }
+        let paths = Array(Set([folder.standardizedFileURL.path, folder.resolvingSymlinksInPath().path])).sorted()
+        let kept = LeftBehindLedger.shared.kept
+        var only: Set<ActivityProcessID>?
+        if AppEnvironment.isIsolated {
+            var context = ActivityMonitor.shared.context
+            LeftBehindLedger.shared.fill(&context)
+            only = WorktreeProcesses.runsOwn(
+                in: snapshot, tags: Set(context.panes.map(\.tag) + context.retired.map(\.pane.tag)), run: OvertermRun.current.marker)
+        }
+        let scope = only
+        let once = CensusOnce()
+        let limit = Self.worktreeReadLimit
+        let deadlineSpan = Self.worktreeReadDeadline
+        return await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async { @Sendable in
+                let kernel = LiveActivityKernel()
+                let read = WorktreeProcesses.read(
+                    paths, in: snapshot, kernel: kernel, app: getpid(), deadline: kernel.uptime() + deadlineSpan, kept: kept, only: scope)
+                Task { @MainActor in
+                    if once.take() { continuation.resume(returning: read) }
+                }
+            }
+            Task { @MainActor in
+                try? await Task.sleep(for: limit)
+                if once.take() { continuation.resume(returning: ([], false)) }
+            }
+        }
+    }
+
+    /// The listing: Cancel the default — a Return stops nothing.
+    func askAboutWorktreeProcesses(_ found: [WorktreeProcess], complete: Bool, in worktree: Worktree, force: Bool, repo: URL, on window: NSWindow) {
+        let stoppable = found.filter { $0.excluded == nil }
+        let alert = NSAlert()
+        alert.messageText =
+            found.isEmpty
+            ? "What runs in “\(worktree.displayName)” couldn’t be read in time"
+            : "\(found.count == 1 ? "1 process runs" : "\(found.count) processes run") in “\(worktree.displayName)”"
+        var words = found.prefix(20).map { "• " + DockerMCP.displayed($0.line) }.joined(separator: "\n")
+        if found.count > 20 { words += "\n…and \(found.count - 20) more" }
+        if !found.isEmpty { words += "\n\nRemoving the worktree leaves them running in a deleted folder." }
+        if !complete {
+            words += (words.isEmpty ? "" : "\n\n") + "The listing may be incomplete: reading each process’s folder and open files took too long."
+        }
+        alert.informativeText = words
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Remove Anyway")
+        if !stoppable.isEmpty { alert.addButton(withTitle: "Stop \(stoppable.count) and Remove…") }
+        alert.buttons[0].keyEquivalent = "\r"
+        alert.buttons[1].keyEquivalent = ""
+        alert.alertStyle = .warning
+        alert.beginSheetModal(for: window) { [weak self] response in
+            guard let self else { return }
+            switch response {
+            case .alertSecondButtonReturn:
+                self.performRemoveWorktree(worktree, force: force, repo: repo)
+            case .alertThirdButtonReturn:
+                self.confirmStopThenRemove(stoppable, worktree: worktree, force: force, repo: repo, on: window)
+            default:
+                break
+            }
+        }
+    }
+
+    /// The stop asked as every write is (D-10): each process listed.
+    private func confirmStopThenRemove(_ processes: [WorktreeProcess], worktree: Worktree, force: Bool, repo: URL, on window: NSWindow) {
+        let confirmation = WriteConfirmation(
+            title: "Stop \(processes.count == 1 ? "1 process" : "\(processes.count) processes") and remove “\(worktree.displayName)”?",
+            detail: processes.prefix(20).map { "\(DockerMCP.displayed($0.name)) (pid \($0.identity.pid))" }.joined(separator: "\n")
+                + (processes.count > 20 ? "\n…and \(processes.count - 20) more" : "")
+                + "\n\nEach gets SIGTERM, by the process listed, where Activity’s policy allows a Stop; the worktree goes once every one has ended.",
+            button: processes.count == 1 ? "Stop and Remove" : "Stop \(processes.count) and Remove")
+        confirmation.present(on: window) { [weak self] _ in self?.stopThenRemove(processes, worktree: worktree, force: force, repo: repo) }
+    }
+
+    /// Each read again and asked of the policy, then SIGTERM by its
+    /// identity; the removal once every one is gone, else "still running —
+    /// Remove Anyway?" naming what was refused.
+    private func stopThenRemove(_ processes: [WorktreeProcess], worktree: Worktree, force: Bool, repo: URL) {
+        let targets = processes.map { ActivitySignalTarget($0.identity, path: $0.path) }
+        let wait = Self.worktreeStopWait
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            guard let checked = await self.leftBehindChecked(targets, pick: .bulk) else {
+                return self.tell("Not removed", "The processes couldn’t be read again: nothing was sent, nothing removed.")
+            }
+            let sending = checked.send
+            let refused = checked.refused.filter { $0.reason != LeftBehindStop.endedWords }
+            DispatchQueue.global(qos: .userInitiated).async { @Sendable in
+                let signals = ProcessSignals()
+                for target in sending { _ = signals.send(.term, to: target, alone: false) }
+                let kernel = LiveActivityKernel()
+                let until = Date().addingTimeInterval(wait)
+                var running = sending
+                while !running.isEmpty, Date() < until {
+                    running = running.filter { target in kernel.process(target.identity.pid).map { $0.identity == target.identity && !$0.isZombie } ?? false }
+                    if !running.isEmpty { usleep(100_000) }
+                }
+                let left = running.map(\.identity.pid)
+                Task { @MainActor [weak self] in
+                    guard let self else { return }
+                    guard !left.isEmpty || !refused.isEmpty, let window = self.window else {
+                        return self.performRemoveWorktree(worktree, force: force, repo: repo)
+                    }
+                    var lines = refused.prefix(20).map { "Not stopped — " + DockerMCP.displayed($0.line) }
+                    if !left.isEmpty { lines.append("pid \(left.map(String.init).joined(separator: ", ")) didn’t end within \(Int(wait)) s.") }
+                    let alert = NSAlert()
+                    alert.messageText = "Still running — Remove Anyway?"
+                    alert.informativeText = lines.joined(separator: "\n")
+                    alert.addButton(withTitle: "Cancel")
+                    alert.addButton(withTitle: "Remove Anyway")
+                    alert.buttons[0].keyEquivalent = "\r"
+                    alert.buttons[1].keyEquivalent = ""
+                    alert.beginSheetModal(for: window) { [weak self] response in
+                        guard response == .alertSecondButtonReturn else { return }
+                        self?.performRemoveWorktree(worktree, force: force, repo: repo)
+                    }
+                }
+            }
+        }
+    }
+}

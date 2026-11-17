@@ -327,6 +327,7 @@ private final class CountingKernel: ActivityKernel, @unchecked Sendable {
         return base.socket(of: pid, descriptor: descriptor)
     }
     func workingDirectory(of pid: pid_t) -> String? { base.workingDirectory(of: pid) }
+    func vnodePath(of pid: pid_t, descriptor: Int32) -> String? { base.vnodePath(of: pid, descriptor: descriptor) }
     func process(_ pid: pid_t) -> ActivityProcess? { base.process(pid) }
     func groupMembers(_ group: pid_t, limit: Int) -> [pid_t]? { base.groupMembers(group, limit: limit) }
     func auditToken(of pid: pid_t) -> ActivityAuditToken? { base.auditToken(of: pid) }
