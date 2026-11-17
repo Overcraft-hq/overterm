@@ -263,6 +263,14 @@ final class ActivityPageModel: ObservableObject {
     /// is read with them; and the read on its way, a later one winning.
     private var lastOptions: ActivityRows.Options?
     private var subjectGeneration = 0
+    /// The selection's history read on its own, before the rows carry it:
+    /// a row just selected (6.11).
+    private var readHistory: ActivityDetailHistory?
+    private var historyReading: ActivityProcessID?
+    private var historyGeneration = 0
+    /// The main thread's part of the last detail made, ms: what
+    /// `activityPerf` gates (10.4, main ≤ 4 ms a publish).
+    private(set) var detailCost: Double = 0
     private var snapshots: AnyCancellable?
     /// The tabs' facts the last rows were made with.
     private var lastTabs: [UUID: ActivityTabFacts] = [:]
@@ -533,6 +541,7 @@ final class ActivityPageModel: ObservableObject {
         options.known = known()
         options.known.runningApps = options.runningApps
         if let selected = selectedProcess?.identity { options.subjectOf = selected }
+        if let selected = selectedProcess, selected.isOwn { options.historyOf = selected.identity }
         lastOptions = options
         Task { [weak self] in
             let content = await Self.make(snapshot, options)
@@ -596,14 +605,39 @@ final class ActivityPageModel: ObservableObject {
             updateSubject()
             return
         }
+        let started = clock_gettime_nsec_np(CLOCK_UPTIME_RAW)
         var row = content.processes.first { $0.id == id }
         if row == nil, let port = content.ports.first(where: { $0.id == id }), let holder = port.holder {
             row = content.processes.first { $0.identity == holder }
         }
-        let made = row.map { ActivityDetail.make($0, in: snapshot, rows: content.identities, ports: content.listeners) }
+        let made = row.map { ActivityDetail.make($0, in: snapshot, rows: content.identities, ports: content.listeners, history: history(of: $0, snapshot)) }
         if made != detail { detail = made }
+        detailCost = Double(clock_gettime_nsec_np(CLOCK_UPTIME_RAW) &- started) / 1_000_000
         updateFocus()
         updateSubject()
+    }
+
+    /// `row`'s history (6.11), never made here: the rows', else one read
+    /// on its own queue for a row just selected — the detail kept as it was
+    /// until it comes.
+    private func history(of row: ActivityProcessRow, _ snapshot: ActivitySnapshot) -> ActivityDetailHistory? {
+        guard row.isOwn else { return nil }
+        if let made = content.detailHistory, made.identity == row.identity { return made }
+        if let read = readHistory, read.identity == row.identity { return read }
+        if historyReading != row.identity {
+            historyReading = row.identity
+            historyGeneration += 1
+            let generation = historyGeneration
+            let identity = row.identity
+            Task { [weak self] in
+                let made = await ActivityDetailHistory.read(identity, in: snapshot)
+                guard let self, self.historyGeneration == generation else { return }
+                self.historyReading = nil
+                self.readHistory = made
+                self.updateDetail()
+            }
+        }
+        return detail?.row.identity == row.identity ? detail?.history : nil
     }
 
     /// The selection's subject (6.10): the rows' when they read it, else

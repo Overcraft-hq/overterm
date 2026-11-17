@@ -71,7 +71,8 @@ struct ActivityPageView: View {
             // — the keyboard and the scroll with it — as it comes and goes.
             if page.showsDetail, let detail = page.detail {
                 Rectangle().fill(theme.border).frame(width: 1)
-                ActivityDetailView(detail: detail, theme: theme, page: page, verbs: page.verbs(for: page.selection, copy: copy)).frame(width: 300)
+                ActivityDetailView(detail: detail, theme: theme, page: page, verbs: page.verbs(for: page.selection, copy: copy), copy: { copy([$0]) })
+                    .frame(width: 300)
             }
         }
         .background(Color(nsColor: GhosttyRuntime.shared.backgroundColor))
@@ -140,7 +141,7 @@ struct ActivityPageView: View {
                 }
             }
             Spacer()
-            ActivityMetersView(meters: summary.meters, processes: summary.processes, threads: summary.threads, theme: theme)
+            ActivityMetersView(meters: summary.meters, processes: summary.processes, threads: summary.threads, history: summary.history, theme: theme)
         }
         .padding(12)
     }
@@ -512,6 +513,34 @@ struct ActivityPageView: View {
         return chips
     }
 
+    /// The row's 15 minutes, a cell each 15 s (6.11): `KubeHeatStripView`'s
+    /// drawing, CPU capped at 100 for the colour; a gap a faint tick.
+    private func strip(_ row: ActivityProcessRow) -> some View {
+        let cells = row.strip ?? []
+        let colours = KubeHeatStrip.Level.allCases.map { TimeChartPalette.heat($0, dark: theme.isDark).color }
+        let track = theme.text3
+        return Canvas { context, size in
+            guard !cells.isEmpty else { return }
+            KubeHeatStripView.draw(
+                cells.map { $0.map { min($0, 100) } }, in: CGRect(x: 0, y: 3, width: size.width, height: max(size.height - 6, 1)),
+                context: &context, colours: colours, track: track)
+        }
+        .padding(.horizontal, 6)
+        .help(Self.stripHelp(row))
+        .accessibilityElement()
+        .accessibilityLabel(Text(verbatim: Self.stripHelp(row)))
+        .accessibilityIdentifier("activity.strip")
+    }
+
+    /// What a strip says: its highest, since when.
+    static func stripHelp(_ row: ActivityProcessRow) -> String {
+        guard let cells = row.strip else { return "No history: it wasn't read while the page or its tab showed" }
+        let read = cells.compactMap { $0 }
+        guard let high = read.max() else { return "Not read in the last 15 minutes" }
+        let since = row.stripSince.map { " since \(ActivityRows.clock($0))" } ?? " over 15 min"
+        return "CPU\(since): at most \(ActivityRows.percent(high))%, \(read.count) of 60 cells read"
+    }
+
     /// A rate as the page writes it: "—" unread.
     static func rate(_ value: Double?, unit: String) -> String {
         guard let value else { return "—" }
@@ -571,6 +600,7 @@ struct ActivityPageView: View {
         case "kind": text(row.translated ? "Intel" : "Apple", theme.text3)
         case "path": text(row.path ?? "", theme.text3)
         case "command": text(row.command ?? "", theme.text2)
+        case "cpu15": strip(row)
         case "energy": number(Self.rate(row.energy, unit: "W"))
         case "wakeups": number(row.idleWakeups.map { String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), $0) } ?? "—")
         case "diskRead": number(Self.rate(row.diskRead, unit: "B/s"))
@@ -636,9 +666,21 @@ struct ActivityMetersView: View {
     let meters: SystemMeters?
     let processes: Int
     let threads: Int
+    /// The Mac's 15 minutes: CPU and memory used (6.11).
+    var history: [TimeChartData] = []
     @ObservedObject var theme: ChromeTheme
+    @StateObject private var cursor = TimeChartCursor()
 
     var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            readings
+            ForEach(history, id: \.id) { data in
+                TimeChartView(data: data, cursor: cursor, span: "last 15 min", height: 44, theme: theme).padding(.horizontal, 10)
+            }
+        }
+    }
+
+    private var readings: some View {
         VStack(alignment: .leading, spacing: 5) {
             Text("CPU").font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
             cpu

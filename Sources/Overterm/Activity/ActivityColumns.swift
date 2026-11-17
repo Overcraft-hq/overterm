@@ -24,6 +24,8 @@ enum ActivityColumns {
         ResourceColumn(id: "name", title: "Name", width: 300, minWidth: 140),
         ResourceColumn(id: "pid", title: "PID", width: 64),
         ResourceColumn(id: "cpu", title: "CPU %", width: 64, help: "100% is one core, as htop and Tab Info count"),
+        ResourceColumn(
+            id: "cpu15", title: "CPU, 15 min", width: 84, help: "Its CPU over the last 15 minutes, a bar each 15 s — the most it used then; a tick where nothing was read"),
         ResourceColumn(id: "memory", title: "Memory", width: 84, help: "The footprint: Activity Monitor's Memory"),
         ResourceColumn(id: "threads", title: "Threads", width: 60),
         ResourceColumn(id: "state", title: "St", width: 36, help: "R running, S sleeping, T stopped, Z ended and not collected"),
@@ -49,7 +51,7 @@ enum ActivityColumns {
     ]
 
     /// Shown until the person picks: 6.5's "on" — User comes with All.
-    static let processDefaults: [String] = ["name", "pid", "cpu", "memory", "threads", "state", "started", "listening"]
+    static let processDefaults: [String] = ["name", "pid", "cpu", "cpu15", "memory", "threads", "state", "started", "listening"]
 
     /// Every column Listening offers, in its default order (6.8).
     static let listening: [ResourceColumn] = [

@@ -70,6 +70,11 @@ struct ActivityProcessRow: ResourceTableRow, Sendable {
     var diskWritten: Double?
     /// What its power assertions keep awake; nil where nothing was read.
     var sleepHold: ActivitySleepHold?
+    /// Its CPU, 15 min, a cell of 15 s each (`ActivityRing`), nil where not
+    /// sampled; nil without any history. `stripSince`: when it began, when
+    /// that is inside the 15 minutes.
+    var strip: [Double?]?
+    var stripSince: Date?
     /// Intel code under Rosetta.
     var translated = false
     var ignoresHangup = false
@@ -126,6 +131,8 @@ struct ActivitySummary: Equatable, Sendable {
     /// The five busiest rows shown, CPU first: names, pids and rates only.
     var busiest: [Busy] = []
     var meters: SystemMeters?
+    /// The meters' 15 minutes (6.11): the Mac's CPU and memory used.
+    var history: [TimeChartData] = []
     /// Identities the churn budget left for a later tick: still reading.
     var unread = 0
     /// No rates yet: the first full tick.
@@ -163,6 +170,8 @@ struct ActivityPageContent: Sendable {
     /// main thread, with every owner of the snapshot — not only the rows
     /// a scope or a filter left —, so the list and the sheet class it alike.
     var subject: ActivityVerbSubject?
+    /// The selection's history (`Options.historyOf`), made with the rows.
+    var detailHistory: ActivityDetailHistory?
     /// The snapshot's owners when they were read: a selection made between
     /// two publishes is read with them (`ActivityRows.subject`).
     var attribution: ActivityAttribution?
@@ -205,6 +214,9 @@ enum ActivityRows {
         /// The process the page lists verbs for — the selection's —, and
         /// what the main actor knows of stopped and backgrounded ones.
         var subjectOf: ActivityProcessID?
+        /// The selection whose history the detail charts (6.11): made here,
+        /// off the main thread, with the rows.
+        var historyOf: ActivityProcessID?
         var known = ActivityVerbSubject.Known()
         /// What each section's filter field says (6.6).
         var processFilter = ""
@@ -317,6 +329,10 @@ enum ActivityRows {
             row.diskRead = facts?.rates?.diskReadPerSecond
             row.diskWritten = facts?.rates?.diskWrittenPerSecond
             row.sleepHold = snapshot.sleepHolds.map { $0[process.pid] ?? [] }
+            if own {
+                row.strip = snapshot.history.cpuStrip(.process(identity), now: snapshot.historyNow)
+                row.stripSince = snapshot.history.since(.process(identity), now: snapshot.historyNow).map { snapshot.date(of: $0) }
+            }
             if case .pane(let tag)? = owner?.place, let tab = owner?.tab {
                 row.pane = panesByTab[tab]?.firstIndex(of: tag).map { $0 + 1 }
             }
@@ -349,6 +365,9 @@ enum ActivityRows {
             content.subject = ActivityVerbSubject.read(identity, in: snapshot, owners: attribution, known: options.known)
         }
         content.processes = sorted(rows, by: options.processSort)
+        if let identity = options.historyOf, snapshot.table.process(identity)?.isOwn(by: uid) == true {
+            content.detailHistory = ActivityDetailHistory.make(identity, in: snapshot)
+        }
         if let grouping = options.grouping {
             // A checkout's containers are its scope's and wider's (6.5): a
             // tab's is its panes, what left them, its forwards.
@@ -392,6 +411,7 @@ enum ActivityRows {
         summary.busiest = Array(
             inScope.compactMap { row in row.cpu.map { ActivitySummary.Busy(id: row.id, name: row.name, cpu: $0) } }.sorted { $0.cpu > $1.cpu }.prefix(5))
         summary.meters = snapshot.meters
+        summary.history = ActivityHistoryCharts.charts(.system, subject: "system", measures: ActivityHistoryCharts.systemMeasures, in: snapshot)
         summary.unread = snapshot.unread
         summary.firstSample = !rated
         summary.scopedToRun = options.isolated
@@ -485,6 +505,7 @@ enum ActivityRows {
         case "kind": return sort.sorted(rows) { $0.translated ? 1 : 0 }
         case "path": return sort.sorted(rows) { $0.path }
         case "command": return sort.sorted(rows) { $0.command }
+        case "cpu15": return sort.sorted(rows) { row in row.strip.flatMap { cells in cells.compactMap { $0 }.max() } }
         case "energy": return sort.sorted(rows) { $0.energy }
         case "wakeups": return sort.sorted(rows) { $0.idleWakeups }
         case "diskRead": return sort.sorted(rows) { $0.diskRead }
@@ -525,6 +546,9 @@ enum ActivityRows {
         formatter.dateFormat = "MMM d"
         return formatter
     }()
+
+    /// A time of today as the page says it: "14:02".
+    static func clock(_ date: Date) -> String { timeFormat.string(from: date) }
 
     /// A start as the Started column says it: since `today`'s midnight as
     /// its time, earlier as its date.

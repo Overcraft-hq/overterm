@@ -1,7 +1,7 @@
 import Foundation
 
 /// The detail of the selected process (docs/design/activity/analysis.md,
-/// 6.4), without history (stage 4 brings it): its header, the masked
+/// 6.4): its header, the masked
 /// command — there is no unmasked view (9.3, D-27) —, where it is and why,
 /// its tree, its listeners and connections counted, its usage. Made from
 /// the page's row and the snapshot it came from; pure.
@@ -31,6 +31,13 @@ struct ActivityDetail: Equatable, Sendable {
     var bounded = false
     var rates: ActivityRates?
     var interruptWakeups: UInt64?
+    /// Its history (6.11): the charts, the hour folded, the spans Ask an
+    /// Agent says — its own for one of the user's, an agent's its
+    /// subtree's too —, made off the main thread (`ActivityDetailHistory`).
+    var history: ActivityDetailHistory?
+    var charts: [TimeChartData] { history?.charts ?? [] }
+    var subtreeCharts: [TimeChartData] { history?.subtreeCharts ?? [] }
+    var hour: String? { history?.hour }
     /// Where it works: read only for the selection, at the focus level
     /// (7.2) — the user's own process, a tick or two after it is selected.
     var folder: ProcessFolders.Folder?
@@ -40,8 +47,11 @@ struct ActivityDetail: Equatable, Sendable {
 
     /// The detail of `row`, read in `snapshot`; `rows` the page's process
     /// rows in scope — its tree goes no further —, `ports` its listeners'
-    /// rows.
-    static func make(_ row: ActivityProcessRow, in snapshot: ActivitySnapshot, rows: Set<ActivityProcessID>, ports: [ActivityPortRow]) -> ActivityDetail {
+    /// rows; `history` its history when made already, off the main thread.
+    static func make(
+        _ row: ActivityProcessRow, in snapshot: ActivitySnapshot, rows: Set<ActivityProcessID>, ports: [ActivityPortRow],
+        history: ActivityDetailHistory? = nil
+    ) -> ActivityDetail {
         var detail = ActivityDetail(row: row)
         let table = snapshot.table
         var current = row.identity
@@ -64,6 +74,7 @@ struct ActivityDetail: Equatable, Sendable {
         detail.rates = facts?.rates
         detail.folder = facts?.folder
         detail.interruptWakeups = facts?.usage?.interruptWakeups
+        if row.isOwn, history?.identity == row.identity { detail.history = history }
         return detail
     }
 

@@ -1,7 +1,7 @@
 import SwiftUI
 
 /// The selected process's detail on the right (docs/design/activity/
-/// analysis.md, 6.4), without history: its header with the row's verbs —
+/// analysis.md, 6.4): its header with the row's verbs —
 /// the list's right-click menu's, one list (`ActivityPageModel.verbs`) —,
 /// the masked command, where and why, its tree, its listeners, its usage.
 /// Every number through `Text(verbatim:)`.
@@ -11,6 +11,10 @@ struct ActivityDetailView: View {
     @ObservedObject var page: ActivityPageModel
     /// The selection's verbs: buttons here, the same as its menu.
     let verbs: [ResourceVerb]
+    /// A chart's Copy Values as CSV.
+    var copy: ((String) -> Void)? = nil
+    /// The crosshair its charts share.
+    @StateObject private var cursor = TimeChartCursor()
 
     private var row: ActivityProcessRow { detail.row }
 
@@ -62,6 +66,7 @@ struct ActivityDetailView: View {
                         }
                         .font(.system(size: ChromeMetrics.text(11.5)))
                     }
+                    history
                 }
             }
             .padding(14)
@@ -143,6 +148,33 @@ struct ActivityDetailView: View {
         }
         if detail.bounded {
             Text("more sockets than a tick reads: its listeners read in rotation").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
+        }
+    }
+
+    /// Its 15 minutes as charts (6.11), its subtree's for an agent, the
+    /// hour folded; said plainly when nothing was read.
+    @ViewBuilder
+    private var history: some View {
+        if let hour = detail.hour {
+            Text(verbatim: hour).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
+                .accessibilityIdentifier("activity.detail.hour")
+        }
+        if detail.charts.isEmpty {
+            if row.isOwn {
+                Text("No history yet: it is read while the page or its tab shows").font(.system(size: ChromeMetrics.text(11)))
+                    .foregroundStyle(theme.text3)
+            }
+        } else {
+            ForEach(detail.charts, id: \.id) { data in
+                TimeChartView(data: data, cursor: cursor, span: "last 15 min", height: data.id.hasSuffix(".cpu") ? 80 : 56, copy: copy, theme: theme)
+            }
+        }
+        if !detail.subtreeCharts.isEmpty {
+            Text("With everything under it").font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).foregroundStyle(theme.text3)
+                .padding(.top, 4)
+            ForEach(detail.subtreeCharts, id: \.id) { data in
+                TimeChartView(data: data, cursor: cursor, span: "last 15 min", height: 56, copy: copy, theme: theme)
+            }
         }
     }
 
