@@ -96,11 +96,19 @@ extension E2ERunner {
         }
         _ = await eventually(5) { pane.foregroundGroup == nil || kernel.process(pane.foregroundGroup ?? 0)?.shortName.hasSuffix("sh") == true }
 
-        // The run's own jobs, in the background.
+        // The run's own jobs, in the background. The forked python leaves
+        // its terminal on purpose, so its pane's close never ends it: it
+        // ends itself once this part writes its stop file — never left
+        // running past the scenario (the harness's leftover check, 10.5).
+        let orphanStop = out("activity-orphan.stop")
+        // Written however the part ends: an early return or a hang never
+        // leaves the orphan for the leftover check to say twice.
+        defer { try? Data().write(to: orphanStop) }
         pane.insertText(
             "/bin/sleep 151 & /bin/sleep 153 & sh -c 'trap \"\" TERM; exec /bin/sleep 152' & sh -c '/bin/sleep 154 & /bin/sleep 154 & wait' & "
                 + "/bin/sleep 155 | /bin/sleep 156 & /bin/sleep 159 & "
-                + "sh -c 'while true; do /bin/sleep 157; done' & python3 -c 'import os,time; os.fork() or os._exit(0); time.sleep(160)' &")
+                + "sh -c 'while true; do /bin/sleep 157; done' & python3 -c 'import os,time; os.fork() or os._exit(0); [time.sleep(0.2) for _ in range(800) if not os.path.exists(\"\(orphanStop.path)\")]' &"
+        )
         pane.pressReturn()
         // A job stopped by a signal, on a line of its own: `$!` at the
         // line's end, where zsh never reads its `!` as history.

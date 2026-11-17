@@ -139,7 +139,12 @@ extension E2ERunner {
         s.listen()
         open("\(supPort.path)", "w").write(str(s.getsockname()[1]))
         open("\(supPids.path)", "a").write("%d %d\\n" % (os.getpid(), os.getppid()))
-        time.sleep(150)
+        # Ends once its supervisor has: one started again as the supervisor
+        # was stopped is left no orphan (the harness's leftover check).
+        parent = os.getppid()
+        for _ in range(750):
+            if os.getppid() != parent: break
+            time.sleep(0.2)
         """.write(to: supScript, atomically: true, encoding: .utf8)
         await atPrompt()
         pane.insertText("sh -c 'while true; do python3 \(supScript.path); /bin/sleep 0.3; done' &")
