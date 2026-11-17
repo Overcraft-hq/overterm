@@ -688,6 +688,66 @@ final class ProcessSignalsTests: XCTestCase {
         XCTAssertEqual(touched, 0)
     }
 
+    // MARK: Priority (6.10's Run in Background, Lower Priority)
+
+    /// Run in Background, Normally and a nice raised: checked as a signal
+    /// is — the token first, the identity through it — then `setpriority`
+    /// by the pid. A nice is raised only: no higher than it is refused with
+    /// no call; the refusals, the gate and a helper with none either.
+    func testPriorityIsSetCheckedAsASignalIs() {
+        mac()
+        let job = target(400)
+        let signals = sender()
+        XCTAssertEqual(signals.setPriority(.background, of: job), .sent(pinned: true))
+        XCTAssertEqual(signals.setPriority(.normal, of: job), .sent(pinned: true))
+        XCTAssertEqual(signals.setPriority(.nice(5), of: job), .sent(pinned: true))
+        XCTAssertEqual(kernel.process(400)?.nice, 5)
+        XCTAssertEqual(
+            kernel.priorities,
+            [.init(pid: 400, change: .background), .init(pid: 400, change: .normal), .init(pid: 400, change: .nice(5))])
+        kernel.resetCounts()
+        XCTAssertEqual(signals.setPriority(.nice(5), of: job), .refused(.niceDown), "upward only")
+        XCTAssertEqual(signals.setPriority(.nice(1), of: job), .refused(.niceDown))
+        XCTAssertEqual(kernel.count("priority"), 0, "nothing asked of the kernel")
+        XCTAssertEqual(signals.setPriority(.nice(20), of: job), .sent(pinned: true))
+
+        kernel.resetCounts()
+        XCTAssertEqual(signals.setPriority(.background, of: target(1)), .refused(.system))
+        XCTAssertEqual(signals.setPriority(.background, of: ActivitySignalTarget(app, path: nil)), .refused(.overterm))
+        XCTAssertEqual(signals.setPriority(.background, of: target(220)), .refused(.helper))
+        XCTAssertEqual(signals.setPriority(.nice(10), of: target(200)), .refused(.notYours), "a setuid login")
+        XCTAssertEqual(sender(guards: true).setPriority(.background, of: target(500)), .refused(.gate))
+        XCTAssertEqual(kernel.count("priority") + kernel.count("token"), 0, "refused before any call")
+        XCTAssertEqual(signals.setPriority(.background, of: target(500)), .sent(pinned: true), "elsewhere, the gate off")
+    }
+
+    /// A reused pid, an exec, no token: nothing set.
+    func testPriorityNeedsTheListedProcessPinned() {
+        mac()
+        let job = target(400)
+        add(400, start: 9_000_000, parent: 300, name: "globex-tool")
+        kernel.resetCounts()
+        XCTAssertEqual(sender().setPriority(.background, of: job), .ended(now: "globex-tool"))
+        XCTAssertEqual(kernel.count("priority"), 0)
+
+        let server = add(410, parent: 300, name: "acme-server")
+        kernel.exec(410, path: "/opt/acme/bin/acme-other", name: "acme-other")
+        XCTAssertEqual(sender().setPriority(.nice(5), of: server), .ranAnotherProgram(path: "/opt/acme/bin/acme-other"))
+        XCTAssertEqual(kernel.count("priority"), 0)
+
+        let plain = add(420, parent: 300, name: "acme-build")
+        kernel.refuseTokens(true)
+        XCTAssertEqual(sender().setPriority(.background, of: plain), .refused(.unpinned), "only a single Stop goes by the pid")
+        XCTAssertEqual(kernel.count("priority"), 0)
+    }
+
+    /// What a sheet names it as.
+    func testThePrioritysCommand() {
+        XCTAssertEqual(ActivityPriorityChange.nice(10).command(for: 4242), "renice 10 -p 4242")
+        XCTAssertEqual(ActivityPriorityChange.background.command(for: 4242), "taskpolicy -b -p 4242")
+        XCTAssertEqual(ActivityPriorityChange.normal.command(for: 4242), "taskpolicy -B -p 4242")
+    }
+
     /// The nine, by name; never 0 or a number of the caller's.
     func testTheSignalsAreNine() {
         XCTAssertEqual(ActivitySignal.allCases.map(\.rawValue), ["HUP", "INT", "QUIT", "TERM", "USR1", "USR2", "KILL", "STOP", "CONT"])
@@ -767,6 +827,9 @@ final class ProcessSignalsTests: XCTestCase {
             XCTAssertEqual(
                 signals.send(signal, to: ActivitySignalTarget(process.identity, path: "/usr/bin/top"), alone: true), .refused(.notYours), "\(signal)")
         }
+        let top = ActivitySignalTarget(process.identity, path: "/usr/bin/top")
+        XCTAssertEqual(signals.setPriority(.background, of: top), .refused(.notYours), "nor reniced")
+        XCTAssertEqual(signals.setPriority(.nice(20), of: top), .refused(.notYours))
         XCTAssertEqual(recorder.calls, [], "no token, no signal")
         XCTAssertEqual(kill(pid, 0), 0, "kill(2) would let it through")
         XCTAssertNil(real.auditToken(of: pid), "and no token comes for it (KERN_FAILURE)")
@@ -873,6 +936,31 @@ final class ProcessSignalsTests: XCTestCase {
         XCTAssertEqual(status & 0x7f, SIGTERM, "ended by the TERM")
     }
 
+    /// A real child of the test's: put in the background and back, and its
+    /// nice raised to 5 then 20 — never lowered: the kernel would refuse,
+    /// and nothing is asked of it. The real kernel's own call keeps to the
+    /// run's own, as its sends do.
+    func testARealChildsPriority() throws {
+        let child = try TestChild("/bin/sleep", ["30"])
+        defer { child.stop() }
+        let real = LiveActivityKernel()
+        XCTAssertEqual(real.setPriority(.nice(5), pid: child.pid), EPERM, "not the app's gate's")
+        XCTAssertEqual(real.process(child.pid)?.nice, 0)
+        own(child.identity)
+        let recorder = RecordingKernel(own: [child.identity])
+        let signals = ProcessSignals(kernel: recorder)
+        let target = ActivitySignalTarget(child.identity, path: real.path(of: child.pid))
+        XCTAssertEqual(signals.setPriority(.background, of: target), .sent(pinned: true))
+        XCTAssertEqual(signals.setPriority(.normal, of: target), .sent(pinned: true))
+        XCTAssertEqual(signals.setPriority(.nice(5), of: target), .sent(pinned: true))
+        XCTAssertEqual(real.process(child.pid)?.nice, 5)
+        XCTAssertEqual(signals.setPriority(.nice(3), of: target), .refused(.niceDown))
+        XCTAssertEqual(signals.setPriority(.nice(20), of: target), .sent(pinned: true))
+        XCTAssertEqual(real.process(child.pid)?.nice, 20)
+        XCTAssertEqual(recorder.calls.filter { $0 == "priority" }.count, 4)
+        XCTAssertEqual(recorder.answers, [0, 0, 0, 0])
+    }
+
     /// A real process that isn't the test's — the process that started the
     /// runner — asked about with the app's own gate: refused before any
     /// call. The kernel here sends nothing whatever it is asked, so not
@@ -889,6 +977,8 @@ final class ProcessSignalsTests: XCTestCase {
             // A Bool, so a failure prints nothing of a process not the test's.
             XCTAssertTrue(signals.send(signal, to: target, alone: true) == .refused(.gate), "refused by the gate: \(signal)")
         }
+        XCTAssertTrue(signals.setPriority(.background, of: target) == .refused(.gate), "nor reniced")
+        XCTAssertTrue(signals.setPriority(.nice(20), of: target) == .refused(.gate))
         XCTAssertEqual(recorder.calls, [], "no token, no signal")
         // And the test's own child, unregistered: its process's child, so a helper's.
         let child = try TestChild("/bin/sleep", ["30"])
@@ -1054,6 +1144,14 @@ private final class RecordingKernel: ActivityKernel, @unchecked Sendable {
             return EPERM
         }
         let answer = real.signal(signal, group: group)
+        lock.withLock { results.append(answer) }
+        return answer
+    }
+
+    func setPriority(_ change: ActivityPriorityChange, pid: pid_t) -> Int32 {
+        record("priority")
+        guard isOwn(pid) else { return EPERM }
+        let answer = real.setPriority(change, pid: pid)
         lock.withLock { results.append(answer) }
         return answer
     }

@@ -91,6 +91,12 @@ protocol ActivityKernel: Sendable {
     /// checks every member just before. Never a group ≤ 1 nor this
     /// process's own.
     func signal(_ signal: Int32, group: pid_t) -> Int32
+    /// `setpriority`: Run in Background and back (`PRIO_DARWIN_PROCESS`),
+    /// or a nice raised (`PRIO_PROCESS`) — 0 when done, else the errno. It
+    /// has no token form: `ProcessSignals.setPriority` pins the process and
+    /// checks it through its token just before. Never a pid ≤ 1 nor this
+    /// process; in an isolated run or a unit test, the run's own only.
+    func setPriority(_ change: ActivityPriorityChange, pid: pid_t) -> Int32
     /// The system's own counters for the meters (`SystemMeterCounters`):
     /// read in the full tick; nil when they can't be read.
     func meterCounters() -> SystemMeterCounters?
@@ -410,6 +416,20 @@ struct LiveActivityKernel: ActivityKernel {
         }
         return killpg(group, signal) == 0 ? 0 : errno
     }
+
+    func setPriority(_ change: ActivityPriorityChange, pid: pid_t) -> Int32 {
+        guard pid > 1, pid != getpid() else { return EPERM }
+        // The isolated-run gate, as the sends make it (6.10 step 11).
+        if let refused = ActivitySignalGate.shared.refusal(of: pid, kernel: self) { return refused }
+        let answer: Int32
+        switch change {
+        // 3.9: another same-uid process's base priority goes to 4, and 0 puts it back.
+        case .background: answer = setpriority(PRIO_DARWIN_PROCESS, id_t(pid), PRIO_DARWIN_BG)
+        case .normal: answer = setpriority(PRIO_DARWIN_PROCESS, id_t(pid), 0)
+        case .nice(let value): answer = setpriority(PRIO_PROCESS, id_t(pid), value)
+        }
+        return answer == 0 ? 0 : errno
+    }
 }
 
 /// A Mac a test makes (10.1): processes of any user — another user's,
@@ -458,9 +478,16 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
         var group = false
     }
 
+    /// A priority the fake was asked to set.
+    struct Priority: Hashable, Sendable {
+        let pid: pid_t
+        let change: ActivityPriorityChange
+    }
+
     let uid: uid_t
     private let lock = NSLock()
     private var table: [pid_t: Process] = [:]
+    private var reniced: [Priority] = []
     private var clock: UInt64 = 1_000_000_000
     private var counts: [String: Int] = [:]
     private var csops = true
@@ -534,6 +561,9 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
 
     /// The signals it was asked to send, in order.
     var sent: [Sent] { lock.withLock { sends } }
+
+    /// The priorities it was asked to set, in order.
+    var priorities: [Priority] { lock.withLock { reniced } }
 
     /// `record` with another state, or another name.
     static func record(_ record: ActivityProcess, status: Int32, shortName: String? = nil) -> ActivityProcess {
@@ -809,6 +839,26 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
                 changed.record = Self.record(member.record, status: signal == SIGSTOP ? SSTOP : SRUN)
                 table[member.record.pid] = changed
             }
+            return 0
+        }
+    }
+
+    /// Recorded; a nice changes its record's, never downward (EACCES, as
+    /// the kernel answers the user).
+    func setPriority(_ change: ActivityPriorityChange, pid: pid_t) -> Int32 {
+        asked("priority") {
+            guard pid > 1, var process = table[pid], !process.record.isZombie else { return ESRCH }
+            if case .nice(let value) = change {
+                guard value >= Int32(process.record.nice) else { return EACCES }
+                let record = process.record
+                process.record = ActivityProcess(
+                    identity: record.identity, parentPID: record.parentPID, group: record.group, terminal: record.terminal,
+                    terminalGroup: record.terminalGroup, effectiveUID: record.effectiveUID, realUID: record.realUID, savedUID: record.savedUID,
+                    status: record.status, flags: record.flags, ignoredSignals: record.ignoredSignals, caughtSignals: record.caughtSignals,
+                    nice: Int8(clamping: value), shortName: record.shortName)
+                table[pid] = process
+            }
+            reniced.append(Priority(pid: pid, change: change))
             return 0
         }
     }

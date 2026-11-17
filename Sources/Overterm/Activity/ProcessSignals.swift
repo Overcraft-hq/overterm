@@ -34,6 +34,28 @@ enum ActivitySignal: String, CaseIterable, Hashable, Sendable {
     func command(for pid: pid_t) -> String { "kill -\(rawValue) \(pid)" }
 }
 
+/// A priority Activity sets (6.10, 3.9): Run in Background
+/// (`PRIO_DARWIN_BG`) and Run Normally (0), or a nice raised — upward
+/// only: lowering it, even back to where it was, needs an administrator.
+enum ActivityPriorityChange: Hashable, Sendable {
+    case background
+    case normal
+    /// The nice it is given, 1…20.
+    case nice(Int32)
+
+    /// The highest nice: Lower Priority ▸ 20.
+    static let lowest: Int32 = 20
+
+    /// The command it equals, as a sheet names it: `renice 10 -p 4242`.
+    func command(for pid: pid_t) -> String {
+        switch self {
+        case .background: "taskpolicy -b -p \(pid)"
+        case .normal: "taskpolicy -B -p \(pid)"
+        case .nice(let value): "renice \(value) -p \(pid)"
+        }
+    }
+}
+
 /// A process as Activity listed it (6.10 step 2): its pid and start time,
 /// and the executable `proc_pidpath` gave then, which a process can't fake
 /// the way it can fake argv[0]. `path` is nil when it couldn't be read —
@@ -111,6 +133,9 @@ enum ActivitySignalRefusal: Hashable, Sendable {
     /// just before the `killpg` isn't one of them — it joined since (a
     /// fork, a pipeline's new stage). Nobody is signalled who wasn't listed.
     case groupChanged
+    /// Lower Priority to a nice no higher than it has: nice can only be
+    /// raised (3.9), so nothing is asked of the kernel.
+    case niceDown
 
     var reason: String {
         switch self {
@@ -125,6 +150,7 @@ enum ActivitySignalRefusal: Hashable, Sendable {
         case .group: "Its process group isn't its own alone: something in it didn't start under it, or isn't yours."
         case .groupHolds: "Its process group now holds a pane's shell, an agent or a terraform write: no group Stop reaches it — nothing was sent."
         case .groupChanged: "A process joined its group since you were asked: nothing was sent — ask again to see every member it holds now."
+        case .niceDown: "Its nice is already that high or higher: nice can only be raised, and lowering it needs an administrator."
         }
     }
 }
@@ -318,6 +344,47 @@ struct ProcessSignals: Sendable {
             return .failed(answer)
         }
         if Self.continues(after: signal, checked) { _ = kernel.signal(SIGCONT, by: token) }
+        return .sent(pinned: true)
+    }
+
+    /// Sets `change` on `target` (6.10's Run in Background, Run Normally,
+    /// Lower Priority), checked as `send` checks a signal: the refusals
+    /// before anything is read, its structure read now, Overterm's helpers
+    /// and the gate, the token taken first and the identity checked through
+    /// it — the start read after it, its executable the listed one. Then
+    /// `setpriority` by its pid, which has no token form: a pid reused in
+    /// the microseconds since the check is the one race left, and the token
+    /// is asked once more after the call to say so. A nice is raised only
+    /// (`.niceDown` otherwise, nothing asked of the kernel). Without a token
+    /// nothing is set: only a single Stop or Interrupt goes by the pid.
+    func setPriority(_ change: ActivityPriorityChange, of target: ActivitySignalTarget) -> ActivitySignalAnswer {
+        let identity = target.identity
+        if let refusal = Self.refusal(before: identity, app: app) { return .refused(refusal) }
+        switch read(identity) {
+        case .ended(let now): return .ended(now: now)
+        case .live(let process):
+            guard process.isWhollyOwn(by: kernel.uid) else { return .refused(.notYours) }
+            if let refusal = refusal(for: process) { return .refused(refusal) }
+        }
+        guard let token = kernel.auditToken(of: identity.pid) else {
+            switch read(identity) {
+            case .ended(let now): return .ended(now: now)
+            case .live: return .refused(.unpinned)
+            }
+        }
+        guard token.pid == identity.pid, token.effectiveUID == kernel.uid, token.realUID == kernel.uid else { return .refused(.notYours) }
+        let checked: ActivityProcess
+        switch read(identity) {
+        case .ended(let now): return .ended(now: now)
+        case .live(let process): checked = process
+        }
+        guard checked.isWhollyOwn(by: kernel.uid) else { return .refused(.notYours) }
+        if let changed = changedImage(target, token: token) { return changed }
+        if case .nice(let value) = change, value <= Int32(checked.nice) { return .refused(.niceDown) }
+        let answer = kernel.setPriority(change, pid: identity.pid)
+        guard answer == 0 else { return answer == ESRCH ? .ended(now: nil) : .failed(answer) }
+        // Still the image the token names: else it ended or exec'd in between.
+        guard kernel.path(of: token) != nil || target.path == nil else { return whatBecame(of: target, token: token) ?? .sent(pinned: true) }
         return .sent(pinned: true)
     }
 
