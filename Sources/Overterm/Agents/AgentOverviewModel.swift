@@ -26,6 +26,8 @@ final class AgentOverviewModel: ObservableObject {
         /// Its agent's CPU, footprint and servers, from the census's
         /// snapshot the card was made from (6.2, 6.12).
         var usage: AgentUsage? = nil
+        /// What its agents' ended runs left running (6.9): "left 2 behind".
+        var left = 0
     }
 
     /// What an agent spends, it and everything under it (its tools, its
@@ -79,7 +81,15 @@ final class AgentOverviewModel: ObservableObject {
             let (agents, snapshot) = PaneAgent.lookupAndSnapshot(snapshots.map { ($0.id, $0.tags) }, census: census, folders: true)
             return (snapshots.map { Self.card(for: $0, agent: agents[$0.id], snapshot: snapshot) }, snapshot)
         }
-        self.cards = Self.ordered(cards)
+        // What its agents' runs left that still runs (6.9).
+        let ledger = LeftBehindLedger.shared
+        let latest = ActivityMonitor.shared.snapshot
+        self.cards = Self.ordered(
+            cards.map { card in
+                var card = card
+                card.left = ledger.leftCount(of: card.id, in: latest)
+                return card
+            })
     }
 
     /// A tab's card, with the agent the census found running in it — and,

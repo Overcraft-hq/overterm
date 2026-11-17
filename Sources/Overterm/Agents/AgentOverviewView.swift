@@ -143,6 +143,18 @@ private struct AgentCard: View {
                 Text(card.activity.isWorking ? "A command is running" : "Shell").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.dimText)
             }
             if let usage = card.usage { usageRow(usage) }
+            if card.left > 0 {
+                // 6.9: what its agent's ended runs left running.
+                Label {
+                    Text(verbatim: "left \(card.left) behind")
+                } icon: {
+                    Image(systemName: "arrow.uturn.backward.circle")
+                }
+                .font(.system(size: ChromeMetrics.text(11)))
+                .foregroundStyle(theme.dimText)
+                .help("Processes its agent's runs left running when it finished: Activity ▸ Left Behind")
+                .accessibilityIdentifier("overview.left")
+            }
         }
         .padding(12)
         .frame(maxWidth: .infinity, minHeight: 96, alignment: .topLeading)
