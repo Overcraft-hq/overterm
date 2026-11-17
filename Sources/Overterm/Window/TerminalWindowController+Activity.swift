@@ -18,6 +18,8 @@ extension TerminalWindowController {
         if surfaces.hasWaiting, let snapshot = ActivityMonitor.shared.sampler.latest { surfaces.pair(snapshot) }
         var context = ActivityContext()
         context.appServices = Settings.shared.activityAppServices
+        // This run's marker: another Overterm's panes are told apart by theirs (6.5 rule 10).
+        context.run = OvertermRun.current.marker
         for controller in windows.compactMap({ $0.windowController as? TerminalWindowController }) {
             let window = controller.window?.windowNumber
             for tab in controller.store.tabs {

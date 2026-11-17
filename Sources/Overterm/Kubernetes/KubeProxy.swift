@@ -84,17 +84,28 @@ struct KubeSocketFolder: Sendable {
     let base: URL
     let uid: uid_t
     let pid: pid_t
+    /// The run's start, µs: named in the folder with its pid — an argv sign
+    /// (`ArgvSign.kubectl`), so a kubectl a crashed run left is known for
+    /// that run's, never for a later Overterm's that got the same pid.
+    let start: UInt64
 
-    init(base: URL = URL(fileURLWithPath: "/tmp", isDirectory: true), uid: uid_t = getuid(), pid: pid_t = getpid()) {
+    init(
+        base: URL = URL(fileURLWithPath: "/tmp", isDirectory: true), uid: uid_t = getuid(), pid: pid_t = getpid(),
+        start: UInt64 = OvertermRun.current.start
+    ) {
         self.base = base
         self.uid = uid
         self.pid = pid
+        self.start = start
     }
 
     /// The app's.
     static let app = KubeSocketFolder()
 
-    var path: String { base.appendingPathComponent("\(Self.prefix)\(uid)-\(pid)", isDirectory: true).path }
+    /// `<base>/ot-kube-<uid>-<pid>-<start36>`.
+    var path: String {
+        base.appendingPathComponent(ArgvSign.kubeFolder(uid: uid, run: ActivityProcessID(pid: pid, start: start)), isDirectory: true).path
+    }
 
     /// The socket's file name: the context's SHA-256, its first 12 hex digits.
     static func name(for context: String) -> String {
@@ -196,12 +207,23 @@ struct KubeSocketFolder: Sendable {
         try? FileManager.default.removeItem(atPath: path)
     }
 
-    /// The folders of this user's runs whose process is gone.
+    /// The folders of this user's runs whose process is gone: its pid
+    /// running nothing, or — the folder naming its start too — another
+    /// process. A folder of the older form, the pid alone, is kept while
+    /// that pid runs anything.
     func sweepStale() {
         let own = "\(Self.prefix)\(uid)-"
         let names = (try? FileManager.default.contentsOfDirectory(atPath: base.path)) ?? []
-        for name in names where name.hasPrefix(own) {
-            guard let other = pid_t(name.dropFirst(own.count)), other != pid, kill(other, 0) != 0, errno == ESRCH else { continue }
+        let mine = (path as NSString).lastPathComponent
+        for name in names where name.hasPrefix(own) && name != mine {
+            let fields = name.dropFirst(own.count).split(separator: "-", omittingEmptySubsequences: false)
+            guard fields.count == 1 || fields.count == 2, let other = pid_t(fields[0]), other > 0 else { continue }
+            let named = fields.count == 2 ? OvertermRun.fromBase36(fields[1]) : nil
+            if fields.count == 2, named == nil { continue }
+            if kill(other, 0) == 0 || errno != ESRCH {
+                // Running: the run's own only when its start is the one named.
+                guard let named, let running = ProcessInspector.kinfo(other)?.start, running != named else { continue }
+            }
             let folder = base.appendingPathComponent(name).path
             var info = stat()
             guard lstat(folder, &info) == 0, info.st_uid == uid, info.st_mode & S_IFMT == S_IFDIR else { continue }
