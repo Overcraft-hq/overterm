@@ -937,24 +937,28 @@ final class ProcessSignalsTests: XCTestCase {
     }
 
     /// A real child of the test's: put in the background and back, and its
-    /// nice raised to 5 then 20 — never lowered: the kernel would refuse,
-    /// and nothing is asked of it. The real kernel's own call keeps to the
-    /// run's own, as its sends do.
+    /// nice raised one step then to 20 — never lowered: the kernel would
+    /// refuse, and nothing is asked of it. Its nice starts at the test
+    /// process's own (a shell's background job runs at 5, zsh's
+    /// `bg_nice`). The real kernel's own call keeps to the run's own, as its
+    /// sends do.
     func testARealChildsPriority() throws {
         let child = try TestChild("/bin/sleep", ["30"])
         defer { child.stop() }
         let real = LiveActivityKernel()
-        XCTAssertEqual(real.setPriority(.nice(5), pid: child.pid), EPERM, "not the app's gate's")
-        XCTAssertEqual(real.process(child.pid)?.nice, 0)
+        let start = Int32(try XCTUnwrap(real.process(child.pid)).nice)
+        try XCTSkipIf(start >= ActivityPriorityChange.lowest - 1, "the test runs at nice \(start): no room to raise it")
+        XCTAssertEqual(real.setPriority(.nice(start + 1), pid: child.pid), EPERM, "not the app's gate's")
+        XCTAssertEqual(real.process(child.pid).map { Int32($0.nice) }, start)
         own(child.identity)
         let recorder = RecordingKernel(own: [child.identity])
         let signals = ProcessSignals(kernel: recorder)
         let target = ActivitySignalTarget(child.identity, path: real.path(of: child.pid))
         XCTAssertEqual(signals.setPriority(.background, of: target), .sent(pinned: true))
         XCTAssertEqual(signals.setPriority(.normal, of: target), .sent(pinned: true))
-        XCTAssertEqual(signals.setPriority(.nice(5), of: target), .sent(pinned: true))
-        XCTAssertEqual(real.process(child.pid)?.nice, 5)
-        XCTAssertEqual(signals.setPriority(.nice(3), of: target), .refused(.niceDown))
+        XCTAssertEqual(signals.setPriority(.nice(start + 1), of: target), .sent(pinned: true))
+        XCTAssertEqual(real.process(child.pid).map { Int32($0.nice) }, start + 1)
+        XCTAssertEqual(signals.setPriority(.nice(start), of: target), .refused(.niceDown))
         XCTAssertEqual(signals.setPriority(.nice(20), of: target), .sent(pinned: true))
         XCTAssertEqual(real.process(child.pid)?.nice, 20)
         XCTAssertEqual(recorder.calls.filter { $0 == "priority" }.count, 4)
