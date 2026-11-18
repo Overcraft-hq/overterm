@@ -65,6 +65,8 @@ extension E2ERunner {
         var rowsMade: [Double] = []
         var shown: [Double] = []
         var heldShown: [Double] = []
+        var shownMain: [Double] = []
+        var heldMain: [Double] = []
         func tick(held: Bool) async {
             burn()
             let builds = page.builds
@@ -81,6 +83,7 @@ extension E2ERunner {
             _ = await eventually(10) { page.builds > builds && frame.count > frames }
             let took = frame.last
             if held { heldShown.append(took) } else { shown.append(took) }
+            if held { heldMain.append(frame.lastCPU) } else { shownMain.append(frame.lastCPU) }
         }
         // An agent's pane: a login, its shell, Claude Code and three
         // children — a selected agent's detail charts its subtree too.
@@ -306,11 +309,12 @@ extension E2ERunner {
         note("activityPerf: the sampler's CPU a tick, p90: full \(p90(fullP90)), light (8 panes) \(p90(lightP90)), \(lightCPU.count) light ticks")
         note("activityPerf: a tick's rows shown \(update), each \(shown.map { Int($0.rounded()) }); held \(held); scrolled \(scrolled.count) steps, \(scroll)")
         note("activityPerf: 5,000 processes' rows, grouped by checkout, made \(crowd)")
+        note("activityPerf: a publish's main-thread CPU \(Self.summary(shownMain)), p90 \(p90(Self.p90(shownMain))); held \(Self.summary(heldMain))")
         note("activityPerf: a selected row's verbs listed on the main thread \(verbs); its process read off it among 5,000, every owner \(subject)")
         note("activityPerf: a selected agent's detail, its charts made off the main thread: on it \(detail), p90 \(p90(Self.p90(detailCost)))")
         // 10.4's 15 ms isn't met yet — the owners' cost, open (design 15):
         // the gate holds what is, so it can only get better.
-        check("5,000 processes' rows are made in under 100 ms (median)", !crowdedRows.isEmpty && crowd.median < 100, "\(crowd)")
+        check("5,000 processes' rows are made in under 60 ms (median)", !crowdedRows.isEmpty && crowd.median < 60, "\(crowd)")
         check("the census's own CPU a tick stays under 50 ms (median)", census.median < 50, "\(census)")
         check("the light tick's CPU is read (12 ticks)", lightCPU.count == 12, "\(lightCPU.count)")
         note(
@@ -332,6 +336,14 @@ extension E2ERunner {
         // visible rows' cells (design 15).
         check("a tick's rows are shown in under 100 ms (median)", !shown.isEmpty && update.median < 100, "\(update)")
         check("held, a tick is shown in under 100 ms (median)", !heldShown.isEmpty && held.median < 100, "\(held)")
+        // 7.7's own measure: the main thread's CPU from the content set to
+        // the run loop's rest — the Mac's other work left out. 10.4's 4 ms
+        // isn't met: SwiftUI lays the visible rows' cells out again
+        // (design 15); gated at what it costs, so it only gets better.
+        check(
+            "a publish takes the main thread under 50 ms of CPU (p90), a held one under 35 ms",
+            shownMain.count >= 12 && Self.p90(shownMain) < 50 && heldMain.count == 12 && Self.p90(heldMain) < 35,
+            "\(Self.summary(shownMain)); held \(Self.summary(heldMain))")
         check("the list scrolls in under 35 ms a step (p95)", !scrolled.isEmpty && scroll.p95 < 35, "\(scroll)")
         // 7.7: the main thread's part of a publish ≤ 4 ms — the verbs' list
         // is all of theirs that stays on it.
@@ -486,19 +498,27 @@ extension E2ERunner {
 /// next rest, a sample each change.
 final class ActivityFrameClock: @unchecked Sendable {
     private let lock = NSLock()
-    private var armed: CFTimeInterval?
+    private var armed: (wall: CFTimeInterval, cpu: UInt64)?
     private var samples: [Double] = []
+    private var cpuSamples: [Double] = []
 
-    func arm() { lock.withLock { if armed == nil { armed = CACurrentMediaTime() } } }
+    /// Both on the main thread: its own CPU between them is the publish's
+    /// main-thread part (7.7), whatever else the Mac runs.
+    func arm() {
+        lock.withLock { if armed == nil { armed = (CACurrentMediaTime(), clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)) } }
+    }
 
     func rest() {
         lock.withLock {
             guard let armed else { return }
-            samples.append((CACurrentMediaTime() - armed) * 1000)
+            samples.append((CACurrentMediaTime() - armed.wall) * 1000)
+            cpuSamples.append(Double(clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) &- armed.cpu) / 1_000_000)
             self.armed = nil
         }
     }
 
     var count: Int { lock.withLock { samples.count } }
     var last: Double { lock.withLock { samples.last ?? 0 } }
+    /// The main thread's CPU of the last publish, ms.
+    var lastCPU: Double { lock.withLock { cpuSamples.last ?? 0 } }
 }
