@@ -247,12 +247,61 @@ extension TerminalWindowController {
     /// The agent's folder, when it differs from the shell's checkout: an
     /// agent in the tab's own folder changes nothing. The checkouts are
     /// looked for on disk only when the folder or the shell's moved.
+    /// Never on the main thread: the walk asks the disk for `.git` up the
+    /// folders, and an agent's folder may sit on a mount that stopped
+    /// answering (7.2). A folder not walked yet keeps what the tab follows
+    /// as it was until its walk lands (`AgentTreeRoots`).
     private func agentFollowing(_ folder: String, of tab: Tab) -> String? {
         if let known = lightTickAgents[tab.id], known.folder == folder, known.shell == tab.workingDirectory { return known.following }
-        let shell = tab.workingDirectory.map { FileTreeModel.treeRoot(for: $0) }
-        let following = FileTreeModel.treeRoot(for: folder) == shell ? nil : folder
+        let roots = AgentTreeRoots.shared
+        let agent = roots.root(for: folder)
+        var shell: URL?
+        if let directory = tab.workingDirectory {
+            guard let root = roots.root(for: directory) else { return tab.agentDirectory }
+            shell = root
+        }
+        guard let agent else { return tab.agentDirectory }
+        let following = agent == shell ? nil : folder
         lightTickAgents[tab.id] = (folder, tab.workingDirectory, following)
         return following
+    }
+}
+
+/// Each folder's checkout root as `FileTreeModel.treeRoot` finds it,
+/// walked on a queue of its own — never the main thread's — and kept (at
+/// most 512): `root(for:)` answers what is known and asks for the rest.
+/// `prime` walks on the caller's own thread, a GCD one (`agentsNow`), so a
+/// read waited for (an MCP call's) follows at once.
+final class AgentTreeRoots: @unchecked Sendable {
+    static let shared = AgentTreeRoots()
+
+    private let lock = NSLock()
+    private var roots: [String: URL] = [:]
+    private var asked: Set<String> = []
+    private let queue = DispatchQueue(label: "Overterm.treeRoots", qos: .utility)
+
+    /// `folder`'s root when it is known; else nil, its walk asked for.
+    func root(for folder: String) -> URL? {
+        let (known, ask) = lock.withLock { () -> (URL?, Bool) in
+            if let root = roots[folder] { return (root, false) }
+            return (nil, asked.insert(folder).inserted)
+        }
+        if ask { queue.async { @Sendable [self] in self.walk(folder) } }
+        return known
+    }
+
+    /// The roots of `folders`, walked here: off the main thread only.
+    func prime(_ folders: [String]) {
+        for folder in folders where lock.withLock({ roots[folder] == nil }) { walk(folder) }
+    }
+
+    private func walk(_ folder: String) {
+        let root = FileTreeModel.treeRoot(for: folder)
+        lock.withLock {
+            if roots.count >= 512 { roots = [:] }
+            roots[folder] = root
+            asked.remove(folder)
+        }
     }
 }
 
@@ -345,7 +394,8 @@ extension TerminalWindowController {
         // waiting is made now, so a tab opened since has its panes in it.
         ActivityMonitor.shared.flushContext()
         let asked = tabs.map { _, tab in (id: tab.id, tags: focusedFirst(tab).map(\.processTag)) }
-        guard let (snapshot, agents) = await agentsNow(asked, fresh: fresh) else { return }
+        let shells = tabs.compactMap { _, tab in tab.workingDirectory }
+        guard let (snapshot, agents) = await agentsNow(asked, shells: shells, fresh: fresh) else { return }
         // A pairing the snapshot brings, as a landing tick's does (7.7).
         let surfaces = SurfaceProcesses.shared
         if surfaces.hasWaiting, surfaces.pair(snapshot) { ActivityMonitor.shared.surfacesPaired() }
@@ -358,7 +408,7 @@ extension TerminalWindowController {
 
     /// The lookup and the agents it read, off the main thread: a GCD
     /// thread's, never a blocked Swift-concurrency thread's (7.7).
-    private nonisolated static func agentsNow(_ tabs: [(id: UUID, tags: [String])], fresh: Bool) async -> (
+    private nonisolated static func agentsNow(_ tabs: [(id: UUID, tags: [String])], shells: [String], fresh: Bool) async -> (
         ActivitySnapshot, [UUID: TabLightRead.Agent]
     )? {
         await withCheckedContinuation { continuation in
@@ -378,6 +428,9 @@ extension TerminalWindowController {
                     agents[tab.id] = TabLightRead.agent(
                         tab.tags, tab: tab.id, in: snapshot, folder: fresh ? { census.folders.folder(readSince: since, of: $0) } : nil)
                 }
+                // Their checkouts walked here, so the main thread follows
+                // them at once without asking the disk (7.2).
+                AgentTreeRoots.shared.prime(agents.values.compactMap { if case .folder(let folder) = $0 { folder } else { nil } } + shells)
                 continuation.resume(returning: (snapshot, agents))
             }
         }
