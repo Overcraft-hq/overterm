@@ -72,7 +72,7 @@ extension E2ERunner {
         check(
             "its rows name the tab", ownRows().allSatisfy { $0.tabTitle != nil }, "\(ownRows().filter { $0.tabTitle == nil }.count) unnamed")
         await activityOwners(tab: tab)
-        await activityTable(tab: tab)
+        let overgitTab = await activityTable(tab: tab)
         check(
             "the header counts the Mac, the rows the run's", page.content.summary.scopedToRun && page.content.summary.processes > page.content.summary.shown,
             "\(page.content.summary.shown) of \(page.content.summary.processes)")
@@ -179,6 +179,17 @@ extension E2ERunner {
         app.toggleActivityPage(nil)
         // Stage 3: Left Behind, the close sheet, the next launch.
         await activityLeftBehindChecks()
+
+        // The detail's Show in Overgit (6.4), last: it takes the page away.
+        if let tabID = overgitTab {
+            let panel = app.sidebarPanel.panel
+            let collapsed = app.sidebarItem?.isCollapsed == true
+            page.actions.overgit(tabID)
+            check("Show in Overgit brings its tab forward, the sidebar on Overgit", app.sidebarPanel.panel == .git && app.store.selected?.id == tabID)
+            app.sidebarPanel.panel = panel
+            if collapsed, app.sidebarItem?.isCollapsed == false { app.toggleFileTree(nil) }
+            app.updateOvergitVisibility()
+        }
     }
 
     /// Owners, groups and the scope (6.5) over the run's own children: the

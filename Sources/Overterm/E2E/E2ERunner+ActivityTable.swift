@@ -7,11 +7,15 @@ import AppKit
 /// over the run's own children only. Pids and counts, never another
 /// process's name or command.
 extension E2ERunner {
-    func activityTable(tab: Tab) async {
+    /// The tab whose checkout the detail's Show in Overgit names, for the
+    /// scenario's last check (it takes the page away).
+    @discardableResult
+    func activityTable(tab: Tab) async -> UUID? {
         let page = app.activityPage
         let pane = tab.terminal
         guard let view = app.pages.view(.activity), let table = WorkspacePages.firstTable(in: view) as? ResourceTableView else {
-            return check("the page's table", false)
+            check("the page's table", false)
+            return nil
         }
         func own() -> [ActivityProcessRow] { page.content.processes.filter { $0.tab == tab.id && !$0.dimmed } }
         func listed() -> [ActivityProcessRow] {
@@ -61,7 +65,10 @@ extension E2ERunner {
         _ = await eventually(10) { own().count >= 3 }
 
         // The detail: the selected server's.
-        guard let server = own().first(where: { $0.name.lowercased().hasPrefix("python") }) else { return check("the server's row", false) }
+        guard let server = own().first(where: { $0.name.lowercased().hasPrefix("python") }) else {
+            check("the server's row", false)
+            return nil
+        }
         page.selection = [server.id]
         let detailed = await eventually(5) { said("activity.detail.command")?.isEmpty == false }
         check("the selected process's detail, its masked command", page.detail?.row.id == server.id && detailed, "pid \(server.identity.pid)")
@@ -209,18 +216,6 @@ extension E2ERunner {
         check("once the pointer leaves, it lets go at once", !page.orderHeld && page.waiting == nil)
         page.processSort = ResourceSort(column: "cpu", ascending: false)
 
-        // The detail's Show in Overgit: its tab forward, the sidebar on
-        // Overgit; then the page and the sidebar as they were.
-        if let tabID = overgitTab {
-            let panel = app.sidebarPanel.panel
-            let collapsed = app.sidebarItem?.isCollapsed == true
-            page.actions.overgit(tabID)
-            check("Show in Overgit brings its tab forward, the sidebar on Overgit", app.sidebarPanel.panel == .git && app.store.selected?.id == tabID)
-            app.sidebarPanel.panel = panel
-            if collapsed, app.sidebarItem?.isCollapsed == false { app.toggleFileTree(nil) }
-            app.updateOvergitVisibility()
-            if app.store.showingOverlay != .activity { app.showActivityPage() }
-            _ = await eventually(10) { page.hasRead && !own().isEmpty }
-        }
+        return overgitTab
     }
 }
