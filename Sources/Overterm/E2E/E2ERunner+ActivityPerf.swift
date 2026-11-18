@@ -46,10 +46,16 @@ extension E2ERunner {
         // Steady: every process the same CPU each tick, so no value drawn
         // moves — what a publish costs when nothing changed.
         var steadyCPU = false
+        // A Mac's usual list: thirty busy at 50.02% each, a hundredth of a
+        // percent of jitter that no column shows, the rest idle.
+        var busyTop = false
         func burn() {
             kernel.advance(2_000_000_000)
-            for pid in pids {
-                let used = steadyCPU ? 10_000_000 : UInt64.random(in: 0...40_000_000, using: &random)
+            for (index, pid) in pids.enumerated() {
+                let used =
+                    busyTop
+                    ? (index < 30 ? 1_000_400_000 + UInt64.random(in: 0...100_000, using: &random) : 0)
+                    : steadyCPU ? 10_000_000 : UInt64.random(in: 0...40_000_000, using: &random)
                 kernel.update(pid) { process in
                     process.usage = FakeActivityKernel.usage(cpuTime: (process.usage?.cpuTime ?? 0) + used, footprint: process.usage?.footprint ?? 0, threads: 4)
                 }
@@ -166,6 +172,24 @@ extension E2ERunner {
             shownMain.removeSubrange(mark.1...)
         }
         steadyCPU = false
+        // Top stable (6.7): the busy thirty's CPU moves below what the column
+        // shows — a re-sort moves no row for it.
+        var topMain: [Double] = []
+        leg = "top"
+        busyTop = true
+        for round in 0..<13 {
+            let mark = (shown.count, shownMain.count)
+            await tick(held: false)
+            if round == 0 {
+                touched["top"] = []
+            } else {
+                topMain += shownMain[mark.1...]
+            }
+            shown.removeSubrange(mark.0...)
+            shownMain.removeSubrange(mark.1...)
+        }
+        busyTop = false
+        let topReorders = (touched["top"] ?? []).map(\.reorders).reduce(0, +)
         var verbsListed: [Double] = []
         leg = "verbs"
         if let selected = page.content.processes.first {
@@ -406,7 +430,8 @@ extension E2ERunner {
                 + "at 5,000 processes, \"+N more\" folded (\(crowdedPublish.folded.rows) rows) \(Self.summary(crowdedPublish.folded.main)), "
                 + "p90 \(p90(Self.p90(crowdedPublish.folded.main))); unfolded (\(crowdedPublish.whole.rows) rows) \(Self.summary(crowdedPublish.whole.main)), "
                 + "p90 \(p90(Self.p90(crowdedPublish.whole.main)))")
-        for name in ["shown", "held", "steady", "verbs", "agent"] {
+        note("activityPerf: thirty busy, their CPU moving below what the column shows: a publish \(Self.summary(topMain)), p90 \(p90(Self.p90(topMain))), \(topReorders) reorders in 12 ticks")
+        for name in ["shown", "held", "steady", "top", "verbs", "agent"] {
             if let touches = touched[name] { note("activityPerf: a publish touched, \(name): \(TableTouch.said(touches))") }
         }
         note("activityPerf: a publish touched, at 5,000 folded: \(TableTouch.said(crowdedPublish.folded.touched))")
@@ -521,6 +546,9 @@ extension E2ERunner {
         check(
             "a publish of processes hands no hosted cell a row", shownTouches.count >= 12 && shownTouches.allSatisfy { $0.shows == 0 },
             "\(shownTouches.map(\.shows)) for \(shownTouches.last?.visible ?? 0) rows")
+        // 6.7: a sort by what the column shows — thirty busy processes whose
+        // CPU moves below a tenth keep their places.
+        check("a re-sort moves no row for a change no column shows (12 ticks)", (touched["top"] ?? []).count == 12 && topReorders == 0, "\(topReorders) reorders")
         check("the list scrolls in under 35 ms a step (p95)", !scrolled.isEmpty && scroll.p95 < 35, "\(scroll)")
         // 7.7: the main thread's part of a publish ≤ 4 ms — the verbs' list
         // is all of theirs that stays on it.

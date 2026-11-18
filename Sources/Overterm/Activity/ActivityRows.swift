@@ -986,7 +986,7 @@ enum ActivityRows {
         summary.threads = threads
         summary.energy = energy
         summary.busiest = Array(
-            inScope.compactMap { row in row.cpu.map { ActivitySummary.Busy(id: row.id, name: row.name, cpu: $0) } }.sorted { $0.cpu > $1.cpu }.prefix(5))
+            inScope.compactMap { row in row.cpu.map { ActivitySummary.Busy(id: row.id, name: row.name, cpu: $0) } }.sorted { Shown.percent($0.cpu) > Shown.percent($1.cpu) }.prefix(5))
         summary.meters = snapshot.meters
         summary.history = ActivityHistoryCharts.charts(.system, subject: "system", measures: ActivityHistoryCharts.systemMeasures, in: snapshot)
         summary.unread = snapshot.unread
@@ -1065,14 +1065,18 @@ enum ActivityRows {
         return name.isEmpty ? nil : name
     }
 
-    /// The processes in `sort`'s order, a column's missing values last.
+    /// The processes in `sort`'s order, a column's missing values last. CPU
+    /// and memory by what the column shows (`Shown`), so two processes the
+    /// list draws alike keep their places — the order they came in, the
+    /// table's — and a re-sort moves a row only for a change a person can
+    /// see (6.7).
     static func sorted(_ rows: [ActivityProcessRow], by sort: ResourceSort?) -> [ActivityProcessRow] {
         guard let sort else { return rows }
         switch sort.column {
         case "name": return sort.sorted(rows) { $0.name.lowercased() }
         case "pid": return sort.sorted(rows) { $0.identity.pid }
-        case "cpu": return sort.sorted(rows) { $0.cpu }
-        case "memory": return sort.sorted(rows) { $0.memory }
+        case "cpu": return sort.sorted(rows) { $0.cpu.map(Shown.percent) }
+        case "memory": return sort.sorted(rows) { $0.memory.map(Shown.bytes) }
         case "threads": return sort.sorted(rows) { $0.threads }
         case "state": return sort.sorted(rows) { $0.state.letter.isEmpty ? nil : $0.state.letter }
         case "started": return sort.sorted(rows) { $0.started }
@@ -1113,6 +1117,26 @@ enum ActivityRows {
         case "backlog": return sort.sorted(rows) { $0.backlogLimit > 0 ? $0.backlog : nil }
         case "note": return sort.sorted(rows) { $0.note }
         default: return rows
+        }
+    }
+
+    /// A value as the list writes it, as a number that sorts as the words
+    /// do: equal when they read alike. Pure.
+    enum Shown {
+        /// `percent`'s tenths.
+        static func percent(_ value: Double) -> Int { Int((value * 10).rounded()) }
+
+        /// `bytes`' unit and its digits: tenths below 100 of a unit, whole
+        /// ones above, the unit first.
+        static func bytes(_ value: UInt64) -> Int {
+            var amount = Double(value)
+            var unit = 0
+            while amount >= 1024, unit < 4 {
+                amount /= 1024
+                unit += 1
+            }
+            let tenths = unit == 0 || amount >= 100 ? Int(amount.rounded()) * 10 : Int((amount * 10).rounded())
+            return unit * 100_000 + tenths
         }
     }
 

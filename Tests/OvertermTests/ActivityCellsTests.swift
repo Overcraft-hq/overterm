@@ -69,6 +69,54 @@ final class ActivityCellsTests: XCTestCase {
         XCTAssertEqual(ActivityCells.plain(.process(new), "memory")?.isNew, true)
     }
 
+    /// A CPU or memory sort orders by what the column shows: rows that read
+    /// alike keep the order they came in, so a re-sort moves a row only for
+    /// a change a person can see (6.7).
+    func testASortMovesARowOnlyForAChangeShown() {
+        func process(_ pid: Int32, cpu: Double, memory: UInt64 = 64 << 20) -> ActivityProcessRow {
+            ActivityProcessRow(
+                id: "\(pid):1", identity: ActivityProcessID(pid: pid, start: 1), name: "acme-\(pid)", cpu: cpu, memory: memory, threads: 1, state: .running,
+                started: Date(timeIntervalSince1970: 0), startedText: "10:02", user: "fake", isOwn: true, tab: nil, tabTitle: nil)
+        }
+        let busiest = ResourceSort(column: "cpu", ascending: false)
+        let rows = [process(1, cpu: 1.24), process(2, cpu: 1.21), process(3, cpu: 1.26), process(4, cpu: 0)]
+        XCTAssertEqual(ActivityRows.sorted(rows, by: busiest).map(\.identity.pid), [3, 1, 2, 4], "1.2 and 1.2 keep their order; 1.3 goes first")
+        XCTAssertEqual(ActivityRows.sorted([rows[1], rows[0]], by: busiest).map(\.identity.pid), [2, 1], "whichever came first")
+        XCTAssertEqual(ActivityRows.Shown.percent(1.24), ActivityRows.Shown.percent(1.21))
+        XCTAssertLessThan(ActivityRows.Shown.percent(1.21), ActivityRows.Shown.percent(1.26))
+
+        let byMemory = ResourceSort(column: "memory", ascending: false)
+        let sized = [process(1, cpu: 0, memory: 64 << 20), process(2, cpu: 0, memory: (64 << 20) + 4_096), process(3, cpu: 0, memory: 65 << 20)]
+        XCTAssertEqual(ActivityRows.bytes(sized[0].memory!), ActivityRows.bytes(sized[1].memory!), "both read 64.0 MB")
+        XCTAssertEqual(ActivityRows.sorted(sized, by: byMemory).map(\.identity.pid), [3, 1, 2])
+        // Across units and the 100 a unit's digits change at, in the words' order.
+        let values: [UInt64] = [512, 1_023, 1_024, 99 << 10, 100 << 10, 1_023 << 10, 1 << 20, 3 << 30]
+        let keys = values.map(ActivityRows.Shown.bytes)
+        XCTAssertEqual(keys, keys.sorted())
+        for (a, b) in zip(values, values.dropFirst()) where ActivityRows.bytes(a) != ActivityRows.bytes(b) {
+            XCTAssertLessThan(ActivityRows.Shown.bytes(a), ActivityRows.Shown.bytes(b), "\(a) < \(b)")
+        }
+    }
+
+    /// The page's numbers, written from integers, say what Foundation's
+    /// `%.Nf` said in the POSIX locale, halves and all.
+    func testNumbersAreWrittenAsPrintfWrites() {
+        let posix = Locale(identifier: "en_US_POSIX")
+        var values: [Double] = [0, 0.05, 0.15, 0.25, 0.35, 1.25, 2.5, 99.95, 100, 123.456, 1_234_567.891, -0.04, 312, .greatestFiniteMagnitude / 1e300]
+        var random = SystemRandomNumberGenerator()
+        values += (0..<500).map { _ in Double.random(in: 0...2_000, using: &random) }
+        for value in values {
+            for digits in 0...2 {
+                XCTAssertEqual(ActivityRows.fixed(value, digits: digits), String(format: "%.\(digits)f", locale: posix, value), "\(value), \(digits)")
+            }
+        }
+        XCTAssertEqual(ActivityRows.bytes(64 << 20), "64.0 MB")
+        XCTAssertEqual(ActivityRows.bytes(512), "512 B")
+        XCTAssertEqual(ActivityRows.bytes(150 << 30), "150 GB")
+        XCTAssertEqual(ActivityPageView.rate(1.25, unit: "W"), "1.2 W")
+        XCTAssertEqual(ActivityPageView.rate(2_048, unit: "B/s"), "2.0 KB/s")
+    }
+
     /// The name cell's fold takes its own click — the fold toggled, no row
     /// selected —; a press anywhere else is the row's, as every cell's.
     @MainActor
@@ -112,24 +160,5 @@ final class ActivityCellsTests: XCTestCase {
         XCTAssertEqual(bars[2].rect, CGRect(x: 36, y: 3, width: 15, height: 18))
         XCTAssertEqual(bars[3].rect.height, 18, "capped at the strip")
         XCTAssertEqual(bars[3].level, .over)
-    }
-
-    /// The page's numbers written by the C library say what Foundation's
-    /// `%.Nf` said in the POSIX locale, halves and all.
-    func testNumbersAreWrittenAsPrintfWrites() {
-        let posix = Locale(identifier: "en_US_POSIX")
-        var values: [Double] = [0, 0.05, 0.15, 0.25, 0.35, 1.25, 2.5, 99.95, 100, 123.456, 1_234_567.891, -0.04, 312, .greatestFiniteMagnitude / 1e300]
-        var random = SystemRandomNumberGenerator()
-        values += (0..<500).map { _ in Double.random(in: 0...2_000, using: &random) }
-        for value in values {
-            for digits in 0...2 {
-                XCTAssertEqual(ActivityRows.fixed(value, digits: digits), String(format: "%.\(digits)f", locale: posix, value), "\(value), \(digits)")
-            }
-        }
-        XCTAssertEqual(ActivityRows.bytes(64 << 20), "64.0 MB")
-        XCTAssertEqual(ActivityRows.bytes(512), "512 B")
-        XCTAssertEqual(ActivityRows.bytes(150 << 30), "150 GB")
-        XCTAssertEqual(ActivityPageView.rate(1.25, unit: "W"), "1.2 W")
-        XCTAssertEqual(ActivityPageView.rate(2_048, unit: "B/s"), "2.0 KB/s")
     }
 }
