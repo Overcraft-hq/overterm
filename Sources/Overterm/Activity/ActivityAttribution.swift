@@ -359,13 +359,7 @@ struct ActivityAttribution: Sendable {
             for process in processes where owners[process.identity] == nil {
                 let identity = process.identity
                 let facts = snapshot.facts[identity]
-                let words: ActivityPathWords
-                if let known = knownWords[identity], known.describes(path: facts?.path, name: facts?.name, shortName: process.shortName) {
-                    words = known
-                } else {
-                    words = ActivityPathWords(path: facts?.path, name: facts?.name, shortName: process.shortName)
-                    madeWords[identity] = words
-                }
+                let words = words(process, facts)
                 var owner = owner(of: process, facts, words)
                 finish(&owner, process, facts)
                 owners[identity] = owner
@@ -375,13 +369,16 @@ struct ActivityAttribution: Sendable {
         }
 
         /// What `process`'s path and names say: as read before while they
-        /// are the same strings, else read now.
-        func words(_ process: ActivityProcess, _ facts: ActivityFacts?) -> ActivityPathWords {
+        /// are the same strings, else read now and kept — a pane's process
+        /// and a responsible one too, reached before the walk.
+        mutating func words(_ process: ActivityProcess, _ facts: ActivityFacts?) -> ActivityPathWords {
             let identity = process.identity
             if let words = madeWords[identity] ?? knownWords[identity], words.describes(path: facts?.path, name: facts?.name, shortName: process.shortName) {
                 return words
             }
-            return ActivityPathWords(path: facts?.path, name: facts?.name, shortName: process.shortName)
+            let words = ActivityPathWords(path: facts?.path, name: facts?.name, shortName: process.shortName)
+            madeWords[identity] = words
+            return words
         }
 
         // MARK: Rules 3–5, 7, 9: the panes
@@ -410,13 +407,15 @@ struct ActivityAttribution: Sendable {
                         if reason == .underExcluded { reason = rootReason(of: identity, reasons) }
                         // Rule 4 wins over 6 in the tree; what left it, or
                         // a daemon started from it, may be an engine's.
-                        if pass == 1 || reason == .detachedOnPurpose || reason == .app,
-                            let engine = engine(of: process, snapshot.facts[identity], words(process, snapshot.facts[identity]))
-                        {
-                            var owner = engine
-                            owner.tab = slice.tab
-                            owners[identity] = owner
-                            continue
+                        if pass == 1 || reason == .detachedOnPurpose || reason == .app {
+                            let facts = snapshot.facts[identity]
+                            let words = words(process, facts)
+                            if let engine = engine(of: process, facts, words) {
+                                var owner = engine
+                                owner.tab = slice.tab
+                                owners[identity] = owner
+                                continue
+                            }
                         }
                         // 8. What carries the pane's tag outside its tree and
                         // started inside one of its agent's ended runs — or
@@ -545,7 +544,7 @@ struct ActivityAttribution: Sendable {
 
         // MARK: The rest, in order
 
-        func owner(of process: ActivityProcess, _ facts: ActivityFacts?, _ words: ActivityPathWords) -> ActivityOwner {
+        mutating func owner(of process: ActivityProcess, _ facts: ActivityFacts?, _ words: ActivityPathWords) -> ActivityOwner {
             let identity = process.identity
             // 1. Overterm itself.
             if process.pid == context.appPID { return ActivityOwner(place: .overterm, rule: 1, reason: "Overterm itself") }
@@ -670,7 +669,7 @@ struct ActivityAttribution: Sendable {
         /// The owner of a responsible process not placed yet (it started
         /// later than the one it is responsible for — rare): its own rules,
         /// never another responsibility.
-        func responsibleOwner(_ identity: ActivityProcessID) -> ActivityOwner? {
+        mutating func responsibleOwner(_ identity: ActivityProcessID) -> ActivityOwner? {
             guard let process = table.process(identity) else { return nil }
             if process.pid == context.appPID { return ActivityOwner(place: .overterm, rule: 1) }
             if helperReason(process) != nil { return ActivityOwner(place: .overterm, rule: 2) }

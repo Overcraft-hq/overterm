@@ -430,6 +430,23 @@ final class ActivityAttributionTests: XCTestCase {
         XCTAssertEqual(try owner("exec", mac, try attribution(mac).0).place, .elsewhere)
     }
 
+    /// What a pane's process's path says is kept too, read once a life
+    /// like the rest's — not again each tick because the pane placed it
+    /// before the walk (10.4).
+    func testAPaneProcessesPathWordsAreKept() throws {
+        let mac = mac()
+        _ = try attribution(mac)
+        let kept = ActivityPathWords.cached()
+        let paths = [
+            "nohup": ("acme-worker", "/opt/acme/bin/acme-worker"), "tmux": ("tmux", "/opt/acme/bin/tmux"),
+            "editor": ("Fake Editor", "/Applications/Fake Editor.app/Contents/MacOS/Fake Editor"),
+        ]
+        for (key, (name, path)) in paths {
+            let words = try XCTUnwrap(kept[try XCTUnwrap(mac.ids[key])], key)
+            XCTAssertTrue(words.describes(path: path, name: name, shortName: name), key)
+        }
+    }
+
     func testEveryProcessIsPlacedAndNothingIsRead() throws {
         let mac = mac()
         let snapshot = try XCTUnwrap(ActivitySampler(kernel: kernel).tickNow(ActivityDemand(.full), context: mac.context))
