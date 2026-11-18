@@ -640,23 +640,38 @@ final class ActivityPageModel: ObservableObject {
             options.repeatsEnded = asked
         }
         lastOptions = options
+        // Held now: the rows shown go along, and the merge of the new values
+        // into their order is made off the main thread too (7.7).
+        let shown = !asked && hasRead && hold.holds(at: .now, voiceOver: voiceOverInList()) ? content : nil
+        let shownMark = shown.map(Self.mark)
         Task { [weak self] in
-            let content = await Self.make(snapshot, options)
+            let made = await Self.make(snapshot, options, heldOver: shown)
             guard let self, self.generation == generation else { return }
             self.builds += 1
             let first = !self.hasRead
             self.hasRead = true
             if !asked, !first, self.hold.holds(at: .now, voiceOver: self.voiceOverInList()) {
-                // Values in the order shown; the rest once it lets go.
-                self.waiting = content
-                self.content = ActivityRows.held(self.content, content)
+                // Values in the order shown; the rest once it lets go. The
+                // merge made with the rows when they are still the ones shown.
+                self.waiting = made.content
+                if let held = made.held, shownMark == Self.mark(self.content) {
+                    self.content = held
+                } else {
+                    self.content = ActivityRows.held(self.content, made.content)
+                }
                 if !self.orderHeld { self.orderHeld = true }
                 self.updateDetail()
                 return
             }
             self.waiting = nil
-            self.apply(content, made: (snapshot.tick, options.scope))
+            self.apply(made.content, made: (snapshot.tick, options.scope))
         }
+    }
+
+    /// What tells the rows shown from others, cheaply: when they were made
+    /// and how many.
+    private nonisolated static func mark(_ content: ActivityPageContent) -> [Double] {
+        [content.madeAt?.timeIntervalSinceReferenceDate ?? 0, Double(content.processes.count), Double(content.list.count), Double(content.ports.count)]
     }
 
     /// `content` shown: the selection kept to what it still lists. `made`:
@@ -686,7 +701,7 @@ final class ActivityPageModel: ObservableObject {
                 }
             }
         }
-        let shown = Set(content.processes.map(\.id)).union(content.list.map(\.id)).union(content.ports.map(\.id))
+        let shown = content.shownIDs ?? ActivityRows.shownIDs(content)
         if !selection.isSubset(of: shown) { selection = selection.intersection(shown) }
         updateDetail()
     }
@@ -790,7 +805,9 @@ final class ActivityPageModel: ObservableObject {
         if wanting { monitor.want(self, .full, .focus(focused)) }
     }
 
-    private nonisolated static func make(_ snapshot: ActivitySnapshot, _ options: ActivityRows.Options) async -> ActivityPageContent {
+    private nonisolated static func make(
+        _ snapshot: ActivitySnapshot, _ options: ActivityRows.Options, heldOver shown: ActivityPageContent? = nil
+    ) async -> (content: ActivityPageContent, held: ActivityPageContent?) {
         await withCheckedContinuation { continuation in
             DispatchQueue.global(qos: .userInitiated).async {
                 // Off the main thread: the LaunchAgents' plists, read again
@@ -802,7 +819,9 @@ final class ActivityPageModel: ObservableObject {
                 // launchd's socket jobs, read once, lazily: only when there
                 // are other users' listeners to name (6.8 rule 9).
                 if options.others?.isBelieved == true { options.launchdSockets = LaunchdSockets.cachedJobs(in: AppEnvironment.launchdSocketFolders) }
-                continuation.resume(returning: ActivityRows.content(of: snapshot, options))
+                var content = ActivityRows.content(of: snapshot, options)
+                content.shownIDs = ActivityRows.shownIDs(content)
+                continuation.resume(returning: (content, shown.map { ActivityRows.held($0, content) }))
             }
         }
     }

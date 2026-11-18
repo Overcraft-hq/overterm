@@ -491,6 +491,8 @@ final class ActivityKeyTests: XCTestCase {
         XCTAssertEqual(held.list.map(\.id), ["1:1", "2:1", "3:1"], "the order shown; the new row waits")
         if case .process(let first) = held.list[0] { XCTAssertEqual(first.cpu, 5, "with its new value") }
         if case .process(let gone) = held.list[2] { XCTAssertEqual(gone.cpu, 1, "a row gone keeps its last") }
+        XCTAssertNil(held.shownIDs, "the ids made with the next rows aren't the held ones")
+        XCTAssertEqual(ActivityRows.shownIDs(held), ["1:1", "2:1", "3:1"])
     }
 
     func testTheOrderHoldsWhileTheListIsWorked() async throws {

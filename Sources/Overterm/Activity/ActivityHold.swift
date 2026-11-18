@@ -70,6 +70,16 @@ extension ActivityRows {
         // The rows shown are the older census's: what came since is new
         // once it lets go (6.7).
         out.madeAt = shown.madeAt
+        out.shownIDs = nil
         return out
+    }
+
+    /// Every row id `content` shows: what a selection is kept to.
+    static func shownIDs(_ content: ActivityPageContent) -> Set<String> {
+        var ids = Set(content.processes.map(\.id))
+        ids.reserveCapacity(content.processes.count + content.ports.count)
+        for item in content.list { ids.insert(item.id) }
+        for port in content.ports { ids.insert(port.id) }
+        return ids
     }
 }

@@ -210,6 +210,10 @@ struct ActivityPageContent: Sendable {
     /// When its census was read: a process started after it is new to
     /// the next rows (6.7).
     var madeAt: Date?
+    /// Every row id it shows, Processes', its list's and Listening's: made
+    /// off the main thread with the rows, what the selection is kept to.
+    /// Nil where it wasn't made.
+    var shownIDs: Set<String>?
     /// The selection's history (`Options.historyOf`), made with the rows.
     var detailHistory: ActivityDetailHistory?
     /// The snapshot's owners when they were read: a selection made between
