@@ -150,6 +150,9 @@ struct ActivityPaneSlice: Hashable, Sendable {
     /// The first claude or codex in its tree (`Agent.of`), and which.
     let agent: ActivityProcessID?
     let agentKind: Agent?
+    /// Of its tree, a burst's processes left unread for the next tick
+    /// (`ActivitySampler.Limits.lightNewPerPane`).
+    var waiting = 0
 
     /// Where its processes show (6.5): the tree, then the tagged with their
     /// descendants — what the light level reads. For display only, never
@@ -251,6 +254,12 @@ struct ActivitySnapshot: Sendable {
     }
 
     func pane(_ tag: String) -> ActivityPaneSlice? { panes.first { $0.tag == tag } }
+
+    /// Whether a pane `demand` reads has a burst's processes left for the
+    /// next tick (`ActivityPaneSlice.waiting`): a lookup asks again then.
+    func waits(within demand: ActivityDemand) -> Bool {
+        panes.contains { pane in pane.waiting > 0 && (demand.full || demand.tabs.map { $0.contains(pane.tab) } ?? true) }
+    }
 
     func panes(of tab: UUID) -> [ActivityPaneSlice] { panes.filter { $0.tab == tab } }
 

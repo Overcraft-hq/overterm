@@ -445,8 +445,10 @@ final class ActivitySamplerTests: XCTestCase {
         XCTAssertTrue((0..<40).allSatisfy { full.facts[ActivityProcessID(pid: pid_t(4200 + $0), start: UInt64(4200 + $0) * 1_000)]?.isRead == true })
     }
 
-    /// A lookup reads a burst's waiting processes in the same call: its
-    /// next round finds them a tick old. After a gap longer than a rate
+    /// A lookup reads a burst whole in one round: its tick leaves nothing
+    /// waiting. A fresh tick's snapshot that left some of a pane's burst
+    /// for later doesn't answer a lookup of that pane — it reads again —
+    /// but answers one of another tab. After a gap longer than a rate
     /// spans, nothing waits: what is new then has run a while.
     func testALookupAndAGapReadABurstAtOnce() throws {
         appAndLaunchd()
@@ -458,9 +460,26 @@ final class ActivitySamplerTests: XCTestCase {
         _ = try tick(sampler, light, context)
         var burst: [ActivityProcessID] = []
         for index in 0..<40 { burst.append(add(pid_t(4000 + index), parent: 1101, name: "cc\(index)")) }
+        let before = try tick(sampler, light, context).tick
         let found = try XCTUnwrap(sampler.lookup(within: 0, demand: light, context: context) { _ in false })
+        XCTAssertEqual(found.tick, before + 1, "one round")
         XCTAssertEqual(found.unread, 0)
+        XCTAssertEqual(found.cost.deferred, 0)
         XCTAssertTrue(burst.allSatisfy { found.facts[$0]?.isRead == true }, "read in the one call")
+
+        // The periodic tick leaves 24 of a new burst for later: fresh, it
+        // answers another tab's lookup, not its own pane's.
+        for index in 0..<40 { add(pid_t(4400 + index), parent: 1101, name: "as\(index)") }
+        let periodic = try tick(sampler, light, context)
+        XCTAssertEqual(periodic.pane("pane-a")?.waiting, 24)
+        XCTAssertTrue(periodic.waits(within: light))
+        let other = ActivityDemand(.light(tabs: [UUID()]))
+        XCTAssertFalse(periodic.waits(within: other))
+        XCTAssertEqual(sampler.lookup(within: .max, demand: other, context: context) { _ in true }?.tick, periodic.tick)
+        let asked = try XCTUnwrap(sampler.lookup(within: .max, demand: ActivityDemand(.light(tabs: [tab])), context: context) { _ in true })
+        XCTAssertEqual(asked.tick, periodic.tick + 1, "read again, in one round")
+        XCTAssertEqual(asked.pane("pane-a")?.waiting, 0)
+        XCTAssertTrue((0..<40).allSatisfy { asked.facts[ActivityProcessID(pid: pid_t(4400 + $0), start: UInt64(4400 + $0) * 1_000)]?.isRead == true })
 
         for index in 0..<40 { add(pid_t(4300 + index), parent: 1101, name: "ld\(index)") }
         kernel.advance(ProcessUsage.maximumInterval + second)

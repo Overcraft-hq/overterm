@@ -32,7 +32,7 @@ import Foundation
 ///   rest of a burst — a build's compilers, most gone within a tick —
 ///   wait a tick, so one that ends first is never read; a session's or a
 ///   terminal's foreground group's leader, and an agent by `p_comm`,
-///   never wait.
+///   never wait, nor does anything a lookup's tick reads (`lookup`).
 /// - **Working folders** are asked at most `Limits.foldersPerTick` a tick,
 ///   the panes' agents' first, and never waited for (`ProcessFolders`).
 /// - **The cache** holds at most `Limits.cacheLimit` identities. Ended ones
@@ -152,13 +152,15 @@ final class ActivitySampler: @unchecked Sendable {
 
     /// A lookup for a caller that answers at once (7.8: the old API,
     /// `ProcessInspector`): the latest snapshot while it is younger than
-    /// `within` — a tick — and `answers` the question; no new scan then.
-    /// Else a tick now, waited for on the calling thread: after the tick in
-    /// flight, whose snapshot may answer, `demand` over `context`, and again
-    /// back to back while the churn budget left reads for a later tick
-    /// (`ActivitySnapshot.unread`) — `rounds` ticks at most — so a cold
-    /// census reads what a lookup asks in one call: a nohup'd server's tag
-    /// among 860 processes' markers. Never from the queue itself; nil when
+    /// `within` — a tick — and `answers` the question, with nothing of a
+    /// pane `demand` reads left for its next tick by a burst's allowance
+    /// (`ActivitySnapshot.waits`); no new scan then. Else a tick now,
+    /// waited for on the calling thread, that leaves no burst for later:
+    /// after the tick in flight, whose snapshot may answer, `demand` over
+    /// `context`, and again back to back while the churn budget left reads
+    /// for a later tick (`ActivitySnapshot.unread`) — `rounds` ticks at
+    /// most — so a cold census reads what a lookup asks in one call: a
+    /// nohup'd server's tag among 860 processes' markers. Never from the queue itself; nil when
     /// the table can't be read. `paced` false: its ticks' cost is left out
     /// of the cadence (`ActivityCadence`) — a window off screen's, whose
     /// app may be napped: slow ticks then say nothing of the Mac, and would
@@ -168,13 +170,17 @@ final class ActivitySampler: @unchecked Sendable {
         answers: (ActivitySnapshot) -> Bool
     ) -> ActivitySnapshot? {
         dispatchPrecondition(condition: .notOnQueue(queue))
-        if let latest, isFresh(latest, within: within), answers(latest) { return latest }
+        func fresh(_ snapshot: ActivitySnapshot?) -> ActivitySnapshot? {
+            guard let snapshot, isFresh(snapshot, within: within), !snapshot.waits(within: demand), answers(snapshot) else { return nil }
+            return snapshot
+        }
+        if let latest = fresh(latest) { return latest }
         return queue.sync {
             // A tick that landed while this one waited may answer it.
-            if let latest, isFresh(latest, within: within), answers(latest) { return latest }
-            guard var snapshot = sample(demand, context: context, paced: paced) else { return nil }
+            if let latest = fresh(latest) { return latest }
+            guard var snapshot = sample(demand, context: context, paced: paced, defers: false) else { return nil }
             for _ in 1..<max(rounds, 1) where snapshot.unread > 0 {
-                guard let next = sample(demand, context: context, paced: paced) else { break }
+                guard let next = sample(demand, context: context, paced: paced, defers: false) else { break }
                 snapshot = next
             }
             return snapshot
@@ -301,8 +307,10 @@ final class ActivitySampler: @unchecked Sendable {
     /// One tick, on the queue: the table, what `demand`'s levels read, the
     /// rates, the panes' slices; nil when the table can't be read — the
     /// caches are left as they were. `paced`: its cost counts toward the
-    /// cadence (`lookup`'s).
-    func sample(_ demand: ActivityDemand, context: ActivityContext, paced: Bool = true) -> ActivitySnapshot? {
+    /// cadence (`lookup`'s). `defers` false: no burst waits a tick
+    /// (`Limits.lightNewPerPane`) — a lookup's, whose caller wants the
+    /// pane read now, in one round.
+    func sample(_ demand: ActivityDemand, context: ActivityContext, paced: Bool = true, defers: Bool = true) -> ActivitySnapshot? {
         dispatchPrecondition(condition: .onQueue(queue))
         let cpuStart = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
         let started = kernel.uptime()
@@ -323,7 +331,7 @@ final class ActivitySampler: @unchecked Sendable {
         // Started since the last tick, at the light level: only when that
         // tick is recent — after a gap, what is new has run a while.
         let previous = lastLive
-        let settles = !demand.full && !previous.isEmpty && now >= lastLiveTime && now - lastLiveTime <= limits.baselineAge
+        let settles = defers && !demand.full && !previous.isEmpty && now >= lastLiveTime && now - lastLiveTime <= limits.baselineAge
         lastLive = live
         lastLiveTime = now
         // An exec keeps the identity and changes p_comm: read it again.
@@ -359,6 +367,7 @@ final class ActivitySampler: @unchecked Sendable {
         var unread = Set<ActivityProcessID>()
         var first: [ActivityProcess] = focus
         var queued = Set(focus.map(\.identity))
+        var waiting: [String: Int] = [:]
         for pane in read {
             var started = 0
             for identity in trees[pane.tag] ?? [] where queued.insert(identity).inserted {
@@ -371,6 +380,7 @@ final class ActivitySampler: @unchecked Sendable {
                     if started > limits.lightNewPerPane {
                         unread.insert(identity)
                         cost.deferred += 1
+                        waiting[pane.tag, default: 0] += 1
                         continue
                     }
                 }
@@ -435,7 +445,7 @@ final class ActivitySampler: @unchecked Sendable {
             slices.append(
                 ActivityPaneSlice(
                     tag: pane.tag, tab: pane.tab, login: pane.login.flatMap { table.process($0)?.identity }, tree: tree, tagged: tagged,
-                    agent: agent, agentKind: kind))
+                    agent: agent, agentKind: kind, waiting: waiting[pane.tag] ?? 0))
             for identity in tree + tagged where counted.insert(identity).inserted { placed.append(identity) }
         }
 
