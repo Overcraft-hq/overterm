@@ -868,7 +868,7 @@ enum SettingsSchema {
             key: "activity.enabled", section: .activity, group: "Activity", title: "Activity in Overterm",
             help:
                 "Every process and port on this Mac, on a page of its own (⌥⌘A), read only while it shows. Off: no page, no switcher, no ⌘K items, no agents' reads. What keeps reading: Tab Info, the pane pills and the left-behind notes read your tabs' own processes while a window is visible, and briefly when a tab closes or an agent finishes; the Terraform header walks a pane where terraform runs; and a port's Free…, Docker's port check and a port's holder read the Mac once when you use them.",
-            kind: .toggle, defaultValue: .bool(true)),
+            kind: .toggle, defaultValue: .bool(true), heldWhenEditedOutside: true),
         SettingSpec(
             key: "activity.interval", section: .activity, group: "Activity", title: "Read every",
             help:
