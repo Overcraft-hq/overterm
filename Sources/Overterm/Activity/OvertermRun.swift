@@ -54,6 +54,8 @@ struct OvertermRun: Hashable, Sendable {
         case terraformApply = "terraform-apply"
         /// Activity's one read of every user's listeners (`NettopListeners`).
         case nettop
+        /// Activity's check that a launchd job is a port's holder (`LaunchdJobs.runningPID`).
+        case launchctl
         /// Any other `ManagedProcess`.
         case managed
     }

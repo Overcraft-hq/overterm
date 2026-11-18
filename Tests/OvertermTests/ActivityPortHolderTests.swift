@@ -68,6 +68,30 @@ final class ActivityPortHolderTests: XCTestCase {
 
     // MARK: The commands
 
+    /// `XPC_SERVICE_NAME` is the process's own to set: a service's stop
+    /// only where launchd runs that job as the holder or a parent of it.
+    func testAServiceIsTheHolderOnlyByLaunchdsPID() {
+        let print = "gui/501/homebrew.mxcl.postgresql@16 = {\n\tactive count = 1\n\tstate = running\n\tpid = 4242\n\tendpoints = {\n\t\tpid = 9\n\t}\n}\n"
+        XCTAssertEqual(LaunchdJobs.pid(inPrint: print), 4242)
+        XCTAssertNil(LaunchdJobs.pid(inPrint: "gui/501/x = {\n\tstate = not running\n}\n"), "not running: no pid")
+        XCTAssertNil(LaunchdJobs.pid(inPrint: "\t\tpid = 9\n"), "only the job's own key")
+        let table = ProcessTable([
+            FakeActivityKernel.record(pid: 1, start: 1, parent: 0, uid: 0, name: "launchd"),
+            FakeActivityKernel.record(pid: 4242, start: 10, parent: 1, name: "postgres"),
+            FakeActivityKernel.record(pid: 4300, start: 20, parent: 4242, name: "postgres"),
+            FakeActivityKernel.record(pid: 5000, start: 30, parent: 1, name: "node"),
+        ])
+        let job = ActivityProcessID(pid: 4242, start: 10)
+        let worker = ActivityProcessID(pid: 4300, start: 20)
+        let stranger = ActivityProcessID(pid: 5000, start: 30)
+        XCTAssertTrue(LaunchdJobs.runs(job, jobPID: 4242, in: table))
+        XCTAssertTrue(LaunchdJobs.runs(worker, jobPID: 4242, in: table), "a child of the job's process")
+        XCTAssertFalse(LaunchdJobs.runs(stranger, jobPID: 4242, in: table), "a process that only says the label")
+        XCTAssertFalse(LaunchdJobs.runs(stranger, jobPID: nil, in: table), "a job launchd doesn't run")
+        XCTAssertNil(LaunchdJobs.runningPID(of: "homebrew.mxcl.postgresql@16"), "a unit test never asks this Mac's launchd")
+        XCTAssertNil(LaunchdJobs.runningPID(of: "x; rm -rf ~"), "nor about a label launchd's characters don't make")
+    }
+
     func testTheCommandsTyped() {
         let brew = ActivityPortHolder.Step.stopService(LaunchdJobs.Job(label: "homebrew.mxcl.postgresql@16"))
         XCTAssertEqual(ActivityPortHolder.command(brew, port: 5432, proto: "tcp", uid: 501), "brew services stop postgresql@16")

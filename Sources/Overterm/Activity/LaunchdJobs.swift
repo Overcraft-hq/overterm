@@ -101,6 +101,65 @@ enum LaunchdJobs {
         return Agent(label: label, program: program)
     }
 
+    // MARK: Whether the job is the holder
+
+    /// The pid launchd runs `label`'s job as in the user's gui domain:
+    /// `launchctl print gui/<uid>/<label>`'s `pid = N`, read off the main
+    /// thread, bounded (2 s, 256 KB). Nil when it isn't loaded there, isn't
+    /// running, or can't be asked. A label launchd's characters don't make
+    /// up is never asked about. An isolated run or a unit test asks
+    /// `standInPID` alone, never this Mac's launchd (9.9).
+    static func runningPID(of label: String, uid: uid_t = getuid()) -> pid_t? {
+        guard ActivityPortHolder.launchdLabel(label) else { return nil }
+        guard !AppEnvironment.isIsolated, !AppEnvironment.isUnitTest else { return standInPID?(label) }
+        let result = KubeProcessRun.run(
+            URL(fileURLWithPath: "/bin/launchctl"), ["print", "gui/\(uid)/\(label)"], environment: ["PATH": "/usr/bin:/bin", "LC_ALL": "C"],
+            timeout: 2, outputLimit: 256 << 10, helper: .launchctl)
+        guard let result, result.status == 0, !result.truncated else { return nil }
+        return pid(inPrint: result.stdout)
+    }
+
+    /// `runningPID`, on a queue of its own: launchctl is waited for there,
+    /// never on a Swift-concurrency thread.
+    static func readRunningPID(of label: String) async -> pid_t? {
+        await withCheckedContinuation { continuation in
+            DispatchQueue.global(qos: .userInitiated).async { continuation.resume(returning: runningPID(of: label)) }
+        }
+    }
+
+    /// A test's launchd: the pid a label's job runs as.
+    static var standInPID: (@Sendable (String) -> pid_t?)? {
+        get { lock.withLock { pidStandIn } }
+        set { lock.withLock { pidStandIn = newValue } }
+    }
+    nonisolated(unsafe) private static var pidStandIn: (@Sendable (String) -> pid_t?)?
+
+    /// The job's own `pid = N` in `launchctl print`'s answer: a line one
+    /// tab in (the job's own keys; deeper ones are its endpoints' and
+    /// spawn's). Pure.
+    static func pid(inPrint text: String) -> pid_t? {
+        for line in text.split(separator: "\n", omittingEmptySubsequences: true) where line.hasPrefix("\tpid = ") {
+            guard let pid = pid_t(line.dropFirst("\tpid = ".count).trimmingCharacters(in: .whitespaces)), pid > 1 else { return nil }
+            return pid
+        }
+        return nil
+    }
+
+    /// Whether the job launchd runs as `jobPID` is `holder`, or one of its
+    /// start-checked parents: a process sets `XPC_SERVICE_NAME` as it
+    /// likes, and children inherit it, so the variable alone names no job.
+    /// Pure.
+    static func runs(_ holder: ActivityProcessID, jobPID: pid_t?, in table: ProcessTable) -> Bool {
+        guard let jobPID, jobPID > 1 else { return false }
+        var identity = holder
+        for _ in 0..<64 {
+            if identity.pid == jobPID { return true }
+            guard let parent = table.parent(of: identity), parent.pid > 1 else { return false }
+            identity = parent.identity
+        }
+        return false
+    }
+
     private static let lock = NSLock()
     nonisolated(unsafe) private static var cached: (folder: URL, modified: Date?, agents: [Agent])?
 

@@ -25,12 +25,24 @@ extension TerminalWindowController {
         }
         Task { @MainActor [weak self] in
             // 6.8: the plan made again from a fresh read as the sheet opens.
-            if let snapshot = await ActivityMonitor.shared.census(),
+            let snapshot = await ActivityMonitor.shared.census()
+            if let snapshot,
                 let changed = ActivityPortHolder.changed(
                     row, step: step, holders: ListeningPorts.holders(of: row.port, proto: row.proto, in: snapshot), snapshot: snapshot)
             {
                 self?.tell("Not freed", changed)
                 return
+            }
+            // A service's stop only when launchd runs that job as the
+            // holder or one of its parents: `XPC_SERVICE_NAME` is the
+            // process's own to set, and its children inherit it. Else the
+            // holder's own Free, as for any process of the user's.
+            if case .stopService(let job) = step, let holder = row.holder {
+                let jobPID = await LaunchdJobs.readRunningPID(of: job.label)
+                guard let snapshot, LaunchdJobs.runs(holder, jobPID: jobPID, in: snapshot.table) else {
+                    self?.freeOwn(row, .stopHolder(holder))
+                    return
+                }
             }
             self?.askToFree(row, step)
         }

@@ -125,6 +125,18 @@ extension E2ERunner {
         guard let base = listener(split, holder: parent) else { return check("the parent's listener", false) }
         var service = base
         service.portOwner = .service(LaunchdJobs.Job(label: "homebrew.mxcl.fake-db"))
+        // The job's pid as launchd would say it: the variable alone names no job.
+        LaunchdJobs.standInPID = { _ in nil }
+        words = await activityFreeAsked(service)
+        check(
+            "a holder only its XPC_SERVICE_NAME calls a service: its own Free, never the service's stop",
+            words != nil && words?.buttons.contains("Stop the Service") == false
+                && words?.texts.joined(separator: "\n").contains("brew services") == false,
+            "\(words?.buttons ?? [])")
+        answerActivitySheet(.alertSecondButtonReturn)
+        let holderPID = parent
+        LaunchdJobs.standInPID = { label in label == "homebrew.mxcl.fake-db" ? holderPID : nil }
+        defer { LaunchdJobs.standInPID = nil }
         words = await activityFreeAsked(service)
         check(
             "a brew service's Free: Stop the Service, the command it runs said",
