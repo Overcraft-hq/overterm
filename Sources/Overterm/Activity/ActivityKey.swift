@@ -8,14 +8,14 @@ import Foundation
 /// (`ActivityPageModel+Verbs`), `p` suspends or resumes it, `b` runs it in
 /// the background or normally, `n` lowers its priority, `a` asks an agent
 /// about it (`ActivityBrief`) — `f` frees a port through its owner's own verb,
-/// or its holder's own (`ActivityPortHolder`); Open Files (`l`), the
-/// detail's Files tab, with stage 4's. `e` opens a terminal in the
+/// or its holder's own (`ActivityPortHolder`); `l` the detail's Files tab:
+/// its open files and sockets, read when asked. `e` opens a terminal in the
 /// selection's folder, read at the focus level. ⌥o and ⌥r are
 /// `ActivityPageModel.pressOption`'s. Pure.
 enum ActivityKey: String, ResourceKey {
     case processes, listening, leftBehind
     case goTo, detail, filter, help
-    case open, reveal, tabInfo, sample, terminal
+    case open, reveal, tabInfo, sample, terminal, files
     case tree, group, narrower, wider
     case follow, pause, mine, connections, free
     case stop, forceQuit, signal, suspend, background, lower, ask
@@ -44,6 +44,7 @@ enum ActivityKey: String, ResourceKey {
         case .tabInfo: "i"
         case .sample: "s"
         case .terminal: "e"
+        case .files: "l"
         case .tree: "t"
         case .group: "G"
         case .narrower: "["
@@ -82,6 +83,7 @@ enum ActivityKey: String, ResourceKey {
         case .tabInfo: "Tab Info for its tab"
         case .sample: "Sample it in a new tab: sample <pid> 5"
         case .terminal: "A terminal in its folder, a new tab"
+        case .files: "Its open files and sockets: the detail's Files, read now — yours only"
         case .tree: "Tree or flat"
         case .group: "Group by checkout, tab, agent, app, user or none"
         case .narrower: "Narrower: all tabs, the checkout, the tab"

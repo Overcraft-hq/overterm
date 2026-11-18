@@ -161,7 +161,15 @@ final class ActivityPageModel: ObservableObject {
         didSet { if everyone != oldValue { rebuild(asked: true) } }
     }
     /// The selected process's detail (6.4).
-    @Published private(set) var detail: ActivityDetail?
+    @Published private(set) var detail: ActivityDetail? {
+        didSet { if showsFiles, detail?.row.identity != oldValue?.row.identity { readFiles() } }
+    }
+    /// The detail's Files (6.4, `l`): shown, and what the read found — of
+    /// the selection, read when it opens and when the selection changes
+    /// while it shows; nil while reading.
+    @Published var showsFiles = false
+    @Published private(set) var openFiles: ProcessOpenFiles.Listing?
+    private var filesGeneration = 0
     /// The selected process as its verbs see it (6.10), read off the main
     /// thread with every owner — with the rows, or for a selection made
     /// between two publishes; nil while it is read.
@@ -512,6 +520,23 @@ final class ActivityPageModel: ObservableObject {
         rebuild(asked: false)
     }
 
+    /// The selection's open files read again (6.4's Files): its own only,
+    /// off the main thread; a later read wins.
+    func readFiles() {
+        filesGeneration += 1
+        openFiles = nil
+        guard showsFiles, let row = detail?.row, row.isOwn, !row.ended else { return }
+        let generation = filesGeneration
+        ProcessOpenFiles.read(row.identity, kernel: monitor.sampler.kernel) { [weak self] listing in
+            Task { @MainActor [weak self] in self?.tookFiles(listing, generation: generation) }
+        }
+    }
+
+    private func tookFiles(_ listing: ProcessOpenFiles.Listing, generation: Int) {
+        guard filesGeneration == generation else { return }
+        openFiles = listing
+    }
+
     /// nettop's period (D-25): every fifth tick, 10 s at the 2 s default.
     var othersPeriod: TimeInterval {
         let parts = interval.components
@@ -816,6 +841,14 @@ final class ActivityPageModel: ObservableObject {
         case .goTo: goToSelection()
         case .detail: showsDetail.toggle()
         case .open: return openSelection(defaultBrowser: false)
+        case .files where processes:
+            guard let row = detail?.row, row.isOwn else { return false }
+            if showsFiles, openFiles?.identity == row.identity {
+                showsFiles = false
+            } else {
+                showsFiles = true
+                readFiles()
+            }
         case .sample where processes:
             guard let row = selectedProcess, row.isOwn else { return false }
             actions.sample(row.identity.pid)

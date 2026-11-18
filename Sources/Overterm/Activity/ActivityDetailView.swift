@@ -57,6 +57,7 @@ struct ActivityDetailView: View {
                 if !detail.listeners.isEmpty || detail.connections > 0 || detail.bounded {
                     block("Listening") { listening }
                 }
+                if row.isOwn { block("Files") { files } }
                 block("Usage") {
                     ForEach(Array(detail.usage.enumerated()), id: \.offset) { _, line in
                         HStack(spacing: 6) {
@@ -150,6 +151,42 @@ struct ActivityDetailView: View {
         }
         if detail.bounded {
             Text("more sockets than a tick reads: its listeners read in rotation").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
+        }
+    }
+
+    /// Its open files and sockets (6.4's Files, `l`): read when asked.
+    @ViewBuilder
+    private var files: some View {
+        if !page.showsFiles {
+            Button("Show Open Files and Sockets (l)") {
+                page.showsFiles = true
+                page.readFiles()
+            }
+            .controlSize(.small)
+            .accessibilityIdentifier("activity.detail.showFiles")
+        } else if let listing = page.openFiles, listing.identity == row.identity {
+            if listing.gone {
+                Text("It ended: nothing to read").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
+            } else {
+                Text(verbatim: "\(listing.descriptors) open — \(listing.entries.count { $0.kind == .file }) files, \(listing.entries.count { $0.kind == .socket }) sockets")
+                    .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
+                ForEach(listing.entries, id: \.descriptor) { entry in
+                    HStack(alignment: .firstTextBaseline, spacing: 6) {
+                        Text(verbatim: "\(entry.descriptor)").font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text3)
+                            .frame(minWidth: 24, alignment: .trailing)
+                        Text(verbatim: entry.kind == .file ? (entry.text as NSString).abbreviatingWithTildeInPath : entry.text)
+                            .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(entry.kind == .file ? theme.text2 : theme.text3).lineLimit(1)
+                            .truncationMode(.middle).help(entry.text)
+                    }
+                }
+                if let cut = listing.cut {
+                    Text(verbatim: "Read stopped: \(cut)").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(TabStatusStyle.signal)
+                }
+            }
+        } else if row.ended {
+            Text("It ended: nothing to read").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
+        } else {
+            Text("Reading…").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
         }
     }
 
