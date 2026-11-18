@@ -69,6 +69,9 @@ struct ActivityPortRow: ResourceTableRow, Sendable {
     enum Kind: Hashable, Sendable {
         case listener
         case connection
+        /// A unix socket a process of the user's listens on (D-32, behind
+        /// `activity.unixSockets`): its path in `address`, no port.
+        case unix
         /// "N ephemeral listeners of your apps" (6.8).
         case folded
     }
@@ -139,6 +142,7 @@ struct ActivityPortRow: ResourceTableRow, Sendable {
     /// "This Mac" or "Network" (6.1), the one address it is bound to, or
     /// who forwards it.
     var reach: String {
+        if kind == .unix { return "This Mac · socket file" }
         if let forwardedBy { return "forwarded by \(forwardedBy)" }
         switch scope {
         case .thisMac: return "This Mac"
@@ -166,6 +170,7 @@ struct ActivityPortRow: ResourceTableRow, Sendable {
 
     var accessibilityLabel: String {
         if kind == .folded { return process + (folded ? ", folded" : "") }
+        if kind == .unix { return (["unix socket \(address)", processText] + (holder.map { ["pid \($0.pid)"] } ?? []) + [ownerText]).joined(separator: ", ") }
         var words = [kind == .connection ? "connection to :\(port)" : ":\(port) \(proto)", processText]
         if let holder { words.append("pid \(holder.pid)") }
         if !ownerText.isEmpty, portOwner != .pane { words.append(ownerText) }
@@ -202,6 +207,8 @@ enum ActivityPorts {
         var everyone = true
         /// launchd's socket jobs (`LaunchdSockets`): what names pid 1's.
         var launchdSockets: [LaunchdSockets.Job] = []
+        /// The user's unix-socket listeners too (D-32).
+        var unixSockets = false
     }
 
     /// What they make: Listening's rows, listeners first, and every
@@ -243,6 +250,8 @@ enum ActivityPorts {
             let row = listeners[index]
             listeners[index].ephemeral = row.port >= inputs.ephemeralFirst && row.tab == nil && row.portOwner.foldsWhenEphemeral
         }
+        // Unix sockets (D-32): no port, no collision, never folded.
+        if inputs.unixSockets { listeners += unix(own, in: snapshot, byIdentity: byIdentity, inputs: inputs) }
         var made = Made()
         made.listeners = listeners
         made.rows = listeners
@@ -746,7 +755,7 @@ extension ActivityAddress {
     }
 }
 
-// MARK: Every user's listeners (D-25)
+// MARK: Every user's listeners (D-25) and unix sockets (D-32)
 
 extension ActivityPorts {
     /// Other users' and macOS's listeners nettop read (6.8 rule 9): a row
@@ -817,5 +826,36 @@ extension ActivityPorts {
         }
         row.owner = row.portOwner.word
         row.whereText = row.user.map { "\($0)'s" } ?? ""
+    }
+
+    /// The user's unix-socket listeners (D-32): a row a holder and path,
+    /// what shares the very socket as its co-holders, its owner as a port's
+    /// is found. No URL, no Free: a socket file is freed by what made it.
+    static func unix(
+        _ own: [ActivityProcessRow], in snapshot: ActivitySnapshot, byIdentity: [ActivityProcessID: ActivityProcessRow], inputs: Inputs
+    ) -> [ActivityPortRow] {
+        var rows: [ActivityPortRow] = []
+        var bySocket: [UInt64: Int] = [:]
+        for process in own {
+            guard let records = snapshot.facts[process.identity]?.sockets?.records else { continue }
+            var seen = Set<String>()
+            for record in records where record.isUnixListener {
+                guard let path = record.path, seen.insert(path).inserted else { continue }
+                if record.socket != 0, let shared = bySocket[record.socket] {
+                    rows[shared].coHolders.append(process.identity)
+                    continue
+                }
+                var row = ActivityPortRow(
+                    id: "unix:\(process.identity.id):\(path)", kind: .unix, port: 0, proto: "unix", address: path, families: [], scope: .thisMac,
+                    process: process.name, holder: process.identity)
+                row.since = process.started
+                row.sinceText = process.startedText
+                attribute(&row, process: byIdentity[process.identity], snapshot: snapshot, inputs: inputs)
+                row.url = nil
+                if record.socket != 0 { bySocket[record.socket] = rows.count }
+                rows.append(row)
+            }
+        }
+        return rows
     }
 }

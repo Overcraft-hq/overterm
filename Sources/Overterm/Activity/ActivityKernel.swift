@@ -759,13 +759,21 @@ final class FakeActivityKernel: ActivityKernel, @unchecked Sendable {
         return info
     }
 
-    /// A unix socket.
-    static func unix(handle: UInt64 = 1) -> socket_fdinfo {
+    /// A unix socket; bound to `path` and accepting (`SO_ACCEPTCONN`) when
+    /// `listening` (D-32).
+    static func unix(handle: UInt64 = 1, path: String? = nil, listening: Bool = false) -> socket_fdinfo {
         var info = socket_fdinfo()
         info.psi.soi_so = handle
         info.psi.soi_kind = Int32(SOCKINFO_UN)
         info.psi.soi_family = AF_UNIX
         info.psi.soi_type = SOCK_STREAM
+        if listening { info.psi.soi_options = Int16(SO_ACCEPTCONN) }
+        if let path {
+            withUnsafeMutableBytes(of: &info.psi.soi_proto.pri_un.unsi_addr.ua_sun.sun_path) { raw in
+                let bytes = Array(path.utf8.prefix(raw.count - 1))
+                raw.copyBytes(from: bytes)
+            }
+        }
         return info
     }
 

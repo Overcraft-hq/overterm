@@ -647,7 +647,11 @@ struct ActivityPageView: View {
         } else {
             switch column {
             case "port":
-                number(row.kind == .connection ? "→ :\(row.port)" : ":\(row.port)", row.kind == .connection ? theme.text2 : theme.text)
+                if row.kind == .unix {
+                    text((row.address as NSString).abbreviatingWithTildeInPath, theme.text).help(row.address)
+                } else {
+                    number(row.kind == .connection ? "→ :\(row.port)" : ":\(row.port)", row.kind == .connection ? theme.text2 : theme.text)
+                }
             case "proto": text(row.proto, theme.text2)
             case "address":
                 text(row.reach, row.scope == .thisMac && row.forwardedBy == nil ? theme.text2 : TabStatusStyle.signal)

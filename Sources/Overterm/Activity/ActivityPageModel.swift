@@ -580,6 +580,7 @@ final class ActivityPageModel: ObservableObject {
         options.reveal = revealed
         options.containers = wantsContainers == .none ? [] : containers()
         options.connections = connections
+        options.unixSockets = Settings.shared.activityUnixSockets
         if Settings.shared.activityOtherListeners {
             if let why = othersReader.unavailable, othersReader.standIn == nil {
                 options.othersState = .unavailable(why)

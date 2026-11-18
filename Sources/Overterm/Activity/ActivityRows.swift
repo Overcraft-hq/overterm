@@ -253,6 +253,8 @@ enum ActivityRows {
         var others: NettopListeners.Reading?
         var othersState = ActivityOtherListeners.off
         var launchdSockets: [LaunchdSockets.Job] = []
+        /// The user's unix-socket listeners in Listening (D-32).
+        var unixSockets = false
         /// The rows shown before this census: what has gone since is shown
         /// once more, "ended" (6.7); one absent from them is new. Empty on
         /// a first build.
@@ -472,6 +474,7 @@ enum ActivityRows {
         portInputs.others = options.others
         portInputs.everyone = options.everyone
         portInputs.launchdSockets = options.launchdSockets
+        portInputs.unixSockets = options.unixSockets
         let made = ActivityPorts.make(of: inScope, in: snapshot, inputs: portInputs)
         content.listeners = made.listeners
         content.droppedConnections = made.droppedConnections

@@ -118,12 +118,17 @@ struct SocketRecord: Hashable, Sendable {
     /// at its limit isn't accepting (6.8, Backlog).
     let backlog: Int
     let backlogLimit: Int
+    /// A unix socket's bound path (`unsi_addr`), when it listens
+    /// (`SO_ACCEPTCONN`): what D-32's rows say. Nil for any other.
+    var path: String? = nil
 
     var isListening: Bool { kind == .tcp && state == .listen }
     /// UDP with a port and no peer: a UDP server's socket.
     var isBoundUDP: Bool { kind == .udp && localPort != 0 && remotePort == 0 }
     /// What the light level keeps: listeners and bound UDP (7.3).
     var isListener: Bool { isListening || isBoundUDP }
+    /// A unix socket that accepts connections, with a path (D-32).
+    var isUnixListener: Bool { kind == .unix && path != nil }
 
     /// What the kernel's structure says, pure; nil for a structure that
     /// isn't a socket's.
@@ -156,7 +161,15 @@ struct SocketRecord: Hashable, Sendable {
         case SOCKINFO_IN:
             return record(socket.soi_protocol == IPPROTO_UDP ? .udp : .other, socket.soi_proto.pri_in)
         case SOCKINFO_UN:
-            return record(.unix)
+            var unix = record(.unix)
+            // Listening (`SO_ACCEPTCONN`) and bound: its path, for D-32's
+            // rows; a connected end or an unnamed one keeps none.
+            if Int32(socket.soi_options) & SO_ACCEPTCONN != 0 {
+                var address = socket.soi_proto.pri_un.unsi_addr.ua_sun
+                let path = withUnsafeBytes(of: &address.sun_path) { raw in String(decoding: raw.prefix { $0 != 0 }, as: UTF8.self) }
+                if !path.isEmpty { unix.path = path }
+            }
+            return unix
         default:
             return record(socket.soi_family == AF_UNIX ? .unix : .other)
         }
@@ -191,7 +204,8 @@ struct SocketScan: Sendable {
 
     /// One process's sockets, as far as they were read.
     struct Sockets: Hashable, Sendable {
-        /// Its TCP and UDP sockets known now, by descriptor: read this tick
+        /// Its TCP and UDP sockets known now — and its listening unix ones
+        /// with a path (D-32) —, by descriptor: read this tick
         /// or kept from an earlier one (a bounded process's listeners only).
         var records: [SocketRecord]
         /// Its descriptors of any kind.
@@ -329,8 +343,9 @@ struct SocketScan: Sendable {
             state.unixDescriptors.remove(descriptor)
             state.records[descriptor] = record
         case .unix:
+            // Counted; a listening one with a path kept for D-32's rows.
             state.unixDescriptors.insert(descriptor)
-            state.records[descriptor] = nil
+            state.records[descriptor] = record.isUnixListener ? record : nil
         case .other:
             state.unixDescriptors.remove(descriptor)
             state.records[descriptor] = nil

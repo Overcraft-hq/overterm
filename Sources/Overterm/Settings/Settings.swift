@@ -528,6 +528,8 @@ final class Settings: ObservableObject {
     var activityAppServices: Bool { activityEnabled && bool("activity.appServices") }
     /// Every user's listeners from nettop (D-25), while Listening shows.
     var activityOtherListeners: Bool { activityEnabled && bool("activity.otherListeners") }
+    /// The user's unix-socket listeners in Listening (D-32).
+    var activityUnixSockets: Bool { activityEnabled && bool("activity.unixSockets") }
     /// A tab's note when an agent left processes running (6.9, D-17).
     var activityLeftBehindNotice: Bool { bool("activity.leftBehindNotice") }
     /// Agents' `port_` and `proc_` reads (ActivityMCP, 8.2): held when

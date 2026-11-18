@@ -133,7 +133,9 @@ struct ActivityDetailView: View {
     private var listening: some View {
         ForEach(detail.listeners, id: \.id) { port in
             HStack(spacing: 6) {
-                Text(verbatim: ":\(port.port) \(port.proto)").font(.system(size: ChromeMetrics.text(11.5), design: .monospaced)).foregroundStyle(theme.text)
+                Text(verbatim: port.kind == .unix ? (port.address as NSString).abbreviatingWithTildeInPath : ":\(port.port) \(port.proto)").font(
+                    .system(size: ChromeMetrics.text(11.5), design: .monospaced)
+                ).foregroundStyle(theme.text)
                 Text(verbatim: port.reach).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(port.scope == .thisMac ? theme.text3 : TabStatusStyle.signal)
                 Spacer(minLength: 4)
                 if let url = port.url {

@@ -890,6 +890,11 @@ enum SettingsSchema {
                 "Root's, macOS's and other users' listening ports in Listening, read by macOS's nettop every 10 s while Listening shows — names, pids and ports only. An answer that lacks your own listeners is said to be unknown, never believed.",
             kind: .toggle, defaultValue: .bool(true), requires: "activity.enabled"),
         SettingSpec(
+            key: "activity.unixSockets", section: .activity, group: "Activity", title: "Unix-socket listeners",
+            help:
+                "Unix-socket listeners in Listening: who holds a socket file (a database's /tmp/.s.PGSQL.5432, docker.sock, the kubectl proxies'). Your processes' only; hundreds on a busy Mac.",
+            kind: .toggle, defaultValue: .bool(false), requires: "activity.enabled"),
+        SettingSpec(
             key: "activity.leftBehindNotice", section: .activity, group: "Activity", title: "Say what an agent left running",
             help:
                 "When an agent finishes and leaves processes running — a server its tool started — the tab says so (\"Claude finished — left node :3001 running\"), in the Inbox too, with Show for Activity's Left Behind. Nothing is ever stopped on its own.",

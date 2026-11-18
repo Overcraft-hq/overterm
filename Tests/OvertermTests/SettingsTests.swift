@@ -37,7 +37,7 @@ final class SettingsTests: XCTestCase {
         XCTAssertEqual(
             SettingsSchema.specs(in: .activity).map(\.key),
             [
-                "activity.enabled", "activity.interval", "activity.everyone", "activity.appServices", "activity.otherListeners", "activity.leftBehindNotice",
+                "activity.enabled", "activity.interval", "activity.everyone", "activity.appServices", "activity.otherListeners", "activity.unixSockets", "activity.leftBehindNotice",
                 "activity.agentAccess",
             ])
         XCTAssertTrue(
