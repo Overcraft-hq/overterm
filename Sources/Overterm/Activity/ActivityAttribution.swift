@@ -62,25 +62,167 @@ struct ActivityOwner: Hashable, Sendable {
         static let fromPane = Marks(rawValue: 1 << 4)
     }
 
-    var place: Place
+    /// Its values, one reference shared by every copy until one of them
+    /// changes (10.4): a build reads each process's owner many times — its
+    /// parent's, the row's, the list's groups —, a copy a retain.
+    private final class Storage: @unchecked Sendable {
+        var place: Place
+        var rule: Int
+        var reason: String?
+        var certainty: Certainty
+        var marks: Marks
+        var tab: UUID?
+        var paneRole: PaneRole?
+        var agent: ActivityProcessID?
+        var agentKind: Agent?
+        var role: ProcessRole
+        var leftBehind: LeftBehindSign?
+        var kept: Bool
+
+        init(
+            place: Place, rule: Int, reason: String? = nil, certainty: Certainty = Certainty.certain, marks: Marks = [], tab: UUID? = nil, paneRole: PaneRole? = nil, agent: ActivityProcessID? = nil,
+            agentKind: Agent? = nil, role: ProcessRole = ProcessRole.other, leftBehind: LeftBehindSign? = nil, kept: Bool = false
+        ) {
+            self.place = place
+            self.rule = rule
+            self.reason = reason
+            self.certainty = certainty
+            self.marks = marks
+            self.tab = tab
+            self.paneRole = paneRole
+            self.agent = agent
+            self.agentKind = agentKind
+            self.role = role
+            self.leftBehind = leftBehind
+            self.kept = kept
+        }
+
+        /// A copy of `other`, for a value about to change.
+        init(copying other: Storage) {
+            place = other.place
+            rule = other.rule
+            reason = other.reason
+            certainty = other.certainty
+            marks = other.marks
+            tab = other.tab
+            paneRole = other.paneRole
+            agent = other.agent
+            agentKind = other.agentKind
+            role = other.role
+            leftBehind = other.leftBehind
+            kept = other.kept
+        }
+
+        func same(as other: Storage) -> Bool {
+            place == other.place
+                && rule == other.rule
+                && reason == other.reason
+                && certainty == other.certainty
+                && marks == other.marks
+                && tab == other.tab
+                && paneRole == other.paneRole
+                && agent == other.agent
+                && agentKind == other.agentKind
+                && role == other.role
+                && leftBehind == other.leftBehind
+                && kept == other.kept
+        }
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(place)
+            hasher.combine(rule)
+            hasher.combine(reason)
+            hasher.combine(certainty)
+            hasher.combine(marks)
+            hasher.combine(tab)
+            hasher.combine(paneRole)
+            hasher.combine(agent)
+            hasher.combine(agentKind)
+            hasher.combine(role)
+            hasher.combine(leftBehind)
+            hasher.combine(kept)
+        }
+    }
+
+    private var storage: Storage
+
+    init(
+        place: Place, rule: Int, reason: String? = nil, certainty: Certainty = Certainty.certain, marks: Marks = [], tab: UUID? = nil, paneRole: PaneRole? = nil, agent: ActivityProcessID? = nil,
+        agentKind: Agent? = nil, role: ProcessRole = ProcessRole.other, leftBehind: LeftBehindSign? = nil, kept: Bool = false
+    ) {
+        storage = Storage(
+            place: place, rule: rule, reason: reason, certainty: certainty, marks: marks, tab: tab, paneRole: paneRole, agent: agent, agentKind: agentKind, role: role, leftBehind: leftBehind,
+            kept: kept)
+    }
+
+    /// Its storage, its own: copied first when another value shares it.
+    private mutating func unique() -> Storage {
+        if !isKnownUniquelyReferenced(&storage) { storage = Storage(copying: storage) }
+        return storage
+    }
+
+    static func == (lhs: ActivityOwner, rhs: ActivityOwner) -> Bool {
+        lhs.storage === rhs.storage || lhs.storage.same(as: rhs.storage)
+    }
+
+    func hash(into hasher: inout Hasher) { storage.hash(into: &hasher) }
+
+
+    var place: Place {
+        get { storage.place }
+        set { unique().place = newValue }
+    }
     /// The rule of 6.5 that placed it.
-    var rule: Int
-    var reason: String?
-    var certainty = Certainty.certain
-    var marks: Marks = []
+    var rule: Int {
+        get { storage.rule }
+        set { unique().rule = newValue }
+    }
+    var reason: String? {
+        get { storage.reason }
+        set { unique().reason = newValue }
+    }
+    var certainty: Certainty {
+        get { storage.certainty }
+        set { unique().certainty = newValue }
+    }
+    var marks: Marks {
+        get { storage.marks }
+        set { unique().marks = newValue }
+    }
     /// The tab of its pane — or of the pane it was started from (an app, a
     /// detached daemon).
-    var tab: UUID?
-    var paneRole: PaneRole?
+    var tab: UUID? {
+        get { storage.tab }
+        set { unique().tab = newValue }
+    }
+    var paneRole: PaneRole? {
+        get { storage.paneRole }
+        set { unique().paneRole = newValue }
+    }
     /// The agent it runs under, or is.
-    var agent: ActivityProcessID?
-    var agentKind: Agent?
-    var role = ProcessRole.other
+    var agent: ActivityProcessID? {
+        get { storage.agent }
+        set { unique().agent = newValue }
+    }
+    var agentKind: Agent? {
+        get { storage.agentKind }
+        set { unique().agentKind = newValue }
+    }
+    var role: ProcessRole {
+        get { storage.role }
+        set { unique().role = newValue }
+    }
     /// Rules 8 and 11: the sign that put it in Left Behind (6.9).
-    var leftBehind: LeftBehindSign?
+    var leftBehind: LeftBehindSign? {
+        get { storage.leftBehind }
+        set { unique().leftBehind = newValue }
+    }
     /// The person kept it (Keep, or unticked in a close sheet): never in a
     /// bulk Stop, never Left Behind again for its life (6.9).
-    var kept = false
+    var kept: Bool {
+        get { storage.kept }
+        set { unique().kept = newValue }
+    }
 }
 
 /// What the main actor says of a tab, for owners and rows (6.5): the place
