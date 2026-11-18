@@ -240,6 +240,27 @@ final class ActivityMCPTests: XCTestCase {
         assertNothingLeaks(text)
     }
 
+    /// 8.5's `proc_mine`: the agent's CPU over the ring's 15 minutes, and
+    /// a server that asked for a port another holds says so, probably.
+    func testProcMineSaysTheAgentsCPUOver15MinutesAndAMovedServer() throws {
+        let context = mac()
+        kernel.update(1103) { process in
+            process.arguments = FakeActivityKernel.arguments(executable: process.path ?? "node", ["node", "\(self.web)/server.js", "--port", "3000"])
+        }
+        let snapshot = try snapshot(context)
+        let content = ActivityRows.content(of: snapshot, options(context))
+        let scene = ActivityMCPAnswer.Scene(caller: caller, content: content, snapshot: snapshot, tabs: tabs, isolated: false, home: home)
+        let text = ActivityMCPAnswer.text(.procMine, scene)
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(text.utf8)) as? [String: Any])
+        let you = try XCTUnwrap(object["you"] as? [String: Any])
+        XCTAssertEqual(you["cpuMean15m"] as? Double, 30, "the agent's subtree, its server's 30% included")
+        let servers = try XCTUnwrap(object["servers"] as? [[String: Any]])
+        XCTAssertEqual(servers.first?["note"] as? String, "moved: :3000 is acme-web's (probably)")
+        let listening = content.ports.first { $0.port == 3001 }
+        XCTAssertEqual(listening?.note, "moved: :3000 is acme-web's (probably)", "Listening's row says it too")
+        assertNothingLeaks(text)
+    }
+
     func testLeftBehindInsideWithItsReasonOutsideByKind() throws {
         let (object, text) = try answer(.procLeftBehind(all: false))
         let mine = try XCTUnwrap(object["checkout"] as? [[String: Any]])

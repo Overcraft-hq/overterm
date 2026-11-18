@@ -122,6 +122,17 @@ enum ActivityMovedServers {
         return nil
     }
 
+    /// The note a moved server's port carries (6.8, 8.5): "moved: :3000 is
+    /// web's (probably)" — on Listening's row and in `proc_mine`'s servers.
+    /// Nil for a port no moved chip names. Pure.
+    static func note(_ chips: [ActivityRowChip], port: Int) -> String? {
+        for chip in chips {
+            guard case .moved(let asked, let got, let holder) = chip, got == port else { continue }
+            return holder.map { "moved: :\(asked) is \($0)'s (probably)" } ?? "moved: it asked for :\(asked) (probably)"
+        }
+        return nil
+    }
+
     /// What a server is, to tell two checkouts' copies of it apart from
     /// other servers: its label or name.
     static func kind(_ row: ActivityProcessRow) -> String { (row.label ?? row.name).lowercased() }

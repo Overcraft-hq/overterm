@@ -246,6 +246,9 @@ enum ActivityPorts {
                 listeners[index].note = first.sentence
             } else if case .known(let holder) = listeners[index].portOwner {
                 listeners[index].note = holder.note
+            } else if let holder = listeners[index].holder, let row = byIdentity[holder] {
+                // A server that asked for a port and got the next (6.8, 6.11).
+                listeners[index].note = ActivityMovedServers.note(row.chips, port: listeners[index].port)
             }
             let row = listeners[index]
             listeners[index].ephemeral = row.port >= inputs.ephemeralFirst && row.tab == nil && row.portOwner.foldsWhenEphemeral

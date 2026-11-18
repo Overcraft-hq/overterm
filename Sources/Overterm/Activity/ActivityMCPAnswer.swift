@@ -496,6 +496,8 @@ enum ActivityMCPAnswer {
                 var you = process(row)
                 // Only what the census read: an unread kind is never guessed.
                 if let kind = slice.agentKind { you["agent"] = kind.name }
+                // The agent's subtree over the ring's 15 minutes (6.11, 8.5).
+                if let span = scene.snapshot.history.spanCPU(.agent(agent)), let mean = percent(span.mean) { you["cpuMean15m"] = mean }
                 answer["you"] = you
             }
             var children: [String: Int] = [:]
@@ -515,7 +517,15 @@ enum ActivityMCPAnswer {
             answer["processes"] = sorted.prefix(ActivityMCPRequest.listLimit).map { process($0) }
             if sorted.count > ActivityMCPRequest.listLimit { answer["more"] = sorted.count - ActivityMCPRequest.listLimit }
             let servers = listeners.filter { inPane($0.holder.flatMap { rows[$0] }) }.sorted { $0.port < $1.port }
-            answer["servers"] = servers.map(port)
+            answer["servers"] = servers.map { server in
+                var object = port(server)
+                if object["note"] == nil, let holder = server.holder.flatMap({ rows[$0] }),
+                    let note = ActivityMovedServers.note(holder.chips, port: server.port)
+                {
+                    object["note"] = field(note)
+                }
+                return object
+            }
             let left = leftBehindRows().filter(inside)
             if !left.isEmpty { answer["leftEarlier"] = left.prefix(ActivityMCPRequest.listLimit).map { process($0) } }
             if servers.isEmpty {
