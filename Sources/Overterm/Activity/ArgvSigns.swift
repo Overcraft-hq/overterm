@@ -53,6 +53,10 @@ enum ArgvSign: Hashable, Sendable {
     /// Every sign in `command` — argv joined, masked or not: the signs are
     /// paths, which masking keeps. Bounded by the command's length.
     static func signs(in command: String) -> [ArgvSign] {
+        // Most commands carry none: one byte search for what every prefix
+        // shares, before any walk by characters (a full tick asks it of
+        // every process of the user's).
+        guard ProcessRole.containsBytes(command, "ot-") || ProcessRole.containsBytes(command, scratchPrefix) else { return [] }
         var found: [ArgvSign] = []
         let text = Substring(command)
         for start in occurrences(of: kubePrefix, in: text) {

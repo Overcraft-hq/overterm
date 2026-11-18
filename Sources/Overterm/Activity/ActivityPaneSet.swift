@@ -140,7 +140,10 @@ struct ActivityPaneSet: Hashable, Sendable {
 
     /// Its executable's file name, else its name, else `p_comm`.
     static func executableName(_ process: ActivityProcess, facts: ActivityFacts?) -> String {
-        if let path = facts?.path, let last = path.split(separator: "/").last { return String(last) }
+        if let path = facts?.path {
+            let last = path.lastIndex(of: "/").map { path[path.index(after: $0)...] } ?? path[...]
+            if !last.isEmpty { return String(last) }
+        }
         return facts?.name ?? process.shortName
     }
 
@@ -151,6 +154,8 @@ struct ActivityPaneSet: Hashable, Sendable {
     /// a bundle) —, else nil. A string walk over its components, bounded by
     /// them — no file system read.
     static func appBundle(of path: String) -> String? {
+        // Most executables aren't an app's: one byte search first.
+        guard ProcessRole.containsBytes(path, ".app/Contents/MacOS/") else { return nil }
         let parts = path.split(separator: "/", omittingEmptySubsequences: true)
         let count = parts.count
         guard count >= 4, parts[count - 2] == "MacOS", parts[count - 3] == "Contents", parts[count - 4].hasSuffix(".app") else { return nil }

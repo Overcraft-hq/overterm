@@ -64,6 +64,38 @@ enum ProcessRole: String, Hashable, Sendable, CaseIterable {
         text.withCString { haystack in needle.withCString { strcasestr(haystack, $0) != nil } }
     }
 
+    /// A role as read for an identity, listening on TCP or not: what
+    /// attribution keeps between ticks (`cached`).
+    struct Cached: Sendable {
+        /// What it was read from: a role is read again when either changed
+        /// (an argv read since, an `exec`).
+        let name: String
+        let command: String?
+        let quiet: ProcessRole
+        let listening: ProcessRole
+    }
+
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var roles: [ActivityProcessID: Cached] = [:]
+
+    /// The roles read so far, by identity.
+    static func cached() -> [ActivityProcessID: Cached] { lock.withLock { roles } }
+
+    /// `made` kept; the lot dropped when it grows past four times what
+    /// lives (`live`) and 4,096 — ended identities go with it.
+    static func remember(_ made: [ActivityProcessID: Cached], live: Int) {
+        lock.withLock {
+            if roles.count + made.count > max(4 * live, 4_096) { roles = [:] }
+            roles.merge(made) { _, new in new }
+        }
+    }
+
+    /// Whether `text` holds `needle`, byte for byte: `strstr` over the
+    /// string's own bytes.
+    static func containsBytes(_ text: String, _ needle: String) -> Bool {
+        text.withCString { haystack in needle.withCString { strstr(haystack, $0) != nil } }
+    }
+
     /// The bytes of an argv a role is read from: an MCP server says so in
     /// its first words; past them an Electron helper's kilobytes of flags.
     static let scanLimit = 4_096

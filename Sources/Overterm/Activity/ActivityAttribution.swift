@@ -576,10 +576,24 @@ struct ActivityAttribution: Sendable {
 
         /// Each process's role, and each pane process's role in its pane.
         mutating func assignRoles() {
+            var known = ProcessRole.cached()
+            var made: [ActivityProcessID: ProcessRole.Cached] = [:]
             for (identity, var owner) in owners {
                 let facts = snapshot.facts[identity]
                 let tcp = facts?.sockets?.listeners.contains { $0.kind == .tcp } ?? false
-                owner.role = ProcessRole.of(name: name(identity), command: facts?.command, listensTCP: tcp)
+                // A role is read from its name and argv, an identity's own:
+                // read once, kept while it lives (its TCP listening apart).
+                let name = name(identity)
+                if let cached = known[identity], cached.name == name, cached.command == facts?.command {
+                    owner.role = tcp ? cached.listening : cached.quiet
+                } else {
+                    let cached = ProcessRole.Cached(
+                        name: name, command: facts?.command, quiet: ProcessRole.of(name: name, command: facts?.command, listensTCP: false),
+                        listening: ProcessRole.of(name: name, command: facts?.command, listensTCP: true))
+                    known[identity] = cached
+                    made[identity] = cached
+                    owner.role = tcp ? cached.listening : cached.quiet
+                }
                 if case .pane(let tag) = owner.place, let slice = snapshot.pane(tag), let process = table.process(identity) {
                     if identity == slice.login {
                         owner.paneRole = .session
@@ -597,6 +611,7 @@ struct ActivityAttribution: Sendable {
                 }
                 owners[identity] = owner
             }
+            if !made.isEmpty { ProcessRole.remember(made, live: owners.count) }
         }
     }
 
