@@ -679,8 +679,15 @@ final class ActivitySampler: @unchecked Sendable {
     /// A row's name (6.5): `proc_name`'s, which is `pbi_name` when set —
     /// else `p_comm`, cut at 16 bytes, which the path's file completes —
     /// else the path's file; `p_comm` only while nothing else is known.
+    /// The file is made a native string: an `NSString`'s, made anew each
+    /// tick, compared with last tick's — the owners' caches — took the
+    /// slow, normalizing path (10.4).
     static func name(comm: String, procName: String?, path: String?) -> String {
-        let file = path.map { ($0 as NSString).lastPathComponent }.flatMap { $0.isEmpty ? nil : $0 }
+        let file = path.map { path -> String in
+            var file = (path as NSString).lastPathComponent
+            file.makeContiguousUTF8()
+            return file
+        }.flatMap { $0.isEmpty ? nil : $0 }
         if let procName, !procName.isEmpty {
             if procName == comm, let file, file.count > comm.count, file.hasPrefix(comm) { return file }
             return procName
