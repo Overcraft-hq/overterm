@@ -46,15 +46,22 @@ extension E2ERunner {
         // Steady: every process the same CPU each tick, so no value drawn
         // moves — what a publish costs when nothing changed.
         var steadyCPU = false
-        // A Mac's usual list: thirty busy at 50.02% each, a hundredth of a
-        // percent of jitter that no column shows, the rest idle.
+        // Thirty busy, spread from 5.0% to 58.2% — twenty values, so ten
+        // pairs read alike and only their order between them keeps them
+        // apart —, each moving ±0.03% a tick, inside the tenth the column
+        // shows; the rest idle, tied at 0.
         var busyTop = false
+        func busy(_ index: Int) -> UInt64 {
+            // A tenth of a percent of 2 s is 2,000,000 ns.
+            let tenths = UInt64(50 + (index % 20) * 28)
+            return tenths * 2_000_000 - 600_000 + UInt64.random(in: 0...1_200_000, using: &random)
+        }
         func burn() {
             kernel.advance(2_000_000_000)
             for (index, pid) in pids.enumerated() {
                 let used =
                     busyTop
-                    ? (index < 30 ? 1_000_400_000 + UInt64.random(in: 0...100_000, using: &random) : 0)
+                    ? (index < 30 ? busy(index) : 0)
                     : steadyCPU ? 10_000_000 : UInt64.random(in: 0...40_000_000, using: &random)
                 kernel.update(pid) { process in
                     process.usage = FakeActivityKernel.usage(cpuTime: (process.usage?.cpuTime ?? 0) + used, footprint: process.usage?.footprint ?? 0, threads: 4)
@@ -191,7 +198,8 @@ extension E2ERunner {
         }
         steadyCPU = false
         // Top stable (6.7): the busy thirty's CPU moves below what the column
-        // shows — a re-sort moves no row for it.
+        // shows — a re-sort moves no row for it, neither past another value
+        // nor between two that read alike.
         var topMain: [Double] = []
         leg = "top"
         busyTop = true
