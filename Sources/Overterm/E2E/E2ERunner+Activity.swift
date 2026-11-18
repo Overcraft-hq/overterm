@@ -102,7 +102,7 @@ extension E2ERunner {
         let portLabels = await eventually(5) { self.activityRowLabels().contains { $0.hasPrefix(":\(port) tcp") } }
         check("its row speaks too", portLabels, "\(activityRowLabels().count) labels")
         let noted = await eventually(5) {
-            self.app.pages.view(.activity).flatMap { Self.accessibilityElement("activity.listeningNote", in: $0) }?.text.contains("aren't read") == true
+            self.app.pages.view(.activity).flatMap { Self.accessibilityElement("activity.listeningNote", in: $0) }?.text.contains("Other users' listeners: not read in a test run") == true
         }
         check("and below the list, what Listening doesn't read", noted)
         await activityListening(tab: tab, server: row)

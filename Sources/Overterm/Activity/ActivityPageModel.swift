@@ -262,6 +262,11 @@ final class ActivityPageModel: ObservableObject {
     /// The last rows' options: a selection's subject between two publishes
     /// is read with them; and the read on its way, a later one winning.
     private var lastOptions: ActivityRows.Options?
+    /// Every user's listeners (D-25): the last read, and when the last one
+    /// began.
+    private var others: NettopListeners.Reading?
+    private var othersBegan: Date?
+    let othersReader: NettopListeners.Reader
     private var subjectGeneration = 0
     /// The selection's history read on its own, before the rows carry it:
     /// a row just selected (6.11).
@@ -290,8 +295,9 @@ final class ActivityPageModel: ObservableObject {
     /// `e` and ⌥r — the user's own process, one at a time.
     private(set) var focused: Set<ActivityProcessID> = []
 
-    init(monitor: ActivityMonitor = .shared) {
+    init(monitor: ActivityMonitor = .shared, othersReader: NettopListeners.Reader = .shared) {
         self.monitor = monitor
+        self.othersReader = othersReader
         for section in Section.allCases {
             if let saved = AppEnvironment.defaults.string(forKey: Self.scopeKey(section)), saved == "allTabs" { scopes[section] = .allTabs }
         }
@@ -499,10 +505,49 @@ final class ActivityPageModel: ObservableObject {
     func take(_ snapshot: ActivitySnapshot) {
         guard !paused, snapshot.tick > latest?.tick ?? 0 else { return }
         latest = snapshot
+        readOthers(snapshot)
         // What Activity stopped or put in the background and has since
         // ended, or been continued elsewhere, is let go.
         held.prune(at: snapshot.date) { snapshot.table.process($0) }
         rebuild(asked: false)
+    }
+
+    /// nettop's period (D-25): every fifth tick, 10 s at the 2 s default.
+    var othersPeriod: TimeInterval {
+        let parts = interval.components
+        return 5 * (Double(parts.seconds) + Double(parts.attoseconds) / 1e18)
+    }
+
+    /// Every user's listeners read again (D-25, 6.8): while Listening shows
+    /// with `activity.otherListeners` on, at most once a period, one read
+    /// at a time; its blind check made against `snapshot`'s listeners of
+    /// the user's and again against the latest's as it lands.
+    private func readOthers(_ snapshot: ActivitySnapshot, now: Bool = false) {
+        guard isShown, section == .listening, Settings.shared.activityOtherListeners, !othersReader.isReading else { return }
+        if !now, let began = othersBegan, Date().timeIntervalSince(began) < othersPeriod { return }
+        let expected = NettopListeners.expected(in: snapshot, among: othersAmong)
+        let started = othersReader.read(expected: expected) { [weak self] reading in
+            Task { @MainActor [weak self] in self?.tookOthers(reading) }
+        }
+        if started { othersBegan = Date() }
+    }
+
+    /// Whose listeners nettop's answer is checked against: a test run's
+    /// own rows' (9.9), else every one of the user's.
+    private var othersAmong: Set<ActivityProcessID>? { isolated ? content.identities : nil }
+
+    private func tookOthers(_ reading: NettopListeners.Reading) {
+        others = latest.map { reading.checked(against: NettopListeners.expected(in: $0, among: othersAmong)) } ?? reading
+        if isShown { rebuild(asked: false) }
+    }
+
+    /// One read of every user's listeners now, whatever the period: what a
+    /// scenario asks, with its stand-in nettop.
+    @discardableResult
+    func readOtherListenersNow() -> Bool {
+        guard let latest else { return false }
+        readOthers(latest, now: true)
+        return othersReader.isReading
     }
 
     /// The rows of the latest snapshot, made off the main thread (7.7); a
@@ -535,6 +580,16 @@ final class ActivityPageModel: ObservableObject {
         options.reveal = revealed
         options.containers = wantsContainers == .none ? [] : containers()
         options.connections = connections
+        if Settings.shared.activityOtherListeners {
+            if let why = othersReader.unavailable, othersReader.standIn == nil {
+                options.othersState = .unavailable(why)
+            } else {
+                // A read older than three of its periods is no longer now.
+                let fresh = others.flatMap { Date().timeIntervalSince($0.date) <= 3 * othersPeriod ? $0 : nil }
+                options.others = fresh
+                options.othersState = ActivityOtherListeners.of(fresh, period: othersPeriod)
+            }
+        }
         // What Activity stopped and put in the background, always: every
         // row's "suspended here" and "background" chips read it, selected
         // or not.
@@ -707,6 +762,9 @@ final class ActivityPageModel: ObservableObject {
                 var options = options
                 options.launchAgents = LaunchdJobs.cachedAgents(in: AppEnvironment.launchAgentsDirectory)
                 options.ephemeralFirst = ActivityPorts.ephemeralRangeFirst()
+                // launchd's socket jobs, read once, lazily: only when there
+                // are other users' listeners to name (6.8 rule 9).
+                if options.others?.isBelieved == true { options.launchdSockets = LaunchdSockets.cachedJobs(in: AppEnvironment.launchdSocketFolders) }
                 continuation.resume(returning: ActivityRows.content(of: snapshot, options))
             }
         }

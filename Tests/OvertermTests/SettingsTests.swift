@@ -35,7 +35,11 @@ final class SettingsTests: XCTestCase {
     func testActivitysSettings() {
         let settings = Settings(url: url, watch: false)
         XCTAssertEqual(
-            SettingsSchema.specs(in: .activity).map(\.key), ["activity.enabled", "activity.interval", "activity.everyone", "activity.appServices", "activity.leftBehindNotice", "activity.agentAccess"])
+            SettingsSchema.specs(in: .activity).map(\.key),
+            [
+                "activity.enabled", "activity.interval", "activity.everyone", "activity.appServices", "activity.otherListeners", "activity.leftBehindNotice",
+                "activity.agentAccess",
+            ])
         XCTAssertTrue(
             settings.activityEnabled && settings.activityEveryone && settings.activityAppServices && settings.activityLeftBehindNotice
                 && settings.activityAgentAccess)

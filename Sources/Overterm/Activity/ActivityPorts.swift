@@ -19,6 +19,9 @@ enum ActivityPortOwner: Hashable, Sendable {
     case engine(String)
     case known(KnownHolders.Holder)
     case service(LaunchdJobs.Job)
+    /// launchd (pid 1) holding a system job's socket (6.8 rule 9,
+    /// `LaunchdSockets`): the job named, never signalled.
+    case launchdSocket(LaunchdSockets.Job)
     case app(String)
     case macOS
     case system(user: String)
@@ -36,6 +39,7 @@ enum ActivityPortOwner: Hashable, Sendable {
         case .pane: "tab"
         case .known(let holder): holder.word
         case .service: "service"
+        case .launchdSocket(let job): job.isApple ? "macos" : "system"
         case .app: "app"
         case .macOS: "macos"
         case .system: "system"
@@ -120,6 +124,10 @@ struct ActivityPortRow: ResourceTableRow, Sendable {
     var folded = false
     /// The checkout it belongs to, by its folder's name.
     var checkout: String?
+    /// Another user's listener, from nettop: whose (D-25).
+    var user: String?
+    /// What a forward typed in a terminal reaches (6.8 rule 6, stage 4).
+    var target: String?
 
     var height: CGFloat { 24 }
 
@@ -127,10 +135,6 @@ struct ActivityPortRow: ResourceTableRow, Sendable {
     var spansColumns: Bool { kind == .folded }
 
     var backlogFull: Bool { backlogLimit > 0 && backlog >= backlogLimit }
-    /// Another user's listener, from nettop: whose (D-25).
-    var user: String?
-    /// What a forward typed in a terminal reaches (6.8 rule 6, stage 4).
-    var target: String?
 
     /// "This Mac" or "Network" (6.1), the one address it is bound to, or
     /// who forwards it.
@@ -192,6 +196,12 @@ enum ActivityPorts {
         /// A filter shows its matches, never folded away.
         var unfold = false
         var scope = ActivityScope.mac
+        /// Every user's listeners as nettop last read them (D-25), shown
+        /// when the read is believed, at the Mac's scope, with everyone's.
+        var others: NettopListeners.Reading?
+        var everyone = true
+        /// launchd's socket jobs (`LaunchdSockets`): what names pid 1's.
+        var launchdSockets: [LaunchdSockets.Job] = []
     }
 
     /// What they make: Listening's rows, listeners first, and every
@@ -204,6 +214,7 @@ enum ActivityPorts {
     }
 
     static let ephemeralFold = "ports:ephemeral"
+    static let ephemeralOthersFold = "ports:ephemeral-others"
     /// Connections listed at most (6.8).
     static let connectionCap = 500
 
@@ -217,6 +228,7 @@ enum ActivityPorts {
         var listeners = holders(own, in: snapshot, published: inputs.context.published)
         for index in listeners.indices { attribute(&listeners[index], process: byIdentity[listeners[index].holder!], snapshot: snapshot, inputs: inputs) }
         listeners += unseenContainers(listeners, in: snapshot, inputs: inputs)
+        listeners += others(listeners, in: snapshot, inputs: inputs)
         let connections = pairs(own, in: snapshot, byIdentity: byIdentity, inputs: inputs)
         count(&listeners, clients: connections.clients, tunnels: connections.tunnels)
         let found = PortCollisions.find(listeners)
@@ -233,21 +245,27 @@ enum ActivityPorts {
         }
         var made = Made()
         made.listeners = listeners
-        let folded = inputs.folds[ephemeralFold] ?? true
-        let ephemeral = listeners.filter(\.ephemeral)
-        made.rows = inputs.unfold || ephemeral.isEmpty || !folded ? listeners : listeners.filter { !$0.ephemeral }
+        made.rows = listeners
+        // The user's apps' and other users' (nettop's) folded apart: root's
+        // daemons aren't the user's apps.
+        var folds: [ActivityPortRow] = []
+        for (id, whose, others) in [(ephemeralFold, "of your apps", false), (ephemeralOthersFold, "of macOS and other users", true)] {
+            let ephemeral = listeners.filter { $0.ephemeral && ($0.user != nil) == others }
+            guard !ephemeral.isEmpty, !inputs.unfold else { continue }
+            let folded = inputs.folds[id] ?? true
+            if folded { made.rows.removeAll { $0.ephemeral && ($0.user != nil) == others } }
+            var fold = ActivityPortRow(
+                id: id, kind: .folded, port: inputs.ephemeralFirst, proto: "", address: "", families: [], scope: .thisMac,
+                process: "\(ephemeral.count) ephemeral listener\(ephemeral.count == 1 ? "" : "s") \(whose)", holder: nil)
+            fold.count = ephemeral.count
+            fold.folded = folded
+            folds.append(fold)
+        }
         if inputs.connections {
             made.rows += connections.rows
             made.droppedConnections = connections.dropped
         }
-        if !ephemeral.isEmpty, !inputs.unfold {
-            var fold = ActivityPortRow(
-                id: ephemeralFold, kind: .folded, port: inputs.ephemeralFirst, proto: "", address: "", families: [], scope: .thisMac,
-                process: "\(ephemeral.count) ephemeral listener\(ephemeral.count == 1 ? "" : "s") of your apps", holder: nil)
-            fold.count = ephemeral.count
-            fold.folded = folded
-            made.rows.append(fold)
-        }
+        made.rows += folds
         return made
     }
 
@@ -404,6 +422,15 @@ enum ActivityPorts {
                 }
             }
         }
+        // A forward typed in a terminal says what it reaches (rule 6).
+        switch row.portOwner {
+        case .pane, .elsewhere, .leftBehind:
+            if let target = ActivityTypedForwards.target(of: process?.command, port: row.port) {
+                row.target = target
+                row.ownerText += row.ownerText.isEmpty ? target : " · \(target)"
+            }
+        default: break
+        }
         row.owner = row.portOwner.word
     }
 
@@ -424,15 +451,6 @@ enum ActivityPorts {
             row.url = nil
         } else if row.holder == nil {
             // Its own row: by the families it is published on (6.8's
-        // A forward typed in a terminal says what it reaches (rule 6).
-        switch row.portOwner {
-        case .pane, .elsewhere, .leftBehind:
-            if let target = ActivityTypedForwards.target(of: process?.command, port: row.port) {
-                row.target = target
-                row.ownerText += row.ownerText.isEmpty ? target : " · \(target)"
-            }
-        default: break
-        }
             // table) — a holder's row keeps the URL its bound sockets gave.
             row.url = url(publishedOn: published.address, port: published.port)
         }
@@ -725,5 +743,79 @@ extension ActivityAddress {
         var v6 = in6_addr()
         guard inet_pton(AF_INET6, text.hasPrefix("[") && text.hasSuffix("]") ? String(text.dropFirst().dropLast()) : text, &v6) == 1 else { return nil }
         self.init(v6: v6)
+    }
+}
+
+// MARK: Every user's listeners (D-25)
+
+extension ActivityPorts {
+    /// Other users' and macOS's listeners nettop read (6.8 rule 9): a row
+    /// a holder, protocol and port, its v4 and v6 together — only where the
+    /// read is believed (its blind check passed or had nothing to check),
+    /// at the Mac's scope, with everyone's (`u`). The user's own sockets
+    /// stay libproc's, which names every holder: a pid of the user's is
+    /// left out, and so is one the table no longer lists. launchd's are
+    /// named from its socket jobs (`LaunchdSockets`), the user's own
+    /// LaunchAgent's as its service; macOS's daemons by name
+    /// (`KnownHolders`); the rest by their user.
+    static func others(_ listeners: [ActivityPortRow], in snapshot: ActivitySnapshot, inputs: Inputs) -> [ActivityPortRow] {
+        guard let reading = inputs.others, reading.isBelieved, inputs.everyone, inputs.scope == .mac else { return [] }
+        var order: [String] = []
+        var groups: [String: (process: ActivityProcess, name: String, records: [SocketRecord])] = [:]
+        for listener in reading.listeners {
+            // By pid and start: a process that started after the read began
+            // took an ended listener's pid, and isn't its holder.
+            guard let process = snapshot.table.process(pid: listener.pid), !process.isOwn(by: snapshot.uid),
+                Double(process.identity.start) / 1e6 <= reading.date.timeIntervalSince1970
+            else { continue }
+            let key = "\(process.identity.id):\(listener.proto):\(listener.port)"
+            if groups[key] == nil {
+                order.append(key)
+                groups[key] = (process, snapshot.name(of: process.identity) ?? listener.name, [])
+            }
+            groups[key]?.records.append(listener.record)
+        }
+        var rows: [ActivityPortRow] = []
+        for key in order {
+            guard let group = groups[key], let port = ListeningPorts.port(group.records, holder: group.process.identity, name: group.name) else { continue }
+            var row = ActivityPortRow(
+                id: "other:\(key)", port: port.port, proto: port.proto, address: port.address, families: port.families, scope: port.scope,
+                process: group.name, holder: group.process.identity, url: port.proto == "udp" ? nil : port.url)
+            row.bound = group.records.map(\.localAddress)
+            let started = Date(timeIntervalSince1970: Double(group.process.identity.start) / 1e6)
+            row.since = started
+            row.sinceText = ActivityRows.startedText(started, today: Calendar.current.startOfDay(for: snapshot.date))
+            row.user = ActivityRows.userName(group.process.effectiveUID)
+            attributeOther(&row, process: group.process, snapshot: snapshot, inputs: inputs)
+            rows.append(row)
+        }
+        return rows
+    }
+
+    /// Another user's listener's owner (6.8 rules 8 and 9).
+    static func attributeOther(_ row: inout ActivityPortRow, process: ActivityProcess, snapshot: ActivitySnapshot, inputs: Inputs) {
+        let file = snapshot.facts[process.identity]?.path.map(ActivityAttribution.fileName) ?? row.process
+        if process.pid == 1, let job = LaunchdSockets.job(port: row.port, proto: row.proto, in: inputs.launchdSockets) {
+            if job.domain == .user {
+                row.portOwner = .service(LaunchdJobs.Job(label: job.label))
+                row.ownerText = "launchd, for your job \(job.label)"
+            } else {
+                row.portOwner = .launchdSocket(job)
+                row.ownerText = "launchd — \(job.label)" + (job.sharedWith.map { " or your job \($0)" } ?? "")
+            }
+            row.note = job.sentence
+        } else if let known = KnownHolders.holder(file, port: row.port) ?? KnownHolders.holder(row.process, port: row.port) {
+            row.portOwner = .known(known)
+            row.ownerText = known.name
+            row.note = known.note
+        } else if snapshot.facts[process.identity]?.codeSigning?.isPlatformBinary == true {
+            row.portOwner = .macOS
+            row.ownerText = "macOS"
+        } else {
+            row.portOwner = .system(user: row.user ?? "")
+            row.ownerText = row.user ?? "another user"
+        }
+        row.owner = row.portOwner.word
+        row.whereText = row.user.map { "\($0)'s" } ?? ""
     }
 }

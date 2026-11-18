@@ -64,7 +64,11 @@ enum ActivityPortHolder {
                 return .refused("\(holder.name) holds every container's ports: stop a container, or quit the engine from its menu.")
             }
             if holder.word == "macos" { return .refused("Part of macOS; it would start again.") }
+            // Another user's tool (root's tailscaled): the read route.
+            if let user = row.user { return readRoute(row, user: user) }
             return own(row)
+        case .launchdSocket(let job):
+            return .refused(job.sentence + ".")
         case .service(let job):
             // Typed and run as keystrokes: a label any process can set
             // through its environment runs nothing but launchd's own.
@@ -73,10 +77,17 @@ enum ActivityPortHolder {
         case .macOS:
             return .refused("Part of macOS; it would start again.")
         case .system(let user):
-            return .readRoute(user: user)
+            return readRoute(row, user: user)
         case .pane, .app, .elsewhere, .leftBehind:
             return own(row)
         }
+    }
+
+    /// Another user's holder: the read route — never for launchd or pid 0,
+    /// refused before any text is made (6.8).
+    private static func readRoute(_ row: ActivityPortRow, user: String) -> Step {
+        if let pid = row.holder?.pid, pid <= 1 { return .refused("launchd holds it for a job: part of macOS.") }
+        return .readRoute(user: user)
     }
 
     /// The user's own holder: Activity's verb, by the identity listed.

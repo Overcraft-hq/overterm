@@ -349,7 +349,7 @@ struct ActivityPageView: View {
                 // Every "none" must be true (6.4): what isn't read is said —
                 // below the list, never over its last row.
                 Rectangle().fill(theme.border).frame(height: 1)
-                Text(verbatim: Self.listeningNote(connections: page.connections, dropped: page.content.droppedConnections))
+                Text(verbatim: Self.listeningNote(connections: page.connections, dropped: page.content.droppedConnections, others: summary.others))
                     .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).padding(.horizontal, 14).padding(.vertical, 6)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .accessibilityIdentifier("activity.listeningNote")
@@ -358,10 +358,10 @@ struct ActivityPageView: View {
     }
 
     /// What isn't read, and the connections past the cap (6.8): said.
-    static func listeningNote(connections: Bool, dropped: Int) -> String {
-        guard connections else { return "Your processes' listeners. Other users' — root's, macOS's — aren't read. Connections: c" }
+    static func listeningNote(connections: Bool, dropped: Int, others: ActivityOtherListeners = .off) -> String {
+        guard connections else { return "Your processes' listeners. \(others.sentence) Connections: c" }
         let more = dropped > 0 ? " +\(dropped) more connection\(dropped == 1 ? "" : "s") not listed." : ""
-        return "Your processes' listeners and connections. Other users' — root's, macOS's — aren't read.\(more)"
+        return "Your processes' listeners and connections. \(others.sentence)\(more)"
     }
 
     private var table: some View {

@@ -526,6 +526,8 @@ final class Settings: ObservableObject {
     }
     var activityEveryone: Bool { activityEnabled && bool("activity.everyone") }
     var activityAppServices: Bool { activityEnabled && bool("activity.appServices") }
+    /// Every user's listeners from nettop (D-25), while Listening shows.
+    var activityOtherListeners: Bool { activityEnabled && bool("activity.otherListeners") }
     /// A tab's note when an agent left processes running (6.9, D-17).
     var activityLeftBehindNotice: Bool { bool("activity.leftBehindNotice") }
     /// Agents' `port_` and `proc_` reads (ActivityMCP, 8.2): held when

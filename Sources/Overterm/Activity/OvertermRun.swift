@@ -52,6 +52,8 @@ struct OvertermRun: Hashable, Sendable {
         case terraform
         /// A detached apply's launcher, and the terraform it starts.
         case terraformApply = "terraform-apply"
+        /// Activity's one read of every user's listeners (`NettopListeners`).
+        case nettop
         /// Any other `ManagedProcess`.
         case managed
     }

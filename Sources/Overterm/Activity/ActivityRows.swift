@@ -151,6 +151,8 @@ struct ActivitySummary: Equatable, Sendable {
     var firstSample = true
     /// A test run lists only its own tabs' processes (9.9).
     var scopedToRun = false
+    /// What was read of every user's listeners (D-25).
+    var others = ActivityOtherListeners.off
 
     struct Busy: Equatable, Sendable {
         let id: String
@@ -245,6 +247,12 @@ enum ActivityRows {
         var connections = false
         var launchAgents: [LaunchdJobs.Agent] = []
         var ephemeralFirst = 49_152
+        /// Every user's listeners as nettop last read them (D-25), and
+        /// what was read of them: shown only where believed. launchd's
+        /// socket jobs name pid 1's (`LaunchdSockets`).
+        var others: NettopListeners.Reading?
+        var othersState = ActivityOtherListeners.off
+        var launchdSockets: [LaunchdSockets.Job] = []
         /// The rows shown before this census: what has gone since is shown
         /// once more, "ended" (6.7); one absent from them is new. Empty on
         /// a first build.
@@ -461,6 +469,9 @@ enum ActivityRows {
         portInputs.folds = options.folds
         portInputs.unfold = !portFilter.isEmpty
         portInputs.scope = options.scope
+        portInputs.others = options.others
+        portInputs.everyone = options.everyone
+        portInputs.launchdSockets = options.launchdSockets
         let made = ActivityPorts.make(of: inScope, in: snapshot, inputs: portInputs)
         content.listeners = made.listeners
         content.droppedConnections = made.droppedConnections
@@ -486,6 +497,7 @@ enum ActivityRows {
         summary.unread = snapshot.unread
         summary.firstSample = !rated
         summary.scopedToRun = options.isolated
+        summary.others = options.othersState
         content.summary = summary
         return content
     }
@@ -658,5 +670,58 @@ enum ActivityRows {
             getpwuid_r(uid, &entry, &buffer, buffer.count, &result) == 0 && result != nil ? String(cString: entry.pw_name) : String(uid)
         users.withLock { userNames[uid] = name }
         return name
+    }
+}
+
+/// What Listening knows of every user's listeners (D-25), said under the
+/// list: every "none" must be true (6.4).
+enum ActivityOtherListeners: Equatable, Sendable {
+    /// `activity.otherListeners` is off.
+    case off
+    /// Nothing can be read here: why ("not read in a test run").
+    case unavailable(String)
+    /// Not read yet.
+    case reading
+    /// Read, and its answer held every listener of yours libproc found;
+    /// read again every `period` seconds.
+    case checked(Date, period: TimeInterval)
+    /// Read, with none of yours to check it against.
+    case unchecked(Date, period: TimeInterval)
+    /// Read blind: its answer lacked yours — unknown, nothing shown.
+    case blind(missing: Int)
+    /// nettop failed: why.
+    case failed(String)
+
+    /// Its state for a reading, against what libproc finds now; reads
+    /// every `period` seconds (5 × `activity.interval`).
+    static func of(_ reading: NettopListeners.Reading?, period: TimeInterval) -> ActivityOtherListeners {
+        guard let reading else { return .reading }
+        switch reading.outcome {
+        case .read(.checked): return .checked(reading.date, period: period)
+        case .read(.unchecked): return .unchecked(reading.date, period: period)
+        case .read(.blind(let missing)): return .blind(missing: missing)
+        case .failed(let why): return .failed(why)
+        }
+    }
+
+    /// "10 s", "2.5 s".
+    private static func seconds(_ period: TimeInterval) -> String {
+        let rounded = (period * 10).rounded() / 10
+        return rounded == rounded.rounded() ? "\(Int(rounded)) s" : String(format: "%.1f s", locale: Locale(identifier: "en_US_POSIX"), rounded) + ""
+    }
+
+    /// The note's sentence.
+    var sentence: String {
+        switch self {
+        case .off: return "Other users' listeners — root's, macOS's — aren't read (Settings ▸ Activity)."
+        case .unavailable(let why): return "Other users' listeners: \(why)."
+        case .reading: return "Other users' listeners: reading…"
+        case .checked(_, let period): return "Other users' listeners from nettop, every \(Self.seconds(period)), checked against yours."
+        case .unchecked(_, let period):
+            return "Other users' listeners from nettop, every \(Self.seconds(period)) — unchecked: none of yours listens to compare with."
+        case .blind(let missing):
+            return "Other users' listeners: unknown — nettop's answer lacked \(missing) of your own listener\(missing == 1 ? "" : "s"), so it was read blind."
+        case .failed(let why): return "Other users' listeners: unknown — \(why)."
+        }
     }
 }

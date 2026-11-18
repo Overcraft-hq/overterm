@@ -885,6 +885,11 @@ enum SettingsSchema {
                 "Count apps' helper services and virtual machines (WebKit content, Docker's VM) under the app responsible for them — a private interface; turns itself off if it fails.",
             kind: .toggle, defaultValue: .bool(true), requires: "activity.enabled"),
         SettingSpec(
+            key: "activity.otherListeners", section: .activity, group: "Activity", title: "Every user's listening ports",
+            help:
+                "Root's, macOS's and other users' listening ports in Listening, read by macOS's nettop every 10 s while Listening shows — names, pids and ports only. An answer that lacks your own listeners is said to be unknown, never believed.",
+            kind: .toggle, defaultValue: .bool(true), requires: "activity.enabled"),
+        SettingSpec(
             key: "activity.leftBehindNotice", section: .activity, group: "Activity", title: "Say what an agent left running",
             help:
                 "When an agent finishes and leaves processes running — a server its tool started — the tab says so (\"Claude finished — left node :3001 running\"), in the Inbox too, with Show for Activity's Left Behind. Nothing is ever stopped on its own.",

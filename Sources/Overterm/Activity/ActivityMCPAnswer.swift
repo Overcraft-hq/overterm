@@ -270,6 +270,7 @@ enum ActivityMCPAnswer {
             case .engine: return "container engine (host network)"
             case .known(let known): return known.name
             case .service: return "launchd job"
+            case .launchdSocket: return "launchd, for a system job"
             case .app: return "app"
             case .macOS: return "macOS"
             case .system: return "another user's"
@@ -438,10 +439,19 @@ enum ActivityMCPAnswer {
             guard !held.isEmpty else {
                 answer["state"] = "not listed"
                 answer["yours"] = false
-                answer["advice"] =
-                    scene.isolated
-                    ? "Nothing in this test run's own tabs listens on :\(number); outside them nothing is read in a test run."
-                    : "None of your processes listens on :\(number). Other users' and macOS's listeners aren't read here, so it may still be taken: binding is the test."
+                let mine = scene.isolated ? "Nothing in this test run's own tabs listens on :\(number)" : "None of your processes listens on :\(number)"
+                // What nettop said of every user's (D-25): every "none" true.
+                switch scene.content.summary.others {
+                case .checked, .unchecked:
+                    answer["advice"] = "\(mine), and nettop lists no other user's or macOS's listener on it: it looks free — binding is the test."
+                case .blind, .failed:
+                    answer["advice"] = "\(mine). \(scene.content.summary.others.sentence) So it may still be taken: binding is the test."
+                default:
+                    answer["advice"] =
+                        scene.isolated
+                        ? "\(mine); outside them nothing is read in a test run."
+                        : "\(mine). Other users' and macOS's listeners aren't read here, so it may still be taken: binding is the test."
+                }
                 return answer
             }
             let yours = held.contains { inPane($0.holder.flatMap { rows[$0] }) }
