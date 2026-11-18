@@ -574,14 +574,42 @@ final class ResourceTableView: NSTableView {
         hover = area
     }
 
+    /// Where the pointer was last seen over the list, in screen points.
+    /// AppKit says "entered" again each time the tracking area is made
+    /// anew under a pointer at rest — a reload, a relayout, a sheet gone —
+    /// several times a second while a page's rows tick; told as a move,
+    /// a pointer resting on the list held its order for ever (6.7).
+    private var pointerSeen: NSPoint?
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        // A window opened under a resting pointer: not a move either.
+        pointerSeen = window == nil ? nil : NSEvent.mouseLocation
+    }
+
     override func mouseEntered(with event: NSEvent) {
         super.mouseEntered(with: event)
-        interaction?(.hover)
+        hovered(event)
     }
 
     override func mouseMoved(with event: NSEvent) {
         super.mouseMoved(with: event)
+        hovered(event)
+    }
+
+    /// `.hover` only when the pointer is somewhere else than it was.
+    private func hovered(_ event: NSEvent) {
+        let location = window.map { $0.convertPoint(toScreen: event.locationInWindow) }
+        guard Self.moved(to: location, from: pointerSeen) else { return }
+        pointerSeen = location
         interaction?(.hover)
+    }
+
+    /// Whether a pointer at `location` has moved from `seen`, by more than
+    /// rounding: an unknown place counts as a move. Pure.
+    nonisolated static func moved(to location: NSPoint?, from seen: NSPoint?) -> Bool {
+        guard let location, let seen else { return true }
+        return abs(location.x - seen.x) > 0.5 || abs(location.y - seen.y) > 0.5
     }
 
     override func mouseExited(with event: NSEvent) {

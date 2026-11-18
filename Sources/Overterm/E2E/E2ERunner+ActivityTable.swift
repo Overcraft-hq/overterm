@@ -214,6 +214,30 @@ extension E2ERunner {
         check("the pointer moving again holds it", page.orderHeld)
         table.interaction?(.exit)
         check("once the pointer leaves, it lets go at once", !page.orderHeld && page.waiting == nil)
+        // AppKit says "entered" again whenever the list's tracking area is
+        // made anew under a pointer at rest — every reload. Told as a move,
+        // a pointer resting where this window opened held the order for the
+        // whole run. The view's own handler, given such an event: only a
+        // pointer somewhere else holds.
+        if let window = table.window {
+            func entered(_ offset: CGFloat) {
+                let screen = NSEvent.mouseLocation
+                let at = window.convertPoint(fromScreen: NSPoint(x: screen.x + offset, y: screen.y))
+                guard
+                    let event = NSEvent.enterExitEvent(
+                        with: .mouseEntered, location: at, modifierFlags: [], timestamp: ProcessInfo.processInfo.systemUptime,
+                        windowNumber: window.windowNumber, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil)
+                else { return }
+                table.mouseEntered(with: event)
+            }
+            entered(40)
+            check("an enter where the pointer wasn't holds the order", page.orderHeld)
+            table.interaction?(.exit)
+            entered(0)
+            table.interaction?(.exit)
+            entered(0)
+            check("an enter again where the pointer rests doesn't", !page.orderHeld)
+        }
         page.processSort = ResourceSort(column: "cpu", ascending: false)
 
         return overgitTab

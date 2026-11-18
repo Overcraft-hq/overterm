@@ -70,6 +70,18 @@ final class ResourceTableTests: XCTestCase {
         XCTAssertEqual(ResourceTableView.pressed(4, in: [], anchor: -1, modifiers: .shift), [4], "⇧ with nothing selected: that row")
     }
 
+    /// A tracking area made again under a resting pointer says "entered"
+    /// at the same place: no move, so no hold (Activity's 6.7).
+    @MainActor
+    func testAnEnterWhereThePointerRestsIsNoMove() {
+        let here = NSPoint(x: 1012.1171875, y: 658.21484375)
+        XCTAssertFalse(ResourceTableView.moved(to: here, from: here), "the same place")
+        XCTAssertFalse(ResourceTableView.moved(to: NSPoint(x: here.x + 0.25, y: here.y), from: here), "rounding")
+        XCTAssertTrue(ResourceTableView.moved(to: NSPoint(x: here.x + 3, y: here.y), from: here), "moved")
+        XCTAssertTrue(ResourceTableView.moved(to: here, from: nil), "never seen")
+        XCTAssertTrue(ResourceTableView.moved(to: nil, from: here), "no window to place it")
+    }
+
     func testARightClickMeansTheSelectionOnlyWhenOnIt() {
         typealias Table = ResourceTable<Fruit>
         let ids = rows().map(\.id)
