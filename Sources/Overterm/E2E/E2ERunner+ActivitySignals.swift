@@ -138,6 +138,25 @@ extension E2ERunner {
         if let stopped = await listed("/bin/sleep 158") {
             _ = await eventuallyAsync(10) { await self.app.activitySubject(stopped.identity)?.target.stopped != nil }
             _ = await eventually(10) { row("/bin/sleep 158")?.state == .stopped }
+            // The header (6.4): a stop Activity didn't make, counted beside
+            // "stopped here"; and past 80% of the per-user limit, the
+            // count and the verbs that would start a process greyed.
+            func header(_ id: String) -> String? { app.pages.view(.activity).flatMap { Self.accessibilityElement(id, in: $0) }?.text }
+            check(
+                "a stop Activity didn't make is counted in the header",
+                await eventually(10) {
+                    page.content.summary.stopped.contains(stopped.identity) && header("activity.stoppedElsewhere")?.contains("stopped in tabs") == true
+                }, header("activity.stoppedElsewhere") ?? "none")
+            page.processLimit = 1
+            page.selection = [stopped.id]
+            let near = await eventually(10) { header("activity.processLimit")?.contains(" of 1 processes") == true }
+            let forking = page.verbs(for: [stopped.id]) { _ in }.filter { ["Sample", "Terminal in Its Folder", "Open Files in a Tab"].contains($0.label ?? $0.title) }
+            check(
+                "near the process limit the header says so, and Sample, Terminal in Its Folder and Open Files wait",
+                near && forking.count == 3 && forking.allSatisfy { $0.unavailable?.contains("near your limit") == true } && !page.press("s"),
+                "\(forking.map { $0.unavailable ?? "-" })")
+            page.processLimit = ActivityProcessLimit.perUser
+            page.refreshVerbs()
             let read = await app.activitySubject(stopped.identity)
             let sheet = await asked("Stop…", of: row("/bin/sleep 158") ?? stopped)
             check(

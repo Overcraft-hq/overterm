@@ -302,6 +302,8 @@ final class ActivityPageModel: ObservableObject {
     /// dropped by the person's hand, or once a tick at the Mac's scope
     /// doesn't list it.
     private(set) var pendingPort: ActivityPendingPort?
+    /// `kern.maxprocperuid` as the rows read it (6.4); a scenario's lower.
+    var processLimit = ActivityProcessLimit.perUser
     /// A link is setting the section and selection: not the person's hand.
     private var linking = false
     /// The selection read in depth (7.3's focus level): its folder for
@@ -611,6 +613,7 @@ final class ActivityPageModel: ObservableObject {
         options.containers = wantsContainers == .none ? [] : containers()
         options.connections = connections
         options.unixSockets = Settings.shared.activityUnixSockets
+        options.processLimit = processLimit
         if Settings.shared.activityOtherListeners {
             if let why = othersReader.unavailable, othersReader.standIn == nil {
                 options.othersState = .unavailable(why)
@@ -857,13 +860,13 @@ final class ActivityPageModel: ObservableObject {
                 readFiles()
             }
         case .sample where processes:
-            guard let row = selectedProcess, row.isOwn else { return false }
+            guard let row = selectedProcess, row.isOwn, !content.summary.nearProcessLimit else { return false }
             actions.sample(row.identity.pid)
         case .reveal:
             guard let path = selectedProcess?.path else { return false }
             actions.reveal(path)
         case .terminal:
-            guard let folder = selectedFolder else { return false }
+            guard let folder = selectedFolder, !content.summary.nearProcessLimit else { return false }
             actions.terminal(ActivityTerminalRequest(directory: folder))
         case .tabInfo:
             guard let tab = selectedProcess?.tab else { return false }
@@ -1055,9 +1058,11 @@ final class ActivityPageModel: ObservableObject {
             ResourceVerb(
                 title: "Reveal Its Folder in Finder", symbol: "folder.badge.gearshape", key: "⌥r", unavailable: folder == nil ? noFolder : nil,
                 perform: { [weak self] in if let folder { self?.actions.reveal(folder) } }))
+        // Near the per-user process limit (6.4), what would start one waits.
+        let forks = content.summary.processLimitText.map { "\($0): near your limit, a new process may not start" }
         verbs.append(
             ResourceVerb(
-                title: "Terminal in Its Folder", symbol: "terminal", key: "e", unavailable: folder == nil ? noFolder : nil,
+                title: "Terminal in Its Folder", symbol: "terminal", key: "e", unavailable: forks ?? (folder == nil ? noFolder : nil),
                 perform: { [weak self] in if let folder { self?.actions.terminal(ActivityTerminalRequest(directory: folder)) } }))
         verbs.append(
             ResourceVerb(
@@ -1066,11 +1071,11 @@ final class ActivityPageModel: ObservableObject {
         verbs.append(
             ResourceVerb(
                 title: "Sample for 5 Seconds in a Tab", label: "Sample", symbol: "waveform.path.ecg", key: "s",
-                unavailable: row.isOwn ? nil : "Another user's: sample can't read it",
+                unavailable: forks ?? (row.isOwn ? nil : "Another user's: sample can't read it"),
                 perform: { [weak self] in self?.actions.sample(row.identity.pid) }))
         verbs.append(
             ResourceVerb(
-                title: "Open Files in a Tab", symbol: "doc.text.magnifyingglass", unavailable: row.isOwn ? nil : "Another user's: lsof can't read it",
+                title: "Open Files in a Tab", symbol: "doc.text.magnifyingglass", unavailable: forks ?? (row.isOwn ? nil : "Another user's: lsof can't read it"),
                 perform: { [weak self] in
                     self?.actions.terminal(ActivityTerminalRequest(directory: NSHomeDirectory(), command: Self.openFilesCommand(row.identity.pid)))
                 }))

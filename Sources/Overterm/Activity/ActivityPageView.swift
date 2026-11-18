@@ -237,6 +237,22 @@ struct ActivityPageView: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("activity.stoppedHere")
             }
+            if page.hasRead, let others = Self.stoppedElsewhere(summary.stopped, here: held.stopped), others > 0 {
+                Button {
+                    page.section = .processes
+                    page.setFilter("state:stopped")
+                } label: {
+                    Text(verbatim: "\(others) stopped in tabs").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.signal)
+                }
+                .buttonStyle(.plain)
+                .help("Stopped processes of your tabs and Left Behind that Activity didn't stop — a job's ⌃Z, or a stop a crash forgot. Lists them (state:stopped)")
+                .accessibilityIdentifier("activity.stoppedElsewhere")
+            }
+            if page.hasRead, let limit = summary.processLimitText {
+                Text(verbatim: limit).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.orangeText)
+                    .help("Near the per-user process limit (kern.maxprocperuid): a new process may fail to start, so Sample and Terminal in Its Folder wait")
+                    .accessibilityIdentifier("activity.processLimit")
+            }
             if let said = page.linkSaid {
                 Text(verbatim: said).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
                     .help("A link asked for this port, and no tick lists it — another user's isn't listed")
@@ -297,13 +313,24 @@ struct ActivityPageView: View {
         !hasRead || summary.unread > 0 || summary.firstSample
     }
 
-    /// "1,297 processes · 864 yours · 23 listening", or a test run's own.
-    private var counts: String {
+    /// "1,297 processes · 864 yours · 23 listening · 2 zombies", or a test run's own.
+    private var counts: String { Self.counts(summary) }
+
+    static func counts(_ summary: ActivitySummary) -> String {
         let number = { (value: Int) in value.formatted(.number.locale(Locale(identifier: "en_US"))) }
+        let zombies = summary.zombies > 0 ? " · \(number(summary.zombies)) zombie\(summary.zombies == 1 ? "" : "s")" : ""
         if summary.scopedToRun {
             return "\(number(summary.shown)) of this test run's tabs · \(number(summary.processes)) on this Mac, counted only · \(summary.listening) listening"
+                + zombies
         }
-        return "\(number(summary.processes)) processes · \(number(summary.own)) yours · \(summary.listening) listening"
+        return "\(number(summary.processes)) processes · \(number(summary.own)) yours · \(summary.listening) listening" + zombies
+    }
+
+    /// The tabs' and leftovers' stopped processes Activity didn't stop;
+    /// nil when there are none. Pure.
+    static func stoppedElsewhere(_ stopped: [ActivityProcessID], here: Set<ActivityProcessID>) -> Int? {
+        let others = stopped.count { !here.contains($0) }
+        return others > 0 ? others : nil
     }
 
     static func seconds(_ duration: Duration) -> String {

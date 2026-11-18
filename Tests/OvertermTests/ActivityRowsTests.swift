@@ -83,6 +83,34 @@ final class ActivityRowsTests: XCTestCase {
         XCTAssertEqual(server.accessibilityLabel, "acme-server, pid 1102, in “web”")
     }
 
+    /// The header's counts (6.4): the user's zombies; the tabs' and the
+    /// leftovers' stopped processes, whoever stopped them; the per-user
+    /// limit, past 80% of which what would start a process waits.
+    func testZombiesStoppedAndTheProcessLimit() throws {
+        let context = mac()
+        add(1103, parent: 1101, name: "acme-job")
+        kernel.update(1103) { $0.record = FakeActivityKernel.record($0.record, status: SSTOP) }
+        add(1104, parent: 1101, name: "acme-dead")
+        kernel.update(1104) { $0.record = FakeActivityKernel.record($0.record, status: SZOMB) }
+        add(2001, parent: 1, name: "globex-paused")
+        kernel.update(2001) { $0.record = FakeActivityKernel.record($0.record, status: SSTOP) }
+        let snapshot = try full(ActivitySampler(kernel: kernel), context)
+        var options = ActivityRows.Options(titles: [tab: "web"])
+        options.processLimit = 10_666
+        var summary = ActivityRows.content(of: snapshot, options).summary
+        XCTAssertEqual(summary.zombies, 1)
+        XCTAssertEqual(summary.stopped, [ActivityProcessID(pid: 1103, start: 1_103_000)], "a tab's, never one outside every tab")
+        XCTAssertEqual(ActivityPageView.stoppedElsewhere(summary.stopped, here: []), 1)
+        XCTAssertNil(ActivityPageView.stoppedElsewhere(summary.stopped, here: [ActivityProcessID(pid: 1103, start: 1_103_000)]), "Activity's own: stopped here")
+        XCTAssertTrue(ActivityPageView.counts(summary).hasSuffix(" · 1 zombie"), ActivityPageView.counts(summary))
+        XCTAssertFalse(summary.nearProcessLimit)
+        XCTAssertNil(summary.processLimitText)
+        options.processLimit = 7
+        summary = ActivityRows.content(of: snapshot, options).summary
+        XCTAssertTrue(summary.nearProcessLimit, "\(summary.own) of 7")
+        XCTAssertEqual(summary.processLimitText, "\(summary.own) of 7 processes")
+    }
+
     func testCPUFirstOnceRatedAndTheBusiest() throws {
         let context = mac()
         let sampler = ActivitySampler(kernel: kernel)

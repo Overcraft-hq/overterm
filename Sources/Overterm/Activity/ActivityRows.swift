@@ -153,6 +153,29 @@ struct ActivitySummary: Equatable, Sendable {
     var scopedToRun = false
     /// What was read of every user's listeners (D-25).
     var others = ActivityOtherListeners.off
+    /// The user's zombies: ended, not yet reaped by their parent (6.4).
+    var zombies = 0
+    /// Every stopped process of the tabs and the leftovers, whoever
+    /// stopped it (`state:stopped`): the header counts those Activity
+    /// didn't stop beside "stopped here", so a stop a crash forgot still
+    /// shows (6.4). At most 1,000.
+    var stopped: [ActivityProcessID] = []
+    /// `kern.maxprocperuid`, read once; nil where it couldn't be.
+    var processLimit: Int?
+
+    /// Past 80% of the per-user limit (6.4): a new process may fail, and
+    /// the verbs that would start one say so.
+    var nearProcessLimit: Bool {
+        guard let processLimit, processLimit > 0 else { return false }
+        return own * 5 > processLimit * 4
+    }
+
+    /// "9,100 of 10,666 processes", near the limit; nil otherwise.
+    var processLimitText: String? {
+        guard nearProcessLimit, let processLimit else { return nil }
+        let number = { (value: Int) in value.formatted(.number.locale(Locale(identifier: "en_US"))) }
+        return "\(number(own)) of \(number(processLimit)) processes"
+    }
 
     struct Busy: Equatable, Sendable {
         let id: String
@@ -255,6 +278,8 @@ enum ActivityRows {
         var launchdSockets: [LaunchdSockets.Job] = []
         /// The user's unix-socket listeners in Listening (D-32).
         var unixSockets = false
+        /// `kern.maxprocperuid` (6.4): the header's warning past 80%.
+        var processLimit: Int? = ActivityProcessLimit.perUser
         /// The rows shown before this census: what has gone since is shown
         /// once more, "ended" (6.7); one absent from them is new. Empty on
         /// a first build.
@@ -333,9 +358,12 @@ enum ActivityRows {
         var threads = 0
         var energy: Double?
         var rated = false
+        var stopped: [ActivityProcessID] = []
+        var zombies = 0
         for process in snapshot.table.processes {
             let identity = process.identity
             let own = process.isOwn(by: uid)
+            if own, process.isZombie { zombies += 1 }
             let facts = snapshot.facts[identity]
             if own, let usage = facts?.usage { threads += Int(usage.threads) }
             if own, let watts = facts?.rates?.energy { energy = (energy ?? 0) + watts }
@@ -345,6 +373,7 @@ enum ActivityRows {
             if options.isolated, tabs[identity] == nil, !isRunsOwnLeftover(attribution?[identity]) { continue }
             if !own, !options.everyone { continue }
             let owner = attribution?[identity]
+            if process.isStopped, stopped.count < 1_000, tabs[identity] != nil || owner?.place == .leftBehind { stopped.append(identity) }
             guard inScope(owner, options.scope, tabs: tabFacts, context: options.context, identity: identity) else { continue }
             let tab = tabs[identity]
             let started = Date(timeIntervalSince1970: Double(identity.start) / 1_000_000)
@@ -501,6 +530,9 @@ enum ActivityRows {
         summary.firstSample = !rated
         summary.scopedToRun = options.isolated
         summary.others = options.othersState
+        summary.zombies = zombies
+        summary.stopped = stopped
+        summary.processLimit = options.processLimit
         content.summary = summary
         return content
     }
@@ -727,4 +759,14 @@ enum ActivityOtherListeners: Equatable, Sendable {
         case .failed(let why): return "Other users' listeners: unknown — \(why)."
         }
     }
+}
+
+/// The per-user process limit (6.4): `kern.maxprocperuid`, read once.
+enum ActivityProcessLimit {
+    static let perUser: Int? = {
+        var value: Int32 = 0
+        var size = MemoryLayout<Int32>.size
+        guard sysctlbyname("kern.maxprocperuid", &value, &size, nil, 0) == 0, value > 0 else { return nil }
+        return Int(value)
+    }()
 }
