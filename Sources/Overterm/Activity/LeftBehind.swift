@@ -220,13 +220,14 @@ enum LeftBehind {
         if let tag = facts?.markers?.tab, !live.contains(tag), let retired = context.retired.last(where: { $0.pane.tag == tag }) {
             return .closedPane(retired)
         }
-        let own = context.run.flatMap(OvertermRun.init(marker:))
         // Its marker: a run that is gone.
         if let marker = facts?.markers?.run, marker != context.run, let run = OvertermRun(marker: marker), !isLive(run.identity, in: table) {
             return run.kind == .isolated ? .testRun : .earlierRun(run.kind)
         }
         // An argv sign.
         if let command = facts?.command {
+            // This run, read only where a sign names one.
+            var own: OvertermRun??
             for sign in ArgvSign.signs(in: command) {
                 switch sign {
                 case .testScratch:
@@ -235,7 +236,8 @@ enum LeftBehind {
                     guard process.parentPID == 1 else { continue }
                     return .testRun
                 default:
-                    guard let named = sign.run, named != own?.identity, !isLive(named, in: table) else { continue }
+                    if own == nil { own = .some(context.run.flatMap(OvertermRun.init(marker:))) }
+                    guard let named = sign.run, named != own??.identity, !isLive(named, in: table) else { continue }
                     return .earlierRun(nil)
                 }
             }

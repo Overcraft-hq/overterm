@@ -168,6 +168,12 @@ struct ActivityAttribution: Sendable {
         /// The panes' logins, and Overterm's helpers as the tick found them.
         let logins: Set<ActivityProcessID>
         let helpers: Set<ActivityProcessID>
+        /// What each path says, read on earlier ticks (`ActivityPathWords`),
+        /// and what this one read anew; the roles alike (`ProcessRole`).
+        let knownWords = ActivityPathWords.cached()
+        var madeWords: [ActivityProcessID: ActivityPathWords] = [:]
+        let knownRoles = ProcessRole.cached()
+        var madeRoles: [ActivityProcessID: ProcessRole.Cached] = [:]
 
         init(snapshot: ActivitySnapshot, context: ActivityContext, inputs: Inputs) {
             self.snapshot = snapshot
@@ -199,11 +205,41 @@ struct ActivityAttribution: Sendable {
         mutating func run() {
             let processes = table.processes.sorted { $0.identity < $1.identity }
             placePanes()
-            // Parents first: a child is no older than its parent.
-            var pending: [ActivityProcess] = []
-            for process in processes where owners[process.identity] == nil { pending.append(process) }
-            for process in pending { owners[process.identity] = owner(of: process) }
-            assignRoles()
+            // The panes' processes' roles, now they are all placed.
+            for identity in Array(owners.keys) {
+                guard let process = table.process(identity), var owner = owners[identity] else { continue }
+                finish(&owner, process, snapshot.facts[identity])
+                owners[identity] = owner
+            }
+            owners.reserveCapacity(processes.count)
+            // Parents first: a child is no older than its parent. Each
+            // process's facts read once, its path's words once a life.
+            for process in processes where owners[process.identity] == nil {
+                let identity = process.identity
+                let facts = snapshot.facts[identity]
+                let words: ActivityPathWords
+                if let known = knownWords[identity], known.describes(path: facts?.path, name: facts?.name, shortName: process.shortName) {
+                    words = known
+                } else {
+                    words = ActivityPathWords(path: facts?.path, name: facts?.name, shortName: process.shortName)
+                    madeWords[identity] = words
+                }
+                var owner = owner(of: process, facts, words)
+                finish(&owner, process, facts)
+                owners[identity] = owner
+            }
+            ProcessRole.remember(madeRoles, live: owners.count)
+            ActivityPathWords.remember(madeWords, live: owners.count)
+        }
+
+        /// What `process`'s path and names say: as read before while they
+        /// are the same strings, else read now.
+        func words(_ process: ActivityProcess, _ facts: ActivityFacts?) -> ActivityPathWords {
+            let identity = process.identity
+            if let words = madeWords[identity] ?? knownWords[identity], words.describes(path: facts?.path, name: facts?.name, shortName: process.shortName) {
+                return words
+            }
+            return ActivityPathWords(path: facts?.path, name: facts?.name, shortName: process.shortName)
         }
 
         // MARK: Rules 3–5, 7, 9: the panes
@@ -232,7 +268,9 @@ struct ActivityAttribution: Sendable {
                         if reason == .underExcluded { reason = rootReason(of: identity, reasons) }
                         // Rule 4 wins over 6 in the tree; what left it, or
                         // a daemon started from it, may be an engine's.
-                        if pass == 1 || reason == .detachedOnPurpose || reason == .app, let engine = engine(of: process) {
+                        if pass == 1 || reason == .detachedOnPurpose || reason == .app,
+                            let engine = engine(of: process, snapshot.facts[identity], words(process, snapshot.facts[identity]))
+                        {
                             var owner = engine
                             owner.tab = slice.tab
                             owners[identity] = owner
@@ -365,26 +403,25 @@ struct ActivityAttribution: Sendable {
 
         // MARK: The rest, in order
 
-        func owner(of process: ActivityProcess) -> ActivityOwner {
+        func owner(of process: ActivityProcess, _ facts: ActivityFacts?, _ words: ActivityPathWords) -> ActivityOwner {
             let identity = process.identity
-            let facts = snapshot.facts[identity]
             // 1. Overterm itself.
             if process.pid == context.appPID { return ActivityOwner(place: .overterm, rule: 1, reason: "Overterm itself") }
             // 2. What Overterm started: its registries, its children that
             // aren't a pane's login, what descends from them.
             if let reason = helperReason(process) { return ActivityOwner(place: .overterm, rule: 2, reason: reason) }
             // 6. An engine.
-            if let engine = engine(of: process) { return engine }
+            if let engine = engine(of: process, facts, words) { return engine }
             // 10. Another Overterm, by its run's marker or its own executable.
-            if let other = anotherOverterm(process, facts) { return other }
+            if let other = anotherOverterm(process, facts, words) { return other }
             // 11. Left Behind by another sign (6.9).
             if let left = leftBehind(process, facts) { return left }
             // 12. An app, by the outermost `.app` on its path.
-            if let app = app(of: process, facts) { return app }
+            if let app = app(of: process, facts, words) { return app }
             // 13. Responsibility (D-31): an XPC service's or a VM's only —
             // anything started in a terminal app has that app as its
             // responsible one, and is the terminal's, not the app's.
-            if ActivityAttribution.isServiceOrVM(process, facts), let responsible = facts?.responsible, responsible != identity,
+            if process.parentPID == 1, words.serviceOrVM, let responsible = facts?.responsible, responsible != identity,
                 let owner = owners[responsible] ?? responsibleOwner(responsible),
                 let inherited = inheritedByResponsibility(process, from: owner, responsible: responsible)
             {
@@ -395,7 +432,7 @@ struct ActivityAttribution: Sendable {
                 return inherited
             }
             // 14. macOS.
-            if let macOS = macOS(process, facts) { return macOS }
+            if let macOS = macOS(process, facts, words) { return macOS }
             // 15. Another user's.
             if !process.isOwn(by: snapshot.uid) {
                 return ActivityOwner(place: .system, rule: 15, reason: ActivityRows.userName(process.effectiveUID))
@@ -436,14 +473,14 @@ struct ActivityAttribution: Sendable {
 
         /// Rule 6: a listener on what a running container publishes, a known
         /// holder, or a VM an engine's app is responsible for.
-        func engine(of process: ActivityProcess) -> ActivityOwner? {
-            let identity = process.identity
-            let facts = snapshot.facts[identity]
-            let held = (facts?.sockets?.listeners ?? []).filter { socket in
-                context.published.contains { ActivityAttribution.matches(socket, $0) }
-            }
-            let file = facts?.path.map(ActivityAttribution.fileName) ?? process.shortName
-            let known = ActivityAttribution.engineHolders[file] ?? ActivityAttribution.engineHolders[facts?.name ?? process.shortName]
+        func engine(of process: ActivityProcess, _ facts: ActivityFacts?, _ words: ActivityPathWords) -> ActivityOwner? {
+            let held =
+                context.published.isEmpty
+                ? []
+                : (facts?.sockets?.listeners ?? []).filter { socket in
+                    context.published.contains { ActivityAttribution.matches(socket, $0) }
+                }
+            let known = words.engine
             if !held.isEmpty {
                 let containers = Set(context.published.filter { published in held.contains { ActivityAttribution.matches($0, published) } }.map(\.container))
                 let engine = known ?? "Docker"
@@ -454,32 +491,37 @@ struct ActivityAttribution: Sendable {
             }
             if let known { return ActivityOwner(place: .engine(known), rule: 6, reason: "\(known)’s engine") }
             if let responsible = facts?.responsible, let path = snapshot.facts[responsible]?.path, let app = ActivityAttribution.appName(of: path),
-                let engine = ActivityAttribution.engineApps[app], file.contains("Virtualization") || file.contains("VirtualMachine")
+                let engine = ActivityAttribution.engineApps[app], words.vmExecutable
             {
                 return ActivityOwner(place: .engine(engine), rule: 6, reason: "\(engine)’s Linux VM — containers run inside it")
             }
             return nil
         }
 
-        func anotherOverterm(_ process: ActivityProcess, _ facts: ActivityFacts?) -> ActivityOwner? {
+        func anotherOverterm(_ process: ActivityProcess, _ facts: ActivityFacts?, _ words: ActivityPathWords) -> ActivityOwner? {
             if let run = facts?.markers?.run, run != context.run, let named = ActivityAttribution.runIdentity(run), named.pid != context.appPID,
                 table.process(named) != nil
             {
                 return ActivityOwner(place: .anotherOverterm, rule: 10, reason: "a tab of another Overterm")
             }
-            if let path = facts?.path, ProcessRole.contains(path, "overterm"), let bundle = ActivityPaneSet.appBundle(of: path), let app = ActivityAttribution.appName(of: bundle),
-                app.hasPrefix("Overterm"), ActivityAttribution.fileName(path) == "Overterm"
-            {
-                return ActivityOwner(place: .anotherOverterm, rule: 10, reason: "\(app)")
-            }
+            if let app = words.overtermApp { return ActivityOwner(place: .anotherOverterm, rule: 10, reason: "\(app)") }
             return nil
         }
 
-        func app(of process: ActivityProcess, _ facts: ActivityFacts?) -> ActivityOwner? {
-            let path = facts?.path ?? inputs.runningApps[process.pid]
-            guard let path, let app = ActivityAttribution.appName(of: path) else { return nil }
+        func app(of process: ActivityProcess, _ facts: ActivityFacts?, _ words: ActivityPathWords) -> ActivityOwner? {
+            let app: String
+            let underSystem: Bool
+            if facts?.path != nil {
+                guard let named = words.app else { return nil }
+                app = named
+                underSystem = words.underSystem
+            } else {
+                guard let path = inputs.runningApps[process.pid], let named = ActivityAttribution.appName(of: path) else { return nil }
+                app = named
+                underSystem = path.hasPrefix("/System/")
+            }
             // macOS's own apps are rule 14's.
-            if path.hasPrefix("/System/"), facts?.codeSigning?.isPlatformBinary == true { return nil }
+            if underSystem, facts?.codeSigning?.isPlatformBinary == true { return nil }
             return ActivityOwner(place: .app(app), rule: 12)
         }
 
@@ -490,7 +532,9 @@ struct ActivityAttribution: Sendable {
             guard let process = table.process(identity) else { return nil }
             if process.pid == context.appPID { return ActivityOwner(place: .overterm, rule: 1) }
             if helperReason(process) != nil { return ActivityOwner(place: .overterm, rule: 2) }
-            return app(of: process, snapshot.facts[identity]) ?? macOS(process, snapshot.facts[identity])
+            let facts = snapshot.facts[identity]
+            let words = words(process, facts)
+            return app(of: process, facts, words) ?? macOS(process, facts, words)
         }
 
         func inheritedByResponsibility(_ process: ActivityProcess, from owner: ActivityOwner, responsible: ActivityProcessID) -> ActivityOwner? {
@@ -548,18 +592,15 @@ struct ActivityAttribution: Sendable {
         /// Rule 14, narrow on purpose: a platform binary from /System,
         /// /usr/libexec or /usr/sbin with launchd as its parent and no app
         /// responsible — unknown signing never matches — or a known agent.
-        func macOS(_ process: ActivityProcess, _ facts: ActivityFacts?) -> ActivityOwner? {
+        func macOS(_ process: ActivityProcess, _ facts: ActivityFacts?, _ words: ActivityPathWords) -> ActivityOwner? {
             guard let facts, facts.codeSigning?.isPlatformBinary == true else { return nil }
-            let file = facts.path.map(ActivityAttribution.fileName) ?? facts.name
-            if let known = ActivityAttribution.appleAgents[file] ?? ActivityAttribution.appleAgents[facts.name] {
-                return ActivityOwner(place: .macOS, rule: 14, reason: known)
-            }
-            guard let path = facts.path, ["/System/", "/usr/libexec/", "/usr/sbin/"].contains(where: { path.hasPrefix($0) }) else { return nil }
+            if let known = words.appleAgent { return ActivityOwner(place: .macOS, rule: 14, reason: known) }
+            guard words.macOSPath else { return nil }
             guard process.parentPID == 1 || process.pid == 1, facts.responsible == nil else { return nil }
             // Unread is not none: with responsibility off, or the call
             // answering nothing, the user's XPC service or VM may be an
             // app's (D-31).
-            if process.isOwn(by: snapshot.uid), !facts.responsibilityRead, ActivityAttribution.isServiceOrVM(process, facts) { return nil }
+            if process.isOwn(by: snapshot.uid), !facts.responsibilityRead, process.parentPID == 1, words.serviceOrVM { return nil }
             return ActivityOwner(place: .macOS, rule: 14)
         }
 
@@ -574,44 +615,37 @@ struct ActivityAttribution: Sendable {
 
         // MARK: Roles
 
-        /// Each process's role, and each pane process's role in its pane.
-        mutating func assignRoles() {
-            var known = ProcessRole.cached()
-            var made: [ActivityProcessID: ProcessRole.Cached] = [:]
-            for (identity, var owner) in owners {
-                let facts = snapshot.facts[identity]
-                let tcp = facts?.sockets?.listeners.contains { $0.kind == .tcp } ?? false
-                // A role is read from its name and argv, an identity's own:
-                // read once, kept while it lives (its TCP listening apart).
-                let name = name(identity)
-                if let cached = known[identity], cached.name == name, cached.command == facts?.command {
-                    owner.role = tcp ? cached.listening : cached.quiet
-                } else {
-                    let cached = ProcessRole.Cached(
-                        name: name, command: facts?.command, quiet: ProcessRole.of(name: name, command: facts?.command, listensTCP: false),
-                        listening: ProcessRole.of(name: name, command: facts?.command, listensTCP: true))
-                    known[identity] = cached
-                    made[identity] = cached
-                    owner.role = tcp ? cached.listening : cached.quiet
-                }
-                if case .pane(let tag) = owner.place, let slice = snapshot.pane(tag), let process = table.process(identity) {
-                    if identity == slice.login {
-                        owner.paneRole = .session
-                    } else if identity == slice.agent {
-                        owner.paneRole = .agent
-                    } else if owner.agent != nil {
-                        owner.paneRole = .agentChild
-                    } else if let login = slice.login, table.parent(of: identity)?.identity == login {
-                        owner.paneRole = .shell
-                    } else if let foreground = process.terminalGroup, foreground == process.group {
-                        owner.paneRole = .foreground
-                    } else {
-                        owner.paneRole = .background
-                    }
-                }
-                owners[identity] = owner
+        /// `owner`'s role, and a pane process's role in its pane.
+        mutating func finish(_ owner: inout ActivityOwner, _ process: ActivityProcess, _ facts: ActivityFacts?) {
+            let identity = process.identity
+            let tcp = facts?.sockets?.listeners.contains { $0.kind == .tcp } ?? false
+            // A role is read from its name and argv, an identity's own:
+            // read once, kept while it lives (its TCP listening apart).
+            let name = facts?.name ?? process.shortName
+            if let cached = madeRoles[identity] ?? knownRoles[identity], cached.name == name, cached.command == facts?.command {
+                owner.role = tcp ? cached.listening : cached.quiet
+            } else {
+                let cached = ProcessRole.Cached(
+                    name: name, command: facts?.command, quiet: ProcessRole.of(name: name, command: facts?.command, listensTCP: false),
+                    listening: ProcessRole.of(name: name, command: facts?.command, listensTCP: true))
+                madeRoles[identity] = cached
+                owner.role = tcp ? cached.listening : cached.quiet
             }
-            if !made.isEmpty { ProcessRole.remember(made, live: owners.count) }
+            if case .pane(let tag) = owner.place, let slice = snapshot.pane(tag) {
+                if identity == slice.login {
+                    owner.paneRole = .session
+                } else if identity == slice.agent {
+                    owner.paneRole = .agent
+                } else if owner.agent != nil {
+                    owner.paneRole = .agentChild
+                } else if let login = slice.login, table.parent(of: identity)?.identity == login {
+                    owner.paneRole = .shell
+                } else if let foreground = process.terminalGroup, foreground == process.group {
+                    owner.paneRole = .foreground
+                } else {
+                    owner.paneRole = .background
+                }
+            }
         }
     }
 

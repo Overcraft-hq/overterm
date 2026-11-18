@@ -132,7 +132,7 @@ struct ActivityPaneSet: Hashable, Sendable {
     static func isDetachedOnPurpose(_ process: ActivityProcess, facts: ActivityFacts?) -> Bool {
         let name = executableName(process, facts: facts)
         if detachedNames.contains(name) { return true }
-        if name.lowercased() == "emacs", let command = facts?.command {
+        if name.utf8.count == 5, name.lowercased() == "emacs", let command = facts?.command {
             return command.split(separator: " ").contains { $0 == "--daemon" || $0.hasPrefix("--daemon=") || $0.hasPrefix("--bg-daemon") || $0.hasPrefix("--fg-daemon") }
         }
         return false

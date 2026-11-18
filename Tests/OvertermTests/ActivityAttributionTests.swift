@@ -418,6 +418,18 @@ final class ActivityAttributionTests: XCTestCase {
 
     /// Every process gets an owner; the pure step reads nothing of the
     /// kernel.
+    /// An `exec` keeps the identity and changes its path: what the path
+    /// says is read again (`ActivityPathWords`, 10.4), never the last one's.
+    func testAnExecIsPlacedByItsNewPath() throws {
+        var mac = mac()
+        mac.ids["exec"] = add(2700, parent: 1, name: "acme-tool")
+        XCTAssertEqual(try owner("exec", mac, try attribution(mac).0).place, .elsewhere)
+        kernel.update(2700) { $0.path = "/Applications/Globex Mail.app/Contents/MacOS/Globex Mail" }
+        XCTAssertEqual(try owner("exec", mac, try attribution(mac).0).place, .app("Globex Mail"))
+        kernel.update(2700) { $0.path = "/opt/acme/bin/acme-tool" }
+        XCTAssertEqual(try owner("exec", mac, try attribution(mac).0).place, .elsewhere)
+    }
+
     func testEveryProcessIsPlacedAndNothingIsRead() throws {
         let mac = mac()
         let snapshot = try XCTUnwrap(ActivitySampler(kernel: kernel).tickNow(ActivityDemand(.full), context: mac.context))
