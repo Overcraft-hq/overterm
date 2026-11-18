@@ -81,12 +81,14 @@ extension E2ERunner {
             let builds = page.builds
             guard let snapshot = await monitor.tick() else { return }
             censusCPU.append(Double(snapshot.cost.cpu) / 1_000_000)
-            // The rows, made as the page makes them, timed on their own.
+            // The rows, made as the page makes them (`make`: the content, the
+            // list's rows, the ids kept), timed on their own.
             var options = ActivityRows.Options()
             options.grouping = .none
             options.tree = false
             let start = CACurrentMediaTime()
-            _ = ActivityRows.content(of: snapshot, options)
+            let content = ActivityRows.withListRows(ActivityRows.content(of: snapshot, options))
+            _ = ActivityRows.shownIDs(content)
             rowsMade.append((CACurrentMediaTime() - start) * 1000)
             let frames = frame.count
             _ = await eventually(10) { page.builds > builds && frame.count > frames }
@@ -409,10 +411,11 @@ extension E2ERunner {
         note("activityPerf: a selected row's verbs listed on the main thread \(verbs); its process read off it among 5,000, every owner \(subject)")
         note("activityPerf: a selected agent's detail, its charts made off the main thread: on it \(detail), p90 \(p90(Self.p90(detailCost)))")
         // 10.4's 15 ms, a tick after the last, over starts spread as a
-        // Mac's and six agents' panes: 13.3–14.0 ms median, 14.0–15.1 p90
-        // measured, five runs (design 15). The first build, nothing before
-        // it and the caches it fills empty, 43.6–45.4 ms: gated just above
-        // what it costs.
+        // Mac's and six agents' panes, all `make` runs — the content, the
+        // list's rows, the ids kept (0.3 ms of it): 13.5–14.4 ms median,
+        // 14.5–15.2 p90 measured, three runs (design 15). The first build,
+        // nothing before it and the caches it fills empty, 43.5–45.4 ms:
+        // gated just above what it costs.
         check(
             "5,000 processes' rows are made a tick after the last in under 15 ms (median, 30 ticks)",
             crowdedRows.count == 30 && crowd.median < 15, "\(crowd), p90 \(p90(Self.p90(crowdedRows)))")
@@ -651,13 +654,16 @@ extension E2ERunner {
                 options.previous = shown.processes
                 options.shownAt = shown.madeAt
             }
+            // What `make` runs, timed whole: the content, the list's rows
+            // with their order and index, the ids kept.
             let start = CACurrentMediaTime()
             var content = ActivityRows.content(of: snapshot, options)
-            let took = (CACurrentMediaTime() - start) * 1000
             let idsStart = CACurrentMediaTime()
             content = ActivityRows.withListRows(content)
             content.shownIDs = ActivityRows.shownIDs(content)
-            let idsTook = (CACurrentMediaTime() - idsStart) * 1000
+            let end = CACurrentMediaTime()
+            let took = (end - start) * 1000
+            let idsTook = (end - idsStart) * 1000
             if let shown {
                 let heldStart = CACurrentMediaTime()
                 _ = ActivityRows.held(shown, content)
