@@ -699,6 +699,11 @@ enum ActivityRows {
             options.grouping == nil && options.scope == .mac && options.subjectOf == nil ? nil : owners(of: snapshot, options, tabs: tabFacts)
         lap(&cost.attribution)
         let today = Calendar.current.startOfDay(for: snapshot.date)
+        // The Started column's words by start minute, as made before for
+        // the same day; users' names by uid, one lock each.
+        let knownStarts = StartedWords.cached(today: today)
+        var madeStarts: [UInt64: String] = [:]
+        var users: [uid_t: String] = [:]
         // Where each process runs: the first pane that places it.
         var tabs: [ActivityProcessID: UUID] = [:]
         for slice in snapshot.panes {
@@ -734,12 +739,27 @@ enum ActivityRows {
             guard inScope(owner, options.scope, tabs: tabFacts, context: options.context, identity: identity) else { continue }
             let tab = tabs[identity]
             let started = Date(timeIntervalSince1970: Double(identity.start) / 1_000_000)
+            let minute = identity.start / 60_000_000
+            let startedWords: String
+            if let known = madeStarts[minute] ?? knownStarts[minute] {
+                startedWords = known
+            } else {
+                startedWords = startedText(started, today: today)
+                madeStarts[minute] = startedWords
+            }
+            let named = own ? uid : process.effectiveUID
+            let user: String
+            if let known = users[named] {
+                user = known
+            } else {
+                user = userName(named)
+                users[named] = user
+            }
             var row = ActivityProcessRow(
                 id: identity.id, identity: identity, name: snapshot.name(of: identity) ?? process.shortName, cpu: facts?.rates?.cpuPercent,
                 memory: facts?.usage?.footprint, threads: facts?.usage?.threads,
                 state: ActivityState(status: process.status, runningThreads: own ? facts?.usage?.runningThreads : nil),
-                started: started, startedText: startedText(started, today: today),
-                user: own ? userName(uid) : userName(process.effectiveUID), isOwn: own, tab: tab, tabTitle: tab.flatMap { titles[$0] })
+                started: started, startedText: startedWords, user: user, isOwn: own, tab: tab, tabTitle: tab.flatMap { titles[$0] })
             row.owner = owner
             row.checkout = tab.flatMap { tabFacts[$0]?.checkout }.map(folderName)
             row.branch = tab.flatMap { tabFacts[$0]?.branch }
@@ -796,6 +816,7 @@ enum ActivityRows {
             }
             rows.append(row)
         }
+        StartedWords.remember(madeStarts, today: today)
         // A server not where it asked to be (6.8, 6.11).
         for (id, chip) in ActivityMovedServers.find(rows, tabs: tabFacts) {
             if let index = rows.firstIndex(where: { $0.id == id }) { rows[index].chips.append(chip) }
@@ -1010,6 +1031,31 @@ enum ActivityRows {
         case "backlog": return sort.sorted(rows) { $0.backlogLimit > 0 ? $0.backlog : nil }
         case "note": return sort.sorted(rows) { $0.note }
         default: return rows
+        }
+    }
+
+    /// The Started column's words made so far, by start minute, for one
+    /// day (10.4): a crowded Mac's rows format 5,000 dates a tick otherwise,
+    /// every tick the same ones. A time of day is its minute's, a date its
+    /// day's; a new day starts it again.
+    enum StartedWords {
+        private static let lock = NSLock()
+        nonisolated(unsafe) private static var day = Date.distantPast
+        nonisolated(unsafe) private static var words: [UInt64: String] = [:]
+
+        /// The words made for `today`, none for another day.
+        static func cached(today: Date) -> [UInt64: String] { lock.withLock { day == today ? words : [:] } }
+
+        /// `made` kept for `today`; the lot dropped past 16,384 minutes.
+        static func remember(_ made: [UInt64: String], today: Date) {
+            guard !made.isEmpty else { return }
+            lock.withLock {
+                if day != today || words.count + made.count > 16_384 {
+                    day = today
+                    words = [:]
+                }
+                words.merge(made) { _, new in new }
+            }
         }
     }
 

@@ -215,6 +215,16 @@ final class ActivityRowsTests: XCTestCase {
         let snapshot = try full(ActivitySampler(kernel: kernel), mac())
         let content = ActivityRows.content(of: snapshot, ActivityRows.Options())
         XCTAssertTrue(content.processes.allSatisfy { !$0.startedText.isEmpty })
+        // Made once a start minute, as made fresh; kept for its day alone.
+        for row in content.processes {
+            XCTAssertEqual(row.startedText, ActivityRows.startedText(row.started, today: Calendar.current.startOfDay(for: snapshot.date)), row.name)
+        }
+        let tomorrow = today.addingTimeInterval(86_400)
+        ActivityRows.StartedWords.remember([1: "09:05"], today: today)
+        XCTAssertEqual(ActivityRows.StartedWords.cached(today: today)[1], "09:05")
+        XCTAssertTrue(ActivityRows.StartedWords.cached(today: tomorrow).isEmpty, "a new day's are made again")
+        ActivityRows.StartedWords.remember([2: "Jan 1"], today: tomorrow)
+        XCTAssertTrue(ActivityRows.StartedWords.cached(today: today).isEmpty)
     }
 
     /// "Reading…" until rows are made and while no rate is in; an empty
