@@ -101,59 +101,15 @@ struct ActivityPageView: View {
 
     // MARK: The left
 
+    /// The left, as a value of what it draws: a publish that changes none
+    /// of it — the rows' values, the detail — doesn't lay it out again (7.7).
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            ForEach(ActivityPageModel.Section.allCases) { section in
-                Button {
-                    page.section = section
-                } label: {
-                    HStack(spacing: 8) {
-                        Image(systemName: section.symbol).frame(width: 18)
-                        Text(section.title)
-                        Spacer()
-                        if page.hasRead {
-                            Text(verbatim: "\(section == .processes ? summary.shown : section == .listening ? summary.listening : summary.leftBehind)")
-                                .foregroundStyle(theme.text3).font(.system(size: ChromeMetrics.text(11), design: .monospaced))
-                        }
-                    }
-                    .foregroundStyle(page.section == section ? theme.text : theme.text2)
-                    .padding(.horizontal, 10)
-                    .frame(height: ChromeMetrics.row(30))
-                    .background(RoundedRectangle(cornerRadius: 7).fill(page.section == section ? theme.selected : .clear))
-                    .contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .help("\(section.title) (\(section.key))")
-                .accessibilityIdentifier("activity.section.\(section.rawValue)")
-            }
-            if !summary.busiest.isEmpty {
-                caption("Busiest").padding(.top, 14)
-                ForEach(summary.busiest, id: \.id) { busy in
-                    Button {
-                        page.reveal(busy.id, in: .processes)
-                    } label: {
-                        HStack(spacing: 6) {
-                            Text(verbatim: busy.name).lineLimit(1).truncationMode(.middle)
-                            Spacer(minLength: 4)
-                            Text(verbatim: "\(ActivityRows.percent(busy.cpu))%").font(.system(size: ChromeMetrics.text(11), design: .monospaced))
-                                .foregroundStyle(busy.cpu >= 50 ? TabStatusStyle.signal : theme.text3)
-                        }
-                        .font(.system(size: ChromeMetrics.text(11.5)))
-                        .foregroundStyle(theme.text2)
-                        .padding(.horizontal, 10)
-                        .frame(height: ChromeMetrics.row(20))
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(Text(verbatim: "\(busy.name), \(ActivityRows.percent(busy.cpu)) percent CPU"))
-                }
-            }
-            Spacer()
-            ActivityMetersView(
-                meters: summary.meters, processes: summary.processes, threads: summary.threads, history: summary.history,
-                energy: page.columns(.processes).contains { $0.id == "energy" } ? summary.energy : nil, copy: { copy([$0]) }, theme: theme)
-        }
-        .padding(12)
+        ActivitySidebar(
+            section: page.section, hasRead: page.hasRead, shown: summary.shown, listening: summary.listening, leftBehind: summary.leftBehind,
+            busiest: summary.busiest, meters: summary.meters, processes: summary.processes, threads: summary.threads, history: summary.history,
+            energy: page.columns(.processes).contains { $0.id == "energy" } ? summary.energy : nil, page: page, theme: theme, copy: copy
+        )
+        .equatable()
     }
 
     private func caption(_ text: String) -> some View {
@@ -438,6 +394,92 @@ struct ActivityPageView: View {
     }
 
 
+}
+
+/// The page's left (6.4): the sections with their counts, the busiest
+/// five, the meters. Equal while what it draws is, so the page's other
+/// publishes skip it.
+struct ActivitySidebar: View, Equatable {
+    let section: ActivityPageModel.Section
+    let hasRead: Bool
+    let shown: Int
+    let listening: Int
+    let leftBehind: Int
+    let busiest: [ActivitySummary.Busy]
+    let meters: SystemMeters?
+    let processes: Int
+    let threads: Int
+    let history: [TimeChartData]
+    let energy: Double?
+    /// Read for its actions, never observed.
+    let page: ActivityPageModel
+    @ObservedObject var theme: ChromeTheme
+    let copy: ([String]) -> Void
+
+    nonisolated static func == (a: ActivitySidebar, b: ActivitySidebar) -> Bool {
+        a.section == b.section && a.hasRead == b.hasRead && a.shown == b.shown && a.listening == b.listening && a.leftBehind == b.leftBehind
+            && a.busiest == b.busiest && a.meters == b.meters && a.processes == b.processes && a.threads == b.threads && a.history == b.history
+            && a.energy == b.energy && a.page === b.page && a.theme === b.theme
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(ActivityPageModel.Section.allCases) { section in
+                Button {
+                    page.section = section
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: section.symbol).frame(width: 18)
+                        Text(section.title)
+                        Spacer()
+                        if hasRead {
+                            Text(verbatim: "\(section == .processes ? shown : section == .listening ? listening : leftBehind)")
+                                .foregroundStyle(theme.text3).font(.system(size: ChromeMetrics.text(11), design: .monospaced))
+                        }
+                    }
+                    .foregroundStyle(self.section == section ? theme.text : theme.text2)
+                    .padding(.horizontal, 10)
+                    .frame(height: ChromeMetrics.row(30))
+                    .background(RoundedRectangle(cornerRadius: 7).fill(self.section == section ? theme.selected : .clear))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("\(section.title) (\(section.key))")
+                .accessibilityIdentifier("activity.section.\(section.rawValue)")
+            }
+            if !busiest.isEmpty {
+                caption("Busiest").padding(.top, 14)
+                ForEach(busiest, id: \.id) { busy in
+                    Button {
+                        page.reveal(busy.id, in: .processes)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(verbatim: busy.name).lineLimit(1).truncationMode(.middle)
+                            Spacer(minLength: 4)
+                            Text(verbatim: "\(ActivityRows.percent(busy.cpu))%").font(.system(size: ChromeMetrics.text(11), design: .monospaced))
+                                .foregroundStyle(busy.cpu >= 50 ? TabStatusStyle.signal : theme.text3)
+                        }
+                        .font(.system(size: ChromeMetrics.text(11.5)))
+                        .foregroundStyle(theme.text2)
+                        .padding(.horizontal, 10)
+                        .frame(height: ChromeMetrics.row(20))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text(verbatim: "\(busy.name), \(ActivityRows.percent(busy.cpu)) percent CPU"))
+                }
+            }
+            Spacer()
+            ActivityMetersView(
+                meters: meters, processes: processes, threads: threads, history: history, energy: energy, copy: { copy([$0]) }, theme: theme)
+        }
+        .padding(12)
+    }
+
+    private func caption(_ text: String) -> some View {
+        Text(text).font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+            .padding(.horizontal, 10)
+    }
 }
 
 /// The meters (6.4): CPU a bar a core, memory as Activity Monitor counts it,
