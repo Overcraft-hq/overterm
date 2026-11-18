@@ -498,22 +498,28 @@ extension E2ERunner {
         check("a tick's rows are shown in under 100 ms (median)", !shown.isEmpty && update.median < 100, "\(update)")
         check("held, a tick is shown in under 100 ms (median)", !heldShown.isEmpty && held.median < 100, "\(held)")
         // 7.7's own measure: the main thread's CPU from the content set to
-        // the run loop's rest — the Mac's other work left out. 10.4's 4 ms
-        // isn't met: every cell on screen is handed its row again, each a
-        // SwiftUI update (design 15); gated just above what it costs, so a
-        // regression of 7.7's whole 4 ms fails — 39.9–43.7 ms p90 measured
-        // re-sorted, 20.2–21.4 held, 13.9–15.5 steady, five runs.
+        // the run loop's rest — the Mac's other work left out. The rows are
+        // AppKit's, a cell drawn again only when its words changed (design
+        // 15). 10.4's 4 ms is met only where little a person sees moves:
+        // three runs, re-sorted (every row on screen another process each
+        // tick, the fake's) 24.0–24.8 ms p90, held (every row's CPU moving)
+        // 9.2–9.6, steady 3.6–5.0, thirty busy below a tenth 4.2–4.5 — each
+        // gated at what it costs, with a margin, never at 4 ms where the
+        // runs reach it: a regression of 7.7's whole 4 ms still fails.
         check(
-            "a publish takes the main thread under 47 ms of CPU (p90), a held one under 23 ms",
-            shownMain.count >= 12 && Self.p90(shownMain) < 47 && heldMain.count == 12 && Self.p90(heldMain) < 23,
+            "a publish takes the main thread under 30 ms of CPU (p90), a held one under 12 ms",
+            shownMain.count >= 12 && Self.p90(shownMain) < 30 && heldMain.count == 12 && Self.p90(heldMain) < 12,
             "\(Self.summary(shownMain)); held \(Self.summary(heldMain))")
         check(
-            "a steady one, nothing drawn moving, under 17 ms (p90)", steadyMain.count == 12 && Self.p90(steadyMain) < 17,
+            "a steady one, nothing drawn moving, under 6 ms (p90)", steadyMain.count == 12 && Self.p90(steadyMain) < 6,
             "\(Self.summary(steadyMain))")
+        check(
+            "with thirty busy whose CPU moves below what is shown, under 6 ms (p90)", topMain.count == 12 && Self.p90(topMain) < 6,
+            "\(Self.summary(topMain))")
         // 7.7 at 5,000: the list's rows made with the content, the table
         // told their order — a crowded Mac's publish, folded at 500 rows,
-        // costs what this one's does: 0.92–1.08× measured (34.6–36.4 ms
-        // median against 32.7–38.3), five runs.
+        // costs what this one's does: 0.98–1.0× measured (19.3–20.4 ms
+        // median against 19.7–20.8), three runs.
         let crowdedMain = Self.summary(crowdedPublish.folded.main)
         let crowdedWhole = Self.summary(crowdedPublish.whole.main)
         check(
@@ -522,16 +528,16 @@ extension E2ERunner {
             "\(crowdedMain) against \(Self.summary(shownMain))")
         // "+N more" unfolded, every one of the 5,000 a row of the table:
         // against the same page folded at 500 the moment before — the rows'
-        // count alone, 1.07–1.10× measured (37.7–39.3 ms median against
-        // 34.8–36.4), three runs — and on its own, 38.5–41.3 ms p90: each
-        // gated just above.
+        // count alone, 1.07–1.13× measured (21.5–21.9 ms median against
+        // 19.3–20.4), three runs — and on its own, 21.9–22.9 ms p90: each
+        // gated above.
         check(
             "…\"+N more\" unfolded, its 5,000 rows' publish at most 1.15× the folded one's (median)",
             crowdedPublish.whole.rows >= 5_000 && crowdedPublish.whole.main.count == 12 && !crowdedPublish.folded.main.isEmpty
                 && crowdedWhole.median <= 1.15 * crowdedMain.median,
             "\(crowdedPublish.whole.rows) rows: \(crowdedWhole) against \(crowdedMain)")
         check(
-            "…and under 44 ms of CPU (p90)", crowdedPublish.whole.main.count == 12 && Self.p90(crowdedPublish.whole.main) < 44,
+            "…and under 28 ms of CPU (p90)", crowdedPublish.whole.main.count == 12 && Self.p90(crowdedPublish.whole.main) < 28,
             "\(crowdedWhole)")
         // 7.7: the list observes only what it draws — "order held", a
         // selected agent's detail and its verbs' subject, landing beside a
@@ -549,7 +555,9 @@ extension E2ERunner {
         // 6.7: a sort by what the column shows — thirty busy processes whose
         // CPU moves below a tenth keep their places.
         check("a re-sort moves no row for a change no column shows (12 ticks)", (touched["top"] ?? []).count == 12 && topReorders == 0, "\(topReorders) reorders")
-        check("the list scrolls in under 35 ms a step (p95)", !scrolled.isEmpty && scroll.p95 < 35, "\(scroll)")
+        // 3.7–3.8 ms p95 measured, three runs, once its cells were AppKit's
+        // (26.5 before).
+        check("the list scrolls in under 10 ms a step (p95)", !scrolled.isEmpty && scroll.p95 < 10, "\(scroll)")
         // 7.7: the main thread's part of a publish ≤ 4 ms — the verbs' list
         // is all of theirs that stays on it.
         check("a selected row's verbs are listed on the main thread in under 4 ms (median)", !verbsListed.isEmpty && verbs.median < 4, "\(verbs)")
