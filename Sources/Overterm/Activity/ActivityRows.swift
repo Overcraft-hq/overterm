@@ -646,6 +646,23 @@ enum ActivityRows {
         var repeatsEnded = false
     }
 
+    /// `row`'s 15 minutes from the history (6.11): one of the user's, its
+    /// strip and since when it began.
+    static func strip(_ row: inout ActivityProcessRow, in snapshot: ActivitySnapshot) {
+        row.strip = snapshot.history.cpuStrip(.process(row.identity), now: snapshot.historyNow)
+        row.stripSince = snapshot.history.since(.process(row.identity), now: snapshot.historyNow).map { snapshot.date(of: $0) }
+    }
+
+    /// `items` with a strip on each of the user's process rows that has none
+    /// yet: what the list draws, a few hundred rows at most of thousands.
+    static func withStrips(_ items: [ActivityListItem], in snapshot: ActivitySnapshot) -> [ActivityListItem] {
+        items.map { item in
+            guard case .process(var row) = item, row.isOwn, row.strip == nil else { return item }
+            strip(&row, in: snapshot)
+            return .process(row)
+        }
+    }
+
     /// The tabs' facts as the rows read them: a title made into facts, each
     /// title masked — a tab's title is often the command running in it,
     /// masked as every command is wherever it leaves the strip (9.3).
@@ -704,6 +721,9 @@ enum ActivityRows {
         let knownStarts = StartedWords.cached(today: today)
         var madeStarts: [UInt64: String] = [:]
         var users: [uid_t: String] = [:]
+        // The 15-minute strips: made for the rows the list draws, after it
+        // is laid out (10.4) — for every row only where they sort it.
+        let stripsInRows = options.processSort?.column == "cpu15"
         // Where each process runs: the first pane that places it.
         var tabs: [ActivityProcessID: UUID] = [:]
         for slice in snapshot.panes {
@@ -785,8 +805,7 @@ enum ActivityRows {
             row.diskWritten = facts?.rates?.diskWrittenPerSecond
             row.sleepHold = snapshot.sleepHolds.map { $0[process.pid] ?? [] }
             if own {
-                row.strip = snapshot.history.cpuStrip(.process(identity), now: snapshot.historyNow)
-                row.stripSince = snapshot.history.since(.process(identity), now: snapshot.historyNow).map { snapshot.date(of: $0) }
+                if stripsInRows { strip(&row, in: snapshot) }
                 let agentTab = agentTabs[identity]
                 let waiting = agentTab.flatMap { tabFacts[$0] }.flatMap { $0.waiting ? $0.waitingSince : nil }
                 row.chips = ActivityChips.of(identity, agentWaitingSince: waiting, isAgent: agentTab != nil, in: snapshot)
@@ -866,6 +885,8 @@ enum ActivityRows {
             content.list = list(rows, grouping: grouping, in: snapshot, tabs: tabFacts, options: listed)
         }
         content.leftBehind = leftBehindList(rows, tabs: tabFacts, options: options)
+        content.list = withStrips(content.list, in: snapshot)
+        content.leftBehind = withStrips(content.leftBehind, in: snapshot)
         lap(&cost.list)
         // Listening (6.8): its listeners, owners, collisions and, asked
         // for, the user's connections.

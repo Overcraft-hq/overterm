@@ -106,7 +106,12 @@ extension E2ERunner {
             "fifteen minutes of history: a strip each of the user's, 60 cells read",
             lastHistory.keyCount >= pids.count && (lastHistory.cpuStrip(.process(ActivityProcessID(pid: pids[0], start: UInt64(pids[0]) * 1_000 + 1)))?.allSatisfy { $0 != nil } ?? false),
             "\(lastHistory.keyCount) keys")
-        _ = await eventually(10) { page.content.processes.contains { $0.strip != nil } }
+        _ = await eventually(10) {
+            page.content.list.contains { item in
+                guard case .process(let row) = item else { return false }
+                return row.strip != nil
+            }
+        }
         // The window's first drawing — every cell on screen made — apart:
         // a tick's is what is timed, not the page's first appearance.
         host.layoutSubtreeIfNeeded()

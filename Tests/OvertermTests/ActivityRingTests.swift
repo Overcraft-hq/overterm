@@ -401,16 +401,27 @@ final class ActivityRingTests: XCTestCase {
         var facts = ActivityTabFacts(id: tab, title: "fake-agent", waiting: true)
         facts.waitingSince = longAgo
         options.tabs = [tab: facts]
-        options.grouping = nil
+        options.grouping = ActivityGrouping.none
+        options.tree = false
         options.scope = .mac
         let content = ActivityRows.content(of: snapshot, options)
-        let rows = Dictionary(uniqueKeysWithValues: content.processes.map { ($0.identity, $0) })
+        // The strips are the list's rows' (10.4).
+        let listed = content.list.compactMap { item -> ActivityProcessRow? in
+            guard case .process(let row) = item else { return nil }
+            return row
+        }
+        let rows = Dictionary(uniqueKeysWithValues: listed.map { ($0.identity, $0) })
         XCTAssertEqual(rows[made.agent]?.chips.count, 1)
         if case .idleBurning? = rows[made.agent]?.chips.first {} else { XCTFail("the agent's row says it") }
         if case .heldCore? = rows[made.loop]?.chips.first {} else { XCTFail("the loop's row says it") }
         XCTAssertEqual(rows[made.loop]?.strip?.count, 60)
         XCTAssertEqual((rows[made.loop]?.strip?.last ?? nil) ?? 0, 100, accuracy: 0.5)
         XCTAssertNil(rows[ActivityProcessID(pid: 1, start: 1_000)]?.strip, "another user's: no history")
+        XCTAssertNil(content.processes.first { $0.identity == made.loop }?.strip, "the flat rows carry none…")
+        var byStrip = options
+        byStrip.processSort = ResourceSort(column: "cpu15", ascending: false)
+        let sorted = ActivityRows.content(of: snapshot, byStrip)
+        XCTAssertEqual(sorted.processes.first { $0.identity == made.loop }?.strip?.count, 60, "…unless they sort by them")
     }
 
     func testAMovedServerAskedForOnePortAndGotTheNext() {

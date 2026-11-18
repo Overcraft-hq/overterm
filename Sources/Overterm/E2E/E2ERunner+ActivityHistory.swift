@@ -10,10 +10,17 @@ extension E2ERunner {
     func activityHistoryChecks(tab: Tab) async {
         let page = app.activityPage
         func ownRows() -> [ActivityProcessRow] { page.content.processes.filter { $0.tab == tab.id && !$0.ended } }
-        let stripped = await eventually(10) { ownRows().contains { ($0.strip?.last ?? nil) != nil } }
+        // The strips are the list's: made for the rows it draws (10.4).
+        func listed() -> [ActivityProcessRow] {
+            page.content.list.compactMap { item in
+                guard case .process(let row) = item, row.tab == tab.id, !row.ended else { return nil }
+                return row
+            }
+        }
+        let stripped = await eventually(10) { listed().contains { ($0.strip?.last ?? nil) != nil } }
         check(
-            "the run's own rows carry a strip of 60 cells, the newest read", stripped && ownRows().allSatisfy { $0.strip == nil || $0.strip?.count == 60 },
-            "\(ownRows().filter { $0.strip != nil }.count) of \(ownRows().count) rows")
+            "the run's own rows carry a strip of 60 cells, the newest read", stripped && listed().allSatisfy { $0.strip == nil || $0.strip?.count == 60 },
+            "\(listed().filter { $0.strip != nil }.count) of \(listed().count) rows")
         check("CPU, 15 min is a column by default", page.columns(.processes).contains { $0.id == "cpu15" })
         let drawn = await eventually(5) {
             self.app.pages.view(.activity).flatMap { Self.accessibilityElement("activity.strip", in: $0) } != nil
