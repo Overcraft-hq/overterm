@@ -247,7 +247,10 @@ final class ActivityPageModel: ObservableObject {
         didSet { if connections != oldValue { rebuild(asked: true) } }
     }
     @Published private(set) var content = ActivityPageContent() {
-        didSet { syncList(rows: true) }
+        didSet {
+            syncList(rows: true)
+            ActivityRelease.later(oldValue)
+        }
     }
     /// A full snapshot has been made into rows since the page showed.
     @Published private(set) var hasRead = false {
@@ -293,7 +296,9 @@ final class ActivityPageModel: ObservableObject {
     /// How the person works the list now, and the rows a tick brought
     /// while the order held: shown once it lets go.
     private var hold = ActivityHold()
-    private(set) var waiting: ActivityPageContent?
+    private(set) var waiting: ActivityPageContent? {
+        didSet { ActivityRelease.later(oldValue) }
+    }
     private var release: Task<Void, Never>?
 
     let monitor: ActivityMonitor
@@ -678,6 +683,9 @@ final class ActivityPageModel: ObservableObject {
         let shownMark = shown.map(Self.mark)
         Task { [weak self] in
             let made = await Self.make(snapshot, options, heldOver: shown)
+            // What this build carried (the rows shown, the merge) dies off
+            // the main thread, after it.
+            defer { ActivityRelease.later((made, shown)) }
             guard let self, self.generation == generation else { return }
             self.builds += 1
             let first = !self.hasRead
@@ -1270,5 +1278,18 @@ final class ActivityPageModel: ObservableObject {
         rebuild(asked: true)
         selection = [id]
         focusList += 1
+    }
+}
+
+/// The page's rows let go of off the main thread (7.7): a tick's content
+/// replaced by the next freed thousands of rows' storage on it — a few
+/// milliseconds a publish at 1,300 processes. Each value is kept a moment
+/// past the main thread's last use, so the queue's is the last reference.
+enum ActivityRelease {
+    private static let queue = DispatchQueue(label: "overterm.activity.release", qos: .utility)
+
+    nonisolated static func later<Value: Sendable>(_ value: Value) {
+        let block: @Sendable () -> Void = { withExtendedLifetime(value) {} }
+        queue.asyncAfter(deadline: .now() + 1, execute: block)
     }
 }
