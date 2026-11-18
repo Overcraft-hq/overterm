@@ -213,6 +213,49 @@ extension E2ERunner {
             if round > 1, !full { churnReads.append((snapshot.cost.identitiesRead, snapshot.cost.commandsRead, snapshot.cost.deferred)) }
         }
         for pid in churned { kernel.remove(pid) }
+        // The same churn whose processes outlive a light tick (a `make -j`
+        // whose compiles take longer than the cadence, `xargs -P`'s
+        // workers): each burst ends a tick after the next starts, so a
+        // tick reads the last one's survivors in full beside the new
+        // one's 16 — the half of the rule the leg above never pays.
+        var lastingLight: [Double] = []
+        var lastingReads: [(identities: Int, commands: Int, deferred: Int)] = []
+        var bursts: [[pid_t]] = []
+        let lasting = ActivitySampler(kernel: kernel)
+        for round in 0..<14 {
+            burn()
+            if bursts.count == 2 { for pid in bursts.removeFirst() { kernel.remove(pid) } }
+            bursts.append(Self.fakeChurn(kernel, under: panes[2].login?.pid ?? pids[16], round: 30 + round, count: 200))
+            guard let snapshot = lasting.tickNow(ActivityDemand(.light(tabs: nil)), context: lightContext) else { continue }
+            if round > 1 {
+                lastingLight.append(Double(snapshot.cost.cpu) / 1_000_000)
+                lastingReads.append((snapshot.cost.identitiesRead, snapshot.cost.commandsRead, snapshot.cost.deferred))
+            }
+        }
+        for pid in bursts.joined() { kernel.remove(pid) }
+        // A lookup of a pane under churn (Tab Info, a drop, an agent's
+        // pane): the periodic tick left most of its burst waiting, so the
+        // lookup reads again — one round that defers nothing.
+        var churnLookup: [Double] = []
+        var lookupRounds: [Int] = []
+        var lookupWhole = true
+        churned = []
+        let asked = ActivityDemand(.light(tabs: [panes[1].tab]))
+        for round in 0..<13 {
+            burn()
+            for pid in churned { kernel.remove(pid) }
+            churned = Self.fakeChurn(kernel, under: panes[1].login?.pid ?? pids[8], round: 50 + round, count: 200)
+            guard let periodic = light.tickNow(ActivityDemand(.light(tabs: nil)), context: lightContext) else { continue }
+            let start = CACurrentMediaTime()
+            let found = light.lookup(within: .max, demand: asked, context: lightContext) { _ in true }
+            let elapsed = (CACurrentMediaTime() - start) * 1000
+            // The first follows a gap: nothing waits, nothing to ask again.
+            guard round > 0, let found else { continue }
+            churnLookup.append(elapsed)
+            lookupRounds.append(found.tick - periodic.tick)
+            lookupWhole = lookupWhole && found.unread == 0 && churned.allSatisfy { pid in found.facts.contains { $0.key.pid == pid && $0.value.isRead } }
+        }
+        for pid in churned { kernel.remove(pid) }
 
         // The list scrolled top to bottom, a third of a screen a step.
         var scrolled: [Double] = []
@@ -342,6 +385,23 @@ extension E2ERunner {
             "…reading at most \(allowance) argv a tick, the rest left for the next",
             churnReads.count == 12 && churnReads.allSatisfy { $0.commands <= allowance && $0.deferred >= 200 - allowance },
             "argv \(churnReads.map(\.commands)), left \(churnReads.map(\.deferred))")
+        note(
+            "activityPerf: under churn whose processes outlive a light tick, the light tick \(Self.summary(lastingLight)), p90 \(p90(Self.p90(lastingLight))), "
+                + "a tick read identities \(lastingReads.map(\.identities)), argv \(lastingReads.map(\.commands)), left a tick \(lastingReads.map(\.deferred)); "
+                + "a pane's lookup beside the periodic tick \(Self.summary(churnLookup)), p90 \(p90(Self.p90(churnLookup))), rounds \(lookupRounds)"
+        )
+        check(
+            "under churn that outlives a tick, the survivors are read the next tick",
+            lastingReads.count == 12 && lastingReads.allSatisfy { $0.commands >= 200 - allowance && $0.deferred >= 200 - allowance },
+            "argv \(lastingReads.map(\.commands)), left \(lastingReads.map(\.deferred))")
+        // Each tick reads the last burst's 184 survivors whole and the new
+        // one's 16: 200 reads a tick, as before the deferral, over a tree
+        // twice the size — 5.6–5.8 ms p90 measured. 10.4's 5 ms isn't met
+        // when a burst outlives a tick (design 15): gated at what it costs.
+        check("…the light tick's p90 then ≤ 7 ms", lastingLight.count == 12 && Self.p90(lastingLight) <= 7, "\(Self.summary(lastingLight))")
+        check(
+            "a pane's lookup under churn reads its burst whole, in one round",
+            churnLookup.count == 12 && lookupWhole && lookupRounds.allSatisfy { $0 == 1 }, "rounds \(lookupRounds)")
         check("and the full tick's p90 ≤ 15 ms", churnFull.count == 12 && Self.p90(churnFull) <= 15, "\(Self.summary(churnFull))")
         check("the rows of a tick are made in under 60 ms (median), off the main thread", rows.median < 60, "\(rows)")
         // The frames are the Mac's as much as the page's — a busy `make
