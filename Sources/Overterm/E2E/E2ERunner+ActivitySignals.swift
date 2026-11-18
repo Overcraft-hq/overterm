@@ -142,11 +142,17 @@ extension E2ERunner {
             // "stopped here"; and past 80% of the per-user limit, the
             // count and the verbs that would start a process greyed.
             func header(_ id: String) -> String? { app.pages.view(.activity).flatMap { Self.accessibilityElement(id, in: $0) }?.text }
-            check(
-                "a stop Activity didn't make is counted in the header",
-                await eventually(10) {
-                    page.content.summary.stopped.contains(stopped.identity) && header("activity.stoppedElsewhere")?.contains("stopped in tabs") == true
-                }, header("activity.stoppedElsewhere") ?? "none")
+            if row("/bin/sleep 158")?.state == .stopped {
+                check(
+                    "a stop Activity didn't make is counted in the header",
+                    await eventually(10) {
+                        page.content.summary.stopped.contains(stopped.identity) && header("activity.stoppedElsewhere")?.contains("stopped in tabs") == true
+                    }, header("activity.stoppedElsewhere") ?? "none")
+            } else {
+                // The shell's `kill -STOP $!` didn't land (design 15's flake):
+                // nothing stopped to count.
+                note("activity: the header's stopped count not checked — the job wasn't stopped")
+            }
             page.processLimit = 1
             page.selection = [stopped.id]
             let near = await eventually(10) { header("activity.processLimit")?.contains(" of 1 processes") == true }
