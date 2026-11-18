@@ -178,6 +178,34 @@ extension E2ERunner {
             // The first reads every pane's process anew: not a tick's cost.
             if round > 0 { lightCPU.append(Double(snapshot.cost.cpu) / 1_000_000) }
         }
+        // 10.4's gates on fakes (7.4): a pane's child holding 20,000
+        // sockets — the per-process bound keeps a tick's walk to its budget
+        // —, then 200 short processes a tick started and ended under a
+        // pane: the light tick's p90 and the full one's, on their own fakes.
+        let heavy = Self.fakeSockets(kernel, under: panes[0].login?.pid ?? pids[0], count: 20_000)
+        var heavyLight: [Double] = []
+        for round in 0..<13 {
+            burn()
+            guard let snapshot = light.tickNow(ActivityDemand(.light(tabs: nil)), context: lightContext) else { continue }
+            if round > 0 { heavyLight.append(Double(snapshot.cost.cpu) / 1_000_000) }
+        }
+        let heavyRead = light.tickNow(ActivityDemand(.light(tabs: nil)), context: lightContext)?.facts[heavy]?.sockets
+        kernel.remove(heavy.pid)
+        var churnLight: [Double] = []
+        var churnFull: [Double] = []
+        var churned: [pid_t] = []
+        let churnFullSampler = ActivitySampler(kernel: kernel)
+        _ = churnFullSampler.tickNow(ActivityDemand(.full), context: lightContext)
+        for round in 0..<26 {
+            burn()
+            for pid in churned { kernel.remove(pid) }
+            churned = Self.fakeChurn(kernel, under: panes[1].login?.pid ?? pids[8], round: round, count: 200)
+            let full = round % 2 == 1
+            let sampler = full ? churnFullSampler : light
+            guard let snapshot = sampler.tickNow(ActivityDemand(full ? .full : .light(tabs: nil)), context: lightContext) else { continue }
+            if round > 1 { (full ? { churnFull.append($0) } : { churnLight.append($0) })(Double(snapshot.cost.cpu) / 1_000_000) }
+        }
+        for pid in churned { kernel.remove(pid) }
 
         // The list scrolled top to bottom, a third of a screen a step.
         var scrolled: [Double] = []
@@ -285,6 +313,17 @@ extension E2ERunner {
         check("5,000 processes' rows are made in under 100 ms (median)", !crowdedRows.isEmpty && crowd.median < 100, "\(crowd)")
         check("the census's own CPU a tick stays under 50 ms (median)", census.median < 50, "\(census)")
         check("the light tick's CPU is read (12 ticks)", lightCPU.count == 12, "\(lightCPU.count)")
+        note(
+            "activityPerf: light p90 beside a 20,000-socket child \(p90(Self.p90(heavyLight))), under churn of 200 a tick \(p90(Self.p90(churnLight))); full under churn \(p90(Self.p90(churnFull)))"
+        )
+        check(
+            "a child of 20,000 sockets: its walk bounded, said so", heavyRead?.bound != nil && (heavyRead?.records.count ?? .max) <= SocketScan.perProcessBudget,
+            "\(heavyRead?.records.count ?? -1) records")
+        check("beside it, the light tick's CPU p90 ≤ 5 ms (12 ticks)", heavyLight.count == 12 && Self.p90(heavyLight) <= 5, "\(Self.summary(heavyLight))")
+        // 10.4 asks 5 ms: 200 new identities' reads, about 20 µs each, are
+        // most of it, and it measured 4.8–5.2 ms (design 15) — gated at 6.
+        check("under churn of 200 a tick, the light tick's p90 ≤ 6 ms", churnLight.count == 12 && Self.p90(churnLight) <= 6, "\(Self.summary(churnLight))")
+        check("and the full tick's p90 ≤ 15 ms", churnFull.count == 12 && Self.p90(churnFull) <= 15, "\(Self.summary(churnFull))")
         check("the rows of a tick are made in under 60 ms (median), off the main thread", rows.median < 60, "\(rows)")
         // The frames are the Mac's as much as the page's — a busy `make
         // e2e` moves them —: gated loosely, against a break, never at the
@@ -326,6 +365,48 @@ extension E2ERunner {
         let agent = add(90_002, parent: 90_001, uid: 501, name: "node", words: ["claude"])
         for child in 0..<3 { _ = add(90_003 + pid_t(child), parent: 90_002, uid: 501, name: "fake-mcp-\(child)", words: ["fake-mcp-\(child)"]) }
         return (login, agent)
+    }
+
+    /// A child of `parent` holding `count` TCP sockets, connected ones
+    /// and a listener (10.4): its identity.
+    static func fakeSockets(_ kernel: FakeActivityKernel, under parent: pid_t, count: Int) -> ActivityProcessID {
+        let pid: pid_t = 95_000
+        let start = UInt64(pid) * 1_000 + 1
+        var process = FakeActivityKernel.Process(record: FakeActivityKernel.record(pid: pid, start: start, parent: parent, uid: 501, name: "fake-sockets"))
+        process.name = "fake-sockets"
+        process.path = "/opt/fake/bin/fake-sockets"
+        process.codeSigning = ActivityCodeSigning(flags: ActivityCodeSigning.valid)
+        process.usage = FakeActivityKernel.usage(cpuTime: 0, footprint: 64 << 20, threads: 4)
+        process.arguments = FakeActivityKernel.arguments(executable: "/opt/fake/bin/fake-sockets", ["fake-sockets"])
+        process.descriptors = (0..<count).map { FakeActivityKernel.descriptor(Int32(3 + $0)) }
+        var sockets: [Int32: socket_fdinfo] = [:]
+        sockets.reserveCapacity(count)
+        sockets[3] = FakeActivityKernel.tcp(local: "127.0.0.1", port: 39_000, handle: 2_000_000)
+        for index in 1..<count {
+            sockets[Int32(3 + index)] = FakeActivityKernel.tcp(
+                local: "127.0.0.1", port: 39_000, remote: "127.0.0.1", remotePort: UInt16(40_000 + index % 20_000), state: .established,
+                handle: UInt64(2_000_000 + index))
+        }
+        process.sockets = sockets
+        kernel.add(process)
+        return ActivityProcessID(pid: pid, start: start)
+    }
+
+    /// `count` short processes under `parent`, new pids each `round`:
+    /// their pids, to end them at the next.
+    static func fakeChurn(_ kernel: FakeActivityKernel, under parent: pid_t, round: Int, count: Int) -> [pid_t] {
+        (0..<count).map { index in
+            let pid = pid_t(100_000 + round * count + index)
+            let start = UInt64(pid) * 1_000 + 1
+            var process = FakeActivityKernel.Process(record: FakeActivityKernel.record(pid: pid, start: start, parent: parent, uid: 501, name: "fake-cc"))
+            process.name = "fake-cc"
+            process.path = "/opt/fake/bin/fake-cc"
+            process.codeSigning = ActivityCodeSigning(flags: ActivityCodeSigning.valid)
+            process.usage = FakeActivityKernel.usage(cpuTime: 1_000_000, footprint: 8 << 20, threads: 1)
+            process.arguments = FakeActivityKernel.arguments(executable: "/opt/fake/bin/fake-cc", ["fake-cc", "-c", "fake-\(index).c", "-o", "fake-\(index).o"])
+            kernel.add(process)
+            return pid
+        }
     }
 
     /// The 90th percentile of `samples`, 0 for none.
