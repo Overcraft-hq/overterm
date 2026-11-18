@@ -69,60 +69,77 @@ class ResourcePressCell: NSTableCellView {
     }
 }
 
-/// One line of text in a list's cell, drawn by AppKit: shown again only
-/// when its value changed (`show`).
+/// One line of text in a list's cell, drawn by the cell itself: shown
+/// again only when its value changed (`show`), and then only drawn — no
+/// text field, no constraint, no layout pass (a label's every change was
+/// a layout of its cell).
 final class ResourceTextCell: ResourcePressCell {
     /// A column's text cells for one kind of row; never a hosted cell's.
     static func identifier(column: String, kind: String) -> NSUserInterfaceItemIdentifier {
         NSUserInterfaceItemIdentifier("resource.text.\(column).\(kind)")
     }
 
-    private let label = NSTextField(labelWithString: "")
     private(set) var shown: ResourceTextCellValue?
+    private var words = NSAttributedString()
+    private var lineHeight: CGFloat = 0
+
+    override var isFlipped: Bool { true }
 
     init() {
         super.init(frame: .zero)
-        label.translatesAutoresizingMaskIntoConstraints = false
-        label.maximumNumberOfLines = 1
-        label.cell?.usesSingleLineMode = true
-        label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        label.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        // Not the cell's `textField`: the table would restyle it on
-        // selection, which the hosted cells beside it never are.
-        addSubview(label)
-        NSLayoutConstraint.activate([
-            label.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 6),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
-            label.centerYAnchor.constraint(equalTo: centerYAnchor),
-        ])
+        setAccessibilityElement(true)
+        setAccessibilityRole(.staticText)
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
-    /// `value` drawn, each part set only where it changed: whether anything
-    /// did.
+    /// `value` drawn: whether anything changed.
     @discardableResult
     func show(_ value: ResourceTextCellValue) -> Bool {
         guard value != shown else { return false }
         let old = shown
         shown = value
-        if old?.text != value.text { label.stringValue = value.text }
-        if old?.color != value.color { label.textColor = value.color }
-        if old?.size != value.size || old?.number != value.number {
-            label.font = value.number ? .monospacedSystemFont(ofSize: value.size, weight: .regular) : .systemFont(ofSize: value.size)
-            label.alignment = value.number ? .right : .left
-            label.lineBreakMode = value.number ? .byTruncatingTail : .byTruncatingMiddle
-        }
+        let font = Self.font(size: value.size, number: value.number)
+        lineHeight = ceil(font.ascender - font.descender + font.leading)
+        let style = Self.style(number: value.number)
+        words = NSAttributedString(
+            string: value.text, attributes: [.font: font, .foregroundColor: value.color.withAlphaComponent(value.color.alphaComponent * value.alpha), .paragraphStyle: style])
+        if old?.text != value.text { setAccessibilityValue(value.text) }
         if old?.help != value.help { toolTip = value.help?.isEmpty == false ? value.help : nil }
-        if old?.alpha != value.alpha { label.alphaValue = value.alpha }
-        if old?.ground != value.ground { needsDisplay = true }
+        needsDisplay = true
         return true
     }
 
     override func draw(_ dirtyRect: NSRect) {
-        guard let ground = shown?.ground else { return }
-        ground.setFill()
-        dirtyRect.intersection(bounds).fill()
+        guard let shown else { return }
+        if let ground = shown.ground {
+            ground.setFill()
+            dirtyRect.intersection(bounds).fill()
+        }
+        let rect = CGRect(x: 6, y: (bounds.height - lineHeight) / 2, width: max(bounds.width - 12, 0), height: lineHeight)
+        words.draw(with: rect, options: [.usesLineFragmentOrigin, .truncatesLastVisibleLine])
     }
+
+    private static var fonts: [CGFloat: (text: NSFont, number: NSFont)] = [:]
+
+    private static func font(size: CGFloat, number: Bool) -> NSFont {
+        if let known = fonts[size] { return number ? known.number : known.text }
+        let made = (text: NSFont.systemFont(ofSize: size), number: NSFont.monospacedSystemFont(ofSize: size, weight: .regular))
+        fonts[size] = made
+        return number ? made.number : made.text
+    }
+
+    /// Text against the leading edge cut in its middle; a number against
+    /// the trailing edge cut at its end.
+    private static let styles: (text: NSParagraphStyle, number: NSParagraphStyle) = {
+        let text = NSMutableParagraphStyle()
+        text.lineBreakMode = .byTruncatingMiddle
+        let number = NSMutableParagraphStyle()
+        number.lineBreakMode = .byTruncatingTail
+        number.alignment = .right
+        return (text, number)
+    }()
+
+    private static func style(number: Bool) -> NSParagraphStyle { number ? styles.number : styles.text }
 }
