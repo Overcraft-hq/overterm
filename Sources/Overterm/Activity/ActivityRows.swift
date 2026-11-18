@@ -128,6 +128,9 @@ struct ActivitySummary: Equatable, Sendable {
     var matched = 0
     /// The user's processes' threads, summed.
     var threads = 0
+    /// The user's processes' energy, summed (6.4): W, an estimate; nil
+    /// where none was rated.
+    var energy: Double?
     /// The five busiest rows shown, CPU first: names, pids and rates only.
     var busiest: [Busy] = []
     var meters: SystemMeters?
@@ -284,12 +287,14 @@ enum ActivityRows {
         var rows: [ActivityProcessRow] = []
         rows.reserveCapacity(snapshot.table.processes.count)
         var threads = 0
+        var energy: Double?
         var rated = false
         for process in snapshot.table.processes {
             let identity = process.identity
             let own = process.isOwn(by: uid)
             let facts = snapshot.facts[identity]
             if own, let usage = facts?.usage { threads += Int(usage.threads) }
+            if own, let watts = facts?.rates?.energy { energy = (energy ?? 0) + watts }
             if facts?.rates != nil { rated = true }
             // A test run's: its tabs' processes, and what its own closed
             // panes and agents' runs left (6.9).
@@ -408,6 +413,7 @@ enum ActivityRows {
         // Every listener in scope, folded or filtered away too.
         summary.listening = made.listeners.count
         summary.threads = threads
+        summary.energy = energy
         summary.busiest = Array(
             inScope.compactMap { row in row.cpu.map { ActivitySummary.Busy(id: row.id, name: row.name, cpu: $0) } }.sorted { $0.cpu > $1.cpu }.prefix(5))
         summary.meters = snapshot.meters

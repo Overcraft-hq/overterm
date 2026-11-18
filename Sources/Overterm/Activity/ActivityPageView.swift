@@ -141,7 +141,9 @@ struct ActivityPageView: View {
                 }
             }
             Spacer()
-            ActivityMetersView(meters: summary.meters, processes: summary.processes, threads: summary.threads, history: summary.history, theme: theme)
+            ActivityMetersView(
+                meters: summary.meters, processes: summary.processes, threads: summary.threads, history: summary.history,
+                energy: page.columns(.processes).contains { $0.id == "energy" } ? summary.energy : nil, copy: { copy([$0]) }, theme: theme)
         }
         .padding(12)
     }
@@ -668,6 +670,11 @@ struct ActivityMetersView: View {
     let threads: Int
     /// The Mac's 15 minutes: CPU and memory used (6.11).
     var history: [TimeChartData] = []
+    /// The user's processes' energy, W: given only while the Energy column
+    /// is on (6.4).
+    var energy: Double?
+    /// Copy Values as CSV, the charts' menu.
+    var copy: ((String) -> Void)? = nil
     @ObservedObject var theme: ChromeTheme
     @StateObject private var cursor = TimeChartCursor()
 
@@ -675,7 +682,7 @@ struct ActivityMetersView: View {
         VStack(alignment: .leading, spacing: 8) {
             readings
             ForEach(history, id: \.id) { data in
-                TimeChartView(data: data, cursor: cursor, span: "last 15 min", height: 44, theme: theme).padding(.horizontal, 10)
+                TimeChartView(data: data, cursor: cursor, span: "last 15 min", height: 44, copy: copy, theme: theme).padding(.horizontal, 10)
             }
         }
     }
@@ -697,6 +704,10 @@ struct ActivityMetersView: View {
                 if meters.lowPower { line("Low Power Mode", "on") }
             }
             if processes > 0 { line("Tasks", "\(processes) · \(threads) threads yours") }
+            if let energy {
+                line("Energy", String(format: "%.2f W yours, estimate", locale: Locale(identifier: "en_US_POSIX"), energy))
+                    .help("The sum of your processes' energy, from macOS's energy counter: an estimate")
+            }
         }
         .padding(.horizontal, 10)
         .accessibilityElement(children: .combine)
