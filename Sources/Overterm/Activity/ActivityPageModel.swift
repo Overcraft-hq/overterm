@@ -1,6 +1,7 @@
 import AppKit
 import Combine
 import Foundation
+import os
 
 /// What the Activity page opens in a new tab (6.10: Terminal in Its
 /// Folder, Sample, Open Files, the service's stop, the read route): a
@@ -1282,14 +1283,38 @@ final class ActivityPageModel: ObservableObject {
 }
 
 /// The page's rows let go of off the main thread (7.7): a tick's content
-/// replaced by the next freed thousands of rows' storage on it — a few
-/// milliseconds a publish at 1,300 processes. Each value is kept a moment
+/// replaced by the next freed thousands of rows' storage on it — 1.8–4.0
+/// ms of the queue's CPU a publish at 1,300 processes (`activityPerf`). Each value is kept a moment
 /// past the main thread's last use, so the queue's is the last reference.
 enum ActivityRelease {
     private static let queue = DispatchQueue(label: "overterm.activity.release", qos: .utility)
 
+    /// The queue's CPU so far, and the values it let go of: moved off the
+    /// main thread, not removed, so 7.3's share of a core counts it
+    /// (`activityPerf`).
+    private static let spentSoFar = OSAllocatedUnfairLock(initialState: (cpu: UInt64(0), values: 0))
+
     nonisolated static func later<Value: Sendable>(_ value: Value) {
-        let block: @Sendable () -> Void = { withExtendedLifetime(value) {} }
+        let held = Held(value)
+        let block: @Sendable () -> Void = {
+            let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
+            held.value = nil
+            let cpu = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID) &- start
+            spentSoFar.withLock {
+                $0.cpu &+= cpu
+                $0.values += 1
+            }
+        }
         queue.asyncAfter(deadline: .now() + 1, execute: block)
+    }
+
+    /// The queue's CPU (nanoseconds) and the values it freed, since launch.
+    nonisolated static var spent: (cpu: UInt64, values: Int) { spentSoFar.withLock { $0 } }
+
+    /// A value let go of inside the timed part of the block, not when the
+    /// block itself is.
+    private final class Held<Value: Sendable>: @unchecked Sendable {
+        var value: Value?
+        init(_ value: Value) { self.value = value }
     }
 }

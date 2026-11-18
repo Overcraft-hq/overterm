@@ -139,12 +139,28 @@ extension E2ERunner {
         host.displayIfNeeded()
         guard let found = WorkspacePages.firstTable(in: host) as? ResourceTableView else { return check("the page's table", false) }
         table = found
-        for _ in 0..<12 { await tick(held: false) }
+        // What a leg's publishes left the release queue to free (7.3: moved
+        // off the main thread, not removed), a publish's share: the queue
+        // frees a second after, so each leg is read a moment past its last.
+        var released: [String: Double] = [:]
+        func releasing(_ name: String, ticks: Int, _ run: () async -> Void) async {
+            await pause(1.2)
+            let before = ActivityRelease.spent
+            await run()
+            await pause(1.2)
+            let after = ActivityRelease.spent
+            released[name] = Double(after.cpu &- before.cpu) / 1_000_000 / Double(ticks)
+        }
+        await releasing("shown", ticks: 12) {
+            for _ in 0..<12 { await tick(held: false) }
+        }
         let moves = (found.reloads, found.reorders)
         leg = "held"
-        for _ in 0..<12 {
-            found.interaction?(.hover)
-            await tick(held: true)
+        await releasing("held", ticks: 12) {
+            for _ in 0..<12 {
+                found.interaction?(.hover)
+                await tick(held: true)
+            }
         }
         // 10.4: with the order held, a tick reloads nothing and moves no
         // row — its values drawn in the rows' places.
@@ -163,13 +179,15 @@ extension E2ERunner {
         var steadyMain: [Double] = []
         leg = "steady"
         steadyCPU = true
-        for round in 0..<13 {
-            let mark = (shown.count, shownMain.count)
-            await tick(held: false)
-            // The first moves from the random CPU to the steady one.
-            if round == 0 { touched["steady"] = [] } else { steadyMain += shownMain[mark.1...] }
-            shown.removeSubrange(mark.0...)
-            shownMain.removeSubrange(mark.1...)
+        await releasing("steady", ticks: 13) {
+            for round in 0..<13 {
+                let mark = (shown.count, shownMain.count)
+                await tick(held: false)
+                // The first moves from the random CPU to the steady one.
+                if round == 0 { touched["steady"] = [] } else { steadyMain += shownMain[mark.1...] }
+                shown.removeSubrange(mark.0...)
+                shownMain.removeSubrange(mark.1...)
+            }
         }
         steadyCPU = false
         // Top stable (6.7): the busy thirty's CPU moves below what the column
@@ -177,16 +195,18 @@ extension E2ERunner {
         var topMain: [Double] = []
         leg = "top"
         busyTop = true
-        for round in 0..<13 {
-            let mark = (shown.count, shownMain.count)
-            await tick(held: false)
-            if round == 0 {
-                touched["top"] = []
-            } else {
-                topMain += shownMain[mark.1...]
+        await releasing("top", ticks: 13) {
+            for round in 0..<13 {
+                let mark = (shown.count, shownMain.count)
+                await tick(held: false)
+                if round == 0 {
+                    touched["top"] = []
+                } else {
+                    topMain += shownMain[mark.1...]
+                }
+                shown.removeSubrange(mark.0...)
+                shownMain.removeSubrange(mark.1...)
             }
-            shown.removeSubrange(mark.0...)
-            shownMain.removeSubrange(mark.1...)
         }
         busyTop = false
         let topReorders = (touched["top"] ?? []).map(\.reorders).reduce(0, +)
@@ -431,6 +451,9 @@ extension E2ERunner {
                 + "p90 \(p90(Self.p90(crowdedPublish.folded.main))); unfolded (\(crowdedPublish.whole.rows) rows) \(Self.summary(crowdedPublish.whole.main)), "
                 + "p90 \(p90(Self.p90(crowdedPublish.whole.main)))")
         note("activityPerf: thirty busy, their CPU moving below what the column shows: a publish \(Self.summary(topMain)), p90 \(p90(Self.p90(topMain))), \(topReorders) reorders in 12 ticks")
+        note(
+            "activityPerf: the release queue's CPU a publish — "
+                + ["shown", "held", "steady", "top"].map { "\($0) \(String(format: "%.2f", released[$0] ?? -1)) ms" }.joined(separator: ", "))
         for name in ["shown", "held", "steady", "top", "verbs", "agent"] {
             if let touches = touched[name] { note("activityPerf: a publish touched, \(name): \(TableTouch.said(touches))") }
         }
