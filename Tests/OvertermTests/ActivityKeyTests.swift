@@ -495,6 +495,41 @@ final class ActivityKeyTests: XCTestCase {
         XCTAssertEqual(ActivityRows.shownIDs(held), ["1:1", "2:1", "3:1"])
     }
 
+    /// The list observes only what it draws (7.7): "order held", the
+    /// cheat sheet or the detail changing leave its state alone; a
+    /// selection, the section, a column and the rows are its.
+    func testTheListIsToldOnlyWhatItDraws() async throws {
+        let (page, monitor) = try await page()
+        defer { monitor.stop() }
+        var changes = 0
+        let watching = page.list.objectWillChange.sink { _ in changes += 1 }
+        defer { watching.cancel() }
+        page.interacted(.hover)
+        XCTAssertTrue(page.orderHeld)
+        page.interacted(.exit)
+        page.cheatSheet = true
+        page.cheatSheet = false
+        page.showsDetail.toggle()
+        XCTAssertEqual(changes, 0, "nothing the list draws")
+        XCTAssertEqual(page.list.rows.rows, page.content.listRows(.processes).rows)
+        XCTAssertEqual(page.list.columns, page.columns(.processes))
+        let id = try XCTUnwrap(page.content.processes.first?.id)
+        page.selection = [id]
+        XCTAssertEqual(page.list.selection, [id])
+        XCTAssertGreaterThan(changes, 0)
+        page.section = .listening
+        XCTAssertEqual(page.list.section, .listening)
+        XCTAssertEqual(page.list.rows.rows, page.content.listRows(.listening).rows)
+        XCTAssertEqual(page.list.columns, page.columns(.listening))
+        XCTAssertEqual(page.list.sort, page.portSort)
+        XCTAssertEqual(page.list.selection, [], "a section's change clears the selection")
+        page.toggleColumn("pid")
+        XCTAssertEqual(page.list.columns, page.columns(.listening), "a column shown or hidden")
+        page.toggleColumn("pid")
+        page.following = true
+        XCTAssertTrue(page.list.following)
+    }
+
     func testTheOrderHoldsWhileTheListIsWorked() async throws {
         let (page, monitor) = try await page()
         defer { monitor.stop() }

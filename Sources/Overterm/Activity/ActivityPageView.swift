@@ -348,21 +348,12 @@ struct ActivityPageView: View {
 
     // MARK: The list
 
-    /// The section's rows, made with the content off the main thread.
-    private var listRows: ActivityListRows { page.content.listRows(page.section) }
-
-    private var columns: [ResourceColumn] { page.columns(page.section) }
-
-    private var sort: Binding<ResourceSort?> {
-        switch page.section {
-        case .processes, .leftBehind: $page.processSort
-        case .listening: $page.portSort
-        }
-    }
-
     private var list: some View {
         VStack(spacing: 0) {
-            table
+            // Its own view, observing only what it draws (7.7): a change of
+            // the detail, a verb's subject or "order held" leaves the table
+            // and its cells alone.
+            ActivityListView(list: page.list, page: page, theme: theme, copy: copy).equatable()
             if page.section == .listening, page.hasRead {
                 // Every "none" must be true (6.4): what isn't read is said —
                 // below the list, never over its last row.
@@ -382,45 +373,6 @@ struct ActivityPageView: View {
         return "Your processes' listeners and connections. \(others.sentence)\(more)"
     }
 
-    private var table: some View {
-        let shown = listRows
-        return ZStack {
-            ResourceTable(
-                rows: shown.rows, selection: $page.selection, columns: columns, sort: sort, cell: { row, column in cell(row, column) },
-                verbs: { [weak page, copy] ids in page?.verbs(for: ids, copy: copy) ?? [] }, copy: { copy(page.selectedLines) },
-                accessibilityIdentifier: "activity.list",
-                accessibilityLabel: { $0.accessibilityLabel }
-            )
-            .with { table in
-                let section = page.section
-                table.interacting = { [weak page] interaction in page?.interacted(interaction) }
-                table.columnsChanged = { [weak page] columns in page?.columnsChanged(columns, in: section) }
-                table.columnChoices = ActivityColumns.choices(section)
-                table.toggleColumn = { [weak page] id in page?.toggleColumn(id, in: section) }
-                table.fold = { [weak page] id, open in page?.fold(id, open: open) ?? false }
-                table.follow = page.following
-                table.order = shown.order
-                table.index = { shown.index[$0] }
-                table.uniformHeight = true
-            }
-            if !page.hasRead {
-                VStack(spacing: 8) {
-                    ProgressView().controlSize(.small)
-                    Text("Reading…").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
-                }
-                .frame(maxWidth: .infinity, maxHeight: .infinity).background(Color(nsColor: GhosttyRuntime.shared.backgroundColor))
-                .accessibilityIdentifier("activity.empty")
-            } else if shown.rows.isEmpty {
-                Text(verbatim: emptySentence).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3).multilineTextAlignment(.center)
-                    .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color(nsColor: GhosttyRuntime.shared.backgroundColor))
-                    .accessibilityIdentifier("activity.empty")
-            }
-        }
-    }
-
-    private var emptySentence: String { Self.emptySentence(page.section, scopedToRun: summary.scopedToRun, filter: page.filter(page.section)) }
-
     /// What an empty section says: true of what was read (6.4).
     static func emptySentence(_ section: ActivityPageModel.Section, scopedToRun: Bool, filter: String = "") -> String {
         let filter = filter.trimmingCharacters(in: .whitespaces)
@@ -436,77 +388,7 @@ struct ActivityPageView: View {
         }
     }
 
-    // MARK: Cells
-
-    private func cell(_ row: ActivityListRow, _ column: ResourceColumn?) -> AnyView {
-        switch row {
-        case .process(let process): AnyView(processCell(process, column?.id))
-        case .port(let port): AnyView(portCell(port, column?.id))
-        case .group(let group): AnyView(groupCell(group, column?.id))
-        }
-    }
-
-    /// The fold's triangle, or its room.
-    private func disclosure(_ id: String, foldable: Bool, folded: Bool) -> some View {
-        Group {
-            if foldable {
-                Button {
-                    page.toggleFold(id, folded: folded)
-                } label: {
-                    Image(systemName: folded ? "chevron.right" : "chevron.down").font(.system(size: ChromeMetrics.text(9), weight: .semibold))
-                        .foregroundStyle(theme.text3).frame(width: 14, height: 18).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(folded ? "Unfold" : "Fold"))
-            } else {
-                Color.clear.frame(width: 14, height: 18)
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func groupCell(_ row: ActivityGroupRow, _ column: String?) -> some View {
-        if row.kind == .container {
-            switch column {
-            case "name":
-                HStack(spacing: 4) {
-                    Color.clear.frame(width: CGFloat(row.depth) * 14 + 14)
-                    Image(systemName: "shippingbox").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
-                    text(row.title, theme.text2)
-                }
-                .help(row.detail.isEmpty ? "A container: its processes run inside Docker’s VM" : row.detail)
-            case "cpu": number(row.cpu.map(ActivityRows.percent) ?? "—", (row.cpu ?? 0) >= 50 ? TabStatusStyle.signal : theme.text2)
-            case "memory": number(row.memory.map(ActivityRows.bytes) ?? "—")
-            default: EmptyView()
-            }
-        } else {
-            HStack(spacing: 6) {
-                Color.clear.frame(width: CGFloat(row.depth) * 14)
-                disclosure(row.id, foldable: row.foldable, folded: row.folded)
-                if let agent = row.agent { Image(systemName: agent.symbol).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text2) }
-                Text(verbatim: row.title).font(.system(size: ChromeMetrics.text(12), weight: row.kind == .more ? .regular : .semibold))
-                    .foregroundStyle(row.kind == .more ? theme.text3 : theme.text).lineLimit(1).truncationMode(.middle)
-                if !row.detail.isEmpty {
-                    Text(verbatim: row.detail).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3).lineLimit(1)
-                        .truncationMode(.tail)
-                }
-                Spacer(minLength: 8)
-                if row.kind != .more {
-                    if !row.ports.isEmpty {
-                        Text(verbatim: Self.ports(row.ports)).font(.system(size: ChromeMetrics.text(11.5), design: .monospaced))
-                            .foregroundStyle(theme.text2).lineLimit(1)
-                    }
-                    Text(verbatim: row.cpu.map { "\(ActivityRows.percent($0))%" } ?? "—").font(.system(size: ChromeMetrics.text(11.5), design: .monospaced))
-                        .foregroundStyle((row.cpu ?? 0) >= 50 ? TabStatusStyle.signal : theme.text2).frame(minWidth: 52, alignment: .trailing)
-                    Text(verbatim: row.memory.map(ActivityRows.bytes) ?? "").font(.system(size: ChromeMetrics.text(11.5), design: .monospaced))
-                        .foregroundStyle(theme.text2).frame(minWidth: 64, alignment: .trailing)
-                }
-            }
-            .padding(.horizontal, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .clipped()
-        }
-    }
+    // MARK: Cells' words
 
     /// At most three ports, then "+N".
     static func ports(_ ports: [Int]) -> String {
@@ -537,33 +419,6 @@ struct ActivityPageView: View {
         return chips
     }
 
-    /// A process's cell: tinted while new, dimmed once ended (6.7).
-    private func processCell(_ row: ActivityProcessRow, _ column: String?) -> some View {
-        processCellContent(row, column)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .opacity(row.ended ? 0.45 : 1)
-            .background(row.isNew ? TabStatusStyle.done.opacity(0.14) : Color.clear)
-    }
-
-    /// The row's 15 minutes, a cell each 15 s (6.11): `KubeHeatStripView`'s
-    /// drawing, CPU capped at 100 for the colour; a gap a faint tick.
-    private func strip(_ row: ActivityProcessRow) -> some View {
-        let cells = row.strip ?? []
-        let colours = KubeHeatStrip.Level.allCases.map { TimeChartPalette.heat($0, dark: theme.isDark).color }
-        let track = theme.text3
-        return Canvas { context, size in
-            guard !cells.isEmpty else { return }
-            KubeHeatStripView.draw(
-                cells.map { $0.map { min($0, 100) } }, in: CGRect(x: 0, y: 3, width: size.width, height: max(size.height - 6, 1)),
-                context: &context, colours: colours, track: track)
-        }
-        .padding(.horizontal, 6)
-        .help(Self.stripHelp(row))
-        .accessibilityElement()
-        .accessibilityLabel(Text(verbatim: Self.stripHelp(row)))
-        .accessibilityIdentifier("activity.strip")
-    }
-
     /// What a strip says: its highest, since when.
     static func stripHelp(_ row: ActivityProcessRow) -> String {
         guard let cells = row.strip else { return "No history: it wasn't read while the page or its tab showed" }
@@ -580,131 +435,7 @@ struct ActivityPageView: View {
         return String(format: value >= 100 ? "%.0f %@" : "%.1f %@", locale: Locale(identifier: "en_US_POSIX"), value, unit)
     }
 
-    @ViewBuilder
-    private func processCellContent(_ row: ActivityProcessRow, _ column: String?) -> some View {
-        switch column {
-        case "name":
-            HStack(spacing: 4) {
-                Color.clear.frame(width: CGFloat(row.depth) * 14)
-                disclosure(row.id, foldable: row.hasChildren, folded: row.folded)
-                if row.owner?.paneRole == .agent, let agent = row.owner?.agentKind {
-                    Image(systemName: agent.symbol).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text)
-                }
-                Text(verbatim: row.name).font(.system(size: ChromeMetrics.text(12)))
-                    .foregroundStyle(
-                        row.dimmed || row.owner?.paneRole == .session || row.owner?.paneRole == .shell ? theme.text3 : row.isOwn ? theme.text : theme.text2
-                    )
-                    .lineLimit(1).truncationMode(.middle).layoutPriority(1)
-                ForEach(Self.chips(row), id: \.self) { chip in
-                    Text(verbatim: chip).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3).lineLimit(1)
-                        .padding(.horizontal, 5).background(Capsule().stroke(theme.border))
-                }
-                ForEach(row.chips, id: \.self) { chip in
-                    Text(verbatim: chip.text(now: Date())).font(.system(size: ChromeMetrics.text(10), weight: chip.warns ? .semibold : .regular))
-                        .foregroundStyle(chip.warns ? TabStatusStyle.signal : theme.text2).lineLimit(1)
-                        .padding(.horizontal, 5).background(Capsule().fill((chip.warns ? TabStatusStyle.signal : theme.text3).opacity(0.12)))
-                        .help(chip.help)
-                        .accessibilityIdentifier("activity.chip")
-                }
-                if row.ended {
-                    Text(verbatim: "ended").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3).lineLimit(1)
-                        .padding(.horizontal, 5).background(Capsule().stroke(theme.border))
-                        .accessibilityIdentifier("activity.ended")
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 6)
-            .clipped()
-            .help(row.owner?.reason ?? "")
-        case "pid":
-            number("\(row.identity.pid)")
-        case "cpu":
-            number(row.cpu.map(ActivityRows.percent) ?? "—", (row.cpu ?? 0) >= 50 ? TabStatusStyle.signal : theme.text2)
-        case "memory":
-            number(row.memory.map(ActivityRows.bytes) ?? "—")
-        case "threads":
-            number(row.threads.map { "\($0)" } ?? "—")
-        case "state":
-            text(row.state.letter, row.state == .stopped || row.state == .zombie ? TabStatusStyle.signal : theme.text2)
-        case "started":
-            number(row.startedText)
-        case "user":
-            text(row.user, theme.text3)
-        case "listening":
-            text(Self.ports(row.listening), theme.text2)
-        case "where":
-            text(row.whereText, theme.text2)
-        case "rss": number(row.residentSize.map(ActivityRows.bytes) ?? "—")
-        case "time": number(row.cpuTime.map(ActivityDetail.duration) ?? "—")
-        case "nice": number("\(row.nice)")
-        case "priority": number(row.priority.map { "\($0)" } ?? "—")
-        case "ppid": number("\(row.parentPID)")
-        case "pgid": number("\(row.group)")
-        case "tty": text(row.terminal ?? "", theme.text3)
-        case "kind": text(row.translated ? "Intel" : "Apple", theme.text3)
-        case "path": text(row.path ?? "", theme.text3)
-        case "command": text(row.command ?? "", theme.text2)
-        case "cpu15": strip(row)
-        case "energy": number(Self.rate(row.energy, unit: "W"))
-        case "wakeups": number(row.idleWakeups.map { String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), $0) } ?? "—")
-        case "diskRead": number(Self.rate(row.diskRead, unit: "B/s"))
-        case "diskWritten": number(Self.rate(row.diskWritten, unit: "B/s"))
-        case "sleep": text(row.sleepHold.map { $0.isEmpty ? "No" : $0.text } ?? "—", row.sleepHold?.isEmpty == false ? theme.text : theme.text3)
-        default:
-            EmptyView()
-        }
-    }
 
-    @ViewBuilder
-    private func portCell(_ row: ActivityPortRow, _ column: String?) -> some View {
-        if row.kind == .folded {
-            HStack(spacing: 6) {
-                disclosure(row.id, foldable: true, folded: row.folded)
-                Text(verbatim: row.process).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3).lineLimit(1)
-                Spacer(minLength: 4)
-            }
-            .padding(.horizontal, 6)
-            .frame(maxWidth: .infinity, alignment: .leading)
-            .help("Listeners of your apps on ports in the ephemeral range: rarely ones you start. A filter shows them too.")
-        } else {
-            switch column {
-            case "port":
-                if row.kind == .unix {
-                    text((row.address as NSString).abbreviatingWithTildeInPath, theme.text).help(row.address)
-                } else {
-                    number(row.kind == .connection ? "→ :\(row.port)" : ":\(row.port)", row.kind == .connection ? theme.text2 : theme.text)
-                }
-            case "proto": text(row.proto, theme.text2)
-            case "address":
-                text(row.reach, row.scope == .thisMac && row.forwardedBy == nil ? theme.text2 : TabStatusStyle.signal)
-                    .help(row.scope == .network ? "Anything that can route to this Mac reaches it — over IPv6 that may be the internet" : "")
-            case "families": text(row.familyWords, theme.text3)
-            case "owner": text(row.ownerText, row.portOwner == .pane ? theme.text2 : theme.text)
-            case "process": text(row.processText, row.kind == .connection ? theme.text2 : theme.text)
-            case "pid": number(row.holder.map { "\($0.pid)" } ?? "")
-            case "where": text(row.whereText, theme.text2)
-            case "clients": number(row.kind == .listener && row.clients > 0 ? "\(row.clients)" : "")
-            case "note":
-                text(row.note ?? "", row.collisions.isEmpty ? theme.text3 : TabStatusStyle.signal).help(row.note ?? "")
-            case "since": text(row.sinceText, theme.text2)
-            case "backlog":
-                text(
-                    row.backlogLimit > 0 ? (row.backlogFull ? "full — not accepting" : "\(row.backlog) of \(row.backlogLimit)") : "",
-                    row.backlogFull ? TabStatusStyle.signal : theme.text3)
-            default: EmptyView()
-            }
-        }
-    }
-
-    private func text(_ value: String, _ color: Color) -> some View {
-        Text(verbatim: value).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(color).lineLimit(1).truncationMode(.middle)
-            .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 6)
-    }
-
-    private func number(_ value: String, _ color: Color? = nil) -> some View {
-        Text(verbatim: value).font(.system(size: ChromeMetrics.text(12), design: .monospaced)).foregroundStyle(color ?? theme.text2).lineLimit(1)
-            .frame(maxWidth: .infinity, alignment: .trailing).padding(.horizontal, 6)
-    }
 }
 
 /// The meters (6.4): CPU a bar a core, memory as Activity Monitor counts it,

@@ -468,12 +468,17 @@ extension E2ERunner {
         check("held, a tick is shown in under 100 ms (median)", !heldShown.isEmpty && held.median < 100, "\(held)")
         // 7.7's own measure: the main thread's CPU from the content set to
         // the run loop's rest — the Mac's other work left out. 10.4's 4 ms
-        // isn't met: SwiftUI lays the visible rows' cells out again
-        // (design 15); gated at what it costs, so it only gets better.
+        // isn't met: every cell on screen is handed its row again, each a
+        // SwiftUI update (design 15); gated at what it costs, so it only
+        // gets better — 41–45 ms p90 measured re-sorted, 20.6–21.6 held,
+        // 15.2–16.0 steady.
         check(
-            "a publish takes the main thread under 50 ms of CPU (p90), a held one under 35 ms",
-            shownMain.count >= 12 && Self.p90(shownMain) < 50 && heldMain.count == 12 && Self.p90(heldMain) < 35,
+            "a publish takes the main thread under 50 ms of CPU (p90), a held one under 25 ms",
+            shownMain.count >= 12 && Self.p90(shownMain) < 50 && heldMain.count == 12 && Self.p90(heldMain) < 25,
             "\(Self.summary(shownMain)); held \(Self.summary(heldMain))")
+        check(
+            "a steady one, nothing drawn moving, under 20 ms (p90)", steadyMain.count == 12 && Self.p90(steadyMain) < 20,
+            "\(Self.summary(steadyMain))")
         // 7.7 at 5,000: the list's rows made with the content, the table
         // told their order — a crowded Mac's publish costs what this one's
         // does (36.6 against 33.8 ms measured), never its rows' count.
@@ -482,6 +487,13 @@ extension E2ERunner {
             "at 5,000 processes, a publish takes the main thread at most 1.5× this Mac's (median)",
             crowdedPublish.main.count == 12 && !shownMain.isEmpty && crowdedMain.median <= 1.5 * Self.summary(shownMain).median,
             "\(crowdedMain) against \(Self.summary(shownMain))")
+        // 7.7: the list observes only what it draws — "order held", a
+        // selected agent's detail and its verbs' subject, landing beside a
+        // tick's rows, never update the table a second time.
+        let once = ["held", "steady", "agent"].allSatisfy { name in (touched[name] ?? []).count >= 12 && touched[name]?.allSatisfy { $0.updates == 1 } == true }
+        check(
+            "held, steady or with an agent selected, each publish updates the table once", once,
+            ["held", "steady", "agent"].map { "\($0) \(touched[$0]?.map(\.updates) ?? [])" }.joined(separator: "; "))
         check("the list scrolls in under 35 ms a step (p95)", !scrolled.isEmpty && scroll.p95 < 35, "\(scroll)")
         // 7.7: the main thread's part of a publish ≤ 4 ms — the verbs' list
         // is all of theirs that stays on it.

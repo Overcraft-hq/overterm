@@ -125,9 +125,13 @@ final class ActivityPageModel: ObservableObject {
         }
     }
 
+    /// What the list draws, published apart (7.7): `syncList` keeps it.
+    let list = ActivityListState()
+
     @Published var section: Section = .processes {
         didSet {
             guard section != oldValue else { return }
+            syncList()
             byHand()
             selection = []
             updateContainers()
@@ -137,13 +141,19 @@ final class ActivityPageModel: ObservableObject {
     }
     /// How Processes is grouped (`G`), and whether as a tree (`t`).
     @Published var grouping: ActivityGrouping = .checkout {
-        didSet { if grouping != oldValue { rebuild(asked: true) } }
+        didSet {
+            guard grouping != oldValue else { return }
+            syncList()
+            rebuild(asked: true)
+        }
     }
     @Published var tree = true {
         didSet { if tree != oldValue { rebuild(asked: true) } }
     }
     /// Each section's filter field (6.6): not remembered, as Docker's isn't.
-    @Published private(set) var filters: [Section: String] = [:]
+    @Published private(set) var filters: [Section: String] = [:] {
+        didSet { syncList() }
+    }
     /// Asks the filter field for the keyboard (`/`).
     @Published var focusFilter = 0
     /// The keys' sheet (`?`).
@@ -153,7 +163,9 @@ final class ActivityPageModel: ObservableObject {
     /// The detail beside the list (Space).
     @Published var showsDetail = true
     /// `F`: the selection kept in view as its row moves.
-    @Published var following = false
+    @Published var following = false {
+        didSet { syncList() }
+    }
     /// `Z`: values and order frozen; the census given back while nothing
     /// else wants it.
     @Published var paused = false {
@@ -163,7 +175,11 @@ final class ActivityPageModel: ObservableObject {
     @Published private(set) var orderHeld = false
     /// `u`: yours only, or everyone's — `activity.everyone` until pressed.
     @Published var everyone: Bool? {
-        didSet { if everyone != oldValue { rebuild(asked: true) } }
+        didSet {
+            guard everyone != oldValue else { return }
+            syncList()
+            rebuild(asked: true)
+        }
     }
     /// The selected process's detail (6.4).
     @Published private(set) var detail: ActivityDetail? {
@@ -196,7 +212,9 @@ final class ActivityPageModel: ObservableObject {
     /// listed"; cleared by the next link, the person's hand, or a hide.
     @Published private(set) var linkSaid: String?
     /// The columns the person left: each section's, kept (6.5).
-    @Published private(set) var layout: ActivityColumns.Layout = ActivityColumns.load()
+    @Published private(set) var layout: ActivityColumns.Layout = ActivityColumns.load() {
+        didSet { syncList() }
+    }
     /// The scope ladder's rung (6.5, `[` and `]`), a section each.
     @Published private(set) var scopes: [Section: ActivityScope] = [:]
     /// Folds by row id, kept in memory for the app's life (6.5).
@@ -204,24 +222,37 @@ final class ActivityPageModel: ObservableObject {
     @Published var selection: Set<String> = [] {
         didSet {
             guard selection != oldValue else { return }
+            syncList()
             byHand()
             updateDetail()
         }
     }
     @Published var processSort: ResourceSort? = ResourceSort(column: "cpu", ascending: false) {
-        didSet { if processSort != oldValue { rebuild(asked: true) } }
+        didSet {
+            guard processSort != oldValue else { return }
+            syncList()
+            rebuild(asked: true)
+        }
     }
     @Published var portSort: ResourceSort? = ResourceSort(column: "port") {
-        didSet { if portSort != oldValue { rebuild(asked: true) } }
+        didSet {
+            guard portSort != oldValue else { return }
+            syncList()
+            rebuild(asked: true)
+        }
     }
     /// Listening's connections (`c`, 6.8): the user's established TCP
     /// connections, paired by the 4-tuple.
     @Published var connections = false {
         didSet { if connections != oldValue { rebuild(asked: true) } }
     }
-    @Published private(set) var content = ActivityPageContent()
+    @Published private(set) var content = ActivityPageContent() {
+        didSet { syncList(rows: true) }
+    }
     /// A full snapshot has been made into rows since the page showed.
-    @Published private(set) var hasRead = false
+    @Published private(set) var hasRead = false {
+        didSet { if hasRead != oldValue { syncList() } }
+    }
     /// The interval the rows are read at, as the header says it.
     @Published private(set) var interval: Duration = .seconds(2)
     /// Asks the list for the keyboard (the window gives it).
@@ -316,6 +347,7 @@ final class ActivityPageModel: ObservableObject {
         for section in Section.allCases {
             if let saved = AppEnvironment.defaults.string(forKey: Self.scopeKey(section)), saved == "allTabs" { scopes[section] = .allTabs }
         }
+        syncList(rows: true)
     }
 
     private static func scopeKey(_ section: Section) -> String { "activity.page.scope.\(section.rawValue)" }
