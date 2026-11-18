@@ -111,9 +111,19 @@ extension E2ERunner {
         )
         pane.pressReturn()
         // A job stopped by a signal, on a line of its own: `$!` at the
-        // line's end, where zsh never reads its `!` as history.
-        _ = await eventually(5) { pane.foregroundGroup == nil || kernel.process(pane.foregroundGroup ?? 0)?.shortName.hasSuffix("sh") == true }
-        pane.insertText("/bin/sleep 158 & kill -STOP $!")
+        // line's end, where zsh never reads its `!` as history. Its STOP
+        // only once the job is /bin/sleep: sent at once it can land on the
+        // forked shell before its exec, and zsh says "suspended (signal)"
+        // yet the job runs on — the check's old flake (zsh -f does it too).
+        func atPrompt() async {
+            _ = await eventually(5) { pane.foregroundGroup == nil || kernel.process(pane.foregroundGroup ?? 0)?.shortName.hasSuffix("sh") == true }
+        }
+        await atPrompt()
+        pane.insertText("/bin/sleep 158 & ACME_STOP=$!")
+        pane.pressReturn()
+        await atPrompt()
+        pane.insertText(
+            "for i in {1..100}; do [ \"$(ps -o comm= -p $ACME_STOP)\" = /bin/sleep ] && break; sleep 0.05; done; kill -STOP $ACME_STOP")
         pane.pressReturn()
 
         // Stop, asked: Cancel sends nothing; the button sends TERM by token.
