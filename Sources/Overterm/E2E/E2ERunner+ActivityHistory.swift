@@ -82,7 +82,8 @@ extension E2ERunner {
         let seen = page.content.processes.first { $0.identity == newPID }
         check(
             "ended, it is shown once more, dimmed", ended,
-            "pid \(newPID?.pid ?? -1); \(seen.map { $0.ended ? "ended" : "listed, not ended" } ?? "not listed"), tick \(page.latest?.tick ?? -1)")
+            "pid \(newPID?.pid ?? -1); \(seen.map { $0.ended ? "ended" : "listed, not ended" } ?? "not listed"), tick \(page.latest?.tick ?? -1) of \(ActivityMonitor.shared.snapshot?.tick ?? -1), builds \(page.builds), paused \(page.paused), wanting \(page.wanting), held \(page.orderHeld), sampling \(ActivityMonitor.shared.isSampling), \(page.content.processes.count) rows"
+        )
         let gone = await ticking(10) { !page.content.processes.contains { $0.identity == newPID } }
         check("then goes", gone)
     }
