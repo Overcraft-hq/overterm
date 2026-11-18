@@ -319,12 +319,12 @@ struct ActivityAttribution: Sendable {
         /// Rule 11 (6.9): a closed pane's tag, an earlier Overterm's
         /// marker or argv sign, a dead group leader. One the person kept is
         /// theirs, elsewhere, "kept running".
-        func leftBehind(_ process: ActivityProcess, _ facts: ActivityFacts?) -> ActivityOwner? {
+        func leftBehind(_ process: ActivityProcess, _ facts: ActivityFacts?, _ words: ActivityPathWords) -> ActivityOwner? {
             guard process.isOwn(by: snapshot.uid) else { return nil }
             guard
                 let sign = LeftBehind.sign(
                     of: process, facts: facts, table: table, context: context, live: liveTags, checkouts: inputs.checkouts,
-                    openCheckouts: openCheckouts)
+                    openCheckouts: openCheckouts, words: words)
             else { return nil }
             if isKept(process.identity) {
                 var owner = ActivityOwner(place: .elsewhere, rule: 11, reason: "kept running — \(sign.reason)", certainty: sign.certainty)
@@ -415,7 +415,7 @@ struct ActivityAttribution: Sendable {
             // 10. Another Overterm, by its run's marker or its own executable.
             if let other = anotherOverterm(process, facts, words) { return other }
             // 11. Left Behind by another sign (6.9).
-            if let left = leftBehind(process, facts) { return left }
+            if let left = leftBehind(process, facts, words) { return left }
             // 12. An app, by the outermost `.app` on its path.
             if let app = app(of: process, facts, words) { return app }
             // 13. Responsibility (D-31): an XPC service's or a VM's only —

@@ -129,8 +129,9 @@ struct ActivityPaneSet: Hashable, Sendable {
 
     /// A session manager or daemon by its executable's name; Emacs only as
     /// a daemon.
-    static func isDetachedOnPurpose(_ process: ActivityProcess, facts: ActivityFacts?) -> Bool {
-        let name = executableName(process, facts: facts)
+    /// `executable`: its `executableName`, made already.
+    static func isDetachedOnPurpose(_ process: ActivityProcess, facts: ActivityFacts?, executable: String? = nil) -> Bool {
+        let name = executable ?? executableName(process, facts: facts)
         if detachedNames.contains(name) { return true }
         if name.utf8.count == 5, name.lowercased() == "emacs", let command = facts?.command {
             return command.split(separator: " ").contains { $0 == "--daemon" || $0.hasPrefix("--daemon=") || $0.hasPrefix("--bg-daemon") || $0.hasPrefix("--fg-daemon") }

@@ -194,9 +194,11 @@ enum LeftBehind {
     /// Why `process` is never Left Behind whatever it carries (6.9's
     /// "Never"): detached on purpose, an app (with a bundle outside every
     /// checkout), a launchd job or brew service. Nil when none applies.
-    static func neverReason(_ process: ActivityProcess, facts: ActivityFacts?, checkouts: [String]) -> String? {
-        if ActivityPaneSet.isDetachedOnPurpose(process, facts: facts) { return "detached on purpose" }
-        if let path = facts?.path, let bundle = ActivityPaneSet.appBundle(of: path),
+    /// `words`: what its path says, read already (`ActivityPathWords`).
+    static func neverReason(_ process: ActivityProcess, facts: ActivityFacts?, checkouts: [String], words: ActivityPathWords? = nil) -> String? {
+        let executable = words.map { words in words.file.flatMap { $0.isEmpty ? nil : $0 } ?? facts?.name ?? process.shortName }
+        if ActivityPaneSet.isDetachedOnPurpose(process, facts: facts, executable: executable) { return "detached on purpose" }
+        if let path = facts?.path, let bundle = words.map(\.bundle) ?? ActivityPaneSet.appBundle(of: path),
             !checkouts.contains(where: { ActivityPaneSet.isInside(bundle, $0) })
         {
             return "an app"
@@ -209,13 +211,14 @@ enum LeftBehind {
     /// marker or argv sign, a dead group leader — first that matches.
     /// `live`: the panes' tags now; `openCheckouts`: the checkouts a tab
     /// shows. Rule 8 (an agent run's window) is `agentRun`'s, asked where
-    /// the live pane's tagged processes are placed.
+    /// the live pane's tagged processes are placed. `words`: what its path
+    /// says, read already (`ActivityPathWords`).
     static func sign(
         of process: ActivityProcess, facts: ActivityFacts?, table: ProcessTable, context: ActivityContext, live: Set<String>,
-        checkouts: [String], openCheckouts: Set<String>
+        checkouts: [String], openCheckouts: Set<String>, words: ActivityPathWords? = nil
     ) -> LeftBehindSign? {
         guard process.pid > 1, process.pid != context.appPID, !process.isZombie else { return nil }
-        if neverReason(process, facts: facts, checkouts: checkouts) != nil { return nil }
+        if neverReason(process, facts: facts, checkouts: checkouts, words: words) != nil { return nil }
         // A closed pane's tag.
         if let tag = facts?.markers?.tab, !live.contains(tag), let retired = context.retired.last(where: { $0.pane.tag == tag }) {
             return .closedPane(retired)
