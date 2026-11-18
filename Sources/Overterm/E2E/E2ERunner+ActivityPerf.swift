@@ -196,6 +196,8 @@ extension E2ERunner {
         kernel.remove(heavy.pid)
         var churnLight: [Double] = []
         var churnFull: [Double] = []
+        // What the light ticks under churn read: identities, argv.
+        var churnReads: [(identities: Int, commands: Int)] = []
         var churned: [pid_t] = []
         let churnFullSampler = ActivitySampler(kernel: kernel)
         _ = churnFullSampler.tickNow(ActivityDemand(.full), context: lightContext)
@@ -207,6 +209,7 @@ extension E2ERunner {
             let sampler = full ? churnFullSampler : light
             guard let snapshot = sampler.tickNow(ActivityDemand(full ? .full : .light(tabs: nil)), context: lightContext) else { continue }
             if round > 1 { (full ? { churnFull.append($0) } : { churnLight.append($0) })(Double(snapshot.cost.cpu) / 1_000_000) }
+            if round > 1, !full { churnReads.append((snapshot.cost.identitiesRead, snapshot.cost.commandsRead)) }
         }
         for pid in churned { kernel.remove(pid) }
 
@@ -319,6 +322,11 @@ extension E2ERunner {
         check("the light tick's CPU is read (12 ticks)", lightCPU.count == 12, "\(lightCPU.count)")
         note(
             "activityPerf: light p90 beside a 20,000-socket child \(p90(Self.p90(heavyLight))), under churn of 200 a tick \(p90(Self.p90(churnLight))); full under churn \(p90(Self.p90(churnFull)))"
+        )
+        note(
+            "activityPerf: under churn of 200 a tick, the light tick \(Self.summary(churnLight)), p90 \(p90(Self.p90(churnLight))), "
+                + "a tick read identities \(churnReads.map(\.identities)), argv \(churnReads.map(\.commands)); "
+                + "the full tick \(Self.summary(churnFull)), p90 \(p90(Self.p90(churnFull)))"
         )
         check(
             "a child of 20,000 sockets: its walk bounded, said so", heavyRead?.bound != nil && (heavyRead?.records.count ?? .max) <= SocketScan.perProcessBudget,
