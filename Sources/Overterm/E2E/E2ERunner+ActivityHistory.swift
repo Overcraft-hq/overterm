@@ -1,4 +1,5 @@
 import AppKit
+import Combine
 
 /// Activity's history on the page (docs/design/activity/analysis.md, 6.7,
 /// 6.11, 10.3; stage 4): a strip on the run's own rows, the meters' and the
@@ -78,11 +79,20 @@ extension E2ERunner {
         let fresh = await ticking(10) { started()?.isNew == true }
         check("a process started a moment ago is tinted new", fresh, "\(earlier.count) earlier sleeps")
         let newPID = started()?.identity
-        let ended = await ticking(15) { page.content.processes.contains { $0.identity == newPID && $0.ended } }
-        let seen = page.content.processes.first { $0.identity == newPID }
+        // An ended row lasts one build, and two builds may land within one
+        // look (the loop's tick and one asked here): every rows published
+        // are watched, not only those standing at each look.
+        final class Seen { var ended = false }
+        let seen = Seen()
+        let watch = page.$content.sink { content in
+            if content.processes.contains(where: { $0.identity == newPID && $0.ended }) { seen.ended = true }
+        }
+        let ended = await ticking(15) { seen.ended }
+        watch.cancel()
+        let last = page.content.processes.first { $0.identity == newPID }
         check(
             "ended, it is shown once more, dimmed", ended,
-            "pid \(newPID?.pid ?? -1); \(seen.map { $0.ended ? "ended" : "listed, not ended" } ?? "not listed"), tick \(page.latest?.tick ?? -1) of \(ActivityMonitor.shared.snapshot?.tick ?? -1), builds \(page.builds), paused \(page.paused), wanting \(page.wanting), held \(page.orderHeld), sampling \(ActivityMonitor.shared.isSampling), \(page.content.processes.count) rows"
+            "pid \(newPID?.pid ?? -1); \(last.map { $0.ended ? "ended" : "listed, not ended" } ?? "not listed"), tick \(page.latest?.tick ?? -1) of \(ActivityMonitor.shared.snapshot?.tick ?? -1), builds \(page.builds), paused \(page.paused), wanting \(page.wanting), held \(page.orderHeld), sampling \(ActivityMonitor.shared.isSampling), \(page.content.processes.count) rows"
         )
         let gone = await ticking(10) { !page.content.processes.contains { $0.identity == newPID } }
         check("then goes", gone)
