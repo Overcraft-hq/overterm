@@ -5,7 +5,9 @@ import Foundation
 /// listening ports first, by number, then the ten busiest processes, as
 /// ranked when it opened. It holds the census's full level while the
 /// palette shows it — every second, so CPU has a rate by the second read —
-/// and stocks its rows until a read with rates, then keeps them: the
+/// and stocks its rows until a read with rates, then keeps them and gives
+/// the full level back (7.3 asks only for two ticks 1 s apart first;
+/// every later one would be read and thrown away): the
 /// palette re-ranks on a reorder, which would move the selection, and a
 /// changed CPU figure alone is never shown (`PaletteModel.restock`).
 @MainActor
@@ -27,8 +29,11 @@ final class ActivitySwitcher {
     let monitor: ActivityMonitor
     /// Its rows, once a full read is made into them; nil while closed.
     private(set) var rows: [Row]?
-    /// Whether it holds the full level now.
+    /// Whether it is open: its rows held while the palette shows them.
     private(set) var holding = false
+    /// Whether it wants the census's full level now: from its opening
+    /// until a read with rates is made into its rows.
+    private(set) var wanting = false
     /// Rows stocked, a scenario's count.
     private(set) var stocks = 0
     private var rated = false
@@ -49,6 +54,7 @@ final class ActivitySwitcher {
         holding = true
         rated = false
         latest = 0
+        wanting = true
         monitor.want(self, .full, every: .seconds(1))
         if let last = monitor.lastFull, monitor.age(of: last) <= ActivityMonitor.nanoseconds(monitor.interval) { take(last) }
         // @Published emits before it changes: the emitted value.
@@ -60,9 +66,16 @@ final class ActivitySwitcher {
     func close() {
         guard holding else { return }
         holding = false
+        letGo()
+        rows = nil
+    }
+
+    /// The full level given back: its rows are kept from here on.
+    private func letGo() {
+        guard wanting else { return }
+        wanting = false
         snapshots = nil
         monitor.unwant(self)
-        rows = nil
     }
 
     private func take(_ snapshot: ActivitySnapshot) {
@@ -77,6 +90,7 @@ final class ActivitySwitcher {
             self.rows = made.rows
             self.rated = made.rated
             self.stocks += 1
+            if made.rated { self.letGo() }
             self.stocked()
         }
     }
