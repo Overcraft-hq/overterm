@@ -151,6 +151,15 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
     /// Every row is the same height: a move in place notes no height and
     /// looks only at the rows with a view.
     var uniformHeight = false
+    /// A cell that is one line of text, drawn by AppKit rather than a
+    /// hosting view each (`ResourceTextCell`): its words, or nil for a
+    /// column the `cell` draws. Whether it answers nil may depend only on
+    /// the row's kind and the column — a cell is reused by both. Nil: every
+    /// cell is the `cell`'s (Docker's, Kubernetes').
+    var plainCell: ((Row, ResourceColumn) -> ResourceTextCellValue?)? = nil
+    /// A key of what a hosted cell draws (`cell`): a cell shown with the
+    /// same key isn't handed its row again. Nil: always handed it.
+    var cellKey: ((Row, ResourceColumn?) -> Int)? = nil
 
     /// This table with `change` made: the options above, set in place.
     func with(_ change: (inout ResourceTable) -> Void) -> ResourceTable {
@@ -497,20 +506,39 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
                 let id = rows[index].id
                 if spans(rows[index]) {
                     if let cell = table.view(atColumn: 0, row: index, makeIfNecessary: false) as? ResourceHostingCell {
-                        cell.show(view.cell(rows[index], nil))
-                        table.hostedShows += 1
+                        show(rows[index], nil, in: cell, view, table)
                         if cell.accessibilityIdentifier() != id { cell.setAccessibilityIdentifier(id) }
                     }
                     continue
                 }
                 for (at, column) in placed {
-                    guard let cell = table.view(atColumn: at, row: index, makeIfNecessary: false) as? ResourceHostingCell else { continue }
-                    cell.show(view.cell(rows[index], view.hasHeader ? column : nil))
-                    table.hostedShows += 1
+                    guard let cell = table.view(atColumn: at, row: index, makeIfNecessary: false) else { continue }
+                    if let text = cell as? ResourceTextCell {
+                        if let value = view.plainCell?(rows[index], column) {
+                            if text.show(value) { table.plainShows += 1 } else { table.plainSkips += 1 }
+                        }
+                    } else if let hosted = cell as? ResourceHostingCell {
+                        show(rows[index], view.hasHeader ? column : nil, in: hosted, view, table)
+                    } else {
+                        continue
+                    }
                     // Moved in place: the cell says its new row.
                     if cell.accessibilityIdentifier() != id { cell.setAccessibilityIdentifier(id) }
                 }
             }
+        }
+
+        /// A hosted cell handed its row, unless its key says it draws it
+        /// already.
+        private func show(_ row: Row, _ column: ResourceColumn?, in cell: ResourceHostingCell, _ view: ResourceTable, _ table: ResourceTableView) {
+            let key = view.cellKey?(row, column)
+            if let key, cell.shownKey == key {
+                table.hostedSkips += 1
+                return
+            }
+            cell.show(view.cell(row, column))
+            cell.shownKey = key
+            table.hostedShows += 1
         }
 
         /// A group's row across a header's columns.
@@ -526,10 +554,20 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
             guard let view else { return nil }
             let column = tableColumn.flatMap { item in columns.first { $0.id == item.identifier.rawValue } }
             let shown = view.hasHeader && !spans(rows[row]) ? column : nil
+            if let shown, let value = view.plainCell?(rows[row], shown) {
+                let identifier = ResourceTextCell.identifier(column: shown.id, kind: rows[row].reuseKind)
+                let cell = tableView.makeView(withIdentifier: identifier, owner: nil) as? ResourceTextCell ?? ResourceTextCell()
+                cell.identifier = identifier
+                _ = cell.show(value)
+                (tableView as? ResourceTableView)?.plainShows += 1
+                cell.setAccessibilityIdentifier(rows[row].id)
+                return cell
+            }
             let identifier = ResourceHostingCell.identifier(column: shown?.id, kind: rows[row].reuseKind)
             let cell = tableView.makeView(withIdentifier: identifier, owner: nil) as? ResourceHostingCell ?? ResourceHostingCell()
             cell.identifier = identifier
             cell.show(view.cell(rows[row], shown))
+            cell.shownKey = view.cellKey?(rows[row], shown)
             (tableView as? ResourceTableView)?.hostedShows += 1
             cell.setAccessibilityIdentifier(rows[row].id)
             return cell
@@ -624,6 +662,12 @@ final class ResourceTableView: NSTableView {
     /// those on screen.
     var updates = 0
     var hostedShows = 0
+    /// Hosted cells whose key said they draw their row already, and the
+    /// AppKit text cells (`ResourceTextCell`) drawn again or left as they
+    /// were.
+    var hostedSkips = 0
+    var plainShows = 0
+    var plainSkips = 0
     var madeRowsLastUpdate = 0
     var visibleRowsLastUpdate = 0
     private var hover: NSTrackingArea?
@@ -761,7 +805,15 @@ final class ResourceHostingCell: NSTableCellView {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
+    /// The `cellKey` of what it was last handed; nil for none.
+    var shownKey: Int?
+
     func show(_ row: AnyView) { hosting.rootView = row }
+
+    override func prepareForReuse() {
+        super.prepareForReuse()
+        shownKey = nil
+    }
 }
 
 /// A row's hosting view: the press goes to SwiftUI whole, and its row is

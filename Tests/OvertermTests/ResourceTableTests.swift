@@ -372,4 +372,120 @@ final class ResourceTableTests: XCTestCase {
         XCTAssertFalse(ResourceTable<Fruit>.Coordinator.shows(7, in: NSRange(location: 2, length: 5)))
         XCTAssertFalse(ResourceTable<Fruit>.Coordinator.shows(0, in: NSRange(location: 0, length: 0)))
     }
+
+    /// A list whose weights are AppKit text (`plainCell`) and names hosted.
+    @MainActor
+    private func plainTable(_ fruit: [Fruit], selection: Binding<Set<String>>, key: ((Fruit, ResourceColumn?) -> Int)? = nil, made: @escaping () -> Void = {})
+        -> ResourceTable<Fruit>
+    {
+        let columns = ["name", "weight"].map { ResourceColumn(id: $0, title: $0) }
+        return ResourceTable<Fruit>(
+            rows: fruit, selection: selection, columns: columns, sort: .constant(nil),
+            cell: { _, _ in
+                made()
+                return AnyView(Text(verbatim: "cell"))
+            }, verbs: { _ in [] }, copy: {}
+        )
+        .with { table in
+            table.plainCell = { row, column in
+                guard column.id == "weight", case .fruit(_, let weight) = row else { return nil }
+                return ResourceTextCellValue(text: weight.map { String($0) } ?? "—", color: .labelColor, size: 12, number: true)
+            }
+            table.cellKey = key
+        }
+    }
+
+    @MainActor
+    private func hosted<Row: ResourceTableRow>(_ list: ResourceTable<Row>) -> (ResourceTable<Row>.Coordinator, ResourceTableView, NSWindow) {
+        let coordinator = list.makeCoordinator()
+        let table = ResourceTableView()
+        table.dataSource = coordinator
+        table.delegate = coordinator
+        table.intercellSpacing = .zero
+        coordinator.table = table
+        let scroll = NSScrollView(frame: NSRect(x: 0, y: 0, width: 400, height: 200))
+        scroll.documentView = table
+        let window = NSWindow(contentRect: scroll.frame, styleMask: [.borderless], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.contentView = scroll
+        coordinator.update(list)
+        table.layoutSubtreeIfNeeded()
+        return (coordinator, table, window)
+    }
+
+    /// A text cell takes a row's press as a hosted one does: selected on
+    /// release, ⌘ toggling, and it answers for every point inside it — the
+    /// table's own mouseDown never selects, so a press falling through to
+    /// it would select nothing.
+    @MainActor
+    func testAPressOnATextCellSelectsItsRowOnRelease() throws {
+        final class Picked { var ids: Set<String> = [] }
+        let picked = Picked()
+        let selection = Binding(get: { picked.ids }, set: { picked.ids = $0 })
+        let fruit: [Fruit] = (0..<20).map { (index: Int) in .fruit("f\(index)", weight: index) }
+        let (coordinator, table, window) = hosted(plainTable(fruit, selection: selection))
+        defer {
+            window.close()
+            withExtendedLifetime(coordinator) {}
+        }
+        let at = table.column(withIdentifier: NSUserInterfaceItemIdentifier("weight"))
+        let cell = try XCTUnwrap(table.view(atColumn: at, row: 3, makeIfNecessary: false) as? ResourceTextCell)
+        XCTAssertEqual(cell.shown?.text, "3")
+        XCTAssertTrue(cell.acceptsFirstMouse(for: nil), "the first click in a window behind others selects")
+        let middle = NSPoint(x: cell.frame.midX, y: cell.frame.midY)
+        XCTAssertTrue(cell.hitTest(middle) === cell, "the cell, never its words, takes the press")
+        func press(_ modifiers: NSEvent.ModifierFlags) {
+            let point = cell.convert(NSPoint(x: cell.bounds.midX, y: cell.bounds.midY), to: nil)
+            for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
+                let event = NSEvent.mouseEvent(
+                    with: type, location: point, modifierFlags: modifiers, timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0,
+                    clickCount: 1, pressure: 1)!
+                if type == .leftMouseDown {
+                    cell.mouseDown(with: event)
+                    XCTAssertTrue(picked.ids.isEmpty || modifiers.contains(.command), "nothing selected while pressed")
+                } else {
+                    cell.mouseUp(with: event)
+                }
+            }
+        }
+        press([])
+        XCTAssertEqual(picked.ids, ["f3"], "selected on release, by id")
+        press(.command)
+        XCTAssertEqual(picked.ids, [], "⌘ takes it away again")
+    }
+
+    /// A text cell is drawn again only when its words changed; a hosted cell
+    /// whose key is the same isn't handed its row again; a nil key always is.
+    @MainActor
+    func testUnchangedCellsAreNotShownAgain() throws {
+        final class Count { var made = 0 }
+        let count = Count()
+        let fruit: [Fruit] = (0..<20).map { (index: Int) in .fruit("f\(index)", weight: index) }
+        let key: (Fruit, ResourceColumn?) -> Int = { row, _ in row.id.hashValue }
+        let (coordinator, table, window) = hosted(plainTable(fruit, selection: .constant([]), key: key, made: { count.made += 1 }))
+        defer { window.close() }
+        let visible = table.rows(in: table.visibleRect).length
+        XCTAssertGreaterThan(visible, 0)
+        let (made, plain) = (count.made, table.plainShows)
+        coordinator.update(plainTable(fruit, selection: .constant([]), key: key, made: { count.made += 1 }))
+        XCTAssertEqual(count.made, made, "the same keys: no name cell made again")
+        XCTAssertEqual(table.plainShows, plain, "the same words: no text cell drawn again")
+        XCTAssertGreaterThanOrEqual(table.plainSkips, visible)
+
+        var heavier = fruit
+        heavier[1] = .fruit("f1", weight: 100)
+        coordinator.update(plainTable(heavier, selection: .constant([]), key: key, made: { count.made += 1 }))
+        XCTAssertEqual(table.plainShows, plain + 1, "one weight changed: one text cell drawn")
+        let at = table.column(withIdentifier: NSUserInterfaceItemIdentifier("weight"))
+        XCTAssertEqual((table.view(atColumn: at, row: 1, makeIfNecessary: false) as? ResourceTextCell)?.shown?.text, "100")
+
+        // Rows moved in place: each cell says its new row, a key changed.
+        coordinator.update(plainTable(Array(heavier.reversed()), selection: .constant([]), key: key, made: { count.made += 1 }))
+        XCTAssertEqual((table.view(atColumn: at, row: 1, makeIfNecessary: false) as? ResourceTextCell)?.shown?.text, "18")
+        XCTAssertGreaterThan(count.made, made, "moved rows' name cells handed their new rows")
+
+        let unkeyed = count.made
+        coordinator.update(plainTable(Array(heavier.reversed()), selection: .constant([]), made: { count.made += 1 }))
+        XCTAssertEqual(count.made, unkeyed + visible, "no key: every name cell on screen handed its row, as before")
+    }
 }
