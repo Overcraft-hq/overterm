@@ -403,11 +403,14 @@ extension E2ERunner {
         note("activityPerf: a publish's main-thread CPU \(Self.summary(shownMain)), p90 \(p90(Self.p90(shownMain))); held \(Self.summary(heldMain)), p90 \(p90(Self.p90(heldMain)))")
         note(
             "activityPerf: a steady publish (no value drawn moves) \(Self.summary(steadyMain)), p90 \(p90(Self.p90(steadyMain))); "
-                + "at 5,000 processes (\(crowdedPublish.rows) rows) \(Self.summary(crowdedPublish.main)), p90 \(p90(Self.p90(crowdedPublish.main)))")
+                + "at 5,000 processes, \"+N more\" folded (\(crowdedPublish.folded.rows) rows) \(Self.summary(crowdedPublish.folded.main)), "
+                + "p90 \(p90(Self.p90(crowdedPublish.folded.main))); unfolded (\(crowdedPublish.whole.rows) rows) \(Self.summary(crowdedPublish.whole.main)), "
+                + "p90 \(p90(Self.p90(crowdedPublish.whole.main)))")
         for name in ["shown", "held", "steady", "verbs", "agent"] {
             if let touches = touched[name] { note("activityPerf: a publish touched, \(name): \(TableTouch.said(touches))") }
         }
-        note("activityPerf: a publish touched, at 5,000: \(TableTouch.said(crowdedPublish.touched))")
+        note("activityPerf: a publish touched, at 5,000 folded: \(TableTouch.said(crowdedPublish.folded.touched))")
+        note("activityPerf: a publish touched, at 5,000 unfolded: \(TableTouch.said(crowdedPublish.whole.touched))")
         note("activityPerf: a selected row's verbs listed on the main thread \(verbs); its process read off it among 5,000, every owner \(subject)")
         note("activityPerf: a selected agent's detail, its charts made off the main thread: on it \(detail), p90 \(p90(Self.p90(detailCost)))")
         // 10.4's 15 ms, a tick after the last, over starts spread as a
@@ -485,11 +488,25 @@ extension E2ERunner {
         // 7.7 at 5,000: the list's rows made with the content, the table
         // told their order — a crowded Mac's publish costs what this one's
         // does (36.6 against 33.8 ms measured), never its rows' count.
-        let crowdedMain = Self.summary(crowdedPublish.main)
+        let crowdedMain = Self.summary(crowdedPublish.folded.main)
+        let crowdedWhole = Self.summary(crowdedPublish.whole.main)
         check(
             "at 5,000 processes, a publish takes the main thread at most 1.5× this Mac's (median)",
-            crowdedPublish.main.count == 12 && !shownMain.isEmpty && crowdedMain.median <= 1.5 * Self.summary(shownMain).median,
+            crowdedPublish.folded.main.count == 12 && !shownMain.isEmpty && crowdedMain.median <= 1.5 * Self.summary(shownMain).median,
             "\(crowdedMain) against \(Self.summary(shownMain))")
+        // "+N more" unfolded, every one of the 5,000 a row of the table:
+        // against the same page folded at 500 the moment before — the rows'
+        // count alone, 1.07–1.10× measured (37.7–39.3 ms median against
+        // 34.8–36.4), three runs — and on its own, 38.5–41.3 ms p90: each
+        // gated just above.
+        check(
+            "…\"+N more\" unfolded, its 5,000 rows' publish at most 1.15× the folded one's (median)",
+            crowdedPublish.whole.rows >= 5_000 && crowdedPublish.whole.main.count == 12 && !crowdedPublish.folded.main.isEmpty
+                && crowdedWhole.median <= 1.15 * crowdedMain.median,
+            "\(crowdedPublish.whole.rows) rows: \(crowdedWhole) against \(crowdedMain)")
+        check(
+            "…and under 44 ms of CPU (p90)", crowdedPublish.whole.main.count == 12 && Self.p90(crowdedPublish.whole.main) < 44,
+            "\(crowdedWhole)")
         // 7.7: the list observes only what it draws — "order held", a
         // selected agent's detail and its verbs' subject, landing beside a
         // tick's rows, never update the table a second time.
@@ -692,9 +709,11 @@ extension E2ERunner {
 
     /// The page over the crowded Mac (7.7 at 5,000): a monitor over its
     /// sampler — the history it merged — and the page in a window of its
-    /// own, flat by CPU; twelve ticks timed as the first page's are.
+    /// own, flat by CPU; twelve ticks timed as the first page's are with
+    /// "+N more" folded (500 rows), then twelve with it unfolded (every
+    /// process a row).
     func crowdedPublishes(_ kernel: FakeActivityKernel, sampler: ActivitySampler, pids: [pid_t], context: ActivityContext) async -> (
-        main: [Double], touched: [TableTouch], rows: Int
+        folded: CrowdedPublishes, whole: CrowdedPublishes
     ) {
         let monitor = ActivityMonitor(sampler: sampler)
         monitor.interval = .seconds(600)
@@ -703,7 +722,7 @@ extension E2ERunner {
         page.isolated = false
         page.grouping = .none
         page.tree = false
-        guard let theme = app.theme else { return ([], [], 0) }
+        guard let theme = app.theme else { return (CrowdedPublishes(), CrowdedPublishes()) }
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1_400, height: 900), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         let host = NSHostingView(rootView: ActivityPageView(page: page, theme: theme, copy: { _ in }))
@@ -735,7 +754,7 @@ extension E2ERunner {
         host.displayIfNeeded()
         guard let table = WorkspacePages.firstTable(in: host) as? ResourceTableView else {
             check("the crowded page's table", false)
-            return ([], [], 0)
+            return (CrowdedPublishes(), CrowdedPublishes())
         }
         let frame = ActivityFrameClock()
         let observer = Self.frameObserver(frame)
@@ -743,21 +762,41 @@ extension E2ERunner {
         defer { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
         let landed = page.$content.dropFirst().sink { _ in frame.arm() }
         defer { landed.cancel() }
+        func publishes() async -> CrowdedPublishes {
+            var main: [Double] = []
+            var touched: [TableTouch] = []
+            for round in 0..<13 {
+                burn()
+                let before = TableTouch(table)
+                let builds = page.builds
+                let frames = frame.count
+                guard await monitor.tick() != nil else { continue }
+                _ = await eventually(10) { page.builds > builds && frame.count > frames }
+                // The first after the window's first drawing: not a tick's.
+                guard round > 0 else { continue }
+                main.append(frame.lastCPU)
+                touched.append(TableTouch(table).since(before))
+            }
+            return CrowdedPublishes(main: main, touched: touched, rows: page.content.list.count)
+        }
+        // As a person first sees it: 500 rows, then "+N more" folded.
+        let folded = await publishes()
+        // "+N more" unfolded: every one of the 5,000 a row of the table.
+        let builds = page.builds
+        let opened = page.fold("more:group:all", open: true)
+        let whole = await eventually(15) { page.builds > builds && page.content.list.count >= 5_000 }
+        check("at 5,000, \"+N more\" unfolds into every process's row", opened && whole, "\(page.content.list.count) rows")
+        host.layoutSubtreeIfNeeded()
+        host.displayIfNeeded()
+        return (folded, await publishes())
+    }
+
+    /// The crowded page's publishes, one fold: the main thread's CPU each,
+    /// what each touched, the list's rows.
+    struct CrowdedPublishes {
         var main: [Double] = []
         var touched: [TableTouch] = []
-        for round in 0..<13 {
-            burn()
-            let before = TableTouch(table)
-            let builds = page.builds
-            let frames = frame.count
-            guard await monitor.tick() != nil else { continue }
-            _ = await eventually(10) { page.builds > builds && frame.count > frames }
-            // The first after the window's first drawing: not a tick's.
-            guard round > 0 else { continue }
-            main.append(frame.lastCPU)
-            touched.append(TableTouch(table).since(before))
-        }
-        return (main, touched, page.content.list.count)
+        var rows = 0
     }
 
     /// What a publish touched of a `ResourceTableView` (7.7), counted by it.
