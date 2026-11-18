@@ -219,12 +219,28 @@ struct ActivityPageContent: Sendable {
     /// The snapshot's owners when they were read: a selection made between
     /// two publishes is read with them (`ActivityRows.subject`).
     var attribution: ActivityAttribution?
+    /// What making it cost, by part (10.4): times only.
+    var cost = ActivityRows.Cost()
 }
 
 enum ActivityRows {
     /// How long a new process is tinted at least (6.7): 3 s, and never
     /// less than a tick.
     static let newFor: TimeInterval = 3
+
+    /// What a build of the rows cost, by part (10.4), ns of the kernel's
+    /// clock (`CLOCK_UPTIME_RAW`): the owners, the rows, the list (filter,
+    /// sort, groups, Left Behind, the selection's), Listening, the summary.
+    struct Cost: Hashable, Sendable {
+        var attribution: UInt64 = 0
+        var rows: UInt64 = 0
+        var list: UInt64 = 0
+        var ports: UInt64 = 0
+        var summary: UInt64 = 0
+    }
+
+    /// The kernel's clock, ns: what `Cost` counts in.
+    static func now() -> UInt64 { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) }
 
     /// What the page lists of `snapshot`.
     struct Options: Sendable {
@@ -338,6 +354,13 @@ enum ActivityRows {
     }
 
     static func content(of snapshot: ActivitySnapshot, _ options: Options) -> ActivityPageContent {
+        var cost = Cost()
+        var mark = now()
+        func lap(_ part: inout UInt64) {
+            let time = now()
+            part = time &- mark
+            mark = time
+        }
         let tabFacts = tabFacts(options)
         let titles = tabFacts.mapValues(\.title)
         // The owners only where something reads them: the switcher's flat
@@ -345,6 +368,7 @@ enum ActivityRows {
         // a selection's verbs are listed.
         let attribution =
             options.grouping == nil && options.scope == .mac && options.subjectOf == nil ? nil : owners(of: snapshot, options, tabs: tabFacts)
+        lap(&cost.attribution)
         let today = Calendar.current.startOfDay(for: snapshot.date)
         // Where each process runs: the first pane that places it.
         var tabs: [ActivityProcessID: UUID] = [:]
@@ -461,6 +485,7 @@ enum ActivityRows {
             gone.listening = []
             rows.append(gone)
         }
+        lap(&cost.rows)
         // The filter (6.6): in a tree a match keeps its ancestors, dimmed.
         let filter = ActivityFilter(options.processFilter)
         var matched = rows.count { !$0.ended }
@@ -491,6 +516,7 @@ enum ActivityRows {
             content.list = list(rows, grouping: grouping, in: snapshot, tabs: tabFacts, options: listed)
         }
         content.leftBehind = leftBehindList(rows, tabs: tabFacts, options: options)
+        lap(&cost.list)
         // Listening (6.8): its listeners, owners, collisions and, asked
         // for, the user's connections.
         let portFilter = ActivityFilter(options.portFilter)
@@ -516,6 +542,7 @@ enum ActivityRows {
         if !portFilter.isEmpty { ports = ports.filter { $0.kind != .folded && portFilter.matches($0) } }
         // The fold last, whatever the sort.
         content.ports = sorted(ports.filter { $0.kind != .folded }, by: options.portSort) + ports.filter { $0.kind == .folded }
+        lap(&cost.ports)
         var summary = ActivitySummary()
         summary.processes = snapshot.table.processes.count
         summary.own = snapshot.table.processes.lazy.filter { $0.isOwn(by: uid) }.count
@@ -538,6 +565,8 @@ enum ActivityRows {
         summary.stopped = stopped
         summary.processLimit = options.processLimit
         content.summary = summary
+        lap(&cost.summary)
+        content.cost = cost
         return content
     }
 

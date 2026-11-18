@@ -286,37 +286,15 @@ extension E2ERunner {
                 await Task.yield()
             }
         }
-        // 5,000 processes, as a crowded Mac: the rows of one full tick,
-        // made as the page makes them (10.4 proposed 15 ms).
+        // 5,000 processes, as a crowded Mac (10.4 proposed 15 ms a build).
         let crowded = FakeActivityKernel(uid: 501)
         var crowdedPIDs: [pid_t] = []
         Self.fakeMac(crowded, count: 5_000, pids: &crowdedPIDs)
         let sampler = ActivitySampler(kernel: crowded)
-        var crowdedRows: [Double] = []
-        var crowdedSubject: [Double] = []
         // Read whole first: the churn budget reads 200 new identities a tick.
         for _ in 0..<60 {
             crowded.advance(1_000_000_000)
             guard let read = sampler.tickNow(ActivityDemand(.full), context: ActivityContext()), read.unread > 0 else { break }
-        }
-        crowded.advance(2_000_000_000)
-        if let snapshot = sampler.tickNow(ActivityDemand(.full), context: ActivityContext()) {
-            var options = ActivityRows.Options()
-            options.grouping = .checkout
-            for _ in 0..<7 {
-                let start = CACurrentMediaTime()
-                _ = ActivityRows.content(of: snapshot, options)
-                crowdedRows.append((CACurrentMediaTime() - start) * 1000)
-            }
-            // A selection made between two publishes: its process read
-            // with every owner, off the main thread.
-            if let identity = snapshot.table.processes.last?.identity {
-                for _ in 0..<7 {
-                    let start = CACurrentMediaTime()
-                    _ = ActivityRows.subject(identity, of: snapshot, options, attribution: nil)
-                    crowdedSubject.append((CACurrentMediaTime() - start) * 1000)
-                }
-            }
         }
         // The crowded Mac's fifteen minutes: the ring at its fullest.
         var crowdedMerged: [Double] = []
@@ -324,8 +302,23 @@ extension E2ERunner {
         for _ in 0..<450 {
             crowded.advance(2_000_000_000)
             guard let snapshot = sampler.tickNow(ActivityDemand(.full), context: ActivityContext()) else { continue }
-            crowdedMerged.append(Double(snapshot.cost.history) / 1_000_000)
+            crowdedMerged.append(Self.milliseconds(snapshot.cost.history))
             crowdedHistory = snapshot.history
+        }
+        // Its rows, a tick after the last, over those fifteen minutes.
+        let crowdedTicks = Self.crowdedTicks(crowded, sampler: sampler, pids: crowdedPIDs)
+        let crowdedRows = crowdedTicks.steady
+        // A selection made between two publishes: its process read with
+        // every owner, off the main thread.
+        var crowdedSubject: [Double] = []
+        if let snapshot = crowdedTicks.last, let identity = snapshot.table.processes.last?.identity {
+            var options = ActivityRows.Options()
+            options.grouping = .checkout
+            for _ in 0..<7 {
+                let start = CACurrentMediaTime()
+                _ = ActivityRows.subject(identity, of: snapshot, options, attribution: nil)
+                crowdedSubject.append((CACurrentMediaTime() - start) * 1000)
+            }
         }
         let history = Self.summary(merged)
         let crowdedMerge = Self.summary(crowdedMerged)
@@ -355,7 +348,12 @@ extension E2ERunner {
         note("activityPerf: \(count) processes (this Mac: \(live)); census CPU a tick \(census); rows made \(rows)")
         note("activityPerf: the sampler's CPU a tick, p90: full \(p90(fullP90)), light (8 panes) \(p90(lightP90)), \(lightCPU.count) light ticks")
         note("activityPerf: a tick's rows shown \(update), each \(shown.map { Int($0.rounded()) }); held \(held); scrolled \(scrolled.count) steps, \(scroll)")
-        note("activityPerf: 5,000 processes' rows, grouped by checkout, made \(crowd)")
+        note(
+            "activityPerf: 5,000 processes' rows, grouped by checkout, a tick after the last (\(crowdedRows.count) ticks): made \(crowd), p90 \(p90(Self.p90(crowdedRows))); "
+                + "owners \(Self.summary(crowdedTicks.parts.map(\.attribution))), rows \(Self.summary(crowdedTicks.parts.map(\.rows))), "
+                + "list \(Self.summary(crowdedTicks.parts.map(\.list))), Listening \(Self.summary(crowdedTicks.parts.map(\.ports))), "
+                + "summary \(Self.summary(crowdedTicks.parts.map(\.summary))); the ids kept \(Self.summary(crowdedTicks.shownIDs)), "
+                + "held \(Self.summary(crowdedTicks.held)); the first build \(p90(crowdedTicks.cold))")
         note("activityPerf: a publish's main-thread CPU \(Self.summary(shownMain)), p90 \(p90(Self.p90(shownMain))); held \(Self.summary(heldMain))")
         note("activityPerf: a selected row's verbs listed on the main thread \(verbs); its process read off it among 5,000, every owner \(subject)")
         note("activityPerf: a selected agent's detail, its charts made off the main thread: on it \(detail), p90 \(p90(Self.p90(detailCost)))")
@@ -495,6 +493,86 @@ extension E2ERunner {
             return pid
         }
     }
+
+    /// The crowded Mac's rows as the page makes them, a tick after the last
+    /// (10.4): each tick moves every one of the user's processes' CPU, ends
+    /// five processes and starts five; each build is given the rows before
+    /// it (`previous`, `marksNew`, `shownAt`) as `rebuild` gives them, and
+    /// the ids kept and a held tick's merge are timed as `make` runs them.
+    /// The first build, with nothing before it, apart.
+    static func crowdedTicks(_ kernel: FakeActivityKernel, sampler: ActivitySampler, pids: [pid_t])
+        -> (steady: [Double], parts: [CrowdedParts], shownIDs: [Double], held: [Double], cold: Double, last: ActivitySnapshot?)
+    {
+        var random = SystemRandomNumberGenerator()
+        let context = ActivityContext()
+        var steady: [Double] = []
+        var parts: [CrowdedParts] = []
+        var shownIDs: [Double] = []
+        var held: [Double] = []
+        var cold = 0.0
+        var shown: ActivityPageContent?
+        var last: ActivitySnapshot?
+        var churned: [pid_t] = []
+        for round in 0..<31 {
+            kernel.advance(2_000_000_000)
+            for pid in pids {
+                let used = UInt64.random(in: 0...40_000_000, using: &random)
+                kernel.update(pid) { process in
+                    process.usage = FakeActivityKernel.usage(cpuTime: (process.usage?.cpuTime ?? 0) + used, footprint: process.usage?.footprint ?? 0, threads: 4)
+                }
+            }
+            // Five ended, five started: a Mac's 2–3 a second.
+            for pid in churned.prefix(5) { kernel.remove(pid) }
+            churned = Array(churned.dropFirst(5)) + fakeChurn(kernel, under: pids.first ?? 1, round: 400 + round, count: 5)
+            guard let snapshot = sampler.tickNow(ActivityDemand(.full), context: context) else { continue }
+            last = snapshot
+            var options = ActivityRows.Options()
+            options.grouping = .checkout
+            options.context = context
+            options.marksNew = shown != nil
+            if let shown {
+                options.previous = shown.processes
+                options.shownAt = shown.madeAt
+            }
+            let start = CACurrentMediaTime()
+            var content = ActivityRows.content(of: snapshot, options)
+            let took = (CACurrentMediaTime() - start) * 1000
+            let idsStart = CACurrentMediaTime()
+            content.shownIDs = ActivityRows.shownIDs(content)
+            let idsTook = (CACurrentMediaTime() - idsStart) * 1000
+            if let shown {
+                let heldStart = CACurrentMediaTime()
+                _ = ActivityRows.held(shown, content)
+                held.append((CACurrentMediaTime() - heldStart) * 1000)
+            }
+            if round == 0 {
+                cold = took
+            } else {
+                steady.append(took)
+                shownIDs.append(idsTook)
+                let cost = content.cost
+                parts.append(
+                    CrowdedParts(
+                        attribution: milliseconds(cost.attribution), rows: milliseconds(cost.rows), list: milliseconds(cost.list),
+                        ports: milliseconds(cost.ports), summary: milliseconds(cost.summary)))
+            }
+            shown = content
+        }
+        for pid in churned { kernel.remove(pid) }
+        return (steady, parts, shownIDs, held, cold, last)
+    }
+
+    /// A crowded build's parts, ms.
+    struct CrowdedParts {
+        let attribution: Double
+        let rows: Double
+        let list: Double
+        let ports: Double
+        let summary: Double
+    }
+
+    /// ns as ms.
+    static func milliseconds(_ nanoseconds: UInt64) -> Double { Double(nanoseconds) / 1_000_000 }
 
     /// The 90th percentile of `samples`, 0 for none.
     static func p90(_ samples: [Double]) -> Double {
