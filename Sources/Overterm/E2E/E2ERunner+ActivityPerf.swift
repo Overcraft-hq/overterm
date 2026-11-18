@@ -362,9 +362,13 @@ extension E2ERunner {
         note("activityPerf: a publish's main-thread CPU \(Self.summary(shownMain)), p90 \(p90(Self.p90(shownMain))); held \(Self.summary(heldMain))")
         note("activityPerf: a selected row's verbs listed on the main thread \(verbs); its process read off it among 5,000, every owner \(subject)")
         note("activityPerf: a selected agent's detail, its charts made off the main thread: on it \(detail), p90 \(p90(Self.p90(detailCost)))")
-        // 10.4's 15 ms isn't met yet — the owners' cost, open (design 15):
-        // the gate holds what is, so it can only get better.
-        check("5,000 processes' rows are made in under 60 ms (median)", !crowdedRows.isEmpty && crowd.median < 60, "\(crowd)")
+        // 10.4's 15 ms, a tick after the last: 11.6 ms median, 12.2 p90
+        // measured (design 15). The first build, nothing before it and
+        // the caches it fills empty, 40 ms: gated at what it costs.
+        check(
+            "5,000 processes' rows are made a tick after the last in under 15 ms (median, 30 ticks)",
+            crowdedRows.count == 30 && crowd.median < 15, "\(crowd), p90 \(p90(Self.p90(crowdedRows)))")
+        check("…the first build in under 50 ms", crowdedTicks.cold > 0 && crowdedTicks.cold < 50, p90(crowdedTicks.cold))
         check("the census's own CPU a tick stays under 50 ms (median)", census.median < 50, "\(census)")
         check("the light tick's CPU is read (12 ticks)", lightCPU.count == 12, "\(lightCPU.count)")
         note(
@@ -426,7 +430,8 @@ extension E2ERunner {
         // 7.7: the main thread's part of a publish ≤ 4 ms — the verbs' list
         // is all of theirs that stays on it.
         check("a selected row's verbs are listed on the main thread in under 4 ms (median)", !verbsListed.isEmpty && verbs.median < 4, "\(verbs)")
-        check("its process is read among 5,000 off the main thread in under 100 ms (median)", !crowdedSubject.isEmpty && subject.median < 100, "\(subject)")
+        // 3.9 ms measured (design 15).
+        check("its process is read among 5,000 off the main thread in under 15 ms (median)", !crowdedSubject.isEmpty && subject.median < 15, "\(subject)")
         check(
             "a selected agent's detail takes the main thread under 4 ms a publish (p90)", detailCost.count == 12 && Self.p90(detailCost) < 4,
             "\(detail)")
