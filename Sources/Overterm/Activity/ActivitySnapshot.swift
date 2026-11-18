@@ -179,6 +179,9 @@ struct ActivityTickCost: Hashable, Sendable {
     var usageRead = 0
     /// Processes whose sockets were walked this tick.
     var socketsRead = 0
+    /// New processes of a burst in a pane left for the next tick, unread
+    /// (`ActivitySampler.Limits.lightNewPerPane`).
+    var deferred = 0
     /// Merging the tick into the history, ns of the Mac's own clock
     /// (`CLOCK_UPTIME_RAW`, a fake kernel's too: the work itself) (6.11).
     var history: UInt64 = 0

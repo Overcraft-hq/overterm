@@ -386,6 +386,89 @@ final class ActivitySamplerTests: XCTestCase {
         XCTAssertEqual(timed.unread, 75)
     }
 
+    /// A burst at the light level (7.3): of the processes a pane's tree
+    /// started since the last tick, 16 are read at once, depth first, the
+    /// oldest child first; the rest wait a tick — named from `p_comm`,
+    /// their usage read — and are read then if they still run. A session's
+    /// or the terminal's foreground group's leader and an agent by name are
+    /// read at once past the allowance; the full level reads them all.
+    func testALightTickReadsABurstOneTickLater() throws {
+        appAndLaunchd()
+        let tab = UUID()
+        let left = pane("pane-a", login: 1100, tab: tab)
+        let context = ActivityContext(panes: [left], appPID: app)
+        let sampler = sampler()
+        let light = ActivityDemand(.light(tabs: nil))
+        _ = try tick(sampler, light, context)
+        var burst: [ActivityProcessID] = []
+        for index in 0..<40 { burst.append(add(pid_t(4000 + index), parent: 1101, name: "cc\(index)", words: ["cc", "-c", "f\(index).c"])) }
+        // Past the allowance: the foreground job's leader, a shell, an agent.
+        let leader = add(4100, parent: 1101, name: "acme-job", words: ["acme-job", "--watch"])
+        kernel.update(4100) { process in
+            process.record = FakeActivityKernel.record(pid: 4100, start: 4_100_000, parent: 1101, group: 4100, terminal: 7, name: "acme-job")
+        }
+        let shell = add(4101, parent: 1101, name: "zsh", words: ["-zsh"])
+        kernel.update(4101) { process in
+            process.record = FakeActivityKernel.record(pid: 4101, start: 4_101_000, parent: 1101, flags: .sessionLeader, name: "zsh")
+        }
+        let agent = add(4102, parent: 1101, name: "claude", words: ["claude", "--resume"])
+        let first = try tick(sampler, light, context)
+        XCTAssertEqual(first.cost.commandsRead, 19, "16 of the burst, and the three that never wait")
+        XCTAssertEqual(first.cost.deferred, 24)
+        XCTAssertEqual(first.unread, 24)
+        XCTAssertTrue(burst.prefix(16).allSatisfy { first.facts[$0]?.isRead == true }, "the oldest first")
+        let waiting = try XCTUnwrap(first.facts[burst[39]])
+        XCTAssertFalse(waiting.isRead)
+        XCTAssertEqual(waiting.name, "cc39", "named from p_comm meanwhile")
+        XCTAssertNil(waiting.command)
+        XCTAssertNotNil(waiting.usage, "its usage read all the same")
+        XCTAssertEqual(first.pane("pane-a")?.tree.contains(burst[39]), true, "still the pane's")
+        XCTAssertEqual(first.facts[leader]?.command, "acme-job --watch")
+        XCTAssertEqual(first.facts[shell]?.isRead, true)
+        XCTAssertEqual(first.facts[agent]?.command, "claude --resume")
+        XCTAssertEqual(first.pane("pane-a")?.agentKind, .claude)
+
+        // The next tick: what still runs is read; what ended never was.
+        for index in 30..<40 { kernel.remove(pid_t(4000 + index)) }
+        let arguments = kernel.count("arguments")
+        let second = try tick(sampler, light, context)
+        XCTAssertEqual(second.unread, 0)
+        XCTAssertEqual(second.cost.deferred, 0)
+        XCTAssertEqual(second.cost.commandsRead, 14)
+        XCTAssertTrue(burst[16..<30].allSatisfy { second.facts[$0]?.command?.hasPrefix("cc -c f") == true })
+        XCTAssertGreaterThan(kernel.count("arguments"), arguments)
+
+        // The full level reads a burst whole.
+        for index in 0..<40 { add(pid_t(4200 + index), parent: 1101, name: "ld\(index)") }
+        let full = try tick(sampler, ActivityDemand(.full), context)
+        XCTAssertEqual(full.cost.deferred, 0)
+        XCTAssertTrue((0..<40).allSatisfy { full.facts[ActivityProcessID(pid: pid_t(4200 + $0), start: UInt64(4200 + $0) * 1_000)]?.isRead == true })
+    }
+
+    /// A lookup reads a burst's waiting processes in the same call: its
+    /// next round finds them a tick old. After a gap longer than a rate
+    /// spans, nothing waits: what is new then has run a while.
+    func testALookupAndAGapReadABurstAtOnce() throws {
+        appAndLaunchd()
+        let tab = UUID()
+        let left = pane("pane-a", login: 1100, tab: tab)
+        let context = ActivityContext(panes: [left], appPID: app)
+        let sampler = sampler()
+        let light = ActivityDemand(.light(tabs: nil))
+        _ = try tick(sampler, light, context)
+        var burst: [ActivityProcessID] = []
+        for index in 0..<40 { burst.append(add(pid_t(4000 + index), parent: 1101, name: "cc\(index)")) }
+        let found = try XCTUnwrap(sampler.lookup(within: 0, demand: light, context: context) { _ in false })
+        XCTAssertEqual(found.unread, 0)
+        XCTAssertTrue(burst.allSatisfy { found.facts[$0]?.isRead == true }, "read in the one call")
+
+        for index in 0..<40 { add(pid_t(4300 + index), parent: 1101, name: "ld\(index)") }
+        kernel.advance(ProcessUsage.maximumInterval + second)
+        let late = try tick(sampler, light, context)
+        XCTAssertEqual(late.cost.deferred, 0)
+        XCTAssertEqual(late.unread, 0)
+    }
+
     /// `isRead` tells a read still to come from one that failed: a process
     /// of the user's whose markers alone the light level read is named
     /// from its path, its argv waiting for the churn budget — not read

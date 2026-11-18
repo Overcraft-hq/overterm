@@ -26,7 +26,13 @@ import Foundation
 ///   (140 µs on average here, 0.7 ms for an Electron helper's line) — the
 ///   level's own processes first — what carries a read pane's tag, once
 ///   the tag is known, among them — then the oldest; the rest are named
-///   from `p_comm` until a later tick (`ActivitySnapshot.unread`).
+///   from `p_comm` until a later tick (`ActivitySnapshot.unread`). At the
+///   light level a read pane's tree reads at most
+///   `Limits.lightNewPerPane` processes started since the last tick: the
+///   rest of a burst — a build's compilers, most gone within a tick —
+///   wait a tick, so one that ends first is never read; a session's or a
+///   terminal's foreground group's leader, and an agent by `p_comm`,
+///   never wait.
 /// - **Working folders** are asked at most `Limits.foldersPerTick` a tick,
 ///   the panes' agents' first, and never waited for (`ProcessFolders`).
 /// - **The cache** holds at most `Limits.cacheLimit` identities. Ended ones
@@ -63,6 +69,10 @@ final class ActivitySampler: @unchecked Sendable {
         /// Working folders asked of the file system a tick (7.2): the panes'
         /// agents' first, the rest at a later tick.
         var foldersPerTick = 200
+        /// Processes started since the last tick that a read pane's tree
+        /// reads at once at the light level, a tick (7.3): the rest of a
+        /// burst a tick later, if they still run.
+        var lightNewPerPane = 16
 
         init() {}
     }
@@ -87,6 +97,10 @@ final class ActivitySampler: @unchecked Sendable {
     /// the difference (`SystemMeters.from`) — none after a gap longer than
     /// `Limits.baselineAge`, as for a process's rates (6.11).
     private var lastMeters: (counters: SystemMeterCounters, time: UInt64)?
+    /// The table's identities at the last tick, and when it was read: one
+    /// not among them started since (`Limits.lightNewPerPane`).
+    private var lastLive: Set<ActivityProcessID> = []
+    private var lastLiveTime: UInt64 = 0
 
     private let flight = NSLock()
     /// A tick is submitted and not yet done: under `flight`.
@@ -306,6 +320,12 @@ final class ActivitySampler: @unchecked Sendable {
         // what this tick doesn't read.
         let live = Set(table.processes.map(\.identity))
         forget(keeping: live)
+        // Started since the last tick, at the light level: only when that
+        // tick is recent — after a gap, what is new has run a while.
+        let previous = lastLive
+        let settles = !demand.full && !previous.isEmpty && now >= lastLiveTime && now - lastLiveTime <= limits.baselineAge
+        lastLive = live
+        lastLiveTime = now
         // An exec keeps the identity and changes p_comm: read it again.
         for process in table.processes {
             if let entry = known[process.identity], entry.comm != process.shortName { known[process.identity] = nil }
@@ -340,8 +360,21 @@ final class ActivitySampler: @unchecked Sendable {
         var first: [ActivityProcess] = focus
         var queued = Set(focus.map(\.identity))
         for pane in read {
+            var started = 0
             for identity in trees[pane.tag] ?? [] where queued.insert(identity).inserted {
-                if let process = table.process(identity) { first.append(process) }
+                guard let process = table.process(identity) else { continue }
+                // Past the pane's allowance, a burst's newest wait a tick,
+                // named from `p_comm` meanwhile; depth first, the oldest
+                // child first, so the job that started them is read.
+                if settles, known[identity] == nil, !previous.contains(identity), !Self.readsAtOnce(process) {
+                    started += 1
+                    if started > limits.lightNewPerPane {
+                        unread.insert(identity)
+                        cost.deferred += 1
+                        continue
+                    }
+                }
+                first.append(process)
             }
         }
         for identity in helpers where queued.insert(identity).inserted {
@@ -643,6 +676,14 @@ final class ActivitySampler: @unchecked Sendable {
             return procName
         }
         return file ?? comm
+    }
+
+    /// Whether a new process in a pane is read at its first light tick,
+    /// whatever the burst: a session's leader (a shell), its terminal's
+    /// foreground group's leader (the job a person ran: `claude`, `make`,
+    /// `ssh`), an agent by `p_comm`.
+    private static func readsAtOnce(_ process: ActivityProcess) -> Bool {
+        process.flags.contains(.sessionLeader) || process.terminalGroup == process.pid || Agent(rawValue: process.shortName) != nil
     }
 
     /// The agent `process` is, by its name or argv[0]'s file.
