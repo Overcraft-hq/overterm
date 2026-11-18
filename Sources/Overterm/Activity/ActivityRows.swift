@@ -1166,7 +1166,11 @@ enum ActivityRows {
 
     /// A CPU share as the page writes it: one decimal, a dot whatever the
     /// locale (`Text(verbatim:)` draws it).
-    static func percent(_ value: Double) -> String { String(format: "%.1f", locale: Locale(identifier: "en_US_POSIX"), value) }
+    static func percent(_ value: Double) -> String { String(format: "%.1f", locale: posix, value) }
+
+    /// The locale every number on the page is written in, made once: a
+    /// `Locale(identifier:)` a cell was most of what writing it cost.
+    static let posix = Locale(identifier: "en_US_POSIX")
 
     /// A footprint in Activity Monitor's units.
     static func bytes(_ value: UInt64) -> String {
@@ -1178,7 +1182,7 @@ enum ActivityRows {
             unit += 1
         }
         let format = unit == 0 || amount >= 100 ? "%.0f %@" : "%.1f %@"
-        return String(format: format, locale: Locale(identifier: "en_US_POSIX"), amount, units[unit])
+        return String(format: format, locale: posix, amount, units[unit])
     }
 
     private static let users = NSLock()

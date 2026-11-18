@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 /// The Activity page's list (docs/design/activity/analysis.md, 6.4, 7.7):
@@ -48,6 +49,7 @@ struct ActivityListView: View, Equatable {
                 table.order = shown.order
                 table.index = { shown.index[$0] }
                 table.uniformHeight = true
+                table.plainCell = { [theme] row, column in ActivityCells.plain(row, column.id).map { Self.value($0, theme: theme) } }
             }
             if !list.hasRead {
                 VStack(spacing: 8) {
@@ -104,9 +106,7 @@ struct ActivityListView: View, Equatable {
                     text(row.title, theme.text2)
                 }
                 .help(row.detail.isEmpty ? "A container: its processes run inside Docker’s VM" : row.detail)
-            case "cpu": number(row.cpu.map(ActivityRows.percent) ?? "—", (row.cpu ?? 0) >= 50 ? TabStatusStyle.signal : theme.text2)
-            case "memory": number(row.memory.map(ActivityRows.bytes) ?? "—")
-            default: EmptyView()
+            default: EmptyView()  // `ActivityCells`' AppKit text
             }
         } else {
             HStack(spacing: 6) {
@@ -200,42 +200,9 @@ struct ActivityListView: View, Equatable {
             .padding(.horizontal, 6)
             .clipped()
             .help(row.owner?.reason ?? "")
-        case "pid":
-            number("\(row.identity.pid)")
-        case "cpu":
-            number(row.cpu.map(ActivityRows.percent) ?? "—", (row.cpu ?? 0) >= 50 ? TabStatusStyle.signal : theme.text2)
-        case "memory":
-            number(row.memory.map(ActivityRows.bytes) ?? "—")
-        case "threads":
-            number(row.threads.map { "\($0)" } ?? "—")
-        case "state":
-            text(row.state.letter, row.state == .stopped || row.state == .zombie ? TabStatusStyle.signal : theme.text2)
-        case "started":
-            number(row.startedText)
-        case "user":
-            text(row.user, theme.text3)
-        case "listening":
-            text(ActivityPageView.ports(row.listening), theme.text2)
-        case "where":
-            text(row.whereText, theme.text2)
-        case "rss": number(row.residentSize.map(ActivityRows.bytes) ?? "—")
-        case "time": number(row.cpuTime.map(ActivityDetail.duration) ?? "—")
-        case "nice": number("\(row.nice)")
-        case "priority": number(row.priority.map { "\($0)" } ?? "—")
-        case "ppid": number("\(row.parentPID)")
-        case "pgid": number("\(row.group)")
-        case "tty": text(row.terminal ?? "", theme.text3)
-        case "kind": text(row.translated ? "Intel" : "Apple", theme.text3)
-        case "path": text(row.path ?? "", theme.text3)
-        case "command": text(row.command ?? "", theme.text2)
         case "cpu15": strip(row)
-        case "energy": number(ActivityPageView.rate(row.energy, unit: "W"))
-        case "wakeups": number(row.idleWakeups.map { String(format: "%.0f", locale: Locale(identifier: "en_US_POSIX"), $0) } ?? "—")
-        case "diskRead": number(ActivityPageView.rate(row.diskRead, unit: "B/s"))
-        case "diskWritten": number(ActivityPageView.rate(row.diskWritten, unit: "B/s"))
-        case "sleep": text(row.sleepHold.map { $0.isEmpty ? "No" : $0.text } ?? "—", row.sleepHold?.isEmpty == false ? theme.text : theme.text3)
         default:
-            EmptyView()
+            EmptyView()  // `ActivityCells`' AppKit text
         }
     }
 
@@ -250,34 +217,8 @@ struct ActivityListView: View, Equatable {
             .padding(.horizontal, 6)
             .frame(maxWidth: .infinity, alignment: .leading)
             .help("Listeners of your apps on ports in the ephemeral range: rarely ones you start. A filter shows them too.")
-        } else {
-            switch column {
-            case "port":
-                if row.kind == .unix {
-                    text((row.address as NSString).abbreviatingWithTildeInPath, theme.text).help(row.address)
-                } else {
-                    number(row.kind == .connection ? "→ :\(row.port)" : ":\(row.port)", row.kind == .connection ? theme.text2 : theme.text)
-                }
-            case "proto": text(row.proto, theme.text2)
-            case "address":
-                text(row.reach, row.scope == .thisMac && row.forwardedBy == nil ? theme.text2 : TabStatusStyle.signal)
-                    .help(row.scope == .network ? "Anything that can route to this Mac reaches it — over IPv6 that may be the internet" : "")
-            case "families": text(row.familyWords, theme.text3)
-            case "owner": text(row.ownerText, row.portOwner == .pane ? theme.text2 : theme.text)
-            case "process": text(row.processText, row.kind == .connection ? theme.text2 : theme.text)
-            case "pid": number(row.holder.map { "\($0.pid)" } ?? "")
-            case "where": text(row.whereText, theme.text2)
-            case "clients": number(row.kind == .listener && row.clients > 0 ? "\(row.clients)" : "")
-            case "note":
-                text(row.note ?? "", row.collisions.isEmpty ? theme.text3 : TabStatusStyle.signal).help(row.note ?? "")
-            case "since": text(row.sinceText, theme.text2)
-            case "backlog":
-                text(
-                    row.backlogLimit > 0 ? (row.backlogFull ? "full — not accepting" : "\(row.backlog) of \(row.backlogLimit)") : "",
-                    row.backlogFull ? TabStatusStyle.signal : theme.text3)
-            default: EmptyView()
-            }
         }
+        // Every other port cell is `ActivityCells`' AppKit text.
     }
 
     private func text(_ value: String, _ color: Color) -> some View {
@@ -285,8 +226,20 @@ struct ActivityListView: View, Equatable {
             .frame(maxWidth: .infinity, alignment: .leading).padding(.horizontal, 6)
     }
 
-    private func number(_ value: String, _ color: Color? = nil) -> some View {
-        Text(verbatim: value).font(.system(size: ChromeMetrics.text(12), design: .monospaced)).foregroundStyle(color ?? theme.text2).lineLimit(1)
-            .frame(maxWidth: .infinity, alignment: .trailing).padding(.horizontal, 6)
+    /// A plain cell's words as the table draws them: its tint the theme's.
+    static func value(_ cell: ActivityCellText, theme: ChromeTheme) -> ResourceTextCellValue {
+        let color: NSColor =
+            switch cell.tint {
+            case .text: theme.textNS
+            case .text2: theme.text2NS
+            case .text3: theme.text3NS
+            case .signal: TabStatusStyle.signalNS
+            }
+        return ResourceTextCellValue(
+            text: cell.text, color: color, size: ChromeMetrics.text(12), number: cell.number, help: cell.help, alpha: cell.ended ? 0.45 : 1,
+            ground: cell.isNew ? newGround : nil)
     }
+
+    /// A new row's tint (6.7), as `processCell`'s.
+    private static let newGround = TabStatusStyle.doneNS.withAlphaComponent(0.14)
 }

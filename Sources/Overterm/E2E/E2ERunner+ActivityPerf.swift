@@ -515,6 +515,13 @@ extension E2ERunner {
         check(
             "held, steady or with an agent selected, each publish updates the table once", once,
             ["held", "steady", "agent"].map { "\($0) \(touched[$0]?.map(\.updates) ?? [])" }.joined(separator: "; "))
+        // 7.7: the plain columns are AppKit text, a hosting view only for a
+        // row's name and its strip — at most two a row on screen a publish.
+        let shownTouches = touched["shown"] ?? []
+        check(
+            "a publish hands at most two hosted cells a row on screen",
+            shownTouches.count >= 12 && shownTouches.allSatisfy { $0.shows <= 2 * max($0.visible, 1) },
+            "\(shownTouches.map(\.shows)) for \(shownTouches.last?.visible ?? 0) rows")
         check("the list scrolls in under 35 ms a step (p95)", !scrolled.isEmpty && scroll.p95 < 35, "\(scroll)")
         // 7.7: the main thread's part of a publish ≤ 4 ms — the verbs' list
         // is all of theirs that stays on it.
@@ -803,34 +810,45 @@ extension E2ERunner {
     /// What a publish touched of a `ResourceTableView` (7.7), counted by it.
     struct TableTouch {
         var updates: Int
+        /// Hosted cells handed their row; those whose key kept them; AppKit
+        /// text cells drawn again; those left as they were.
         var shows: Int
+        var hostedSkips = 0
+        var plainShows = 0
+        var plainSkips = 0
         var reorders: Int
         var made: Int
         var visible: Int
 
-        init(updates: Int, shows: Int, reorders: Int, made: Int, visible: Int) {
-            self.updates = updates
-            self.shows = shows
-            self.reorders = reorders
-            self.made = made
-            self.visible = visible
-        }
-
         @MainActor init(_ table: ResourceTableView) {
-            self.init(
-                updates: table.updates, shows: table.hostedShows, reorders: table.reorders, made: table.madeRowsLastUpdate,
-                visible: table.visibleRowsLastUpdate)
+            updates = table.updates
+            shows = table.hostedShows
+            hostedSkips = table.hostedSkips
+            plainShows = table.plainShows
+            plainSkips = table.plainSkips
+            reorders = table.reorders
+            made = table.madeRowsLastUpdate
+            visible = table.visibleRowsLastUpdate
         }
 
         /// The counts since `before`; the rows as the last update found them.
         func since(_ before: TableTouch) -> TableTouch {
-            TableTouch(updates: updates - before.updates, shows: shows - before.shows, reorders: reorders - before.reorders, made: made, visible: visible)
+            var touch = self
+            touch.updates -= before.updates
+            touch.shows -= before.shows
+            touch.hostedSkips -= before.hostedSkips
+            touch.plainShows -= before.plainShows
+            touch.plainSkips -= before.plainSkips
+            touch.reorders -= before.reorders
+            return touch
         }
 
-        /// "updates [1, 1…], cells shown [168…], reorders N, rows made 30 of 28 on screen".
+        /// "updates [1, 1…], hosted cells shown [70…] (kept [0…]), text cells
+        /// drawn [280…] (kept [35…]), reorders N, rows made 30 of 28 on screen".
         static func said(_ touches: [TableTouch]) -> String {
             guard let last = touches.last else { return "none" }
-            return "updates a publish \(touches.map(\.updates)), cells shown \(touches.map(\.shows)), reorders \(touches.map(\.reorders).reduce(0, +)), "
+            return "updates a publish \(touches.map(\.updates)), hosted cells shown \(touches.map(\.shows)) (kept \(touches.map(\.hostedSkips))), "
+                + "text cells drawn \(touches.map(\.plainShows)) (kept \(touches.map(\.plainSkips))), reorders \(touches.map(\.reorders).reduce(0, +)), "
                 + "rows with a view \(last.made) of \(last.visible) on screen"
         }
     }

@@ -432,7 +432,7 @@ struct ActivityPageView: View {
     static func rate(_ value: Double?, unit: String) -> String {
         guard let value else { return "—" }
         if unit == "B/s" { return ActivityRows.bytes(UInt64(max(value, 0).rounded())) + "/s" }
-        return String(format: value >= 100 ? "%.0f %@" : "%.1f %@", locale: Locale(identifier: "en_US_POSIX"), value, unit)
+        return String(format: value >= 100 ? "%.0f %@" : "%.1f %@", locale: ActivityRows.posix, value, unit)
     }
 
 
