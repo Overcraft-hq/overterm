@@ -104,7 +104,7 @@ extension E2ERunner {
         }
         check(
             "fifteen minutes of history: a strip each of the user's, 60 cells read",
-            lastHistory.keyCount >= pids.count && (lastHistory.cpuStrip(.process(ActivityProcessID(pid: pids[0], start: UInt64(pids[0]) * 1_000 + 1)))?.allSatisfy { $0 != nil } ?? false),
+            lastHistory.keyCount >= pids.count && (lastHistory.cpuStrip(.process(ActivityProcessID(pid: pids[0], start: Self.fakeStart(pids[0]))))?.allSatisfy { $0 != nil } ?? false),
             "\(lastHistory.keyCount) keys")
         _ = await eventually(10) {
             page.content.list.contains { item in
@@ -177,7 +177,7 @@ extension E2ERunner {
         let light = ActivitySampler(kernel: kernel)
         let panes = stride(from: 0, to: min(pids.count, 64), by: 8).map { index in
             ActivityContext.Pane(
-                tag: "fake-pane-\(index)", tab: UUID(), login: ActivityProcessID(pid: pids[index], start: UInt64(pids[index]) * 1_000 + 1))
+                tag: "fake-pane-\(index)", tab: UUID(), login: ActivityProcessID(pid: pids[index], start: Self.fakeStart(pids[index])))
         }
         let lightContext = ActivityContext(panes: panes, appPID: 0)
         for round in 0..<13 {
@@ -294,31 +294,39 @@ extension E2ERunner {
         // 5,000 processes, as a crowded Mac (10.4 proposed 15 ms a build).
         let crowded = FakeActivityKernel(uid: 501)
         var crowdedPIDs: [pid_t] = []
-        Self.fakeMac(crowded, count: 5_000, pids: &crowdedPIDs)
+        Self.fakeMac(crowded, count: 5_000, boot: Self.crowdedBoot, pids: &crowdedPIDs)
+        // Its panes, as the page's context and tabs have them.
+        let crowdedPanes = Self.crowdedPanes(crowded, pids: &crowdedPIDs)
         let sampler = ActivitySampler(kernel: crowded)
         // Read whole first: the churn budget reads 200 new identities a tick.
         for _ in 0..<60 {
             crowded.advance(1_000_000_000)
-            guard let read = sampler.tickNow(ActivityDemand(.full), context: ActivityContext()), read.unread > 0 else { break }
+            guard let read = sampler.tickNow(ActivityDemand(.full), context: crowdedPanes.context), read.unread > 0 else { break }
         }
         // The crowded Mac's fifteen minutes: the ring at its fullest.
         var crowdedMerged: [Double] = []
         var crowdedHistory = ActivityRing()
         for _ in 0..<450 {
             crowded.advance(2_000_000_000)
-            guard let snapshot = sampler.tickNow(ActivityDemand(.full), context: ActivityContext()) else { continue }
+            guard let snapshot = sampler.tickNow(ActivityDemand(.full), context: crowdedPanes.context) else { continue }
             crowdedMerged.append(Self.milliseconds(snapshot.cost.history))
             crowdedHistory = snapshot.history
         }
         // Its rows, a tick after the last, over those fifteen minutes.
-        let crowdedTicks = Self.crowdedTicks(crowded, sampler: sampler, pids: crowdedPIDs)
+        let crowdedTicks = Self.crowdedTicks(crowded, sampler: sampler, pids: crowdedPIDs, panes: crowdedPanes)
         let crowdedRows = crowdedTicks.steady
+        check(
+            "the crowded Mac's six panes own their processes, each one's worker by its tag", crowdedTicks.inPanes >= 36,
+            "\(crowdedTicks.inPanes) rows")
         // A selection made between two publishes: its process read with
         // every owner, off the main thread.
         var crowdedSubject: [Double] = []
         if let snapshot = crowdedTicks.last, let identity = snapshot.table.processes.last?.identity {
             var options = ActivityRows.Options()
             options.grouping = .checkout
+            options.context = crowdedPanes.context
+            options.tabs = crowdedPanes.tabs
+            options.checkouts = crowdedPanes.checkouts
             for _ in 0..<7 {
                 let start = CACurrentMediaTime()
                 _ = ActivityRows.subject(identity, of: snapshot, options, attribution: nil)
@@ -439,34 +447,69 @@ extension E2ERunner {
 
     /// An agent's pane on the fake Mac: `login` (root's), `zsh`, Claude
     /// Code (`node` with `claude` in its argv) and three helpers under it,
-    /// each burning with the rest (`pids`).
-    static func fakeAgent(_ kernel: FakeActivityKernel, pids: inout [pid_t]) -> (login: ActivityProcessID, agent: ActivityProcessID) {
-        func add(_ pid: pid_t, parent: pid_t, uid: uid_t, name: String, words: [String]) -> ActivityProcessID {
-            let start = UInt64(pid) * 1_000 + 1
-            var process = FakeActivityKernel.Process(record: FakeActivityKernel.record(pid: pid, start: start, parent: parent, uid: uid, name: name))
+    /// each burning with the rest (`pids`), its pids from `base`. With a
+    /// `tag`, a worker started in it that left its terminal (nohup'd,
+    /// launchd's child) carrying the pane's tag.
+    static func fakeAgent(_ kernel: FakeActivityKernel, base: pid_t = 90_000, tag: String? = nil, pids: inout [pid_t]) -> (
+        login: ActivityProcessID, agent: ActivityProcessID
+    ) {
+        func add(_ pid: pid_t, parent: pid_t, uid: uid_t, name: String, words: [String], environment: [String] = [], nohup: Bool = false)
+            -> ActivityProcessID
+        {
+            let start = fakeStart(pid)
+            var process = FakeActivityKernel.Process(
+                record: FakeActivityKernel.record(
+                    pid: pid, start: start, parent: parent, uid: uid, ignoredSignals: nohup ? UInt32(1) << UInt32(SIGHUP - 1) : 0, name: name))
             process.name = name
             process.path = "/opt/fake/bin/\(name)"
             process.codeSigning = ActivityCodeSigning(flags: ActivityCodeSigning.valid)
             if uid != 0 {
                 process.usage = FakeActivityKernel.usage(cpuTime: 0, footprint: 64 << 20, threads: 4)
-                process.arguments = FakeActivityKernel.arguments(executable: "/opt/fake/bin/\(name)", words)
+                process.arguments = FakeActivityKernel.arguments(executable: "/opt/fake/bin/\(name)", words, environment: environment)
                 pids.append(pid)
             }
             kernel.add(process)
             return ActivityProcessID(pid: pid, start: start)
         }
-        let login = add(90_000, parent: 1, uid: 0, name: "login", words: ["login"])
-        _ = add(90_001, parent: 90_000, uid: 501, name: "zsh", words: ["-zsh"])
-        let agent = add(90_002, parent: 90_001, uid: 501, name: "node", words: ["claude"])
-        for child in 0..<3 { _ = add(90_003 + pid_t(child), parent: 90_002, uid: 501, name: "fake-mcp-\(child)", words: ["fake-mcp-\(child)"]) }
+        let login = add(base, parent: 1, uid: 0, name: "login", words: ["login"])
+        _ = add(base + 1, parent: base, uid: 501, name: "zsh", words: ["-zsh"])
+        let agent = add(base + 2, parent: base + 1, uid: 501, name: "node", words: ["claude"])
+        for child in 0..<3 { _ = add(base + 3 + pid_t(child), parent: base + 2, uid: 501, name: "fake-mcp-\(child)", words: ["fake-mcp-\(child)"]) }
+        if let tag {
+            _ = add(base + 6, parent: 1, uid: 501, name: "fake-worker", words: ["fake-worker"], environment: ["OVERTERM_TAB_ID=\(tag)"], nohup: true)
+        }
         return (login, agent)
+    }
+
+    /// The crowded Mac's panes as the page's context has them (10.4): six
+    /// agents' panes over three checkouts, two tabs each, every pane's
+    /// worker left its terminal with the pane's tag — the owners' pane
+    /// path, `ActivityPaneSet` and checkout grouping over real tabs.
+    static func crowdedPanes(_ kernel: FakeActivityKernel, pids: inout [pid_t]) -> (
+        context: ActivityContext, tabs: [UUID: ActivityTabFacts], checkouts: [String]
+    ) {
+        let checkouts = (0..<3).map { "/Users/fake/src/fake-repo-\($0)" }
+        var panes: [ActivityContext.Pane] = []
+        var tabs: [UUID: ActivityTabFacts] = [:]
+        for index in 0..<6 {
+            let tag = "fake-crowded-pane-\(index)"
+            let tab = UUID()
+            let checkout = checkouts[index % 3]
+            let (login, _) = fakeAgent(kernel, base: 91_000 + pid_t(index) * 100, tag: tag, pids: &pids)
+            panes.append(
+                ActivityContext.Pane(tag: tag, tab: tab, login: login, title: "fake-\(index)", checkout: checkout, branch: "fake-branch", agent: .claude))
+            tabs[tab] = ActivityTabFacts(
+                id: tab, title: "fake-\(index)", checkout: checkout, branch: "fake-branch", repository: "fake-repo-\(index % 3)", order: index,
+                agent: .claude)
+        }
+        return (ActivityContext(panes: panes, appPID: 0), tabs, checkouts)
     }
 
     /// A child of `parent` holding `count` TCP sockets, connected ones
     /// and a listener (10.4): its identity.
     static func fakeSockets(_ kernel: FakeActivityKernel, under parent: pid_t, count: Int) -> ActivityProcessID {
         let pid: pid_t = 95_000
-        let start = UInt64(pid) * 1_000 + 1
+        let start = fakeStart(pid)
         var process = FakeActivityKernel.Process(record: FakeActivityKernel.record(pid: pid, start: start, parent: parent, uid: 501, name: "fake-sockets"))
         process.name = "fake-sockets"
         process.path = "/opt/fake/bin/fake-sockets"
@@ -492,7 +535,7 @@ extension E2ERunner {
     static func fakeChurn(_ kernel: FakeActivityKernel, under parent: pid_t, round: Int, count: Int) -> [pid_t] {
         (0..<count).map { index in
             let pid = pid_t(100_000 + round * count + index)
-            let start = UInt64(pid) * 1_000 + 1
+            let start = fakeStart(pid)
             var process = FakeActivityKernel.Process(record: FakeActivityKernel.record(pid: pid, start: start, parent: parent, uid: 501, name: "fake-cc"))
             process.name = "fake-cc"
             process.path = "/opt/fake/bin/fake-cc"
@@ -509,12 +552,14 @@ extension E2ERunner {
     /// five processes and starts five; each build is given the rows before
     /// it (`previous`, `marksNew`, `shownAt`) as `rebuild` gives them, and
     /// the ids kept and a held tick's merge are timed as `make` runs them.
-    /// The first build, with nothing before it, apart.
-    static func crowdedTicks(_ kernel: FakeActivityKernel, sampler: ActivitySampler, pids: [pid_t])
-        -> (steady: [Double], parts: [CrowdedParts], shownIDs: [Double], held: [Double], cold: Double, last: ActivitySnapshot?)
-    {
+    /// The first build, with nothing before it, apart. `panes`: the
+    /// context and tabs the page gives its builds (`crowdedPanes`).
+    static func crowdedTicks(
+        _ kernel: FakeActivityKernel, sampler: ActivitySampler, pids: [pid_t],
+        panes: (context: ActivityContext, tabs: [UUID: ActivityTabFacts], checkouts: [String])
+    ) -> (steady: [Double], parts: [CrowdedParts], shownIDs: [Double], held: [Double], cold: Double, last: ActivitySnapshot?, inPanes: Int) {
         var random = SystemRandomNumberGenerator()
-        let context = ActivityContext()
+        let context = panes.context
         var steady: [Double] = []
         var parts: [CrowdedParts] = []
         var shownIDs: [Double] = []
@@ -539,6 +584,8 @@ extension E2ERunner {
             var options = ActivityRows.Options()
             options.grouping = .checkout
             options.context = context
+            options.tabs = panes.tabs
+            options.checkouts = panes.checkouts
             options.marksNew = shown != nil
             if let shown {
                 options.previous = shown.processes
@@ -569,7 +616,11 @@ extension E2ERunner {
             shown = content
         }
         for pid in churned { kernel.remove(pid) }
-        return (steady, parts, shownIDs, held, cold, last)
+        // The rows the panes own, rule 9's workers among them.
+        let inPanes = (shown?.processes ?? []).filter { row in
+            if case .pane? = row.owner?.place { true } else { false }
+        }
+        return (steady, parts, shownIDs, held, cold, last, inPanes.count)
     }
 
     /// A crowded build's parts, ms.
@@ -613,13 +664,37 @@ extension E2ERunner {
         CFRunLoopObserverCreateWithHandler(kCFAllocatorDefault, CFRunLoopActivity.beforeWaiting.rawValue, true, CFIndex.max) { _, _ in frame.rest() }
     }
 
+    /// The scenario's now, µs since 1970: the fakes' starts are laid back
+    /// from it.
+    nonisolated static let fakeNow = UInt64(Date().timeIntervalSince1970 * 1_000_000)
+    /// The scenario's first fake Mac's boot, two days ago: its processes'
+    /// starts run from then to four hours ago.
+    nonisolated static let fakeBoot = fakeNow - 2 * 86_400_000_000
+    /// The crowded Mac's, four days ago: its starts end before the first
+    /// Mac's begin, so its first build finds none of their minutes'
+    /// words made.
+    nonisolated static let crowdedBoot = fakeNow - 4 * 86_400_000_000
+
+    /// When a fake process started, µs since 1970, spread as a Mac's are
+    /// (10.4): a fake Mac's own (pids under 90,000) a pid every 31 s from
+    /// `boot` — 5,000 over nearly two days, so the Started column has
+    /// thousands of minutes to say, over three days —; what the scenario
+    /// starts later (agents' panes, churn: pids from 90,000) in the last
+    /// hour, a tenth of a second apart. Both grow with the pid: a child
+    /// never starts before its parent.
+    nonisolated static func fakeStart(_ pid: pid_t, boot: UInt64 = fakeBoot) -> UInt64 {
+        let pid = UInt64(max(pid, 0))
+        return pid < 90_000 ? boot + pid * 31_000_000 : fakeNow - 3_600_000_000 + (pid - 90_000) * 100_000
+    }
+
     /// A fake Mac of `count` processes: launchd, root's daemons — a third,
     /// named only —, the user's apps with their helpers and shells with
-    /// their children, a few listening. Every name invented.
-    static func fakeMac(_ kernel: FakeActivityKernel, count: Int, pids: inout [pid_t]) {
+    /// their children, a few listening. Every name invented. Started from
+    /// `boot` on (`fakeStart`).
+    static func fakeMac(_ kernel: FakeActivityKernel, count: Int, boot: UInt64 = fakeBoot, pids: inout [pid_t]) {
         func add(_ pid: pid_t, parent: pid_t, uid: uid_t, name: String, listen: UInt16? = nil) {
             var process = FakeActivityKernel.Process(
-                record: FakeActivityKernel.record(pid: pid, start: UInt64(pid) * 1_000 + 1, parent: parent, uid: uid, name: name))
+                record: FakeActivityKernel.record(pid: pid, start: fakeStart(pid, boot: boot), parent: parent, uid: uid, name: name))
             process.name = name
             process.path = uid == 0 ? "/usr/libexec/\(name)" : "/opt/fake/bin/\(name)"
             process.codeSigning = ActivityCodeSigning(flags: ActivityCodeSigning.valid)
