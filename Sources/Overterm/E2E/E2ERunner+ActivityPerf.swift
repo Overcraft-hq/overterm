@@ -475,24 +475,25 @@ extension E2ERunner {
         // 7.7's own measure: the main thread's CPU from the content set to
         // the run loop's rest — the Mac's other work left out. 10.4's 4 ms
         // isn't met: every cell on screen is handed its row again, each a
-        // SwiftUI update (design 15); gated at what it costs, so it only
-        // gets better — 41–45 ms p90 measured re-sorted, 20.6–21.6 held,
-        // 15.2–16.0 steady.
+        // SwiftUI update (design 15); gated just above what it costs, so a
+        // regression of 7.7's whole 4 ms fails — 39.9–43.7 ms p90 measured
+        // re-sorted, 20.2–21.4 held, 13.9–15.5 steady, five runs.
         check(
-            "a publish takes the main thread under 50 ms of CPU (p90), a held one under 25 ms",
-            shownMain.count >= 12 && Self.p90(shownMain) < 50 && heldMain.count == 12 && Self.p90(heldMain) < 25,
+            "a publish takes the main thread under 47 ms of CPU (p90), a held one under 23 ms",
+            shownMain.count >= 12 && Self.p90(shownMain) < 47 && heldMain.count == 12 && Self.p90(heldMain) < 23,
             "\(Self.summary(shownMain)); held \(Self.summary(heldMain))")
         check(
-            "a steady one, nothing drawn moving, under 20 ms (p90)", steadyMain.count == 12 && Self.p90(steadyMain) < 20,
+            "a steady one, nothing drawn moving, under 17 ms (p90)", steadyMain.count == 12 && Self.p90(steadyMain) < 17,
             "\(Self.summary(steadyMain))")
         // 7.7 at 5,000: the list's rows made with the content, the table
-        // told their order — a crowded Mac's publish costs what this one's
-        // does (36.6 against 33.8 ms measured), never its rows' count.
+        // told their order — a crowded Mac's publish, folded at 500 rows,
+        // costs what this one's does: 0.92–1.08× measured (34.6–36.4 ms
+        // median against 32.7–38.3), five runs.
         let crowdedMain = Self.summary(crowdedPublish.folded.main)
         let crowdedWhole = Self.summary(crowdedPublish.whole.main)
         check(
-            "at 5,000 processes, a publish takes the main thread at most 1.5× this Mac's (median)",
-            crowdedPublish.folded.main.count == 12 && !shownMain.isEmpty && crowdedMain.median <= 1.5 * Self.summary(shownMain).median,
+            "at 5,000 processes, a publish takes the main thread at most 1.15× this Mac's (median)",
+            crowdedPublish.folded.main.count == 12 && !shownMain.isEmpty && crowdedMain.median <= 1.15 * Self.summary(shownMain).median,
             "\(crowdedMain) against \(Self.summary(shownMain))")
         // "+N more" unfolded, every one of the 5,000 a row of the table:
         // against the same page folded at 500 the moment before — the rows'
