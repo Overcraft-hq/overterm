@@ -626,4 +626,26 @@ final class ActivityProbeTests: XCTestCase {
         let churn = reads.isEmpty ? "" : "; identities read a tick: median \(reads[reads.count / 2]), max \(reads.last ?? 0)"
         return "wall \(line(costs.map(\.wall))); CPU \(line(costs.map(\.cpu)))\(churn)"
     }
+
+    /// nettop on this Mac (D-25): its answer parsed and checked against the
+    /// census's own listeners, timed — counts, the check and times only.
+    func testNettopsAnswerOnThisMac() throws {
+        let snapshot = try XCTUnwrap(ActivitySampler(kernel: kernel).tickNow(ActivityDemand(.full), context: ActivityContext()))
+        let expected = NettopListeners.expected(in: snapshot)
+        var times: [UInt64] = []
+        var reading: NettopListeners.Reading?
+        for _ in 0..<5 {
+            let (read, time) = timed { NettopListeners.Reader.run(NettopListeners.executable, expected: expected) }
+            reading = read
+            times.append(time)
+        }
+        let read = try XCTUnwrap(reading)
+        times.sort()
+        report(
+            "nettop: \(read.listeners.count) listeners (\(Set(read.listeners.map(\.pid)).count) processes), the user's \(expected.count) checked: \(read.outcome); "
+                + "wall median \(times[2] / 1_000_000) ms, max \(times[4] / 1_000_000) ms")
+        guard case .read(let check) = read.outcome else { return XCTFail("nettop's answer wasn't read: \(read.outcome)") }
+        if case .blind(let missing) = check { XCTFail("\(missing) of the user's listeners missing: read blind") }
+    }
+
 }

@@ -110,6 +110,7 @@ extension E2ERunner {
         await activityVerbAndLinkChecks(tab: tab, server: row)
         await activitySignalChecks(tab: tab)
         await activitySuspendChecks(tab: tab)
+        await activityListenerSourceChecks(tab: tab)
         check("1 is Processes again", page.press("1") && page.section == .processes)
 
         // Hidden again: its want given back, no full tick for 3 s.
