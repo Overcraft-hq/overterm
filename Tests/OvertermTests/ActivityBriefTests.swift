@@ -57,6 +57,25 @@ final class ActivityBriefTests: XCTestCase {
         XCTAssertTrue(busy.message.hasPrefix("Why is “acme-server” (pid 4242) using 312"), busy.message)
     }
 
+    /// With `activity.unixSockets` on, the detail lists its unix-socket
+    /// listeners too: never in the brief (D-32), its ports only.
+    func testAUnixSocketIsNeverInTheBrief() {
+        var detail = ActivityDetail(row: row())
+        let holder = ActivityProcessID(pid: 4242, start: 1)
+        var unix = ActivityPortRow(
+            id: "unix:4242:1:/tmp/acme.sock", kind: .unix, port: 0, proto: "unix", address: "/tmp/acme.sock", families: [], scope: .thisMac,
+            process: "acme-server", holder: holder)
+        unix.note = "a note of the socket's"
+        detail.listeners = [unix]
+        let alone = ActivityBrief.make(detail, home: home)
+        XCTAssertFalse(alone.parts.contains { $0.title == "Its ports" }, "no ports: no part")
+        XCTAssertFalse(alone.text.contains("acme.sock") || alone.parts.contains { $0.text.contains("acme.sock") || $0.text.contains("UNIX") })
+        detail.listeners.append(
+            ActivityPortRow(id: "l", port: 3000, proto: "tcp", address: "127.0.0.1", families: .v4, scope: .thisMac, process: "acme-server", holder: holder))
+        let both = ActivityBrief.make(detail, home: home)
+        XCTAssertEqual(both.parts.first { $0.title == "Its ports" }?.text, "It listens on:\n  :3000 TCP — This Mac, v4")
+    }
+
     /// The program's own text is data: fenced longer than any backtick run
     /// inside it, so it can't close the block; masked — a secret flag, a
     /// URL's password, a bearer token —; capped.

@@ -104,8 +104,10 @@ struct ActivityBrief: Equatable, Sendable {
         lines.append(fenced(inside ? programText(row, home: home) : "name: \(ActivityText.forAgents(row.name, home: home))"))
 
         var parts: [AskAgentModel.Part] = []
-        if !detail.listeners.isEmpty {
-            let ports = detail.listeners.map { port in
+        // Ports only: a unix socket's path is never in an agent's words (D-32).
+        let listeners = detail.listeners.filter { $0.kind == .listener }
+        if !listeners.isEmpty {
+            let ports = listeners.map { port in
                 var line = "  :\(port.port) \(port.proto.uppercased()) — \(port.reach), \(port.familyWords)"
                 if let url = port.url, port.kind == .listener { line += " — \(url.absoluteString)" }
                 if inside, let note = port.note { line += " — \(ActivityText.forAgents(note, home: home, limit: nil))" }
