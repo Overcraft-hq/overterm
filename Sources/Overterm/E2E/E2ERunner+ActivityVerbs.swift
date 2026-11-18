@@ -182,6 +182,30 @@ extension E2ERunner {
             check("and nothing is done", steps.count + typed.count == before)
         }
 
+        // Free a Port… (6.3): View's command opens ⌘K on its item; the
+        // port typed into its field selects its row and asks its Free.
+        app.showActivityFreePort(nil)
+        let freeItem = await eventually(5) { self.app.palette.selected?.id == "a.activity.freePort" }
+        check("View ▸ Free a Port… opens ⌘K on its item, a field for the port", freeItem && app.palette.selected?.placeholders == ["port"])
+        let item = app.palette.selected
+        app.hidePalette()
+        let before = steps.count + typed.count
+        item?.perform(true, ["port": ":\(split)"])
+        let freeAsked = await eventually(8) { self.window.attachedSheet != nil }
+        let selectedPort = page.selection.compactMap { id in page.content.ports.first { $0.id == id }?.port }
+        check(
+            "typed, its row selected on Listening and its Free asked",
+            freeAsked && page.section == .listening && selectedPort == [split] && activitySheet().buttons.count > 1,
+            "\(selectedPort), \(activitySheet().texts.prefix(1))")
+        answerActivitySheet(.alertSecondButtonReturn)
+        item?.perform(true, ["port": "70000"])
+        let refusedAsked = await eventually(5) { self.window.attachedSheet != nil }
+        check(
+            "a number that isn't a port is said, nothing asked",
+            refusedAsked && activitySheet().texts.contains { $0.contains("isn't a port") } && activitySheet().buttons == ["OK"])
+        answerActivitySheet(.alertFirstButtonReturn)
+        check("and Cancel did nothing", steps.count + typed.count == before)
+
         // Refused: nothing asked.
         var bridge = base
         bridge.portOwner = .bridge

@@ -92,6 +92,17 @@ final class ActivityPortHolderTests: XCTestCase {
         XCTAssertNil(LaunchdJobs.runningPID(of: "x; rm -rf ~"), "nor about a label launchd's characters don't make")
     }
 
+    /// Free a Port…'s field (6.3): a number, `:3000`, `5353/udp` — never a
+    /// guess at anything else.
+    func testFreeAPortReadsWhatWasTyped() {
+        XCTAssertTrue(ActivityPageModel.typedPort("3000")! == (3000, "tcp"))
+        XCTAssertTrue(ActivityPageModel.typedPort(" :8080 ")! == (8080, "tcp"))
+        XCTAssertTrue(ActivityPageModel.typedPort("5353/UDP")! == (5353, "udp"))
+        for bad in ["", "0", "65536", "3000x", "-1", "３０００", "1e3", "localhost:3000", ":"] {
+            XCTAssertNil(ActivityPageModel.typedPort(bad), bad)
+        }
+    }
+
     func testTheCommandsTyped() {
         let brew = ActivityPortHolder.Step.stopService(LaunchdJobs.Job(label: "homebrew.mxcl.postgresql@16"))
         XCTAssertEqual(ActivityPortHolder.command(brew, port: 5432, proto: "tcp", uid: 501), "brew services stop postgresql@16")

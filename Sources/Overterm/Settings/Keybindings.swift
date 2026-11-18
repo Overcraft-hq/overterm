@@ -329,6 +329,7 @@ enum KeyCommands {
         .init("activity.switch", "Activity Switcher", group: "Panels", key: "ctrl+cmd+a"),
         // No key by default (6.3): the user can bind it.
         .init("activity.listening", "Activity: Listening", group: "Panels"),
+        .init("activity.freePort", "Free a Port…", group: "Panels"),
         // ⌥⌘E and ⌃⌘E: bound by neither KeyCommands nor Ghostty v1.4.0's
         // defaults (src/config/Config.zig: ⌘E is search_selection, ⇧⌘E Tab Peek's here).
         .init("terraform.show", "Terraform", group: "Panels", key: "alt+cmd+e"),

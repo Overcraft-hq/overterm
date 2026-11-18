@@ -1350,13 +1350,17 @@ walks the closing panes' trees itself, on the main thread, at the close
   listening ports, by number, then the ten busiest processes. It holds
   the full level every second while the palette shows it, page or no
   page, and stocks its rows until a read has rates, then keeps them as
-  ranked — the palette re-ranks on a reorder, which would move the
-  selection. It follows the palette's scope: held on Activity's tab,
+  ranked and lets the full level go — the palette re-ranks on a reorder,
+  which would move the selection. It follows the palette's scope: held on Activity's tab,
   reached by ⌃⌘A or ⇥, let go on any other; with Activity off ⌘K has no
   such tab. ↩ shows the row on the page; ⌥↩ opens a port where
   Settings ▸ Browser says, or goes to a process's tab. Activity:
   Listening (`activity.listening`, View menu, no key by default) opens
-  the page on its ports.
+  the page on its ports. Free a Port… (`activity.freePort`, View menu, no
+  key by default) opens ⌘K on its item, the port typed into its field
+  (`3000`, `:3000`, `5353/udp` — `ActivityPageModel.typedPort`): the page
+  on Listening at the Mac's scope, the port's row selected and its Free
+  asked as `f` asks it, the holder read again as the sheet opens.
 
 ## Agents
 

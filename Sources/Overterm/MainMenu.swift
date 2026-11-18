@@ -120,6 +120,7 @@ enum MainMenu {
         command(viewMenu, "Activity", #selector(TerminalWindowController.toggleActivityPage(_:)), "activity.page")
         command(viewMenu, "Activity Switcher", #selector(TerminalWindowController.showActivitySwitcher(_:)), "activity.switch")
         command(viewMenu, "Activity: Listening", #selector(TerminalWindowController.showActivityListening(_:)), "activity.listening")
+        command(viewMenu, "Free a Port…", #selector(TerminalWindowController.showActivityFreePort(_:)), "activity.freePort")
         // The rail's Terraform panel; its switcher scopes the palette to the roots.
         command(viewMenu, "Terraform", #selector(TerminalWindowController.showTerraformPanel(_:)), "terraform.show")
         command(viewMenu, "Terraform Switcher", #selector(TerminalWindowController.showTerraformSwitcher(_:)), "terraform.switch")

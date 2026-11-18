@@ -37,6 +37,8 @@ struct ActivityPendingPort: Equatable, Sendable {
     var pid: pid_t?
     var after: Int
     var scope: ActivityScope
+    /// Free a Port… (6.3): its Free asked once the row is listed.
+    var free = false
 }
 
 /// What the page asks of the window (6.3): the verbs that don't signal.
@@ -659,7 +661,9 @@ final class ActivityPageModel: ObservableObject {
         if let pending = pendingPort {
             if let row = Self.linked(pending, in: content.ports) {
                 pendingPort = nil
-                return reveal(row.id, in: .listening)
+                reveal(row.id, in: .listening)
+                if pending.free { actions.free(row) }
+                return
             }
             if let made {
                 switch Self.unlisted(pending, tick: made.tick, scope: made.scope) {
@@ -1128,6 +1132,34 @@ final class ActivityPageModel: ObservableObject {
                 reveal(row.id, in: .listening)
             }
         }
+    }
+
+    /// Free a Port… (6.3): Listening at the Mac's scope, the port's row
+    /// selected and its Free asked as `f` asks it — the holder read again
+    /// from a fresh census as the sheet opens. A port no row lists says so
+    /// as a link's does.
+    func free(port: Int, proto: String = "tcp") {
+        show(.port(port, proto: proto, pid: nil, tab: nil))
+        if pendingPort != nil {
+            pendingPort?.free = true
+        } else if let row = Self.linked(ActivityPendingPort(port: port, proto: proto, after: 0, scope: .mac), in: content.ports) {
+            actions.free(row)
+        }
+    }
+
+    /// The port Free a Port… was given: a number, `:3000`, or `5353/udp`.
+    /// Nil for anything else. Pure.
+    nonisolated static func typedPort(_ text: String) -> (port: Int, proto: String)? {
+        var word = text.trimmingCharacters(in: .whitespaces).lowercased()
+        var proto = "tcp"
+        for suffix in ["/udp", "/tcp"] where word.hasSuffix(suffix) {
+            proto = String(suffix.dropFirst())
+            word.removeLast(suffix.count)
+        }
+        if word.hasPrefix(":") { word.removeFirst() }
+        guard !word.isEmpty, word.count <= 5, word.allSatisfy(\.isASCII), word.allSatisfy(\.isNumber), let port = Int(word), (1...65_535).contains(port)
+        else { return nil }
+        return (port, proto)
     }
 
     /// The person's hand — a key, a selection, a section — takes the page

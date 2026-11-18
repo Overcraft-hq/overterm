@@ -376,6 +376,26 @@ extension TerminalWindowController {
         showActivityPage(.listening)
     }
 
+    /// Free a Port… (`activity.freePort`, no key by default; 6.3): ⌘K on
+    /// its item, the port typed into its field.
+    @objc func showActivityFreePort(_ sender: Any?) {
+        guard Settings.shared.activityEnabled else { return openSettings(.activity) }
+        if paletteView?.isHidden != false { showPalette(sender) }
+        palette.scope = .action
+        palette.query = "Free a Port"
+        if let at = palette.results.firstIndex(where: { $0.id == "a.activity.freePort" }) { palette.selectedIndex = at }
+    }
+
+    /// Free a Port…'s item, run with `typed`: the page on Listening, the
+    /// port's row selected, its Free asked.
+    func activityFreePort(typed: String?) {
+        guard let typed, let (port, proto) = ActivityPageModel.typedPort(typed) else {
+            return tell("Not freed", "“\(DockerMCP.displayed(typed ?? ""))” isn't a port: type a number from 1 to 65535, or one like 5353/udp.")
+        }
+        showActivityPage(.listening)
+        activityPage.free(port: port, proto: proto)
+    }
+
     /// What the palette offers of Activity: the page and its Listening, and
     /// while the switcher holds the census, its rows.
     func activityPaletteItems() -> [PaletteItem] {
@@ -402,6 +422,10 @@ extension TerminalWindowController {
                 id: "a.activity.listening", group: .action, title: "Activity: Listening", subtitle: "Your processes' listening ports, and who holds each",
                 symbol: "dot.radiowaves.left.and.right"
             ) { [weak self] _, _ in self?.showActivityListening(nil) },
+            PaletteItem(
+                id: "a.activity.freePort", group: .action, title: "Free a Port…", subtitle: "Who holds it, and its own way to let it go — asked first",
+                symbol: "xmark.circle", placeholders: ["port"]
+            ) { [weak self] _, values in self?.activityFreePort(typed: values["port"]) },
         ]
     }
 }
