@@ -614,6 +614,43 @@ value, a path or an address of a process that isn't the test's.
   both rows from its side —, none for one holder, one shared socket,
   another protocol or port, or a connection; the note on a built row and
   in its VoiceOver label, `is:collision`.
+- `NettopListenersTests` (D-25): a pinned, hand-written fixture
+  (`Fixtures/nettop-listeners.txt`, every name invented) — a name with
+  spaces or dots, the pid after its last dot, `:` before an IPv4 port and
+  `.` before an IPv6 one, a zone left out, UDP without a state, a
+  connected UDP, an established TCP and QUIC no listeners, one listener
+  twice once —; anything else failing the whole parse; the blind check
+  (checked, unchecked, blind; 0 rows blind, a listener that closed while
+  it ran no proof); and a read through a stand-in the test writes — its
+  own child, nettop's arguments checked — while the real nettop is never
+  run under test (`Reader.unavailable`).
+- `LaunchdSocketsTests`: fixture plists in folders the test hands over
+  (`Fixtures/launchd-sockets/`: a number and a name, a dict and an array
+  of them, dgram as UDP, a unix socket's, none, a broken plist), names
+  through the fixture's services file; the user's own job only alone on
+  a number — beside another's, both named; `/Library/LaunchAgents`'
+  stopped in the gui domain; a unit test reads no launchd folder of the Mac's
+  (`AppEnvironment.launchdSocketFolders`).
+- `ActivityListenerSourcesTests`: over a fake Mac, a nettop reading's
+  rows — launchd's named and refused, the user's own LaunchAgent's its
+  service's stop, Bonjour by name, another user's the read route, the
+  user's own left to libproc, a pid the table lacks or one started after
+  the read left out, their Since, their ephemeral ones folded apart —; a
+  blind, narrow or mine-only read shows none; a typed `kubectl
+  port-forward`'s and `ssh -L`'s targets, clustered flags too (`-fNL`,
+  `-NR`), an `ssh -R`'s "forwarded by"; unix-socket listeners only
+  behind their setting, a co-holder, no Free; more known holders, a
+  user's own non-platform `sshd` theirs, and a brew service of a known
+  tool its service.
+- `ActivityMCPTests.testAPortNoneOfYoursHoldsIsReadThroughNettop`: an
+  agent's `port_holder` through a stand-in nettop — a believed read names
+  launchd's job, a blind one is unknown, a port the user holds starts no
+  nettop. `ActivityBriefTests`: a unix socket never in the brief.
+- `ProcessOpenFilesTests`: the Files block's read over a fake Mac —
+  files by path, sockets in words, pipes and kqueues named, an unreadable
+  path said —, another user's and a reused pid nothing; a path read
+  that never returns (the fake's call held) left behind, later reads
+  saying so at once.
 - `RunMarkersTests` (stage 3's groundwork, 6.9 and D-15): the run's
   marker, its kind from the bundle's place, set over an inherited one
   and taken off a login shell's answer; every argv sign spelt and read
@@ -815,8 +852,18 @@ doesn't tick for 3 s while the light tick goes on, and its rows are gone;
 first, and its ↩ shows it on the page in Listening, the hold going with
 the palette; ⇥ onto Activity's tab in ⌘K holds it too, and ⇥ off lets
 go; with Activity off, ⌥⌘A opens Settings ▸ Activity and ⌘K has no
-Activity tab. Its checks print counts, its own pids and port
-numbers only.
+Activity tab. Stage 4's checks (`E2ERunner+ActivityListenerSources`)
+type a stand-in `kubectl port-forward` and `ssh -L` (scripts named as the
+tools, listening on their own ports — never the real ones) and check
+each row's target; turn unix-socket listeners on and off over a socket
+of the run's own; point the page's nettop at a stand-in whose answer the
+scenario writes from the run's own listeners and launchd (pid 1) on a
+port nobody holds, with a fixture plist naming it
+(`LaunchdSockets.standIn`) — the row named, its Free refused, the note
+"checked" —, then an answer without the run's own (blind: unknown, no
+rows) and the setting off; and read the server's open files with `l`.
+The real nettop and this Mac's launchd folders are never read in a run.
+Its checks print counts, its own pids and port numbers only.
 `marks` leaves one tab in each activity state; with `OVERTERM_DUMP_PNG=<png>`
 it captures the window, for judging the look. Run one by hand while working
 on it:

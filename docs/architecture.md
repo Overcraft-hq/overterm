@@ -580,7 +580,8 @@ in its panes and everything they start — `netstat` prints no rows at all
 and exits 0, as if nothing listened (docs/design/activity/analysis.md
 3.5; the `splits` scenario counts 0 rows of `netstat -an -p tcp` in a
 pane, where Terminal's shell gets the Mac's). lsof and `nettop` are not
-affected. The ports above are libproc's, which sees every socket of the
+affected — Activity reads every user's listeners through nettop, checked
+against libproc's (Activity, Every user's listeners). The ports above are libproc's, which sees every socket of the
 user's own processes; to ask from a pane who holds a port, `lsof -nP
 -iTCP:<port> -sTCP:LISTEN` answers, netstat doesn't.
 
@@ -986,6 +987,17 @@ walks the closing panes' trees itself, on the main thread, at the close
   why, its tree — only through the page's rows, so a test run's stops at
   its own tabs' (9.9) —, its listeners and connections counted, its
   usage.
+  **Files** (`l`, or its button; `ProcessOpenFiles`): what the selection
+  holds open — files by path (`PROC_PIDFDVNODEPATHINFO`), sockets as the
+  census decodes them, pipes and the kernel's other kinds by name —, read
+  only when asked and again when the selection changes while it shows,
+  on a queue of its own, each path on a worker waited 200 ms: one that
+  doesn't come back (a hard-mounted share that stopped answering) is
+  left behind and stops the read ("a file isn't answering"), and later
+  reads say so at once, asking for no path, until it returns
+  (`ProcessOpenFiles.Stuck`); 2 s and 1,000 entries at most, each said;
+  the user's own only, a pid taken since shows nothing; one that ended
+  says so.
 - **Listening** (`ActivityPorts`, pure, with the rows; design 6.8): one
   row per holder, protocol and port — its v4 and v6 sockets together
   ("v4 + v6"), the processes that share the very socket (`soi_so`: a
@@ -1026,8 +1038,69 @@ walks the closing panes' trees itself, on the main thread, at the close
   Apps', macOS's and known holders' listeners in the ephemeral range
   (`net.inet.ip.portrange.first`) fold into one line; a tab's, a server
   of the user's elsewhere and a launchd job's never do, and a filter
-  shows them. The header's count is every listener; the switcher lists
-  the folded ones too.
+  shows them; other users' (nettop's) fold into a line of their own. The
+  header's count is every listener; the switcher lists the folded ones
+  too.
+- **Every user's listeners** (`NettopListeners`, design 6.8, D-25;
+  `activity.otherListeners`, on): libproc reads only the user's own
+  sockets and netstat prints nothing under the ad hoc-signed app, so
+  `nettop -L 1 -n -x -J state` — entitled, unaffected by its parent —
+  runs every fifth tick (10 s at 2 s) while Listening shows, and once for
+  an agent's `port_holder` that nothing of the user's answers (the read
+  of the last 10 s, else one now or the one running, waited for; checked
+  against the agent's snapshot, never older than 10 s): a
+  short-lived child through `KubeProcessRun` (a group of its own, 5 s, 1
+  MB, ended at quit; `OVERTERM_HELPER=nettop`), on a GCD thread, one at a
+  time (`NettopListeners.Reader`, the page's `readOthers`). Its text is
+  parsed strictly (`parse`, pure: `name.pid,,` the pid after the last
+  dot; `tcp4 127.0.0.1:8021<->*:*,Listen,`, IPv6's port after a dot;
+  anything else fails the read). **The blind check** (`check`): the
+  answer must hold every TCP listener of the user's that libproc found
+  as it began and still finds as it lands (a test run's own only); one
+  that lacks them is "unknown", never "nothing listens"; none to compare
+  is "unchecked", said. Believed, other users' rows (`ActivityPorts.others`)
+  show at the Mac's scope with everyone's, a row a holder, protocol and
+  port, by pid and start — a process started after the read began isn't
+  its holder; the user's own stay libproc's —: launchd's named from its
+  socket jobs (`LaunchdSockets`: each plist's `Sockets` — the port a
+  number or an `/etc/services` name, stream or dgram — from
+  `/System/Library/LaunchDaemons`, `/Library/LaunchDaemons`,
+  `/Library/LaunchAgents` and `~/Library/LaunchAgents`, read once, lazily,
+  off the main thread, regular files only; `AppEnvironment.launchdSocketFolders`,
+  a test's own alone in a test run; `/Library/LaunchAgents`' jobs load
+  into each user's gui domain, `Domain.agents`, said with `launchctl
+  bootout gui/<uid>/…`), its Free refused with the job and its switch
+  (`ActivityPortOwner.launchdSocket`), the user's own LaunchAgent's its
+  service's stop — only when no other job names the socket: when both
+  do, both are named and neither stopped; macOS's daemons by name
+  (`KnownHolders.macOSDaemons`: Bonjour, NetBIOS, printing, the Sharing
+  services…; never a kill), the rest by their user with the read route
+  (never for pid ≤ 1). The note under the list says what was read
+  (`ActivityOtherListeners`). A test run never runs the real nettop: the
+  reader's `standIn` alone.
+- **Known holders** (`KnownHolders`) also name people's tools whose
+  listeners aren't servers they asked for — ngrok's inspector on 4040,
+  Cloudflare Tunnel, Tailscale, Dropbox's LAN sync, Spotify Connect,
+  Ollama —; one that runs as the user's launchd job (a brew service) is
+  that service, macOS's daemons stay macOS's — by name only where the
+  binary is macOS's (a platform binary, or under `/usr`, `/System`,
+  `/Library/Apple`; `KnownHolders.isMacOSBinary`): a user's own `sshd`
+  is theirs, and Free asks.
+- **A forward typed in a terminal** (`ActivityTypedForwards`, pure, rule
+  6): a pane's or the user's `kubectl port-forward` or `ssh -L` says its
+  target from the masked argv's words — ssh's clustered flags read as
+  ssh reads them (`-fNL 5432:db:5432`) — "port-forward → svc/web:80 ·
+  namespace shop, context dev", "ssh -L → db:5432 via bastion", an `ssh
+  -D` a SOCKS proxy — past an interpreter running the tool's script,
+  never run (`ActivityPortRow.target`, after the owner's words). An `ssh
+  -R` that reaches a local server says where it is published on that
+  server's row ("forwarded by ssh -R to relay:8080 (pid N)").
+- **Unix-socket listeners** (D-32, `activity.unixSockets`, off): the walk
+  keeps a listening unix socket's path (`SO_ACCEPTCONN`, `unsi_addr`,
+  `SocketRecord.path`), and Listening lists the user's as rows
+  (`ActivityPorts.unix`, `ActivityPortRow.Kind.unix`) — the path, its
+  holder and what inherited the socket, the owner as a port's —; no URL,
+  no Free, no collision, never in agents' answers.
 - **Free :N** (`f` on a listener; design 6.8): through the owner's own
   verb (`ActivityPortHolder`, pure; `TerminalWindowController+ActivityFree`)
   — Stop Container (the Docker page's Stop), Stop Forward, Disconnect a
