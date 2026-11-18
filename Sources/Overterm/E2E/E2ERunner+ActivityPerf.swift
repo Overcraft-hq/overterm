@@ -531,12 +531,15 @@ extension E2ERunner {
         // 7.7's own measure: the main thread's CPU from the content set to
         // the run loop's rest — the Mac's other work left out. The rows are
         // AppKit's, a cell drawn again only when its words changed (design
-        // 15). 10.4's 4 ms is met only where little a person sees moves:
-        // three runs, re-sorted (every row on screen another process each
-        // tick, the fake's) 24.0–24.8 ms p90, held (every row's CPU moving)
-        // 9.2–9.6, steady 3.6–5.0, thirty busy below a tenth 4.2–4.5 — each
-        // gated at what it costs, with a margin, never at 4 ms where the
-        // runs reach it: a regression of 7.7's whole 4 ms still fails.
+        // 15). 10.4's 4 ms is met only where little a person sees moves.
+        // p90s over eight runs: re-sorted (every row on screen another
+        // process each tick, the fake's) 22.7–25.8 ms, held (every row's CPU
+        // moving) 9.2–11.1, steady 3.6–5.2, thirty busy within their tenths
+        // 4.1–4.5 — each gated at what it costs, never at 4 ms where the
+        // runs reach it. The margins differ: held, steady and top fail a
+        // regression of about 1–3 ms over their worst run, but re-sorted's
+        // runs spread 3 ms, so its gate fails one only of about 4–7 ms —
+        // tighter than 30 would fail a slow run.
         check(
             "a publish takes the main thread under 30 ms of CPU (p90), a held one under 12 ms",
             shownMain.count >= 12 && Self.p90(shownMain) < 30 && heldMain.count == 12 && Self.p90(heldMain) < 12,
@@ -560,15 +563,15 @@ extension E2ERunner {
         // "+N more" unfolded, every one of the 5,000 a row of the table:
         // against the same page folded at 500 the moment before — the rows'
         // count alone, 1.07–1.13× measured (21.5–21.9 ms median against
-        // 19.3–20.4), three runs — and on its own, 21.9–22.9 ms p90: each
-        // gated above.
+        // 19.3–20.4), three runs — and on its own, 20.1–22.9 ms p90 over
+        // six: gated at 26, a regression of about 3–6 ms failing.
         check(
             "…\"+N more\" unfolded, its 5,000 rows' publish at most 1.15× the folded one's (median)",
             crowdedPublish.whole.rows >= 5_000 && crowdedPublish.whole.main.count == 12 && !crowdedPublish.folded.main.isEmpty
                 && crowdedWhole.median <= 1.15 * crowdedMain.median,
             "\(crowdedPublish.whole.rows) rows: \(crowdedWhole) against \(crowdedMain)")
         check(
-            "…and under 28 ms of CPU (p90)", crowdedPublish.whole.main.count == 12 && Self.p90(crowdedPublish.whole.main) < 28,
+            "…and under 26 ms of CPU (p90)", crowdedPublish.whole.main.count == 12 && Self.p90(crowdedPublish.whole.main) < 26,
             "\(crowdedWhole)")
         // 7.7: the list observes only what it draws — "order held", a
         // selected agent's detail and its verbs' subject, landing beside a
