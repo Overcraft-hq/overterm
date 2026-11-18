@@ -515,12 +515,11 @@ extension E2ERunner {
         check(
             "held, steady or with an agent selected, each publish updates the table once", once,
             ["held", "steady", "agent"].map { "\($0) \(touched[$0]?.map(\.updates) ?? [])" }.joined(separator: "; "))
-        // 7.7: the plain columns are AppKit text, a hosting view only for a
-        // row's name and its strip — at most two a row on screen a publish.
+        // 7.7: a process's row is AppKit's whole — its words, its name, its
+        // strip —: a publish of Processes hands no hosting view a row.
         let shownTouches = touched["shown"] ?? []
         check(
-            "a publish hands at most two hosted cells a row on screen",
-            shownTouches.count >= 12 && shownTouches.allSatisfy { $0.shows <= 2 * max($0.visible, 1) },
+            "a publish of processes hands no hosted cell a row", shownTouches.count >= 12 && shownTouches.allSatisfy { $0.shows == 0 },
             "\(shownTouches.map(\.shows)) for \(shownTouches.last?.visible ?? 0) rows")
         check("the list scrolls in under 35 ms a step (p95)", !scrolled.isEmpty && scroll.p95 < 35, "\(scroll)")
         // 7.7: the main thread's part of a publish ≤ 4 ms — the verbs' list

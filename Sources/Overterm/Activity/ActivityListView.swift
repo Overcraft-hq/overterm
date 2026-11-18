@@ -50,6 +50,8 @@ struct ActivityListView: View, Equatable {
                 table.index = { shown.index[$0] }
                 table.uniformHeight = true
                 table.plainCell = { [theme] row, column in ActivityCells.plain(row, column.id).map { Self.value($0, theme: theme) } }
+                table.drawnCell = { [theme, weak page] row, column in Self.drawn(row, column.id, theme: theme, page: page) }
+                table.cellKey = { [theme] row, column in Self.key(row, column?.id, theme: theme) }
             }
             if !list.hasRead {
                 VStack(spacing: 8) {
@@ -71,7 +73,8 @@ struct ActivityListView: View, Equatable {
 
     private func cell(_ row: ActivityListRow, _ column: ResourceColumn?) -> AnyView {
         switch row {
-        case .process(let process): AnyView(processCell(process, column?.id))
+        // A process's cells are all AppKit's: `plainCell`, `drawnCell`.
+        case .process: AnyView(EmptyView())
         case .port(let port): AnyView(portCell(port, column?.id))
         case .group(let group): AnyView(groupCell(group, column?.id))
         }
@@ -137,75 +140,6 @@ struct ActivityListView: View, Equatable {
         }
     }
 
-    /// A process's cell: tinted while new, dimmed once ended (6.7).
-    private func processCell(_ row: ActivityProcessRow, _ column: String?) -> some View {
-        processCellContent(row, column)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
-            .opacity(row.ended ? 0.45 : 1)
-            .background(row.isNew ? TabStatusStyle.done.opacity(0.14) : Color.clear)
-    }
-
-    /// The row's 15 minutes, a cell each 15 s (6.11): `KubeHeatStripView`'s
-    /// drawing, CPU capped at 100 for the colour; a gap a faint tick.
-    private func strip(_ row: ActivityProcessRow) -> some View {
-        let cells = row.strip ?? []
-        let colours = KubeHeatStrip.Level.allCases.map { TimeChartPalette.heat($0, dark: theme.isDark).color }
-        let track = theme.text3
-        return Canvas { context, size in
-            guard !cells.isEmpty else { return }
-            KubeHeatStripView.draw(
-                cells.map { $0.map { min($0, 100) } }, in: CGRect(x: 0, y: 3, width: size.width, height: max(size.height - 6, 1)),
-                context: &context, colours: colours, track: track)
-        }
-        .padding(.horizontal, 6)
-        .help(ActivityPageView.stripHelp(row))
-        .accessibilityElement()
-        .accessibilityLabel(Text(verbatim: ActivityPageView.stripHelp(row)))
-        .accessibilityIdentifier("activity.strip")
-    }
-
-    @ViewBuilder
-    private func processCellContent(_ row: ActivityProcessRow, _ column: String?) -> some View {
-        switch column {
-        case "name":
-            HStack(spacing: 4) {
-                Color.clear.frame(width: CGFloat(row.depth) * 14)
-                disclosure(row.id, foldable: row.hasChildren, folded: row.folded)
-                if row.owner?.paneRole == .agent, let agent = row.owner?.agentKind {
-                    Image(systemName: agent.symbol).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text)
-                }
-                Text(verbatim: row.name).font(.system(size: ChromeMetrics.text(12)))
-                    .foregroundStyle(
-                        row.dimmed || row.owner?.paneRole == .session || row.owner?.paneRole == .shell ? theme.text3 : row.isOwn ? theme.text : theme.text2
-                    )
-                    .lineLimit(1).truncationMode(.middle).layoutPriority(1)
-                ForEach(ActivityPageView.chips(row), id: \.self) { chip in
-                    Text(verbatim: chip).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3).lineLimit(1)
-                        .padding(.horizontal, 5).background(Capsule().stroke(theme.border))
-                }
-                ForEach(row.chips, id: \.self) { chip in
-                    Text(verbatim: chip.text(now: Date())).font(.system(size: ChromeMetrics.text(10), weight: chip.warns ? .semibold : .regular))
-                        .foregroundStyle(chip.warns ? TabStatusStyle.signal : theme.text2).lineLimit(1)
-                        .padding(.horizontal, 5).background(Capsule().fill((chip.warns ? TabStatusStyle.signal : theme.text3).opacity(0.12)))
-                        .help(chip.help)
-                        .accessibilityIdentifier("activity.chip")
-                }
-                if row.ended {
-                    Text(verbatim: "ended").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3).lineLimit(1)
-                        .padding(.horizontal, 5).background(Capsule().stroke(theme.border))
-                        .accessibilityIdentifier("activity.ended")
-                }
-                Spacer(minLength: 0)
-            }
-            .padding(.horizontal, 6)
-            .clipped()
-            .help(row.owner?.reason ?? "")
-        case "cpu15": strip(row)
-        default:
-            EmptyView()  // `ActivityCells`' AppKit text
-        }
-    }
-
     @ViewBuilder
     private func portCell(_ row: ActivityPortRow, _ column: String?) -> some View {
         if row.kind == .folded {
@@ -240,6 +174,103 @@ struct ActivityListView: View, Equatable {
             ground: cell.isNew ? newGround : nil)
     }
 
-    /// A new row's tint (6.7), as `processCell`'s.
+    /// A new row's tint (6.7).
     private static let newGround = TabStatusStyle.doneNS.withAlphaComponent(0.14)
+
+    // MARK: The AppKit name and strip
+
+    /// A process's name or strip cell, drawn by AppKit; nil for every other.
+    static func drawn(_ row: ActivityListRow, _ column: String, theme: ChromeTheme, page: ActivityPageModel?) -> ResourceDrawnCell? {
+        guard case .process(let process) = row else { return nil }
+        switch column {
+        case "name":
+            let value = nameValue(process, theme: theme, now: Date())
+            return ResourceDrawnCell(
+                kind: "name", make: { ActivityNameCell() },
+                show: { [weak page] cell in
+                    guard let cell = cell as? ActivityNameCell else { return false }
+                    if cell.toggle == nil { cell.toggle = { [weak page] id, folded in page?.toggleFold(id, folded: folded) } }
+                    return cell.show(value)
+                })
+        case "cpu15":
+            let value = stripValue(process, theme: theme)
+            return ResourceDrawnCell(kind: "strip", make: { ActivityStripCell() }, show: { ($0 as? ActivityStripCell)?.show(value) ?? false })
+        default: return nil
+        }
+    }
+
+    /// The name cell's value (6.5): indent, fold, the agent's symbol, the
+    /// name dimmed for a match's ancestor, a session or a shell, its chips.
+    static func nameValue(_ row: ActivityProcessRow, theme: ChromeTheme, now: Date) -> ActivityNameValue {
+        var chips = ActivityPageView.chips(row).map { ActivityNameValue.Chip(text: $0, color: theme.text3NS, stroke: theme.borderNS) }
+        for chip in row.chips {
+            chips.append(
+                ActivityNameValue.Chip(
+                    text: chip.text(now: now), color: chip.warns ? TabStatusStyle.signalNS : theme.text2NS,
+                    fill: (chip.warns ? TabStatusStyle.signalNS : theme.text3NS).withAlphaComponent(0.12), bold: chip.warns, help: chip.help,
+                    identifier: "activity.chip"))
+        }
+        if row.ended { chips.append(ActivityNameValue.Chip(text: "ended", color: theme.text3NS, stroke: theme.borderNS, identifier: "activity.ended")) }
+        let role = row.owner?.paneRole
+        let agent = role == .agent ? row.owner?.agentKind : nil
+        return ActivityNameValue(
+            id: row.id, depth: row.depth, folded: row.hasChildren ? row.folded : nil, chevron: theme.text3NS, symbol: agent?.symbol,
+            symbolColor: theme.textNS, name: row.name,
+            nameColor: row.dimmed || role == .session || role == .shell ? theme.text3NS : row.isOwn ? theme.textNS : theme.text2NS, chips: chips,
+            help: row.owner?.reason ?? "", size: ChromeMetrics.text(12), chipSize: ChromeMetrics.text(10), alpha: row.ended ? 0.45 : 1,
+            ground: row.isNew ? newGround : nil)
+    }
+
+    /// The strip cell's value (6.11): a cell each 15 s, CPU capped at 100
+    /// for the colour, a gap a faint tick.
+    static func stripValue(_ row: ActivityProcessRow, theme: ChromeTheme) -> ActivityStripValue {
+        ActivityStripValue(
+            strip: row.strip, since: row.stripSince, colours: heatColours(dark: theme.isDark), track: theme.text3NS, alpha: row.ended ? 0.45 : 1,
+            ground: row.isNew ? newGround : nil)
+    }
+
+    private static let heat = (
+        light: KubeHeatStrip.Level.allCases.map { heatColour(TimeChartPalette.heat($0, dark: false)) },
+        dark: KubeHeatStrip.Level.allCases.map { heatColour(TimeChartPalette.heat($0, dark: true)) }
+    )
+
+    private static func heatColour(_ rgb: TimeChartPalette.RGB) -> NSColor {
+        NSColor(srgbRed: rgb.red, green: rgb.green, blue: rgb.blue, alpha: 1)
+    }
+
+    private static func heatColours(dark: Bool) -> [NSColor] { dark ? heat.dark : heat.light }
+
+    /// What a hosted cell draws, as a key (`ResourceTable.cellKey`): a
+    /// group's or a container's row, a folded port row, by every value its
+    /// SwiftUI cell reads and the theme's colours.
+    static func key(_ row: ActivityListRow, _ column: String?, theme: ChromeTheme) -> Int {
+        var hasher = Hasher()
+        hasher.combine(theme.revision)
+        hasher.combine(ChromeMetrics.text(12))
+        hasher.combine(column)
+        switch row {
+        case .group(let group):
+            hasher.combine(group.id)
+            hasher.combine(group.kind.rawValue)
+            hasher.combine(group.depth)
+            hasher.combine(group.title)
+            hasher.combine(group.detail)
+            hasher.combine(group.cpu)
+            hasher.combine(group.memory)
+            hasher.combine(group.ports)
+            hasher.combine(group.folded)
+            hasher.combine(group.foldable)
+            hasher.combine(group.agent?.symbol)
+        case .port(let port):
+            hasher.combine(port.id)
+            hasher.combine(port.process)
+            hasher.combine(port.folded)
+        case .process(let process):
+            // Drawn by AppKit (`drawn`): a key that never repeats, should one
+            // ever be hosted.
+            hasher.combine(process.id)
+            hasher.combine(UUID())
+        }
+        return hasher.finalize()
+    }
 }

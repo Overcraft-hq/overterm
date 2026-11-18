@@ -420,11 +420,13 @@ struct ActivityPageView: View {
     }
 
     /// What a strip says: its highest, since when.
-    static func stripHelp(_ row: ActivityProcessRow) -> String {
-        guard let cells = row.strip else { return "No history: it wasn't read while the page or its tab showed" }
+    static func stripHelp(_ row: ActivityProcessRow) -> String { stripHelp(row.strip, since: row.stripSince) }
+
+    static func stripHelp(_ strip: [Double?]?, since began: Date?) -> String {
+        guard let cells = strip else { return "No history: it wasn't read while the page or its tab showed" }
         let read = cells.compactMap { $0 }
         guard let high = read.max() else { return "Not read in the last 15 minutes" }
-        let since = row.stripSince.map { " since \(ActivityRows.clock($0))" } ?? " over 15 min"
+        let since = began.map { " since \(ActivityRows.clock($0))" } ?? " over 15 min"
         return "CPU\(since): at most \(ActivityRows.percent(high))%, \(read.count) of 60 cells read"
     }
 

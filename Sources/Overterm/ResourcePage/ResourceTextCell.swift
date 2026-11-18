@@ -20,6 +20,15 @@ struct ResourceTextCellValue: Equatable {
     var ground: NSColor? = nil
 }
 
+/// A cell of the page's own AppKit view (`ResourceTable.drawnCell`): its
+/// kind, the reuse identifier's last part; how to make one; and how to
+/// show the row in it, saying whether anything changed.
+struct ResourceDrawnCell {
+    let kind: String
+    let make: () -> ResourcePressCell
+    let show: (ResourcePressCell) -> Bool
+}
+
 /// A cell that takes a row's press as `ResourceRowHostingView` does: on
 /// release, through the table's `pressRow` — `ResourceTableView.mouseDown`
 /// never calls super, so a cell that let the press fall through would

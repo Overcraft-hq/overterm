@@ -157,6 +157,9 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
     /// the row's kind and the column — a cell is reused by both. Nil: every
     /// cell is the `cell`'s (Docker's, Kubernetes').
     var plainCell: ((Row, ResourceColumn) -> ResourceTextCellValue?)? = nil
+    /// A cell an AppKit view of the page's draws (`ResourceDrawnCell`), or
+    /// nil; asked before `plainCell`, by the same rule.
+    var drawnCell: ((Row, ResourceColumn) -> ResourceDrawnCell?)? = nil
     /// A key of what a hosted cell draws (`cell`): a cell shown with the
     /// same key isn't handed its row again. Nil: always handed it.
     var cellKey: ((Row, ResourceColumn?) -> Int)? = nil
@@ -517,6 +520,10 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
                         if let value = view.plainCell?(rows[index], column) {
                             if text.show(value) { table.plainShows += 1 } else { table.plainSkips += 1 }
                         }
+                    } else if let drawn = cell as? ResourcePressCell {
+                        if let content = view.drawnCell?(rows[index], column) {
+                            if content.show(drawn) { table.plainShows += 1 } else { table.plainSkips += 1 }
+                        }
                     } else if let hosted = cell as? ResourceHostingCell {
                         show(rows[index], view.hasHeader ? column : nil, in: hosted, view, table)
                     } else {
@@ -554,6 +561,15 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
             guard let view else { return nil }
             let column = tableColumn.flatMap { item in columns.first { $0.id == item.identifier.rawValue } }
             let shown = view.hasHeader && !spans(rows[row]) ? column : nil
+            if let shown, let content = view.drawnCell?(rows[row], shown) {
+                let identifier = NSUserInterfaceItemIdentifier("resource.drawn.\(shown.id).\(rows[row].reuseKind).\(content.kind)")
+                let cell = tableView.makeView(withIdentifier: identifier, owner: nil) as? ResourcePressCell ?? content.make()
+                cell.identifier = identifier
+                _ = content.show(cell)
+                (tableView as? ResourceTableView)?.plainShows += 1
+                cell.setAccessibilityIdentifier(rows[row].id)
+                return cell
+            }
             if let shown, let value = view.plainCell?(rows[row], shown) {
                 let identifier = ResourceTextCell.identifier(column: shown.id, kind: rows[row].reuseKind)
                 let cell = tableView.makeView(withIdentifier: identifier, owner: nil) as? ResourceTextCell ?? ResourceTextCell()
