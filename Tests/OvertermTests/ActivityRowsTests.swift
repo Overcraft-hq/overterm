@@ -131,6 +131,26 @@ final class ActivityRowsTests: XCTestCase {
         XCTAssertEqual(byName.first?.name, "acme-server")
     }
 
+    /// A row is one reference until a copy changes (10.4): the copy alone
+    /// changes, and equal values are equal rows whichever storage.
+    func testARowCopiedChangesAloneAndComparesByValue() {
+        let row = ActivityProcessRow(
+            id: "4242:1", identity: ActivityProcessID(pid: 4242, start: 1), name: "acme", cpu: 1, memory: nil, threads: nil, state: .sleeping,
+            started: Date(timeIntervalSince1970: 0), startedText: "", user: "fake", isOwn: true, tab: nil, tabTitle: nil)
+        var copy = row
+        XCTAssertEqual(copy, row)
+        copy.cpu = 2
+        copy.chips.append(.heldCore(since: Date(timeIntervalSince1970: 0)))
+        XCTAssertEqual(row.cpu, 1)
+        XCTAssertTrue(row.chips.isEmpty)
+        XCTAssertNotEqual(copy, row)
+        var same = ActivityProcessRow(
+            id: "4242:1", identity: ActivityProcessID(pid: 4242, start: 1), name: "acme", cpu: 2, memory: nil, threads: nil, state: .sleeping,
+            started: Date(timeIntervalSince1970: 0), startedText: "", user: "fake", isOwn: true, tab: nil, tabTitle: nil)
+        same.chips = copy.chips
+        XCTAssertEqual(same, copy, "equal values, another storage")
+    }
+
     func testOnlyYoursWithoutEveryone() throws {
         let snapshot = try full(ActivitySampler(kernel: kernel), mac())
         let content = ActivityRows.content(of: snapshot, ActivityRows.Options(everyone: false))

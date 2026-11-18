@@ -5,101 +5,430 @@ import Foundation
 /// 6.4, 6.5): what one full snapshot said of it. Values only; a first
 /// sample's CPU is nil, drawn "—", never 0.
 struct ActivityProcessRow: ResourceTableRow, Sendable {
+    /// Its values, one reference shared by every copy until one of them
+    /// changes (10.4): a build copies a row many times — sorted, grouped,
+    /// Listening's, the held merge —, each copy a retain.
+    private final class Storage: @unchecked Sendable {
+        let id: String
+        let identity: ActivityProcessID
+        let name: String
+        var cpu: Double?
+        let memory: UInt64?
+        let threads: Int32?
+        let state: ActivityState
+        let started: Date
+        let startedText: String
+        let user: String
+        let isOwn: Bool
+        let tab: UUID?
+        let tabTitle: String?
+        var owner: ActivityOwner? = nil
+        var checkout: String? = nil
+        var whereText: String = ""
+        var listening: [Int] = []
+        var depth: Int = 0
+        var hasChildren: Bool = false
+        var folded: Bool = false
+        var agentCounts: String? = nil
+        var dimmed: Bool = false
+        var parentPID: pid_t = 0
+        var group: pid_t = 0
+        var nice: Int8 = 0
+        var terminal: String? = nil
+        var command: String? = nil
+        var label: String? = nil
+        var path: String? = nil
+        var residentSize: UInt64? = nil
+        var cpuTime: UInt64? = nil
+        var priority: Int32? = nil
+        var energy: Double? = nil
+        var idleWakeups: Double? = nil
+        var diskRead: Double? = nil
+        var diskWritten: Double? = nil
+        var sleepHold: ActivitySleepHold? = nil
+        var strip: [Double?]? = nil
+        var stripSince: Date? = nil
+        var isNew: Bool = false
+        var newSince: Date? = nil
+        var ended: Bool = false
+        var chips: [ActivityRowChip] = []
+        var translated: Bool = false
+        var ignoresHangup: Bool = false
+        var pane: Int? = nil
+        var branch: String? = nil
+        var boundUDP: [Int] = []
+        var connected: Bool = false
+        var stoppedHere: Bool = false
+        var backgroundHere: Bool = false
+        var bulkEligible: Bool = false
+
+        init(
+            id: String, identity: ActivityProcessID, name: String, cpu: Double? = nil, memory: UInt64?, threads: Int32?, state: ActivityState, started: Date, startedText: String, user: String,
+            isOwn: Bool, tab: UUID?, tabTitle: String?
+        ) {
+            self.id = id
+            self.identity = identity
+            self.name = name
+            self.cpu = cpu
+            self.memory = memory
+            self.threads = threads
+            self.state = state
+            self.started = started
+            self.startedText = startedText
+            self.user = user
+            self.isOwn = isOwn
+            self.tab = tab
+            self.tabTitle = tabTitle
+        }
+
+        /// A copy of `other`, for a row about to change.
+        init(copying other: Storage) {
+            id = other.id
+            identity = other.identity
+            name = other.name
+            cpu = other.cpu
+            memory = other.memory
+            threads = other.threads
+            state = other.state
+            started = other.started
+            startedText = other.startedText
+            user = other.user
+            isOwn = other.isOwn
+            tab = other.tab
+            tabTitle = other.tabTitle
+            owner = other.owner
+            checkout = other.checkout
+            whereText = other.whereText
+            listening = other.listening
+            depth = other.depth
+            hasChildren = other.hasChildren
+            folded = other.folded
+            agentCounts = other.agentCounts
+            dimmed = other.dimmed
+            parentPID = other.parentPID
+            group = other.group
+            nice = other.nice
+            terminal = other.terminal
+            command = other.command
+            label = other.label
+            path = other.path
+            residentSize = other.residentSize
+            cpuTime = other.cpuTime
+            priority = other.priority
+            energy = other.energy
+            idleWakeups = other.idleWakeups
+            diskRead = other.diskRead
+            diskWritten = other.diskWritten
+            sleepHold = other.sleepHold
+            strip = other.strip
+            stripSince = other.stripSince
+            isNew = other.isNew
+            newSince = other.newSince
+            ended = other.ended
+            chips = other.chips
+            translated = other.translated
+            ignoresHangup = other.ignoresHangup
+            pane = other.pane
+            branch = other.branch
+            boundUDP = other.boundUDP
+            connected = other.connected
+            stoppedHere = other.stoppedHere
+            backgroundHere = other.backgroundHere
+            bulkEligible = other.bulkEligible
+        }
+
+        func same(as other: Storage) -> Bool {
+            id == other.id
+                && identity == other.identity
+                && name == other.name
+                && cpu == other.cpu
+                && memory == other.memory
+                && threads == other.threads
+                && state == other.state
+                && started == other.started
+                && startedText == other.startedText
+                && user == other.user
+                && isOwn == other.isOwn
+                && tab == other.tab
+                && tabTitle == other.tabTitle
+                && owner == other.owner
+                && checkout == other.checkout
+                && whereText == other.whereText
+                && listening == other.listening
+                && depth == other.depth
+                && hasChildren == other.hasChildren
+                && folded == other.folded
+                && agentCounts == other.agentCounts
+                && dimmed == other.dimmed
+                && parentPID == other.parentPID
+                && group == other.group
+                && nice == other.nice
+                && terminal == other.terminal
+                && command == other.command
+                && label == other.label
+                && path == other.path
+                && residentSize == other.residentSize
+                && cpuTime == other.cpuTime
+                && priority == other.priority
+                && energy == other.energy
+                && idleWakeups == other.idleWakeups
+                && diskRead == other.diskRead
+                && diskWritten == other.diskWritten
+                && sleepHold == other.sleepHold
+                && strip == other.strip
+                && stripSince == other.stripSince
+                && isNew == other.isNew
+                && newSince == other.newSince
+                && ended == other.ended
+                && chips == other.chips
+                && translated == other.translated
+                && ignoresHangup == other.ignoresHangup
+                && pane == other.pane
+                && branch == other.branch
+                && boundUDP == other.boundUDP
+                && connected == other.connected
+                && stoppedHere == other.stoppedHere
+                && backgroundHere == other.backgroundHere
+                && bulkEligible == other.bulkEligible
+        }
+    }
+
+    private var storage: Storage
+
+    init(
+        id: String, identity: ActivityProcessID, name: String, cpu: Double? = nil, memory: UInt64?, threads: Int32?, state: ActivityState, started: Date, startedText: String, user: String,
+        isOwn: Bool, tab: UUID?, tabTitle: String?
+    ) {
+        storage = Storage(
+            id: id, identity: identity, name: name, cpu: cpu, memory: memory, threads: threads, state: state, started: started, startedText: startedText, user: user, isOwn: isOwn, tab: tab,
+            tabTitle: tabTitle)
+    }
+
+    /// Its storage, its own: copied first when another row shares it.
+    private mutating func unique() -> Storage {
+        if !isKnownUniquelyReferenced(&storage) { storage = Storage(copying: storage) }
+        return storage
+    }
+
+    static func == (lhs: ActivityProcessRow, rhs: ActivityProcessRow) -> Bool {
+        lhs.storage === rhs.storage || lhs.storage.same(as: rhs.storage)
+    }
+
     /// Its identity's "pid:start": the selection's key, never the pid alone.
-    let id: String
-    let identity: ActivityProcessID
-    let name: String
-    var cpu: Double?
+    var id: String { storage.id }
+    var identity: ActivityProcessID { storage.identity }
+    var name: String { storage.name }
+    var cpu: Double? {
+        get { storage.cpu }
+        set { unique().cpu = newValue }
+    }
     /// The footprint, Activity Monitor's Memory; nil for another user's.
-    let memory: UInt64?
-    let threads: Int32?
-    let state: ActivityState
+    var memory: UInt64? { storage.memory }
+    var threads: Int32? { storage.threads }
+    var state: ActivityState { storage.state }
     /// `p_starttime`.
-    let started: Date
+    var started: Date { storage.started }
     /// The Started column's words: today's start as its time, an earlier
     /// one as its date — made with the rows, off the main thread.
-    let startedText: String
+    var startedText: String { storage.startedText }
     /// Its effective user's name.
-    let user: String
-    let isOwn: Bool
+    var user: String { storage.user }
+    var isOwn: Bool { storage.isOwn }
     /// The tab it runs in (a pane's tree, or what carries the pane's tag),
     /// by its title; nil outside every tab.
-    let tab: UUID?
-    let tabTitle: String?
+    var tab: UUID? { storage.tab }
+    var tabTitle: String? { storage.tabTitle }
     /// Who it belongs to, and why (6.5).
-    var owner: ActivityOwner?
+    var owner: ActivityOwner? {
+        get { storage.owner }
+        set { unique().owner = newValue }
+    }
     /// Its tab's checkout, by its folder's name.
-    var checkout: String?
+    var checkout: String? {
+        get { storage.checkout }
+        set { unique().checkout = newValue }
+    }
     /// The Where column's words: tab · checkout · agent, or its owner.
-    var whereText = ""
+    var whereText: String {
+        get { storage.whereText }
+        set { unique().whereText = newValue }
+    }
     /// The TCP ports it listens on, by number.
-    var listening: [Int] = []
+    var listening: [Int] {
+        get { storage.listening }
+        set { unique().listening = newValue }
+    }
     /// Its depth in the list's tree, whether it has children there, and
     /// whether they are folded.
-    var depth = 0
-    var hasChildren = false
-    var folded = false
+    var depth: Int {
+        get { storage.depth }
+        set { unique().depth = newValue }
+    }
+    var hasChildren: Bool {
+        get { storage.hasChildren }
+        set { unique().hasChildren = newValue }
+    }
+    var folded: Bool {
+        get { storage.folded }
+        set { unique().folded = newValue }
+    }
     /// An agent's row: what runs under it, counted ("12 MCP · 3 shells").
-    var agentCounts: String?
+    var agentCounts: String? {
+        get { storage.agentCounts }
+        set { unique().agentCounts = newValue }
+    }
     /// Kept in a filtered tree only as a match's ancestor: drawn dimmed,
     /// so the match keeps its place (6.6).
-    var dimmed = false
+    var dimmed: Bool {
+        get { storage.dimmed }
+        set { unique().dimmed = newValue }
+    }
 
     // What the other columns, the filter and the detail read (6.5, 6.6):
     // kinfo's record, the masked command, the usage beyond the footprint.
-    var parentPID: pid_t = 0
-    var group: pid_t = 0
-    var nice: Int8 = 0
+    var parentPID: pid_t {
+        get { storage.parentPID }
+        set { unique().parentPID = newValue }
+    }
+    var group: pid_t {
+        get { storage.group }
+        set { unique().group = newValue }
+    }
+    var nice: Int8 {
+        get { storage.nice }
+        set { unique().nice = newValue }
+    }
     /// Its controlling terminal's name (`ttys003`); nil without one.
-    var terminal: String?
+    var terminal: String? {
+        get { storage.terminal }
+        set { unique().terminal = newValue }
+    }
     /// argv masked as it was read (9.3); nil for another user's, or unread.
-    var command: String?
+    var command: String? {
+        get { storage.command }
+        set { unique().command = newValue }
+    }
     /// An interpreter's label (`ActivityText.label`).
-    var label: String?
-    var path: String?
-    var residentSize: UInt64?
+    var label: String? {
+        get { storage.label }
+        set { unique().label = newValue }
+    }
+    var path: String? {
+        get { storage.path }
+        set { unique().path = newValue }
+    }
+    var residentSize: UInt64? {
+        get { storage.residentSize }
+        set { unique().residentSize = newValue }
+    }
     /// User and system CPU time, ns.
-    var cpuTime: UInt64?
-    var priority: Int32?
+    var cpuTime: UInt64? {
+        get { storage.cpuTime }
+        set { unique().cpuTime = newValue }
+    }
+    var priority: Int32? {
+        get { storage.priority }
+        set { unique().priority = newValue }
+    }
     /// W, an estimate.
-    var energy: Double?
+    var energy: Double? {
+        get { storage.energy }
+        set { unique().energy = newValue }
+    }
     /// Idle wake-ups a second (`ri_pkg_idle_wkups`, Activity Monitor's).
-    var idleWakeups: Double?
+    var idleWakeups: Double? {
+        get { storage.idleWakeups }
+        set { unique().idleWakeups = newValue }
+    }
     /// Bytes a second.
-    var diskRead: Double?
-    var diskWritten: Double?
+    var diskRead: Double? {
+        get { storage.diskRead }
+        set { unique().diskRead = newValue }
+    }
+    var diskWritten: Double? {
+        get { storage.diskWritten }
+        set { unique().diskWritten = newValue }
+    }
     /// What its power assertions keep awake; nil where nothing was read.
-    var sleepHold: ActivitySleepHold?
+    var sleepHold: ActivitySleepHold? {
+        get { storage.sleepHold }
+        set { unique().sleepHold = newValue }
+    }
     /// Its CPU, 15 min, a cell of 15 s each (`ActivityRing`), nil where not
     /// sampled; nil without any history. `stripSince`: when it began, when
     /// that is inside the 15 minutes.
-    var strip: [Double?]?
-    var stripSince: Date?
+    var strip: [Double?]? {
+        get { storage.strip }
+        set { unique().strip = newValue }
+    }
+    var stripSince: Date? {
+        get { storage.stripSince }
+        set { unique().stripSince = newValue }
+    }
     /// New since the rows shown last (6.7): tinted for a tick, or 3 s
     /// when ticks are faster — since `newSince`.
-    var isNew = false
-    var newSince: Date?
+    var isNew: Bool {
+        get { storage.isNew }
+        set { unique().isNew = newValue }
+    }
+    var newSince: Date? {
+        get { storage.newSince }
+        set { unique().newSince = newValue }
+    }
     /// Gone since the last census: shown once more, dimmed, "ended".
-    var ended = false
+    var ended: Bool {
+        get { storage.ended }
+        set { unique().ended = newValue }
+    }
     /// What changed, on this row (6.11).
-    var chips: [ActivityRowChip] = []
+    var chips: [ActivityRowChip] {
+        get { storage.chips }
+        set { unique().chips = newValue }
+    }
     /// Intel code under Rosetta.
-    var translated = false
-    var ignoresHangup = false
+    var translated: Bool {
+        get { storage.translated }
+        set { unique().translated = newValue }
+    }
+    var ignoresHangup: Bool {
+        get { storage.ignoresHangup }
+        set { unique().ignoresHangup = newValue }
+    }
     /// Its pane's number in its tab, from 1.
-    var pane: Int?
-    var branch: String?
+    var pane: Int? {
+        get { storage.pane }
+        set { unique().pane = newValue }
+    }
+    var branch: String? {
+        get { storage.branch }
+        set { unique().branch = newValue }
+    }
     /// The UDP ports it is bound on.
-    var boundUDP: [Int] = []
+    var boundUDP: [Int] {
+        get { storage.boundUDP }
+        set { unique().boundUDP = newValue }
+    }
     /// It holds an established TCP connection.
-    var connected = false
+    var connected: Bool {
+        get { storage.connected }
+        set { unique().connected = newValue }
+    }
     /// Activity stopped it, or put it in the background (6.10): only those
     /// are said so — the background state can't be read back (3.9).
-    var stoppedHere = false
-    var backgroundHere = false
+    var stoppedHere: Bool {
+        get { storage.stoppedHere }
+        set { unique().stoppedHere = newValue }
+    }
+    var backgroundHere: Bool {
+        get { storage.backgroundHere }
+        set { unique().backgroundHere = newValue }
+    }
     /// Left Behind (6.9): a bulk Stop may take it — certain, not ignoring
     /// SIGHUP, detached, an app nor a terraform write, nor kept.
-    var bulkEligible = false
+    var bulkEligible: Bool {
+        get { storage.bulkEligible }
+        set { unique().bulkEligible = newValue }
+    }
 
     var height: CGFloat { 24 }
 
