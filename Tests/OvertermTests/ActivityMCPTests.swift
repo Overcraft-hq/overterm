@@ -28,7 +28,10 @@ final class ActivityMCPTests: XCTestCase {
     override func tearDown() {
         ActivityMCP.scene = nil
         ActivityMCP.monitor = .shared
+        ActivityMCP.othersReader = .shared
+        LaunchdSockets.standIn = nil
         Settings.shared.set("activity.agentAccess", nil)
+        Settings.shared.set("activity.otherListeners", nil)
         Settings.shared.set("activity.enabled", nil)
         super.tearDown()
     }
@@ -504,5 +507,72 @@ final class ActivityMCPTests: XCTestCase {
         XCTAssertFalse(later.isError)
         XCTAssertEqual(kernel.count("processes"), reads + 1)
         assertNothingLeaks(later.text, home: false)
+    }
+
+    // MARK: Every user's listeners (D-25)
+
+    private static let launchdFixtures = URL(fileURLWithPath: #filePath).deletingLastPathComponent().appendingPathComponent(
+        "Fixtures/launchd-sockets/system")
+
+    /// A stand-in nettop answering `text`, leaving a mark when it runs: the
+    /// test's own child, never the real nettop.
+    private func standIn(_ text: String) throws -> (reader: NettopListeners.Reader, ran: URL) {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("ot-mcp-nettop-\(UUID().uuidString.prefix(8))", isDirectory: true)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        addTeardownBlock { try? FileManager.default.removeItem(at: folder) }
+        let answer = folder.appendingPathComponent("answer.txt")
+        try text.write(to: answer, atomically: true, encoding: .utf8)
+        let ran = folder.appendingPathComponent("ran")
+        let script = folder.appendingPathComponent("nettop")
+        try "#!/bin/sh\ntouch \"\(ran.path)\"\ncat \"\(answer.path)\"\n".write(to: script, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: script.path)
+        let reader = NettopListeners.Reader()
+        reader.standIn = script
+        return (reader, ran)
+    }
+
+    /// The user's own listeners as nettop prints them: what makes a read
+    /// believed.
+    private static let yours = [(pid_t(1103), 3001), (1202, 3000), (1302, 5432), (2000, 8080), (1800, 4000)]
+        .map { "fake.\($0.0),,\ntcp4 127.0.0.1:\($0.1)<->*:*,Listen,\n" }.joined()
+    private static let launchd = "launchd.1,,\ntcp4 127.0.0.1:8021<->*:*,Listen,\n"
+
+    /// port_holder about a port none of the user's processes holds reads
+    /// every user's: a believed read names launchd's job; a blind one is
+    /// unknown, never "free"; a port the user holds starts no nettop.
+    func testAPortNoneOfYoursHoldsIsReadThroughNettop() async throws {
+        _ = serve()
+        Settings.shared.set("activity.agentAccess", .bool(true))
+        Settings.shared.set("activity.otherListeners", .bool(true))
+        LaunchdSockets.standIn = [LaunchdSockets.Folder(url: Self.launchdFixtures, domain: .system)]
+
+        let believed = try standIn(",state,\n" + Self.launchd + Self.yours)
+        ActivityMCP.othersReader = believed.reader
+        let mine = await call("port_holder", ["port": 3001])
+        XCTAssertTrue(mine.text.contains("\"yours\":true"), mine.text)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: believed.ran.path), "a port of the user's starts no nettop")
+        XCTAssertNil(believed.reader.latest)
+
+        let held = await call("port_holder", ["port": 8021])
+        XCTAssertFalse(held.isError, held.text)
+        XCTAssertTrue(FileManager.default.fileExists(atPath: believed.ran.path))
+        let object = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(held.text.utf8)) as? [String: Any])
+        XCTAssertEqual(object["state"] as? String, "held")
+        XCTAssertEqual(object["yours"] as? Bool, false)
+        let holder = try XCTUnwrap((object["holders"] as? [[String: Any]])?.first)
+        XCTAssertEqual(holder["class"] as? String, "launchd, for a system job")
+        let free = await call("port_holder", ["port": 9999])
+        XCTAssertTrue(free.text.contains("nettop lists no other user's or macOS's listener on it"), free.text)
+        assertNothingLeaks(held.text, home: false)
+
+        let blind = try standIn(",state,\n" + Self.launchd)
+        ActivityMCP.othersReader = blind.reader
+        let unknown = await call("port_holder", ["port": 8021])
+        let answer = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(unknown.text.utf8)) as? [String: Any])
+        XCTAssertEqual(answer["state"] as? String, "not listed", "a blind read shows none")
+        let advice = try XCTUnwrap(answer["advice"] as? String)
+        XCTAssertTrue(advice.contains("unknown") && advice.contains("may still be taken"), advice)
+        XCTAssertFalse(advice.contains("aren't read here"), advice)
+        XCTAssertTrue(KubeProcessRun.livePIDs.isEmpty, "the stand-ins ended and reaped")
     }
 }
