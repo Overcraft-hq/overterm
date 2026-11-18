@@ -265,6 +265,9 @@ extension TerminalWindowController {
     /// An `activity.` setting changed: off closes the page and stops its
     /// reading; the interval and everyone's are the page's want and rows.
     func activitySettingsChanged() {
+        // Agents' port_/proc_ tools come and go with `activity.enabled`
+        // and `activity.agentAccess`: the bridge serves for them alone too.
+        BrowserBridge.shared.update()
         if !Settings.shared.activityEnabled {
             closeOverlay(.activity)
             if paletteView?.isHidden == false, palette.scope == .activity { hidePalette() }

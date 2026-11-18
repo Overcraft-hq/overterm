@@ -80,6 +80,21 @@ extension E2ERunner {
         let refused = await call("port_holder", ["port": port])
         check("and a call is refused", refused.isError)
         Settings.shared.set("activity.agentAccess", nil)
+
+        // Activity's access alone keeps the bridge serving: with every other
+        // group's off, turning it off stops the server and on starts it.
+        let others = [
+            "browser.agentControl", "api.agentControl", "notes.agentAccess", "database.agentAccess", "docker.agentAccess",
+            "kubernetes.agentAccess", "terraform.agentAccess",
+        ]
+        let before = others.map { Settings.shared.fileValue($0) }
+        for key in others { Settings.shared.set(key, .bool(false)) }
+        check("Activity's access alone keeps the bridge serving", await eventually(5) { BrowserBridge.shared.port != nil })
+        Settings.shared.set("activity.agentAccess", .bool(false))
+        check("turned off, with nothing else on, the bridge stops", await eventually(5) { BrowserBridge.shared.port == nil })
+        Settings.shared.set("activity.agentAccess", nil)
+        check("turned on again, it serves for Activity alone", await eventually(5) { BrowserBridge.shared.isServing })
+        for (key, value) in zip(others, before) { Settings.shared.set(key, value) }
     }
 
     /// A TCP port on 127.0.0.1 nothing holds now: bound and closed.
