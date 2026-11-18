@@ -488,4 +488,44 @@ final class ResourceTableTests: XCTestCase {
         coordinator.update(plainTable(Array(heavier.reversed()), selection: .constant([]), made: { count.made += 1 }))
         XCTAssertEqual(count.made, unkeyed + visible, "no key: every name cell on screen handed its row, as before")
     }
+
+    /// A row equal to what its view showed, under the same look, is passed
+    /// over whole; a changed row, or a new look, is shown again.
+    @MainActor
+    func testAnEqualRowIsPassedOverUntilTheLookChanges() throws {
+        final class Count { var asked = 0 }
+        let count = Count()
+        func list(_ fruit: [Fruit], look: Int) -> ResourceTable<Fruit> {
+            plainTable(fruit, selection: .constant([])).with { table in
+                let plain = table.plainCell
+                table.plainCell = { row, column in
+                    count.asked += 1
+                    return plain?(row, column)
+                }
+                table.skipsEqualRows = true
+                table.look = look
+            }
+        }
+        let fruit: [Fruit] = (0..<20).map { (index: Int) in .fruit("f\(index)", weight: index) }
+        let (coordinator, table, window) = hosted(list(fruit, look: 1))
+        defer {
+            window.close()
+            withExtendedLifetime(coordinator) {}
+        }
+        XCTAssertTrue(table.rowView(atRow: 0, makeIfNecessary: false) is ResourceRowView)
+        let visible = table.rows(in: table.visibleRect).length
+        count.asked = 0
+        coordinator.update(list(fruit, look: 1))
+        XCTAssertEqual(count.asked, 0, "no row changed: no cell asked")
+        XCTAssertGreaterThanOrEqual(table.rowSkips, visible)
+        var heavier = fruit
+        heavier[2] = .fruit("f2", weight: 99)
+        coordinator.update(list(heavier, look: 1))
+        XCTAssertEqual(count.asked, 1, "the changed row alone, its one text column")
+        let at = table.column(withIdentifier: NSUserInterfaceItemIdentifier("weight"))
+        XCTAssertEqual((table.view(atColumn: at, row: 2, makeIfNecessary: false) as? ResourceTextCell)?.shown?.text, "99")
+        count.asked = 0
+        coordinator.update(list(heavier, look: 2))
+        XCTAssertGreaterThanOrEqual(count.asked, visible, "a new look: every row shown again")
+    }
 }

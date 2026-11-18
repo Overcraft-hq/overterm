@@ -815,6 +815,8 @@ extension E2ERunner {
         var hostedSkips = 0
         var plainShows = 0
         var plainSkips = 0
+        /// Rows passed over whole, equal to what their view showed.
+        var rowSkips = 0
         var reorders: Int
         var made: Int
         var visible: Int
@@ -825,6 +827,7 @@ extension E2ERunner {
             hostedSkips = table.hostedSkips
             plainShows = table.plainShows
             plainSkips = table.plainSkips
+            rowSkips = table.rowSkips
             reorders = table.reorders
             made = table.madeRowsLastUpdate
             visible = table.visibleRowsLastUpdate
@@ -838,6 +841,7 @@ extension E2ERunner {
             touch.hostedSkips -= before.hostedSkips
             touch.plainShows -= before.plainShows
             touch.plainSkips -= before.plainSkips
+            touch.rowSkips -= before.rowSkips
             touch.reorders -= before.reorders
             return touch
         }
@@ -847,7 +851,7 @@ extension E2ERunner {
         static func said(_ touches: [TableTouch]) -> String {
             guard let last = touches.last else { return "none" }
             return "updates a publish \(touches.map(\.updates)), hosted cells shown \(touches.map(\.shows)) (kept \(touches.map(\.hostedSkips))), "
-                + "text cells drawn \(touches.map(\.plainShows)) (kept \(touches.map(\.plainSkips))), reorders \(touches.map(\.reorders).reduce(0, +)), "
+                + "AppKit cells drawn \(touches.map(\.plainShows)) (kept \(touches.map(\.plainSkips))), rows passed over \(touches.map(\.rowSkips)), reorders \(touches.map(\.reorders).reduce(0, +)), "
                 + "rows with a view \(last.made) of \(last.visible) on screen"
         }
     }

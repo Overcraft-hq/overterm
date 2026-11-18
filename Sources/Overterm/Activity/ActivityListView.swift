@@ -52,6 +52,10 @@ struct ActivityListView: View, Equatable {
                 table.plainCell = { [theme] row, column in ActivityCells.plain(row, column.id).map { Self.value($0, theme: theme) } }
                 table.drawnCell = { [theme, weak page] row, column in Self.drawn(row, column.id, theme: theme, page: page) }
                 table.cellKey = { [theme] row, column in Self.key(row, column?.id, theme: theme) }
+                // A row holds all its cells draw but the theme, the text size
+                // and the minute its chips count to (6.11).
+                table.skipsEqualRows = true
+                table.look = Self.look(theme: theme, now: Date())
             }
             if !list.hasRead {
                 VStack(spacing: 8) {
@@ -239,6 +243,16 @@ struct ActivityListView: View, Equatable {
     }
 
     private static func heatColours(dark: Bool) -> [NSColor] { dark ? heat.dark : heat.light }
+
+    /// What every cell draws besides its row: the theme's colours, the
+    /// text size, the minute a chip's "for 5 min" counts to.
+    static func look(theme: ChromeTheme, now: Date) -> Int {
+        var hasher = Hasher()
+        hasher.combine(theme.revision)
+        hasher.combine(ChromeMetrics.text(12))
+        hasher.combine(Int(now.timeIntervalSinceReferenceDate / 60))
+        return hasher.finalize()
+    }
 
     /// What a hosted cell draws, as a key (`ResourceTable.cellKey`): a
     /// group's or a container's row, a folded port row, by every value its

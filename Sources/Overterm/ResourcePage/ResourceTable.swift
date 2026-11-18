@@ -163,6 +163,13 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
     /// A key of what a hosted cell draws (`cell`): a cell shown with the
     /// same key isn't handed its row again. Nil: always handed it.
     var cellKey: ((Row, ResourceColumn?) -> Int)? = nil
+    /// A row equal to the one its view last showed, under the same `look`,
+    /// isn't shown again — none of its cells is asked for its words. Only
+    /// for rows that hold everything their cells draw; `look` the rest (the
+    /// theme, the text size, a clock a cell reads). Off: every row with a
+    /// view is shown at every update.
+    var skipsEqualRows = false
+    var look = 0
 
     /// This table with `change` made: the options above, set in place.
     func with(_ change: (inout ResourceTable) -> Void) -> ResourceTable {
@@ -502,6 +509,15 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
             table.visibleRowsLastUpdate = table.rows(in: table.visibleRect).length
             let placed = ResourceTable.placed(columns, in: table)
             for index in made where index < rows.count {
+                let rowView = view.skipsEqualRows ? table.rowView(atRow: index, makeIfNecessary: false) as? ResourceRowView : nil
+                if let rowView, rowView.shownLook == view.look, let shown = rowView.shownRow as? Row, shown == rows[index] {
+                    table.rowSkips += 1
+                    continue
+                }
+                defer {
+                    rowView?.shownRow = rows[index]
+                    rowView?.shownLook = view.look
+                }
                 if let label = view.accessibilityLabel, let rowView = table.rowView(atRow: index, makeIfNecessary: false) {
                     let said = label(rows[index])
                     if rowView.accessibilityLabel() != said { rowView.setAccessibilityLabel(said) }
@@ -589,10 +605,27 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
             return cell
         }
 
-        /// A row's view as it comes on screen: what VoiceOver says of it.
+        /// A row's view as it comes on screen: what VoiceOver says of it,
+        /// and the row its cells were just made for.
         func tableView(_ tableView: NSTableView, didAdd rowView: NSTableRowView, forRow row: Int) {
-            guard let label = view?.accessibilityLabel, rows.indices.contains(row) else { return }
+            guard rows.indices.contains(row) else { return }
+            if let shown = rowView as? ResourceRowView {
+                shown.shownRow = rows[row]
+                shown.shownLook = view?.look ?? 0
+            }
+            guard let label = view?.accessibilityLabel else { return }
             rowView.setAccessibilityLabel(label(rows[row]))
+        }
+
+        /// A row view that remembers its row (`skipsEqualRows`); the table's
+        /// own otherwise.
+        func tableView(_ tableView: NSTableView, rowViewForRow row: Int) -> NSTableRowView? {
+            guard view?.skipsEqualRows == true else { return nil }
+            let identifier = NSUserInterfaceItemIdentifier("resource.rowView")
+            let made = tableView.makeView(withIdentifier: identifier, owner: nil) as? ResourceRowView ?? ResourceRowView()
+            made.identifier = identifier
+            made.shownRow = nil
+            return made
         }
 
         func tableViewSelectionDidChange(_ notification: Notification) {
@@ -684,6 +717,8 @@ final class ResourceTableView: NSTableView {
     var hostedSkips = 0
     var plainShows = 0
     var plainSkips = 0
+    /// Rows equal to what their view showed, passed over whole.
+    var rowSkips = 0
     var madeRowsLastUpdate = 0
     var visibleRowsLastUpdate = 0
     private var hover: NSTrackingArea?
@@ -790,6 +825,12 @@ final class ResourceTableView: NSTableView {
         if item.action == #selector(copy(_:)) { return selectedRow >= 0 }
         return super.validateUserInterfaceItem(item)
     }
+}
+
+/// A row's view that remembers the row its cells show (`skipsEqualRows`).
+final class ResourceRowView: NSTableRowView {
+    var shownRow: Any?
+    var shownLook = 0
 }
 
 /// A row's cell: a SwiftUI row in a hosting view kept for the cell's life,
