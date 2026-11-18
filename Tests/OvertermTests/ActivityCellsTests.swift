@@ -113,4 +113,23 @@ final class ActivityCellsTests: XCTestCase {
         XCTAssertEqual(bars[3].rect.height, 18, "capped at the strip")
         XCTAssertEqual(bars[3].level, .over)
     }
+
+    /// The page's numbers written by the C library say what Foundation's
+    /// `%.Nf` said in the POSIX locale, halves and all.
+    func testNumbersAreWrittenAsPrintfWrites() {
+        let posix = Locale(identifier: "en_US_POSIX")
+        var values: [Double] = [0, 0.05, 0.15, 0.25, 0.35, 1.25, 2.5, 99.95, 100, 123.456, 1_234_567.891, -0.04, 312, .greatestFiniteMagnitude / 1e300]
+        var random = SystemRandomNumberGenerator()
+        values += (0..<500).map { _ in Double.random(in: 0...2_000, using: &random) }
+        for value in values {
+            for digits in 0...2 {
+                XCTAssertEqual(ActivityRows.fixed(value, digits: digits), String(format: "%.\(digits)f", locale: posix, value), "\(value), \(digits)")
+            }
+        }
+        XCTAssertEqual(ActivityRows.bytes(64 << 20), "64.0 MB")
+        XCTAssertEqual(ActivityRows.bytes(512), "512 B")
+        XCTAssertEqual(ActivityRows.bytes(150 << 30), "150 GB")
+        XCTAssertEqual(ActivityPageView.rate(1.25, unit: "W"), "1.2 W")
+        XCTAssertEqual(ActivityPageView.rate(2_048, unit: "B/s"), "2.0 KB/s")
+    }
 }

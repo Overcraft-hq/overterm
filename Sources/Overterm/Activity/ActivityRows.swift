@@ -1166,11 +1166,33 @@ enum ActivityRows {
 
     /// A CPU share as the page writes it: one decimal, a dot whatever the
     /// locale (`Text(verbatim:)` draws it).
-    static func percent(_ value: Double) -> String { String(format: "%.1f", locale: posix, value) }
+    static func percent(_ value: Double) -> String { fixed(value, digits: 1) }
 
-    /// The locale every number on the page is written in, made once: a
-    /// `Locale(identifier:)` a cell was most of what writing it cost.
-    static let posix = Locale(identifier: "en_US_POSIX")
+    /// `value` with `digits` (0–2) decimals as `%.Nf` writes it in the
+    /// POSIX locale — a dot whatever the person's —, made from integers:
+    /// Foundation's `String(format:locale:)` goes through ICU's number
+    /// formatter, most of what a list's cell cost to write (7.7). A value a
+    /// hair from a half, where only the exact binary value says which way
+    /// `%f` rounds, and a huge one are Foundation's still. Pure.
+    static func fixed(_ value: Double, digits: Int) -> String {
+        let scale: Int64 = digits == 0 ? 1 : digits == 1 ? 10 : 100
+        let scaled = value * Double(scale)
+        let fraction = scaled - scaled.rounded(.down)
+        guard value.isFinite, abs(scaled) < 1e15, abs(fraction - 0.5) > 1e-6 else {
+            return String(format: digits == 0 ? "%.0f" : digits == 1 ? "%.1f" : "%.2f", locale: posixLocale, value)
+        }
+        let magnitude = abs(Int64(scaled.rounded()))
+        var text = value.sign == .minus ? "-" : ""
+        text += String(magnitude / scale)
+        if digits > 0 {
+            let decimals = String(magnitude % scale)
+            text += "." + String(repeating: "0", count: digits - decimals.count) + decimals
+        }
+        return text
+    }
+
+    /// For what `fixed` leaves to Foundation: made once.
+    private static let posixLocale = Locale(identifier: "en_US_POSIX")
 
     /// A footprint in Activity Monitor's units.
     static func bytes(_ value: UInt64) -> String {
@@ -1181,8 +1203,7 @@ enum ActivityRows {
             amount /= 1024
             unit += 1
         }
-        let format = unit == 0 || amount >= 100 ? "%.0f %@" : "%.1f %@"
-        return String(format: format, locale: posix, amount, units[unit])
+        return fixed(amount, digits: unit == 0 || amount >= 100 ? 0 : 1) + " " + units[unit]
     }
 
     private static let users = NSLock()

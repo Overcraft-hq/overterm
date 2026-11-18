@@ -69,7 +69,7 @@ enum ActivityCells {
         case "path": text(row.path ?? "", .text3)
         case "command": text(row.command ?? "", .text2)
         case "energy": number(ActivityPageView.rate(row.energy, unit: "W"))
-        case "wakeups": number(row.idleWakeups.map { String(format: "%.0f", locale: ActivityRows.posix, $0) } ?? "—")
+        case "wakeups": number(row.idleWakeups.map { ActivityRows.fixed($0, digits: 0) } ?? "—")
         case "diskRead": number(ActivityPageView.rate(row.diskRead, unit: "B/s"))
         case "diskWritten": number(ActivityPageView.rate(row.diskWritten, unit: "B/s"))
         case "sleep": text(row.sleepHold.map { $0.isEmpty ? "No" : $0.text } ?? "—", row.sleepHold?.isEmpty == false ? .text : .text3)
