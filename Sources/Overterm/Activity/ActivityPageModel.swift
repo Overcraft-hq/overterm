@@ -819,7 +819,7 @@ final class ActivityPageModel: ObservableObject {
                 // launchd's socket jobs, read once, lazily: only when there
                 // are other users' listeners to name (6.8 rule 9).
                 if options.others?.isBelieved == true { options.launchdSockets = LaunchdSockets.cachedJobs(in: AppEnvironment.launchdSocketFolders) }
-                var content = ActivityRows.content(of: snapshot, options)
+                var content = ActivityRows.withListRows(ActivityRows.content(of: snapshot, options))
                 content.shownIDs = ActivityRows.shownIDs(content)
                 continuation.resume(returning: (content, shown.map { ActivityRows.held($0, content) }))
             }

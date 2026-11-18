@@ -555,6 +555,47 @@ final class ActivityRowsTests: XCTestCase {
         XCTAssertEqual(ActivityGrouping.none.next, .checkout, "G comes round")
     }
 
+    /// The list's rows made with the content off the main thread (7.7) are
+    /// the items as the list mapped them, for every grouping, tree or flat,
+    /// folded or not; held, they keep the order shown and its token.
+    func testTheListsRowsAreMadeWithTheContent() throws {
+        let context = grouped()
+        let snapshot = try full(ActivitySampler(kernel: kernel), context)
+        let unfolded = Dictionary(uniqueKeysWithValues: ActivityRows.Fixed.allCases.map { ($0.id, false) })
+        for grouping in ActivityGrouping.allCases {
+            for tree in [true, false] {
+                for folds in [[:], unfolded] {
+                    let made = ActivityRows.content(
+                        of: snapshot,
+                        options(context) {
+                            $0.grouping = grouping
+                            $0.tree = tree
+                            $0.folds = folds
+                        })
+                    let content = ActivityRows.withListRows(made)
+                    let said = "\(grouping), tree \(tree), \(folds.isEmpty ? "folded" : "unfolded")"
+                    XCTAssertEqual(content.listRows(.processes).rows, made.list.map(ActivityListRow.init), said)
+                    XCTAssertEqual(content.listRows(.leftBehind).rows, made.leftBehind.map(ActivityListRow.init), said)
+                    XCTAssertEqual(content.listRows(.listening).rows, made.ports.map(ActivityListRow.port), said)
+                    XCTAssertEqual(made.listRows(.processes).rows, content.listRows(.processes).rows, "mapped when not made: \(said)")
+                    XCTAssertEqual(made.listRows(.processes).order, content.listRows(.processes).order, said)
+                    for (at, row) in content.processRows.rows.enumerated() { XCTAssertEqual(content.processRows.index[row.id], at, said) }
+                }
+            }
+        }
+        let shown = ActivityRows.withListRows(ActivityRows.content(of: snapshot, options(context) { $0.grouping = .checkout }))
+        var reversed = shown
+        reversed.list.reverse()
+        reversed.ports.reverse()
+        let next = ActivityRows.withListRows(reversed)
+        XCTAssertNotEqual(next.processRows.order, shown.processRows.order, "another order, another token")
+        let held = ActivityRows.held(shown, next)
+        XCTAssertEqual(held.listRows(.processes).rows, held.list.map(ActivityListRow.init), "held: the rows are the held items")
+        XCTAssertEqual(held.listRows(.listening).rows, held.ports.map(ActivityListRow.port))
+        XCTAssertEqual(held.processRows.order, shown.processRows.order, "the token of the order shown")
+        XCTAssertEqual(held.portRows.order, shown.portRows.order)
+    }
+
     func testTheScopeLadder() throws {
         let context = grouped()
         let snapshot = try full(ActivitySampler(kernel: kernel), context)

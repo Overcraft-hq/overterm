@@ -396,7 +396,7 @@ extension E2ERunner {
             "activityPerf: 5,000 processes' rows, grouped by checkout, a tick after the last (\(crowdedRows.count) ticks): made \(crowd), p90 \(p90(Self.p90(crowdedRows))); "
                 + "owners \(Self.summary(crowdedTicks.parts.map(\.attribution))), rows \(Self.summary(crowdedTicks.parts.map(\.rows))), "
                 + "list \(Self.summary(crowdedTicks.parts.map(\.list))), Listening \(Self.summary(crowdedTicks.parts.map(\.ports))), "
-                + "summary \(Self.summary(crowdedTicks.parts.map(\.summary))); the ids kept \(Self.summary(crowdedTicks.shownIDs)), "
+                + "summary \(Self.summary(crowdedTicks.parts.map(\.summary))); the list's rows and the ids kept \(Self.summary(crowdedTicks.shownIDs)), "
                 + "held \(Self.summary(crowdedTicks.held)); the first build \(p90(crowdedTicks.cold))")
         note("activityPerf: a publish's main-thread CPU \(Self.summary(shownMain)), p90 \(p90(Self.p90(shownMain))); held \(Self.summary(heldMain)), p90 \(p90(Self.p90(heldMain)))")
         note(
@@ -474,6 +474,14 @@ extension E2ERunner {
             "a publish takes the main thread under 50 ms of CPU (p90), a held one under 35 ms",
             shownMain.count >= 12 && Self.p90(shownMain) < 50 && heldMain.count == 12 && Self.p90(heldMain) < 35,
             "\(Self.summary(shownMain)); held \(Self.summary(heldMain))")
+        // 7.7 at 5,000: the list's rows made with the content, the table
+        // told their order — a crowded Mac's publish costs what this one's
+        // does (36.6 against 33.8 ms measured), never its rows' count.
+        let crowdedMain = Self.summary(crowdedPublish.main)
+        check(
+            "at 5,000 processes, a publish takes the main thread at most 1.5× this Mac's (median)",
+            crowdedPublish.main.count == 12 && !shownMain.isEmpty && crowdedMain.median <= 1.5 * Self.summary(shownMain).median,
+            "\(crowdedMain) against \(Self.summary(shownMain))")
         check("the list scrolls in under 35 ms a step (p95)", !scrolled.isEmpty && scroll.p95 < 35, "\(scroll)")
         // 7.7: the main thread's part of a publish ≤ 4 ms — the verbs' list
         // is all of theirs that stays on it.
@@ -635,6 +643,7 @@ extension E2ERunner {
             var content = ActivityRows.content(of: snapshot, options)
             let took = (CACurrentMediaTime() - start) * 1000
             let idsStart = CACurrentMediaTime()
+            content = ActivityRows.withListRows(content)
             content.shownIDs = ActivityRows.shownIDs(content)
             let idsTook = (CACurrentMediaTime() - idsStart) * 1000
             if let shown {

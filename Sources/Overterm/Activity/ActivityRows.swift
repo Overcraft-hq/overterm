@@ -550,6 +550,67 @@ struct ActivityPageContent: Sendable {
     var attribution: ActivityAttribution?
     /// What making it cost, by part (10.4): times only.
     var cost = ActivityRows.Cost()
+    /// Each section's rows as the list draws them, made with the rest off
+    /// the main thread (`ActivityRows.listRows`, 7.7); empty until made.
+    var processRows = ActivityListRows()
+    var leftBehindRows = ActivityListRows()
+    var portRows = ActivityListRows()
+    /// Whether the three above were made: a content made elsewhere (a
+    /// test's) has its rows mapped when asked.
+    var listRowsMade = false
+
+    /// `section`'s rows as the list draws them: those made with the
+    /// content, else mapped now.
+    func listRows(_ section: ActivityPageModel.Section) -> ActivityListRows {
+        if listRowsMade {
+            switch section {
+            case .processes: return processRows
+            case .listening: return portRows
+            case .leftBehind: return leftBehindRows
+            }
+        }
+        switch section {
+        case .processes: return ActivityListRows(list.map(ActivityListRow.init))
+        case .listening: return ActivityListRows(ports.map(ActivityListRow.port))
+        case .leftBehind: return ActivityListRows(leftBehind.map(ActivityListRow.init))
+        }
+    }
+}
+
+/// A section's rows as the list draws them (7.7): the rows, a token of
+/// their ids in order and each id's place — made with the content off the
+/// main thread, so the table neither compares every id nor looks the
+/// selection up row by row on it.
+struct ActivityListRows: Sendable {
+    private(set) var rows: [ActivityListRow] = []
+    /// The ids in order, hashed with their count: equal for the same
+    /// order (`ResourceTable.order`).
+    private(set) var order = 0
+    /// Each id's row, the first where an id comes twice.
+    private(set) var index: [String: Int] = [:]
+
+    init() {}
+
+    init(_ rows: [ActivityListRow]) {
+        self.rows = rows
+        var hasher = Hasher()
+        hasher.combine(rows.count)
+        index.reserveCapacity(rows.count)
+        for (at, row) in rows.enumerated() {
+            let id = row.id
+            hasher.combine(id)
+            if index[id] == nil { index[id] = at }
+        }
+        order = hasher.finalize()
+    }
+
+    /// These rows in their order with `next`'s values where it has them
+    /// (6.7's held order): the order and the places are these.
+    func taking(_ next: ActivityListRows) -> ActivityListRows {
+        var out = self
+        out.rows = rows.map { row in next.index[row.id].map { next.rows[$0] } ?? row }
+        return out
+    }
 }
 
 enum ActivityRows {

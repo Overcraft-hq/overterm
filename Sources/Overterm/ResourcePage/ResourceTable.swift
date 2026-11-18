@@ -141,6 +141,16 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
     var fold: ((String, Bool) -> Bool)? = nil
     /// The selected row kept in view as the rows change under it.
     var follow = false
+    /// A token of the rows' ids in their order, made with them: equal to
+    /// the last update's, the ids aren't compared one by one (Activity's
+    /// 5,000 rows, 7.7). Nil: compared.
+    var order: Int? = nil
+    /// A row's place by its id, made with the rows: the selection found
+    /// through it, not by a walk of every row. Nil: walked.
+    var index: ((String) -> Int?)? = nil
+    /// Every row is the same height: a move in place notes no height and
+    /// looks only at the rows with a view.
+    var uniformHeight = false
 
     /// This table with `change` made: the options above, set in place.
     func with(_ change: (inout ResourceTable) -> Void) -> ResourceTable {
@@ -246,6 +256,8 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
         private var settingSort = false
         /// The selection, by id, as the last update found it.
         private var shownSelection: Set<String> = []
+        /// The last update's `order`.
+        private var shownOrder: Int?
 
         func update(_ view: ResourceTable) {
             self.view = view
@@ -266,7 +278,10 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
                 }
             let columnsMade = view.columns != columns
             if columnsMade { setColumns(view, in: table) }
-            if view.rows.map(\.id) != rows.map(\.id) {
+            let sameOrder =
+                if let order = view.order, order == shownOrder, view.rows.count == rows.count { true } else { view.rows.map(\.id) == rows.map(\.id) }
+            shownOrder = view.order
+            if !sameOrder {
                 let old = rows
                 rows = view.rows
                 if columnsMade || old.isEmpty || rows.isEmpty {
@@ -288,7 +303,7 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
                 rows = view.rows
                 showVisible(view, in: table)
             }
-            let wanted = IndexSet(rows.indices.filter { view.selection.contains(rows[$0].id) })
+            let wanted = Self.wanted(view.selection, index: view.index, rows: rows)
             // A selection made — a press, a link, a reveal — is brought into
             // view once; the same selection moving with its rows only when
             // followed (`follow`), or the list jumps to it at every re-sort.
@@ -312,10 +327,15 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
         /// with their new values.
         private func reorder(from old: [Row], _ view: ResourceTable, in table: ResourceTableView) {
             table.reorders += 1
-            let plan = Self.inPlace(
-                old: old.map { RowShape(height: $0.height, kind: $0.reuseKind, spans: spans($0)) },
-                new: rows.map { RowShape(height: $0.height, kind: $0.reuseKind, spans: spans($0)) },
-                made: Self.madeRows(in: table))
+            let made = Self.madeRows(in: table)
+            let plan =
+                view.uniformHeight
+                ? Self.inPlace(oldCount: old.count, newCount: rows.count, made: made) { index in
+                    old[index].reuseKind != rows[index].reuseKind || spans(old[index]) != spans(rows[index])
+                }
+                : Self.inPlace(
+                    old: old.map { RowShape(height: $0.height, kind: $0.reuseKind, spans: spans($0)) },
+                    new: rows.map { RowShape(height: $0.height, kind: $0.reuseKind, spans: spans($0)) }, made: made)
             settingSelection = true
             table.beginUpdates()
             if !plan.removed.isEmpty { table.removeRows(at: plan.removed, withAnimation: []) }
@@ -370,6 +390,32 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
                 }
             }
             return (added, removed, remade, heights)
+        }
+
+        /// `inPlace` for rows of one height: only the rows with a view
+        /// (`made`) are looked at, `changed` saying whether one's kind or
+        /// span differ. Pure.
+        nonisolated static func inPlace(oldCount: Int, newCount: Int, made: IndexSet, changed: (Int) -> Bool)
+            -> (added: IndexSet, removed: IndexSet, remade: IndexSet, heights: IndexSet)
+        {
+            let common = min(oldCount, newCount)
+            let added = newCount > oldCount ? IndexSet(integersIn: oldCount..<newCount) : IndexSet()
+            let removed = oldCount > newCount ? IndexSet(integersIn: newCount..<oldCount) : IndexSet()
+            var remade = IndexSet()
+            for index in made where index < common && changed(index) { remade.insert(index) }
+            return (added, removed, remade, IndexSet())
+        }
+
+        /// The rows `selection` means: through `index` where the page
+        /// made one, else by a walk of the rows; none for none. Pure.
+        nonisolated static func wanted(_ selection: Set<String>, index: ((String) -> Int?)?, rows: [Row]) -> IndexSet {
+            guard !selection.isEmpty else { return IndexSet() }
+            guard let index else { return IndexSet(rows.indices.filter { selection.contains(rows[$0].id) }) }
+            var wanted = IndexSet()
+            for id in selection {
+                if let at = index(id), rows.indices.contains(at), rows[at].id == id { wanted.insert(at) }
+            }
+            return wanted
         }
 
         /// Whether `row` lies inside the visible range, wholly. Pure.
@@ -442,6 +488,7 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
             let made = Self.madeRows(in: table)
             table.madeRowsLastUpdate = made.count
             table.visibleRowsLastUpdate = table.rows(in: table.visibleRect).length
+            let placed = ResourceTable.placed(columns, in: table)
             for index in made where index < rows.count {
                 if let label = view.accessibilityLabel, let rowView = table.rowView(atRow: index, makeIfNecessary: false) {
                     let said = label(rows[index])
@@ -456,7 +503,7 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
                     }
                     continue
                 }
-                for (at, column) in ResourceTable.placed(columns, in: table) {
+                for (at, column) in placed {
                     guard let cell = table.view(atColumn: at, row: index, makeIfNecessary: false) as? ResourceHostingCell else { continue }
                     cell.show(view.cell(rows[index], view.hasHeader ? column : nil))
                     table.hostedShows += 1

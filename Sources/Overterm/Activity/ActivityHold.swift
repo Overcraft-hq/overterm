@@ -71,6 +71,25 @@ extension ActivityRows {
         // once it lets go (6.7).
         out.madeAt = shown.madeAt
         out.shownIDs = nil
+        // The list's rows in the order shown, as `list` and `ports` are;
+        // Left Behind's are `next`'s, as its items are.
+        if shown.listRowsMade, next.listRowsMade {
+            out.processRows = shown.processRows.taking(next.processRows)
+            out.portRows = shown.portRows.taking(next.portRows)
+        } else {
+            out.listRowsMade = false
+        }
+        return out
+    }
+
+    /// `content` with its list's rows made (7.7): off the main thread, with
+    /// the rest of it.
+    static func withListRows(_ content: ActivityPageContent) -> ActivityPageContent {
+        var out = content
+        out.processRows = ActivityListRows(content.list.map(ActivityListRow.init))
+        out.leftBehindRows = ActivityListRows(content.leftBehind.map(ActivityListRow.init))
+        out.portRows = ActivityListRows(content.ports.map(ActivityListRow.port))
+        out.listRowsMade = true
         return out
     }
 

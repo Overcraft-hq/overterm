@@ -3,11 +3,19 @@ import SwiftUI
 /// A row of the page's one list: a process's or a listener's. One table for
 /// both sections, so the list keeps its place in the view tree — the
 /// keyboard and the scroll with it — as the section changes (6.4).
-enum ActivityListRow: ResourceTableRow {
+enum ActivityListRow: ResourceTableRow, Sendable {
     case process(ActivityProcessRow)
     case port(ActivityPortRow)
     /// A group's header, a container, "+N more" (6.5).
     case group(ActivityGroupRow)
+
+    /// Processes' and Left Behind's item as a row.
+    init(_ item: ActivityListItem) {
+        switch item {
+        case .group(let row): self = .group(row)
+        case .process(let row): self = .process(row)
+        }
+    }
 
     var id: String {
         switch self {
@@ -340,25 +348,8 @@ struct ActivityPageView: View {
 
     // MARK: The list
 
-    private var rows: [ActivityListRow] {
-        switch page.section {
-        case .processes:
-            page.content.list.map { item in
-                switch item {
-                case .group(let row): ActivityListRow.group(row)
-                case .process(let row): ActivityListRow.process(row)
-                }
-            }
-        case .listening: page.content.ports.map(ActivityListRow.port)
-        case .leftBehind:
-            page.content.leftBehind.map { item in
-                switch item {
-                case .group(let row): ActivityListRow.group(row)
-                case .process(let row): ActivityListRow.process(row)
-                }
-            }
-        }
-    }
+    /// The section's rows, made with the content off the main thread.
+    private var listRows: ActivityListRows { page.content.listRows(page.section) }
 
     private var columns: [ResourceColumn] { page.columns(page.section) }
 
@@ -392,9 +383,10 @@ struct ActivityPageView: View {
     }
 
     private var table: some View {
-        ZStack {
+        let shown = listRows
+        return ZStack {
             ResourceTable(
-                rows: rows, selection: $page.selection, columns: columns, sort: sort, cell: { row, column in cell(row, column) },
+                rows: shown.rows, selection: $page.selection, columns: columns, sort: sort, cell: { row, column in cell(row, column) },
                 verbs: { [weak page, copy] ids in page?.verbs(for: ids, copy: copy) ?? [] }, copy: { copy(page.selectedLines) },
                 accessibilityIdentifier: "activity.list",
                 accessibilityLabel: { $0.accessibilityLabel }
@@ -407,6 +399,9 @@ struct ActivityPageView: View {
                 table.toggleColumn = { [weak page] id in page?.toggleColumn(id, in: section) }
                 table.fold = { [weak page] id, open in page?.fold(id, open: open) ?? false }
                 table.follow = page.following
+                table.order = shown.order
+                table.index = { shown.index[$0] }
+                table.uniformHeight = true
             }
             if !page.hasRead {
                 VStack(spacing: 8) {
@@ -415,7 +410,7 @@ struct ActivityPageView: View {
                 }
                 .frame(maxWidth: .infinity, maxHeight: .infinity).background(Color(nsColor: GhosttyRuntime.shared.backgroundColor))
                 .accessibilityIdentifier("activity.empty")
-            } else if rows.isEmpty {
+            } else if shown.rows.isEmpty {
                 Text(verbatim: emptySentence).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3).multilineTextAlignment(.center)
                     .padding(24).frame(maxWidth: .infinity, maxHeight: .infinity)
                     .background(Color(nsColor: GhosttyRuntime.shared.backgroundColor))

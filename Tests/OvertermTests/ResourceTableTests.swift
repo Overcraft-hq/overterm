@@ -239,6 +239,36 @@ final class ResourceTableTests: XCTestCase {
         XCTAssertEqual(prepared.remade, IndexSet([2]), "a view prepared off screen is remade too")
     }
 
+    /// Rows of one height moved in place: only the rows with a view are
+    /// looked at — gaps in them too —, no height is noted.
+    func testRowsOfOneHeightMoveInPlaceLookingOnlyAtThoseMade() {
+        var asked: [Int] = []
+        let plan = ResourceTable<Fruit>.Coordinator.inPlace(oldCount: 6, newCount: 4, made: IndexSet([0, 2, 3, 5])) { index in
+            asked.append(index)
+            return index == 3
+        }
+        XCTAssertEqual(asked, [0, 2, 3], "the made rows both lists have, and only those")
+        XCTAssertEqual(plan.remade, IndexSet([3]))
+        XCTAssertEqual(plan.removed, IndexSet([4, 5]))
+        XCTAssertTrue(plan.added.isEmpty)
+        XCTAssertTrue(plan.heights.isEmpty)
+        let grown = ResourceTable<Fruit>.Coordinator.inPlace(oldCount: 1, newCount: 3, made: IndexSet([0])) { _ in false }
+        XCTAssertEqual(grown.added, IndexSet([1, 2]))
+    }
+
+    /// The selection found through the page's index of the rows, or walked
+    /// without one: the same rows; an index that names another row's
+    /// place is not believed.
+    func testTheSelectionIsFoundThroughTheIndex() {
+        let fruit: [Fruit] = (0..<20).map { (index: Int) in .fruit("f\(index)", weight: index) }
+        let index = Dictionary(uniqueKeysWithValues: fruit.enumerated().map { ($1.id, $0) })
+        let selection: Set<String> = ["f3", "f17", "gone"]
+        XCTAssertEqual(ResourceTable<Fruit>.Coordinator.wanted(selection, index: { index[$0] }, rows: fruit), IndexSet([3, 17]))
+        XCTAssertEqual(ResourceTable<Fruit>.Coordinator.wanted(selection, index: nil, rows: fruit), IndexSet([3, 17]))
+        XCTAssertEqual(ResourceTable<Fruit>.Coordinator.wanted([], index: { index[$0] }, rows: fruit), IndexSet())
+        XCTAssertEqual(ResourceTable<Fruit>.Coordinator.wanted(["f3"], index: { _ in 5 }, rows: fruit), IndexSet(), "a stale index")
+    }
+
     /// A row the table prepared beyond the visible rect (responsive
     /// scrolling) is a row with a view: moved in place, it is handed its
     /// new row — never left drawing the one that sat there, which a press
