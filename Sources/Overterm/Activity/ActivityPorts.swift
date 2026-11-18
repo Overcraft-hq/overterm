@@ -368,12 +368,19 @@ enum ActivityPorts {
             row.ownerText = owner?.reason ?? "left behind"
         default:
             let facts = snapshot.facts[holder]
-            if let known {
+            // macOS's by name only where the binary is macOS's: a user's own
+            // `sshd` (Homebrew's, a test's) is theirs, and Free asks.
+            let known = known.flatMap { $0.word != "macos" || KnownHolders.isMacOSBinary(facts) ? $0 : nil }
+            // macOS's own first (rapportd runs as a launchd job), then a
+            // launchd job of the user's (a brew service of a tool), then
+            // the other known holders.
+            let job =
+                LaunchdJobs.job(service: facts?.markers?.service)
+                ?? LaunchdJobs.job(path: facts?.path, parent: process?.parentPID ?? 0, agents: inputs.launchAgents)
+            if let known, known.word == "macos" || job == nil {
                 row.portOwner = .known(known)
                 row.ownerText = known.name
-            } else if let job = LaunchdJobs.job(service: facts?.markers?.service)
-                ?? LaunchdJobs.job(path: facts?.path, parent: process?.parentPID ?? 0, agents: inputs.launchAgents)
-            {
+            } else if let job {
                 row.portOwner = .service(job)
                 row.ownerText = job.title
             } else {
