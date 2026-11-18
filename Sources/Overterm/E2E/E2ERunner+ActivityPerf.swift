@@ -43,10 +43,13 @@ extension E2ERunner {
 
         // Ticks: CPU moved on each process, so the CPU sort reorders.
         var random = SystemRandomNumberGenerator()
+        // Steady: every process the same CPU each tick, so no value drawn
+        // moves — what a publish costs when nothing changed.
+        var steadyCPU = false
         func burn() {
             kernel.advance(2_000_000_000)
             for pid in pids {
-                let used = UInt64.random(in: 0...40_000_000, using: &random)
+                let used = steadyCPU ? 10_000_000 : UInt64.random(in: 0...40_000_000, using: &random)
                 kernel.update(pid) { process in
                     process.usage = FakeActivityKernel.usage(cpuTime: (process.usage?.cpuTime ?? 0) + used, footprint: process.usage?.footprint ?? 0, threads: 4)
                 }
@@ -67,8 +70,14 @@ extension E2ERunner {
         var heldShown: [Double] = []
         var shownMain: [Double] = []
         var heldMain: [Double] = []
+        // What each publish touched (7.7), by leg: the table's updates, the
+        // cells handed a row, the rows with a view and those on screen.
+        var leg = "shown"
+        var touched: [String: [TableTouch]] = [:]
+        var table: ResourceTableView?
         func tick(held: Bool) async {
             burn()
+            let before = table.map(TableTouch.init)
             let builds = page.builds
             guard let snapshot = await monitor.tick() else { return }
             censusCPU.append(Double(snapshot.cost.cpu) / 1_000_000)
@@ -84,6 +93,7 @@ extension E2ERunner {
             let took = frame.last
             if held { heldShown.append(took) } else { shown.append(took) }
             if held { heldMain.append(frame.lastCPU) } else { shownMain.append(frame.lastCPU) }
+            if let table, let before { touched[leg, default: []].append(TableTouch(table).since(before)) }
         }
         // An agent's pane: a login, its shell, Claude Code and three
         // children — a selected agent's detail charts its subtree too.
@@ -119,17 +129,19 @@ extension E2ERunner {
         await pause(0.3)
         host.layoutSubtreeIfNeeded()
         host.displayIfNeeded()
+        guard let found = WorkspacePages.firstTable(in: host) as? ResourceTableView else { return check("the page's table", false) }
+        table = found
         for _ in 0..<12 { await tick(held: false) }
-        guard let table = WorkspacePages.firstTable(in: host) as? ResourceTableView else { return check("the page's table", false) }
-        let moves = (table.reloads, table.reorders)
+        let moves = (found.reloads, found.reorders)
+        leg = "held"
         for _ in 0..<12 {
-            table.interaction?(.hover)
+            found.interaction?(.hover)
             await tick(held: true)
         }
         // 10.4: with the order held, a tick reloads nothing and moves no
         // row — its values drawn in the rows' places.
-        let heldMoves = (table.reloads - moves.0, table.reorders - moves.1)
-        table.interaction?(.exit)
+        let heldMoves = (found.reloads - moves.0, found.reorders - moves.1)
+        found.interaction?(.exit)
         check("ticks were held", page.orderHeld == false && heldShown.count == 12, "\(heldShown.count)")
         check(
             "held, the table neither reloads nor moves a row (12 ticks)", heldMoves == (0, 0),
@@ -138,7 +150,22 @@ extension E2ERunner {
         // A selected row's verbs (6.10, 7.7): its process read off the main
         // thread with every owner, with the rows; on the main thread only
         // the list — what the detail's bar and the menu draw each update.
+        // Steady: no value drawn moves (7.7) — a publish that changed
+        // nothing a person sees; its own leg, not the shown one's samples.
+        var steadyMain: [Double] = []
+        leg = "steady"
+        steadyCPU = true
+        for round in 0..<13 {
+            let mark = (shown.count, shownMain.count)
+            await tick(held: false)
+            // The first moves from the random CPU to the steady one.
+            if round == 0 { touched["steady"] = [] } else { steadyMain += shownMain[mark.1...] }
+            shown.removeSubrange(mark.0...)
+            shownMain.removeSubrange(mark.1...)
+        }
+        steadyCPU = false
         var verbsListed: [Double] = []
+        leg = "verbs"
         if let selected = page.content.processes.first {
             page.selection = [selected.id]
             let read = await eventually(10) { page.verbSubject?.signal.identity == selected.identity }
@@ -157,6 +184,7 @@ extension E2ERunner {
         // off the main thread with the rows; the main thread's part of each
         // publish — the detail assigned — timed by the page.
         var detailCost: [Double] = []
+        leg = "agent"
         if let row = page.content.processes.first(where: { $0.identity == agent.agent }) {
             page.selection = [row.id]
             let charted = await eventually(10) { !(page.detail?.charts.isEmpty ?? true) && !(page.detail?.subtreeCharts.isEmpty ?? true) }
@@ -264,7 +292,7 @@ extension E2ERunner {
 
         // The list scrolled top to bottom, a third of a screen a step.
         var scrolled: [Double] = []
-        if let scroll = table.enclosingScrollView {
+        if let scroll = found.enclosingScrollView {
             // The first screens' cells made once, as a person's first
             // scroll makes them; the steps timed are the reused ones'.
             for step in 1...3 {
@@ -333,6 +361,9 @@ extension E2ERunner {
                 crowdedSubject.append((CACurrentMediaTime() - start) * 1000)
             }
         }
+        // The page itself over the crowded Mac (7.7 at 5,000): its census
+        // with the fifteen minutes above, the rows shown, flat by CPU.
+        let crowdedPublish = await crowdedPublishes(crowded, sampler: sampler, pids: crowdedPIDs, context: crowdedPanes.context)
         let history = Self.summary(merged)
         let crowdedMerge = Self.summary(crowdedMerged)
         let megabytes = { (ring: ActivityRing) in
@@ -367,7 +398,14 @@ extension E2ERunner {
                 + "list \(Self.summary(crowdedTicks.parts.map(\.list))), Listening \(Self.summary(crowdedTicks.parts.map(\.ports))), "
                 + "summary \(Self.summary(crowdedTicks.parts.map(\.summary))); the ids kept \(Self.summary(crowdedTicks.shownIDs)), "
                 + "held \(Self.summary(crowdedTicks.held)); the first build \(p90(crowdedTicks.cold))")
-        note("activityPerf: a publish's main-thread CPU \(Self.summary(shownMain)), p90 \(p90(Self.p90(shownMain))); held \(Self.summary(heldMain))")
+        note("activityPerf: a publish's main-thread CPU \(Self.summary(shownMain)), p90 \(p90(Self.p90(shownMain))); held \(Self.summary(heldMain)), p90 \(p90(Self.p90(heldMain)))")
+        note(
+            "activityPerf: a steady publish (no value drawn moves) \(Self.summary(steadyMain)), p90 \(p90(Self.p90(steadyMain))); "
+                + "at 5,000 processes (\(crowdedPublish.rows) rows) \(Self.summary(crowdedPublish.main)), p90 \(p90(Self.p90(crowdedPublish.main)))")
+        for name in ["shown", "held", "steady", "verbs", "agent"] {
+            if let touches = touched[name] { note("activityPerf: a publish touched, \(name): \(TableTouch.said(touches))") }
+        }
+        note("activityPerf: a publish touched, at 5,000: \(TableTouch.said(crowdedPublish.touched))")
         note("activityPerf: a selected row's verbs listed on the main thread \(verbs); its process read off it among 5,000, every owner \(subject)")
         note("activityPerf: a selected agent's detail, its charts made off the main thread: on it \(detail), p90 \(p90(Self.p90(detailCost)))")
         // 10.4's 15 ms, a tick after the last, over starts spread as a
@@ -623,6 +661,111 @@ extension E2ERunner {
             if case .pane? = row.owner?.place { true } else { false }
         }
         return (steady, parts, shownIDs, held, cold, last, inPanes.count)
+    }
+
+    /// The page over the crowded Mac (7.7 at 5,000): a monitor over its
+    /// sampler — the history it merged — and the page in a window of its
+    /// own, flat by CPU; twelve ticks timed as the first page's are.
+    func crowdedPublishes(_ kernel: FakeActivityKernel, sampler: ActivitySampler, pids: [pid_t], context: ActivityContext) async -> (
+        main: [Double], touched: [TableTouch], rows: Int
+    ) {
+        let monitor = ActivityMonitor(sampler: sampler)
+        monitor.interval = .seconds(600)
+        monitor.setContext(context)
+        let page = ActivityPageModel(monitor: monitor)
+        page.isolated = false
+        page.grouping = .none
+        page.tree = false
+        guard let theme = app.theme else { return ([], [], 0) }
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 1_400, height: 900), styleMask: [.titled, .resizable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let host = NSHostingView(rootView: ActivityPageView(page: page, theme: theme, copy: { _ in }))
+        window.contentView = host
+        window.orderBack(nil)
+        defer {
+            page.close()
+            monitor.stop()
+            window.orderOut(nil)
+        }
+        var random = SystemRandomNumberGenerator()
+        func burn() {
+            kernel.advance(2_000_000_000)
+            for pid in pids {
+                let used = UInt64.random(in: 0...40_000_000, using: &random)
+                kernel.update(pid) { process in
+                    process.usage = FakeActivityKernel.usage(cpuTime: (process.usage?.cpuTime ?? 0) + used, footprint: process.usage?.footprint ?? 0, threads: 4)
+                }
+            }
+        }
+        page.visible = true
+        burn()
+        _ = await monitor.tick()
+        check(
+            "at 5,000, the page reads the crowded Mac",
+            await eventually(15) { page.hasRead && page.content.processes.count >= 5_000 && !page.content.summary.firstSample },
+            "\(page.content.processes.count)")
+        host.layoutSubtreeIfNeeded()
+        host.displayIfNeeded()
+        guard let table = WorkspacePages.firstTable(in: host) as? ResourceTableView else {
+            check("the crowded page's table", false)
+            return ([], [], 0)
+        }
+        let frame = ActivityFrameClock()
+        let observer = Self.frameObserver(frame)
+        CFRunLoopAddObserver(CFRunLoopGetMain(), observer, .commonModes)
+        defer { CFRunLoopRemoveObserver(CFRunLoopGetMain(), observer, .commonModes) }
+        let landed = page.$content.dropFirst().sink { _ in frame.arm() }
+        defer { landed.cancel() }
+        var main: [Double] = []
+        var touched: [TableTouch] = []
+        for round in 0..<13 {
+            burn()
+            let before = TableTouch(table)
+            let builds = page.builds
+            let frames = frame.count
+            guard await monitor.tick() != nil else { continue }
+            _ = await eventually(10) { page.builds > builds && frame.count > frames }
+            // The first after the window's first drawing: not a tick's.
+            guard round > 0 else { continue }
+            main.append(frame.lastCPU)
+            touched.append(TableTouch(table).since(before))
+        }
+        return (main, touched, page.content.list.count)
+    }
+
+    /// What a publish touched of a `ResourceTableView` (7.7), counted by it.
+    struct TableTouch {
+        var updates: Int
+        var shows: Int
+        var reorders: Int
+        var made: Int
+        var visible: Int
+
+        init(updates: Int, shows: Int, reorders: Int, made: Int, visible: Int) {
+            self.updates = updates
+            self.shows = shows
+            self.reorders = reorders
+            self.made = made
+            self.visible = visible
+        }
+
+        @MainActor init(_ table: ResourceTableView) {
+            self.init(
+                updates: table.updates, shows: table.hostedShows, reorders: table.reorders, made: table.madeRowsLastUpdate,
+                visible: table.visibleRowsLastUpdate)
+        }
+
+        /// The counts since `before`; the rows as the last update found them.
+        func since(_ before: TableTouch) -> TableTouch {
+            TableTouch(updates: updates - before.updates, shows: shows - before.shows, reorders: reorders - before.reorders, made: made, visible: visible)
+        }
+
+        /// "updates [1, 1…], cells shown [168…], reorders N, rows made 30 of 28 on screen".
+        static func said(_ touches: [TableTouch]) -> String {
+            guard let last = touches.last else { return "none" }
+            return "updates a publish \(touches.map(\.updates)), cells shown \(touches.map(\.shows)), reorders \(touches.map(\.reorders).reduce(0, +)), "
+                + "rows with a view \(last.made) of \(last.visible) on screen"
+        }
     }
 
     /// A crowded build's parts, ms.

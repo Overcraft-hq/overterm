@@ -250,6 +250,7 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
         func update(_ view: ResourceTable) {
             self.view = view
             guard let table else { return }
+            table.updates += 1
             table.copySelection = view.copy
             table.pressedRow = { [weak self] index in
                 guard let self, self.rows.indices.contains(index) else { return }
@@ -437,8 +438,11 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
 
         /// Every row with a view, on screen or prepared beyond it, handed
         /// its row's values.
-        private func showVisible(_ view: ResourceTable, in table: NSTableView) {
-            for index in Self.madeRows(in: table) where index < rows.count {
+        private func showVisible(_ view: ResourceTable, in table: ResourceTableView) {
+            let made = Self.madeRows(in: table)
+            table.madeRowsLastUpdate = made.count
+            table.visibleRowsLastUpdate = table.rows(in: table.visibleRect).length
+            for index in made where index < rows.count {
                 if let label = view.accessibilityLabel, let rowView = table.rowView(atRow: index, makeIfNecessary: false) {
                     let said = label(rows[index])
                     if rowView.accessibilityLabel() != said { rowView.setAccessibilityLabel(said) }
@@ -447,6 +451,7 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
                 if spans(rows[index]) {
                     if let cell = table.view(atColumn: 0, row: index, makeIfNecessary: false) as? ResourceHostingCell {
                         cell.show(view.cell(rows[index], nil))
+                        table.hostedShows += 1
                         if cell.accessibilityIdentifier() != id { cell.setAccessibilityIdentifier(id) }
                     }
                     continue
@@ -454,6 +459,7 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
                 for (at, column) in ResourceTable.placed(columns, in: table) {
                     guard let cell = table.view(atColumn: at, row: index, makeIfNecessary: false) as? ResourceHostingCell else { continue }
                     cell.show(view.cell(rows[index], view.hasHeader ? column : nil))
+                    table.hostedShows += 1
                     // Moved in place: the cell says its new row.
                     if cell.accessibilityIdentifier() != id { cell.setAccessibilityIdentifier(id) }
                 }
@@ -477,6 +483,7 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
             let cell = tableView.makeView(withIdentifier: identifier, owner: nil) as? ResourceHostingCell ?? ResourceHostingCell()
             cell.identifier = identifier
             cell.show(view.cell(rows[row], shown))
+            (tableView as? ResourceTableView)?.hostedShows += 1
             cell.setAccessibilityIdentifier(rows[row].id)
             return cell
         }
@@ -564,6 +571,14 @@ final class ResourceTableView: NSTableView {
     /// moved in place — a held order makes neither.
     var reloads = 0
     var reorders = 0
+    /// What a publish touches (7.7), counted for the same: the page's
+    /// updates of the table, the cells handed a row (each a SwiftUI
+    /// update), and at the last update the rows with a view against
+    /// those on screen.
+    var updates = 0
+    var hostedShows = 0
+    var madeRowsLastUpdate = 0
+    var visibleRowsLastUpdate = 0
     private var hover: NSTrackingArea?
 
     override func updateTrackingAreas() {
