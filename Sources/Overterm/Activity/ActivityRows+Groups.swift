@@ -76,6 +76,55 @@ struct ActivityContainer: Hashable, Sendable {
     var memory: UInt64?
 }
 
+/// A compose project's folder in its checkout's spelling (6.5): Compose
+/// writes the path it was run from, a tab's checkout is said without its
+/// symlinks resolved (`/var` against `/private/var`), and the checkout
+/// scope compares paths as strings. Made off the main thread with the
+/// rows — a real path asks the disk, which a hung mount holds —, each
+/// folder's real path kept (at most 256).
+enum ActivityFolderSpelling {
+    /// `containers` with each folder in its checkout's spelling.
+    static func spelled(_ containers: [ActivityContainer], checkouts: [String], real: (String) -> String = cachedReal) -> [ActivityContainer] {
+        guard containers.contains(where: { $0.folder != nil }) else { return containers }
+        var spelled: [String: String] = [:]
+        return containers.map { container in
+            guard let folder = container.folder else { return container }
+            var container = container
+            if let known = spelled[folder] {
+                container.folder = known
+            } else {
+                let made = Self.folder(folder, checkouts: checkouts, real: real)
+                spelled[folder] = made
+                container.folder = made
+            }
+            return container
+        }
+    }
+
+    /// `folder` as `checkouts` spell it when one of them is the same
+    /// folder by its real path, else as it is. Pure but for `real`, asked
+    /// only when the spelling differs.
+    static func folder(_ folder: String, checkouts: [String], real: (String) -> String) -> String {
+        if checkouts.contains(folder) || checkouts.isEmpty { return folder }
+        let resolved = real(folder)
+        return checkouts.first { real($0) == resolved } ?? folder
+    }
+
+    private static let lock = NSLock()
+    nonisolated(unsafe) private static var reals: [String: String] = [:]
+
+    /// `path`'s real path, read once: never on the main thread.
+    static func cachedReal(_ path: String) -> String {
+        if let known = lock.withLock({ reals[path] }) { return known }
+        let real = FileTreeModel.realPath(URL(fileURLWithPath: path))
+        lock.withLock {
+            if reals.count >= 256 { reals = [:] }
+            reals[path] = real
+        }
+        return real
+    }
+}
+
 /// A row of Processes that isn't a process: a group's header, a container,
 /// "+N more" (6.5).
 struct ActivityGroupRow: Equatable, Sendable {

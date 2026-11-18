@@ -798,6 +798,7 @@ final class ActivityPageModel: ObservableObject {
                 var options = options
                 options.launchAgents = LaunchdJobs.cachedAgents(in: AppEnvironment.launchAgentsDirectory)
                 options.ephemeralFirst = ActivityPorts.ephemeralRangeFirst()
+                options.containers = ActivityFolderSpelling.spelled(options.containers, checkouts: options.checkouts)
                 // launchd's socket jobs, read once, lazily: only when there
                 // are other users' listeners to name (6.8 rule 9).
                 if options.others?.isBelieved == true { options.launchdSockets = LaunchdSockets.cachedJobs(in: AppEnvironment.launchdSocketFolders) }

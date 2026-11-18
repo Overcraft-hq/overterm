@@ -199,18 +199,14 @@ extension TerminalWindowController {
 
     /// The running containers of a local engine, with what its usage
     /// monitor last read; none from a remote one, whose processes aren't
-    /// this Mac's.
+    /// this Mac's. A project's folder as Compose wrote it: its checkout's
+    /// spelling is found off the main thread, with the rows
+    /// (`ActivityFolderSpelling`) — a folder's real path asks the disk.
     static func activityContainers() -> [ActivityContainer] {
         let docker = DockerModel.shared
         guard docker.endpoint?.remoteHost == nil else { return [] }
         var containers: [ActivityContainer] = []
-        // A project's folder in its checkout's spelling: Compose writes the
-        // path it was run from, the tab's checkout is said without its
-        // symlinks resolved (`/var` against `/private/var`).
-        let checkouts = activityTabFacts().checkouts
-        let folders = Dictionary(
-            docker.projects.map { ($0.name, $0.workingDir.map { activityFolder($0, checkouts: checkouts, real: { FileTreeModel.realPath(URL(fileURLWithPath: $0)) }) }) },
-            uniquingKeysWith: { first, _ in first })
+        let folders = Dictionary(docker.projects.map { ($0.name, $0.workingDir) }, uniquingKeysWith: { first, _ in first })
         for container in docker.containers where container.State == "running" {
             let project = container.Labels?["com.docker.compose.project"]
             let usage = docker.usage.byContainer[container.Id]
@@ -221,15 +217,6 @@ extension TerminalWindowController {
                     memory: usage.map { UInt64(max($0.memoryBytes, 0)) }))
         }
         return containers
-    }
-
-    /// `folder` as `checkouts` spell it when one of them is the same
-    /// folder by its real path — what scopes compare by string — else as
-    /// it is. Pure but for `real`, asked only when the spelling differs.
-    nonisolated static func activityFolder(_ folder: String, checkouts: [String], real: (String) -> String) -> String {
-        if checkouts.contains(folder) || checkouts.isEmpty { return folder }
-        let resolved = real(folder)
-        return checkouts.first { real($0) == resolved } ?? folder
     }
 
     /// View ▸ Activity (⌥⌘A): the page, or back to the terminal from it.

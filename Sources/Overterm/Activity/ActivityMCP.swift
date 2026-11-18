@@ -130,6 +130,7 @@ enum ActivityMCP {
             // port, the ephemeral range folds apps' listeners alike.
             options.launchAgents = LaunchdJobs.cachedAgents(in: AppEnvironment.launchAgentsDirectory)
             options.ephemeralFirst = ActivityPorts.ephemeralRangeFirst()
+            options.containers = ActivityFolderSpelling.spelled(options.containers, checkouts: options.checkouts)
             if options.others?.isBelieved == true { options.launchdSockets = LaunchdSockets.cachedJobs(in: AppEnvironment.launchdSocketFolders) }
             let content = ActivityRows.content(of: snapshot, options)
             let tabs = options.tabs.mapValues { tab in
