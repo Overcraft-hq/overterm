@@ -286,6 +286,29 @@ final class ActivityMonitorTests: XCTestCase {
         XCTAssertEqual(kernel.count("processes"), 4, "an interval old: the same snapshot")
     }
 
+    /// Light ticks after a full one: the full snapshot kept for the
+    /// windows that read it shares the newer ring, and is dropped past
+    /// them — never a third copy of the ring kept for nothing.
+    func testTheLastFullSnapshotIsLetGoBehindLightTicks() async throws {
+        monitor.interval = .seconds(2)
+        let census = await monitor.census()
+        let first = try XCTUnwrap(census)
+        let owner = Owner()
+        monitor.want(owner, .light(tabs: nil), every: .seconds(3600))
+        await eventually("a light tick") { monitor.snapshot?.demand.full == false }
+        XCTAssertEqual(monitor.lastFull?.tick, first.tick, "within the windows: kept")
+        XCTAssertEqual(monitor.lastFull?.history.bytes, monitor.snapshot?.history.bytes, "with the newer ring")
+        monitor.unwant(owner)
+        kernel.advance(4_000_000_001)
+        let light = monitor.snapshot?.tick ?? 0
+        monitor.want(owner, .light(tabs: nil), every: .seconds(3600))
+        await eventually("another light tick") { (monitor.snapshot?.tick ?? 0) > light }
+        monitor.unwant(owner)
+        XCTAssertNil(monitor.lastFull, "past every window that reads it: dropped")
+        let again = await monitor.census()
+        XCTAssertNotNil(again, "a census reads anew")
+    }
+
     /// A census whose table can't be read says so: nil, not an older
     /// snapshot passed off as one less than 2 s old.
     func testACensusThatCantReadSaysSo() async throws {

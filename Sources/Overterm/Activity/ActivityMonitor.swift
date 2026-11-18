@@ -292,9 +292,26 @@ final class ActivityMonitor: ObservableObject {
             if snapshot.demand.full, snapshot.tick > lastFull?.tick ?? 0 {
                 lastFull = snapshot
                 fullTicks += 1
+            } else if snapshot.tick > lastFull?.tick ?? .max {
+                keepLastFull(behind: snapshot)
             }
         }
         return snapshot
+    }
+
+    /// A newer light tick landed after the last full one: the ring is
+    /// the sampler's, copied at every merge, and a full snapshot kept
+    /// behind light ticks held a third copy the cap (`ActivityRing.copies`)
+    /// doesn't count. Past every window that reads it — the one-offs' 2 s,
+    /// an agent's interval, the page's two at opening — it is dropped; until
+    /// then it shares the newer snapshot's ring, one copy fewer.
+    private func keepLastFull(behind newer: ActivitySnapshot) {
+        guard let last = lastFull else { return }
+        if age(of: last) > max(Self.oneOffSpacing, 2 * Self.nanoseconds(interval)) {
+            lastFull = nil
+        } else {
+            lastFull?.history = newer.history
+        }
     }
 
     nonisolated static func nanoseconds(_ duration: Duration) -> UInt64 {
