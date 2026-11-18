@@ -74,6 +74,15 @@ extension E2ERunner {
             "\(page.detail?.ancestors.count ?? 0) ancestors")
         let bar = await eventually(5) { Self.accessibilityElement("activity.actions", in: view) != nil }
         check("the detail's verbs are an action bar, the row menu's list", bar && page.verbs(for: [server.id]) { _ in }.contains { $0.title == "Go to Tab" })
+        // Where and why's links (6.4): the checkout in Overgit too.
+        var overgitTab: UUID?
+        if server.checkout != nil, let tabID = server.tab {
+            let link = await eventually(5) { Self.accessibilityElement("activity.detail.overgit", in: view) != nil }
+            check("Where and why links the checkout in Overgit", link)
+            overgitTab = tabID
+        } else {
+            check("the server's row has its tab's checkout", false)
+        }
 
         // Follow: a list taller than its view, the selected row scrolled
         // off: unfollowed it stays off, followed it comes back into view.
@@ -199,5 +208,19 @@ extension E2ERunner {
         table.interaction?(.exit)
         check("once the pointer leaves, it lets go at once", !page.orderHeld && page.waiting == nil)
         page.processSort = ResourceSort(column: "cpu", ascending: false)
+
+        // The detail's Show in Overgit: its tab forward, the sidebar on
+        // Overgit; then the page and the sidebar as they were.
+        if let tabID = overgitTab {
+            let panel = app.sidebarPanel.panel
+            let collapsed = app.sidebarItem?.isCollapsed == true
+            page.actions.overgit(tabID)
+            check("Show in Overgit brings its tab forward, the sidebar on Overgit", app.sidebarPanel.panel == .git && app.store.selected?.id == tabID)
+            app.sidebarPanel.panel = panel
+            if collapsed, app.sidebarItem?.isCollapsed == false { app.toggleFileTree(nil) }
+            app.updateOvergitVisibility()
+            if app.store.showingOverlay != .activity { app.showActivityPage() }
+            _ = await eventually(10) { page.hasRead && !own().isEmpty }
+        }
     }
 }

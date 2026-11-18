@@ -52,6 +52,7 @@ struct ActivityDetailView: View {
                     if row.owner?.certainty == .probably {
                         Text("probably: from its lineage or folder, not a tag").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
                     }
+                    links
                 }
                 block("Tree") { tree }
                 if !detail.listeners.isEmpty || detail.connections > 0 || detail.bounded {
@@ -102,6 +103,24 @@ struct ActivityDetailView: View {
             return words.joined(separator: " · ")
         }
         return row.whereText.isEmpty ? (row.isOwn ? "Yours, outside every tab" : row.user) : row.whereText
+    }
+
+    /// Where and why's links (6.4): its tab, Tab Info, the checkout in
+    /// Overgit — a process in no tab has none.
+    @ViewBuilder
+    private var links: some View {
+        if let tab = row.tab, !row.ended {
+            HStack(spacing: 12) {
+                Button("Go to Tab") { page.goTo(row) }
+                Button("Tab Info") { page.actions.tabInfo(tab) }
+                if row.checkout != nil {
+                    Button("Show in Overgit") { page.actions.overgit(tab) }
+                        .help("Its tab's checkout in the sidebar's git panel (⌥⌘G)")
+                        .accessibilityIdentifier("activity.detail.overgit")
+                }
+            }
+            .buttonStyle(.link).font(.system(size: ChromeMetrics.text(11.5)))
+        }
     }
 
     @ViewBuilder

@@ -51,6 +51,11 @@ extension TerminalWindowController {
                 self.activityGoTo(tab: id)
                 window.showInfo(for: tab)
             },
+            overgit: { [weak self] id in
+                guard let self, let (window, _) = Self.activityWindow(of: id) else { return }
+                self.activityGoTo(tab: id)
+                window.showOvergit(nil)
+            },
             sample: { [weak self] pid in self?.activitySample(pid) },
             free: { [weak self] row in self?.activityFree(row) },
             terminal: { [weak self] request in self?.activityTerminal(request) },

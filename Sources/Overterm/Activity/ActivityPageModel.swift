@@ -52,6 +52,9 @@ struct ActivityPageActions {
     var open: @MainActor (URL, UUID?, Bool) -> Void = { _, _, _ in }
     /// Tab Info (⌃⌘I) for a tab.
     var tabInfo: @MainActor (UUID) -> Void = { _ in }
+    /// A tab's checkout in Overgit: the tab brought forward, the sidebar
+    /// on its git panel.
+    var overgit: @MainActor (UUID) -> Void = { _ in }
     /// An executable shown in Finder.
     var reveal: @MainActor (String) -> Void = { path in NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
     /// `sample <pid> 5` in a new tab (`s`): it only reads.
@@ -921,7 +924,7 @@ final class ActivityPageModel: ObservableObject {
     }
 
     /// `row`'s tab, and its pane when the pane's tag placed it.
-    private func goTo(_ row: ActivityProcessRow) {
+    func goTo(_ row: ActivityProcessRow) {
         guard let tab = row.tab else { return }
         var pane: String?
         if case .pane(let tag)? = row.owner?.place { pane = tag }
