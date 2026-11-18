@@ -208,6 +208,15 @@ enum AppEnvironment {
         return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/LaunchAgents", isDirectory: true)
     }
 
+    /// The folders whose plists name launchd's socket-activated jobs
+    /// (`LaunchdSockets`, 6.8 rule 9): the system's and the user's
+    /// LaunchAgents; in an isolated run or a unit test only a test's own
+    /// (`LaunchdSockets.standIn`), else none (9.9).
+    static var launchdSocketFolders: [LaunchdSockets.Folder] {
+        guard !isIsolated, !isUnitTest else { return LaunchdSockets.standIn ?? [] }
+        return LaunchdSockets.defaultFolders(home: FileManager.default.homeDirectoryForCurrentUser)
+    }
+
     /// The terraform Overterm runs: guarded, `OVERTERM_TERRAFORM`'s (a
     /// scenario's recording wrapper) when it is an absolute path to an
     /// executable, else none; else the user's, searched for by
