@@ -170,6 +170,10 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
     /// view is shown at every update.
     var skipsEqualRows = false
     var look = 0
+    /// The list takes whatever room it is offered, told so (`sizeThatFits`):
+    /// asked its size otherwise, SwiftUI had AppKit fit the scroll view's
+    /// whole subtree by its constraints at every update of the page.
+    var fillsProposal = false
 
     /// This table with `change` made: the options above, set in place.
     func with(_ change: (inout ResourceTable) -> Void) -> ResourceTable {
@@ -257,6 +261,11 @@ struct ResourceTable<Row: ResourceTableRow>: NSViewRepresentable {
 
     func updateNSView(_ scroll: NSScrollView, context: Context) {
         context.coordinator.update(self)
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSScrollView, context: Context) -> CGSize? {
+        guard fillsProposal else { return nil }
+        return proposal.replacingUnspecifiedDimensions(by: CGSize(width: 320, height: 240))
     }
 
     @MainActor

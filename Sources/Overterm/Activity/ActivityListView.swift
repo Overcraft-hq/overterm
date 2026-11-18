@@ -55,6 +55,7 @@ struct ActivityListView: View, Equatable {
                 // A row holds all its cells draw but the theme, the text size
                 // and the minute its chips count to (6.11).
                 table.skipsEqualRows = true
+                table.fillsProposal = true
                 table.look = Self.look(theme: theme, now: Date())
             }
             if !list.hasRead {
