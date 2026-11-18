@@ -127,6 +127,10 @@ struct ActivityPortRow: ResourceTableRow, Sendable {
     var spansColumns: Bool { kind == .folded }
 
     var backlogFull: Bool { backlogLimit > 0 && backlog >= backlogLimit }
+    /// Another user's listener, from nettop: whose (D-25).
+    var user: String?
+    /// What a forward typed in a terminal reaches (6.8 rule 6, stage 4).
+    var target: String?
 
     /// "This Mac" or "Network" (6.1), the one address it is bound to, or
     /// who forwards it.
@@ -420,6 +424,15 @@ enum ActivityPorts {
             row.url = nil
         } else if row.holder == nil {
             // Its own row: by the families it is published on (6.8's
+        // A forward typed in a terminal says what it reaches (rule 6).
+        switch row.portOwner {
+        case .pane, .elsewhere, .leftBehind:
+            if let target = ActivityTypedForwards.target(of: process?.command, port: row.port) {
+                row.target = target
+                row.ownerText += row.ownerText.isEmpty ? target : " · \(target)"
+            }
+        default: break
+        }
             // table) — a holder's row keeps the URL its bound sockets gave.
             row.url = url(publishedOn: published.address, port: published.port)
         }
@@ -604,7 +617,7 @@ enum ActivityPorts {
                 let clientName = byIdentity[client.holder]?.name ?? "?"
                 let port = Int(server.record.localPort)
                 clients["\(server.holder.id):\(port)", default: 0] += 1
-                if let tunnel = tunnelClient(client.holder, byIdentity: byIdentity) { tunnels["\(server.holder.id):\(port)"] = tunnel }
+                if let tunnel = tunnelClient(client.holder, port: port, byIdentity: byIdentity) { tunnels["\(server.holder.id):\(port)"] = tunnel }
                 let key = "conn:\(client.holder.id)>\(server.holder.id):\(port)"
                 add(key) {
                     var row = ActivityPortRow(
@@ -650,10 +663,16 @@ enum ActivityPorts {
     }
 
     /// "cloudflared (pid 4242)" when `holder` is a tunnel client.
-    static func tunnelClient(_ holder: ActivityProcessID, byIdentity: [ActivityProcessID: ActivityProcessRow]) -> String? {
+    static func tunnelClient(_ holder: ActivityProcessID, port: Int, byIdentity: [ActivityProcessID: ActivityProcessRow]) -> String? {
         guard let process = byIdentity[holder] else { return nil }
         let file = process.path.map(ActivityAttribution.fileName) ?? process.name
-        guard tunnelClients.contains(file) || (file == "ssh" && (process.command ?? "").contains(" -R")) else { return nil }
+        if file == "ssh" {
+            // Where an `ssh -R` publishes what it reaches: the port it
+            // forwards to is the server's.
+            guard let published = ActivityTypedForwards.remoteForward(of: process.command, port: port) else { return nil }
+            return "\(published) (pid \(holder.pid))"
+        }
+        guard tunnelClients.contains(file) else { return nil }
         return "\(file) (pid \(holder.pid))"
     }
 
