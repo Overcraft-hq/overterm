@@ -38,21 +38,36 @@ enum LaunchdSockets {
         var isApple: Bool { label.hasPrefix("com.apple.") }
 
         /// "launchd holds :8021 for com.apple.ftp-proxy, part of macOS".
+        /// The label comes from a plist anyone may write (~/Library/LaunchAgents),
+        /// and a person copies the command from here: a command is given only
+        /// for a label of launchd's plain characters (`ActivityPortHolder.launchdLabel`).
         var sentence: String {
-            let held = "launchd holds :\(port) for \(DockerMCP.displayed(label))"
+            let held = "launchd holds :\(port) for \(Self.shown(label))"
             if let mine = sharedWith {
-                return held + " or your job \(DockerMCP.displayed(mine)) — both name it, so neither is stopped from here"
+                return held + " or your job \(Self.shown(mine)) — both name it, so neither is stopped from here"
             }
+            let plain = ActivityPortHolder.launchdLabel(label)
+            let unusual = ": its label isn't one a command can carry safely, so stop it where its plist is defined"
             switch domain {
-            case .user: return held + ", your own job: its own stop is `launchctl bootout gui/\(getuid())/\(label)`"
+            case .user:
+                guard plain else { return held + ", your own job" + unusual }
+                return held + ", your own job: its own stop is `launchctl bootout gui/\(getuid())/\(label)`"
             case .system:
                 if isApple { return held + ", part of macOS: turned off where macOS sets it (System Settings ▸ General ▸ Sharing for Remote Login)" }
+                guard plain else { return held + ", another's job" + unusual }
                 return held + ", another's job: `sudo launchctl bootout system/\(label)` stops it"
             case .agents:
                 if isApple { return held + ", part of macOS" }
+                guard plain else { return held + ", an agent loaded for every user from /Library/LaunchAgents" + unusual }
                 return held
                     + ", an agent loaded for every user from /Library/LaunchAgents: `launchctl bootout gui/\(getuid())/\(label)` stops yours, and its plist is the system's"
             }
+        }
+
+        /// A label as the row shows it: every character visible, a line
+        /// break or a tab too — the sentence is one line.
+        static func shown(_ label: String) -> String {
+            DockerMCP.displayed(label).replacingOccurrences(of: "\n", with: "\\u{A}").replacingOccurrences(of: "\t", with: "\\u{9}")
         }
     }
 

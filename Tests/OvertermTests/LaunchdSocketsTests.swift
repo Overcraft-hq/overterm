@@ -75,6 +75,19 @@ final class LaunchdSocketsTests: XCTestCase {
         XCTAssertFalse(agent.sentence.contains("system/"), agent.sentence)
     }
 
+    /// A label from a plist anyone may write never goes into a command a
+    /// person would paste: `$(…)`, a newline, a bidi control.
+    func testAnUnusualLabelGetsNoCommand() {
+        for label in ["com.evil.$(rm -rf ~)", "com.evil.x\nrm -rf ~", "com.evil.\u{202E}gnp", "com.evil x; true"] {
+            for domain in [LaunchdSockets.Domain.user, .system, .agents] {
+                let sentence = LaunchdSockets.Job(label: label, port: 7000, proto: "tcp", domain: domain).sentence
+                XCTAssertFalse(sentence.contains("launchctl"), sentence)
+                XCTAssertTrue(sentence.contains("stop it where its plist is defined"), sentence)
+                XCTAssertFalse(sentence.contains("\n") || sentence.contains("\u{202E}"), sentence)
+            }
+        }
+    }
+
     func testATestRunReadsNoneButItsOwn() {
         XCTAssertTrue(AppEnvironment.launchdSocketFolders.isEmpty, "a unit test reads no launchd folder of this Mac's")
         LaunchdSockets.standIn = folders()
