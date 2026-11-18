@@ -46,7 +46,7 @@ final class ActivityBriefTests: XCTestCase {
         XCTAssertTrue(brief.text.contains("It runs in the tab “web”, checkout acme-shop, branch feature-x, under Claude."), brief.text)
         XCTAssertTrue(brief.text.contains("Why Overterm places it there: in pane 1 of “web”, started by Claude."))
         XCTAssertTrue(brief.text.contains("  CPU: 12.0%") || brief.text.contains("  CPU: 12%"), brief.text)
-        XCTAssertTrue(brief.text.contains("Overterm keeps no history of its usage"))
+        XCTAssertTrue(brief.text.contains("Overterm has no history of it yet"), "none kept for it: said, never a stale claim")
         XCTAssertTrue(brief.text.contains("It has 3 established TCP connections."), "counted, never where they go")
         XCTAssertTrue(brief.text.contains("executable: ~/acme/node_modules/.bin/node"), "the home folder as ~")
         XCTAssertFalse(brief.text.contains(home))
@@ -137,5 +137,27 @@ final class ActivityBriefTests: XCTestCase {
         let nowhere = ActivityBrief.audience(tab: nil, checkout: nil, agents: agents)
         XCTAssertEqual(nowhere.targets, [theirs, mine, plain, tab])
         XCTAssertFalse(nowhere.inside, "outside every tab: the outside brief")
+    }
+
+    /// Its history goes as a summary (8.6, 6.11): CPU over 15 minutes and
+    /// the hour, least, mean and most; the footprint's trend; an agent's
+    /// subtree's too — never the samples.
+    func testTheBriefSaysItsHistoryAsASummary() {
+        var detail = ActivityDetail(row: row(cpu: 310))
+        var history = ActivityDetailHistory(identity: detail.row.identity)
+        history.recentCPU = .init(low: 2, mean: 140.25, high: 312, count: 450)
+        history.hourCPU = .init(low: 1, mean: 80, high: 312, count: 60)
+        history.memory = .init(first: Double(64 << 20), last: Double(512 << 20), high: Double(600 << 20), minutes: 60)
+        history.subtreeRecentCPU = .init(low: 5, mean: 150, high: 330, count: 450)
+        detail.history = history
+        let brief = ActivityBrief.make(detail, home: home)
+        XCTAssertTrue(
+            brief.text.contains("CPU over the last 15 minutes (450 samples): 2.0–312.0%, mean 140.2%") || brief.text.contains("CPU over the last 15 minutes (450 samples): 2.0–312.0%, mean 140.3%"),
+            brief.text)
+        XCTAssertTrue(brief.text.contains("CPU over the last hour, a minute each: 1.0–312.0%, mean 80.0%"), brief.text)
+        XCTAssertTrue(brief.text.contains("Memory over the last 60 min: grew from 64.0 MB to 512 MB, at most 600 MB"), brief.text)
+        XCTAssertTrue(brief.text.contains("With everything under it, CPU over the last 15 minutes: 5.0–330.0%, mean 150.0%"), brief.text)
+        XCTAssertFalse(brief.text.contains("no history"))
+        XCTAssertTrue(brief.outsideText.contains("CPU over the last hour"), "its usage is what an outside agent gets too")
     }
 }
