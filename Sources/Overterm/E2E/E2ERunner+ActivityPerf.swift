@@ -196,8 +196,9 @@ extension E2ERunner {
         kernel.remove(heavy.pid)
         var churnLight: [Double] = []
         var churnFull: [Double] = []
-        // What the light ticks under churn read: identities, argv.
-        var churnReads: [(identities: Int, commands: Int)] = []
+        // What the light ticks under churn read: identities, argv, and
+        // what each left for the next tick.
+        var churnReads: [(identities: Int, commands: Int, deferred: Int)] = []
         var churned: [pid_t] = []
         let churnFullSampler = ActivitySampler(kernel: kernel)
         _ = churnFullSampler.tickNow(ActivityDemand(.full), context: lightContext)
@@ -209,7 +210,7 @@ extension E2ERunner {
             let sampler = full ? churnFullSampler : light
             guard let snapshot = sampler.tickNow(ActivityDemand(full ? .full : .light(tabs: nil)), context: lightContext) else { continue }
             if round > 1 { (full ? { churnFull.append($0) } : { churnLight.append($0) })(Double(snapshot.cost.cpu) / 1_000_000) }
-            if round > 1, !full { churnReads.append((snapshot.cost.identitiesRead, snapshot.cost.commandsRead)) }
+            if round > 1, !full { churnReads.append((snapshot.cost.identitiesRead, snapshot.cost.commandsRead, snapshot.cost.deferred)) }
         }
         for pid in churned { kernel.remove(pid) }
 
@@ -325,16 +326,22 @@ extension E2ERunner {
         )
         note(
             "activityPerf: under churn of 200 a tick, the light tick \(Self.summary(churnLight)), p90 \(p90(Self.p90(churnLight))), "
-                + "a tick read identities \(churnReads.map(\.identities)), argv \(churnReads.map(\.commands)); "
+                + "a tick read identities \(churnReads.map(\.identities)), argv \(churnReads.map(\.commands)), left a tick \(churnReads.map(\.deferred)); "
                 + "the full tick \(Self.summary(churnFull)), p90 \(p90(Self.p90(churnFull)))"
         )
         check(
             "a child of 20,000 sockets: its walk bounded, said so", heavyRead?.bound != nil && (heavyRead?.records.count ?? .max) <= SocketScan.perProcessBudget,
             "\(heavyRead?.records.count ?? -1) records")
         check("beside it, the light tick's CPU p90 ≤ 5 ms (12 ticks)", heavyLight.count == 12 && Self.p90(heavyLight) <= 5, "\(Self.summary(heavyLight))")
-        // 10.4 asks 5 ms: 200 new identities' reads, about 20 µs each, are
-        // most of it, and it measured 4.8–5.2 ms (design 15) — gated at 6.
-        check("under churn of 200 a tick, the light tick's p90 ≤ 6 ms", churnLight.count == 12 && Self.p90(churnLight) <= 6, "\(Self.summary(churnLight))")
+        // 10.4's 5 ms: a burst's newest wait a tick at the light level, so
+        // the 200 that end before it are never read — 1.5–1.7 ms p90
+        // measured, 5.0–5.2 when each was read (design 15).
+        check("under churn of 200 a tick, the light tick's p90 ≤ 5 ms", churnLight.count == 12 && Self.p90(churnLight) <= 5, "\(Self.summary(churnLight))")
+        let allowance = ActivitySampler.Limits().lightNewPerPane
+        check(
+            "…reading at most \(allowance) argv a tick, the rest left for the next",
+            churnReads.count == 12 && churnReads.allSatisfy { $0.commands <= allowance && $0.deferred >= 200 - allowance },
+            "argv \(churnReads.map(\.commands)), left \(churnReads.map(\.deferred))")
         check("and the full tick's p90 ≤ 15 ms", churnFull.count == 12 && Self.p90(churnFull) <= 15, "\(Self.summary(churnFull))")
         check("the rows of a tick are made in under 60 ms (median), off the main thread", rows.median < 60, "\(rows)")
         // The frames are the Mac's as much as the page's — a busy `make
