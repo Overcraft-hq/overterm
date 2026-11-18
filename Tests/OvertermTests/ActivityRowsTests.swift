@@ -274,6 +274,7 @@ final class ActivityRowsTests: XCTestCase {
         var stocked = 0
         switcher.stocked = { stocked += 1 }
         switcher.open()
+        XCTAssertTrue(switcher.wanting)
         XCTAssertTrue(monitor.demand.full)
         XCTAssertEqual(monitor.cadence, .seconds(1))
         let first = await eventually { switcher.rows != nil }
@@ -284,6 +285,9 @@ final class ActivityRowsTests: XCTestCase {
         _ = await monitor.tick()
         let rated = await eventually { switcher.rows?.contains { $0.target == .process } == true }
         XCTAssertTrue(rated, "stocked again once a read has rates")
+        XCTAssertFalse(switcher.wanting, "rated: the full level given back")
+        XCTAssertFalse(monitor.demand.full)
+        XCTAssertTrue(switcher.holding, "its rows kept while it is open")
         let frozen = switcher.rows
         let stocks = switcher.stocks
         burn(2000, 900_000_000)
