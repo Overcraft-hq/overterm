@@ -85,53 +85,231 @@ struct ActivityDemand: Hashable, Sendable {
 /// 7.5). The reads it was given are cached by identity on the sampler's
 /// queue; usage, rates and sockets are this tick's.
 struct ActivityFacts: Hashable, Sendable {
+    /// Its values, one reference shared by every copy until one of them
+    /// changes (10.4): every reader of a snapshot copies a process's facts
+    /// out of its dictionary, often several times a build — a copy is a
+    /// retain.
+    private final class Storage: @unchecked Sendable {
+        var name: String
+        var isRead: Bool
+        var path: String?
+        var codeSigning: ActivityCodeSigning?
+        var command: String?
+        var label: String?
+        var isCut: Bool
+        var isTitle: Bool
+        var argvAgent: Agent?
+        var resumes: String?
+        var markers: ProcessMarkers?
+        var usage: ActivityUsage?
+        var rates: ActivityRates?
+        var sockets: SocketScan.Sockets?
+        var folder: ProcessFolders.Folder?
+        var responsible: ActivityProcessID?
+        var responsibilityRead: Bool
+
+        init(
+            name: String, isRead: Bool = false, path: String? = nil, codeSigning: ActivityCodeSigning? = nil, command: String? = nil, label: String? = nil, isCut: Bool = false, isTitle: Bool = false,
+            argvAgent: Agent? = nil, resumes: String? = nil, markers: ProcessMarkers? = nil, usage: ActivityUsage? = nil, rates: ActivityRates? = nil, sockets: SocketScan.Sockets? = nil,
+            folder: ProcessFolders.Folder? = nil, responsible: ActivityProcessID? = nil, responsibilityRead: Bool = false
+        ) {
+            self.name = name
+            self.isRead = isRead
+            self.path = path
+            self.codeSigning = codeSigning
+            self.command = command
+            self.label = label
+            self.isCut = isCut
+            self.isTitle = isTitle
+            self.argvAgent = argvAgent
+            self.resumes = resumes
+            self.markers = markers
+            self.usage = usage
+            self.rates = rates
+            self.sockets = sockets
+            self.folder = folder
+            self.responsible = responsible
+            self.responsibilityRead = responsibilityRead
+        }
+
+        /// A copy of `other`, for a value about to change.
+        init(copying other: Storage) {
+            name = other.name
+            isRead = other.isRead
+            path = other.path
+            codeSigning = other.codeSigning
+            command = other.command
+            label = other.label
+            isCut = other.isCut
+            isTitle = other.isTitle
+            argvAgent = other.argvAgent
+            resumes = other.resumes
+            markers = other.markers
+            usage = other.usage
+            rates = other.rates
+            sockets = other.sockets
+            folder = other.folder
+            responsible = other.responsible
+            responsibilityRead = other.responsibilityRead
+        }
+
+        func same(as other: Storage) -> Bool {
+            name == other.name
+                && isRead == other.isRead
+                && path == other.path
+                && codeSigning == other.codeSigning
+                && command == other.command
+                && label == other.label
+                && isCut == other.isCut
+                && isTitle == other.isTitle
+                && argvAgent == other.argvAgent
+                && resumes == other.resumes
+                && markers == other.markers
+                && usage == other.usage
+                && rates == other.rates
+                && sockets == other.sockets
+                && folder == other.folder
+                && responsible == other.responsible
+                && responsibilityRead == other.responsibilityRead
+        }
+
+        func hash(into hasher: inout Hasher) {
+            hasher.combine(name)
+            hasher.combine(isRead)
+            hasher.combine(path)
+            hasher.combine(codeSigning)
+            hasher.combine(command)
+            hasher.combine(label)
+            hasher.combine(isCut)
+            hasher.combine(isTitle)
+            hasher.combine(argvAgent)
+            hasher.combine(resumes)
+            hasher.combine(markers)
+            hasher.combine(usage)
+            hasher.combine(rates)
+            hasher.combine(sockets)
+            hasher.combine(folder)
+            hasher.combine(responsible)
+            hasher.combine(responsibilityRead)
+        }
+    }
+
+    private var storage: Storage
+
+    init(name: String) {
+        storage = Storage(name: name)
+    }
+
+    /// Its storage, its own: copied first when another value shares it.
+    private mutating func unique() -> Storage {
+        if !isKnownUniquelyReferenced(&storage) { storage = Storage(copying: storage) }
+        return storage
+    }
+
+    static func == (lhs: ActivityFacts, rhs: ActivityFacts) -> Bool {
+        lhs.storage === rhs.storage || lhs.storage.same(as: rhs.storage)
+    }
+
+    func hash(into hasher: inout Hasher) { storage.hash(into: &hasher) }
+
     /// What a row calls it (6.5): the user's `pbi_name`, else its path's
     /// file; another user's its path's file — `p_comm`, cut at 16 bytes,
     /// only while nothing of it is read yet.
-    var name: String
+    var name: String {
+        get { storage.name }
+        set { unique().name = newValue }
+    }
     /// Read in full: its path and code signing, and for the user's its name
     /// and argv — read, or found unreadable (`command` nil then). One of the
     /// user's whose markers alone were read (outside every tree, at the
     /// light level) is named from its path but waits for its argv, false
     /// until the churn budget lets a level read it: pending, not failed.
-    var isRead = false
-    var path: String?
-    var codeSigning: ActivityCodeSigning?
+    var isRead: Bool {
+        get { storage.isRead }
+        set { unique().isRead = newValue }
+    }
+    var path: String? {
+        get { storage.path }
+        set { unique().path = newValue }
+    }
+    var codeSigning: ActivityCodeSigning? {
+        get { storage.codeSigning }
+        set { unique().codeSigning = newValue }
+    }
     /// argv masked as it was read (`ProcessArguments`): the user's only;
     /// nil until read, or unreadable.
-    var command: String?
+    var command: String? {
+        get { storage.command }
+        set { unique().command = newValue }
+    }
     /// An interpreter's or a package runner's label (`ActivityText.label`).
-    var label: String?
+    var label: String? {
+        get { storage.label }
+        set { unique().label = newValue }
+    }
     /// argv ran past 64 KB: `command` ends "…cut".
-    var isCut = false
+    var isCut: Bool {
+        get { storage.isCut }
+        set { unique().isCut = newValue }
+    }
     /// argv[0] is a title the process wrote over its argv.
-    var isTitle = false
+    var isTitle: Bool {
+        get { storage.isTitle }
+        set { unique().isTitle = newValue }
+    }
     /// The agent argv[0]'s file names, and the session id its `--resume`
     /// or `-r` gives, read off the raw words (`ProcessArguments`).
-    var argvAgent: Agent?
-    var resumes: String?
+    var argvAgent: Agent? {
+        get { storage.argvAgent }
+        set { unique().argvAgent = newValue }
+    }
+    var resumes: String? {
+        get { storage.resumes }
+        set { unique().resumes = newValue }
+    }
     /// The four names of its environment (9.2): nil for a process a pane's
     /// tree places (never read), a `CS_RESTRICT` one (hidden by the
     /// kernel), another user's, or one not read yet.
-    var markers: ProcessMarkers?
+    var markers: ProcessMarkers? {
+        get { storage.markers }
+        set { unique().markers = newValue }
+    }
     /// This tick's usage, the user's processes the level read; `rates`
     /// nil is "—": a first sample, or none this tick.
-    var usage: ActivityUsage?
-    var rates: ActivityRates?
+    var usage: ActivityUsage? {
+        get { storage.usage }
+        set { unique().usage = newValue }
+    }
+    var rates: ActivityRates? {
+        get { storage.rates }
+        set { unique().rates = newValue }
+    }
     /// Its sockets as this tick read them: at the light level only its
     /// listening and bound-UDP ones.
-    var sockets: SocketScan.Sockets?
+    var sockets: SocketScan.Sockets? {
+        get { storage.sockets }
+        set { unique().sockets = newValue }
+    }
     /// Its working folder, where a level asked (a pane's agent, a process
     /// in focus): the last read, never waited for.
-    var folder: ProcessFolders.Folder?
+    var folder: ProcessFolders.Folder? {
+        get { storage.folder }
+        set { unique().folder = newValue }
+    }
     /// The process macOS holds responsible for it, when another (6.5 rule
     /// 13, D-31): read at the full level while `activity.appServices` is
     /// on; nil when off, unknown or its own.
-    var responsible: ActivityProcessID?
+    var responsible: ActivityProcessID? {
+        get { storage.responsible }
+        set { unique().responsible = newValue }
+    }
     /// Whether `responsible` was read: false while off, where the call
     /// answers nothing, for another user's, or once the one read has gone —
     /// a nil then is unknown, never "none" (D-31).
-    var responsibilityRead = false
+    var responsibilityRead: Bool {
+        get { storage.responsibilityRead }
+        set { unique().responsibilityRead = newValue }
+    }
 }
 
 /// One pane's processes as the light level found them (6.5): the slices
