@@ -100,14 +100,14 @@ for pin in "${pins[@]}"; do
       ;;
     swift)
       where="is tagged. Overterm resolves **$pinned** (\`$file\`)."
-      # A release for a newer Swift than the one releases are built with
-      # (Package.swift's tools version: Xcode 16.4, Swift 6.1) can't be taken
-      # until that moves — said up front, not found by trying.
+      # A release for a newer Swift tools version than Package.swift's can't
+      # be taken until that moves — said up front, not found by trying.
+      # (Releases build with Xcode 27.2, Swift 6.4: moving it is the bump.)
       ours="$(sed -n '1s/.*swift-tools-version: *\([0-9.]*\).*/\1/p' "$ROOT/Package.swift")"
       theirs="$(curl -fsSL "${source%.git}/raw/$latest/Package.swift" 2>/dev/null | sed -n '1s/.*swift-tools-version: *\([0-9.]*\).*/\1/p' || true)"
       if [[ -n "$theirs" && -n "$ours" ]] && newer "$ours" "$theirs"; then
         title="$title — needs Swift $theirs"
-        where="$where It needs **swift-tools-version $theirs**; Overterm builds with Swift $ours (Xcode 16.4), so it waits for the move to a newer Xcode."
+        where="$where It needs **swift-tools-version $theirs**; Overterm's Package.swift says $ours (built with Xcode 27.2, Swift 6.4), so it waits for that to move."
       fi
       releases="${source%.git}/releases"
       steps="1. \`swift package update $name\` — it moves \`Package.resolved\` (and what $name brings in); raise its \`from:\` in \`Package.swift\` only if something needs the new version

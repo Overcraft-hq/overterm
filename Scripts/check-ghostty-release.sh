@@ -38,7 +38,7 @@ sha="$(git ls-remote --tags "https://github.com/$UPSTREAM.git" "refs/tags/$lates
 notes="https://ghostty.org/docs/install/release-notes/$(echo "${latest#v}" | tr . -)"
 xcode_line=""
 if [[ -n "$xcode" ]]; then
-  xcode_line="- Ghostty's build docs at that tag mention **$xcode**; the pin was set on Xcode 16.4 because main needed Xcode 26. Check before bumping."
+  xcode_line="- Ghostty's build docs at that tag mention **$xcode**; the pin builds with Xcode 27.2 (CI's and the release's). Check before bumping."
 fi
 
 body="$(cat <<MD
