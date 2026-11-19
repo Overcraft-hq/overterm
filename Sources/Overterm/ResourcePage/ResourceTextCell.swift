@@ -32,8 +32,10 @@ struct ResourceDrawnCell {
 /// A cell that takes a row's press as `ResourceRowHostingView` does: on
 /// release, through the table's `pressRow` — `ResourceTableView.mouseDown`
 /// never calls super, so a cell that let the press fall through would
-/// select nothing —, the first click in a window behind others too, and a
-/// right-click as the table's menu for the row clicked.
+/// select nothing; and the table hits a cell only when the cell says it
+/// may (`validateProposedFirstResponder`) —, the first click in a window
+/// behind others too, and a right-click as the table's menu for the row
+/// clicked.
 class ResourcePressCell: NSTableCellView {
     private var down: NSEvent?
 
@@ -50,6 +52,13 @@ class ResourcePressCell: NSTableCellView {
         guard !isHidden, frame.contains(point) else { return nil }
         return self
     }
+
+    /// The press is the cell's to take. A view-based table hands a press
+    /// to a view in its row only when that view says so; NSView's answer
+    /// is the table's, which is no for all but controls. So the table hit
+    /// itself, and its `mouseDown` selects nothing: no AppKit cell could
+    /// be pressed. A hosting view says yes, which is why hosted rows could.
+    override func validateProposedFirstResponder(_ responder: NSResponder, for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
         down = event

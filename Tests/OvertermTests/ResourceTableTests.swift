@@ -434,6 +434,12 @@ final class ResourceTableTests: XCTestCase {
         XCTAssertTrue(cell.acceptsFirstMouse(for: nil), "the first click in a window behind others selects")
         let middle = NSPoint(x: cell.frame.midX, y: cell.frame.midY)
         XCTAssertTrue(cell.hitTest(middle) === cell, "the cell, never its words, takes the press")
+        // As a real press finds it, from the window's frame view: a table
+        // hands a press to a view in a row only when that view says it may.
+        let frameView = try XCTUnwrap(window.contentView?.superview)
+        let inWindow = cell.convert(NSPoint(x: cell.bounds.midX, y: cell.bounds.midY), to: nil)
+        XCTAssertTrue(
+            frameView.hitTest(frameView.convert(inWindow, from: nil)) === cell, "the window's press reaches the cell, not the table, which selects nothing")
         func press(_ modifiers: NSEvent.ModifierFlags) {
             let point = cell.convert(NSPoint(x: cell.bounds.midX, y: cell.bounds.midY), to: nil)
             for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
