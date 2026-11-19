@@ -215,6 +215,12 @@ extension E2ERunner {
             "\(fake.requests.suffix(4))")
         check("what the cluster serves is read once, its CRDs watched", fake.watched.contains(KubernetesModel.crdName), "\(fake.watched)")
         await kubernetesPart("kubernetesStreamingLists") { await kubernetesStreamingLists(model, page, fake) }
+        // Pods' two rows: one selected, the other added with ⌘.
+        if await eventually(5, { Set(page.rows.map(\.id)).isSuperset(of: ["shop/web-7d9", "shop/worker-5c"]) }) {
+            await kubernetesCommandPressCheck(selected: "shop/web-7d9", adding: "shop/worker-5c")
+        } else {
+            check("the pods' two rows, to press", false, "\(page.rows.map(\.id))")
+        }
 
         // Keys, while the list has the keyboard.
         if let event = NSEvent.keyEvent(

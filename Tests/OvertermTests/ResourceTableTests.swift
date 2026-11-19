@@ -440,13 +440,24 @@ final class ResourceTableTests: XCTestCase {
         let inWindow = cell.convert(NSPoint(x: cell.bounds.midX, y: cell.bounds.midY), to: nil)
         XCTAssertTrue(
             frameView.hitTest(frameView.convert(inWindow, from: nil)) === cell, "the window's press reaches the cell, not the table, which selects nothing")
-        if let rowView = table.rowView(atRow: 3, makeIfNecessary: false) {
-            let room = NSPoint(x: rowView.bounds.maxX - 1, y: rowView.bounds.midY)
-            if rowView.hitTest(rowView.convert(room, to: rowView.superview)) === rowView {
-                XCTAssertTrue(
-                    table.hitTest(rowView.convert(room, to: table.superview)) === table, "a row's room no cell covers is the table's, to select")
-            }
+        // Room past the last column, whatever the table's own widths: its
+        // columns narrowed under a table as wide as the window, inset as
+        // the pages' tables are (AppKit lays a view of its own in the row).
+        table.style = .inset
+        table.columnAutoresizingStyle = .noColumnAutoresizing
+        for column in table.tableColumns {
+            column.minWidth = 20
+            column.width = 60
         }
+        table.layoutSubtreeIfNeeded()
+        let rowView = try XCTUnwrap(table.rowView(atRow: 3, makeIfNecessary: false))
+        let last = try XCTUnwrap(rowView.subviews.filter { $0 is NSTableCellView }.map(\.frame.maxX).max())
+        let room = NSPoint(x: (last + rowView.bounds.maxX) / 2, y: rowView.bounds.midY)
+        XCTAssertGreaterThan(rowView.bounds.maxX - last, 20, "room past the last column, to press")
+        XCTAssertTrue(
+            table.hitTest(rowView.convert(room, to: table.superview)) === table, "a row's room no cell covers is the table's, to select")
+        let roomInWindow = rowView.convert(room, to: nil)
+        XCTAssertTrue(frameView.hitTest(frameView.convert(roomInWindow, from: nil)) === table, "the window's press there reaches the table")
         func press(_ modifiers: NSEvent.ModifierFlags) {
             let point = cell.convert(NSPoint(x: cell.bounds.midX, y: cell.bounds.midY), to: nil)
             for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {
