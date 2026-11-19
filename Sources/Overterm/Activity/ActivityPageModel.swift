@@ -405,6 +405,20 @@ final class ActivityPageModel: ObservableObject {
         rebuild(asked: true)
     }
 
+    /// A plain press on a row (`ResourceTable`'s `pressed`, after it is
+    /// selected): a group's header, or Listening's folded ports, flips its
+    /// fold — the whole header is the switch, not only its chevron. A
+    /// process is only selected; its own chevron is a button of its own.
+    func pressed(_ id: String) {
+        if section == .listening {
+            if let fold = content.ports.first(where: { $0.id == id && $0.kind == .folded }) { toggleFold(id, folded: fold.folded) }
+            return
+        }
+        if case .group(let row)? = content.list.first(where: { $0.id == id }), row.foldable, row.kind != .container {
+            toggleFold(id, folded: row.folded)
+        }
+    }
+
     /// ← (`open` false) and → on a row, as `ResourceTable` reads them:
     /// whether it folded or unfolded.
     func fold(_ id: String, open: Bool) -> Bool {

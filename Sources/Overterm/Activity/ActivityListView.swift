@@ -37,6 +37,7 @@ struct ActivityListView: View, Equatable {
                 cell: { row, column in cell(row, column) },
                 verbs: { [weak page, copy] ids in page?.verbs(for: ids, copy: copy) ?? [] }, copy: { [weak page, copy] in copy(page?.selectedLines ?? []) },
                 accessibilityIdentifier: "activity.list",
+                pressed: { [weak page] in page?.pressed($0) },
                 accessibilityLabel: { $0.accessibilityLabel }
             )
             .with { table in
@@ -85,18 +86,19 @@ struct ActivityListView: View, Equatable {
         }
     }
 
-    /// The fold's triangle, or its room.
+    /// The fold's triangle, or its room. Not a button: a press anywhere on
+    /// a group's row flips it (`ActivityPageModel.pressed`), and a button
+    /// here would take the same press and flip it back. VoiceOver flips it
+    /// by the row's action.
     private func disclosure(_ id: String, foldable: Bool, folded: Bool) -> some View {
         Group {
             if foldable {
-                Button {
-                    page.toggleFold(id, folded: folded)
-                } label: {
-                    Image(systemName: folded ? "chevron.right" : "chevron.down").font(.system(size: ChromeMetrics.text(9), weight: .semibold))
-                        .foregroundStyle(theme.text3).frame(width: 14, height: 18).contentShape(Rectangle())
-                }
-                .buttonStyle(.plain)
-                .accessibilityLabel(Text(folded ? "Unfold" : "Fold"))
+                Image(systemName: folded ? "chevron.right" : "chevron.down").font(.system(size: ChromeMetrics.text(9), weight: .semibold))
+                    .foregroundStyle(theme.text3).frame(width: 14, height: 18)
+                    .accessibilityElement()
+                    .accessibilityLabel(Text(folded ? "Unfold" : "Fold"))
+                    .accessibilityAddTraits(.isButton)
+                    .accessibilityAction { [weak page] in page?.toggleFold(id, folded: folded) }
             } else {
                 Color.clear.frame(width: 14, height: 18)
             }

@@ -261,6 +261,10 @@ extension E2ERunner {
         // A group's hosted header.
         if let group = page.list.rows.rows.firstIndex(where: { if case .group(let g) = $0 { g.kind != .more && g.kind != .container } else { false } }) {
             let groupID = page.list.rows.rows[group].id
+            // Its fold before any press: the first press already flips it.
+            var foldable = false
+            var wasFolded = false
+            if case .group(let g) = page.list.rows.rows[group] { foldable = g.foldable; wasFolded = g.folded }
             await clear()
             let width = table.frameOfCell(atColumn: 0, row: group).width
             let press = await pressListRow(table, row: group, column: nil, dx: min(width / 2, 160))
@@ -268,6 +272,24 @@ extension E2ERunner {
             check("a press on a group's header selects it", chosen, "hit \(press.hit), table \(press.selected), row \(group)")
             let cell = pressHitCell(press, in: table, row: group)
             check("the group's hosted header took the press", cell.ok, "hit \(press.hit), expected \(cell.expected)")
+            // The whole header is the fold's switch, not only its chevron: the
+            // press folded or unfolded it, and a second press puts it back.
+            func folded() -> Bool? {
+                for row in page.list.rows.rows { if case .group(let g) = row, g.id == groupID { return g.folded } }
+                return nil
+            }
+            if foldable {
+                let flipped = await eventually(3) { folded() == !wasFolded }
+                check("a press on a group's header flips its fold", flipped, "folded \(String(describing: folded())), was \(wasFolded)")
+                if let again = page.list.rows.rows.firstIndex(where: { $0.id == groupID }) {
+                    let w = table.frameOfCell(atColumn: 0, row: again).width
+                    _ = await pressListRow(table, row: again, column: nil, dx: min(w / 2, 160))
+                }
+                let back = await eventually(3) { folded() == wasFolded }
+                check("and a second press puts it back", back, "folded \(String(describing: folded())), was \(wasFolded)")
+            } else {
+                note("the group pressed can't fold")
+            }
         } else {
             note("no group header listed to press")
         }
