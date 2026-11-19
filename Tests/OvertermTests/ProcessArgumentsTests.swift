@@ -425,8 +425,26 @@ final class ProcessArgumentsTests: XCTestCase {
         defer { region.deallocate() }
         let forced = try XCTUnwrap(ProcessArguments.read(child.pid, kernel: kernel, markers: true, in: region))
         XCTAssertEqual(forced.command, "/bin/sleep 60")
+        // The kernel hides a restricted process's environment only while
+        // System Integrity Protection is on — GitHub's macOS runners have
+        // it off. Overterm's own rule (never scanned, above) holds either way.
+        guard Self.integrityProtected else { return }
         XCTAssertEqual(forced.markers, ProcessMarkers(), "the kernel left it out")
     }
+
+    /// Whether System Integrity Protection is on, as `csrutil` says.
+    private static let integrityProtected: Bool = {
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/usr/bin/csrutil")
+        process.arguments = ["status"]
+        let pipe = Pipe()
+        process.standardOutput = pipe
+        process.standardError = Pipe()
+        guard (try? process.run()) != nil else { return true }
+        let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+        process.waitUntilExit()
+        return !output.contains("disabled")
+    }()
 
     /// Another user's process: the kernel refuses argv (EINVAL).
     func testAnotherUsersArgvIsRefused() {
