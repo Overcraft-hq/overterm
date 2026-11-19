@@ -25,7 +25,9 @@ final class ActivityMCPTests: XCTestCase {
     private let api = "/Users/fake/src/globex-api"
     private let home = "/Users/fake"
 
-    override func tearDown() {
+    // Async, so the main actor's (Swift 6.1 runs a plain override
+    // nonisolated); no super call — see CLAUDE.md's note on @MainActor tests.
+    override func tearDown() async throws {
         ActivityMCP.scene = nil
         ActivityMCP.monitor = .shared
         ActivityMCP.othersReader = .shared
@@ -33,7 +35,6 @@ final class ActivityMCPTests: XCTestCase {
         Settings.shared.set("activity.agentAccess", nil)
         Settings.shared.set("activity.otherListeners", nil)
         Settings.shared.set("activity.enabled", nil)
-        super.tearDown()
     }
 
     @discardableResult

@@ -15,10 +15,11 @@ final class ActivityRowsTests: XCTestCase {
     private let app: pid_t = 1000
     private let tab = UUID()
 
-    override func tearDown() {
+    // Async, so the main actor's (Swift 6.1 runs a plain override
+    // nonisolated); no super call — see CLAUDE.md's note on @MainActor tests.
+    override func tearDown() async throws {
         Settings.shared.set("activity.enabled", nil)
         Settings.shared.set("activity.everyone", nil)
-        super.tearDown()
     }
 
     @discardableResult

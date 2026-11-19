@@ -324,14 +324,14 @@ struct ActivityPageView: View {
     }
 
     /// What isn't read, and the connections past the cap (6.8): said.
-    static func listeningNote(connections: Bool, dropped: Int, others: ActivityOtherListeners = .off) -> String {
+    nonisolated static func listeningNote(connections: Bool, dropped: Int, others: ActivityOtherListeners = .off) -> String {
         guard connections else { return "Your processes' listeners. \(others.sentence) Connections: c" }
         let more = dropped > 0 ? " +\(dropped) more connection\(dropped == 1 ? "" : "s") not listed." : ""
         return "Your processes' listeners and connections. \(others.sentence)\(more)"
     }
 
     /// What an empty section says: true of what was read (6.4).
-    static func emptySentence(_ section: ActivityPageModel.Section, scopedToRun: Bool, filter: String = "") -> String {
+    nonisolated static func emptySentence(_ section: ActivityPageModel.Section, scopedToRun: Bool, filter: String = "") -> String {
         let filter = filter.trimmingCharacters(in: .whitespaces)
         if !filter.isEmpty { return "Nothing matches “\(filter)”." }
         switch section {
