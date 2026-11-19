@@ -56,8 +56,9 @@ concurrency:
 jobs:
   release:
     runs-on: xcode-27  # public preview (see the top)
-    # Up to 30 of them waiting for CI on this commit to finish.
-    timeout-minutes: 75
+    # Up to 30 of them waiting for CI on this commit to finish, and a
+    # release build without CI's cache takes over 50 (Xcode 27.2).
+    timeout-minutes: 150
     env:
       GH_TOKEN: ${{ github.token }}
     steps:

@@ -226,8 +226,9 @@ jobs:
     if: needs.changes.outputs.bundle == 'true'
     runs-on: xcode-27  # public preview (see the top)
     # A cold GhosttyKit build (≈10 min, when its cache misses) and the
-    # release build (≈17 min).
-    timeout-minutes: 60
+    # release build: ≈17 min from the cache, over 50 min with none — the
+    # first run on Xcode 27.2 was cut at 60.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@v7
 
