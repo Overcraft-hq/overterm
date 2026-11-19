@@ -890,6 +890,7 @@ extension E2ERunner {
         }
         page.showKind(services)
         check("the Services list", await eventually(10) { page.rows.contains { $0.id == "shop/web" } }, "\(page.rows.map(\.id))")
+        await kubernetesPressChecks(id: "shop/web")
         page.selection = ["shop/web"]
         func verb(_ title: String, _ id: String = "shop/web") -> ResourceVerb? { page.verbs(for: [id]).first { $0.title == title } }
         check(

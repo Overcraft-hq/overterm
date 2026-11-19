@@ -3458,6 +3458,7 @@ extension E2ERunner {
             "and lists a compose project, then the rest",
             await eventually(5) { page.groups.map(\.id) == ["project:ot-shop", "loose"] }, "\(page.groups.map(\.id))")
         check("its services by name", page.groups.first?.containers.map(\.composeService) == ["db", "web"])
+        await dockerPressChecks()
         check("the list has the keyboard", await eventually(3) { self.app.dockerListHasKeyboard() }, "\(String(describing: window.firstResponder))")
 
         if let png = ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"], !png.isEmpty {

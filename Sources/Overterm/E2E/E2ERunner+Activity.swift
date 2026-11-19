@@ -72,6 +72,7 @@ extension E2ERunner {
         check(
             "its rows name the tab", ownRows().allSatisfy { $0.tabTitle != nil }, "\(ownRows().filter { $0.tabTitle == nil }.count) unnamed")
         await activityOwners(tab: tab)
+        await activityPressChecks(tab: tab)
         let overgitTab = await activityTable(tab: tab)
         check(
             "the header counts the Mac, the rows the run's", page.content.summary.scopedToRun && page.content.summary.processes > page.content.summary.shown,
@@ -105,6 +106,7 @@ extension E2ERunner {
             self.app.pages.view(.activity).flatMap { Self.accessibilityElement("activity.listeningNote", in: $0) }?.text.contains("Other users' listeners: not read in a test run") == true
         }
         check("and below the list, what Listening doesn't read", noted)
+        await activityPressChecks(tab: tab, port: port)
         await activityListening(tab: tab, server: row)
         await activityAgentReadChecks(tab: tab, port: port)
         await activityVerbAndLinkChecks(tab: tab, server: row)
