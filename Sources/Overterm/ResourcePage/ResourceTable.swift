@@ -847,6 +847,15 @@ final class ResourceTableView: NSTableView {
         return hit is NSTableRowView ? self : hit
     }
 
+    /// A press on an AppKit cell (`ResourcePressCell`) is the cell's to
+    /// take. A view-based table hands a press to a view in a row only when
+    /// it says so here, and its own answer is no for all but controls: it
+    /// hit itself instead, and its `mouseDown` selects nothing.
+    override func validateProposedFirstResponder(_ responder: NSResponder, for event: NSEvent?) -> Bool {
+        if responder is ResourcePressCell { return true }
+        return super.validateProposedFirstResponder(responder, for: event)
+    }
+
     override func mouseUp(with event: NSEvent) {
         guard let down = roomPress else { return super.mouseUp(with: event) }
         roomPress = nil
