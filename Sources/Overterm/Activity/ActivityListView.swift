@@ -15,8 +15,20 @@ struct ActivityListView: View, Equatable {
     /// ⌘C: the selection, as the window copies it.
     let copy: ([String]) -> Void
 
+    /// The objects' identities, as `==` compares them: an observed object's
+    /// property is the main actor's, and `==` is nonisolated (Swift 6.1).
+    private let objects: [ObjectIdentifier]
+
+    init(list: ActivityListState, page: ActivityPageModel, theme: ChromeTheme, copy: @escaping ([String]) -> Void) {
+        self.list = list
+        self.page = page
+        self.theme = theme
+        self.copy = copy
+        objects = [ObjectIdentifier(list), ObjectIdentifier(page), ObjectIdentifier(theme)]
+    }
+
     nonisolated static func == (a: ActivityListView, b: ActivityListView) -> Bool {
-        a.list === b.list && a.page === b.page && a.theme === b.theme
+        a.objects == b.objects
     }
 
     private var sort: Binding<ResourceSort?> {

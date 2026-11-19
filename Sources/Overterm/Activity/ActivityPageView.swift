@@ -107,7 +107,8 @@ struct ActivityPageView: View {
         ActivitySidebar(
             section: page.section, hasRead: page.hasRead, shown: summary.shown, listening: summary.listening, leftBehind: summary.leftBehind,
             busiest: summary.busiest, meters: summary.meters, processes: summary.processes, threads: summary.threads, history: summary.history,
-            energy: page.columns(.processes).contains { $0.id == "energy" } ? summary.energy : nil, page: page, theme: theme, copy: copy
+            energy: page.columns(.processes).contains { $0.id == "energy" } ? summary.energy : nil, page: page, theme: theme, copy: copy,
+            themeID: ObjectIdentifier(theme)
         )
         .equatable()
     }
@@ -347,7 +348,7 @@ struct ActivityPageView: View {
     // MARK: Cells' words
 
     /// At most three ports, then "+N".
-    static func ports(_ ports: [Int]) -> String {
+    nonisolated static func ports(_ ports: [Int]) -> String {
         let shown = ports.prefix(3).map { ":\($0)" }.joined(separator: " ")
         return ports.count > 3 ? "\(shown) +\(ports.count - 3)" : shown
     }
@@ -387,7 +388,7 @@ struct ActivityPageView: View {
     }
 
     /// A rate as the page writes it: "—" unread.
-    static func rate(_ value: Double?, unit: String) -> String {
+    nonisolated static func rate(_ value: Double?, unit: String) -> String {
         guard let value else { return "—" }
         if unit == "B/s" { return ActivityRows.bytes(UInt64(max(value, 0).rounded())) + "/s" }
         return ActivityRows.fixed(value, digits: value >= 100 ? 0 : 1) + " " + unit
@@ -415,11 +416,14 @@ struct ActivitySidebar: View, Equatable {
     let page: ActivityPageModel
     @ObservedObject var theme: ChromeTheme
     let copy: ([String]) -> Void
+    /// The theme's identity, as `==` compares it: an observed object's
+    /// property is the main actor's, and `==` is nonisolated (Swift 6.1).
+    let themeID: ObjectIdentifier
 
     nonisolated static func == (a: ActivitySidebar, b: ActivitySidebar) -> Bool {
         a.section == b.section && a.hasRead == b.hasRead && a.shown == b.shown && a.listening == b.listening && a.leftBehind == b.leftBehind
             && a.busiest == b.busiest && a.meters == b.meters && a.processes == b.processes && a.threads == b.threads && a.history == b.history
-            && a.energy == b.energy && a.page === b.page && a.theme === b.theme
+            && a.energy == b.energy && a.page === b.page && a.themeID == b.themeID
     }
 
     var body: some View {
