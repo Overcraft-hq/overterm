@@ -266,7 +266,7 @@ Requirements: macOS 13+, Xcode 27.2 (what CI and releases build with),
 27.2 — the system's choice stays:
 
 ```sh
-export DEVELOPER_DIR=/Applications/Xcode-27.2.app/Contents/Developer
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer   # wherever Xcode 27.2 is installed
 ```
 
 ```sh

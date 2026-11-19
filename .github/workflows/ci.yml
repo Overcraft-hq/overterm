@@ -134,7 +134,10 @@ jobs:
 
       # GhosttyKit's pin (Ghostty v1.4.0, Zig 0.17.0) builds with Xcode 27.2.
       - name: Use Xcode ${{ env.XCODE }}
-        run: sudo xcode-select -s "/Applications/Xcode_$XCODE.app"
+        run: |
+          # The preview image may change: say what it has if this one is missing.
+          ls -d /Applications/Xcode_*.app
+          sudo xcode-select -s "/Applications/Xcode_$XCODE.app"
 
       - name: Swift version
         run: swift --version
@@ -221,7 +224,10 @@ jobs:
       - uses: actions/checkout@v7
 
       - name: Use Xcode ${{ env.XCODE }}
-        run: sudo xcode-select -s "/Applications/Xcode_$XCODE.app"
+        run: |
+          # The preview image may change: say what it has if this one is missing.
+          ls -d /Applications/Xcode_*.app
+          sudo xcode-select -s "/Applications/Xcode_$XCODE.app"
 
       - uses: jdx/mise-action@v5  # Zig, pinned in mise.toml
 
