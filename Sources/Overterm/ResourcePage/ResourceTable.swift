@@ -826,14 +826,25 @@ final class ResourceTableView: NSTableView {
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         interaction?(.hover)
-        if row(at: convert(event.locationInWindow, from: nil)) < 0 {
+        let point = convert(event.locationInWindow, from: nil)
+        let row = row(at: point)
+        if row < 0 {
             deselectAll(nil)
-        } else {
+        } else if !cellCovers(point, row: row) {
             // A row's room no cell covers — its inset, past its last
             // column — reaches the table: selected on release, as a cell's.
+            // One a hosted cell passed up is its cell's, selected there.
             roomPress = event
             interaction?(.pressBegan)
         }
+    }
+
+    /// Whether one of `row`'s cells lies under `point`, in the table's
+    /// coordinates.
+    private func cellCovers(_ point: NSPoint, row: Int) -> Bool {
+        guard let rowView = rowView(atRow: row, makeIfNecessary: false) else { return false }
+        let inRow = rowView.convert(point, from: self)
+        return rowView.subviews.contains { $0 is NSTableCellView && !$0.isHidden && $0.frame.contains(inRow) }
     }
 
     /// A press on a row that reached the table itself, until its release.
