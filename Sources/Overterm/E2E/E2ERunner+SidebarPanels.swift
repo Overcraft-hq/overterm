@@ -47,6 +47,17 @@ extension E2ERunner {
         Settings.shared.set("general.sidebarOrder", nil)
         check("the default order is today's", SidebarPanel.shown == SidebarPanel.allCases.filter(\.isEnabled))
 
+        // The Activity page from the foot of the rail, there while Activity
+        // is on: its button opens the page, and goes with the setting.
+        check("Activity's button is at the foot of the rail", SidebarRailAction.shown.first == .activity, "\(SidebarRailAction.shown)")
+        app.performRailAction(.activity)
+        check("and it opens the Activity page", await eventually(3) { self.app.store.showingOverlay == .activity })
+        app.closeOverlay(.activity)
+        Settings.shared.set("activity.enabled", .bool(false))
+        check("Activity off: its button goes", await eventually(3) { !SidebarRailAction.shown.contains(.activity) })
+        Settings.shared.set("activity.enabled", nil)
+        check("and comes back with it", await eventually(3) { SidebarRailAction.shown.contains(.activity) })
+
         // Compact: a narrower rail, and the column's limits follow it.
         let regular = app.sidebarItem?.minimumThickness ?? 0
         Settings.shared.set("general.sidebarRail", .string("compact"))

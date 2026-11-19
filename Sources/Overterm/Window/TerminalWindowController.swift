@@ -503,8 +503,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 dockerActions: dockerActions,
                 terraformActions: terraformPanelActions,
                 openKubernetesPage: { [weak self] in self?.toggleKubernetesPage(nil) },
-                onSettings: { [weak self] in self?.openSettings() },
-                onClose: { [weak self] in self?.toggleFileTree(nil) }
+                railAction: { [weak self] in self?.performRailAction($0) }
             ))
         sidebar.sizingOptions = []
         let sidebarItem = NSSplitViewItem(

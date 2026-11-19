@@ -226,6 +226,17 @@ extension TerminalWindowController {
         togglePage(.activity)
     }
 
+    /// A button at the foot of the sidebar's rail: Activity's opens the
+    /// page (shown, never toggled away — the strip's × closes it), the gear
+    /// Settings, the last puts the sidebar away.
+    func performRailAction(_ action: SidebarRailAction) {
+        switch action {
+        case .activity: showActivityPage()
+        case .settings: openSettings()
+        case .hide: toggleFileTree(nil)
+        }
+    }
+
     /// The page, shown (a link's, the switcher's), on `section`.
     func showActivityPage(_ section: ActivityPageModel.Section? = nil) {
         guard Settings.shared.activityEnabled else { return openSettings(.activity) }

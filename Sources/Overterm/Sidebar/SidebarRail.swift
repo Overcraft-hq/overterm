@@ -6,6 +6,10 @@ import SwiftUI
 /// A type rather than two buttons written into the view, so what sits at
 /// the foot of the rail can be read (and checked) without drawing it.
 enum SidebarRailAction: String, CaseIterable, Identifiable {
+    /// The Activity page (⌥⌘A): a page over the body like Settings, so its
+    /// button sits beside the gear rather than among the panels — there is
+    /// no Activity panel to switch the sidebar to.
+    case activity
     /// The Settings tab, where VS Code keeps its gear.
     case settings
     /// Put the sidebar away — what the ✕ in the old icon bar did.
@@ -15,6 +19,7 @@ enum SidebarRailAction: String, CaseIterable, Identifiable {
 
     var symbol: String {
         switch self {
+        case .activity: "cpu"
         case .settings: "gearshape"
         case .hide: "sidebar.leading"
         }
@@ -22,6 +27,7 @@ enum SidebarRailAction: String, CaseIterable, Identifiable {
 
     var title: String {
         switch self {
+        case .activity: "Activity"
         case .settings: "Settings"
         case .hide: "Hide Sidebar"
         }
@@ -30,12 +36,18 @@ enum SidebarRailAction: String, CaseIterable, Identifiable {
     /// The key that does the same thing, for the tooltip.
     var shortcut: String {
         switch self {
+        case .activity: "⌥⌘A"
         case .settings: "⌘,"
         case .hide: "⌘B"
         }
     }
 
     var help: String { "\(title) (\(shortcut))" }
+
+    /// The buttons the rail draws: Activity's only while Settings has it on.
+    @MainActor static var shown: [SidebarRailAction] {
+        allCases.filter { $0 != .activity || Settings.shared.activityEnabled }
+    }
 }
 
 /// The sidebar's activity rail: the panels down its left edge, the way VS
@@ -63,8 +75,9 @@ struct SidebarRail: View {
 
     @ObservedObject var sidebar: SidebarModel
     @ObservedObject var theme: ChromeTheme
-    let onSettings: () -> Void
-    let onClose: () -> Void
+    /// What a button at the foot does: the window's
+    /// (`TerminalWindowController.performRailAction`).
+    let perform: (SidebarRailAction) -> Void
 
     var body: some View {
         VStack(spacing: 2) {
@@ -83,16 +96,13 @@ struct SidebarRail: View {
                         Button("Hide \(item.title)") { Settings.shared.set(key, .bool(false)) }
                     }
                     Divider()
-                    Button("Customize Sidebar…") { onSettings() }
+                    Button("Customize Sidebar…") { perform(.settings) }
                 }
             }
             Spacer(minLength: 8)
-            ForEach(SidebarRailAction.allCases) { action in
+            ForEach(SidebarRailAction.shown) { action in
                 RailButton(selected: false, help: action.help, theme: theme) {
-                    switch action {
-                    case .settings: onSettings()
-                    case .hide: onClose()
-                    }
+                    perform(action)
                 } label: {
                     Image(systemName: action.symbol).font(.system(size: Self.isCompact ? 12 : 14))
                 }

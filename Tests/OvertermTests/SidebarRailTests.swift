@@ -76,12 +76,19 @@ final class SidebarRailTests: XCTestCase {
         XCTAssertFalse(symbols.contains(where: \.isEmpty))
     }
 
-    /// The foot of the rail: Settings, then the button that puts the
-    /// sidebar away — the ✕ the old icon bar had.
+    /// The foot of the rail: the Activity page, Settings, then the button
+    /// that puts the sidebar away — the ✕ the old icon bar had. Activity's
+    /// only while Settings has it on.
     func testTheFootOfTheRail() {
-        XCTAssertEqual(SidebarRailAction.allCases, [.settings, .hide])
+        XCTAssertEqual(SidebarRailAction.allCases, [.activity, .settings, .hide])
+        XCTAssertEqual(SidebarRailAction.activity.help, "Activity (⌥⌘A)")
         XCTAssertEqual(SidebarRailAction.settings.help, "Settings (⌘,)")
         XCTAssertEqual(SidebarRailAction.hide.help, "Hide Sidebar (⌘B)")
+        XCTAssertEqual(
+            SidebarRailAction.shown,
+            Settings.shared.activityEnabled ? [.activity, .settings, .hide] : [.settings, .hide])
+        let symbols = SidebarRailAction.allCases.map(\.symbol)
+        XCTAssertEqual(Set(symbols).count, symbols.count, "\(symbols)")
     }
 
     /// The rail's width is the column's to find, not the panel's to give
