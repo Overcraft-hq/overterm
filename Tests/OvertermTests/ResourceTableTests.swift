@@ -467,6 +467,37 @@ final class ResourceTableTests: XCTestCase {
         XCTAssertEqual(picked.ids, [], "⌘ takes it away again")
     }
 
+    /// A view laid in a row beside its cells — AppKit lays one in an inset
+    /// table's row, over the room past the last column — never takes a
+    /// press there: the table does, to select the row (the cells keep
+    /// theirs).
+    @MainActor
+    func testAViewInARowBesideItsCellsLeavesItsRoomToTheTable() throws {
+        let fruit: [Fruit] = (0..<20).map { (index: Int) in .fruit("f\(index)", weight: index) }
+        let (coordinator, table, window) = hosted(plainTable(fruit, selection: .constant([])))
+        defer {
+            window.close()
+            withExtendedLifetime(coordinator) {}
+        }
+        table.columnAutoresizingStyle = .noColumnAutoresizing
+        for column in table.tableColumns {
+            column.minWidth = 20
+            column.width = 60
+        }
+        table.layoutSubtreeIfNeeded()
+        let rowView = try XCTUnwrap(table.rowView(atRow: 3, makeIfNecessary: false))
+        let stray = NSView(frame: rowView.bounds.insetBy(dx: 10, dy: 0))
+        rowView.addSubview(stray, positioned: .below, relativeTo: nil)
+        let last = try XCTUnwrap(rowView.subviews.filter { $0 is NSTableCellView }.map(\.frame.maxX).max())
+        let room = NSPoint(x: (last + stray.frame.maxX) / 2, y: rowView.bounds.midY)
+        XCTAssertTrue(rowView.hitTest(rowView.convert(room, to: rowView.superview)) === stray, "the view lies over the room")
+        XCTAssertTrue(table.hitTest(rowView.convert(room, to: table.superview)) === table, "the row's room is the table's, to select")
+        let at = table.column(withIdentifier: NSUserInterfaceItemIdentifier("weight"))
+        let cell = try XCTUnwrap(table.view(atColumn: at, row: 3, makeIfNecessary: false) as? ResourceTextCell)
+        let middle = cell.convert(NSPoint(x: cell.bounds.midX, y: cell.bounds.midY), to: table.superview)
+        XCTAssertTrue(table.hitTest(middle) === cell, "a cell keeps its press")
+    }
+
     /// A text cell is drawn again only when its words changed; a hosted cell
     /// whose key is the same isn't handed its row again; a nil key always is.
     @MainActor

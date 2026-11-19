@@ -854,8 +854,17 @@ final class ResourceTableView: NSTableView {
     /// there — answers as the table: the row view took the press for its
     /// own and the row was never selected.
     override func hitTest(_ point: NSPoint) -> NSView? {
-        let hit = super.hitTest(point)
-        return hit is NSTableRowView ? self : hit
+        guard let hit = super.hitTest(point) else { return nil }
+        if hit is NSTableRowView { return self }
+        // A view AppKit lays in the row beside its cells answered for the
+        // row's room past its last column, and selected nothing either:
+        // only a cell, or what is in it, answers for itself.
+        var view = hit
+        while let up = view.superview, up !== self {
+            if up is NSTableRowView { return view is NSTableCellView ? hit : self }
+            view = up
+        }
+        return hit
     }
 
     /// A press on an AppKit cell (`ResourcePressCell`) is the cell's to
