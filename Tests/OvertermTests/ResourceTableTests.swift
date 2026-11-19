@@ -440,6 +440,13 @@ final class ResourceTableTests: XCTestCase {
         let inWindow = cell.convert(NSPoint(x: cell.bounds.midX, y: cell.bounds.midY), to: nil)
         XCTAssertTrue(
             frameView.hitTest(frameView.convert(inWindow, from: nil)) === cell, "the window's press reaches the cell, not the table, which selects nothing")
+        if let rowView = table.rowView(atRow: 3, makeIfNecessary: false) {
+            let room = NSPoint(x: rowView.bounds.maxX - 1, y: rowView.bounds.midY)
+            if rowView.hitTest(rowView.convert(room, to: rowView.superview)) === rowView {
+                XCTAssertTrue(
+                    table.hitTest(rowView.convert(room, to: table.superview)) === table, "a row's room no cell covers is the table's, to select")
+            }
+        }
         func press(_ modifiers: NSEvent.ModifierFlags) {
             let point = cell.convert(NSPoint(x: cell.bounds.midX, y: cell.bounds.midY), to: nil)
             for type in [NSEvent.EventType.leftMouseDown, .leftMouseUp] {

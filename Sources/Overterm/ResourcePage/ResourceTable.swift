@@ -821,11 +821,37 @@ final class ResourceTableView: NSTableView {
 
     /// A press on no row clears the selection. One on a row is its
     /// view's, selected on release (`ResourceRowHostingView`); passed up
-    /// here too, selecting it again undid a ⌘-click's toggle.
+    /// here too, selecting it again undid a ⌘-click's toggle. Only one on
+    /// a row's room outside its cells comes here, and is selected here.
     override func mouseDown(with event: NSEvent) {
         window?.makeFirstResponder(self)
         interaction?(.hover)
-        if row(at: convert(event.locationInWindow, from: nil)) < 0 { deselectAll(nil) }
+        if row(at: convert(event.locationInWindow, from: nil)) < 0 {
+            deselectAll(nil)
+        } else {
+            // A row's room no cell covers — its inset, past its last
+            // column — reaches the table: selected on release, as a cell's.
+            roomPress = event
+            interaction?(.pressBegan)
+        }
+    }
+
+    /// A press on a row that reached the table itself, until its release.
+    private var roomPress: NSEvent?
+
+    /// A row's own view — its room no cell covers, the selection drawn
+    /// there — answers as the table: the row view took the press for its
+    /// own and the row was never selected.
+    override func hitTest(_ point: NSPoint) -> NSView? {
+        let hit = super.hitTest(point)
+        return hit is NSTableRowView ? self : hit
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        guard let down = roomPress else { return super.mouseUp(with: event) }
+        roomPress = nil
+        pressRow(down)
+        interaction?(.pressEnded)
     }
 
     @objc func copy(_ sender: Any?) { copySelection() }
