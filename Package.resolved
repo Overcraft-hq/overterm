@@ -1,5 +1,5 @@
 {
-  "originHash" : "3c86e5288885fd94f31ae5dda983c8740f749943d2c906a975d867b1672fd62c",
+  "originHash" : "bc579ea25f94d85c8dd1b33c7107d4d4c829d1638ead9f1b9d511fdcc9aba830",
   "pins" : [
     {
       "identity" : "mysql-nio",
@@ -51,8 +51,8 @@
       "kind" : "remoteSourceControl",
       "location" : "https://github.com/apple/swift-async-algorithms.git",
       "state" : {
-        "revision" : "13713a4ffdee8abd929f92568ee9462a46ae26e0",
-        "version" : "1.1.7"
+        "revision" : "3da39bbc4e687d4192af7c9cf4eab805745a0b9c",
+        "version" : "1.1.5"
       }
     },
     {
@@ -80,15 +80,6 @@
       "state" : {
         "revision" : "da9d28d69ebe3894b18376c8f2395c2f37b8448f",
         "version" : "4.5.2"
-      }
-    },
-    {
-      "identity" : "swift-distributed-tracing",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-distributed-tracing.git",
-      "state" : {
-        "revision" : "cc504a45f6ce73ce6067837d7ac19fa67b229a56",
-        "version" : "1.5.0"
       }
     },
     {
@@ -152,15 +143,6 @@
       "state" : {
         "revision" : "0c0290ff6b24942dadb83a929ffaaa1481df04a2",
         "version" : "1.1.1"
-      }
-    },
-    {
-      "identity" : "swift-service-context",
-      "kind" : "remoteSourceControl",
-      "location" : "https://github.com/apple/swift-service-context.git",
-      "state" : {
-        "revision" : "d0997351b0c7779017f88e7a93bc30a1878d7f29",
-        "version" : "1.3.0"
       }
     },
     {
