@@ -162,7 +162,15 @@ jobs:
         if: steps.frameworks.outputs.cache-hit != 'true'
         run: |
           xcrun metal --version >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
-          make ghosttykit treesitter
+          # A cold build fetches Ghostty's Zig packages from their upstreams,
+          # and a reset connection fails it. Zig keeps what it fetched and the
+          # script reuses its checkout, so a second try fetches only the rest.
+          for attempt in 1 2 3; do
+            make ghosttykit treesitter && break
+            [[ $attempt == 3 ]] && exit 1
+            echo "::warning::the frameworks' build failed (attempt $attempt); trying again in 30 s"
+            sleep 30
+          done
 
       # The debug build of the last run on main, its packages compiled once
       # per Package.resolved. Overterm's own modules are left out: the
@@ -244,7 +252,15 @@ jobs:
         if: steps.frameworks.outputs.cache-hit != 'true'
         run: |
           xcrun metal --version >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
-          make ghosttykit treesitter
+          # A cold build fetches Ghostty's Zig packages from their upstreams,
+          # and a reset connection fails it. Zig keeps what it fetched and the
+          # script reuses its checkout, so a second try fetches only the rest.
+          for attempt in 1 2 3; do
+            make ghosttykit treesitter && break
+            [[ $attempt == 3 ]] && exit 1
+            echo "::warning::the frameworks' build failed (attempt $attempt); trying again in 30 s"
+            sleep 30
+          done
 
       # The release build of the last run on main: the Swift packages are
       # compiled once per Package.resolved, not every run. The Release

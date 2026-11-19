@@ -131,7 +131,15 @@ jobs:
         if: steps.frameworks.outputs.cache-hit != 'true'
         run: |
           xcrun metal --version >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
-          make ghosttykit treesitter
+          # A cold build fetches Ghostty's Zig packages from their upstreams,
+          # and a reset connection fails it. Zig keeps what it fetched and the
+          # script reuses its checkout, so a second try fetches only the rest.
+          for attempt in 1 2 3; do
+            make ghosttykit treesitter && break
+            [[ $attempt == 3 ]] && exit 1
+            echo "::warning::the frameworks' build failed (attempt $attempt); trying again in 30 s"
+            sleep 30
+          done
 
       # CI's release build on main (see the top): the newest for these
       # packages and this Xcode. Restored only — CI is what saves it.
