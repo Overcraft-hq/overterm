@@ -3,7 +3,7 @@ APP := Overterm.app
 # This Mac's own settings, untracked (see .gitignore): SIGN_IDENTITY.
 -include local.mk
 
-.PHONY: ghosttykit treesitter icon themes build test e2e app dmg run install signed-spike clean hooks
+.PHONY: ghosttykit treesitter icon themes build test test-changed e2e app dmg run install signed-spike clean hooks
 
 ## ghosttykit: build Frameworks/GhosttyKit.xcframework from the pinned Ghostty
 ghosttykit:
@@ -29,6 +29,18 @@ build:
 ## test: run the unit tests (E2E scenarios are skipped)
 test:
 	swift test --skip OvertermE2ETests
+
+## test-changed: only the unit tests this branch's changes reach — against
+## BASE (origin/main), what isn't committed yet too (Scripts/affected-tests.sh)
+BASE ?= origin/main
+test-changed:
+	@filter="$$( { git diff --name-only $(BASE)...HEAD; git diff --name-only HEAD; \
+		git ls-files --others --exclude-standard; } | sort -u | ./Scripts/affected-tests.sh )"; \
+	case "$$filter" in \
+		none) echo "No unit test is reached by the changes since $(BASE)." ;; \
+		all) swift test --skip OvertermE2ETests ;; \
+		*) echo "Running: $$filter"; swift test --skip OvertermE2ETests --filter "$$filter" ;; \
+	esac
 
 ## e2e: build the app, then run every end-to-end scenario in it (opens windows briefly)
 e2e: app

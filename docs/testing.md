@@ -42,21 +42,61 @@ Tabs are real: the unit-test process never calls `ghostty_init`, so
 pty, same object. Don't initialize the runtime in unit tests.
 
 Async models supersede older refreshes by design; wait for them to settle
-(`eventually { … }`) rather than asserting right after one call.
+(`eventually { … }`) rather than asserting right after one call. A test
+that counts a fake server's requests counts only what it asked for, or
+waits for the page's own reads to stop first: CI's machine is slower, and
+a page's namespaces or its first lists landing after a `forgetRequests()`
+failed two such tests there that never failed here.
+
+### Choosing tests
+
+`make test` runs them all (~5 min here, ~9 on CI). `make test-changed` runs
+the ones this branch's changes reach, against `BASE` (`origin/main`), what
+isn't committed counted too: `Scripts/affected-tests.sh` reads the changed
+paths and picks a test class when its file changed or when it names a
+top-level type a changed source file declares or extends (`RabbitMQText.swift`
+→ `RabbitMQTests`; `MongoShell.swift` → the three Mongo classes). The
+package, `Resources/`, `Scripts/`, a fixture or a deleted source file run
+everything; docs alone run nothing; most of the suite reached runs all of it.
+
+It is a test's direct reach, not every caller's — a change felt three types
+away can pass it. So it is for a pull request and for here, and **main
+runs every test**.
+
+CI (`.github/workflows/ci.yml`) is three jobs: `changes` says what a push or
+pull request needs, then `test` (lint and the unit tests; a pull request
+its reached classes) and `bundle` (the release build, only when the app's
+files change) run on two machines at once. The debug build's packages are
+cached like the release's — once per `Package.resolved`, saved by main —
+leaving Overterm's own modules, which the checkout's new mtimes rebuild
+anyway, out of it.
 
 ### Database drivers
 
 `DatabaseDriverTests` talks to real servers. SQLite runs always; PostgreSQL,
-MySQL and ClickHouse need Docker:
+MySQL, MariaDB and ClickHouse need Docker, as `MongoDriverTests` does
+MongoDB:
 
 ```
-Scripts/database-test-servers.sh            # PostgreSQL :55432, MySQL :53306, ClickHouse :58123
-OVERTERM_DB_TESTS=1 swift test --filter DatabaseDriverTests
+Scripts/database-test-servers.sh            # PostgreSQL :55432, MySQL :53306, MariaDB :53307,
+                                            # ClickHouse :58123, MongoDB :57017
+OVERTERM_DB_TESTS=1 swift test --filter 'DatabaseDriverTests|MongoDriverTests'
 Scripts/database-test-servers.sh stop
 ```
 
-Without `OVERTERM_DB_TESTS=1` those three are skipped, so `make test` and
+MongoDB takes plain and TLS clients on one port, its certificate signed
+by a throwaway CA the script makes in `$TMPDIR/ot-mongodb-tls` (never
+committed); `MongoDriverTests.testTLS` verifies against it.
+
+Without `OVERTERM_DB_TESTS=1` those are skipped, so `make test` and
 CI need no Docker. BigQuery's signing and its answers are tested offline.
+
+`DatabaseOperationsDriverTests` (the Server page, editing, users) run on
+the same servers — `OVERTERM_DB_TESTS=1 swift test --filter
+DatabaseOperationsDriverTests` — the script preloading pg_stat_statements
+and turning performance_schema on (MariaDB's is off by default). The
+`databaseOps` scenario edits a SQLite result always, and opens
+PostgreSQL's Server and Users pages only when :55432 answers.
 
 It also starts an SSH bastion (:52222, on a Docker network with
 PostgreSQL) for `SSHTunnelTests` and the `databaseTunnel` scenario; both

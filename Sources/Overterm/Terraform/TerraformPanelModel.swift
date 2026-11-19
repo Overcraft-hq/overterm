@@ -60,6 +60,19 @@ struct TerraformWorktree: Equatable, Sendable {
     /// The worktrees of `listed` other than `checkout`: none bare or
     /// prunable, at most 12; none at all when the list isn't this
     /// checkout's repository's (the window's list may lag a tab switch).
+    /// What a root is compared with — its lock file, its state: the main
+    /// worktree (the default branch's checkout) and nothing else, none
+    /// when the checkout is it. Every other worktree is someone's work in
+    /// progress: "feat/x has no lock file" said nothing about this one, and
+    /// a dozen of them listed on every card buried what mattered.
+    static func comparedWith(_ listed: [Worktree], of checkout: URL?) -> [TerraformWorktree] {
+        guard let checkout else { return [] }
+        let me = checkout.resolvingSymlinksInPath().standardizedFileURL.path
+        let paths = listed.map { $0.path.resolvingSymlinksInPath().standardizedFileURL.path }
+        guard paths.contains(me) else { return [] }
+        return zip(listed, paths).filter { $0.0.isMain && !$0.0.isBare && $0.1 != me }.map { TerraformWorktree(url: $0.0.path, name: $0.0.displayName) }
+    }
+
     static func others(_ listed: [Worktree], of checkout: URL?) -> [TerraformWorktree] {
         guard let checkout else { return [] }
         let me = checkout.resolvingSymlinksInPath().standardizedFileURL.path

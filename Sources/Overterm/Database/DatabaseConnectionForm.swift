@@ -36,7 +36,9 @@ struct DatabaseConnectionForm: View {
                 .onChange(of: connection.kind) { kind in
                     connection.port = kind.defaultPort
                     // Redis doesn't negotiate TLS: Prefer would be plain, said as Off.
-                    if (kind == .redis || kind.isObservability), connection.sslMode == .prefer { connection.sslMode = .disable }
+                    if (kind == .redis || kind.isObservability || kind.isSearch || kind.consoleText != nil || kind == .mongodb), connection.sslMode == .prefer { connection.sslMode = .disable }
+                    // DocumentDB's clusters want TLS, checked against Amazon's bundle.
+                    if kind == .documentdb { connection.sslMode = .verifyFull }
                     if kind == .s3 { connection.apply(connection.provider) }
                     if kind == .gcs { connection.bigQueryAuth = .gcloud }
                     tested = nil
@@ -47,7 +49,17 @@ struct DatabaseConnectionForm: View {
                 case .s3: s3Fields
                 case .gcs: gcsFields
                 case .redis: redisFields
+                case .mongodb, .documentdb: mongoFields
                 case .prometheus, .loki, .tempo: observabilityFields
+                case .elasticsearch, .opensearch: searchFields
+                case .oracle: oracleFields
+                case .dynamodb, .influxdb, .neo4j, .rabbitmq:
+                    HTTPKindFields(connection: $connection, password: $password, hasSavedPassword: hasSavedPassword) { tested = nil }
+                    // AWS's DynamoDB is signed for its own host: no tunnel.
+                    if !(connection.kind == .dynamodb && DynamoItems.isAWS(connection.host)) {
+                        Toggle("Through an SSH tunnel", isOn: $connection.sshEnabled)
+                        if connection.sshEnabled { sshFields }
+                    }
                 default: serverFields
                 }
                 Toggle("Read-only — refuse anything that writes", isOn: $connection.readOnly)
@@ -138,6 +150,61 @@ struct DatabaseConnectionForm: View {
         if connection.sshEnabled { sshFields }
     }
 
+    /// Elasticsearch's and OpenSearch's: an address or an Elastic Cloud ID
+    /// pasted fills them; a user for Basic auth, or without one an API key
+    /// (or `Bearer …`) in the password's place; OpenSearch on AWS signed by
+    /// an AWS profile instead.
+    @ViewBuilder private var searchFields: some View {
+        TextField(
+            "URL", text: Binding(get: { "" }, set: { fillSearch(from: $0) }),
+            prompt: Text(verbatim: "Paste https://elastic:password@host:9200, or a Cloud ID"))
+        TextField("Host", text: $connection.host)
+        TextField(
+            "Port",
+            text: Binding(
+                get: { connection.port.map(String.init) ?? "" },
+                set: { connection.port = Int($0.filter(\.isNumber)) }))
+        TextField("Path", text: $connection.basePath, prompt: Text(verbatim: "/ — or where a proxy serves it"))
+        let profiles = connection.kind == .opensearch ? AWSProfile.names() : []
+        if !profiles.isEmpty || !connection.awsProfile.isEmpty {
+            Picker("Sign in with", selection: $connection.awsProfile) {
+                Text("User, API key or token").tag("")
+                ForEach(profiles, id: \.self) { Text("AWS profile: \($0) (SigV4)").tag($0) }
+            }
+        }
+        if connection.awsProfile.isEmpty {
+            TextField("User (optional — Basic auth)", text: $connection.user)
+            SecureField(
+                hasSavedPassword
+                    ? "Password or key (saved — empty keeps it)" : connection.user.isEmpty ? "API key, or Bearer <token> (optional)" : "Password",
+                text: $password)
+        } else {
+            TextField("Region", text: $connection.location, prompt: Text(verbatim: "from the endpoint's name, else the profile's"))
+        }
+        Picker("TLS", selection: $connection.sslMode) {
+            Text("Off — http").tag(DatabaseSSLMode.disable)
+            Text("On — don't check the certificate").tag(DatabaseSSLMode.require)
+            Text("On — verify the certificate").tag(DatabaseSSLMode.verifyFull)
+        }
+        .onAppear { if connection.sslMode == .prefer { connection.sslMode = .disable } }
+        Toggle("Through an SSH tunnel", isOn: $connection.sshEnabled)
+        if connection.sshEnabled { sshFields }
+    }
+
+    /// An address or a Cloud ID, spread over the fields; its password typed
+    /// in, kept only if the connection is saved — then in the keychain.
+    private func fillSearch(from text: String) {
+        guard let address = SearchAddress(text) else { return }
+        connection.host = address.host
+        connection.port = address.port
+        connection.basePath = address.path
+        connection.sslMode = address.tls ? .verifyFull : .disable
+        if !address.user.isEmpty { connection.user = address.user }
+        if let secret = address.password { password = secret }
+        if connection.name.isEmpty || connection.name == connection.kind.title { connection.name = address.host }
+        tested = nil
+    }
+
     /// `https://user:token@host:port/path`, spread over the fields.
     private func fillAddress(from text: String) {
         let text = text.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -166,6 +233,129 @@ struct DatabaseConnectionForm: View {
         connection.sslMode = url.tls ? .verifyFull : .disable
         if let secret = url.password { password = secret }
         if connection.name.isEmpty || connection.name == "Redis" { connection.name = url.host }
+        tested = nil
+    }
+
+    /// MongoDB's and DocumentDB's: a connection string pasted fills them
+    /// all; a replica set's hosts are a list, an srv name is looked up at
+    /// each connect; the user is defined in the auth database; TLS is on
+    /// from the first byte or off, a CA bundle of its own to verify with.
+    @ViewBuilder private var mongoFields: some View {
+        TextField(
+            "URL", text: Binding(get: { "" }, set: { fillMongo(from: $0) }),
+            prompt: Text(
+                verbatim: connection.kind == .documentdb
+                    ? "Paste mongodb://user:password@….docdb.amazonaws.com:27017/?tls=true&replicaSet=rs0"
+                    : "Paste mongodb://user:password@host:27017/db or mongodb+srv://…"))
+        Toggle("SRV name — its hosts from DNS (mongodb+srv://)", isOn: $connection.srv)
+        TextField(connection.srv ? "SRV name" : "Host (a replica set's: a,b:27018,c)", text: $connection.host)
+        if !connection.srv {
+            TextField(
+                "Port",
+                text: Binding(
+                    get: { connection.port.map(String.init) ?? "" },
+                    set: { connection.port = Int($0.filter(\.isNumber)) }))
+        }
+        TextField("User (optional)", text: $connection.user)
+        SecureField(hasSavedPassword ? "Password (saved — empty keeps it)" : "Password", text: $password)
+        TextField("Database", text: $connection.database, prompt: Text(verbatim: "test"))
+        TextField("Auth database", text: $connection.authSource, prompt: Text(verbatim: "admin — where the user is defined"))
+        Picker("TLS", selection: $connection.sslMode) {
+            Text("Off").tag(DatabaseSSLMode.disable)
+            Text("On — don't check the certificate").tag(DatabaseSSLMode.require)
+            Text("On — verify the certificate").tag(DatabaseSSLMode.verifyFull)
+        }
+        .onAppear { if connection.sslMode == .prefer { connection.sslMode = .disable } }
+        if connection.sslMode == .verifyFull {
+            HStack {
+                TextField(
+                    connection.kind == .documentdb ? "CA bundle (Amazon's global-bundle.pem)" : "CA bundle (optional — else the system's)",
+                    text: $connection.caFile)
+                Button("Choose…") {
+                    let panel = NSOpenPanel()
+                    panel.canChooseFiles = true
+                    panel.allowsOtherFileTypes = true
+                    if panel.runModal() == .OK, let url = panel.url { connection.caFile = (url.path as NSString).abbreviatingWithTildeInPath }
+                }
+            }
+        }
+        if connection.kind == .documentdb {
+            Text(
+                "DocumentDB: TLS with Amazon's CA bundle (truststore.pki.rds.amazonaws.com/global/global-bundle.pem). Overterm never retries a write, as DocumentDB's retryWrites=false asks. Outside its VPC, reach it through an SSH tunnel to the cluster's endpoint."
+            )
+            .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(.secondary)
+        }
+    }
+
+    /// Oracle's: an Easy Connect string (or a JDBC URL, or SQL*Plus's
+    /// `user/password@host/service`) pasted fills them; the Database field is
+    /// the service name, or a SID; TLS is TCPS from the first byte or off.
+    @ViewBuilder private var oracleFields: some View {
+        TextField(
+            "Connect", text: Binding(get: { "" }, set: { fillOracle(from: $0) }),
+            prompt: Text(verbatim: "Paste host:1521/FREEPDB1, tcps://host:2484/service or user@host/service"))
+        TextField("Host", text: $connection.host)
+        TextField(
+            "Port",
+            text: Binding(
+                get: { connection.port.map(String.init) ?? "" },
+                set: { connection.port = Int($0.filter(\.isNumber)) }))
+        TextField("User", text: $connection.user)
+        SecureField(hasSavedPassword ? "Password (saved — empty keeps it)" : "Password", text: $password)
+        Picker("Connect by", selection: $connection.location) {
+            Text("Service name").tag("")
+            Text("SID").tag(OracleDriver.sidMarker)
+        }
+        TextField(
+            connection.location == OracleDriver.sidMarker ? "SID" : "Service name", text: $connection.database,
+            prompt: Text(verbatim: connection.location == OracleDriver.sidMarker ? "ORCL, XE" : "FREEPDB1, XEPDB1, ORCLPDB1…"))
+        Picker("TLS", selection: $connection.sslMode) {
+            Text("Off — TCP").tag(DatabaseSSLMode.disable)
+            Text("On (TCPS) — don't check the certificate").tag(DatabaseSSLMode.require)
+            Text("On (TCPS) — verify the certificate").tag(DatabaseSSLMode.verifyFull)
+        }
+        .onAppear { if connection.sslMode == .prefer { connection.sslMode = .disable } }
+        Toggle("Through an SSH tunnel", isOn: $connection.sshEnabled)
+        if connection.sshEnabled { sshFields }
+    }
+
+    /// A mongodb:// or mongodb+srv:// string, spread over the fields; its
+    /// password typed in, kept only if the connection is saved — then in
+    /// the keychain.
+    private func fillMongo(from text: String) {
+        guard let url = MongoURL(text) else { return }
+        connection.srv = url.srv
+        if url.hosts.count == 1 {
+            let (host, port) = MongoURL.split(url.hosts[0])
+            connection.host = host
+            connection.port = url.srv ? nil : port ?? 27017
+        } else {
+            connection.host = url.hosts.joined(separator: ",")
+            connection.port = 27017
+        }
+        connection.user = url.user
+        connection.database = url.database
+        connection.authSource = url.authSource
+        connection.sslMode = url.tls ? (url.insecure ? .require : .verifyFull) : .disable
+        if !url.caFile.isEmpty { connection.caFile = url.caFile }
+        if let secret = url.password { password = secret }
+        if connection.name.isEmpty || connection.name == connection.kind.title {
+            connection.name = MongoURL.split(url.hosts[0]).host.split(separator: ".").first.map(String.init) ?? url.hosts[0]
+        }
+    }
+
+    /// An Easy Connect string, spread over the fields; its password typed
+    /// in, kept only if the connection is saved — then in the keychain.
+    private func fillOracle(from text: String) {
+        guard let address = OracleAddress.parse(text) else { return }
+        connection.host = address.host
+        connection.port = address.port ?? (address.tls ? 2484 : 1521)
+        if !address.service.isEmpty { connection.database = address.service }
+        connection.location = address.sid ? OracleDriver.sidMarker : ""
+        connection.sslMode = address.tls ? .verifyFull : .disable
+        if let user = address.user, !user.isEmpty { connection.user = user }
+        if let secret = address.password { password = secret }
+        if connection.name.isEmpty || connection.name == connection.kind.title { connection.name = address.host }
         tested = nil
     }
 
@@ -338,7 +528,10 @@ struct DatabaseConnectionForm: View {
                     let schemas = (try? await driver.schemas())?.count ?? 0
                     await driver.close()
                     let through = tunnel == nil ? "" : " through \(connection.sshHost)"
-                    let noun = connection.kind.isRedis ? "database" : connection.kind.isObservability ? "folder" : "schema"
+                    let noun =
+                        connection.kind.isRedis || connection.kind.isMongo || connection.kind == .influxdb || connection.kind == .neo4j
+                        ? "database"
+                        : connection.kind == .dynamodb ? "region" : connection.kind == .rabbitmq ? "vhost" : connection.kind.isObservability || connection.kind.isSearch ? "folder" : "schema"
                     tested = .success(
                         "Connected\(through) in \(Int(Date().timeIntervalSince(started) * 1000)) ms — \(schemas) \(noun)\(schemas == 1 ? "" : "s")")
                 }

@@ -232,6 +232,9 @@ final class TerraformStateTests: XCTestCase {
         XCTAssertEqual(
             TerraformOutputLinks.offers(for: output("db", .object(["endpoint": .string("acme.mysql.example.test"), "port": .number("3306")]))),
             [.database(kind: .mysql, host: "acme.mysql.example.test", port: 3306, database: nil)])
+        XCTAssertEqual(
+            TerraformOutputLinks.offers(for: output("db", .object(["endpoint": .string("acme.mariadb.example.test"), "port": .number("3306")]))),
+            [.database(kind: .mariadb, host: "acme.mariadb.example.test", port: 3306, database: nil)], "MariaDB is its own kind")
         XCTAssertTrue(TerraformOutputLinks.offers(for: output("site", .string("https://acme:pw@acme.example.test/"))).isEmpty, "no URL with a password in it")
         XCTAssertTrue(TerraformOutputLinks.offers(for: output("site", .sensitive)).isEmpty)
         XCTAssertTrue(TerraformOutputLinks.offers(for: output("bucket", .string("acme-logs"))).isEmpty)

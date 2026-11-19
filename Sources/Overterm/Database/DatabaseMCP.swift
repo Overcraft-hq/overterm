@@ -71,6 +71,9 @@ enum DatabaseMCP {
             case nil:
                 return BrowserMCP.errorResult("Nothing ran.")
             }
+        case "db_server", "db_activity", "db_slow_queries", "db_locks":
+            let target = try connection(storage: false)
+            return BrowserMCP.textResult(try await monitor(name, on: target, model: model, arguments: arguments))
         case "storage_connections":
             return BrowserMCP.textResult(describe(model.store.connections.filter(\.kind.isStorage), storage: true))
         case "storage_list":
@@ -103,6 +106,53 @@ enum DatabaseMCP {
                 out + "\n\n" + text + (range != nil ? "\n… (the first \(FilePreview.size(limit)); max_bytes for more)" : ""))
         default:
             throw BrowserMCP.ToolError(message: "No tool \(name).")
+        }
+    }
+
+    // MARK: The Server page's reads
+
+    /// The Server page's reads, as text: Markdown tables, statements cut to
+    /// a line. Reads only — no tool cancels a session, edits a row or
+    /// changes a user — and never a password or its hash (none is read).
+    static func monitor(_ tool: String, on connection: DatabaseConnection, model: DatabaseModel, arguments: [String: Any]) async throws -> String {
+        guard connection.kind.features.contains(.monitoring) else {
+            let kinds = DatabaseKind.allCases.filter { $0.features.contains(.monitoring) }.map(\.title)
+            throw BrowserMCP.ToolError(message: "\(connection.kind.title) has no server page here — \(tool) reads \(kinds.joined(separator: ", ")).")
+        }
+        let session = model.session(connection)
+        await session.open()
+        if case .failed(let message) = session.state { throw BrowserMCP.ToolError(message: message) }
+        guard let driver = session.monitoring else { throw BrowserMCP.ToolError(message: "Not connected.") }
+        let type = DatabaseDrivers.driverType(of: connection.kind) as? any DatabaseMonitoring.Type
+        let parts = type?.monitorParts(for: connection.kind) ?? []
+        let limit = min(max(arguments["limit"] as? Int ?? 50, 1), 200)
+        switch tool {
+        case "db_server":
+            var out = "\(connection.name) (\(connection.kind.title))\n" + ServerText.overview(try await driver.overview())
+            if parts.contains(.sizes), let sizes = try await driver.sizes().value { out += "\n\n" + ServerText.sizes(sizes, limit: limit) }
+            return out
+        case "db_activity":
+            guard parts.contains(.activity) else { return "\(connection.kind.title) has no sessions to list." }
+            switch try await driver.activity() {
+            case .value(let sessions):
+                let idle = arguments["idle"] as? Bool ?? false
+                return ServerText.activity(idle ? sessions : sessions.filter { $0.isActive || $0.isOwn }, of: sessions.count, limit: limit)
+            case .unavailable(let gap): return ServerText.gap(gap)
+            }
+        case "db_slow_queries":
+            guard parts.contains(.slowQueries) else { return "\(connection.kind.title) keeps no record of slow queries." }
+            switch try await driver.slowQueries() {
+            case .value(let queries):
+                let byMean = (arguments["order"] as? String)?.lowercased() == "mean"
+                return ServerText.slowQueries(queries, byMean: byMean, limit: limit)
+            case .unavailable(let gap): return ServerText.gap(gap)
+            }
+        default:
+            guard parts.contains(.locks) else { return "\(connection.kind.title) doesn't say who waits on whom." }
+            switch try await driver.locks() {
+            case .value(let waits): return ServerText.locks(waits)
+            case .unavailable(let gap): return ServerText.gap(gap)
+            }
         }
     }
 
@@ -148,9 +198,39 @@ enum DatabaseMCP {
             guard !tables.isEmpty else { return "No \(what.lowercased()) in the last 6 hours." }
             return "\(what) (\(tables.count)):\n" + tables.prefix(2000).map { "- \($0.name)" }.joined(separator: "\n")
         }
+        if session.connection.kind.isSearch {
+            guard !tables.isEmpty else { return "No \(schema). Folders: \(session.schemas.joined(separator: ", "))" }
+            var out = "\(schema.prefix(1).uppercased() + schema.dropFirst()) (\(tables.count); others: \(session.schemas.filter { $0 != schema }.joined(separator: ", ")))\n"
+            for table in tables.prefix(300) {
+                let fields = session.columns(of: table.name, in: schema).prefix(100).map { "\($0.name) \($0.type)" }
+                out += "\n\(table.name)\(table.detail.map { " [\($0)]" } ?? "")(\(fields.joined(separator: ", ")))"
+            }
+            if tables.count > 300 { out += "\n… \(tables.count - 300) more; db_schema with “table” for one." }
+            return out
+        }
+        if session.connection.kind == .rabbitmq {
+            guard !tables.isEmpty else { return "Vhost \(schema) has no queues or exchanges. Vhosts: \(session.schemas.joined(separator: ", "))" }
+            var out = "Vhost \(schema) (others: \(session.schemas.filter { $0 != schema }.joined(separator: ", "))); `PEEK <queue> [n]` reads a queue's messages\n"
+            for table in tables.prefix(500) {
+                let bindings = session.columns(of: table.name, in: schema).prefix(50).map { "\($0.name) key \($0.type)" }
+                out += "\n- \(table.name) [\(table.detail ?? "")]\(bindings.isEmpty ? "" : " " + bindings.joined(separator: ", "))"
+            }
+            if tables.count > 500 { out += "\n… \(tables.count - 500) more." }
+            return out
+        }
         if session.connection.kind.isRedis {
             guard !tables.isEmpty else { return "\(schema) has no keys. Databases with keys: \(session.schemas.joined(separator: ", "))" }
             return "Keys in \(schema) (first \(tables.count), by SCAN; `VIEW key` reads one):\n" + tables.map { "- \($0.name)" }.joined(separator: "\n")
+        }
+        if session.connection.kind.isMongo {
+            guard !tables.isEmpty else { return "\(schema) has no collections. Databases: \(session.schemas.joined(separator: ", "))" }
+            var out = "Database \(schema) (others: \(session.schemas.filter { $0 != schema }.joined(separator: ", "))) — fields from the first \(MongoDriver.sampleSize) documents of each collection\n"
+            for table in tables.prefix(300) {
+                let fields = session.columns(of: table.name, in: schema).map { "\($0.name) \($0.type)" }
+                out += "\n\(table.isView ? "view" : "collection") \(table.name)(\(fields.joined(separator: ", ")))"
+            }
+            if tables.count > 300 { out += "\n… \(tables.count - 300) more; db_schema with “table” for one." }
+            return out
         }
         guard !tables.isEmpty else { return "\(schema) has no tables. Schemas: \(session.schemas.joined(separator: ", "))" }
         var out = "Schema \(schema) (others: \(session.schemas.filter { $0 != schema }.joined(separator: ", ")))\n"
@@ -192,17 +272,48 @@ enum DatabaseMCP {
             "A database's schema: its tables with their columns — or, with “table”, one table's columns. Without “schema”, the connection's default.",
             [
                 "connection": ["type": "string", "description": "Its name, from db_connections (optional when there is one)."],
-                "schema": ["type": "string", "description": "The schema (dataset in BigQuery, database in MySQL/ClickHouse, db0… in Redis — its keys, up to 1000)."],
+                "schema": [
+                    "type": "string",
+                    "description":
+                        "The schema (dataset in BigQuery, database in MySQL/MariaDB/ClickHouse/MongoDB, db0… in Redis — its keys, up to 1000; indices, data streams or aliases in Elasticsearch/OpenSearch, each with its mapping's fields; the region in DynamoDB — tables with their keys and indexes; a database or bucket in InfluxDB — measurements with fields and tags; a database in Neo4j — labels and [:TYPES] with their properties; a vhost in RabbitMQ — queues with their messages and consumers, exchanges, their bindings).",
+                ],
                 "table": ["type": "string", "description": "One table's columns."],
             ]),
         tool(
             "db_query",
-            "Run one SQL statement — or, on a Redis connection, one Redis command as redis-cli takes it (`HGETALL user:1`, `SCAN 0 MATCH user:* COUNT 100`; `VIEW key` reads any key whatever its type), or PromQL / LogQL / TraceQL on Prometheus, Loki, Tempo (over the window the user picked in the console, an hour unless changed; a 32-hex trace id reads that trace; `.targets` and `.alerts` on Prometheus) — on a saved connection and get its rows as a Markdown table. Reads only, unless the user allows agents to write in Settings — then they are asked each time.",
+            "Run one SQL statement — or, on a Redis connection, one Redis command as redis-cli takes it (`HGETALL user:1`, `SCAN 0 MATCH user:* COUNT 100`; `VIEW key` reads any key whatever its type), on MongoDB or DocumentDB one mongo shell statement (`db.orders.find({ status: \"open\" }).sort({ at: -1 })`, `db.orders.aggregate([…])`, `db.orders.countDocuments({})`, `db.getSiblingDB(\"other\").c.findOne({})`, `db.runCommand({ … })`, `show collections` — values only, no JavaScript), or on Elasticsearch / OpenSearch one request as Kibana's Dev Tools writes it (`GET /orders/_search` then its JSON body on the lines below; a search's hits come back as rows, `_cat/indices` too; `POST /_sql` and ES|QL `POST /_query` as their columns), or PromQL / LogQL / TraceQL on Prometheus, Loki, Tempo (over the window the user picked in the console, an hour unless changed; a 32-hex trace id reads that trace; `.targets` and `.alerts` on Prometheus), PartiQL on DynamoDB (`SELECT * FROM \"orders\" WHERE pk = 'a'`), InfluxQL, Flux (2.x) or SQL (3.x) on InfluxDB, Cypher on Neo4j (`MATCH (n:Person) RETURN n LIMIT 10`), on RabbitMQ `PEEK <queue> [n]` (messages read and put back — they stay, marked redelivered; asked first), `PUBLISH <exchange> <routing key> <payload>`, `PURGE <queue>`, `USE <vhost>` or any management API path (`GET /api/queues/%2F?columns=name,messages`) — on a saved connection and get its rows as a Markdown table. Reads only, unless the user allows agents to write in Settings — then they are asked each time.",
             [
                 "connection": ["type": "string", "description": "Its name, from db_connections (optional when there is one)."],
-                "sql": ["type": "string", "description": "One statement, or one Redis command."],
+                "sql": ["type": "string", "description": "One statement, one Redis command, one mongo shell statement, or one Elasticsearch/OpenSearch request."],
                 "limit": ["type": "integer", "description": "Rows to return (default 100, at most 1000)."],
             ], required: ["sql"]),
+        tool(
+            "db_server",
+            "A database server's headline numbers (version, uptime, connections used of max, cache hit rate, replication) and its sizes (databases, the biggest tables and indexes) — PostgreSQL, MySQL, MariaDB; a SQLite file's pages and journal; Redis's INFO; Neo4j's version, nodes and relationships, each label's and type's count; InfluxDB's version, series, memory, each database's (1.x) or bucket's (2.x) disk and retention; RabbitMQ's nodes (memory, disk, file descriptors, alarms), totals and rates, its queues by size; MongoDB's serverStatus and collections; a search cluster's health, heap and indices; DynamoDB's tables (items, size, billing, capacity, indexes, TTL, PITR); Oracle's instance (schemas as its databases, by dba_segments); ClickHouse's (parts on disk, merges, mutations); BigQuery's project — its jobs and its datasets' storage.",
+            [
+                "connection": ["type": "string", "description": "Its name, from db_connections (optional when there is one)."],
+                "limit": ["type": "integer", "description": "Tables and indexes listed (default 50, at most 200)."],
+            ]),
+        tool(
+            "db_activity",
+            "What a database server is running now: each session's id, user, database, client, state, how long, and its statement (cut to a line) — Redis's clients (their last command), Neo4j's transactions, InfluxDB 1's queries, RabbitMQ's connections (their channels, consumers, unacked messages), MongoDB's operations ($currentOp), a search cluster's tasks, Oracle's v$session, ClickHouse's running queries, BigQuery's running and pending jobs. Idle sessions left out unless “idle” is true. Reads only: no tool cancels a session.",
+            [
+                "connection": ["type": "string", "description": "Its name, from db_connections (optional when there is one)."],
+                "idle": ["type": "boolean", "description": "Idle sessions too."],
+                "limit": ["type": "integer", "description": "Sessions listed (default 50, at most 200)."],
+            ]),
+        tool(
+            "db_slow_queries",
+            "A database server's own record of its statements, costliest first — PostgreSQL's pg_stat_statements, MySQL's and MariaDB's performance_schema (or MariaDB's slow log table), Redis's SLOWLOG (the same command line together), Neo4j's statements running now by how long (its record is a file on the server), MongoDB's profiler (values left out) or $queryStats, OpenSearch's Query Insights, Oracle's v$sqlstats, ClickHouse's system.query_log (the last 7 days), BigQuery's INFORMATION_SCHEMA.JOBS_BY_PROJECT (the last 7 days; a billed query, with bytes processed and slot time as “cost”): calls, total and mean time, rows. Says what to turn on when the record is off.",
+            [
+                "connection": ["type": "string", "description": "Its name, from db_connections (optional when there is one)."],
+                "order": ["type": "string", "description": "“total” (default) or “mean” time."],
+                "limit": ["type": "integer", "description": "Statements listed (default 50, at most 200)."],
+            ]),
+        tool(
+            "db_locks",
+            "Who waits on whom on a database server: the waiting session, the one blocking it, the lock, how long, both statements — PostgreSQL, MySQL, MariaDB, Neo4j (its transactions' “Blocked by”), MongoDB (operations waiting for a lock), Oracle (v$session's blocking_session).",
+            ["connection": ["type": "string", "description": "Its name, from db_connections (optional when there is one)."]]),
         tool("storage_connections", "The user's saved S3 / GCS connections: name, kind, bucket.", [:]),
         tool(
             "storage_list",
@@ -234,4 +345,71 @@ enum DatabaseMCP {
 
 extension String {
     fileprivate var nonEmpty: String? { isEmpty ? nil : self }
+}
+
+/// The Server page's reads as an agent reads them: Markdown tables
+/// (`ResultExport`), every statement on one line and cut. Pure.
+enum ServerText {
+    static let statementLimit = 300
+
+    static func gap(_ gap: MonitorGap) -> String {
+        gap.reason + (gap.fix.map { "\nTo turn it on: \($0)" } ?? "")
+    }
+
+    static func overview(_ overview: ServerOverview) -> String {
+        let rows = overview.facts.map { [$0.title, $0.value, $0.detail] as [String?] }
+        return ResultExport.text(.markdown, columns: ["", "value", "detail"], rows: rows) + overview.notes.map { "\n\($0)" }.joined()
+    }
+
+    static func sizes(_ sizes: DatabaseSizes, limit: Int) -> String {
+        var parts: [String] = []
+        for (title, entries) in [("Databases", sizes.databases), ("Biggest tables", sizes.tables), ("Biggest indexes", sizes.indexes)] where !entries.isEmpty {
+            let rows = entries.prefix(limit).map { entry -> [String?] in
+                [entry.schema.map { "\($0).\(entry.name)" } ?? entry.name, entry.size, entry.detail]
+            }
+            parts.append("\(title):\n" + ResultExport.text(.markdown, columns: ["name", "size", "detail"], rows: rows))
+        }
+        parts += sizes.notes
+        return parts.joined(separator: "\n\n")
+    }
+
+    static func activity(_ sessions: [DatabaseActivity], of total: Int, limit: Int) -> String {
+        guard !sessions.isEmpty else { return "Nothing running: \(total) session\(total == 1 ? "" : "s"), all idle (“idle”: true lists them)." }
+        let rows = sessions.prefix(limit).map { session -> [String?] in
+            [
+                session.id + (session.isOwn ? " (this connection)" : ""), session.user, session.database, session.client, session.state,
+                session.seconds.map(OpsText.duration), session.waiting, OpsText.statement(session.statement, limit: statementLimit),
+            ]
+        }
+        let more = sessions.count > limit ? "\n… \(sessions.count - limit) more." : ""
+        return ResultExport.text(.markdown, columns: ["session", "user", "database", "client", "state", "for", "waits on", "statement"], rows: rows)
+            + "\n\(sessions.count) of \(total) sessions." + more
+    }
+
+    static func slowQueries(_ queries: [SlowQuery], byMean: Bool, limit: Int) -> String {
+        guard !queries.isEmpty else { return "No statements recorded yet." }
+        let sorted = byMean ? queries.sorted { $0.mean > $1.mean } : queries.sorted { $0.total > $1.total }
+        // What else the record says (BigQuery's bytes and slots), when it says it.
+        let detail = sorted.contains { $0.detail != nil }
+        let rows = sorted.prefix(limit).map { query -> [String?] in
+            [
+                "\(query.calls)", OpsText.duration(query.total), OpsText.duration(query.mean), query.rows.map(String.init), query.database,
+            ] + (detail ? [query.detail] : []) + [OpsText.statement(query.statement, limit: statementLimit)]
+        }
+        let columns = ["calls", "total", "mean", "rows", "database"] + (detail ? ["cost"] : []) + ["statement"]
+        return ResultExport.text(.markdown, columns: columns, rows: rows)
+            + "\nBy \(byMean ? "mean" : "total") time; \(min(limit, sorted.count)) of \(sorted.count)."
+    }
+
+    static func locks(_ waits: [LockWait]) -> String {
+        guard !waits.isEmpty else { return "Nobody is waiting on a lock." }
+        let rows = waits.map { wait -> [String?] in
+            [
+                wait.waiting + (wait.waitingUser.map { " (\($0))" } ?? ""), wait.blocking + (wait.blockingUser.map { " (\($0))" } ?? ""), wait.lock,
+                wait.seconds.map(OpsText.duration), OpsText.statement(wait.waitingStatement, limit: statementLimit),
+                OpsText.statement(wait.blockingStatement, limit: statementLimit),
+            ]
+        }
+        return ResultExport.text(.markdown, columns: ["waiting", "blocked by", "lock", "for", "waiting statement", "blocking statement"], rows: rows)
+    }
 }

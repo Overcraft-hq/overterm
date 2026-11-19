@@ -26,6 +26,9 @@ struct DatabaseActions {
     var newRedisKey: (DatabaseSession, Int) -> Void = { _, _ in }
     /// The server's page.
     var redisServer: (DatabaseSession) -> Void = { _ in }
+    /// A SQL connection's Server page (monitoring), and its Users page.
+    var server: (DatabaseConnection) -> Void = { _ in }
+    var users: (DatabaseConnection) -> Void = { _ in }
     /// Asks, then deletes the key.
     var deleteRedisKey: (DatabaseSession, Int, String) -> Void = { _, _, _ in }
     /// Asks for a new name (title, the current one), then gives it.
@@ -146,6 +149,9 @@ private struct ConnectionTree: View {
             if connection.kind.isRedis {
                 Button("Server Info") { actions.redisServer(session) }
             }
+            // Redis's own page is its Server Info: the shared one's reads are its agents'.
+            if connection.kind.features.contains(.monitoring), !connection.kind.isRedis { Button("Server") { actions.server(connection) } }
+            if connection.kind.features.contains(.users) { Button("Users & Roles") { actions.users(connection) } }
             if session.isOpen {
                 Button("Disconnect") { model.disconnect(connection) }
             } else {
@@ -229,18 +235,27 @@ private struct ConnectionTree: View {
     @ViewBuilder private func tableTree(_ table: CatalogTable) -> some View {
         let key = "\(self.key)/\(table.schema)/\(table.name)"
         TreeRow(
-            depth: 2, open: model.expanded.contains(key), symbol: table.isView ? "eye" : "tablecells", title: table.name, detail: nil,
+            depth: 2, open: model.expanded.contains(key), symbol: table.isView ? "eye" : "tablecells", title: table.name, detail: table.detail,
             dot: nil, theme: theme
         ) {
             toggle(key) { await session.loadColumns(table.schema) }
         }
         .contextMenu {
-            Button("Select Top 100") { actions.run(connection, select(table, limit: 100)) }
-            Button("New Console") { actions.console(connection) }
-            Divider()
-            Button("Copy Name") { copy(table.name) }
-            Button("Copy Qualified Name") { copy(qualified(table)) }
-            Button("Copy SELECT") { copy(select(table, limit: 100)) }
+            if connection.kind.isMongo {
+                Button("Find First 100") { actions.run(connection, select(table, limit: 100)) }
+                Button("New Console") { actions.console(connection) }
+                Divider()
+                Button("Copy Name") { copy(table.name) }
+                Button("Copy Namespace") { copy("\(table.schema).\(table.name)") }
+                Button("Copy find()") { copy(select(table, limit: 100)) }
+            } else {
+                Button("Select Top 100") { actions.run(connection, select(table, limit: 100)) }
+                Button("New Console") { actions.console(connection) }
+                Divider()
+                Button("Copy Name") { copy(table.name) }
+                Button("Copy Qualified Name") { copy(qualified(table)) }
+                Button("Copy SELECT") { copy(select(table, limit: 100)) }
+            }
         }
         if model.expanded.contains(key) {
             let columns = session.columns(of: table.name, in: table.schema)
@@ -253,6 +268,7 @@ private struct ConnectionTree: View {
 
     private func qualified(_ table: CatalogTable) -> String {
         switch connection.kind {
+        case .elasticsearch, .opensearch: return table.name
         case .sqlite: return quote(table.name)
         case .bigquery: return "`\(connection.project).\(table.schema).\(table.name)`"
         default: return "\(quote(table.schema)).\(quote(table.name))"
@@ -263,11 +279,15 @@ private struct ConnectionTree: View {
     private func quote(_ name: String) -> String {
         let plain = name.range(of: #"^[a-z_][a-z0-9_]*$"#, options: .regularExpression) != nil
         if plain { return name }
-        return connection.kind == .mysql || connection.kind == .clickhouse ? "`\(name)`" : "\"\(name.replacingOccurrences(of: "\"", with: "\"\""))\""
+        return [.mysql, .mariadb, .clickhouse].contains(connection.kind) ? "`\(name)`" : "\"\(name.replacingOccurrences(of: "\"", with: "\"\""))\""
     }
 
     private func select(_ table: CatalogTable, limit: Int) -> String {
-        "SELECT * FROM \(qualified(table)) LIMIT \(limit);"
+        if connection.kind.isMongo { return MongoText.find(table.name, in: table.schema, limit: limit) }
+        // An index's documents, as Kibana's Dev Tools asks for them — with
+        // their versions, which an edit of them is made on.
+        if connection.kind.isSearch { return "GET /\(table.name)/_search\n{\n  \"size\": \(limit),\n  \"seq_no_primary_term\": true\n}" }
+        return DatabaseKind.browseStatement(connection, table: table, limit: limit) ?? "SELECT * FROM \(qualified(table)) LIMIT \(limit);"
     }
 
     private func toggle(_ key: String, load: @escaping () async -> Void) {

@@ -1,0 +1,63 @@
+// The gRPC tests' service: one method of each kind, and a message with a
+// field of every shape the JSON mapping has to get right.
+syntax = "proto3";
+
+package shop.v1;
+
+import "google/protobuf/timestamp.proto";
+import "google/protobuf/wrappers.proto";
+
+service Orders {
+  rpc GetOrder(GetOrderRequest) returns (Order);
+  rpc ListOrders(ListOrdersRequest) returns (stream Order);
+  rpc UploadOrders(stream Order) returns (UploadSummary);
+  rpc Chat(stream ChatMessage) returns (stream ChatMessage);
+}
+
+enum Status {
+  STATUS_UNSPECIFIED = 0;
+  PAID = 1;
+  SHIPPED = 2;
+}
+
+message GetOrderRequest {
+  string id = 1;
+}
+
+message ListOrdersRequest {
+  int32 limit = 1;
+  Status status = 2;
+}
+
+message Order {
+  message Customer {
+    string name = 1;
+    string email = 2;
+  }
+  string id = 1;
+  int64 total_cents = 2;
+  Status status = 3;
+  repeated string tags = 4;
+  map<string, int32> quantities = 5;
+  google.protobuf.Timestamp created_at = 6;
+  Customer customer = 7;
+  google.protobuf.StringValue note = 8;
+  repeated int32 scores = 9;
+  double weight = 10;
+  bool gift = 11;
+  bytes blob = 12;
+  oneof delivery {
+    string address = 13;
+    string pickup_point = 14;
+  }
+  sint64 delta = 15;
+}
+
+message UploadSummary {
+  int32 count = 1;
+  int64 total_cents = 2;
+}
+
+message ChatMessage {
+  string text = 1;
+}

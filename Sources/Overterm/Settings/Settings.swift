@@ -403,24 +403,23 @@ final class Settings: ObservableObject {
     /// What New Task starts: an agent's raw value, or "shell".
     var taskAgent: String { string("agents.newTaskAgent") }
     var defaultTaskAgent: Agent? { Agent(rawValue: taskAgent) }
-    var claudeArguments: String { string("agents.claudeArguments") }
-    var codexArguments: String { string("agents.codexArguments") }
     var worktreeLocation: WorktreeLocation { WorktreeLocation(rawValue: string("agents.worktreeLocation")) ?? .sibling }
     /// New Task's "From"; empty is the main worktree's branch.
     var taskBase: String { string("agents.newTaskBase") }
 
-    /// Added to an agent's command wherever it starts or resumes.
-    func arguments(for agent: Agent) -> String {
-        switch agent {
-        case .claude:
-            // The tab's browser, for Claude Code — the pane being made has the
-            // file (TerminalView sets the variable; BrowserBridge writes it).
-            BrowserBridge.shared.isServing
-                ? (claudeArguments + " --mcp-config \"$\(BrowserBridge.configVariable)\"").trimmingCharacters(in: .whitespaces)
-                : claudeArguments
-        case .codex: codexArguments
-        }
+    /// Settings ▸ Agents' extra arguments for `agent`, as typed.
+    func userArguments(for agent: Agent) -> String { string(agent.argumentsKey) }
+
+    /// What a launch of `agent` adds to its command wherever it starts or
+    /// resumes: the arguments above, then the bridge for a pane made now —
+    /// each agent the way it takes one (`AgentLaunch`) — and its attention
+    /// signal where it has a switch for one launch.
+    func launch(for agent: Agent) -> AgentLaunch {
+        AgentLaunch.make(agent, AgentLaunchFiles.facts(for: agent, arguments: userArguments(for: agent), serving: BrowserBridge.shared.isServing))
     }
+
+    /// The arguments part of it (`launch(for:)`).
+    func arguments(for agent: Agent) -> String { launch(for: agent).arguments }
 
     /// The quota gauge at the right of the tab strip.
     var usageChip: Bool { bool("general.usageChip") }

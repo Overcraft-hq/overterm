@@ -19,9 +19,8 @@ enum TerraformLockDrift {
     struct Drift: Equatable, Sendable, Identifiable {
         var worktree: String
         var differences: [Difference]
-        /// This worktree has no lock file, or the other has none.
+        /// This worktree has no lock file; the other has one.
         var missingHere = false
-        var missingThere = false
         /// The other worktree's path: names repeat (two detached HEADs).
         var worktreePath = ""
 
@@ -32,11 +31,10 @@ enum TerraformLockDrift {
                 let locked = differences.compactMap { d in d.there.map { "\(d.provider) \($0)" } }
                 return "no lock file here; \(worktree)'s locks " + locked.prefix(4).joined(separator: ", ") + (locked.count > 4 ? ", \(locked.count - 4) more" : "")
             }
-            if missingThere { return "\(worktree) has no lock file" }
             return differences.prefix(4).map { d in
                 switch (d.here, d.there) {
-                case (let here?, let there?): "\(d.provider) \(here) here, \(there) in \(worktree)"
-                case (nil, let there?): "\(d.provider) only in \(worktree) (\(there))"
+                case (let here?, let there?): "\(d.provider) \(here) here, \(there) on \(worktree)"
+                case (nil, let there?): "\(d.provider) only on \(worktree) (\(there))"
                 case (let here?, nil): "\(d.provider) only here (\(here))"
                 case (nil, nil): d.provider
                 }
@@ -76,9 +74,10 @@ enum TerraformLockDrift {
             guard !there.isEmpty else { return nil }
             return Drift(
                 worktree: worktree, differences: there.keys.sorted().map { Difference(provider: shortName($0), here: nil, there: there[$0]) }, missingHere: true)
-        case (let here?, nil):
-            guard !here.isEmpty else { return nil }
-            return Drift(worktree: worktree, differences: [], missingThere: true)
+        case (_?, nil):
+            // Nothing there to compare with: main never ran init, or
+            // ignores its lock file. Not this checkout's problem.
+            return nil
         case (let here?, let there?):
             let differences = Set(here.keys).union(there.keys).sorted().compactMap { address -> Difference? in
                 here[address] == there[address] ? nil : Difference(provider: shortName(address), here: here[address], there: there[address])

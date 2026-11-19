@@ -31,9 +31,13 @@ enum DockerClient {
         var database: (DatabaseKind, port: Int)? {
             switch self {
             case .postgres: (.postgres, 5432)
-            case .mysql, .mariadb: (.mysql, 3306)
+            case .mysql: (.mysql, 3306)
+            case .mariadb: (.mariadb, 3306)
             case .clickhouse: (.clickhouse, 8123)
             case .redis, .valkey: (.redis, 6379)
+            // The HTTP API's port: the Database panel doesn't speak Bolt.
+            case .neo4j: (.neo4j, 7474)
+            case .mongo: (.mongodb, 27017)
             default: nil
             }
         }
@@ -106,6 +110,12 @@ enum DockerClient {
     /// image by its ID once its tag has moved on to a newer one (a pull):
     /// then `reference` says, the name inspect keeps (`Config.Image`).
     static func kind(of container: ContainerSummary, reference: String? = nil) -> Kind? {
+        imageWords(of: container, reference: reference).flatMap(kind(words:))
+    }
+
+    /// A container's image's words, by that rule — nil when the list
+    /// names it by its ID and nothing else does.
+    static func imageWords(of container: ContainerSummary, reference: String? = nil) -> [String]? {
         var image = container.Image
         if listsImageByID(container) {
             guard let reference else { return nil }
@@ -117,7 +127,7 @@ enum DockerClient {
         {
             components[components.count - 1] = String(last.dropFirst(lead.count))
         }
-        return kind(words: split(components))
+        return split(components)
     }
 
     /// Whether the list names the image only by its ID: what Docker's

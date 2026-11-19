@@ -75,8 +75,9 @@ struct ProcessArguments: Hashable, Sendable {
     /// argv[0] is a title the process wrote over its argv: `command` is
     /// that title, its arguments gone.
     let isTitle: Bool
-    /// The agent argv[0]'s file names (`claude`, `/opt/homebrew/bin/codex`),
-    /// taken off the raw word before masking: masked, a long relative
+    /// The agent argv names (`Agent.of(arguments:)`: argv[0]'s file —
+    /// `claude`, `/opt/homebrew/bin/codex` — or the script an interpreter
+    /// runs, Gemini CLI's under `node`), taken off the raw words before masking: masked, a long relative
     /// path reads as a base64 blob and the agent would be missed.
     var agent: Agent? = nil
     /// The session id after argv's first `--resume` or `-r`, hex and dashes
@@ -257,7 +258,7 @@ struct ProcessArguments: Hashable, Sendable {
         let markers = scanEnvironment ? scan(bytes, from: layout.environment) : nil
         guard decode else { return ProcessArguments(command: "", label: nil, isCut: layout.isCut, isTitle: layout.isTitle, markers: markers) }
         var words = layout.words.map { String(decoding: UnsafeRawBufferPointer(rebasing: bytes[$0]), as: UTF8.self) }
-        let agent = words.first.flatMap { Agent(rawValue: ($0 as NSString).lastPathComponent) }
+        let agent = Agent.of(arguments: words)
         let resumes = resumedSession(in: words)
         let masked = Secrets.maskArguments(words)
         words.removeAll()

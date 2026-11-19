@@ -1,8 +1,9 @@
 import AppKit
 import GhosttyKit
 
-/// ⌘V with a picture on the clipboard, into an agent: Claude Code and Codex
-/// read a clipboard image themselves, on ⌃V — a terminal can't send them a
+/// ⌘V with a picture on the clipboard, into an agent: Claude Code, Codex,
+/// pi and Gemini CLI read a clipboard image themselves, on ⌃V
+/// (`Agent.takesClipboardImage`) — a terminal can't send them a
 /// picture, and with no text to paste Ghostty sends nothing at all, so ⌘V
 /// just did nothing. In a pane an agent has the keyboard of, the paste key
 /// with only an image on the clipboard is handed over as ⌃V. Anywhere else
@@ -21,7 +22,8 @@ enum ImagePaste {
         return !types.isDisjoint(with: [.png, .tiff, NSPasteboard.PasteboardType("public.jpeg"), NSPasteboard.PasteboardType("public.heic")])
     }
 
-    /// Whether Claude Code or Codex is in the pane's foreground process
+    /// Whether an agent that reads a clipboard image itself
+    /// (`Agent.takesClipboardImage`) is in the pane's foreground process
     /// group (`ghostty_surface_foreground_pid`: the group, `tcgetpgrp`, not
     /// a pid), read at the instant it matters, inside the key equivalent
     /// (docs/design/activity/analysis.md, 7.7): the group's members by
@@ -41,31 +43,33 @@ enum ImagePaste {
     ) -> Bool {
         guard let group, group > 0, let members = kernel.groupMembers(group, limit: limit) else { return false }
         var reads = argumentReads
-        for pid in members where agent(pid, kernel: kernel, argumentReads: &reads) != nil { return true }
+        for pid in members where agent(pid, kernel: kernel, argumentReads: &reads)?.takesClipboardImage == true { return true }
         return false
     }
 
     /// The agent `pid` is: by the name it runs as, else — a name that may
     /// host one, while `argumentReads` lasts — by its argv's first word's
-    /// file (`Agent.of`'s rule); nil for one gone, a zombie, or one not
+    /// file, or under an interpreter by the script it runs (`Agent.of`'s
+    /// rule: Gemini CLI under `node`); nil for one gone, a zombie, or one not
     /// running as the user alone.
     nonisolated static func agent(_ pid: pid_t, kernel: some ActivityKernel, argumentReads: inout Int) -> Agent? {
         guard let process = kernel.process(pid), !process.isZombie, process.isWhollyOwn(by: kernel.uid),
             let name = kernel.name(of: pid)
         else { return nil }
-        if let agent = Agent(rawValue: name) { return agent }
+        if let agent = Agent.of(processName: name) { return agent }
         guard mayHost(name), argumentReads > 0 else { return nil }
         argumentReads -= 1
-        return ProcessArguments.executableName(of: pid, kernel: kernel).flatMap(Agent.init(rawValue:))
+        // One read: the agent off argv's raw words inside it (`Agent.of(arguments:)`).
+        return ProcessArguments.read(pid, kernel: kernel, markers: false, codeSigning: nil)?.agent
     }
 
     /// Whether a process of this name may be an agent under another name:
-    /// a JavaScript runtime (Claude Code's or Codex's npm install runs as
-    /// `node`), a name that starts with an agent's (a platform build of
+    /// a JavaScript runtime (Claude Code's or Codex's npm install, Gemini
+    /// CLI, runs as `node`), a name that starts with an agent's (a platform build of
     /// Codex), or a version's (Claude Code's native install runs its
     /// `versions/<x.y.z>` file). Pure.
     nonisolated static func mayHost(_ name: String) -> Bool {
-        if ["node", "bun", "deno"].contains(name) { return true }
+        if Agent.interpreters.contains(name) || name.hasPrefix("node") { return true }
         if Agent.allCases.contains(where: { name.hasPrefix($0.rawValue) }) { return true }
         return name.contains(where: \.isNumber) && name.allSatisfy { $0.isASCII && ($0.isNumber || $0 == ".") }
     }

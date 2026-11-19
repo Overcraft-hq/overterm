@@ -5,17 +5,21 @@ import _CryptoExtras
 /// is done. Signed in with a service account's key (a JWT it signs, traded
 /// for a token) or with whoever `gcloud` is signed in as on this Mac.
 actor BigQueryDriver: DatabaseDriver {
-    private let config: DatabaseConnection
+    let config: DatabaseConnection
     private let serviceAccount: String?
     private var token: (value: String, expires: Date)?
     private let session = URLSession(configuration: .ephemeral)
+    /// Jobs the Server page's own reads started: never cancelled from it.
+    var ownJobs: Set<String> = []
+    /// Where each listed job runs: `jobs.cancel` names it.
+    var jobLocations: [String: String] = [:]
 
     init(_ connection: DatabaseConnection, serviceAccount: String?) {
         config = connection
         self.serviceAccount = serviceAccount
     }
 
-    private var base: String { "https://bigquery.googleapis.com/bigquery/v2/projects/\(config.project)" }
+    var base: String { "https://bigquery.googleapis.com/bigquery/v2/projects/\(config.project)" }
 
     func connect() async throws {
         _ = try await accessToken()
@@ -123,12 +127,12 @@ actor BigQueryDriver: DatabaseDriver {
         return json
     }
 
-    private func get(_ address: String) async throws -> [String: Any] {
+    func get(_ address: String) async throws -> [String: Any] {
         guard let url = URL(string: address) else { throw DatabaseError.failed("Not a valid project.") }
         return try await send(URLRequest(url: url))
     }
 
-    private func post(_ address: String, _ body: [String: Any]) async throws -> [String: Any] {
+    func post(_ address: String, _ body: [String: Any]) async throws -> [String: Any] {
         guard let url = URL(string: address) else { throw DatabaseError.failed("Not a valid project.") }
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
@@ -140,11 +144,17 @@ actor BigQueryDriver: DatabaseDriver {
     // MARK: Queries
 
     func execute(_ sql: String, limit: Int) async throws -> QueryResult {
+        try await query(sql, limit: limit, own: false)
+    }
+
+    /// A statement as a job; `own`, the Server page's, its job remembered.
+    func query(_ sql: String, limit: Int, own: Bool) async throws -> QueryResult {
         let started = Date()
         var body: [String: Any] = ["query": sql, "useLegacySql": false, "maxResults": limit, "timeoutMs": 30_000]
         if !config.location.isEmpty { body["location"] = config.location }
         if !config.database.isEmpty { body["defaultDataset"] = ["projectId": config.project, "datasetId": config.database] }
         var answer = try await post("\(base)/queries", body)
+        if own, let id = (answer["jobReference"] as? [String: Any])?["jobId"] as? String { ownJobs.insert(id) }
         // Not done in time: its results, asked for until it is.
         while answer["jobComplete"] as? Bool == false, let job = answer["jobReference"] as? [String: Any], let id = job["jobId"] as? String {
             try Task.checkCancellation()

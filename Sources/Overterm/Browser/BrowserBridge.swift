@@ -14,16 +14,22 @@ import Network
 /// MCP config file written for it, and its token from
 /// `OVERTERM_MCP_TOKEN`, in that pane's environment only: the file's header
 /// is `Bearer ${OVERTERM_MCP_TOKEN}`, which Claude Code expands. Overterm
-/// starts `claude` with `--mcp-config "$OVERTERM_MCP_CONFIG"`
-/// (Settings.arguments). What is left: another of the user's processes,
+/// starts `claude` with `--mcp-config "$OVERTERM_MCP_CONFIG"`, and Codex,
+/// opencode and Gemini CLI with the pane's `OVERTERM_MCP_URL` and the
+/// token by name, each the way it takes a server for one launch
+/// (`AgentLaunch`); pi has no MCP. What is left: another of the user's processes,
 /// not sandboxed, can read a process's environment (KERN_PROCARGS2) — the
 /// confirmations name the asking tab and agent for that (`MCPAsker`).
 @MainActor
 final class BrowserBridge {
     static let shared = BrowserBridge()
-    static let configVariable = "OVERTERM_MCP_CONFIG"
+    nonisolated static let configVariable = "OVERTERM_MCP_CONFIG"
     /// The pane's token: in its environment, never in a file.
     nonisolated static let tokenVariable = "OVERTERM_MCP_TOKEN"
+    /// The pane's own URL: for the agents that take a server on their
+    /// command line or as a substitution (Codex, opencode, Gemini CLI —
+    /// `AgentLaunch`). Not a secret: the token is.
+    nonisolated static let urlVariable = "OVERTERM_MCP_URL"
 
     /// The browser of the tab a pane is in — the window answers.
     var resolve: ((String) -> AgentBrowser?)?
@@ -84,8 +90,8 @@ final class BrowserBridge {
     /// What a new pane's environment gets — its config file's path and its
     /// token — or nil when agents don't get the bridge.
     func environment(forPane tag: String) -> [String: String]? {
-        guard let path = configPath(forPane: tag) else { return nil }
-        return [Self.configVariable: path, Self.tokenVariable: tokens.token(for: tag)]
+        guard let path = configPath(forPane: tag), let port else { return nil }
+        return [Self.configVariable: path, Self.tokenVariable: tokens.token(for: tag), Self.urlVariable: Self.url(port: port, tag: tag)]
     }
 
     /// A pane's Claude Code config: its path, and the token by name only —
@@ -96,12 +102,15 @@ final class BrowserBridge {
             "mcpServers": [
                 "overterm-browser": [
                     "type": "http",
-                    "url": "http://127.0.0.1:\(port)/mcp/\(tag)",
+                    "url": url(port: port, tag: tag),
                     "headers": ["Authorization": "Bearer ${\(tokenVariable)}"],
                 ]
             ]
         ]
     }
+
+    /// A pane's address: its own path.
+    nonisolated static func url(port: UInt16, tag: String) -> String { "http://127.0.0.1:\(port)/mcp/\(tag)" }
 
     /// The config file for a new pane — written now, while the server is
     /// up — or nil when agents don't get the browser.

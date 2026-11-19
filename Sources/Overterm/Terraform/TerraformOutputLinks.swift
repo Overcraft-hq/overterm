@@ -171,7 +171,8 @@ enum TerraformOutputLinks {
     private static func kind(scheme: String) -> DatabaseKind? {
         switch scheme {
         case "postgres", "postgresql": .postgres
-        case "mysql", "mariadb": .mysql
+        case "mysql": .mysql
+        case "mariadb": .mariadb
         case "redshift": .redshift
         case "clickhouse": .clickhouse
         default: nil
@@ -181,7 +182,8 @@ enum TerraformOutputLinks {
     private static func kind(words: Set<String>) -> DatabaseKind? {
         if words.contains("redshift") { return .redshift }
         if words.contains("clickhouse") { return .clickhouse }
-        if !words.isDisjoint(with: ["mysql", "mariadb"]) { return .mysql }
+        if words.contains("mariadb") { return .mariadb }
+        if words.contains("mysql") { return .mysql }
         if !words.isDisjoint(with: ["postgres", "postgresql", "pg"]) { return .postgres }
         return nil
     }

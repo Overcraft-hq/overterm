@@ -41,7 +41,7 @@ struct ActivityOwner: Hashable, Sendable {
         /// The terminal's foreground group.
         case foreground
         case background
-        /// The pane's agent: the first claude or codex in its tree.
+        /// The pane's agent: the first agent (`Agent.of`) in its tree.
         case agent
         /// Below the agent: its MCP servers, tool shells, dev servers.
         case agentChild

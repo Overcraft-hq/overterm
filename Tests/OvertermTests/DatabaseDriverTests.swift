@@ -3,8 +3,8 @@ import _CryptoExtras
 
 @testable import Overterm
 
-/// The drivers against real databases. SQLite always; PostgreSQL, MySQL and
-/// ClickHouse when OVERTERM_DB_TESTS=1 and Scripts/database-test-servers.sh
+/// The drivers against real databases. SQLite always; PostgreSQL, MySQL,
+/// MariaDB and ClickHouse when OVERTERM_DB_TESTS=1 and Scripts/database-test-servers.sh
 /// has them running in Docker. BigQuery's signing and answers, offline.
 final class DatabaseDriverTests: XCTestCase {
     private var servers: Bool { ProcessInfo.processInfo.environment["OVERTERM_DB_TESTS"] == "1" }
@@ -117,6 +117,56 @@ final class DatabaseDriverTests: XCTestCase {
         XCTAssertEqual(affected.affected, 3, "a write says how many rows it changed")
         _ = try await driver.execute("DROP TABLE counted", limit: 1)
         await driver.close()
+    }
+
+    func testMariaDB() async throws {
+        guard servers else { throw XCTSkip("OVERTERM_DB_TESTS=1 with Scripts/database-test-servers.sh") }
+        let mariadb = connection(.mariadb, port: 53307)
+        XCTAssertTrue(DatabaseDrivers.make(mariadb, password: nil, serviceAccount: nil) is MySQLDriver, "MariaDB speaks MySQL's protocol")
+        let driver = MySQLDriver(mariadb, password: "otpass")
+        try await exercise(driver, schema: "shop", create: "CREATE TABLE orders (id int PRIMARY KEY, note text)")
+        try await driver.connect()
+        let version = try await driver.execute("SELECT VERSION()", limit: 1)
+        XCTAssertTrue(version.rows.first?.first??.contains("MariaDB") == true, "\(version.rows)")
+        // MariaDB's own SQL in the console: RETURNING, sequences.
+        _ = try await driver.execute("CREATE OR REPLACE TABLE counted (id int)", limit: 1)
+        let returned = try await driver.execute("INSERT INTO counted VALUES (1), (2) RETURNING id", limit: 10)
+        XCTAssertEqual(returned.rows, [["1"], ["2"]])
+        _ = try await driver.execute("DROP TABLE counted", limit: 1)
+        await driver.close()
+        // Read-only is the session's own.
+        var readOnly = mariadb
+        readOnly.readOnly = true
+        let reader = MySQLDriver(readOnly, password: "otpass")
+        try await reader.connect()
+        do {
+            _ = try await reader.execute("CREATE TABLE x (a int)", limit: 1)
+            XCTFail("a read-only session wrote")
+        } catch {}
+        await reader.close()
+        // A user signed in with ed25519, MariaDB's own plugin: said plainly.
+        var root = mariadb
+        root.user = "root"
+        let admin = MySQLDriver(root, password: "otpass")
+        try await admin.connect()
+        _ = try await admin.execute("INSTALL SONAME 'auth_ed25519'", limit: 1)
+        _ = try await admin.execute("CREATE OR REPLACE USER 'oted'@'%' IDENTIFIED VIA ed25519 USING PASSWORD('otpass')", limit: 1)
+        var ed = mariadb
+        ed.user = "oted"
+        do {
+            try await MySQLDriver(ed, password: "otpass").connect()
+            XCTFail("ed25519 isn't spoken")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("signs this user in with ed25519"), error.localizedDescription)
+        }
+        _ = try await admin.execute("DROP USER 'oted'@'%'", limit: 1)
+        await admin.close()
+        do {
+            try await MySQLDriver(mariadb, password: "wrong").connect()
+            XCTFail("connected with a wrong password")
+        } catch {
+            XCTAssertTrue(error.localizedDescription.contains("Access denied"), error.localizedDescription)
+        }
     }
 
     func testClickHouse() async throws {

@@ -20,7 +20,7 @@ final class APIRequestModel: ObservableObject {
     private var cancellables: Set<AnyCancellable> = []
 
     enum RequestTab: String, CaseIterable, Identifiable {
-        case params, body, headers, auth, vars, script, assert, tests, docs, settings
+        case params, body, schema, headers, auth, vars, script, assert, tests, docs, settings
         var id: String { rawValue }
         var title: String { rawValue == "vars" ? "Vars" : rawValue.capitalized }
     }
@@ -160,6 +160,10 @@ final class APIRequestModel: ObservableObject {
 
     func send() {
         guard let workspace else { return }
+        if file.isGRPC {
+            if workspace.grpcResult(for: url)?.running == true { workspace.cancelGRPC(url) } else { workspace.sendGRPC(file, at: url) }
+            return
+        }
         if isSending { workspace.cancel(url) } else { workspace.send(file, at: url) }
     }
 
@@ -198,6 +202,18 @@ final class APIRequestModel: ObservableObject {
         NSPasteboard.general.setString(text, forType: .string)
     }
 
+    /// A GraphQL request: its Schema tab, its query completed from it.
+    var isGraphQL: Bool { file.requestType == "graphql" || file.bodyMode == .graphql }
+
+    /// The tabs this request has: Schema only for GraphQL.
+    var tabs: [RequestTab] { RequestTab.allCases.filter { $0 != .schema || isGraphQL } }
+
+    /// What may finish the word at the caret in the GraphQL query, from the schema.
+    func graphQLCompletions(before text: String) -> [String] {
+        guard let workspace, case .loaded(let schema)? = workspace.graphQLSchema(file, at: url) else { return [] }
+        return schema.complete(before: text).candidates.map(\.label)
+    }
+
     /// Counts for the tab bar: what each tab holds.
     func count(_ tab: RequestTab) -> Int {
         switch tab {
@@ -208,7 +224,7 @@ final class APIRequestModel: ObservableObject {
         case .script: [file.preRequestScript, file.postResponseScript].compactMap { $0 }.filter { !$0.isEmpty }.count
         case .tests: (file.tests?.isEmpty == false) ? 1 : 0
         case .docs: (file.docs?.isEmpty == false) ? 1 : 0
-        case .body, .auth, .settings: 0
+        case .body, .auth, .settings, .schema: 0
         }
     }
 }

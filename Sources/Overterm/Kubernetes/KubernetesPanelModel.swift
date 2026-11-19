@@ -129,6 +129,8 @@ final class KubernetesPanelModel: ObservableObject {
 
     let store: KubeBindingStore
     let kubernetes: KubernetesModel
+    /// The cluster's pulse in the rail: warnings, nodes (`KubePanelPulse`).
+    let pulse = KubePanelPulse()
     /// Asked of the window: a review tab for a range in the checkout.
     var openReview: (ReviewSource, URL) -> Void = { _, _ in }
     /// Asked of the window: the right slot on the pod picked.
@@ -275,6 +277,7 @@ final class KubernetesPanelModel: ObservableObject {
     private func stop() {
         generation += 1
         gitOps.stop()
+        pulse.stop()
         for task in follows.values { task.cancel() }
         follows = [:]
         followed = []
@@ -302,6 +305,7 @@ final class KubernetesPanelModel: ObservableObject {
         guard let binding else {
             gitOps.unbound()
             readGuess()
+            followUnboundPulse()
             return
         }
         guard let checkout else { return }
@@ -332,6 +336,7 @@ final class KubernetesPanelModel: ObservableObject {
         kinds.append(.pods)
         followed = kinds
         following = (binding, context, checkout)
+        pulse.follow(client(for: context), context: context.name, namespace: binding.namespace)
         for kind in kinds { follow(kind, generation: generation) }
         gitOps.follow(binding, context: context, checkout: checkout, client: client(for: context))
     }
@@ -664,6 +669,7 @@ final class KubernetesPanelModel: ObservableObject {
             guard let self, self.checkout == checkout else { return }
             self.guessing = false
             self.guess = read
+            self.followUnboundPulse()
         }
     }
 
@@ -688,8 +694,25 @@ final class KubernetesPanelModel: ObservableObject {
     func upgradeChart() { helmSession()?.upgrade() }
 
     /// The forwards in the bound namespace.
+    /// No binding: the pulse of the page's context (else the kubeconfig's
+    /// current one) in the namespace the checkout's files name, if they do.
+    private func followUnboundPulse() {
+        guard panelVisible, binding == nil else { return }
+        let generation = self.generation
+        let kubernetes = self.kubernetes
+        let guessed = guess?.namespace
+        Task { [weak self] in
+            guard let list = await kubernetes.contextsForAgents() else { return }
+            guard let self, self.generation == generation, self.binding == nil else { return }
+            guard let context = kubernetes.selected ?? list.current.flatMap(list.context(named:)) ?? list.contexts.first else { return }
+            // One namespace, never the cluster: the files', else the context's own.
+            self.pulse.follow(self.client(for: context), context: context.name, namespace: guessed ?? context.namespace ?? "default")
+        }
+    }
+
+    /// The forwards that are this binding's — or, with none, every one running.
     func forwards(_ all: [KubeForward]) -> [KubeForward] {
-        guard let binding else { return [] }
+        guard let binding else { return all }
         return all.filter { $0.spec.context == binding.context && $0.spec.namespace == binding.namespace }
     }
 }

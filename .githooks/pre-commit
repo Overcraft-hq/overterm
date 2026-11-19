@@ -31,7 +31,9 @@ if [[ ! "$version" =~ $semver ]]; then
   problem="VERSION is '$version', not MAJOR.MINOR.PATCH."
 elif [[ -n "$released" && "$(printf '%s\n%s\n' "$released" "$version" | sort -V | tail -1)" == "$released" ]]; then
   problem="VERSION is $version, and v$released is released: this change goes into the next version."
-elif ! git show :CHANGELOG.md 2>/dev/null | grep -qE "^## $(printf '%s' "$version" | sed 's/\./\\./g')( |$)"; then
+# Read whole, then searched: `git show | grep -q` under pipefail failed
+# whenever grep found the entry before git had written the file out (SIGPIPE).
+elif ! grep -qE "^## $(printf '%s' "$version" | sed 's/\./\\./g')( |$)" <<<"$(git show :CHANGELOG.md 2>/dev/null || true)"; then
   problem="CHANGELOG.md has no entry for $version."
 fi
 if [[ -z "$problem" ]]; then exit 0; fi

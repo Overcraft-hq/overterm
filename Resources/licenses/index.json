@@ -385,6 +385,14 @@
  },
  {
   "group": "Swift packages",
+  "name": "oracle-nio",
+  "version": "1.0.0-rc.4",
+  "license": "Apache-2.0",
+  "url": "https://github.com/lovetodream/oracle-nio",
+  "file": "licenses/oracle-nio.txt"
+ },
+ {
+  "group": "Swift packages",
   "name": "postgres-nio",
   "version": "1.33.2",
   "license": "MIT",
@@ -441,6 +449,14 @@
  },
  {
   "group": "Swift packages",
+  "name": "swift-distributed-tracing",
+  "version": "1.5.0",
+  "license": "Apache-2.0",
+  "url": "https://github.com/apple/swift-distributed-tracing",
+  "file": "licenses/swift-distributed-tracing.txt"
+ },
+ {
+  "group": "Swift packages",
   "name": "swift-log",
   "version": "1.15.1",
   "license": "Apache-2.0",
@@ -462,6 +478,14 @@
   "license": "Apache-2.0",
   "url": "https://github.com/apple/swift-nio",
   "file": "licenses/swift-nio.txt"
+ },
+ {
+  "group": "Swift packages",
+  "name": "swift-nio-http2",
+  "version": "1.46.0",
+  "license": "Apache-2.0",
+  "url": "https://github.com/apple/swift-nio-http2",
+  "file": "licenses/swift-nio-http2.txt"
  },
  {
   "group": "Swift packages",
@@ -489,11 +513,27 @@
  },
  {
   "group": "Swift packages",
+  "name": "swift-service-context",
+  "version": "1.3.0",
+  "license": "Apache-2.0",
+  "url": "https://github.com/apple/swift-service-context",
+  "file": "licenses/swift-service-context.txt"
+ },
+ {
+  "group": "Swift packages",
   "name": "swift-service-lifecycle",
   "version": "2.12.1",
   "license": "Apache-2.0",
   "url": "https://github.com/swift-server/swift-service-lifecycle",
   "file": "licenses/swift-service-lifecycle.txt"
+ },
+ {
+  "group": "Swift packages",
+  "name": "swift-syntax",
+  "version": "602.0.0",
+  "license": "Apache-2.0",
+  "url": "https://github.com/swiftlang/swift-syntax",
+  "file": "licenses/swift-syntax.txt"
  },
  {
   "group": "Swift packages",

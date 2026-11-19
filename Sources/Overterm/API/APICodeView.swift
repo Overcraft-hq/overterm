@@ -13,6 +13,10 @@ struct APICodeView: NSViewRepresentable {
     /// Wraps long lines (prose, a long token); code otherwise scrolls sideways.
     var wraps = false
     var accessibilityIdentifier: String?
+    /// What may finish the word at the caret, given the text before it — a
+    /// GraphQL query's fields. Offered as a word is typed (⎋ too), nothing
+    /// put in until one is picked.
+    var complete: ((String) -> [String])?
 
     func makeCoordinator() -> Coordinator { Coordinator(self) }
 
@@ -126,6 +130,35 @@ struct APICodeView: NSViewRepresentable {
             guard let textView else { return }
             parent.text = textView.string
             schedulePaint()
+            offerCompletion(textView)
+        }
+
+        private var completing = false
+
+        /// After a letter typed (not one a completion put in), the list.
+        private func offerCompletion(_ textView: NSTextView) {
+            guard parent.complete != nil, !completing, textView.selectedRange().length == 0 else { return }
+            let caret = textView.selectedRange().location
+            let text = textView.string as NSString
+            guard caret > 0, let last = text.substring(with: NSRange(location: caret - 1, length: 1)).first, last.isLetter || last == "_" else { return }
+            completing = true
+            DispatchQueue.main.async { [weak self, weak textView] in
+                MainActor.assumeIsolated {
+                    textView?.complete(nil)
+                    self?.completing = false
+                }
+            }
+        }
+
+        func textView(
+            _ textView: NSTextView, completions words: [String], forPartialWordRange charRange: NSRange,
+            indexOfSelectedItem index: UnsafeMutablePointer<Int>?
+        ) -> [String] {
+            guard let complete = parent.complete else { return words }
+            let before = (textView.string as NSString).substring(to: NSMaxRange(charRange))
+            // Nothing picked at first: typing on doesn't take a guess.
+            index?.pointee = -1
+            return complete(before)
         }
 
         private func schedulePaint() {

@@ -102,7 +102,9 @@ final class KubernetesPanelModelTests: XCTestCase {
         XCTAssertEqual(panel.guess?.namespace, "shop")
         XCTAssertEqual(panel.guess?.selector, "app.kubernetes.io/part-of=shop")
         XCTAssertEqual(panel.guess?.workloads, ["deploy/web"])
-        XCTAssertTrue(api.requests.isEmpty, "unbound, no cluster is asked: \(api.requests)")
+        XCTAssertTrue(
+            api.requests.allSatisfy { $0.method == "GET" && $0.path.hasSuffix("/namespaces/shop/events") },
+            "unbound, only the guessed namespace's warnings are asked: \(api.requests)")
         panel.beginEdit()
         try await until(5, "the draft") { panel.draft != nil }
         XCTAssertEqual(panel.contextNames, ["fake-dev", "fake-prod"])

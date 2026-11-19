@@ -4,8 +4,8 @@ import SQLite3
 /// A SQLite file, through the system's libsqlite3 — read-only when the
 /// connection says so, at the file's own level.
 actor SQLiteDriver: DatabaseDriver {
-    private let connection: DatabaseConnection
-    nonisolated(unsafe) private var db: OpaquePointer?
+    let connection: DatabaseConnection
+    nonisolated(unsafe) private(set) var db: OpaquePointer?
 
     init(_ connection: DatabaseConnection) {
         self.connection = connection

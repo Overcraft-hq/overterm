@@ -26,6 +26,8 @@ struct CatalogTable: Equatable, Hashable, Sendable {
     var schema: String
     var name: String
     var isView = false
+    /// What the tree says beside it: an index's documents, an alias's index.
+    var detail: String?
 }
 
 struct CatalogColumn: Equatable, Hashable, Sendable {
@@ -78,13 +80,22 @@ enum DatabaseDrivers {
         switch connection.kind {
         case .sqlite: SQLiteDriver(connection)
         case .postgres, .redshift: PostgresDriver(connection, password: password)
-        case .mysql: MySQLDriver(connection, password: password)
+        // MariaDB speaks MySQL's protocol: the same driver, its words its own.
+        case .mysql, .mariadb: MySQLDriver(connection, password: password)
         case .clickhouse: ClickHouseDriver(connection, password: password)
         case .bigquery: BigQueryDriver(connection, serviceAccount: serviceAccount)
         case .redis: RedisDriver(connection, password: password)
         case .prometheus, .loki, .tempo: ObservabilityDriver(connection, password: password)
         // Storage has its own client (StorageClient); nothing runs SQL on it.
         case .s3, .gcs: NoSQLDriver()
+        // Each its own driver, written in 1.6.1.
+        case .mongodb, .documentdb: MongoDriver(connection, password: password)
+        case .elasticsearch, .opensearch: SearchDriver(connection, password: password)
+        case .dynamodb: DynamoDBDriver(connection, password: password)
+        case .influxdb: InfluxDBDriver(connection, password: password)
+        case .neo4j: Neo4jDriver(connection, password: password)
+        case .rabbitmq: RabbitMQDriver(connection, password: password)
+        case .oracle: OracleDriver(connection, password: password)
         }
     }
 

@@ -55,7 +55,8 @@ extension TerraformRunRisks {
         var lock: [TerraformLockFile.Provider]?
         for path in names.prefix(TerraformRootGuess.maxFilesPerFolder) {
             let name = (path as NSString).lastPathComponent
-            guard name.hasSuffix(".tf") || name == ".terraform.lock.hcl" else { continue }
+            // OpenTofu's .tofu too, as the panel reads a root (`isConfigFile`).
+            guard name.hasSuffix(".tf") || name.hasSuffix(".tofu") || name == ".terraform.lock.hcl" else { continue }
             guard let text = try? await Git.run(["show", "\(base):\(path)"], in: checkout), text.utf8.count <= TerraformRootGuess.maxBytesPerFile else { continue }
             if name == ".terraform.lock.hcl" { lock = TerraformLockFile.providers(in: text) } else { texts.append(text) }
         }

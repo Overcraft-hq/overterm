@@ -922,7 +922,7 @@ final class DockerDatabaseGuessTests: XCTestCase {
     func testMySQLAndClickHouse() throws {
         let port = [DockerPort(IP: "127.0.0.1", PrivatePort: 3306, PublicPort: 53306, Type: "tcp")]
         let root = try XCTUnwrap(DockerDatabaseGuess.guess(container("mariadb:11", ports: port), env: [("MARIADB_ROOT_PASSWORD", "r00t")]))
-        XCTAssertEqual(root.connection.kind, .mysql)
+        XCTAssertEqual(root.connection.kind, .mariadb)
         XCTAssertEqual(root.connection.user, "root")
         XCTAssertEqual(root.password, "r00t")
         let user = try XCTUnwrap(
@@ -952,6 +952,31 @@ final class DockerDatabaseGuessTests: XCTestCase {
             DockerDatabaseGuess.guess(
                 container("valkey/valkey:8", ports: [DockerPort(IP: "0.0.0.0", PrivatePort: 6379, PublicPort: 56380, Type: "tcp")]), env: [])?
                 .connection.kind, .redis)
+    }
+
+    func testMongoDB() throws {
+        let port = [DockerPort(IP: "0.0.0.0", PrivatePort: 27017, PublicPort: 57017, Type: "tcp")]
+        let official = try XCTUnwrap(
+            DockerDatabaseGuess.guess(
+                container("mongo:7", ports: port),
+                env: [("MONGO_INITDB_ROOT_USERNAME", "ot"), ("MONGO_INITDB_ROOT_PASSWORD", "pw"), ("MONGO_INITDB_DATABASE", "shop")]))
+        XCTAssertEqual(official.connection.kind, .mongodb)
+        XCTAssertEqual(official.connection.port, 57017)
+        XCTAssertEqual(official.connection.user, "ot")
+        XCTAssertEqual(official.password, "pw")
+        XCTAssertEqual(official.connection.database, "shop")
+        XCTAssertEqual(official.connection.authSource, "admin", "the root user lives in admin")
+        XCTAssertEqual(official.connection.sslMode, .disable)
+        let bitnami = try XCTUnwrap(
+            DockerDatabaseGuess.guess(
+                container("bitnami/mongodb:7.0", ports: port),
+                env: [("MONGODB_ROOT_PASSWORD", "r"), ("MONGODB_USERNAME", "app"), ("MONGODB_PASSWORD", "a"), ("MONGODB_DATABASE", "orders")]))
+        XCTAssertEqual(bitnami.connection.user, "app", "the app's own user over root")
+        XCTAssertEqual(bitnami.connection.authSource, "orders", "made in its own database")
+        let open = try XCTUnwrap(DockerDatabaseGuess.guess(container("mongo:7", ports: port), env: []))
+        XCTAssertEqual(open.connection.user, "", "no auth: no user")
+        XCTAssertNil(open.password)
+        XCTAssertNil(DockerDatabaseGuess.kind(of: "mongo-express"), "a UI beside it")
     }
 
     func testNoGuessForWhatCantBeReached() {

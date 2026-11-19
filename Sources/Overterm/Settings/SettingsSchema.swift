@@ -553,30 +553,46 @@ enum SettingsSchema {
             kind: .toggle, defaultValue: nil, ghostty: "clipboard-paste-protection"),
     ]
 
-    private static let agents: [SettingSpec] = [
-        SettingSpec(
-            key: "agents.claudeArguments", section: .agents, group: "Arguments", title: "Claude",
-            help: "Added wherever the agent starts or picks up again: ⌥⌘C / ⌥⌘X, New Task, tabs reopened at launch, and Sessions' resume.",
-            kind: .text(placeholder: "--model opus", monospaced: true), defaultValue: .string("")),
-        SettingSpec(
-            key: "agents.codexArguments", section: .agents, group: "Arguments", title: "Codex",
-            kind: .text(placeholder: "-m gpt-5", monospaced: true), defaultValue: .string("")),
-        SettingSpec(
-            key: "agents.newTaskAgent", section: .agents, group: "New Task", title: "Starts",
-            kind: .choice(Agent.allCases.map { .init(value: $0.rawValue, label: $0.name) } + [.init(value: "shell", label: "A shell only")]),
-            defaultValue: .string(Agent.claude.rawValue)),
-        SettingSpec(
-            key: "agents.worktreeLocation", section: .agents, group: "New Task", title: "Worktrees go",
-            help: "Inside the repository, .worktrees/ is added to its local exclude file (.git/info/exclude) — no tracked file changes.",
-            kind: .choice([
-                .init(value: "sibling", label: "Next to the repository — repo-wt-branch"),
-                .init(value: "inside", label: "Inside it — repo/.worktrees/branch"),
-            ]), defaultValue: .string("sibling")),
-        SettingSpec(
-            key: "agents.newTaskBase", section: .agents, group: "New Task", title: "New branches start from",
-            help: "Empty: the main worktree's branch.", kind: .text(placeholder: "the main worktree's branch", monospaced: true),
-            defaultValue: .string("")),
-    ]
+    /// What each agent's arguments field says: where they go, and what
+    /// Overterm adds to that agent's launch (`AgentLaunch`).
+    static func argumentsHelp(_ agent: Agent) -> String {
+        switch agent {
+        case .claude:
+            "Added wherever the agent starts or picks up again: ⌥⌘C / ⌥⌘X, New Task, tabs reopened at launch, and Sessions' resume. Overterm's tools (the browser, API client, notes…) come with --mcp-config."
+        case .codex:
+            "Overterm's tools come as -c mcp_servers overrides for that launch; the token stays in the pane's environment. Codex has no per-command deny: Terraform's guard can't hold it back."
+        case .opencode:
+            "Overterm's tools come in OPENCODE_CONFIG_CONTENT for that launch, merged over your config; Terraform's guard in OPENCODE_PERMISSION. opencode says nothing when it waits: Overterm reads its permission dialog off a pane you aren't looking at."
+        case .pi:
+            "pi has no MCP, by design: Overterm's tools aren't offered to it. Overterm loads a small extension (-e) that tells the tab when pi is done. pi asks before nothing, so Terraform's guard can't hold it back."
+        case .gemini:
+            "Overterm's tools and Gemini's own notifications come in a system-defaults file of Overterm's (GEMINI_CLI_SYSTEM_DEFAULTS_PATH) — not where a real one is installed. Terraform's guard is an --admin-policy file."
+        }
+    }
+
+    private static let agents: [SettingSpec] =
+        []
+        + Agent.allCases.map { agent in
+            SettingSpec(
+                key: agent.argumentsKey, section: .agents, group: "Arguments", title: agent.name, help: argumentsHelp(agent),
+                kind: .text(placeholder: agent.argumentsPlaceholder, monospaced: true), defaultValue: .string(""))
+        } + [
+            SettingSpec(
+                key: "agents.newTaskAgent", section: .agents, group: "New Task", title: "Starts",
+                kind: .choice(Agent.allCases.map { .init(value: $0.rawValue, label: $0.name) } + [.init(value: "shell", label: "A shell only")]),
+                defaultValue: .string(Agent.claude.rawValue)),
+            SettingSpec(
+                key: "agents.worktreeLocation", section: .agents, group: "New Task", title: "Worktrees go",
+                help: "Inside the repository, .worktrees/ is added to its local exclude file (.git/info/exclude) — no tracked file changes.",
+                kind: .choice([
+                    .init(value: "sibling", label: "Next to the repository — repo-wt-branch"),
+                    .init(value: "inside", label: "Inside it — repo/.worktrees/branch"),
+                ]), defaultValue: .string("sibling")),
+            SettingSpec(
+                key: "agents.newTaskBase", section: .agents, group: "New Task", title: "New branches start from",
+                help: "Empty: the main worktree's branch.", kind: .text(placeholder: "the main worktree's branch", monospaced: true),
+                defaultValue: .string("")),
+        ]
 
     private static let editor: [SettingSpec] = [
         SettingSpec(
@@ -942,7 +958,7 @@ enum SettingsSchema {
         SettingSpec(
             key: "terraform.agentWriteGuard", section: .terraform, group: "Agents", title: "Start agents with Terraform's writes denied",
             help:
-                "In a checkout with a production root — or one not read yet — Claude Code started from Overterm (New Task, an agent tab, a resumed one) gets --disallowedTools rules for terraform, tofu and terragrunt apply, destroy, import, taint, force-unlock, state, workspace delete, refresh, test, -auto-approve and state migration — for that launch only; nothing is written to its settings. Unverified against Claude Code itself: its parser takes the rules, but whether each one matches, and holds under --dangerously-skip-permissions, is its documentation's word, not tested here. A script, bash -c or make apply get around it, and Codex has no such flag: its pane says \"terraform writes not guarded\". Either way the pane header and the Inbox show an agent's terraform, and Overterm never answers its ask.",
+                "In a checkout with a production root — or one not read yet — Claude Code started from Overterm (New Task, an agent tab, a resumed one) gets --disallowedTools rules for terraform, tofu and terragrunt apply, destroy, import, taint, force-unlock, state, workspace delete, refresh, test, -auto-approve and state migration — for that launch only; nothing is written to its settings. opencode gets the same as OPENCODE_PERMISSION deny rules, Gemini CLI as an --admin-policy file (not where an administrator's Gemini policies are installed); Codex and pi have no per-command deny and are said unguarded on their pane. Unverified against Claude Code itself: its parser takes the rules, but whether each one matches, and holds under --dangerously-skip-permissions, is its documentation's word, not tested here. A script, bash -c or make apply get around it, and Codex has no such flag: its pane says \"terraform writes not guarded\". Either way the pane header and the Inbox show an agent's terraform, and Overterm never answers its ask.",
             kind: .toggle, defaultValue: .bool(true), requires: "terraform.enabled", heldWhenEditedOutside: true),
         SettingSpec(
             key: "terraform.agentAccess", section: .terraform, group: "Agents", title: "Agents can read the checkout's Terraform",

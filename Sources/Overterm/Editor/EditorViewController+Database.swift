@@ -17,6 +17,14 @@ extension EditorViewController {
         else { return }
         let console = SQLConsole(file: url, model: DatabaseModel.shared)
         console.confirm = { [weak self] sql, why in await self?.confirmDestructive(sql, why: why) ?? false }
+        console.confirmWrite = { [weak self] confirmation in
+            guard let window = self?.view.window else { return false }
+            return await confirmation.ask(on: window) != nil
+        }
+        console.confirmDiscard = { [weak self] edits in
+            guard let window = self?.view.window else { return false }
+            return await Self.askDiscardRowEdits(edits, on: window)
+        }
         buffer.sqlConsole = console
         if let session = console.session { Task { await session.open() } }
     }
@@ -82,8 +90,13 @@ extension EditorViewController {
         let at = min(NSMaxRange(line), text.length)
         let lead = at > 0 && text.character(at: at - 1) != 0x0A ? "\n\n" : "\n"
         let statement = sql.trimmingCharacters(in: .whitespacesAndNewlines)
-        // A Redis command is its line; SQL ends with a semicolon.
-        let piece = lead + statement + (statement.hasSuffix(";") || kind.isRedis ? "" : ";") + "\n"
+        // A Redis command or a mongo shell statement is its line; SQL ends with a semicolon.
+        // A search request ends at a blank line, so one goes before it.
+        let terminator = kind.consoleText?.terminator ?? (kind.isRedis || kind.isMongo || kind.isSearch ? "" : ";")
+        // An Oracle block ends at a `/` line, as SQL*Plus has it.
+        let close = kind == .oracle && OracleText.isBlock(statement) ? (statement.hasSuffix(";") ? "" : ";") + "\n/" : nil
+        let piece =
+            (kind.isSearch ? "\n" : "") + lead + statement + (close ?? (statement.hasSuffix(terminator) ? "" : terminator)) + "\n"
         replaceText(of: buffer, with: text.replacingCharacters(in: NSRange(location: at, length: 0), with: piece))
         textView.setSelectedRange(NSRange(location: at + (lead as NSString).length, length: 0))
         textView.scrollRangeToVisible(textView.selectedRange())
@@ -162,10 +175,13 @@ extension EditorViewController {
         let text = textView.string as NSString
         let caret = textView.selectedRange().location
         if session.connection.kind.isRedis { return updateRedisCompletion(session: session, buffer: buffer, caret: caret, window: window) }
+        // Kibana's requests aren't SQL: nothing of SQL's to offer.
+        if session.connection.kind.isSearch || session.connection.kind.consoleText?.completesSQL == false { return false }
+        if session.connection.kind.isMongo { return updateMongoCompletion(session: session, buffer: buffer, caret: caret, window: window) }
         if session.connection.kind.isObservability {
             return updateObservabilityCompletion(session: session, buffer: buffer, caret: caret, window: window)
         }
-        let range = SQLText.statement(at: caret, in: text as String) ?? NSRange(location: 0, length: text.length)
+        let range = session.connection.kind.statement(at: caret, in: text as String) ?? NSRange(location: 0, length: text.length)
         let start = min(range.location, caret)
         let before = text.substring(with: NSRange(location: start, length: caret - start))
         let statement = text.substring(with: NSRange(location: start, length: max(NSMaxRange(range), caret) - start))
@@ -206,6 +222,31 @@ extension EditorViewController {
         let browser = session.browser(db)
         if !browser.scanned { Task { await browser.scan() } }
         guard let answer = RedisCompletion.complete(before, keys: browser.keys.map(\.name)) else {
+            completionPopup.hide()
+            completion = nil
+            return false
+        }
+        return showConsoleCompletion(answer.candidates, typed: answer.typed, buffer: buffer, caret: caret, window: window)
+    }
+
+    /// A MongoDB console's: the console database's collections after `db.`,
+    /// a collection's methods after `db.<collection>.`.
+    private func updateMongoCompletion(session: DatabaseSession, buffer: EditorBuffer, caret: Int, window: NSWindow) -> Bool {
+        let text = textView.string as NSString
+        let lineStart = text.lineRange(for: NSRange(location: caret, length: 0)).location
+        let before = text.substring(with: NSRange(location: lineStart, length: caret - lineStart))
+        let schema = session.schema ?? session.connection.database
+        if session.tables[schema] == nil {
+            // The collections not read yet: read them, then offer again.
+            Task { [weak self, weak buffer] in
+                await session.loadTables(schema)
+                guard let self, let buffer, buffer === self.active, self.textView.selectedRange().location == caret,
+                    session.tables[schema] != nil
+                else { return }
+                self.updateSQLCompletion()
+            }
+        }
+        guard let answer = MongoCompletion.complete(before, collections: (session.tables[schema] ?? []).map(\.name)) else {
             completionPopup.hide()
             completion = nil
             return false
@@ -254,5 +295,18 @@ extension EditorViewController {
         let items = candidates.map { EditorListItem(title: $0.label, detail: $0.detail, badge: $0.badge, badgeColor: $0.badgeColor, matched: []) }
         completionPopup.show(items, details: candidates.map(\.detail), at: textView.screenRect(forCharacterAt: anchor), in: window)
         return true
+    }
+}
+
+extension EditorViewController {
+    /// Rows edited in a result and not saved: Cancel, or Discard. They are
+    /// never on disk — the database has the rows as they were.
+    static func askDiscardRowEdits(_ edits: Int, on window: NSWindow) async -> Bool {
+        let alert = NSAlert()
+        alert.messageText = edits == 1 ? "Discard 1 row edit not saved?" : "Discard \(edits) row edits not saved?"
+        alert.informativeText = "Edited rows are held here until you Save them; the database still has them as they were."
+        alert.addButton(withTitle: "Cancel")
+        alert.addButton(withTitle: "Discard Edits").hasDestructiveAction = true
+        return await alert.beginSheetModal(for: window) == .alertSecondButtonReturn
     }
 }

@@ -34,6 +34,9 @@ enum MainMenu {
         command(fileMenu, "New Tab", #selector(TerminalWindowController.newTab(_:)), "tabs.new")
         command(fileMenu, "New Claude Tab", #selector(TerminalWindowController.newClaudeTab(_:)), "tabs.newClaude")
         command(fileMenu, "New Codex Tab", #selector(TerminalWindowController.newCodexTab(_:)), "tabs.newCodex")
+        command(fileMenu, "New opencode Tab", #selector(TerminalWindowController.newOpencodeTab(_:)), "tabs.newOpencode")
+        command(fileMenu, "New pi Tab", #selector(TerminalWindowController.newPiTab(_:)), "tabs.newPi")
+        command(fileMenu, "New Gemini Tab", #selector(TerminalWindowController.newGeminiTab(_:)), "tabs.newGemini")
         command(fileMenu, "New Task…", #selector(TerminalWindowController.newTask(_:)), "tasks.new")
         fileMenu.addItem(
             withTitle: "Clean Up Merged Worktrees…", action: #selector(TerminalWindowController.cleanUpMergedWorktrees(_:)), keyEquivalent: "")

@@ -203,7 +203,15 @@ final class KubeClusterOverviewTests: XCTestCase {
         XCTAssertTrue(page.press("1"))
         try await until(5, "live") { page.clusterOverview.state == .live }
         XCTAssertEqual(model.marksSeen, [], "no mark on the shop's rows")
-        let paths = Set(api.requests.map(\.path))
+        // Live can come before the Overview's first reads have all been made
+        // (a slow machine): the paths it asks for, once they stop growing.
+        var paths = Set(api.requests.map(\.path))
+        for _ in 0..<50 {
+            try await Task.sleep(for: .milliseconds(200))
+            let now = Set(api.requests.map(\.path))
+            if now == paths { break }
+            paths = now
+        }
         api.add(
             "deployments.apps", "acme-pay", namespace: "shop", values: ["Ready": "1/1", "Up-to-date": 1, "Available": 1],
             annotations: ["argocd.argoproj.io/tracking-id": "prod-shop-acme-pay-service:apps/Deployment:shop/acme-pay"])

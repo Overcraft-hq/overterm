@@ -188,7 +188,7 @@ struct TabBarView: View {
             .menuIndicator(.visible)
             .fixedSize()
             .foregroundStyle(theme.dimText)
-            .help("New Tab (⌘T) — arrow for Claude / Codex")
+            .help("New Tab (⌘T) — arrow for an agent: " + Agent.allCases.map(\.name).joined(separator: ", "))
             .padding(.leading, 6)
             if let release = updates.available {
                 Button(action: actions.showUpdate) {

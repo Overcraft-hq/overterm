@@ -401,7 +401,7 @@ extension ActivityRows {
             var header = ActivityGroupRow(id: id, kind: .tab, depth: depth, title: "“\(tabs[tab]?.title ?? "")”", folded: folded(id))
             if let agentRow = shown.first(where: { $0.owner?.paneRole == .agent && !$0.ended }), let agent = agentRow.owner?.agentKind {
                 header.agent = agent
-                header.detail = ([agent == .claude ? "Claude Code" : "Codex"] + [agentRow.agentCounts ?? roleCounts(agentRow, in: rows)].filter { !$0.isEmpty })
+                header.detail = ([agent.productName] + [agentRow.agentCounts ?? roleCounts(agentRow, in: rows)].filter { !$0.isEmpty })
                     .joined(separator: "  ")
             }
             group(header, rows: rows) { builder in

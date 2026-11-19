@@ -25,6 +25,19 @@ final class SQLConsole: ObservableObject {
     private var sessionChanges: AnyCancellable?
     /// Asked before a statement that destroys: true to send it.
     var confirm: (_ sql: String, _ why: String) async -> Bool = { _, _ in true }
+    /// Asked before a Save of edited rows, its statements shown: true to run them.
+    var confirmWrite: (WriteConfirmation) async -> Bool = { _ in false }
+    /// Asked before rows edited and not saved are lost (a result's tab or
+    /// the console closed): true to discard them.
+    var confirmDiscard: (_ edits: Int) async -> Bool = { _ in true }
+    /// Each run's rows as edited (`ResultEditor`), made when its grid first shows.
+    private var editors: [UUID: ResultEditor] = [:]
+
+    /// Row edits not saved, in a run or in all of them — never kept on
+    /// disk, so closing loses them (CLAUDE.md: closing always asks).
+    func unsavedEdits(in run: Run? = nil) -> Int {
+        editors.filter { id, editor in (run == nil || id == run?.id) && !editor.saving }.values.reduce(0) { $0 + $1.edits.count }
+    }
 
     init(file: URL, model: DatabaseModel) {
         self.file = file
@@ -81,7 +94,11 @@ final class SQLConsole: ObservableObject {
             }
             // Statements not reached (one before failed): their tabs go.
             runs.removeAll { $0.running }
-            if runs.count > 10 { runs.removeFirst(runs.count - 10) }
+            // The oldest go past ten — never one with row edits not saved.
+            while runs.count > 10, let old = runs.firstIndex(where: { unsavedEdits(in: $0) == 0 }) {
+                editors[runs[old].id] = nil
+                runs.remove(at: old)
+            }
             if !runs.contains(where: { $0.id == selected }) { selected = runs.last?.id }
         }
     }
@@ -97,13 +114,57 @@ final class SQLConsole: ObservableObject {
         }
     }
 
+    /// Every run's row edits dropped (its file closing, asked first).
+    func discardAllEdits() {
+        for editor in editors.values { editor.discard() }
+    }
+
+    /// A result's tab closed — asked first when its rows have edits not saved.
+    func requestClose(_ run: Run) {
+        let edits = unsavedEdits(in: run)
+        guard edits > 0 else { return close(run) }
+        Task { @MainActor in
+            if await confirmDiscard(edits) { close(run) }
+        }
+    }
+
     func close(_ run: Run) {
         if live == run.id { stopFollowing() }
+        editors[run.id] = nil
         runs.removeAll { $0.id == run.id }
         if selected == run.id { selected = runs.last?.id }
     }
 
     var current: Run? { runs.first { $0.id == selected } ?? runs.last }
+
+    // MARK: Editing rows
+
+    /// A run's editor — when its connection edits rows and the run has rows;
+    /// whether these rows can be is its own to say (`ResultEditor.state`).
+    func editor(for run: Run) -> ResultEditor? {
+        guard let session, session.editing != nil, let result = run.result, result.hasRows, result.payload == nil, !run.running else { return nil }
+        if let editor = editors[run.id] { return editor }
+        let editor = ResultEditor(runID: run.id, sql: run.sql, console: self, session: session)
+        editors[run.id] = editor
+        // Runs gone take their editors with them.
+        editors = editors.filter { id, _ in runs.contains { $0.id == id } }
+        Task { await editor.resolve() }
+        return editor
+    }
+
+    /// A run's statement again, its rows replacing the old ones — after a
+    /// Save. Not recorded in the history: the statement was, when first run.
+    func reread(_ id: UUID) async {
+        guard let session, let at = runs.firstIndex(where: { $0.id == id }) else { return }
+        let sql = runs[at].sql
+        await session.run([sql], limit: Settings.shared.databaseRowLimit) { [weak self] _, outcome in
+            guard let self, let at = self.runs.firstIndex(where: { $0.id == id }) else { return }
+            switch outcome {
+            case .success(let result): self.runs[at].result = result
+            case .failure(let error): self.runs[at].error = error.localizedDescription
+            }
+        }
+    }
 
     // MARK: Live (Loki)
 

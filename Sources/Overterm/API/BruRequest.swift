@@ -96,7 +96,84 @@ extension BruFile {
 
     /// A request file has a method block; folder.bru, collection.bru and
     /// environments don't.
-    var isRequest: Bool { methodBlock != nil }
+    var isRequest: Bool { methodBlock != nil || isGRPC }
+
+    // MARK: gRPC
+
+    /// Bruno's gRPC request: `grpc { url, method, methodType, protoPath }`,
+    /// its `metadata`, a `body:grpc { name, content }` a message.
+    var isGRPC: Bool { has("grpc") }
+
+    var grpcURL: String {
+        get { value("url", in: "grpc") ?? "" }
+        set { setValue(newValue, for: "url", in: "grpc") }
+    }
+
+    /// `/package.Service/Method`.
+    var grpcMethod: String {
+        get { value("method", in: "grpc") ?? "" }
+        set { newValue.isEmpty ? removeValue("method", in: "grpc") : setValue(newValue, for: "method", in: "grpc") }
+    }
+
+    /// unary, client-streaming, server-streaming, bidi-streaming.
+    var grpcMethodType: String {
+        get { value("methodType", in: "grpc") ?? "unary" }
+        set { setValue(newValue, for: "methodType", in: "grpc") }
+    }
+
+    /// A .proto of the collection's, relative to its root; empty: reflection.
+    var protoPath: String {
+        get { value("protoPath", in: "grpc") ?? "" }
+        set { newValue.isEmpty ? removeValue("protoPath", in: "grpc") : setValue(newValue, for: "protoPath", in: "grpc") }
+    }
+
+    var grpcAuthMode: AuthMode {
+        get { AuthMode(rawValue: value("auth", in: "grpc") ?? "none") ?? .none }
+        set { setValue(newValue.rawValue, for: "auth", in: "grpc") }
+    }
+
+    var metadata: [BruPair] {
+        get { pairs("metadata") }
+        set { setPairs("metadata", newValue) }
+    }
+
+    struct GRPCMessage: Equatable, Sendable {
+        var name: String
+        var content: String
+    }
+
+    var grpcMessages: [GRPCMessage] {
+        get {
+            blocks(named: "body:grpc").map { block in
+                guard case .dictionary(let pairs) = block.content else { return GRPCMessage(name: "", content: "") }
+                func value(_ key: String) -> String { pairs.first { $0.key == key }?.value ?? "" }
+                return GRPCMessage(name: value("name"), content: value("content"))
+            }
+        }
+        set {
+            setBlocks(
+                "body:grpc",
+                newValue.map { message in
+                    // In triple quotes, as Bruno writes a message — a line of one too.
+                    [BruPair(key: "name", value: message.name), BruPair(key: "content", value: message.content, multiline: true)]
+                })
+        }
+    }
+
+    /// A new gRPC request, as Bruno writes one.
+    static func newGRPCRequest(name: String, url: String = "", seq: Int) -> BruFile {
+        var file = BruFile()
+        file.setPairs("meta", [BruPair(key: "name", value: name), BruPair(key: "type", value: "grpc"), BruPair(key: "seq", value: String(seq))])
+        file.setPairs(
+            "grpc",
+            [
+                BruPair(key: "url", value: url), BruPair(key: "body", value: "grpc"), BruPair(key: "auth", value: "inherit"),
+                BruPair(key: "methodType", value: "unary"),
+            ], keepEmpty: true)
+        file.grpcMessages = [GRPCMessage(name: "message 1", content: "{}")]
+        return file
+    }
+
 
     // MARK: The method block
 
@@ -124,9 +201,10 @@ extension BruFile {
         set { setValue(newValue.rawValue, for: "body", in: methodName) }
     }
 
+    /// The method block's `auth:` — a gRPC request's is in its `grpc` block.
     var authMode: AuthMode {
-        get { AuthMode(rawValue: value("auth", in: methodName) ?? "none") ?? .none }
-        set { setValue(newValue.rawValue, for: "auth", in: methodName) }
+        get { AuthMode(rawValue: value("auth", in: isGRPC ? "grpc" : methodName) ?? "none") ?? .none }
+        set { setValue(newValue.rawValue, for: "auth", in: isGRPC ? "grpc" : methodName) }
     }
 
     /// Folder and collection files keep their auth mode in `auth { mode: }`.
@@ -237,6 +315,32 @@ extension BruFile {
     }
 
     // MARK: New files
+
+    /// What a new request is: Bruno's request types.
+    enum RequestKind: String, Sendable {
+        case http, graphql, grpc
+
+        var title: String {
+            switch self {
+            case .http: "HTTP"
+            case .graphql: "GraphQL"
+            case .grpc: "gRPC"
+            }
+        }
+    }
+
+    /// A new GraphQL request, as Bruno writes one: POSTed, its query a body.
+    static func newGraphQLRequest(name: String, url: String = "", seq: Int) -> BruFile {
+        var file = BruFile()
+        file.setPairs(
+            "meta", [BruPair(key: "name", value: name), BruPair(key: "type", value: "graphql"), BruPair(key: "seq", value: String(seq))])
+        file.setPairs(
+            "post", [BruPair(key: "url", value: url), BruPair(key: "body", value: "graphql"), BruPair(key: "auth", value: "inherit")],
+            keepEmpty: true)
+        file.setText("body:graphql", "query {\n  \n}")
+        file.setPairs("settings", [BruPair(key: "encodeUrl", value: "true")])
+        return file
+    }
 
     /// A new request file, laid out as Bruno writes one.
     static func newRequest(name: String, method: String = "get", url: String = "", seq: Int) -> BruFile {

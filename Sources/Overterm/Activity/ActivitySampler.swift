@@ -700,7 +700,7 @@ final class ActivitySampler: @unchecked Sendable {
     /// foreground group's leader (the job a person ran: `claude`, `make`,
     /// `ssh`), an agent by `p_comm`.
     private static func readsAtOnce(_ process: ActivityProcess) -> Bool {
-        process.flags.contains(.sessionLeader) || process.terminalGroup == process.pid || Agent(rawValue: process.shortName) != nil
+        process.flags.contains(.sessionLeader) || process.terminalGroup == process.pid || Agent.of(processName: process.shortName) != nil
     }
 
     /// The agent `process` is, by its name or argv[0]'s file.

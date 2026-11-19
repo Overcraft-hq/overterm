@@ -65,7 +65,15 @@ enum ResultExport {
 
     /// Rows sorted by a column: numbers as numbers, NULLs last.
     static func sorted(_ rows: [[String?]], by column: Int, ascending: Bool) -> [[String?]] {
-        rows.sorted { a, b in
+        sortedIndexes(rows, by: column, ascending: ascending).map { rows[$0] }
+    }
+
+    /// The rows' indexes in that order — the grid keeps where each row came
+    /// from, so an edit lands on the row it was made on.
+    static func sortedIndexes(_ rows: [[String?]], by column: Int, ascending: Bool) -> [Int] {
+        rows.indices.sorted { i, j in
+            let a = rows[i]
+            let b = rows[j]
             let x = column < a.count ? a[column] : nil
             let y = column < b.count ? b[column] : nil
             switch (x, y) {

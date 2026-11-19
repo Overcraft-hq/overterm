@@ -30,7 +30,7 @@ extension TerminalWindowController {
             .sink { [weak self] listed in
                 DispatchQueue.main.async {
                     guard let self else { return }
-                    self.terraformPanel.setOtherWorktrees(TerraformWorktree.others(listed, of: self.terraformPanel.checkout))
+                    self.terraformPanel.setOtherWorktrees(TerraformWorktree.comparedWith(listed, of: self.terraformPanel.checkout))
                 }
             }
             .store(in: &cancellables)
@@ -59,7 +59,7 @@ extension TerminalWindowController {
     func updateTerraformCheckout() {
         let folder = terraformCheckout
         if terraformPanel.checkout?.standardizedFileURL != folder?.standardizedFileURL {
-            terraformPanel.setOtherWorktrees(TerraformWorktree.others(worktrees.worktrees, of: folder), read: false)
+            terraformPanel.setOtherWorktrees(TerraformWorktree.comparedWith(worktrees.worktrees, of: folder), read: false)
             terraformPanel.checkout = folder
         }
     }

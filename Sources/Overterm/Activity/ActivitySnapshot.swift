@@ -325,7 +325,7 @@ struct ActivityPaneSlice: Hashable, Sendable {
     /// Processes carrying its tag outside its tree (nohup, disown), and
     /// their descendants: a place for display, not the pane's set (6.5).
     let tagged: [ActivityProcessID]
-    /// The first claude or codex in its tree (`Agent.of`), and which.
+    /// The first agent in its tree (`Agent.of`), and which.
     let agent: ActivityProcessID?
     let agentKind: Agent?
     /// Of its tree, a burst's processes left unread for the next tick

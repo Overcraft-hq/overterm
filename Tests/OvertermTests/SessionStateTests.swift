@@ -108,7 +108,7 @@ final class SessionStateTests: XCTestCase {
 
     func testUnknownAgentIsACorruptFileNotACrash() throws {
         try FileManager.default.createDirectory(at: url.deletingLastPathComponent(), withIntermediateDirectories: true)
-        try Data(#"{"tabs":[{"isPinned":false,"agent":"gemini"}]}"#.utf8).write(to: url)
+        try Data(#"{"tabs":[{"isPinned":false,"agent":"aider"}]}"#.utf8).write(to: url)
         XCTAssertNil(SessionState.load(from: url))
     }
 }

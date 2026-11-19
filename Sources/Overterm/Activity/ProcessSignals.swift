@@ -543,7 +543,12 @@ struct ProcessSignals: Sendable {
     func holdsWhatNoGroupReaches(_ member: ActivityProcess) -> Bool {
         let file = kernel.path(of: member.pid).map { ($0 as NSString).lastPathComponent }
         let names = Set([file, member.shortName, ProcessArguments.executableName(of: member.pid, kernel: kernel)].compactMap { $0 })
-        if names.contains(where: { Agent(rawValue: $0) != nil }) { return true }
+        if names.contains(where: { Agent.of(processName: $0) != nil }) { return true }
+        // An agent run by an interpreter (Gemini CLI under `node`): by its argv.
+        if names.contains(where: { Agent.interpreters.contains($0) || $0.hasPrefix("node") }) {
+            guard let arguments = ProcessArguments.read(member.pid, kernel: kernel, markers: false, codeSigning: nil) else { return true }
+            if arguments.agent != nil { return true }
+        }
         if !names.isDisjoint(with: TerraformCommandLine.tools) {
             guard let command = ProcessArguments.read(member.pid, kernel: kernel, markers: false, codeSigning: nil)?.command else { return true }
             return TerraformCommandLine.parse(command, probable: false)?.isWrite == true

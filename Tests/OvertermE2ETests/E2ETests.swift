@@ -262,9 +262,17 @@ final class E2ETests: XCTestCase {
     func testReviewPerf() throws { try run("reviewPerf") }
     func testDockerPerf() throws { try run("dockerPerf") }
     func testDatabase() throws { try run("database") }
+    func testDatabaseOps() throws { try run("databaseOps") }
+    func testDatabaseOpsClickHouse() throws { try run("databaseOpsClickHouse") }
+    func testDatabaseOpsKinds() throws { try run("databaseOpsKinds") }
     func testStorage() throws { try run("storage") }
     func testRedis() throws { try run("redis") }
     func testObservability() throws { try run("observability") }
+    func testMongoDB() throws { try run("mongodb") }
+    func testMongoOps() throws { try run("mongoOps") }
+    func testAPIGraphQL() throws { try run("apiGraphQL") }
+    func testAPIMCP() throws { try run("apiMCP") }
+    func testAPIGRPC() throws { try run("apiGRPC") }
     // The whole Docker page, end to end: 80–110 s on a busy machine.
     func testDocker() throws { try run("docker", timeout: 300) }
     /// The Kubernetes page against the fake API server: the run's only
@@ -346,6 +354,7 @@ final class E2ETests: XCTestCase {
     func testSessionGroups() throws { try run("sessionGroups") }
     func testFullScreen() throws { try run("fullScreen") }
     func testImagePaste() throws { try run("imagePaste") }
+    func testAgents() throws { try run("agents") }
     func testSidebarPanels() throws { try run("sidebarPanels") }
     func testCloseKeys() throws { try run("closeKeys") }
     func testEditorZed() throws { try run("editorZed") }

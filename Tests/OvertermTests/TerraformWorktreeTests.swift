@@ -46,25 +46,50 @@ final class TerraformWorktreeTests: XCTestCase {
             in: lock([("registry.terraform.io/hashicorp/aws", "6.2.0"), ("registry.terraform.io/hashicorp/random", "3.6.3"), ("registry.terraform.io/globex/acme", "1.0.0")]))
         let drift = TerraformLockDrift.drift(here: here, there: there, worktree: "main")
         XCTAssertEqual(drift?.differences.map(\.provider), ["globex/acme", "aws"])
-        XCTAssertEqual(drift?.sentence, "globex/acme only in main (1.0.0); aws 5.80.0 here, 6.2.0 in main")
+        XCTAssertEqual(drift?.sentence, "globex/acme only on main (1.0.0); aws 5.80.0 here, 6.2.0 on main")
         XCTAssertNil(TerraformLockDrift.drift(here: here, there: here, worktree: "main"), "the same lock: nothing said")
         XCTAssertNil(TerraformLockDrift.drift(here: nil, there: nil, worktree: "main"))
         let missingHere = TerraformLockDrift.drift(here: nil, there: here, worktree: "main")
         XCTAssertEqual(missingHere?.sentence, "no lock file here; main's locks aws 5.80.0, random 3.6.3")
-        XCTAssertEqual(TerraformLockDrift.drift(here: here, there: nil, worktree: "bump-eks")?.sentence, "bump-eks has no lock file")
-        // One line a root, whatever the number of worktrees; a long list capped.
-        var other = TerraformLockDrift.drift(here: here, there: nil, worktree: "bump-eks")!
-        other.worktreePath = "/acme/bump-eks"
-        XCTAssertEqual(
-            TerraformLockDrift.summary([drift!, other, other]), "globex/acme only in main (1.0.0); aws 5.80.0 here, 6.2.0 in main — and 2 other worktrees")
+        // Main without a lock file has nothing to compare with: not this checkout's problem.
+        XCTAssertNil(TerraformLockDrift.drift(here: here, there: nil, worktree: "main"))
+        XCTAssertEqual(TerraformLockDrift.summary([drift!]), "globex/acme only on main (1.0.0); aws 5.80.0 here, 6.2.0 on main")
         XCTAssertNil(TerraformLockDrift.summary([]))
-        XCTAssertEqual(other.id, "/acme/bump-eks", "by path: names repeat")
         let many = TerraformLockDrift.versions(in: lock((1...7).map { ("registry.terraform.io/hashicorp/acme\($0)", "1.0.\($0)") }))
         XCTAssertEqual(
             TerraformLockDrift.drift(here: nil, there: many, worktree: "main")?.sentence,
             "no lock file here; main's locks acme1 1.0.1, acme2 1.0.2, acme3 1.0.3, acme4 1.0.4, 3 more")
         XCTAssertEqual(TerraformLockDrift.shortName("registry.opentofu.org/opentofu/random"), "random")
         XCTAssertEqual(TerraformLockDrift.shortName("tf.globex.example/acme/net"), "tf.globex.example/acme/net", "off the public registry: whole")
+    }
+
+    /// Needs init: a required provider its lock file doesn't pin — by its
+    /// source, not its local name; no lock file at all is another thing.
+    func testNeedsInitByProviderSource() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("acme-init-\(UUID().uuidString)", isDirectory: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        try """
+        terraform {
+          required_providers {
+            betteruptime = { source = "BetterStackHQ/better-uptime" }
+            aws = { source = "hashicorp/aws" }
+          }
+        }
+        """.write(to: root.appendingPathComponent("main.tf"), atomically: true, encoding: .utf8)
+        var facts = TerraformRootFacts.read(root: root, checkout: root)
+        XCTAssertFalse(facts.needsInit, "no lock file: not a provider missing from it")
+        XCTAssertTrue(facts.neverInitialised)
+        try lock([("registry.terraform.io/betterstackhq/better-uptime", "0.20.0"), ("registry.terraform.io/hashicorp/aws", "5.80.0")])
+            .write(to: root.appendingPathComponent(".terraform.lock.hcl"), atomically: true, encoding: .utf8)
+        facts = TerraformRootFacts.read(root: root, checkout: root)
+        XCTAssertFalse(facts.needsInit, "betteruptime is locked as better-uptime: its name isn't its type")
+        XCTAssertFalse(facts.neverInitialised)
+        try lock([("registry.terraform.io/betterstackhq/better-uptime", "0.20.0")])
+            .write(to: root.appendingPathComponent(".terraform.lock.hcl"), atomically: true, encoding: .utf8)
+        facts = TerraformRootFacts.read(root: root, checkout: root)
+        XCTAssertEqual(facts.unlocked, ["aws"])
+        XCTAssertTrue(facts.needsInit)
     }
 
     /// Read from the file, bounded, and read again when it changes.

@@ -54,7 +54,7 @@ libghostty's own threads and git calls.
 
 "That checkout" is `Tab.checkoutSource`, in order: an **attached** checkout
 (Worktrees → Attach to This Tab), else where the tab's **agent** works
-(`Tab.agentDirectory`, the claude/codex process's cwd as the census's light
+(`Tab.agentDirectory`, the agent process's cwd (any `Agent`) as the census's light
 tick reads it every 2 s for every tab of a window on screen, and — a window
 off screen has no light tick — `OffScreenAgents` for its tabs where an
 agent may work, and an agent's MCP call reads it again first, waiting for
@@ -625,7 +625,10 @@ something different is the one mistake this must not make. "Deny" and
 "don't ask again" are found by their words, never by their position.
 
 A tab reaches the inbox only when `TabActivity` says it needs you; the
-inbox is the attention list, not a screen scraper. It polls (1.5 s) only
+inbox is the attention list, not a screen scraper — for an agent that
+sends no signal, the screen check (Agents) is what marks it. Gemini CLI
+takes the digit alone (`confirmsOnKey`); opencode's dialog, with no
+numbers, is said and never answered. It polls (1.5 s) only
 while it is open, because reading a question means reading the screen.
 
 Also the Dock badge (as before) and, while anything waits, a menu bar
@@ -1364,12 +1367,115 @@ walks the closing panes' trees itself, on the main thread, at the close
 
 ## Agents
 
-`Agent` is a closed enum (Claude, Codex). An agent starts by typing its command
-into a fresh login shell (`initial_input`), so quitting it leaves a shell.
-Restore types `resumeCommand` (`claude --continue`, `codex resume --last`).
-Claude Code needs no configuration for tab flags: with `TERM_PROGRAM=ghostty`
-its default notification channel is OSC 777 and its progress bar (OSC 9;4) is
-on by default (checked against 2.1.280).
+`Agent` is a closed enum — Claude Code, Codex, opencode, pi, Gemini CLI —
+and adding one is that enum: its name, command and resume, symbol, Settings
+key (`agents.<agent>Arguments`), how its process is recognised, whether it
+reads a clipboard image on ⌃V (`ImagePaste`; not opencode, unestablished),
+and its launch's handoffs (`AgentLaunch`). The menus (File, the arrow by +,
+Overgit's worktree menu), ⌘K, New Task's picker and Settings list
+`Agent.allCases`. An agent starts by typing its command into a fresh login
+shell (`initial_input`), so quitting it leaves a shell. Restore types
+`resumeCommand`, each CLI's own: `claude --continue`, `codex resume --last`,
+`opencode --continue`, `pi --continue` (the directory's newest session),
+`gemini --resume latest` (sessions are per project).
+
+**Recognised** (`Agent.of(processName:)`, `Agent.of(arguments:)`, pure) by
+process name — `claude`, `codex` (its npm wrapper execs the native binary),
+`opencode` (a compiled Bun binary, no child), `pi` (it sets
+`process.title`) — or by argv: the first word's base name, or under `node`
+the script past the interpreter's flags. Gemini CLI is `node
+/opt/homebrew/bin/gemini`, and relaunches itself as `node
+--max-old-space-size=… …/@google/gemini-cli/bundle/gemini.js`; both are it.
+
+**The bridge, per agent** (`AgentLaunch`, pure; Browser has the server).
+Each the way the CLI takes a server for one launch, nothing written into
+its configuration, the pane's token only in the pane's environment, by
+name: a pane has `OVERTERM_MCP_CONFIG` (its Claude file),
+`OVERTERM_MCP_TOKEN` and `OVERTERM_MCP_URL` (its own path).
+- Claude Code: `--mcp-config "$OVERTERM_MCP_CONFIG"`.
+- Codex: `-c "mcp_servers.overterm-browser.url=\"$OVERTERM_MCP_URL\""
+  -c 'mcp_servers.overterm-browser.bearer_token_env_var="OVERTERM_MCP_TOKEN"'`
+  — a `-c` overrides that key path only (`config_override.rs`), and
+  `bearer_token_env_var` names the variable Codex sends as the bearer.
+- opencode: `OPENCODE_CONFIG_CONTENT='{"mcp":{"overterm-browser":{"type":
+  "remote","url":"{env:OVERTERM_MCP_URL}","headers":{"Authorization":
+  "Bearer {env:OVERTERM_MCP_TOKEN}"}}}}'` — inline config merged last over
+  the user's ("settings that do not conflict are preserved"), `{env:…}`
+  substituted. One text for every pane; a user's own
+  `OPENCODE_CONFIG_CONTENT` is replaced for that launch.
+- Gemini CLI: `GEMINI_CLI_SYSTEM_DEFAULTS_PATH=<Overterm's file>` — the
+  lowest settings layer, its `mcpServers` shallow-merged with the user's;
+  the server an `httpUrl` of `${OVERTERM_MCP_URL}` and a header `Bearer
+  ${OVERTERM_MCP_TOKEN}` (Gemini expands `$VAR`/`${VAR}` in every layer).
+  Not where a real system defaults file is installed, or the variable is
+  already set: that would be replaced. `mcp.allowed` or
+  `--allowed-mcp-server-names` in the user's own settings can still leave
+  it out.
+- pi: none — no MCP, by design (its README).
+The files of Overterm's an agent's launch names (`AgentLaunchFiles`, the
+support folder's `agents/`, 0600): Gemini's two defaults files, pi's
+extension, Gemini's Terraform policy — the same text for every pane, no
+token and no URL (those are the pane's variables), so nothing a pane owns
+is left behind when it closes; the pane's Claude file goes with the pane
+as before.
+
+**Saying when they wait.** Claude Code needs no configuration for tab
+flags: with `TERM_PROGRAM=ghostty` its default notification channel is
+OSC 777 and its progress bar (OSC 9;4) is on by default (checked against
+2.1.280). Codex sends OSC 9 on an approval and at a turn's end by default
+(`tui.notifications`, its auto method picks OSC 9 for Ghostty), while the
+terminal isn't focused. Gemini CLI's are off by default
+(`general.enableNotifications`): its defaults file above turns them on, as
+OSC 777. pi has none: `-e <Overterm's extension>` (pi's own `notify.ts`
+example, its OSC 777 branch) says "Ready for input" at `agent_end`.
+opencode's are off by default and live in its TUI config
+(`OPENCODE_TUI_CONFIG`, whose merge wasn't established): left alone.
+For any of them that sends nothing — opencode, an agent typed in a shell —
+the screen check (`AgentScreenCheck`, below).
+
+**The screen check** (`AgentScreenCheck`, pure;
+`TerminalWindowController+AgentScreen`). Every 3 s a window looks at the
+panes of its tabs that aren't in front of you, where something runs (an
+agent tab, or the ledger's running command), that haven't sent a
+notification or progress since their last command began. Which agent is
+in a pane's foreground group is a lookup in the census off the main
+thread (`foregroundAgent(in:snapshot:)`: the pane's slice, the terminal's
+foreground group as the table read it — no walk of its own), at most
+every 10 s a pane; only a pane with an agent has its screen read —
+the viewport's text, on the main thread (a `ghostty_surface_read_text`,
+under a millisecond for a screenful) — and parsed off it. A question
+there — an approval in numbers (`AgentPrompt.isApproval`: a question, one
+choice marked, one that says no — never an answer's numbered list), or
+opencode's `△ Permission required` dialog with its Allow once / Reject —
+marks the tab waiting with its words (`TabActivity.agentAsked`), and
+notifies as an agent's notification would; gone from the screen, the
+mark goes (`agentAnswered`), unless something else marked the tab since.
+A tab in front of you is read only while such a question stands, to see
+it go. The cost, then: nothing for a tab you look at or one at its
+prompt; for a background agent that signals, one lookup at its start; for
+one that doesn't, a lookup every 10 s and a screen read every 3 s.
+
+**Their questions** (`AgentPrompt`): Claude Code's `❯ 1. Yes`, Codex's
+`› 1. Yes, proceed (y)` with the command between the question and the
+choices (the question is the nearest line above ending in "?"), Gemini
+CLI's `● 1. Allow once` inside its round box (`│ … │` taken off), whose
+list takes the digit with no Return (`Choice.confirmsOnKey`: a Return
+would reach its prompt). opencode's dialog has no numbers: the Inbox says
+it and offers no answer. pi asks nothing.
+
+**Terraform's guard** (`TerraformAgentGuard.launch(for:)`): Claude Code's
+`--disallowedTools`; opencode's `OPENCODE_PERMISSION` (its `bash` rules,
+merged after the user's; the last match wins); Gemini CLI's
+`--admin-policy <Overterm's policy file>` — admin tier, the user's own
+policies kept (`--policy` would replace them), not where an
+administrator's policies are installed (Gemini then ignores it: said).
+Codex and pi: not guarded, said on the pane.
+
+What each was checked against: Claude Code 2.1, Codex at
+openai/codex `c08843a` (its docs and source; not installed here),
+opencode 1.18.31 (its `--help` and the strings of its binary), pi 0.73.1
+(its npm package's README, docs and dist), Gemini CLI 0.40.1 (`--help` and
+its installed bundle). None was run: a session reaches its model provider.
 
 ## Usage
 
@@ -1636,7 +1742,10 @@ driving it are in the same window as the code.
   tools — the window's confirmation naming B's checkout (Terraform
   analysis, D-15). The file's header is `Bearer ${OVERTERM_MCP_TOKEN}`,
   which Claude Code expands, and `OVERTERM_MCP_TOKEN` is in that pane's
-  environment only (`BrowserBridge.environment(forPane:)`). Every write an
+  environment only (`BrowserBridge.environment(forPane:)`), with
+  `OVERTERM_MCP_URL`, the pane's own address, for the agents that take a
+  server another way — Codex, opencode, Gemini CLI (Agents, the bridge per
+  agent); pi has no MCP. Every write an
   MCP call asks about says who asks — "Asked through MCP by Claude in the
   tab “…”" (`MCPAsker`: the call's pane as a task-local, its tab by
   `tab.terminals`, the agent by `tab.agent` or its process) — in that
@@ -1728,6 +1837,77 @@ opens in Bruno and runs under `bru run` — nothing of Overterm's own on disk.
   about the agent's own tab's checkout (`agentAPI(forPane:)`). The server
   runs while either tool set is given (`BrowserBridge.update`). The
   response's ✦ hands a request and what came back to an agent.
+
+### GraphQL
+
+Bruno's GraphQL requests (`meta type: graphql`, `body:graphql` and its
+vars) are sent as JSON as they were; what was added is the schema
+(`GraphQLSchema`, pure). It is read by introspection — GraphiQL's query,
+sent with the request's own URL, headers and auth (`APIWorkspace.loadGraphQLSchema`)
+— kept per endpoint for the session, and shown in a Schema tab
+(`GraphQLSchemaView`). The query completes from it (`APICodeView.complete`,
+AppKit's completion with nothing picked first): the place of the caret is
+read from the text alone — the type at each `{`, a field's parentheses, a
+type after `on` or a variable's colon — strings and comments skipped, so a
+query that doesn't parse yet still completes.
+
+### MCP servers
+
+MCP Inspector's work beside the editor. Servers come from the agents'
+configs, read never written (`MCPServerConfig.discover`): the checkout's
+`.mcp.json`, Claude Code's `~/.claude.json` (the user's, and this
+checkout's under `projects`), Codex's `~/.codex/config.toml` (`TOMLLine`,
+as much TOML as those tables use); `${VAR}` and `${VAR:-default}` expanded;
+opencode's `$XDG_CONFIG_HOME/opencode/opencode.json(c)` (`mcp`: `local`
+with its `command` array, `remote` with `url` and `headers`; `{env:VAR}`),
+Gemini CLI's `~/.gemini/settings.json` (`mcpServers`: `httpUrl`, `url`,
+`command`; `$VAR` and `${VAR}`, an unset one left as written).
+Servers added here are Overterm's (`MCPAddedServers`, `API/MCPServers.json`
+in its folder), their headers' and env's values in the keychain — and
+nothing goes into a Bruno collection, which has no MCP request.
+
+`MCPClient` (an actor) is JSON-RPC 2.0 over stdio (a process run with the
+user's shell environment, ended at quit), Streamable HTTP (its
+`Mcp-Session-Id`, answers as JSON or an event stream) or the 2024 SSE
+transport; `initialize`, then what `capabilities` says the server has. An
+event stream is read by `SSELines`, which keeps the empty lines that end
+events — `AsyncBytes.lines` drops them. A request unanswered in 60 s fails.
+`MCPInspector` (the API workspace's) lists tools, resources (and templates)
+and prompts, calls a tool with JSON arguments started from its input schema,
+logs every message and stderr; `MCPPageView` is the right-hand slot's page.
+
+### gRPC
+
+Bruno's gRPC request (`meta type: grpc`; `grpc { url, method, methodType,
+protoPath, auth }`, `metadata`, a `body:grpc { name, content }` a message —
+`BruFile.setBlocks` keeps several blocks of one name, and a content always in
+triple quotes, as Bruno writes it). No gRPC library:
+
+- **`Protobuf`** (pure): the wire format; FileDescriptorProto and
+  FileDescriptorSet read into a `Registry`; a message as proto3's JSON to
+  bytes and back by its descriptor — 64-bit numbers as strings, enums by
+  name, bytes in base64, maps, oneofs, Timestamp, Duration, the wrappers,
+  Struct/Value/ListValue — and a skeleton to start a message from.
+- **`GRPCConnection`**: HTTP/2 on swift-nio-http2 — a stream a call, the
+  HEADERS with `te: trailers` and the metadata, a DATA frame a message with
+  gRPC's five-byte prefix, the status in the trailers (or the headers alone,
+  trailers-only). TLS by ALPN h2, h2c to a local server; `grpc://` and
+  `grpcs://` as Bruno reads them. Messages are handed on as they arrive.
+- **Where methods come from**: the collection's `.proto` files (the
+  request's `protoPath`, else bruno.json's `protobuf`) compiled by the
+  `protoc` on this Mac (`GRPCProtoc`, not shipped), else the server's
+  reflection, v1 then v1alpha (`GRPCReflection`; what the files import asked
+  for by name).
+- **`GRPCPlan`** fills variables as an HTTP request's plan does; the
+  collection's and folders' headers become metadata, and the auth
+  (inherited too) a header. **`GRPCRequestView`**: the method picker, the
+  messages, metadata, auth, docs; the status, every reply, headers and
+  trailers. One message for a unary call or a server stream, all of them
+  for a client or bidi stream (sent, then the stream half-closed).
+- **Tested** against `E2EGRPCServer` (h2c, `Fixtures/grpc/shop.proto`'s
+  service with its descriptors embedded, reflection v1 and v1alpha) and
+  `E2EMCPServer` (a stdio script, a Streamable HTTP server) — the
+  `apiGraphQL`, `apiMCP` and `apiGRPC` scenarios.
 
 ## Notes (⌥⌘N, sidebar)
 
@@ -1830,8 +2010,8 @@ in it, and `.obsidian/` is read for where things go, never written.
 ## Database (⌥⌘B, sidebar)
 
 A database client beside the terminal, DataGrip's work in the sidebar and
-the editor: PostgreSQL, MySQL, SQLite, Redshift, ClickHouse, BigQuery,
-Redis, and Prometheus, Loki and Tempo (Settings ▸ Database turns it off; its rows fetched and asking before a
+the editor: PostgreSQL, MySQL, MariaDB, SQLite, Redshift, ClickHouse, BigQuery,
+Redis, MongoDB and Amazon DocumentDB, DynamoDB, InfluxDB, Neo4j, Oracle, Prometheus, Loki and Tempo, and Elasticsearch and OpenSearch (Settings ▸ Database turns it off; its rows fetched and asking before a
 destroying statement are there too).
 
 - **Connections** (`DatabaseConnection`, `DatabaseStore`): a name, a kind,
@@ -1871,10 +2051,25 @@ destroying statement are there too).
   only reads, whether it destroys; what the caret is writing — a table
   after FROM, a column after `alias.` — and the candidates from the
   catalog, a schema not read yet read and the list asked again.
-- **Tests**: `DatabaseDriverTests` run PostgreSQL, MySQL and ClickHouse in
-  Docker (`Scripts/database-test-servers.sh`, then `OVERTERM_DB_TESTS=1`);
+- **Tests**: `DatabaseDriverTests` run PostgreSQL, MySQL, MariaDB and
+  ClickHouse in Docker (`Scripts/database-test-servers.sh`, then `OVERTERM_DB_TESTS=1`);
   SQLite always; BigQuery's signing and answers offline. The `database`
-  scenario runs the panel and a console on SQLite.
+  scenario runs the panel and a console on SQLite. The Server page,
+  editing and users: `DatabaseOperationsTests` (the pure parts) and
+  `DatabaseOperationsDriverTests` (SQLite always; PostgreSQL, MySQL,
+  MariaDB with the script's pg_stat_statements and performance_schema on —
+  a session cancelled, a lock waited on, a user made and signed in with
+  its password); the `databaseOps` scenario edits and saves a SQLite
+  result in the grid and opens its Server page — and PostgreSQL's Server
+  and Users pages when :55432 answers. Oracle's, ClickHouse's and BigQuery's:
+  `DatabaseOperationsKindsTests` (pure) and `DatabaseOperationsKindsDriverTests`
+  (ClickHouse from the script — its user may manage access, so SQL users are
+  made and signed in with — and Oracle Database Free, as `ot`, who reads no
+  `v$` view, and as SYSTEM; BigQuery has no server to test against); the
+  `databaseOpsClickHouse` scenario edits a ClickHouse result as mutations,
+  stops a query on its Server page and reads its Users page, against
+  `E2EClickHouseServer` — a fake that keeps one table and changes it by the
+  statements a Save sends.
 
 ### Redis (Redis Insight's work, in the panel and the right-hand pane)
 
@@ -1917,6 +2112,74 @@ destroying statement are there too).
   free port, nothing on disk, TLS with a certificate made for it) —
   `RedisDriverTests` and the `redis` scenario; skipped without one (CI).
 
+### MongoDB and Amazon DocumentDB
+
+- **The driver** (`MongoDriver`): OP_MSG on SwiftNIO, no client library —
+  a command is a BSON document (`BSON.swift`: values, documents in their
+  order, decimal128, ObjectIds made as drivers make them), its answer one
+  (`MongoWire`, `MongoReplyHandler`: replies matched to requests by id).
+  `hello` (`isMaster` before 4.4), then SCRAM (`MongoSCRAM`, pure,
+  CryptoKit and CommonCrypto's PBKDF2): SHA-256 when the server says the
+  user has it, SHA-1 otherwise — MongoDB's SHA-1 password is its MD5
+  digest of `user:mongo:password`; the server's signature is checked.
+  The user's database is `authSource` (the form's Auth database, admin
+  when empty). TLS is on from the first byte or off, as Redis's; Verify
+  Full checks against the system's roots or the connection's CA bundle
+  (`caFile`). A replica set's hosts (`a,b:27018` in Host) or an srv name's
+  (`MongoSRV`: dnssd's SRV and TXT records, the hosts checked to be in the
+  name's domain, read at every connect) are tried in order and the
+  primary followed; one host, or a tunnel's local end, is spoken to
+  directly — reads on a secondary say `primaryPreferred`. A tunnel takes
+  one host, never an srv name or a list.
+- **The console** (`MongoShell.swift`, pure): the mongo shell's
+  statements, read — never evaluated: `show dbs`, `use x`,
+  `db.<c>.find(…).sort(…).limit(n)`, `findOne`, `aggregate`,
+  `countDocuments`, `distinct`, the writes, `findOneAnd…`, indexes,
+  `db.runCommand`/`adminCommand`, `getSiblingDB`, `getCollection`. Values
+  in the shell's notation (`ObjectId()`, `ISODate()`, `NumberLong()`,
+  `NumberDecimal()`, regex literals, unquoted keys) and Extended JSON's
+  `$oid` forms. A variable or a function is said to be unsupported. A
+  statement is a line or a bracketed block; `;` ends one, a line starting
+  with `.` goes on with the one above. `MongoCommand.onlyReads` is an
+  allow-list of commands (an aggregate with `$out`/`$merge` writes;
+  anything unread writes); `danger` names `deleteMany({})`, an
+  `updateMany({})`, drops, `$out`. The driver refuses a write on a
+  read-only connection too. Completion: a collection after `db.`, a
+  method after `db.<c>.`.
+- **Answers** (`MongoResult`): documents a row each, their top-level
+  fields as columns across the page (`_id` first), a nested value as the
+  shell writes it — what the console reads back; a string as itself, a
+  date as its ISO time. One past the row limit is read (getMore across
+  batches) to say there are more, the cursor then killed. A write says
+  what it did (inserted with the ids made for it, matched/modified,
+  deleted).
+- **The catalog**: databases (admin, config, local left out unless the
+  connection's), a database's collections (views marked), and as columns
+  the fields of each collection's first 20 documents — a collection has
+  no schema to read. Find First 100 names its database
+  (`getSiblingDB`): `use` may have moved `db`.
+- **DocumentDB** is the same driver: TLS on by default, Verify Full
+  against Amazon's `global-bundle.pem` chosen in the form; nothing is
+  retried, as its `retryWrites=false` asks. A command it refuses that
+  MongoDB takes is said so. Not tested against a real cluster here.
+- **Docker and Kubernetes**: a `mongo` container or pod is a connection —
+  `MONGO_INITDB_ROOT_*`, in admin; Bitnami's app user in its own database.
+- **Tests**: `MongoTests` (BSON, the shell, the RFCs' SCRAM examples,
+  connection strings, SRV records), `MongoFakeServerTests` against
+  `E2EMongoServer` (an in-memory mongod: OP_MSG, batches of 100) — and
+  the `mongodb` scenario —, `MongoDriverTests` against mongo:7 in Docker
+  (`OVERTERM_DB_TESTS=1`; plain and TLS on one port, verified against a CA
+  the script makes in `$TMPDIR`).
+
+### MariaDB
+
+MySQL's driver (MySQLNIO): the same handshake, SQL and catalog;
+backquoted names. A user signed in with MariaDB's own plugins (ed25519,
+PARSEC) is refused with what to do — MySQLNIO speaks only
+`mysql_native_password` and `caching_sha2_password`. Docker's `mariadb`
+image, Kubernetes' pods and Terraform's outputs give the MariaDB kind.
+Tested against mariadb:11.4 (`DatabaseDriverTests.testMariaDB`).
+
 ### Prometheus, Loki, Tempo (metrics, logs, traces)
 
 - **One driver** (`ObservabilityDriver`): their HTTP APIs, sharing a base
@@ -1950,6 +2213,660 @@ destroying statement are there too).
   API's documented shapes (`ObservabilityTests`, the `observability`
   scenario) — no servers are run here.
 
+### Elasticsearch, OpenSearch (search engines)
+
+- **One driver** (`SearchDriver`): their shared REST API over URLSession —
+  a base URL (TLS as the other HTTP kinds, `ClickHouseTrust`: Require
+  takes Elasticsearch 8's own certificate, Verify Full checks it;
+  `basePath` behind a proxy; an SSH tunnel's local end). Basic auth with a
+  user; without one the password field holds an API key (`ApiKey`,
+  Elastic's encoded form, or `id:key` encoded here) or `Bearer …`
+  (`SearchAuth`). OpenSearch on AWS signs with SigV4 (`S3Signer`, service
+  `es`, or `aoss` for Serverless) from an AWS profile, the region from the
+  endpoint's name. A URL or an Elastic Cloud ID pasted in the form fills it
+  (`SearchAddress`).
+- **The console** (`SearchText`, `SearchRequest`, pure): Kibana Dev
+  Tools' syntax — `GET /orders/_search`, its JSON body below; a request
+  ends at the next method line, or a blank line once its braces close (a
+  blank line inside a body doesn't end it); `#` and `//` comments;
+  `"""…"""` as a JSON string; `_bulk`/`_msearch` bodies compacted to a
+  line an object. URLSession sends no body with a GET, so a GET with one
+  to an API that reads by POST too (`_search`, `_count`…) goes as that
+  POST; to any other it is refused, never sent without its body.
+- **What came back** (`SearchResults`, pure): a search's hits as rows —
+  `_index`, `_id`, `_score` (not when sorted), then `_source`'s top-level
+  fields, nested ones as JSON — the total and took in the message; with
+  no hits, one aggregation of buckets as rows (key, doc_count, each
+  sub-aggregation's value), else the aggregations' JSON; `_cat/*` with
+  `format=json` added, as rows in the server's column order; SQL's,
+  OpenSearch SQL/PPL's and ES|QL's columns as theirs; a count; anything
+  else its JSON pretty in one cell, `acknowledged`/`result`/`deleted`
+  said in the message. An error is the server's `type: reason — cause`.
+- **Reads and writes**: GET and HEAD read, and a POST only to the APIs
+  that read (`_search`, `_count`, `_msearch`, `_cat`, `_sql`, `_query`,
+  `_eql`, `_field_caps`…) — never a POST to `_mapping` (it changes it),
+  `_pit` or `_async_search` (they keep something). Agents read the same
+  but not the security APIs. Asked first: DELETE of an index (a pattern
+  or `_all` said so) or a data stream, `_delete_by_query`,
+  `_update_by_query`.
+- **The catalog**: folders for indices (hidden ones, `.`-named, left
+  out; each with its documents counted, or closed), data streams and
+  aliases (only the folders that have any); an index's mapping as its
+  columns — dotted (`address.city`), multi-fields (`note.keyword`), the
+  type as the column's — a data stream's from its newest backing index,
+  an alias's from its first. One `GET /_mapping` a catalog read.
+- **Docker**: `elasticsearch` and `opensearch` images (not Dashboards,
+  Kibana or an exporter) open as a connection — `elastic` and TLS
+  unless the env turns security off; `admin` and its demo certificate for
+  OpenSearch unless `DISABLE_SECURITY_PLUGIN`.
+- **Tested**: the pure parts always (`SearchTextTests`); the driver
+  against Elasticsearch 8 (security on, user `ot`, an API key, a wrong
+  password, Verify Full refused) and OpenSearch 2 (security off) with
+  `Scripts/database-test-servers.sh search` and `OVERTERM_DB_TESTS=1`
+  (`SearchDriverTests`).
+
+### DynamoDB, InfluxDB, Neo4j (REST APIs, their own console languages)
+
+- **Shared** (`KindConsoleText`, `HTTPDriverTransport`): each kind's
+  console language is a `KindConsoleText` (`DatabaseKind.consoleText`),
+  asked first by `statements`, `verb`, `onlyReads`, `agentReads`, `danger`
+  and `subject`; the panel's Select Top is `DatabaseKind.browseStatement`.
+  The drivers share a base URL (TLS Off, Require or Verify Full —
+  `ClickHouseTrust`; Prefer is plain), a failure to reach the server said
+  as one (nothing there, no such host, TLS), JSON values as text. A pasted
+  address fills the form (`KindAddress`, `HTTPKindFields`). Docker:
+  `neo4j` maps to its HTTP port, and InfluxDB and DynamoDB Local — which
+  have no client in `DockerClient` — through `DockerDatabaseGuess.panelOnlyWords`.
+- **DynamoDB** (`DynamoDBDriver`, `DynamoDBText`): the JSON API
+  (`X-Amz-Target: DynamoDB_20120810.*`) signed by `S3Signer` as service
+  `dynamodb`; an AWS profile, or the access key (User) and its secret (the
+  keychain's password); AWS's endpoint for the region (Location), or
+  DynamoDB Local's — signed with placeholders when no key is given. The
+  console is PartiQL (`ExecuteStatement`), followed page by page to the row
+  limit (100 pages at most); items are rows — the table's keys first, then
+  every attribute by name; S and N as written, B base64, BOOL a word, NULL
+  NULL, sets, lists and maps as JSON (`DynamoItems`). The tree: one folder,
+  the region; its tables; a table's keys (partition, sort) and indexes. Only
+  SELECT reads; a DELETE or UPDATE without WHERE is asked about. No tunnel to
+  AWS's endpoint (it is signed for its own host).
+- **InfluxDB** (`InfluxDBDriver`, `InfluxDBText`): the version is Location
+  (`1`, `2`, `3`) or `/ping`'s `X-Influxdb-Version`. 1.x: InfluxQL at
+  `/query` (a read a GET, a write a POST), Basic auth. 2.x: Flux at
+  `/api/v2/query` (annotated CSV, `InfluxParse.flux`), a token and an
+  organization (Project); a statement that starts as InfluxQL goes through
+  the 1.x compatibility API, the bucket its database. 3.x: SQL at
+  `/api/v3/query_sql`, SHOW at `query_influxql`, as CSV. A block of lines
+  up to a blank one is a statement, a `;` ends one too; `USE db` alone or
+  leading a statement says the database (bucket); `WRITE` and line protocol
+  — the only write outside the query languages — posts the points. Flux
+  reads unless it calls `to()`/`wideTo()` or a package that posts. Series
+  are flattened: the measurement when several, tags, then columns. The
+  tree: databases or buckets (InfluxDB's own `_…` last) → measurements →
+  fields with their types and tags (2.x by InfluxQL's SHOW … KEYS, else
+  Flux's `schema` a measurement at a time, 50 at most).
+- **Neo4j** (`Neo4jDriver`, `Neo4jText`): the transactional HTTP API
+  (`/db/<db>/tx/commit`, rows and graph), else the Query API
+  (`/db/<db>/query/v2`, 5.19+ and Aura) where the first answers 404; Basic
+  auth. A node is `{"labels", "properties"}`, a relationship `{"type",
+  "properties"}`, a path the list of both. Statements end at `;` or a
+  blank line; `:use db` switches. Read-only is Neo4j's own read mode
+  (`access-mode: READ`, `accessMode: Read`) and a clause that writes
+  (CREATE, MERGE, SET, DELETE, REMOVE, DROP, LOAD CSV, FOREACH, `IN
+  TRANSACTIONS`…) refused before sending — a property `n.set` or a label
+  `:Create` isn't one; an agent's procedures only from a list that reads
+  (`db.labels`, `db.schema.*`…). A DELETE with no WHERE, property or LIMIT
+  is asked about. The tree: databases → labels and `[:TYPES]` → their
+  property keys and types (`db.schema.nodeTypeProperties`).
+- **Tested**: pure parts always (`DynamoDBTests`, `InfluxDBTests`,
+  `Neo4jTests`); the drivers against DynamoDB Local, InfluxDB 2.7, 1.11 and
+  3 Core and Neo4j 5 in `Scripts/database-test-servers.sh` with
+  `OVERTERM_DB_TESTS=1`.
+
+### RabbitMQ (the management API, a console language of ours); not Kafka
+
+- **RabbitMQ** (`RabbitMQDriver`, `RabbitMQText`): the management plugin's
+  HTTP API (15672, 15671 with TLS; Path for one behind a proxy), Basic
+  auth, through `HTTPDriverTransport` like the REST kinds — TLS, the
+  tunnel, the address pasted (`KindAddress`: `http(s)://` as the API's
+  place, `amqp(s)://…/vhost` as the broker's — the vhost, the API's port,
+  443 for CloudAMQP). AMQP itself is never spoken. The vhost is the
+  connection's Database (`/` unless set). The console is `RabbitText`'s
+  language, a command a line (a payload may go on below), `#` comments —
+  a new console starts with them as its help (`KindConsoleText.help`):
+  `USE <vhost>`, `PEEK <queue> [n]` (`POST …/get` with
+  `ackmode=reject_requeue_true`: the messages stay, marked redelivered —
+  on a quorum queue a peek counts as a delivery, said; a stream refused),
+  `PUBLISH <exchange> <key> <payload>` (the payload as written; "routed"
+  or dropped, said), `PURGE <queue>`, and `GET|PUT|POST|DELETE /api/…`
+  with a JSON body below. A message is a row: payload (UTF-8, else
+  `base64:`), key, exchange, redelivered, properties and headers as JSON;
+  any other answer a row an object (`name` and the counts first), an
+  object as keys and values. The management API's counts are sampled
+  (every 5 s): PEEK's "of N" comes from the `get`'s own `message_count`,
+  PURGE says none. Read-only: only USE, PEEK and GET are sent; an agent
+  is asked about a PEEK (its messages go back redelivered, counted on a
+  quorum queue) and a GET of `/api/users`, `/api/definitions` or the
+  parameters (password hashes, a shovel's URI); PURGE and DELETE ask.
+  No `Accept` header: RabbitMQ refuses a purge that sends one (406). The
+  tree: vhosts → queues (type, ready, unacked, consumers) and
+  `exchange:<name>`s (the default one `amq.default`) → their bindings
+  with their keys, the default exchange's implied ones left out. Docker:
+  `rabbitmq` images through `panelOnlyWords` on 15672 — only an image
+  with the management plugin publishes it — with `RABBITMQ_DEFAULT_*`
+  (Bitnami's `RABBITMQ_USERNAME`…), else `guest`. Tested: `RabbitMQTests`,
+  against `rabbitmq:3-management` with `Scripts/database-test-servers.sh
+  queues` and `OVERTERM_DB_TESTS=1`.
+- **Kafka** is not offered (not a kind). The rule is a maintained Swift package
+  or nothing, and `swift-kafka-client` doesn't fit yet: 1.0.0 (and
+  1.0.0-beta.1) need swift-tools 6.2.3 and macOS 15; the last that builds
+  with Swift 6.1 for macOS 13, 1.0.0-alpha.9, links librdkafka against the
+  system's OpenSSL found by pkg-config — Homebrew's, a dylib under
+  `/opt/homebrew` the shipped app can't count on — and its API has no
+  metadata: no topics, partitions or watermark offsets for the tree (its
+  C module is a target, not a product, so not reachable either). When
+  the package's macOS floor allows 13 again (or the app's moves to 15)
+  with the BoringSSL build 1.0.0 has, it fits.
+
+### Oracle Database
+
+- **The driver** (`OracleDriver`): OracleNIO (`lovetodream/oracle-nio`,
+  TNS on SwiftNIO, Apache-2.0 — no Instant Client), its tracing trait off;
+  on NIOPosix's loop, as Network.framework's waits out the timeout on a
+  refused port. Host, port, user, password; the Database field is the
+  **service name**, or a SID when "Connect by" says so (`location` is
+  `sid`). TLS is TCPS from the first byte (Oracle doesn't negotiate, so
+  Prefer is plain): Require doesn't check the certificate, Verify Full
+  checks it against the host (the tunnel's `serverName`). An Easy Connect
+  string pasted fills the form (`OracleAddress`: `host:port/service`,
+  `//host/service`, `tcps://…`, `host:port:SID`, JDBC's thin URL, and
+  SQL*Plus's `user/password@…` — its password to the keychain); a
+  `(DESCRIPTION=…)` descriptor isn't spread. A failure is said: a refused
+  login (ORA-01017), locked or expired, nothing at the port, the listener
+  closing before sign-in — a service it doesn't serve (OracleNIO reads the
+  listener's REFUSE as the connection closing), TLS.
+- **The console** (`OracleText`, pure): as SQL*Plus splits it — SQL ends at
+  `;`; a PL/SQL block (`BEGIN`, `DECLARE`, `<<label>>`, `CREATE …
+  PROCEDURE/FUNCTION/PACKAGE/TRIGGER/TYPE/…`) keeps its `;`s and ends at a
+  line of `/` alone, or the text's end; `'…'`, `q'[…]'`, `"…"`, `--` and
+  `/* */` skipped, `#` a name's letter. SQL is sent without its `;`, a block
+  with its last one; `EXEC p(…)` is `BEGIN p(…); END;`; `DESC [owner.]t`
+  is answered from ALL_TAB_COLUMNS as SQL*Plus lays it out. Each
+  statement commits itself (`autoCommit`). After a block, DBMS_OUTPUT's
+  lines (enabled before the first) follow "PL/SQL procedure successfully
+  completed." in the message. History puts a `/` after a block.
+- **Values as text** (`OracleValueText`, pure, from the bytes): NUMBER
+  exactly (base-100 digits, never through a Double), DATE `2024-02-29`
+  (with a time when it has one), TIMESTAMP to its nanoseconds, WITH TIME
+  ZONE at its own offset, intervals as Oracle writes them, RAW in hex,
+  BINARY_FLOAT/DOUBLE, BOOLEAN. LOBs are fetched as locators: a CLOB's
+  first 200 characters and its length (the first 50 CLOBs of a result;
+  the rest by length), a BLOB by its size — never dumped whole. JSON,
+  VECTOR and objects are named, with the function that shows them. An
+  empty read's columns come from `DBMS_SQL.DESCRIBE_COLUMNS3` (parsed,
+  never run — OracleNIO describes none without rows).
+- **Reads and writes**: SELECT, WITH and DESC read — not with `FOR
+  UPDATE`; a block, EXEC, DML and DDL write. A read-only connection
+  refuses the rest before sending, and runs each read inside `SET
+  TRANSACTION READ ONLY`, ended after it (the next read sees what was
+  committed since). Agents (`agentReads`): no write's word anywhere, no
+  `WITH FUNCTION`, no `SELECT … INTO`. Asked first: DROP, TRUNCATE,
+  DELETE or UPDATE without WHERE — inside a block too, and a DROP or
+  TRUNCATE as `EXECUTE IMMEDIATE`'s literal.
+- **The catalog**: the user's own schema first, then every one not
+  `oracle_maintained`; its tables (not nested, secondary or in the
+  recycle bin) and views; ALL_TAB_COLUMNS's columns with their types as
+  DESC says them (`VARCHAR2(40 CHAR)`, `NUMBER(12,2)`). Select Top is
+  `FETCH FIRST n ROWS ONLY`, names quoted unless upper-case.
+- **Docker**: gvenzl's `oracle-free`/`oracle-xe`, Oracle's registry's
+  `database/free|express|enterprise` and `oracle/database` (not Oracle
+  Linux or GraalVM) open as a connection — APP_USER over SYSTEM, the
+  default pluggable database (FREEPDB1, XEPDB1, ORCLPDB1) unless
+  ORACLE_DATABASE/ORACLE_PDB names one.
+- **Tested**: pure parts always (`OracleTests`); the driver — every type
+  above, the limit, PL/SQL, DESC, the catalog, read-only, a wrong
+  password, an unknown service, a closed port, TLS to a plain listener —
+  against Oracle Database Free with `Scripts/database-test-servers.sh
+  oracle` and `OVERTERM_DB_TESTS=1` — its Server page, editing and users in
+  `DatabaseOperationsKindsDriverTests`.
+
+### What a driver does beyond statements (DatabaseOperations)
+
+Three protocols a driver conforms to, as far as its engine supports it —
+`DatabaseMonitoring` (the Server page), `DatabaseTableEditing` (rows
+edited), `DatabaseUserManagement` (the Users page) — in
+`DatabaseOperations.swift`, with the values every kind fills in: a
+session (`DatabaseActivity`: an id cancelling names, who, a database or
+none, where from, state, statement, how long, `isOwn`), a statement's
+record (`SlowQuery`), a wait (`LockWait`), sizes, headline numbers
+(`ServerFact`); a table's key (`TableKey`: primary, a unique key over NOT
+NULL columns, SQLite's rowid); a user or role (`DatabaseUser`, never a
+password or its hash) and its grants. A read whose source isn't there
+says so — `Monitored.unavailable(MonitorGap)`: the reason and the line
+that turns it on — never an empty table. The UI asks the driver's *type*
+(`DatabaseDrivers.features(of:)`, through `driverType(of:)`): a kind whose
+driver doesn't conform shows no item; a static on the protocol says it of
+a kind (Redshift, PostgreSQL's driver, edits no rows). A new kind fills
+them in its own file (`PostgresOperations`, `MySQLOperations`,
+`SQLiteOperations`); a document store's "row" is a document by `_id`, a
+session may have no database. Every read goes through the driver's own
+connection — the session's actor, never a second connection — and isn't
+recorded in the history. PostgreSQL's, MySQL's and Oracle's drivers run one
+operation at a time (`exclusive`, as Redis's): a Save's transaction is
+BEGIN, its statements, COMMIT, and a read of the Server page between
+them would run inside it.
+
+A kind whose words aren't SQL's — Neo4j, InfluxDB, RabbitMQ, Redis
+(`Neo4jOperations`, `InfluxDBOperations`, `RabbitMQOperations`,
+`RedisOperations`), MongoDB and DocumentDB, Elasticsearch and OpenSearch,
+DynamoDB (`MongoOperations`, `SearchOperations`, `DynamoDBOperations`) —
+and a SQL engine whose ways differ — Oracle, ClickHouse, BigQuery
+(`OracleOperations`, `ClickHouseOperations`, `BigQueryOperations`) —
+fills a few hooks, each with a default that is the SQL engines' way:
+
+- `sessionStops` — how a session is stopped, as `SessionStop`s: the menu
+  item, the confirmation's question, what is sent, what it does (Neo4j's
+  TERMINATE TRANSACTION, Redis's CLIENT KILL, RabbitMQ's connection
+  closed, MongoDB's `killOp` — an operation, never its session —, a
+  search task's `_cancel`); empty, none offered (DynamoDB); nil, the SQL
+  engines' two (`SessionStop.sql`: cancel the statement, terminate the
+  session).
+- `editableResult(for:result:)` finds a result's rows itself — a graph's
+  nodes, a find's documents, a search's hits, a SELECT's items — and their
+  key (`TableKey.Kind.identity`, said as given: `elementId`, `_id`,
+  `_index and _id`, a partition and sort key) with each column's type
+  (`EditableResult.types`, from `QueryResult.types` — a column of several
+  types is `mixed`); nil, the SQL way (`EditableQuery`, `key(of:)`, the
+  catalog's columns). `editStatements` makes the Save's statements in the
+  kind's console language (SQL's default: `EditStatements` in
+  `editDialect`), each with its `terminator` in the listing
+  (`EditStatement.listing`: `;`, or a blank line after a JSON body) and a
+  `note` the confirmation says once (Neo4j's "its relationships go too");
+  `editSaveNote` says how they run together. Each statement is written as
+  its console writes it and read back by the console's own parser to run —
+  what the preview shows is what runs. A document's field can be removed,
+  not only set to null (`CellValue.absent`, the grid's Remove Field, where
+  `EditableResult.removesFields`).
+- `userStatements()` — a `UserStatementMaking` (`UserStatementMaking.swift`):
+  the statements, or requests, its Users page makes, and what its sheets
+  ask (`UserForm`: an account field — MySQL's host, MongoDB's database it
+  signs in to, filled with the connection's —, toggles, grant kinds, the
+  password note; `offers` which buttons a user or role gets;
+  `roleCandidates`). `SQLUserStatements` wraps `UserStatements` for the SQL
+  engines; `Neo4jUserStatements`, `InfluxUserStatements`,
+  `Influx2UserStatements`, `RabbitUserStatements`, `RedisUserStatements`,
+  `MongoUserStatements`, `SearchUserStatements` are the others';
+  `OracleUserStatements` and `ClickHouseUserStatements` are SQL of their
+  own (`UserForm.sql`: listed with `;` as SQL's are). A
+  request-shaped user change (RabbitMQ's, InfluxDB 2's) is a `UserRequest`
+  line, `METHOD /api/path {json}`, `NEW` before it where it must not
+  replace what is there.
+
+A size that counts things rather than bytes (nodes, relationships) says
+its `unit`. A slow statement may say what else its record does
+(`SlowQuery.detail`: BigQuery's bytes and slot time, Oracle's CPU and
+buffer gets, ClickHouse's bytes read) — a "cost" column for agents. A key
+may carry a word for the edit bar and its help (`TableKey.label`/`note`:
+"mutations", "key not enforced", "by ROWID") and columns a new row sets but
+an UPDATE never changes (`fixedColumns`, `EditableResult.isUpdatable`:
+ClickHouse's sorting and partition keys). `SQLDialect` quotes Oracle's
+names as PostgreSQL's, ClickHouse's and BigQuery's with backslash escapes
+(`` `a\`b` ``, `'it\'s'`, no raw newline). `OpsText.maskSecrets` masks
+Oracle's `IDENTIFIED BY "…"` (or a bare word) too.
+
+### Server page (monitoring)
+
+A connection's page in the right slot (`DatabaseSlotModel`,
+`DatabaseServerModel`, `DatabaseServerView`; `RightPane.Mode.database`),
+from its row's menu (Server) or ⌘K (Server: name). Its tabs are the
+driver's `monitorParts`: Overview, Activity, Slow Queries, Locks, Sizes.
+**Read only while it shows**: the tab on screen is read again every 5 s
+(Pause stops it); Slow Queries and Sizes, heavier, when their tab opens
+and on Refresh. A session is cancelled or terminated from its menu — asked
+first (`WriteConfirmation`), refused on a read-only connection, never
+offered on the page's own session (the driver refuses it too).
+
+- **PostgreSQL**: `pg_stat_activity` (client backends; `pg_cancel_backend`,
+  `pg_terminate_backend`); `pg_stat_statements`, the hundred costliest by
+  total and the hundred by mean (`total_exec_time` from 13, `total_time`
+  before) — not installed, or installed but not preloaded, said with
+  `shared_preload_libraries` and `CREATE EXTENSION`; `pg_blocking_pids`
+  against `pg_stat_activity`, the lock from `pg_locks`; sizes from
+  `pg_database_size` (where CONNECT is allowed), `pg_total_relation_size`,
+  indexes; version, uptime, connections of `max_connections`, the shared
+  buffers' hit rate, replica and its lag, commits, deadlocks. Another
+  user's statement is `<insufficient privilege>` without
+  `pg_read_all_stats` — said under the list.
+- **Redshift** (not tested against a cluster): `stv_sessions` with
+  `stv_recents`, `sys_query_history` grouped by text, `svv_transactions`'
+  waits, `svv_table_info`; no indexes.
+- **MySQL, MariaDB**: `information_schema.PROCESSLIST` (`KILL QUERY`,
+  `KILL`; other users' sessions need PROCESS — said);
+  `performance_schema.events_statements_summary_by_digest`, else MariaDB's
+  `mysql.slow_log` when `log_output` is TABLE, else what to turn on; MySQL's
+  `performance_schema.data_lock_waits`, MariaDB's
+  `information_schema.INNODB_LOCK_WAITS` (PROCESS); sizes from
+  `information_schema` (MySQL caches them up to a day — said) and indexes
+  from `mysql.innodb_index_stats`; `SHOW GLOBAL STATUS`, the variables,
+  `SHOW REPLICA STATUS`.
+- **SQLite**: the overview alone — the library's version, the file, pages,
+  free pages, journal mode, encoding — and Check Integrity
+  (`PRAGMA integrity_check`, on request).
+- **Neo4j** (`Neo4jOperations`): `SHOW TRANSACTIONS YIELD *` is Activity
+  (the page's own told by its statement; TERMINATE TRANSACTION), Slow
+  Queries (what runs now, longest first — finished ones are in query.log
+  on the server's disk, not read over HTTP, said) and Locks (each
+  transaction's `Blocked by: […]`); `dbms.components()`, the databases,
+  nodes and relationships from the count store; Sizes are each label's
+  and relationship type's count (a `unit`, not bytes — the store's bytes
+  only where JMX says them, 4.x).
+- **InfluxDB** (`InfluxDBOperations`): 1.x `SHOW DIAGNOSTICS`/`SHOW STATS`
+  (version, uptime, series, heap, queries, points written), `SHOW QUERIES`
+  (`KILL QUERY`), shards' `diskBytes` by database and retention policy —
+  each an admin's, else said with the GRANT; 2.x `/health` and
+  `/metrics`' headline numbers, the buckets with their retention and
+  their shards' bytes (`storage_shard_disk_size` by bucket id); its
+  running queries aren't listed (said). 3.x: its health only — said.
+- **RabbitMQ** (`RabbitMQOperations`): `/api/overview` and `/api/nodes`
+  (memory of the high watermark, disk free, file descriptors, alarms
+  said), the connections as sessions with their channels' consumers and
+  unacked messages (Close Connection: `DELETE /api/connections/<name>`;
+  none is the page's own — Overterm speaks HTTP), the queues by bytes
+  with their rates and each vhost's sum. Another user's connections are
+  shown to a user tagged monitoring or administrator — said.
+- **Redis** (`RedisOperations`): its own page stays Server Info
+  (`RedisSlotView`) — the panel and ⌘K offer no second one — but its
+  reads are the shared ones too, with the same parsers (`RedisInfo`,
+  `RedisClients`, `RedisSlowEntry`), so agents' tools say what the page
+  does: INFO, CLIENT LIST (CLIENT KILL; its own client marked), SLOWLOG
+  GET with the same command line together and AUTH's and ACL's secrets
+  masked.
+- **MongoDB**: `serverStatus` (version, uptime, connections of current +
+  available, opcounters, the WiredTiger cache used, memory, network) and
+  hello's topology; `$currentOp` with `allUsers` (this user's own without
+  the inprog privilege; the page's own operation by hello's
+  `connectionId`; a command's `pwd` and secret-named fields masked; an
+  operation with no client is a daemon) — cancelled with `killOp`, no
+  session ended; the profiler of the console's database (`system.profile`,
+  its last 1,000 entries summed by namespace, kind and query hash, shown as
+  shapes — every value `?`), `$queryStats` first where the server has it,
+  the profiler off said with `runCommand({ profile: 1, slowms: 100 })`;
+  waits from `$currentOp`'s `waitingForLock` — MongoDB doesn't say on
+  whom, so the blocker named is the longest-running operation holding an
+  exclusive lock on the same database, else "?"; sizes from `listDatabases`
+  and each collection's `$collStats` (collStats on DocumentDB), the console's
+  database, 100 collections at most. **DocumentDB** (not tested against a
+  cluster): `currentOp` with `$all`; no Slow Queries (its profiler writes to
+  CloudWatch Logs) and no Locks — the overview says so.
+- **Elasticsearch, OpenSearch**: `_cluster/health`, `_nodes/stats` (the
+  fullest heap, the busiest CPU, disk), hot_threads' headline lines;
+  `_tasks?detailed` (the listing's own task marked; cancelled with
+  `POST /_tasks/<id>/_cancel`, an id checked to be `node:number`); the
+  search slow log is the nodes' files, not readable over the API — said,
+  with each index's thresholds and the `_settings` line that sets one;
+  OpenSearch's Query Insights (`_insights/top_queries?type=latency`) where
+  installed, its record off said with the cluster setting; `_cat/indices`
+  by store size. No Locks.
+- **DynamoDB**: no sessions, slow-query record or locks: the overview
+  (region, tables, `DescribeLimits`) and Sizes — each table's
+  `DescribeTable` (items, size, billing, capacity, status, GSIs and LSIs as
+  indexes), `DescribeTimeToLive`, `DescribeContinuousBackups` (PITR); 100
+  tables at most. Consumed capacity is CloudWatch's — said.
+- **Oracle** (`OracleOperations`): `v$session` with its statement from
+  `v$sql` (INACTIVE is idle); Cancel Statement… is `ALTER SYSTEM CANCEL SQL
+  'sid,serial#'`, Kill Session… `ALTER SYSTEM KILL SESSION '…' IMMEDIATE`
+  (ALTER SYSTEM's; the id checked to be digits before it is put in a
+  statement). One of Overterm's own connections (`program` Overterm) is
+  offered Cancel only, and the driver refuses its kill: OracleNIO never
+  answers a statement on a killed session — it is disconnected in the
+  panel. `v$sqlstats`, the hundred costliest by elapsed time and the
+  hundred by a call's, with CPU and buffer gets; locks from `v$session`'s
+  `blocking_session`, the object from the row it waits on, an idle
+  blocker's last statement; sizes from `dba_segments` — schemas as the
+  "databases", the biggest tables and indexes outside Oracle's own schemas
+  — else `user_segments` (this user's own, said); `v$instance`,
+  `v$database`, sessions and processes of their `v$parameter`, the buffer
+  cache's hit rate. A user who may not read `v$`/`dba_` views is told the
+  grant (SELECT_CATALOG_ROLE); the overview falls back to `v$version`.
+- **ClickHouse** (`ClickHouseOperations`): no Locks (it takes no row
+  locks). `system.processes` — every running query, the page's own read
+  marked (`queryID()`); Kill Query… is `KILL QUERY WHERE query_id = …`, its
+  one stop — HTTP has no session to end. `system.query_log`'s last seven
+  days grouped by `normalized_query_hash`, the page's own reads left out
+  (they start with `ClickHouseOps.marker`) — no query log, said with the
+  setting; sizes from `system.parts` (active, on disk) and
+  `system.data_skipping_indices`; version, uptime, connections of
+  `max_connections` (`system.server_settings`), memory, the mark cache's
+  hit rate, merges and mutations not done, replicated tables' delay.
+- **BigQuery** (`BigQueryOperations`): no server — the project's jobs.
+  Overview and Activity from the REST API's `jobs.list` (running and
+  pending; everyone's with `bigquery.jobs.listAll`, else this account's —
+  said), free; Cancel Job… is `jobs.cancel` at the job's location, never a
+  job the page's own reads started. Slow Queries
+  (`region-<location>.INFORMATION_SCHEMA.JOBS_BY_PROJECT`, the last seven
+  days grouped by the normalized query, by slot time, with bytes processed
+  and slots) and Sizes (`TABLE_STORAGE`, datasets as the "databases") are
+  queries, billed as any — the overview says so. No location on the
+  connection: US, said. No Locks.
+
+### Editing rows
+
+A console result whose rows are one table's is edited in its grid
+(`ResultEditor`, `ResultGrid`): Select Top from the tree, or any
+`SELECT * | columns FROM [schema.]table [alias] [WHERE …] [ORDER BY …]
+[LIMIT …]` — `EditableQuery` (pure) refuses a join, a comma, GROUP BY,
+DISTINCT, UNION, a subquery in FROM, and any expression or alias in the
+select list (an alias could pass another column off as the key). Its key
+(`key(of:)`: the primary key, else a unique key over NOT NULL columns, not
+partial or on expressions; SQLite's rowid for a rowid table, which needs
+`SELECT rowid, *`) must be among the result's columns, each of which must
+be the table's (`EditableResult.match`). Otherwise the status bar says why
+(Read only, its reason on hover). A read-only connection, or a kind whose
+driver doesn't edit, offers nothing.
+
+- **Changes are pending** (`PendingEdits`, pure) until Save: a cell
+  (double-click; several lines, or Edit Value…, in a sheet; Set to NULL,
+  Set to Empty String — NULL and `''` are two), a row added (its columns
+  DEFAULT until set), duplicated (the key and generated columns left to
+  the new row), deleted; Revert. The grid tints an edited cell, strikes a
+  deleted row, greens an added one; it keeps where each row came from
+  (`sortedIndexes`), so a sorted grid edits the right row. Generated
+  columns, and those whose text isn't their value (a SQLite BLOB, MySQL's
+  binary and spatial types), aren't written.
+- **The statements** (`EditStatements`, pure): deletes, updates, inserts,
+  each row found by its key's values as read; every name quoted and every
+  value a literal the engine's way (`SQLDialect`; MySQL's backslashes as
+  the session's sql_mode has them). Preview shows them; Save asks with
+  them all (`WriteConfirmation`), then applies them in one transaction —
+  each must change the one row it names (MySQL's UPDATE counts only rows
+  it changed, so a 0 is checked by counting the key's rows), else
+  everything rolls back and the error says which. Then the statement is
+  run again and its rows replace the old; what ran goes in the history.
+  Redshift doesn't enforce its keys, so its rows aren't edited.
+- **Neo4j's nodes** (`Neo4jEdits`, pure): `MATCH (n:Label) [WHERE …]
+  RETURN n [ORDER BY …] [SKIP …] [LIMIT …]` — one label, the node itself
+  returned — comes back as rows of its nodes' properties (`flatten`:
+  `elementId(n)`, then each property, sorted), each found again by its
+  `elementId` (`TableKey.Kind.identity`). A cell is written as the type
+  the catalog has seen for its property (`db.schema.nodeTypeProperties`:
+  String, Long, Double, Boolean, or a list of one); a date, a point, or a
+  property seen with two types is read-only — its text isn't its value.
+  NULL is `REMOVE n.p`, `''` an empty string; a node added is `CREATE
+  (n:Label {…})`, deleted `DETACH DELETE` (its relationships with it —
+  the confirmation says so). Each statement `RETURN count(n)`, all in one
+  explicit transaction (`/db/<db>/tx`), each checked to count 1, else
+  rolled back. Over the transactional API only.
+- **MongoDB, DocumentDB** (`MongoEdits`): a `find()` on one collection —
+  not an aggregate, not a projection that computes — whose `_id` is shown
+  and of one type. A cell is a top-level field: `$set` to a value or null,
+  `$unset` by Remove Field; a field with a dot or a leading `$` refused (a
+  path, an operator); a new document `insertOne` (its `_id` made at run
+  time unless set), a deleted one `deleteOne`, an `_id` never changed. Typed
+  text is read by its column's type (a string as itself, an int an int, a
+  date its ISO time, an ObjectId its hex), else as the shell writes a value.
+  Each write must find exactly its document; on a replica set, mongos or
+  DocumentDB all go in one transaction (`lsid`, `txnNumber`,
+  `commitTransaction`), on a standalone server one by one — the
+  confirmation says which.
+- **Elasticsearch, OpenSearch** (`SearchEdits`): a `_search`'s hits, found
+  by `_index` and `_id` (and `_routing`); with `"seq_no_primary_term": true`
+  (Select Top asks for it) on the version read — `if_seq_no`,
+  `if_primary_term`, a 409 said as changed since read. `_update` with `doc`,
+  a painless script where a field is removed; `POST /<index>/_doc`, or
+  `_create/<id>` when the new row's `_id` is set, into its `_index` cell or
+  the one index the search named; `DELETE`. Each `refresh=wait_for`, so the
+  hits read again show it; no transactions — one by one, said. A `_source`
+  filter refuses (a part of each document). Values by the field's JSON type.
+- **DynamoDB** (`DynamoEdits`): a `SELECT` from a table (not an index) whose
+  partition and sort key are shown, in PartiQL run by `ExecuteTransaction`
+  (100 statements at most): `UPDATE … SET … REMOVE … WHERE` the key and each
+  edited scalar as read, `INSERT … VALUE` (fails where the key is taken),
+  `DELETE … WHERE` the key — PartiQL checks no condition of a missing item,
+  so one already gone is a no-op. S, N, BOOL, NULL; a map,
+  list or set as JSON; a binary attribute read only.
+- **Oracle**: the SQL way, in Oracle's quoting — the primary key, else an
+  enabled unique key over NOT NULL columns, else a heap table's ROWID
+  (`SELECT ROWID, t.* FROM … t`; the bar says "by ROWID", the confirmation
+  that it holds until the table is moved or shrunk); an unquoted name is
+  found upper-case. CLOBs, BLOBs, LONG, JSON, object types, virtual and
+  identity ALWAYS columns aren't written. A Save sets the session's date,
+  timestamp and number formats to the grid's (`OracleOps.nlsSetStatements`)
+  so a value's text reads back as itself, and puts the session's own back
+  after. Oracle keeps `''` as NULL — said. No DEFAULT VALUES: a new row
+  sets one column at least.
+- **ClickHouse**: only a plain MergeTree (Replicated, Shared too) whose
+  primary key is plain columns, none Nullable — its rows are found by it,
+  and ClickHouse doesn't keep it unique. A change is a mutation
+  (`ClickHouseOps.editStatements`: `ALTER TABLE … UPDATE`, a lightweight
+  `DELETE FROM`, `INSERT`), sent one at a time with `mutations_sync`, each
+  UPDATE and DELETE only after counting the key's rows and finding one; no
+  transaction: one that fails stops the rest, the error says which ran.
+  The bar says "mutations". The sorting and partition keys are set by an
+  INSERT, never changed in a row (`fixedColumns`); MATERIALIZED and ALIAS
+  columns, arrays, maps, tuples, JSON aren't written.
+- **BigQuery**: only a table with a primary key declared
+  (`INFORMATION_SCHEMA.TABLE_CONSTRAINTS`) — BigQuery enforces none, the
+  bar says "key not enforced". Its own `editableResult` reads the key and
+  every column's type (`EditableResult.types`); each literal is cast to
+  its column's (`BigQueryOps.editStatements`: `CAST('5' AS INT64)`, a type
+  only as the catalog's words); nested, BYTES and GEOGRAPHY columns aren't
+  written. A Save is one script (`BigQueryOps.script`): a transaction whose
+  every statement is checked by `@@row_count`, any failure rolled back and
+  raised again.
+- **Not edited**: InfluxDB — a point isn't updated in place (a write of
+  the same series and time overwrites it) and a delete is by time range
+  and predicate, never a row; RabbitMQ — messages aren't rows; Redis — a
+  key has its own page.
+
+### Users and roles
+
+A connection's Users page in the right slot (`DatabaseUsersModel`,
+`DatabaseUsersView`), from its row's menu or ⌘K: users and roles with their
+attributes (superuser, logs in, creates databases or roles, replication,
+locked, password expired, valid until, connection limit) and memberships;
+a picked one's grants. New User…, Change Password…, Grant…, Grant Role…,
+Drop… (its name typed), Revoke… from a grant's menu: each made by
+`UserStatements` (pure — names quoted, privileges only from the engine's
+list, never typed), shown in the sheet as it will run, asked
+(`WriteConfirmation`), sent once; refused on a read-only connection.
+
+- **A new password** is typed in SecureFields, lives in the sheet's state
+  until its statement is sent, and is never kept — not the keychain, a
+  log, the history. PostgreSQL's goes as its SCRAM-SHA-256 verifier
+  (`scramVerifier`, as psql's `\password` makes it) and Redshift's as its
+  md5 form, so neither is in the clear on the wire or in a server log;
+  MySQL's goes as `IDENTIFIED BY` over the text protocol (MySQLNIO logs a
+  prepared statement's text, a simple query's never). Every preview,
+  confirmation and error shows `shown` — the statement with the password
+  masked — and an error is scrubbed of it (`UserStatement.scrub`).
+- **PostgreSQL**: `pg_roles` (never `pg_authid`), `pg_auth_members`; grants
+  from the catalog's ACLs (`aclexplode` of databases, schemas and this
+  database's tables — readable by anyone) and what the role owns. CREATE
+  ROLE … LOGIN PASSWORD, ALTER ROLE … PASSWORD, GRANT/REVOKE on a
+  database, schema, all tables in a schema or a table, GRANT role, DROP
+  ROLE. **Redshift**: `pg_user`, `pg_group` as roles, `svv_relation_privileges`.
+- **MySQL, MariaDB**: `mysql.user` without `authentication_string` (or
+  MariaDB's `Password`), MariaDB's lock flag from `mysql.global_priv`;
+  roles from `mysql.role_edges` (MySQL 8) or `mysql.roles_mapping`; grants
+  by `SHOW GRANTS FOR`, read with any `IDENTIFIED …` (MariaDB prints the
+  hash) cut out first (`MySQLOps.redact`). A user who may not read
+  `mysql.user` is told so, with the grant an administrator would give.
+- **Neo4j**: `SHOW USERS` (and Enterprise's `SHOW ROLES`, `SHOW ROLE|USER
+  … PRIVILEGES AS COMMANDS`) on `system`. CREATE USER … SET ENCRYPTED
+  PASSWORD — its stored form, `1,<hash>,<salt>` (SHA-256 of salt and
+  password, hashed 1024 times), so the password is never in the clear
+  on the wire or in the query log — ALTER USER, DROP USER; Enterprise:
+  CREATE ROLE, GRANT ROLE, a privilege granted to a role on a database or
+  graph, a listed privilege revoked in the server's own words (`GRANT … TO
+  r` → `REVOKE GRANT … FROM r`). Community has no roles or privileges —
+  said.
+- **InfluxDB**: 1.x InfluxQL — `SHOW USERS`, `SHOW GRANTS FOR`, CREATE
+  USER (admin: WITH ALL PRIVILEGES), SET PASSWORD (InfluxDB redacts it
+  from its log), GRANT/REVOKE READ, WRITE, ALL on a database, DROP USER.
+  2.x API — users created, their password set and made members of the
+  connection's organization (`{user:name}` and `{org}` in the request are
+  ids looked up just before sending), dropped; a user's tokens listed as
+  its grants by description and permissions — the token's value is never
+  decoded — and revoked (deleted); tokens aren't made here, since a new
+  one's value would have to be shown. 3.x has tokens, not users — said.
+- **RabbitMQ**: `/api/users?columns=name,tags` (never `password_hash`),
+  permissions per vhost and topic permissions. A user is a PUT with its
+  password's `rabbit_password_hashing_sha256` hash (salt and SHA-256,
+  RabbitMQ's own — never the password), its tags (administrator its
+  superuser); a new one never replaces one (`NEW`); a password change
+  PUTs its tags with it. Permissions on a vhost: configure, write, read —
+  each `.*` or `^$`; revoked and dropped with DELETE. Only an
+  administrator lists users — said, with `rabbitmqctl set_user_tags`.
+- **Redis**: ACL — `ACL LIST`, each line's password hashes counted ("a
+  password set"), never kept; its commands, key patterns (`~`, `%R~`,
+  `%W~`), channels and selectors as its grants. ACL SETUSER with each
+  word one argument, the password as `#<sha256>` (never in the clear, in
+  MONITOR or the slow log); a new user's line starts with `reset` and is
+  refused over one that exists; a row revoked whole (nocommands,
+  resetkeys, resetchannels, clearselectors); ACL DELUSER. Changes are the
+  running server's — ACL SAVE or CONFIG REWRITE keeps them (said).
+- **MongoDB, DocumentDB** (`MongoUserStatements`): `usersInfo` with
+  `forAllDBs` (else the auth database's), custom roles by `rolesInfo` —
+  never `showCredentials`; a user is `name@database` (`DatabaseUser.host`
+  carries the database). Grants: its roles (each revocable) and what they
+  give by resource (`showPrivileges`; DocumentDB's roles alone). Grant… is
+  a built-in role on a database (admin's cluster-wide ones too); Grant
+  Role… one of the server's own. `createUser`, `updateUser` (the password,
+  once, inside the command — the server keeps its SCRAM verifiers),
+  `grantRolesToUser`, `revokeRolesFromUser`, `dropUser`/`dropRole`, as
+  `db.getSiblingDB(…).runCommand({…})`.
+- **Elasticsearch** (`SearchUserStatements`): `_security/user` and
+  `_security/role` (a password never in either answer); a user's grants are
+  its roles' cluster and index privileges. Create (`POST`), change password
+  (`_password`), Grant Role/revoke by writing the user's roles whole (its
+  name and email kept), `DELETE`. **OpenSearch**: the security plugin's
+  `internalusers` (its `hash` never read), `roles`, `rolesmapping` — mapped
+  roles said, not changed; a user's own `opendistro_security_roles` and its
+  password by `PATCH`. Security off, or a user without `manage_security`
+  (OpenSearch: the REST API's admin), is said. No Grant…: privileges are
+  roles'.
+- **DynamoDB** has no users of its own (IAM's): no page.
+- **Oracle** (`OracleUserStatements`): `dba_users` (Oracle's own left
+  out; never a password column), `dba_roles` (those made here, and
+  CONNECT, RESOURCE, DBA and the catalog roles — Oracle's own granted,
+  never dropped), `dba_role_privs`; grants from `dba_sys_privs` (a system
+  privilege each), `dba_role_privs` and `dba_tab_privs` — this user's own
+  from `user_*` without SELECT_CATALOG_ROLE, another's said. CREATE USER …
+  IDENTIFIED BY `"…"` (Oracle's password is a quoted identifier: no `"` in
+  it; sent once, encrypted only over TCPS) and GRANT CREATE SESSION when it
+  logs in; a plain name typed is upper-cased as Oracle reads it. Grants: a
+  system privilege (WITH ADMIN OPTION) or a table's (WITH GRANT OPTION);
+  roles only as roles; DROP USER/ROLE — what it owns must go first.
+- **ClickHouse** (`ClickHouseUserStatements`): `system.users` (never
+  `auth_params`), `system.roles`, `system.role_grants`, `system.grants` by
+  `*.*`, `db.*`, `db.table`. A user from the server's users.xml or LDAP
+  can't be changed by SQL: said among its attributes, offered no write.
+  CREATE USER … IDENTIFIED WITH `sha256_hash` BY the salted hash — the
+  password never on the wire — and VALID UNTIL, or CREATE ROLE for one that
+  doesn't log in; GRANT/REVOKE on the server, a database or a table (a
+  column's grant and a partial revoke left alone); roles; DROP USER/ROLE.
+- **BigQuery** has no Users page: who may do what is Google Cloud IAM, not
+  SQL.
+
 ### Saved queries
 
 Any connection's (`DatabaseModel.saved`, `Database/saved.json` in
@@ -1979,7 +2896,13 @@ one on quit. Tested against an Alpine sshd beside PostgreSQL
 
 On the MCP server the browser's tools are on (BrowserBridge), with
 `database.agentAccess`: `db_connections`, `db_schema`, `db_query`,
-`storage_connections`, `storage_list`, `storage_read`. Connections are
+`db_server`, `db_activity`, `db_slow_queries`, `db_locks`,
+`storage_connections`, `storage_list`, `storage_read`. The four Server
+tools are the page's reads as Markdown tables (`ServerText`), statements
+on one line and cut (a slow statement's `detail` — BigQuery's bytes and
+slots — as a "cost" column when a kind says one); no tool cancels a
+session, edits a row or changes a user, and none reads a password or its
+hash. Connections are
 named, never their secrets. `db_query` takes one statement and reads only:
 `SQLText.agentReads` is stricter than a person's check — a WITH hiding a
 write, `SELECT … INTO` and `EXPLAIN ANALYZE` of a write all count as
@@ -2409,7 +3332,8 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   Tab" verbs stay in the image's Docker Scout menu (`quickview`, `cves`,
   `recommendations`), when the plugin is there (`DockerCLI.hasPlugin`).
 - **MCP Toolkit** (`DockerMCPToolkit`, pure but for `read`): whether
-  Claude Code and Codex reach Docker's MCP gateway — `docker mcp client
+  Claude Code, Codex, opencode and Gemini CLI (the Toolkit's
+  `claude-code`, `codex`, `opencode`, `gemini`) reach Docker's MCP gateway — `docker mcp client
   ls --global --json`, which reads their config files and nothing else,
   each time the page shows (an isolated run asks only a scenario's stub).
   Connect and Disconnect are `docker mcp client connect|disconnect
@@ -2794,7 +3718,7 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   removed — a never-started one would hold its volume for good, and
   another Overterm may still be reading through a newer one.
 - **Open in Database** (`d`, `DockerDatabaseGuess`, pure): a PostgreSQL,
-  MySQL, MariaDB or ClickHouse container as a connection — the kind from
+  MySQL, MariaDB, ClickHouse, Redis or MongoDB container as a connection — the kind from
   its image, user, password and database from the variables its image's
   documentation asks for, the host port it publishes — in the Database
   panel's form, filled in. Nothing is saved until the form is, and then
@@ -4281,8 +5205,8 @@ never the proxy's socket, which refuses port-forward on every context.
   (`kubernetesOpenedExternally`) instead of opening anything.
 - **`d`** on a database pod (`databaseRef`, Open in Database Client on a
   pod whose detail read it): the image says which (`KubeDatabase.detect`, a
-  `KubeDatabaseTarget`, by `DockerClient`'s table — postgres, mysql and mariadb, clickhouse, redis and valkey; an
-  exporter beside it is a tool; Mongo and the rest are said, with their
+  `KubeDatabaseTarget`, by `DockerClient`'s table — postgres, mysql and mariadb, clickhouse, redis and valkey, mongo; an
+  exporter beside it is a tool; Cassandra and the rest are said, with their
   client in a shell), the container's port (the image's, or the one it
   declares — unless that is a port the image speaks another protocol on:
   ClickHouse's native 9000/9440/9009, MySQL's X Protocol 33060,
@@ -8216,13 +9140,17 @@ stage 2e, force unlock, and stage 2f, a review's Terraform section.
   modules, the lock file's providers, a local backend's workspaces and
   whether this one's state file is here, the version pins from the root
   up to the checkout (`.terraform-version`, `.tool-versions`, `mise.toml`;
-  bounded, stopping at `/`). The repository's other worktrees — the
-  window's `WorktreeModel` list (`TerraformWorktree.others`: not bare,
-  not prunable, at most 12, none while the list is another repository's),
-  never a second `git worktree list` — are read for the same root, their
+  bounded, stopping at `/`). The main worktree — the default branch's
+  checkout, from the window's `WorktreeModel` list (`TerraformWorktree.comparedWith`:
+  `isMain` only, none on main itself or while the list is another
+  repository's), never a second `git worktree list` — is read for the same
+  root (every other worktree is someone's work in progress: "feat/x has no
+  lock file" said nothing about this checkout, and a dozen named on every
+  card buried what mattered), its
   backend and workspace only (`TerraformRootFacts.readIdentity`: the init
   record, else the backend block; kept by the files' size and mtime): one with the same
-  `TerraformStateIdentity` "shares its state"; a local root whose state is
+  `TerraformStateIdentity` is "the same state as main: an apply here changes
+  what it deploys"; a local root whose state is
   missing here but there says "no state in this worktree: the state is in
   `main`'s checkout" (3.7). Nothing is written but `TerraformRootStore`'s
   production identities, in Overterm's folder. A file event redoes the
@@ -8391,8 +9319,9 @@ stage 2e, force unlock, and stage 2f, a review's Terraform section.
     guarded. Each launch starts a read again off the main thread (one
     `git ls-files`, `decide`, once at a time a checkout), so a production
     root merged into a worktree the panel never shows reaches the next
-    launch; no walk or file read on the main thread. Codex has no
-    per-command deny: `.notGuarded`, a "terraform writes not guarded"
+    launch; no walk or file read on the main thread. opencode and Gemini
+    CLI are guarded their own way (Agents, Terraform's guard). Codex and
+    pi have no per-command deny: `.notGuarded`, a "terraform writes not guarded"
     chip on its pane's header for as long as it runs
     (`TerminalView.terraformAgentGuard`). Nothing is written to the
     agent's settings, no shim on PATH (D-8). **The rules are unverified
@@ -8815,11 +9744,18 @@ stage 2e, force unlock, and stage 2f, a review's Terraform section.
   person's own Init or a plan ran there. `terraform.newWorktreeInit`
   (on) turns the init off; the warnings stay. What it did shows on the
   root's card. Every card also compares its lock file with the same
-  root's in the other worktrees (`TerraformLockDrift`, pure: "aws 5.80.0
-  here, 6.2.0 in main", "no lock file here"; one line a card, the first
-  and how many more — `summary`), read from the files
+  root's in the main worktree (`TerraformLockDrift`, pure: "aws 5.80.0
+  here, 6.2.0 on main", "no lock file here"; nothing when main has none —
+  nothing to compare), read from the files
   themselves — committed or not, what each worktree's init uses — and
   kept by their size and time. Tests: `TerraformWorktreeTests`; the
+  "Needs init" is a required provider the lock file doesn't pin, by its
+  source (namespace/type, as `TerraformInitPlan` reads it — the local
+  name isn't the type: `betteruptime` is `better-uptime`), named, with
+  what to do; no lock file and no `.terraform` is a quiet "not
+  initialised here yet". What every card shares — the branch @ commit, the
+  version they run — is said once above them; a card's version only when
+  it differs, a local backend's state "no state yet" when it isn't there.
   `terraform` scenario's `E2ERunner+TerraformA2b` (New Task's root warned,
   initialised through the recording wrapper, validate there — its local
   module installed by that init; a worktree without it needs init).

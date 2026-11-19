@@ -20,6 +20,8 @@ struct APIActions {
     var trash: (_ item: APIItem) -> Void
     /// A request's .bru, or a folder's folder.bru, open on its Docs.
     var openDocs: (URL) -> Void = { _ in }
+    /// An MCP server, inspected in the right-hand pane.
+    var openMCP: (MCPServerConfig) -> Void = { _ in }
 }
 
 /// The sidebar's API panel: the checkout's Bruno collection — its
@@ -50,6 +52,8 @@ struct APIPanelView: View {
                 if workspace.collection != nil {
                     Menu {
                         Button("New Request…") { newRequest(in: workspace.collection?.root) }
+                        Button("New GraphQL Request…") { newRequest(in: workspace.collection?.root, kind: .graphql) }
+                        Button("New gRPC Request…") { newRequest(in: workspace.collection?.root, kind: .grpc) }
                         Button("New Folder…") { newFolder(in: workspace.collection?.root) }
                         Divider()
                         importItems
@@ -85,6 +89,7 @@ struct APIPanelView: View {
             } else {
                 empty
             }
+            MCPServersSection(inspector: workspace.mcp, theme: theme, open: actions.openMCP)
         }
         .frame(minWidth: 0, maxWidth: .infinity, alignment: .leading)
         .clipped()
@@ -258,6 +263,8 @@ struct APIPanelView: View {
     @ViewBuilder private func menu(_ item: APIItem) -> some View {
         let folder = item.isFolder ? item.url : item.url.deletingLastPathComponent()
         Button("New Request…") { newRequest(in: folder) }
+        Button("New GraphQL Request…") { newRequest(in: folder, kind: .graphql) }
+        Button("New gRPC Request…") { newRequest(in: folder, kind: .grpc) }
         Button("New Folder…") { newFolder(in: folder) }
         Divider()
         if item.hasDocs {
@@ -414,13 +421,13 @@ struct APIPanelView: View {
     /// A new request opens at once, unnamed and ready to send — it is named,
     /// and lands in `folder`, when it is saved (⌘S), as a Postman tab does.
     /// Asking a name first, and writing an empty request, came before using it.
-    private func newRequest(in folder: URL?) {
+    private func newRequest(in folder: URL?, kind: BruFile.RequestKind = .http) {
         guard let folder else { return }
         run {
             // Yours start blank, for a URL typed whole; a collection's
             // start from its environment's base.
             let personal = workspace.collection(containing: folder.appendingPathComponent("x"))?.isPersonal == true
-            actions.open(try workspace.newDraft(in: folder, url: personal ? "" : "{{baseUrl}}/"))
+            actions.open(try workspace.newDraft(in: folder, url: kind == .grpc ? "" : (personal ? "" : "{{baseUrl}}/"), kind: kind))
         }
     }
 

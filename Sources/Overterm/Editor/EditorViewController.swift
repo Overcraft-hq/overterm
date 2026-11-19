@@ -53,7 +53,9 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// Files with unsaved edits, and cluster objects' YAML with edits not
     /// applied (never saved: closing loses them).
     var unsavedNames: [String] {
-        buffers.filter { ($0.document.isDirty && $0.document.unsaveable == nil) || $0.resource?.isEdited == true }.map(\.name)
+        buffers.filter {
+            ($0.document.isDirty && $0.document.unsaveable == nil) || $0.resource?.isEdited == true || ($0.sqlConsole?.unsavedEdits() ?? 0) > 0
+        }.map(\.name)
     }
     /// The Kubernetes detail's YAML tab (`KubeResourceYAMLView`): one
     /// buffer at a time — the resource's, shared with the window's editor —
@@ -1211,6 +1213,16 @@ final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// Unsaved edits: Save, Don't Save, or Cancel. `proceed` is false only
     /// for Cancel (or a failed save).
     private func confirmDiscard(_ buffer: EditorBuffer, _ proceed: @escaping (Bool) -> Void) {
+        // A console's rows edited and not saved: asked about first, then the file.
+        if let console = buffer.sqlConsole, console.unsavedEdits() > 0, let window = view.window {
+            Task { @MainActor [weak self] in
+                guard await Self.askDiscardRowEdits(console.unsavedEdits(), on: window) else { return proceed(false) }
+                console.discardAllEdits()
+                guard let self else { return proceed(true) }
+                self.confirmDiscard(buffer, proceed)
+            }
+            return
+        }
         if let resource = buffer.resource {
             guard resource.isEdited, let window = view.window else { return proceed(true) }
             let alert = NSAlert()

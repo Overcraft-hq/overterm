@@ -261,6 +261,41 @@ final class PaneAgentTests: XCTestCase {
         XCTAssertEqual(
             PaneAgent.lookup([(id: tab, tags: ["pane-a1"])], census: sampler, folders: false)[tab]?.kind, .codex, "and the next lookup sees it")
     }
+
+    /// The screen check's agent (`TerminalWindowController.foregroundAgent`)
+    /// is a lookup in the census, no walk of its own: the pane's terminal's
+    /// foreground group as the table read it, and the first agent in it —
+    /// Gemini CLI under `node` by its script; an agent in the background of
+    /// its pane isn't the one asking.
+    func testTheForegroundAgentFromTheCensus() throws {
+        func record(_ pid: pid_t, parent: pid_t, uid: uid_t = 501, group: pid_t, foreground: pid_t, name: String, words: [String]) {
+            let path = "/opt/acme/bin/\(name)"
+            var process = FakeActivityKernel.Process(
+                record: ActivityProcess(
+                    identity: ActivityProcessID(pid: pid, start: UInt64(pid) * 1_000), parentPID: parent, group: group, terminal: 7,
+                    terminalGroup: foreground, effectiveUID: uid, realUID: uid == 0 ? 501 : uid, savedUID: uid, status: SRUN, flags: [],
+                    ignoredSignals: 0, caughtSignals: 0, nice: 0, shortName: name))
+            process.name = name
+            process.path = path
+            process.codeSigning = ActivityCodeSigning(flags: ActivityCodeSigning.valid)
+            process.usage = FakeActivityKernel.usage()
+            process.arguments = FakeActivityKernel.arguments(executable: path, words)
+            kernel.add(process)
+        }
+        record(1100, parent: app, uid: 0, group: 1100, foreground: 1102, name: "login", words: ["login"])
+        record(1101, parent: 1100, group: 1101, foreground: 1102, name: "zsh", words: ["-zsh"])
+        record(1103, parent: 1101, group: 1103, foreground: 1102, name: "codex", words: ["codex"])
+        record(1102, parent: 1101, group: 1102, foreground: 1102, name: "node", words: ["node", "/opt/homebrew/bin/gemini"])
+        let login = ActivityProcessID(pid: 1100, start: 1_100_000)
+        let sampler = census([ActivityContext.Pane(tag: "pane-a1", tab: tab, login: login)])
+        let snapshot = try XCTUnwrap(sampler.tickNow(ActivityDemand(.light(tabs: [tab])), context: sampler.appContext))
+        let slice = try XCTUnwrap(snapshot.pane("pane-a1"))
+        XCTAssertEqual(TerminalWindowController.foregroundAgent(in: slice, snapshot: snapshot), .gemini, "the foreground's, not the Codex behind it")
+        let ticks = try XCTUnwrap(sampler.latest).tick
+        let inspector = ProcessInspector(census: sampler)
+        XCTAssertEqual(TerminalWindowController.foregroundAgent(login: 1100, tag: "pane-a1", inspector: inspector), .gemini)
+        XCTAssertEqual(sampler.latest?.tick, ticks, "a fresh snapshot answers: no tick")
+    }
 }
 
 /// A surface a unit test has: alive, never ghostty's.

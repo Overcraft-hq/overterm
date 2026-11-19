@@ -55,7 +55,7 @@ enum ActivityVerb: Hashable, Sendable {
 enum ActivityClass: Hashable, Sendable {
     /// A job in a pane: the user's, under its `login`.
     case paneJob
-    /// The pane's agent: claude or codex.
+    /// The pane's agent: any `Agent`.
     case agent
     /// What runs under an agent: an MCP server, a tool shell, a server one
     /// of them started.

@@ -27,6 +27,15 @@ final class APIWorkspace: ObservableObject {
     @Published private(set) var results: [URL: APIExecution.Result] = [:]
     /// Requests in flight, by file.
     @Published private(set) var sending: Set<URL> = []
+    /// GraphQL schemas, by the endpoint they were read from: kept for the
+    /// session, read again on Refresh.
+    @Published private(set) var graphQLSchemas: [String: GraphQLSchemaState] = [:]
+    /// gRPC: each source's services and methods, each request's last call.
+    @Published var grpcSchemas: [String: GRPCSchemaState] = [:]
+    @Published var grpcResults: [URL: GRPCResult] = [:]
+    var grpcTasks: [URL: Task<Void, Never>] = [:]
+    /// The MCP servers the panel lists, and the one inspected.
+    let mcp = MCPInspector.make()
     @Published var search = ""
     /// Specs, collections and servers to import from (APIDiscovery).
     @Published private(set) var discovered: [APIDiscovery.Source] = []
@@ -104,6 +113,7 @@ final class APIWorkspace: ObservableObject {
         // to that one, it is read again (an agent found nothing otherwise).
         loadedRoot = nil
         if visible { reload() }
+        mcp.reload(checkout: url)
     }
 
     // MARK: My Requests
@@ -172,6 +182,7 @@ final class APIWorkspace: ObservableObject {
 
     /// Finds the collections again and reads them — off the main thread.
     func reload() {
+        mcp.reload(checkout: root)
         guard let root else {
             collections = []
             return
@@ -619,10 +630,17 @@ final class APIWorkspace: ObservableObject {
     }
 
     /// A new request, unnamed and unsaved, ready to send.
-    func newDraft(in folder: URL, url: String = "") throws -> URL {
+    func newDraft(in folder: URL, url: String = "", kind: BruFile.RequestKind = .http) throws -> URL {
         try FileManager.default.createDirectory(at: Self.draftsDirectory, withIntermediateDirectories: true)
-        let file = APIImport.unique(Self.draftsDirectory.appendingPathComponent("New Request.bru"), isFolder: false)
-        try BruFile.newRequest(name: "New Request", url: url, seq: 1).text.write(to: file, atomically: true, encoding: .utf8)
+        let name = kind == .http ? "New Request" : "New \(kind.title) Request"
+        let file = APIImport.unique(Self.draftsDirectory.appendingPathComponent("\(name).bru"), isFolder: false)
+        let made =
+            switch kind {
+            case .http: BruFile.newRequest(name: name, url: url, seq: 1)
+            case .graphql: BruFile.newGraphQLRequest(name: name, url: url, seq: 1)
+            case .grpc: BruFile.newGRPCRequest(name: name, url: url, seq: 1)
+            }
+        try made.text.write(to: file, atomically: true, encoding: .utf8)
         drafts[Self.canonicalPath(file)] = folder
         return file
     }
@@ -824,5 +842,77 @@ struct APIRunSnapshot {
         environmentName = setup.environmentName
         runtime = setup.runtime
         runtimeJSON = setup.runtimeJSON
+    }
+}
+
+// MARK: GraphQL
+
+enum GraphQLSchemaState: Equatable {
+    case loading
+    case loaded(GraphQLSchema)
+    case failed(String)
+}
+
+extension APIWorkspace {
+    /// Where a GraphQL request's schema is read from: its URL, variables filled.
+    func graphQLEndpoint(_ file: BruFile, at url: URL) -> String? {
+        try? graphQLPlan(file, at: url).url.absoluteString
+    }
+
+    /// The request as Send would make it — its URL, headers and auth — with
+    /// the introspection query for its body.
+    private func graphQLPlan(_ file: BruFile, at url: URL) throws -> APIRequestPlan {
+        let setup = setup(for: url, file: file)
+        var context = APIRequestPlan.Context()
+        context.collectionRoot = setup.collectionRoot
+        context.collectionFile = setup.collectionFile
+        context.folderFiles = setup.folderFiles
+        context.variables.environment = setup.environment
+        context.variables.runtime = setup.runtime
+        context.variables.processEnv = setup.processEnv
+        var plan = try APIRequestPlan.make(file, context: context)
+        plan.method = "POST"
+        plan.body = try JSONSerialization.data(withJSONObject: ["query": GraphQLSchema.introspectionQuery, "operationName": "IntrospectionQuery"])
+        plan.multipart = []
+        plan.headers.removeAll { $0.name.lowercased() == "content-type" }
+        plan.headers.append((name: "Content-Type", value: "application/json"))
+        return plan
+    }
+
+    func graphQLSchema(_ file: BruFile, at url: URL) -> GraphQLSchemaState? {
+        graphQLEndpoint(file, at: url).flatMap { graphQLSchemas[$0] }
+    }
+
+    /// Reads the schema, unless it was read already (or `force`).
+    func loadGraphQLSchema(_ file: BruFile, at url: URL, force: Bool = false) {
+        let plan: APIRequestPlan
+        do {
+            plan = try graphQLPlan(file, at: url)
+        } catch {
+            return
+        }
+        let key = plan.url.absoluteString
+        // Read, or being read: once is enough until Refresh. A failure is tried again.
+        if !force, let state = graphQLSchemas[key] {
+            if case .failed = state {} else { return }
+        }
+        graphQLSchemas[key] = .loading
+        let client = client(for: collection(containing: url)?.root)
+        let options = options
+        Task { [weak self] in
+            let state: GraphQLSchemaState
+            do {
+                let response = try await client.send(plan, options: options)
+                if response.status >= 400 {
+                    let text = String(decoding: response.body.prefix(300), as: UTF8.self)
+                    state = .failed("The server answered \(response.status): \(text)")
+                } else {
+                    state = .loaded(try GraphQLSchema.parse(response.body))
+                }
+            } catch {
+                state = .failed(error.localizedDescription)
+            }
+            self?.graphQLSchemas[key] = state
+        }
     }
 }

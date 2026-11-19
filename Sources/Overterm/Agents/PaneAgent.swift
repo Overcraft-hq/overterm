@@ -2,7 +2,7 @@ import Foundation
 
 /// A tab's agent as the census found it (docs/design/activity/analysis.md,
 /// 7.8's `AgentOverviewModel`, `SessionsModel` and `MCPAsker` rows): the
-/// first Claude Code or Codex in its panes' trees, in the order asked —
+/// first agent (`Agent.of`: Claude Code, Codex, opencode, pi, Gemini CLI) in its panes' trees, in the order asked —
 /// each pane's slice of one snapshot, a lookup, where each reader walked
 /// every pane's tree with a scan of its own (2.4 item 2).
 struct PaneAgent: Equatable, Sendable {
