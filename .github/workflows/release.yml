@@ -15,6 +15,11 @@
 # `clean_build` builds without the cache.
 #
 # Manual only: a macOS runner is expensive, so nothing triggers it on push.
+#
+# On GitHub's `xcode-27` image (macOS 27), a public preview, with Xcode 27.2
+# selected by path (27.1 is the image's default) — CI's machine and Xcode.
+# XCODE names it for xcode-select and the cache keys, which must stay CI's:
+# the caches restored here are the ones CI saved.
 name: Release
 
 on:
@@ -40,13 +45,17 @@ permissions:
   contents: write
   actions: read  # CI's run on this commit
 
+# CI's (ci.yml): the Xcode selected, and the caches' keys.
+env:
+  XCODE: "27.2"
+
 concurrency:
   group: release
   cancel-in-progress: false
 
 jobs:
   release:
-    runs-on: macos-15
+    runs-on: xcode-27  # public preview (see the top)
     # Up to 30 of them waiting for CI on this commit to finish.
     timeout-minutes: 75
     env:
@@ -98,24 +107,28 @@ jobs:
           done
           echo "::error::CI on ${GITHUB_SHA:0:7} didn't finish in 30 minutes"; exit 1
 
-      # GhosttyKit's pin (Ghostty v1.4.0, Zig 0.17.0) builds with Xcode 16.4.
-      - name: Use Xcode 16.4
-        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+      # GhosttyKit's pin (Ghostty v1.4.0, Zig 0.17.0) builds with Xcode 27.2.
+      - name: Use Xcode ${{ env.XCODE }}
+        run: sudo xcode-select -s "/Applications/Xcode_$XCODE.app"
 
       - uses: jdx/mise-action@v5  # Zig, pinned in mise.toml
 
       # Frameworks/ holds both prebuilt libraries: GhosttyKit, and TreeSitterKit
-      # with the editor's queries. One cache, keyed on both build scripts.
+      # with the editor's queries. One cache, keyed on both build scripts,
+      # mise.toml and the Xcode — CI's key.
       - name: Restore GhosttyKit and TreeSitterKit
         id: frameworks
         uses: actions/cache@v6
         with:
           path: Frameworks
-          key: frameworks-${{ runner.arch }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
+          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
 
+      # The Metal toolchain for Ghostty's shaders, if the image lacks it (CI's step).
       - name: Build GhosttyKit and TreeSitterKit
         if: steps.frameworks.outputs.cache-hit != 'true'
-        run: make ghosttykit treesitter
+        run: |
+          xcrun metal --version >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
+          make ghosttykit treesitter
 
       # CI's release build on main (see the top): the newest for these
       # packages and this Xcode. Restored only — CI is what saves it.
@@ -127,9 +140,9 @@ jobs:
             .build
             !.build/debug
             !.build/*/debug
-          key: spm-release-${{ runner.arch }}-xcode16.4-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+          key: spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
           restore-keys: |
-            spm-release-${{ runner.arch }}-xcode16.4-${{ hashFiles('Package.resolved') }}-
+            spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
 
       - name: Unit tests
         if: ${{ inputs.run_tests }}

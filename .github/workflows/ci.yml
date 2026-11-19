@@ -1,7 +1,13 @@
 # CI: formatted, built and unit-tested on the toolchain the Release workflow
-# ships with — Xcode 16.4, Swift 6.1 — so what would stop a release stops the
-# commit instead. (A test that Swift 6.1 couldn't compile reached main and
-# was found only by the release.)
+# ships with — Xcode 27.2, Swift 6.4, the one Overterm is developed with — so
+# what would stop a release stops the commit instead. (A test that the
+# release's Swift couldn't compile reached main and was found only by the
+# release.)
+#
+# The macOS jobs run on GitHub's `xcode-27` image (macOS 27), a public
+# preview: Xcode 27.1 is its default, so 27.2 is selected by path. XCODE below
+# names it once for xcode-select and every cache key — a new Xcode restores
+# no build made by another. The Release workflow uses the same keys.
 #
 # Pull requests, and pushes to main too: the repository is public, so the
 # macOS minutes cost nothing, and commits land on main without a pull request
@@ -33,6 +39,10 @@ concurrency:
 # Least privilege: CI only reads the repository.
 permissions:
   contents: read
+
+# The Xcode both macOS jobs select, and their caches' keys (release.yml's too).
+env:
+  XCODE: "27.2"
 
 jobs:
   # The pre-commit hook's rule (CLAUDE.md, Commits), for contributors who
@@ -115,16 +125,16 @@ jobs:
   test:
     needs: changes
     if: needs.changes.outputs.tests != 'none'
-    runs-on: macos-15
+    runs-on: xcode-27  # public preview (see the top)
     # A cold GhosttyKit build (≈10 min, when its cache misses), the debug
     # build (≈14 min cold, ≈8 with its packages cached) and the tests (≈9).
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
 
-      # GhosttyKit's pin (Ghostty v1.4.0, Zig 0.17.0) builds with Xcode 16.4.
-      - name: Use Xcode 16.4
-        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+      # GhosttyKit's pin (Ghostty v1.4.0, Zig 0.17.0) builds with Xcode 27.2.
+      - name: Use Xcode ${{ env.XCODE }}
+        run: sudo xcode-select -s "/Applications/Xcode_$XCODE.app"
 
       - name: Swift version
         run: swift --version
@@ -134,17 +144,22 @@ jobs:
 
       - uses: jdx/mise-action@v5  # Zig, pinned in mise.toml
 
-      # The same cache as the Release workflow's: one key on both build scripts.
+      # The same cache as the Release workflow's: one key on both build
+      # scripts, mise.toml (Zig) and the Xcode (its SDK and libtool).
       - name: Restore GhosttyKit and TreeSitterKit
         id: frameworks
         uses: actions/cache@v6
         with:
           path: Frameworks
-          key: frameworks-${{ runner.arch }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
+          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
 
+      # Ghostty's shaders need the Metal toolchain, a download of its own
+      # since Xcode 26 (docs/ghostty.md) — fetched only if the image lacks it.
       - name: Build GhosttyKit and TreeSitterKit
         if: steps.frameworks.outputs.cache-hit != 'true'
-        run: make ghosttykit treesitter
+        run: |
+          xcrun metal --version >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
+          make ghosttykit treesitter
 
       # The debug build of the last run on main, its packages compiled once
       # per Package.resolved. Overterm's own modules are left out: the
@@ -161,9 +176,9 @@ jobs:
             !.build/*/debug/OvertermE2ETests.build
             !.build/*/debug/OvertermPackageTests.xctest
             !.build/*/debug/index
-          key: spm-debug-${{ runner.arch }}-xcode16.4-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+          key: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
           restore-keys: |
-            spm-debug-${{ runner.arch }}-xcode16.4-${{ hashFiles('Package.resolved') }}-
+            spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
 
       - name: Unit tests
         env:
@@ -190,7 +205,7 @@ jobs:
             !.build/*/debug/OvertermE2ETests.build
             !.build/*/debug/OvertermPackageTests.xctest
             !.build/*/debug/index
-          key: spm-debug-${{ runner.arch }}-xcode16.4-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+          key: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
 
   # The release path otherwise runs only when someone releases: assemble the
   # bundle on every run that changes the app and check what the release
@@ -198,15 +213,15 @@ jobs:
   bundle:
     needs: changes
     if: needs.changes.outputs.bundle == 'true'
-    runs-on: macos-15
+    runs-on: xcode-27  # public preview (see the top)
     # A cold GhosttyKit build (≈10 min, when its cache misses) and the
     # release build (≈17 min).
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v7
 
-      - name: Use Xcode 16.4
-        run: sudo xcode-select -s /Applications/Xcode_16.4.app
+      - name: Use Xcode ${{ env.XCODE }}
+        run: sudo xcode-select -s "/Applications/Xcode_$XCODE.app"
 
       - uses: jdx/mise-action@v5  # Zig, pinned in mise.toml
 
@@ -215,11 +230,15 @@ jobs:
         uses: actions/cache@v6
         with:
           path: Frameworks
-          key: frameworks-${{ runner.arch }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
+          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
 
+      # Ghostty's shaders need the Metal toolchain, a download of its own
+      # since Xcode 26 (docs/ghostty.md) — fetched only if the image lacks it.
       - name: Build GhosttyKit and TreeSitterKit
         if: steps.frameworks.outputs.cache-hit != 'true'
-        run: make ghosttykit treesitter
+        run: |
+          xcrun metal --version >/dev/null 2>&1 || xcodebuild -downloadComponent MetalToolchain
+          make ghosttykit treesitter
 
       # The release build of the last run on main: the Swift packages are
       # compiled once per Package.resolved, not every run. The Release
@@ -231,9 +250,9 @@ jobs:
             .build
             !.build/debug
             !.build/*/debug
-          key: spm-release-${{ runner.arch }}-xcode16.4-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+          key: spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
           restore-keys: |
-            spm-release-${{ runner.arch }}-xcode16.4-${{ hashFiles('Package.resolved') }}-
+            spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
 
       - name: Assemble and verify the app bundle
         run: |
@@ -255,4 +274,4 @@ jobs:
             .build
             !.build/debug
             !.build/*/debug
-          key: spm-release-${{ runner.arch }}-xcode16.4-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+          key: spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
