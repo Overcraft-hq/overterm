@@ -3,8 +3,9 @@
 #
 # Why a release tag and not main: a release is what was tested. Ghostty's
 # docs ask Xcode 26 / the macOS 26 SDK of its macOS app; v1.4.0's library
-# builds with Xcode 16.4 (CI's). We only take the library — Ghostty's own
-# macOS app is not built.
+# builds with Xcode 27.2 (CI's and the release's) as it is, Zig 0.17.0 against
+# the macOS 27.2 SDK. We only take the library — Ghostty's own macOS app is
+# not built.
 set -euo pipefail
 
 GHOSTTY_REPO="https://github.com/ghostty-org/ghostty.git"
@@ -36,9 +37,13 @@ fi
 # link against, and its libtool, which drops what Zig archived
 # (Scripts/ghosttykit-xcode26.py). With it, Zig gets a fixed copy of the
 # SDK and libtool a fixed copy of each archive, by tools in front on PATH.
-# CI's Xcode 16 needs none of it; untried with v1.4.0's Zig 0.17.0.
+# It is Zig 0.15's problem, not the SDK's alone: v1.4.0's Zig 0.17.0 links
+# against the 27.2 SDK's arm64e-only stubs and its archives survive Xcode
+# 27.2's libtool (built from scratch, every member and ghostty_ symbol
+# there), so the shims go in front only for a Zig 0.15 with Xcode 26 or later.
 xcode_major="$(xcodebuild -version 2>/dev/null | sed -n 's/^Xcode \([0-9]*\).*/\1/p')"
-if [[ "${xcode_major:-0}" -ge 26 ]]; then
+zig_version="$(cd "$ROOT" && mise exec -- zig version 2>/dev/null || true)"
+if [[ "${xcode_major:-0}" -ge 26 && "$zig_version" == 0.15.* ]]; then
   echo "==> Xcode $xcode_major: an SDK and a libtool Zig 0.15.2 can work with"
   SHIMS="$ROOT/vendor/xcode26"
   rm -rf "$SHIMS"
