@@ -231,12 +231,17 @@ final class CheckoutSourceTests: XCTestCase {
 
     func testAgentProcessesAreRecognized() {
         func node(_ name: String, _ command: String) -> ProcessNode {
-            ProcessNode(pid: 1, parent: 0, name: name, arguments: command.split(separator: " ").map(String.init), cpuPercent: 0, memory: 0, workingDirectory: nil)
+            ProcessNode(identity: ActivityProcessID(pid: 1, start: 1), parent: 0, name: name, maskedCommand: command, cpuPercent: 0, memory: 0, workingDirectory: nil)
         }
         XCTAssertTrue(TerminalWindowController.isAgent(node("claude", "claude --continue")))
         XCTAssertTrue(TerminalWindowController.isAgent(node("node", "/Users/b/.local/bin/codex resume --last")))
         XCTAssertFalse(TerminalWindowController.isAgent(node("zsh", "-zsh")))
         XCTAssertFalse(TerminalWindowController.isAgent(node("vim", "vim claude.md")))
+        // The census's rule is the same one, and says which.
+        XCTAssertEqual(Agent.of(name: "claude", command: ""), .claude)
+        XCTAssertEqual(Agent.of(name: "node", command: "/Users/b/.local/bin/codex resume --last"), .codex)
+        XCTAssertNil(Agent.of(name: "vim", command: "vim claude.md"))
+        XCTAssertNil(Agent.of(name: "zsh", command: ""))
     }
 
 }

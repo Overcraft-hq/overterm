@@ -12,14 +12,8 @@ extension TerminalWindowController {
             .removeDuplicates()
             .sink { [weak self] asks in self?.applyTerraformAsks(asks) }
             .store(in: &cancellables)
-        TerraformMCP.paneCheckout = { tag in
-            for controller in NSApp.windows.compactMap({ $0.windowController as? TerminalWindowController }) {
-                if let tab = controller.store.tabs.first(where: { $0.terminals.contains { $0.processTag == tag } }) {
-                    return tab.checkoutSource?.root
-                }
-            }
-            return nil
-        }
+        // Its agent's folder read again first while its window is off screen.
+        TerraformMCP.paneCheckout = { tag in await TerminalWindowController.paneCheckout(tag) }
     }
 
     /// Each tab's ask: the first of its panes' — every pane, not only the

@@ -119,6 +119,11 @@ enum MainMenu {
         command(viewMenu, "Terminal in Kubernetes Context…", #selector(TerminalWindowController.openKubernetesTerminalPicker(_:)), "kubernetes.terminal")
         // Enabled while the page shows a list (TerminalWindowController.validateMenuItem).
         command(viewMenu, "Export Kubernetes List as CSV…", #selector(TerminalWindowController.exportKubernetesList(_:)), "kubernetes.exportCSV")
+        // Docker's way: ⌥⌘A again goes back to the terminal.
+        command(viewMenu, "Activity", #selector(TerminalWindowController.toggleActivityPage(_:)), "activity.page")
+        command(viewMenu, "Activity Switcher", #selector(TerminalWindowController.showActivitySwitcher(_:)), "activity.switch")
+        command(viewMenu, "Activity: Listening", #selector(TerminalWindowController.showActivityListening(_:)), "activity.listening")
+        command(viewMenu, "Free a Port…", #selector(TerminalWindowController.showActivityFreePort(_:)), "activity.freePort")
         // The rail's Terraform panel; its switcher scopes the palette to the roots.
         command(viewMenu, "Terraform", #selector(TerminalWindowController.showTerraformPanel(_:)), "terraform.show")
         command(viewMenu, "Terraform Switcher", #selector(TerminalWindowController.showTerraformSwitcher(_:)), "terraform.switch")

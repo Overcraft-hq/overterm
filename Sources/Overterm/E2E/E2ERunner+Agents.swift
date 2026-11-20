@@ -121,7 +121,11 @@ extension E2ERunner {
             let login = SurfaceProcesses.shared.loginPID(of: tab.terminal)
             check(
                 "\(agent.name) is recognised in its pane",
-                await eventually(10) { login.flatMap { TerminalWindowController.foregroundAgent(login: $0, inspector: ProcessInspector()) } == agent })
+                await eventually(10) {
+                    login.flatMap {
+                        TerminalWindowController.foregroundAgent(login: $0, tag: tab.terminal.processTag, inspector: ProcessInspector())
+                    } == agent
+                })
         }
 
         // Their questions mark their tabs, with no signal sent.

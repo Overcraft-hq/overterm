@@ -88,13 +88,14 @@ enum ShellEnvironment {
         guard let data = run(shell, ["-lic", script], environment: launchEnvironment(inherited), timeout: timeout),
             let parsed = parse(data)
         else { return nil }
-        return restoringHistory(parsed, inherited: inherited)
+        // Its markers aren't the next child's: each spawn path sets its own.
+        return restoringHistory(OvertermRun.unmarked(parsed), inherited: inherited)
     }
 
     /// The environment the shell is started with: Overterm's own, with
-    /// history going nowhere.
+    /// history going nowhere, marked as this run's (D-15).
     static func launchEnvironment(_ inherited: [String: String]) -> [String: String] {
-        inherited.merging(["HISTFILE": "/dev/null"]) { _, ours in ours }
+        OvertermRun.current.marking(inherited.merging(["HISTFILE": "/dev/null"]) { _, ours in ours }, helper: .loginShell)
     }
 
     /// The answer with the user's own HISTFILE back (or none, as Overterm

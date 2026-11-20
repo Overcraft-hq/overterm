@@ -52,19 +52,29 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// The ⌘F overlay over the terminal (terminal + files + contents).
     let spotlight = SpotlightModel()
     private(set) var spotlightView: NSView?
-    /// Polls where the selected tab's agent works (see Tab.agentDirectory).
-    private var agentPoll: Timer?
+    /// This window wants the census's light tick for its tabs: it is on
+    /// screen (`updateLightTick`, TerminalWindowController+Activity).
+    var lightTickWanted = false
+    /// A scenario's say over whether the window counts as on screen for
+    /// the light tick; nil follows the window.
+    var lightTickVisibility: Bool?
+    /// Each tab's agent's folder as the light tick last decided it against
+    /// the tab's shell: the folder, the shell's then, and what the tab
+    /// follows — decided again only when either moved.
+    var lightTickAgents: [UUID: (folder: String, shell: String?, following: String?)] = [:]
     /// The screen check's loop (`TerminalWindowController+AgentScreen`).
     var agentScreenLoop: Task<Void, Never>?
     /// Its per-pane state, by `processTag`.
     var agentScreenPanes: [String: AgentScreenPane] = [:]
     /// A round still reading: the next one skips.
     var agentScreenInFlight = false
-    /// Shared across Tab Info popovers so CPU deltas and env reads carry over.
+    /// This window's readers' lookups in the app's census (`ProcessInspector`,
+    /// docs/design/activity/analysis.md 7.8). It keeps nothing of its own:
+    /// the CPU baselines and what was read of each process live with the
+    /// census, every reader's.
     private let inspector = ProcessInspector()
     /// The strip's width in the toolbar (`sizeStrip`).
     var stripWidth: NSLayoutConstraint?
-    var processInspector: ProcessInspector { inspector }
     /// Kept across popovers: transcripts are re-read only where they grew.
     private let claudeReader = ClaudeUsageReader()
     private(set) var infoPopover: NSPopover?
@@ -126,6 +136,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     let terraformPlanPane = TerraformPlanPaneModel()
     /// Whether this window holds `KubernetesModel.show()` for its page.
     var kubernetesPageHeld = false
+    /// The Activity page's own state; its view is made the first time it opens.
+    let activityPage = ActivityPageModel()
+    /// The ⌃⌘A switcher's hold and rows, while the palette shows it.
+    let activitySwitcher = ActivitySwitcher()
     /// What an isolated run would have opened in the default browser (an Ingress).
     var kubernetesOpenedExternally: [URL] = []
     /// …and for the ⌃⌘J switcher, while the palette shows it.
@@ -194,6 +208,18 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     /// A scenario's: a Docker link (a port pill's) handed here instead of
     /// the browser.
     var dockerLinkRecorder: ((URL) -> Void)?
+    /// A scenario's: a link `openLink` would open — a pane pill's, Tab
+    /// Info's — handed here with whether Settings ▸ Browser opens it in
+    /// the browser column, instead of either browser.
+    var linkRecorder: ((URL, _ inside: Bool) -> Void)?
+    /// A scenario's: a Free on the Activity page — its owner's verb —
+    /// handed here; only a container's Stop also acts (on the run's fake
+    /// engine), nothing else reaches a forward, a tunnel, launchd or System
+    /// Settings.
+    var activityFreeRecorder: ((ActivityPortHolder.Step) -> Void)?
+    /// A scenario's: what the Activity page would open in a new tab — a
+    /// folder, a command typed, run or not — handed here instead.
+    var activityTerminalRecorder: ((ActivityTerminalRequest) -> Void)?
     /// Ask Why on a tab's mark, in a scenario: the brief handed here
     /// instead of the sheet.
     var kubernetesBriefRecorder: ((KubeAgentBrief, Tab) -> Void)?
@@ -486,8 +512,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 dockerActions: dockerActions,
                 terraformActions: terraformPanelActions,
                 openKubernetesPage: { [weak self] in self?.toggleKubernetesPage(nil) },
-                onSettings: { [weak self] in self?.openSettings() },
-                onClose: { [weak self] in self?.toggleFileTree(nil) }
+                railAction: { [weak self] in self?.performRailAction($0) }
             ))
         sidebar.sizingOptions = []
         let sidebarItem = NSSplitViewItem(
@@ -711,6 +736,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                         guard let self, let tab = self.store.tabs.first(where: { $0.id == id }) else { return }
                         self.askWhy(onMarkOf: tab)
                     },
+                    showLeftBehind: { [weak self] id in self?.showLeftBehind(of: id) },
                     close: { [weak self] in self?.toggleInbox(nil) })))
         inboxView.onKey = { [weak self] key in self?.inboxKey(key) ?? false }
         let inboxPanel = NSViewController()
@@ -753,6 +779,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         declarePage(settingsWorkspacePage())
         wireDockerPage()
         wireKubernetesPage()
+        wireActivityPage()
         wireDockerPanel()
         wireKubernetesPanel()
         wireTerraformPanel()
@@ -760,6 +787,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         wireDockerAttention()
         wireKubernetesAttention()
         wireTerraformAgents()
+        wireActivityMCP()
         wireTerraformPlan()
         watchDockerPalette().store(in: &cancellables)
         watchKubernetesPalette().store(in: &cancellables)
@@ -780,7 +808,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         tabBarView = tabBar
         installTabRightClick()
         installTabDragging()
-        startAgentPoll()
+        watchLightTick()
+        watchActivityContext()
         startAgentScreenCheck()
 
         let content = NSView()
@@ -894,6 +923,16 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             rootView: AgentOverviewView(
                 model: overview, worktrees: worktrees, theme: theme,
                 onChoose: { [weak self] in self?.chooseOverviewCard($0) },
+                onActivity: { [weak self] card in
+                    // 6.12: the page at the card's agent, else its tab.
+                    self?.showInActivity(card.agentProcess.map { .process($0, tab: card.id) } ?? .tab(card.id))
+                },
+                onOpen: { [weak self] card, url in
+                    guard let self else { return }
+                    let tab = self.store.tabs.first { $0.id == card.id }
+                    self.hideAgentOverview()
+                    self.openLink(url, for: tab)
+                },
                 onDismiss: { [weak self] in self?.hideAgentOverview() }))
         overviewView.onEscape = { [weak self] in self?.hideAgentOverview() }
         overviewView.translatesAutoresizingMaskIntoConstraints = false
@@ -987,39 +1026,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             return NSHostingView(
                 rootView: PaneHeaderView(
                     tab: tab, pane: pane, store: self.store, blocks: self.blocks(of: pane), theme: theme,
-                    actions: PaneHeaderActions(
-                        copyOutput: { [weak self] in self?.copyOutput(of: $0) },
-                        killPort: { [weak self] port in
-                            // A Kubernetes forward's: stopped, its kubectl closed by its pid.
-                            if let forward = port.forward {
-                                KubeForwards.shared.stop(forward.id)
-                                return
-                            }
-                            // A container's: stopped through the engine.
-                            if let container = port.container {
-                                self?.dockerPage.act(.stop, on: DockerModel.shared.container(container).map { [$0] } ?? [])
-                                return
-                            }
-                            // The exact pid lsof reported, asked first, and
-                            // only while it is still that process holding
-                            // the port (`stopListener`). Never a pattern:
-                            // `pkill -f` once killed the shell running the
-                            // tests (CLAUDE.md).
-                            self?.stopListener(port)
-                        },
-                        rerun: { [weak self] in self?.rerun(in: $0) },
-                        splitRight: { [weak self] in self?.split($0, .right) },
-                        splitDown: { [weak self] in self?.split($0, .down) },
-                        zoom: { [weak self] in self?.toggleSplitZoom($0) },
-                        close: { [weak self] pane in
-                            guard let self, let tab = self.tab(containing: pane) else { return }
-                            self.closePane(pane, in: tab)
-                        },
-                        openPort: { [weak self, weak tab] port in
-                            guard let url = port.url else { return }
-                            self?.openLink(url, for: tab)
-                        },
-                        showForwards: { [weak self] in self?.showKubernetesForwards() })))
+                    actions: self.paneHeaderActions(for: tab)))
         }
         host.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(host)
@@ -1050,6 +1057,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         let blocks = PaneBlocks()
         blocks.onCommandFinished = { [weak self, weak pane] block in
             self?.history.record(block, folder: pane?.workingDirectory)
+            // An agent's command ending: 2 s on, one census says whether it went (6.9).
+            if let pane { LeftBehindLedger.shared.commandFinished(in: pane.processTag) }
         }
         paneBlocks[key] = blocks
         return blocks
@@ -1222,16 +1231,51 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             self.removePane(pane, from: tab)
         }
         if guarded { return }
-        guard pane.needsConfirmClose, let window else { return removePane(pane, from: tab) }
-        let alert = NSAlert()
-        alert.messageText = "Close this pane?"
-        alert.informativeText = "Something is still running in it. Closing kills it."
-        alert.addButton(withTitle: "Close Pane")
-        alert.addButton(withTitle: "Cancel")
-        alert.beginSheetModal(for: window) { [weak self, weak tab, weak pane] response in
-            guard response == .alertFirstButtonReturn, let self, let tab, let pane else { return }
-            self.removePane(pane, from: tab)
+        // A pane with tagged survivors counts as needing the question (D-16).
+        guard pane.needsConfirmClose || Self.hasSurvivors([pane]), let window else { return removePane(pane, from: tab) }
+        Task { @MainActor [weak self, weak tab, weak pane] in
+            guard let self, let tab, let pane else { return }
+            let survivors = await self.closeSurvivors([pane])
+            guard tab.splits.contains(pane) else { return }
+            let alert = NSAlert()
+            alert.messageText = "Close this pane?"
+            alert.informativeText = [pane.needsConfirmClose ? "Something is still running in it. Closing kills it." : "", survivors.said]
+                .filter { !$0.isEmpty }.joined(separator: "\n\n")
+            alert.addButton(withTitle: "Close Pane")
+            alert.addButton(withTitle: "Cancel")
+            let boxes = Self.survivorBoxes(survivors)
+            alert.accessoryView = boxes?.0
+            alert.beginSheetModal(for: window) { [weak self, weak tab, weak pane] response in
+                guard response == .alertFirstButtonReturn, let self, let tab, let pane else { return }
+                self.removePane(pane, from: tab)
+                self.settleSurvivors(boxes?.1 ?? [])
+            }
         }
+    }
+
+    /// What a pane's header does, for `tab`'s panes: each action names its
+    /// own pane or port.
+    func paneHeaderActions(for tab: Tab) -> PaneHeaderActions {
+        PaneHeaderActions(
+            copyOutput: { [weak self] in self?.copyOutput(of: $0) },
+            freePort: { [weak self] port, pane in self?.freePort(port, in: pane) },
+            rerun: { [weak self] in self?.rerun(in: $0) },
+            splitRight: { [weak self] in self?.split($0, .right) },
+            splitDown: { [weak self] in self?.split($0, .down) },
+            zoom: { [weak self] in self?.toggleSplitZoom($0) },
+            close: { [weak self] pane in
+                guard let self, let tab = self.tab(containing: pane) else { return }
+                self.closePane(pane, in: tab)
+            },
+            openPort: { [weak self, weak tab] port in
+                guard let url = port.url else { return }
+                self?.openLink(url, for: tab)
+            },
+            showForwards: { [weak self] in self?.showKubernetesForwards() },
+            showInActivity: { [weak self, weak tab] port in
+                // 6.12: Listening with that port selected — its holder's row.
+                self?.showInActivity(.port(port.port, proto: port.proto, pid: port.pid > 0 ? port.pid : nil, tab: tab?.id))
+            })
     }
 
     /// Takes `pane` out of `tab` — the tab itself when it was its last pane.
@@ -1275,6 +1319,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         guard tab.splits.contains(pane) else { return }
         guard tab.isSplit, let rest = tab.splits.removing(pane) else { return removeTab(tab) }
         let wasFocused = tab.terminal === pane
+        retireForLeftBehind(pane, of: tab)
         pane.close()
         pane.removeFromSuperview()
         tab.setSplits(rest)
@@ -1341,6 +1386,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         addTab(terminal, .folder, agent: nil, after: store.selected, in: directory.path)
     }
 
+    /// A shell tab after the selected one, in `directory`, with `command`
+    /// typed as its shell starts and left there: Return is the person's
+    /// (Activity's read route, which asks for a password).
+    func newTab(in directory: URL, typing command: String) {
+        let fontSize = store.selected?.terminal.inheritedSettings().fontSize
+        let terminal = TerminalView(workingDirectory: directory.path, initialInput: command, fontSize: fontSize)
+        addTab(terminal, .folder, agent: nil, after: store.selected, in: directory.path)
+    }
+
     // MARK: Attention
 
     /// Actually in front of you: selected, in the key window, app active.
@@ -1377,6 +1431,15 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             clusterNotices += 1
             notifyUnlessHeld(tab, note: note, mark: .failed)
         }
+        updateAttentionBadge()
+    }
+
+    /// An agent run in `tab` ended and left processes running (6.9, D-17):
+    /// the tab's note, told while you are elsewhere — off with
+    /// `activity.leftBehindNotice`.
+    func markLeftBehind(_ note: String, on tab: Tab) {
+        guard Settings.shared.activityLeftBehindNotice else { return }
+        if tab.activity.leftBehind(note, visible: isVisible(tab)) { notifyUnlessHeld(tab) }
         updateAttentionBadge()
     }
 
@@ -1445,7 +1508,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     func refreshSessions() {
         guard Settings.shared.sessionsEnabled else { return }
         let directories = worktrees.worktrees.isEmpty ? [tree.root?.path].compactMap { $0 } : worktrees.worktrees.map(\.path.path)
-        Task { await sessions.refresh(directories: directories, tabs: store.tabs, inspector: inspector) }
+        Task { await sessions.refresh(directories: directories, tabs: store.tabs) }
     }
 
     /// The tab a session runs in, or — `inNewTab`, or not running — a new
@@ -1837,82 +1900,16 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
 
     // MARK: Following the agent
 
-    /// Every 2 s, where the selected tab's agent process (any `Agent`)
-    /// works. Claude Code moves its process into a worktree on
-    /// EnterWorktree (and back on exit); the sidebar and diff follow.
-    private func startAgentPoll() {
-        agentPoll = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated { self?.pollAgentDirectory() }
-        }
-    }
-
-    /// A scan still running: the next tick skips it (see pollAgentDirectory).
-    private var agentPollInFlight = false
-    /// Ports are read every third tick: `lsof` costs far more than reading
-    /// the process table, and a server's port does not move.
-    private var agentPollTick = 0
-
-    private func pollAgentDirectory() {
-        // A process scan slower than the 2 s tick (a loaded machine) would
-        // otherwise stack up scans on the pool, their answers out of order.
-        guard !agentPollInFlight, let tab = store.selected else { return }
-        agentPollInFlight = true
-        agentPollTick += 1
-        let readPorts = agentPollTick % 3 == 1
-        // The focused pane's agent first, then any other pane's.
-        let panes = [tab.terminal] + tab.terminals.filter { $0 !== tab.terminal }
-        let roots = panes.map { (SurfaceProcesses.shared.loginPID(of: $0), $0.processTag) }
-        let inspector = self.inspector
-        DispatchQueue.global(qos: .utility).async {
-            // Only the port tick needs every pane's tree; the rest of the
-            // time the scan stops at the first pane with an agent in it.
-            let agent: ProcessNode?
-            var pids: [pid_t] = []
-            var paneOf: [pid_t: Int] = [:]
-            if readPorts {
-                let trees = roots.map { inspector.tree(root: $0.0, tag: $0.1) }
-                agent = Self.firstAgent(in: trees)
-                for (index, tree) in trees.enumerated() {
-                    for pid in tree.flatMap(\.flattened).map(\.pid) {
-                        pids.append(pid)
-                        paneOf[pid] = paneOf[pid] ?? index
-                    }
-                }
-            } else {
-                agent = Self.firstAgent(in: roots) { inspector.tree(root: $0, tag: $1) }
-            }
-            let directory = agent?.workingDirectory
-            Task { @MainActor in
-                self.agentPollInFlight = false
-                // Only when it differs from the shell's: an agent in the
-                // tab's own directory changes nothing.
-                let shell = tab.workingDirectory.map { FileTreeModel.treeRoot(for: $0) }
-                let following = directory.flatMap { FileTreeModel.treeRoot(for: $0) == shell ? nil : $0 }
-                if tab.agentDirectory != following { tab.agentDirectory = following }
-                // A folder rule follows where the tab works, and a split's
-                // new pane takes its tab's theme.
-                self.applyTabThemes()
-                guard readPorts else { return }
-                let ports = await ListeningPorts.of(pids)
-                if tab.ports != ports { tab.ports = ports }
-                var byPane: [ObjectIdentifier: [ListeningPort]] = [:]
-                for port in ports {
-                    guard let index = paneOf[port.pid] else { continue }
-                    byPane[ObjectIdentifier(panes[index]), default: []].append(port)
-                }
-                if tab.panePorts != byPane { tab.panePorts = byPane }
-                // Its folder may have moved: its checkout's containers again.
-                self.updateContainerPorts(of: tab)
-            }
-        }
-    }
+    // Where each tab's agent works, and what its processes listen on, come
+    // from the census's light tick (TerminalWindowController+Activity).
 
     /// The first agent process under a tab's panes (`roots`: each pane's
     /// login and tag, in order). `tree` is ProcessInspector.tree, read once
-    /// per pane: it answers from the live process table, differently from
-    /// one read to the next. (`lazy.compactMap(…).first` read the pane it
-    /// returned twice and force-unwrapped the second answer — an agent
-    /// exiting in between crashed the app.)
+    /// per pane: a lookup in the census, whose answer changes from one tick
+    /// to the next, and a second read may come after a tick.
+    /// (`lazy.compactMap(…).first` read the pane it returned twice and
+    /// force-unwrapped the second answer — an agent exiting in between
+    /// crashed the app.)
     nonisolated static func firstAgent(in roots: [(pid_t?, String)], tree: (pid_t?, String) -> [ProcessNode]) -> ProcessNode? {
         for (root, tag) in roots {
             if let agent = tree(root, tag).flatMap(\.flattened).first(where: isAgent) { return agent }
@@ -1920,17 +1917,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         return nil
     }
 
-    /// The same, over trees already in hand — for a caller that needs every
-    /// pane's tree anyway (the port scan does) and so cannot stop early.
-    nonisolated static func firstAgent(in trees: [[ProcessNode]]) -> ProcessNode? {
-        for tree in trees {
-            if let agent = tree.flatMap(\.flattened).first(where: isAgent) { return agent }
-        }
-        return nil
-    }
-
-    /// A known agent (`Agent`), by process name or argv (`argvAgent`, read
-    /// off the raw words: `command` is masked).
+    /// A known agent (`Agent`), by process name or argv (`Agent.of`, the
+    /// census's rule too).
     nonisolated static func isAgent(_ node: ProcessNode) -> Bool {
         AgentOverviewModel.agent(of: node) != nil
     }
@@ -1979,6 +1967,20 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 "“\(worktree.displayName)” has \(open.count) open tab\(open.count == 1 ? "" : "s"). Close \(open.count == 1 ? "it" : "them") before removing the worktree.")
             return
         }
+        // What runs in it outside every tab, by folder or open file (6.9).
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let read = await self.worktreeProcesses(worktree.path)
+            if read.found.isEmpty, read.complete {
+                self.confirmRemoveWorktree(worktree, force: force, repo: repo, on: window)
+            } else {
+                // A listing cut short is said, never taken for "nothing runs".
+                self.askAboutWorktreeProcesses(read.found, complete: read.complete, in: worktree, force: force, repo: repo, on: window)
+            }
+        }
+    }
+
+    private func confirmRemoveWorktree(_ worktree: Worktree, force: Bool, repo: URL, on window: NSWindow) {
         let alert = NSAlert()
         alert.messageText = force ? "Force-remove “\(worktree.displayName)”?" : "Remove worktree “\(worktree.displayName)”?"
         alert.informativeText =
@@ -1990,18 +1992,23 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         alert.alertStyle = force ? .critical : .warning
         alert.beginSheetModal(for: window) { [weak self] response in
             guard response == .alertFirstButtonReturn else { return }
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                do {
-                    _ = try await Git.run(["worktree", "remove"] + (force ? ["--force"] : []) + [worktree.path.path], in: repo)
-                    await self.worktrees.refresh()
-                } catch {
-                    // git refuses a dirty worktree without --force; offer it.
-                    if !force, (error as? GitError)?.stderr.contains("--force") == true {
-                        self.removeWorktree(worktree, force: true)
-                    } else {
-                        self.showAlert("Couldn’t remove the worktree", error.localizedDescription)
-                    }
+            self?.performRemoveWorktree(worktree, force: force, repo: repo)
+        }
+    }
+
+    /// `git worktree remove`, the dirty case offered with --force.
+    func performRemoveWorktree(_ worktree: Worktree, force: Bool, repo: URL) {
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            do {
+                _ = try await Git.run(["worktree", "remove"] + (force ? ["--force"] : []) + [worktree.path.path], in: repo)
+                await self.worktrees.refresh()
+            } catch {
+                // git refuses a dirty worktree without --force; offer it.
+                if !force, (error as? GitError)?.stderr.contains("--force") == true {
+                    self.removeWorktree(worktree, force: true)
+                } else {
+                    self.showAlert("Couldn’t remove the worktree", error.localizedDescription)
                 }
             }
         }
@@ -2025,6 +2032,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     kept.append((worktree, "locked"))
                 } else if !self.tabs(in: worktree).isEmpty {
                     kept.append((worktree, "open in a tab"))
+                } else if let running = await self.runningInWorktree(worktree) {
+                    // 6.9: never removed under what runs in it, nor when
+                    // that couldn't be read; removing it alone lists them.
+                    kept.append((worktree, running))
                 } else if await Self.hasChanges(worktree.path) {
                     kept.append((worktree, "uncommitted changes"))
                 } else {
@@ -2033,6 +2044,14 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             }
             self.confirmCleanUp(removable: removable, kept: kept, repo: repo)
         }
+    }
+
+    /// Why Clean Up Merged keeps `worktree` for what runs in it; nil when
+    /// nothing does, as a complete read says.
+    private func runningInWorktree(_ worktree: Worktree) async -> String? {
+        let read = await worktreeProcesses(worktree.path)
+        if !read.found.isEmpty { return "processes run in it" }
+        return read.complete ? nil : "what runs in it couldn’t be read"
     }
 
     private static func hasChanges(_ path: URL) async -> Bool {
@@ -2660,6 +2679,10 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
             menu.addItem(ClosureMenuItem("Reset Name") { tab.customTitle = nil })
         }
         menu.addItem(ClosureMenuItem("Show Info…") { [weak self] in self?.showInfo(for: tab) })
+        if Settings.shared.activityEnabled {
+            // 6.12: the page, scoped to the tab.
+            menu.addItem(ClosureMenuItem("Show in Activity") { [weak self] in self?.showInActivity(.tab(tab.id)) })
+        }
         if let askWhy = kubernetesAttentionMenuItem(for: tab) { menu.addItem(askWhy) }
         menu.addItem(
             tab.isSuspended
@@ -2708,7 +2731,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     func showInfo(for tab: Tab) {
         infoPopover?.close()
         guard let strip = tabBarView, let theme, let frame = store.tabFrames[tab.id] else { return }
-        let model = TabInfoModel(tab: tab, inspector: inspector, claudeReader: claudeReader)
+        // A split tab's groups are labelled by what each pane runs.
+        let model = TabInfoModel(tab: tab, claudeReader: claudeReader) { [weak self] pane in self?.blocks(of: pane).ledger.running?.command }
         let popover = NSPopover()
         popover.behavior = .transient
         // Its contents are painted in the terminal's colours; its controls
@@ -2720,7 +2744,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                 openURL: { [weak self, weak tab] url in
                     self?.infoPopover?.close()
                     self?.openLink(url, for: tab)
-                }))
+                },
+                showInActivity: Settings.shared.activityEnabled ? { [weak self] link in self?.showInActivity(link) } : nil))
         popover.delegate = self
         // Strip frames are top-left; the host is flipped, so that is its space.
         var rect = frame
@@ -3212,7 +3237,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     @objc func showAgentOverview(_ sender: Any?) {
         guard let overviewView else { return }
         if !overviewView.isHidden { return hideAgentOverview() }
-        Task { await overview.refresh(store.tabs, inspector: inspector) }
+        Task { await overview.refresh(store.tabs) }
         overviewView.isHidden = false
         window?.makeFirstResponder(overviewView)
         overviewEscape = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
@@ -3223,7 +3248,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         overviewPoll = Timer.scheduledTimer(withTimeInterval: 2, repeats: true) { [weak self] _ in
             MainActor.assumeIsolated {
                 guard let self else { return }
-                Task { await self.overview.refresh(self.store.tabs, inspector: self.inspector) }
+                Task { await self.overview.refresh(self.store.tabs) }
             }
         }
     }
@@ -3250,6 +3275,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         paletteView?.isHidden = true
         focusSelectedTerminal()
         releaseKubernetesSwitcher()
+        releaseActivitySwitcher()
     }
 
     /// Actions first, then tabs, worktrees and snippets — the order shown
@@ -3591,15 +3617,29 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         // Settings ▸ General ▸ Ask before closing: only when something runs.
         if !Self.needsCloseConfirmation(tabs) { return tabs.forEach { removeTab($0) } }
         if tabs.count == 1 { store.select(tabs[0]) }
+        // What closing leaves running, from a fresh census (6.9, D-16).
+        let panes = tabs.flatMap(\.terminals)
+        Task { @MainActor [weak self] in
+            guard let self else { return }
+            let survivors = await self.closeSurvivors(panes)
+            self.askToClose(tabs.filter { tab in self.store.tabs.contains { $0 === tab } }, survivors: survivors, on: window)
+        }
+    }
+
+    private func askToClose(_ tabs: [Tab], survivors: ActivitySurvivors, on window: NSWindow) {
+        guard !tabs.isEmpty else { return }
         let alert = NSAlert()
         alert.messageText = tabs.count == 1 ? "Close “\(tabs[0].title)”?" : "Close \(tabs.count) tabs?"
-        alert.informativeText = Self.closeWarning(for: tabs)
+        alert.informativeText = [Self.closeWarning(for: tabs), survivors.said].filter { !$0.isEmpty }.joined(separator: "\n\n")
         alert.addButton(withTitle: tabs.count == 1 ? "Close Tab" : "Close \(tabs.count) Tabs")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
+        let boxes = Self.survivorBoxes(survivors)
+        alert.accessoryView = boxes?.0
         alert.beginSheetModal(for: window) { [weak self] response in
-            guard response == .alertFirstButtonReturn else { return }
-            tabs.forEach { self?.removeTab($0) }
+            guard response == .alertFirstButtonReturn, let self else { return }
+            tabs.forEach { self.removeTab($0) }
+            self.settleSurvivors(boxes?.1 ?? [])
         }
     }
 
@@ -3614,6 +3654,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     ) -> Bool {
         confirmClose == .always || tabs.contains { $0.terminals.contains { $0.needsConfirmClose } }
             || !runningForwards(of: tabs, in: forwards, quitting: quitting).isEmpty
+            // What carries their tags and will keep running counts (D-16).
+            || hasSurvivors(tabs.flatMap(\.terminals))
     }
 
     /// The forwards closing these tabs (or quitting) is about: those not
@@ -3727,6 +3769,8 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
                     self.kubernetesPanelSettingsChanged()
                 }
                 if keys.contains(where: { $0.hasPrefix("terraform.") }) { self.terraformPanelSettingsChanged() }
+                if keys.contains("activity.interval") { self.activityIntervalChanged() }
+                if keys.contains(where: { $0.hasPrefix("activity.") }) { self.activitySettingsChanged() }
                 if !keys.isDisjoint(with: Self.sidebarPanelKeys) { self.sidebarPanelsChanged() }
                 if keys.contains("general.sidebarRail") { self.sizeSidebarColumn() }
                 let editorKeys = keys.filter { $0.hasPrefix("editor.") }
@@ -3871,6 +3915,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         focus.forget(tab.id)
         broadcast.forget(tab)
         for pane in tab.terminals {
+            retireForLeftBehind(pane, of: tab)
             pane.close()
             pane.removeFromSuperview()
         }
@@ -4279,7 +4324,9 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         }
         let alert = NSAlert()
         alert.messageText = store.tabs.count == 1 ? "Close the window?" : "Close the window and its \(store.tabs.count) tabs?"
-        alert.informativeText = Self.closeWarning(for: store.tabs, quitting: last)
+        // What goes on running is named: under "only when something is running" it may be why this asks (D-16).
+        alert.informativeText = [Self.closeWarning(for: store.tabs, quitting: last), Self.survivorsListed(store.tabs.flatMap(\.terminals))]
+            .filter { !$0.isEmpty }.joined(separator: "\n\n")
         alert.addButton(withTitle: "Close Window")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
@@ -4300,6 +4347,18 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
     func windowDidChangeOcclusionState(_ notification: Notification) {
         for page in pages.all { page.occlusionChanged?() }
         updateEditorOnScreen()
+        updateLightTick()
+    }
+
+    func windowDidMiniaturize(_ notification: Notification) { updateLightTick() }
+
+    func windowDidDeminiaturize(_ notification: Notification) { updateLightTick() }
+
+    /// Shown, its tabs are the light tick's (an isolated run's window too,
+    /// which may never be told its occlusion changed).
+    override func showWindow(_ sender: Any?) {
+        super.showWindow(sender)
+        updateLightTick()
     }
 
     func windowWillClose(_ notification: Notification) {
@@ -4309,7 +4368,7 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         if let peekKeys { NSEvent.removeMonitor(peekKeys) }
         peek.close()
         saveFinalSession()
-        agentPoll?.invalidate()
+        endLightTick()
         agentScreenLoop?.cancel()
         usage.stop()
         pullRequestPoll?.invalidate()
@@ -4319,7 +4378,13 @@ final class TerminalWindowController: NSWindowController, NSWindowDelegate, NSTo
         forgetKubernetesCheckouts()
         for page in pages.all { page.windowClosing?() }
         updateMenuBarItem(count: 0)
-        for tab in store.tabs { tab.terminals.forEach { $0.close() } }
+        for tab in store.tabs {
+            for pane in tab.terminals {
+                // What its panes leave is a closed pane's, as a tab's close says (6.9).
+                retireForLeftBehind(pane, of: tab)
+                pane.close()
+            }
+        }
     }
 }
 

@@ -23,6 +23,18 @@ enum Agent: String, CaseIterable, Identifiable, Codable, Sendable {
         }
     }
 
+    /// The CLI's own full name, where a heading names it (Activity's tab
+    /// groups): "Claude Code", "Gemini CLI".
+    var productName: String {
+        switch self {
+        case .claude: "Claude Code"
+        case .codex: "Codex"
+        case .opencode: "opencode"
+        case .pi: "pi"
+        case .gemini: "Gemini CLI"
+        }
+    }
+
     /// Typed into a fresh shell to start the agent.
     var command: String { rawValue }
 
@@ -39,6 +51,25 @@ enum Agent: String, CaseIterable, Identifiable, Codable, Sendable {
         case .pi: "pi --continue"
         case .gemini: "gemini --resume latest"
         }
+    }
+
+    /// The agent a process is, by its name (`of(processName:)`) or its
+    /// command (`of(arguments:)`: its first word's file — `claude`,
+    /// `/opt/homebrew/bin/codex` — or the script `node` runs, Gemini CLI);
+    /// nil for anything else.
+    /// The census's light tick and every reader of a tab's tree ask this.
+    static func of(name: String, command: String) -> Agent? {
+        of(name: name, argv: nil, command: command)
+    }
+
+    /// The same, with the agent argv[0]'s raw word names, as the census
+    /// read it (`ProcessArguments.agent`) — a masked first word may hide it
+    /// (a long relative path reads as a base64 blob) —, else the masked
+    /// command's first word.
+    static func of(name: String, argv: Agent?, command: String) -> Agent? {
+        if let agent = of(processName: name) { return agent }
+        if let argv { return argv }
+        return of(arguments: [command])
     }
 
     /// Picks one conversation back up (Claude Code's --resume); nil for

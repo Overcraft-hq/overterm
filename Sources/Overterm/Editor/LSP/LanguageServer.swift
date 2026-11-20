@@ -208,6 +208,14 @@ final class LanguageServer: @unchecked Sendable {
         return environment
     }
 
+    /// What its process is given: `environment(_:adding:setting:removing:)`
+    /// over `inherited`, then marked as this run's (D-15) — after the
+    /// removals, so no pattern takes the markers.
+    func processEnvironment(_ inherited: [String: String]) -> [String: String] {
+        OvertermRun.current.marking(
+            Self.environment(inherited, adding: command.environment, setting: environmentAdded, removing: environmentRemoved), helper: .languageServer)
+    }
+
     /// `environmentRemoved`'s patterns: a name, `X*`, `*X`, `*X*` — in
     /// any case: a credential spelt `aws_secret_access_key` is still one
     /// (`TerraformGuards.isCredential` reads names the same way).
@@ -243,7 +251,7 @@ final class LanguageServer: @unchecked Sendable {
         process.executableURL = command.executable
         process.arguments = command.arguments
         process.currentDirectoryURL = root
-        process.environment = Self.environment(ProcessInfo.processInfo.environment, adding: command.environment, setting: environmentAdded, removing: environmentRemoved)
+        process.environment = processEnvironment(ProcessInfo.processInfo.environment)
         let stdin = Pipe()
         let stdout = Pipe()
         let stderr = Pipe()

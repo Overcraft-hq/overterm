@@ -33,15 +33,11 @@ extension TerminalWindowController {
             .debounce(for: .milliseconds(500), scheduler: DispatchQueue.main)
             .sink { [weak self] _ in self?.kubernetesPanel.gitOps.headMayHaveMoved() }
             .store(in: &cancellables)
-        // An agent's `k8s_` call: its pane's tab's checkout, in any window.
-        KubeMCP.paneCheckout = { tag in
-            for controller in NSApp.windows.compactMap({ $0.windowController as? TerminalWindowController }) {
-                if let tab = controller.store.tabs.first(where: { $0.terminals.contains { $0.processTag == tag } }) {
-                    return tab.checkoutSource?.root
-                }
-            }
-            return nil
-        }
+        // An agent's `k8s_` call: its pane's tab's checkout, in any window —
+        // its agent's folder read again at the call's start while its window
+        // is off screen, then asked as the tab says it.
+        KubeMCP.paneFollow = { tag in _ = await TerminalWindowController.paneCheckout(tag) }
+        KubeMCP.paneCheckout = { tag in TerminalWindowController.knownCheckout(ofPane: tag) }
     }
 
     /// The selected tab's checkout, as the diff, Ask Why and agents'

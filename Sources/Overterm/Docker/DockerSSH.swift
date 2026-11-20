@@ -156,10 +156,14 @@ final class DockerSSHForward: ManagedResource {
     }
 
     /// The local end's path: short (a unix socket's path is 104 bytes at
-    /// most), this process's own, one a host.
-    static func localSocket(for target: DockerSSHTarget, folder: URL = FileManager.default.temporaryDirectory) -> String {
+    /// most), this run's own, one a host. Its name says the run's pid and
+    /// start (`ArgvSign.dockerSSH`): `/usr/bin/ssh` hides its environment,
+    /// so this is how a forward a crashed run left is known for its.
+    static func localSocket(
+        for target: DockerSSHTarget, folder: URL = FileManager.default.temporaryDirectory, run: ActivityProcessID = OvertermRun.current.identity
+    ) -> String {
         let key = String(UInt64(bitPattern: Int64(target.url.hashValue)) % 0xFFFF_FFFF, radix: 16)
-        return folder.appendingPathComponent("ot-docker-\(getpid())-\(key).sock").path
+        return folder.appendingPathComponent(ArgvSign.dockerSocket(run: run, key: key)).path
     }
 
     /// Where the engine's socket is on the host: the target's own path, else
@@ -200,7 +204,8 @@ final class DockerSSHForward: ManagedResource {
     static func launch(_ target: DockerSSHTarget, localSocket: String, remoteSocket: String) -> ManagedProcess.Launch {
         ManagedProcess.Launch(
             executable: ssh, arguments: arguments(target, localSocket: localSocket, remoteSocket: remoteSocket),
-            readiness: .socket(localSocket), timeout: 20, removing: [localSocket])
+            readiness: .socket(localSocket), timeout: 20, removing: [localSocket],
+            helper: .dockerSSH)
     }
 
     /// The host's real name, as ~/.ssh/config makes it (`ssh -G`, which

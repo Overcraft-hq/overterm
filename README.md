@@ -13,7 +13,7 @@
 <p align="center">
   <img alt="macOS 13+" src="https://img.shields.io/badge/macOS-13%2B-1d1d1f">
   <img alt="Apple silicon" src="https://img.shields.io/badge/Apple%20silicon-arm64-1d1d1f">
-  <img alt="Swift 6.1" src="https://img.shields.io/badge/Swift-6.1-f05138">
+  <img alt="Swift 6.4" src="https://img.shields.io/badge/Swift-6.4-f05138">
   <img alt="libghostty v1.4.0" src="https://img.shields.io/badge/libghostty-v1.4.0-2bb35d">
 </p>
 
@@ -184,7 +184,7 @@ that says nothing (opencode) still marks its tab.
 | **⌘L** | The selection to an agent, with the command it came from, its exit code and the diff. |
 | **New Task** <kbd>⇧⌘N</kbd> | A worktree, a branch and an agent tab in one go — and its compose stack, on free ports if another worktree's has them. |
 | **Search** <kbd>⌘F</kbd> | The scrollback, the checkout's file names and their contents; ⌘-click a `path:line` to open it. |
-| **Agents over MCP** | Claude Code, Codex, opencode and Gemini CLI started here (each for that launch only, nothing written to their configs; pi has no MCP) reach the browser, the notes, the API client, the databases, Docker, Kubernetes (`k8s_get`, `k8s_logs`, `k8s_why`, `k8s_metrics`…) and Terraform (`tf_roots`, `tf_validate`, `tf_plan`, `tf_outputs`…) — reads freely, asks you before anything writes. |
+| **Agents over MCP** | Claude Code, Codex, opencode and Gemini CLI started here (each for that launch only, nothing written to their configs; pi has no MCP) reach the browser, the notes, the API client, the databases, Docker, Kubernetes (`k8s_get`, `k8s_logs`, `k8s_why`, `k8s_metrics`…) Terraform (`tf_roots`, `tf_validate`, `tf_plan`, `tf_outputs`…) and this Mac's processes and ports (`port_holder`, `proc_mine`, `proc_left_behind`…) — reads freely, asks you before anything writes. |
 | **Restored** | Tabs, names, splits and islands come back on relaunch: shells with their last 2000 lines, agent tabs resuming their conversation. |
 
 How each works, in detail: [docs/architecture.md](docs/architecture.md).
@@ -261,12 +261,12 @@ for a Keep or Revert.
 
 ## Build
 
-Requirements: macOS 13+, Xcode 16.4 (what CI and releases build with),
+Requirements: macOS 13+, Xcode 27.2 (what CI and releases build with),
 [mise](https://mise.jdx.dev). With another Xcode selected, point the shell at
-16.4 — the system's choice stays:
+27.2 — the system's choice stays:
 
 ```sh
-export DEVELOPER_DIR=/Applications/Xcode-16.4.app/Contents/Developer
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer   # wherever Xcode 27.2 is installed
 ```
 
 ```sh

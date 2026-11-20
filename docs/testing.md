@@ -350,7 +350,13 @@ Codex's is "not guarded", a checkout with no Terraform gets nothing. A
 script in the agent tab prints a Claude Code permission prompt for
 `cd envs/prod && terraform apply -auto-approve`: the tab is marked with
 envs/prod, production; the Inbox's card has no answer and `answer` types
-nothing; the mark goes when the screen is cleared. The scenario runs the
+nothing; the mark goes when the screen is cleared. With the window off
+screen (`lightTickVisibility = false`, so no light tick), an agent tab whose
+shell is in a checkout with no Terraform runs a stand-in agent that works
+in the one with production roots: its folder is followed there all the same
+(`OffScreenAgents`), a stand-in `terraform output` it runs marks the pane
+as having printed secrets, and its ask is read and said as production —
+each step waiting for a file the scenario writes. The scenario runs the
 real terraform itself (init and `plan -out`, `terraform_data` only, in the
 guarded scratch environment) and reads the plan through `tf_plan_summary`:
 the sensitive variable's sentinel absent, `show -json /dev/fd/3` the only
@@ -410,6 +416,376 @@ state and outputs and 2d's drift and tests (`+TerraformB2c`,
 `terraformPerf` needs an installed terraform (`OVERTERM_TF_TEST_TERRAFORM`,
 else Homebrew's) and is skipped without one.
 
+### Activity
+
+The census (`Sources/Overterm/Activity/`, docs/design/activity/analysis.md
+Section 10) reads the real process table, and a test may only ever touch
+processes it started. The kernel is a protocol, `ActivityKernel`:
+`FakeActivityKernel` is a whole Mac a test makes — other users'
+processes, 20,000 sockets, a clock it moves — for the classification,
+the bounds and the rates. Real processes are the test's own children
+only (`TestChild`, `Tests/OvertermTests/ActivityTestChildren.swift`):
+spawned into a group of their own, never the runner's, their identity
+(pid and start time) read at spawn and read again before the one SIGKILL
+their cleanup sends, then reaped. Never a name, a pattern, `kill(-1)` or
+a group the test didn't make. A child that wouldn't end on its own ends
+itself (a busy loop's `ulimit -t 20`): a runner stopped by ⌃C, whose
+SIGINT never reaches a child's own group, or a crash leaves nothing
+burning a core. What the tests plant is invented (`acme-*`,
+`SENTINEL-*`); no assertion message carries an argv, an environment
+value, a path or an address of a process that isn't the test's.
+
+- `ProcessTableTests`: the headroom retry, every field, parents by
+  start time; a child's start and parent, a zombie child, a `nohup`'d one.
+- `ProcessUsageTests`: rates by the interval measured, 250 ms at least and
+  15 s at most, the first sample "—", baselines that survive readers asking for others
+  (Tab Info's split-tab 0%); a busy child's rate.
+- `ProcessArgumentsTests`: argv masked at the read and cut at 64 KB, the
+  environment scanned in place for four names only — a sentinel planted
+  in a python child's environment never in any string the read makes —,
+  a reader's own names alone (Terraform's three, a closed set no
+  secret's name is in), argv's words handed to it inside the read,
+  the region cleared, a `CS_RESTRICT` child's environment hidden; a full
+  region never parsed (an area an `exec` grew read again, one past
+  `kern.argmax` refused); a title written over argv read alone, a
+  python child's that writes one too.
+- `ProcessCommandTests`: a command line as Tab Info's tooltip shows it,
+  read as the census reads argv — a fake password, made at run time,
+  masked in every form (a flag's, mysql's `-p`, a URL's, a bearer's, with
+  a space in it, starting with `/`, inside Claude Code's `eval`) —, while
+  which agent runs (argv[0] a long relative path that masking hides) and
+  the session a Claude resumed (`--fork-session -r <id>`) are taken off
+  the raw words inside the read.
+- `SocketScanTests`: the classification from fixtures; a child handed
+  listeners on 127.0.0.1 and ::1 and a bound UDP socket; a child holding
+  3,000 sockets read 2,000 a tick, rotating.
+- `ActivityTextTests`: masking for display, for titles (as commands) and
+  for agents, `Secrets`' per-program passwords (9.3), interpreters'
+  labels, masked before they are cut.
+- `ActivitySamplerTests`: a tick over a fake Mac — two panes read in turn
+  both reading their CPU (Tab Info's split-tab 0%), the first sample "—"
+  and a reused pid's again, rates only over 250 ms and never over a gap,
+  what each level reads, a tagged process joining its pane (a tree's
+  members' environments never read), the pane's agent and its folder, an
+  `exec` read again; the churn budget (200 a tick, the level's own first —
+  what carries a pane's tag among them once it is known —, then the
+  oldest, and the time the reads may take), a read still to come told
+  from a failed one, the cache's bound (ended identities first), the
+  in-flight guard, the stretched cadence, a folder on a mount that
+  doesn't answer, one waited for bounded by its deadline, one read since
+  a moment (an MCP call's) never the one known while a read goes on, at most 200
+  folders asked a tick, the app's children
+  for the pairing and the logins no pane has, listed on its queue (a
+  zombie `login` left out); a lookup answered from the
+  latest snapshot while it is a tick old at most, else a tick, a cold one
+  reading what the budget left in the same call, one waiting for the tick
+  in flight; then a busy child of the test's through the real
+  kernel. The fake's clock moves only when told — a call made to cost
+  time or held (`FakeActivityKernel.onCall`, `CallGate`) — so nothing
+  waits on a moment.
+- `ProcessInspectorTests`: a tab's tree a lookup in the census — a split
+  tab's two panes asked for in turn both reading their CPU, no new scan
+  while a snapshot is a tick old, a tag alone or a root no pane has, a
+  setuid child, one running as the user only for now and a zombie left
+  out of a tree (Tab Info's own nodes name them), an agent's folder at
+  once, a reused pid inheriting nothing, a command and
+  its tooltip masked as it is read —, then the test's own children: a
+  tree, a nohup'd python found by its tag among every process's markers,
+  two busy roots read in turn.
+- `SurfaceProcessesTests`: which `login` is whose, stand-in surfaces over
+  a fake Mac — a list a tick old never pairs a new pane with a closed
+  pane's `login` (ended, a zombie, its pid another's since), a surface
+  made after a list takes nothing from it, the oldest surface the oldest
+  `login`, a pairing over only with its `login`, waiting surfaces paired
+  from a list read off the main thread (Tab Info's, as it opens), and
+  from a census that landed — a zombie `login` never paired, one taken
+  since never offered twice; the app's children from one read of the
+  table, a zombie `login` left out.
+- `TabSuspensionTests`: the sends through `ProcessSignals` over a fake
+  Mac, the shell stopped first and continued last; what Suspend Tab stops
+  read at the press — a lookup that always ticks, where the census's
+  other readers answer from a snapshot a tick old; the pane's set
+  (`ActivityPaneSet`) — a tagged daemon whose child sits on a pty of its
+  own, a tmux by name, an app and its helper, a nohup'd job and a tree
+  member on another terminal left out, what left the terminal and a dev
+  build's `.app` inside a checkout kept; the pane's own jobs on its
+  terminal kept whatever their path — Xcode's toolchain, a framework's
+  `Python.app`, a CLI in an app's `Contents/Resources`; a reused pid
+  never resumed.
+- `TabInfoModelTests`: Tab Info over its tab's slice — a split tab a group
+  a pane, each labelled (masked), the shell its dimmed root, what left a
+  terminal under its pane, both panes' busy children's CPU, the
+  footprint, the ports from the census's sockets (no lsof), a snapshot of
+  another tab left alone.
+- `ListeningPortsTests`: where a listener is opened — its URL from its
+  sockets' bound addresses and families (6.8's table, on documentation
+  addresses: a dual-stack wildcard or both families on loopback
+  `localhost`, IPv4 alone `127.0.0.1`, IPv6 alone `[::1]`, one address
+  that address, a loopback alias such as 127.0.0.2 too, a link-local one
+  nothing to open) —, a process's v4 and v6 sockets on one port one entry
+  with the widest scope and its holder's identity, a published port
+  reached where it is published; who holds a
+  port, the census's (the oldest of the user's listeners, a UDP socket
+  or a connection from the number none, another user's never named) and
+  a real child's listener named by the walk; the bind probe on a real
+  listener, and on a socket bound to one of this Mac's own addresses —
+  bound, never listening, so no firewall asks — which the wildcard and
+  loopback probes alone never met. A port is watched with the census
+  (`KubePortForwardTests`' and the `kubernetes` scenario's forward gone),
+  never by binding it. A forward's scope is where kubectl listens, and
+  Tab Info says the address of one that isn't this Mac's alone
+  (`KubePortForwardTests`).
+- `TabLightReadTests`: the light tick's consumers from a fake census —
+  each pane's own ports (what carries its tag outside its tree under it),
+  a holder's v4 and v6 sockets one pill, none for a setuid program the
+  pane runs (only what runs as the user alone), the tab's ports sorted, a pane
+  the snapshot has for another tab not this tab's; an agent's folder read
+  since a moment over the one the tick knew (the `follow` scenario's: off
+  screen, an agent's `tf_` and `k8s_` calls scoped at their first ask to
+  the worktree it just entered); the focused pane's
+  agent first, its folder followed once read, kept while it isn't, nothing
+  to follow where it can't be read; Docker's "a tab holds the port" from
+  a census of every pane, a process outside every pane no tab's. Setting
+  them on the tabs is the `info` scenario's — a server started in a tab
+  that isn't selected shows on its pill, and a window off screen wants no
+  light tick until it shows — and the `docker` scenario's: a container
+  whose port a server holds in a tab that isn't selected names that tab.
+- `ActivityMonitorTests`: one tick for every reader at the fastest
+  cadence, the ticks stopped at the last `unwant` and when a reader goes
+  away, an early tick only for a wider want and once for a burst, one-off
+  censuses coalesced and nil when the table can't be read, agents served
+  from a snapshot at most one interval old (at 1 s too), a tick in flight
+  never doubled, the context rebuilt once for a burst of changes, at its
+  limit for one that never quiets, and by the early tick a tab opened and
+  wanted in the same turn makes; a pairing a snapshot brought bringing
+  the next tick early; a busy Mac's 5 s.
+- `ProcessSignalsTests`: the one signal path over a fake Mac — the refusals
+  made before any call that touches a process (pid ≤ 1, this process, what
+  doesn't run as the user alone: a setuid program's, root's, another
+  user's, and what runs as the user only for now, its real or saved uid
+  another's), a pid taken again before the token or after it (the token
+  then reaches nothing), or, with no token, after the path was read and
+  before the kill, an exec since it was listed or between the token and the
+  send told apart from an end (its own binary again too), a deleted
+  executable, a stopped target continued after TERM and INT but never a
+  traced one, no token or no token call (only a single TERM or INT falls
+  back),
+  Overterm's helpers by where they sit and by their group (an apply found
+  again, a plugin reparented), the gate and the real kernel's own check of
+  it; then the test's own children through the real kernel: a setuid `top`,
+  refused by its effective uid though `kill(child, 0)` passes, kept alive by
+  an output pipe the test never reads and ended by its own SIGPIPE; a bash
+  that execs sleep after it was listed, and between the token and the send
+  (the old token's ESRCH); a token across an exec and an end (a zombie's
+  ESRCH the kernel's, a reaped pid's the gate's); a dead child, a zombie and
+  then reaped; an unregistered child the real kernel's sends refuse, though
+  a `ProcessSignals` was handed a gate that registered it; a
+  `ManagedProcess`'s member let go to launchd, a helper's by its group; an
+  apply's group while a run has it; a sleep
+  stopped, continued and ended by its token; its priority — Run in
+  Background and back, a nice raised a step then to 20, never lowered — and
+  the real kernel's `setpriority` refused for what isn't the run's own. A
+  priority over the fake Mac is checked as a signal is (refusals, the
+  gate, a reused pid, an exec, no token, a nice no higher). A group's send (6.10 step 9)
+  over the fake Mac: one `killpg` once the leader is pinned and every
+  member checked; refused for a member that started before the leader, is
+  in another session, isn't the user's alone or is a helper's, for a
+  leader that doesn't lead its group, and for a member not the run's own
+  in an isolated run; an ended leader's pid another's says so. In
+  `TerraformApplyTests`, the close guard's Interrupt over the fake Mac: its
+  targets kept (terraform's own group, terraform alone in an agent's); a
+  group refused — a member older than the leader, a helper's in it — sends
+  nothing and is said, never terraform alone instead; no start read by
+  `find` reaches nobody; with no token call terraform alone still goes by
+  its pid and its own group is refused and said.
+- `ActivityHeldTests`: a Suspend's tree stopped only once its root was, a Resume planned again at its button; what Activity stopped and put in the background,
+  kept by identity — resumed as kept, a Suspension whole from its root;
+  let go only by a census read after the change; the quit question's
+  count read now and its Resume and Quit, children first by token, a pid
+  another process holds since never sent anything, one it couldn't
+  continue still held and asked about again.
+- `ActivitySignalCheckTests`: the pane pill's Free… over every class a pill
+  can name — the owners' own verbs, the never-list (what runs as the user
+  only for now among it), a terraform write interrupted wherever it runs,
+  the agent's critical Stop, a helm or pulumi write's critical sheet and
+  its reading from a masked argv, what outlives its terminal and apps
+  refused — and every Free asked, the owners' own verbs too.
+- `SystemMetersTests`: the meters' arithmetic — CPU a core between two
+  reads, none for a first one, the counters' wrap at 2³², a changed core
+  count, a core whose counters didn't move or a gap over 15 s without a
+  rate; memory in Activity Monitor's terms; the pressure
+  and thermal words; the full tick carrying them and the light one never
+  asking; the real kernel's counters, counts only.
+- `ActivityRowsTests`: the page's rows over a fake Mac — everyone's
+  processes, other users' without numbers, a first sample "—", CPU first
+  once rated, the busiest five, only yours without `activity.everyone`, a
+  test run's own tabs' alone with the Mac counted, the user's listeners
+  by number with their tab and reach, what each row says to VoiceOver,
+  numbers written the same in every locale, a tab's title masked as a
+  command in the rows and their labels, the Started column's words, when
+  the header says "Reading…" and what an empty section says; the page's
+  want — the full level only while it is shown in a window on screen with
+  Activity on, its rows dropped when hidden and none made while hidden;
+  the ⌃⌘A switcher's rows (ports by number, then the ten busiest with a
+  rate) and its hold, every second while open, its rows kept once rated,
+  a masked title's secret in none of them; ⌘K's Activity tab only while
+  Activity is on.
+- `ActivityPortsTests`: Listening over a fake Mac — a holder's v4 and v6
+  one row and UDP without a URL, the URL by the bound families, the
+  owners in order (a container by its published address, port and
+  protocol, never the number alone, and its own row "via the engine"
+  only at the Mac's or its checkout's scope; a forward keeping its https,
+  a database tunnel, the bridge, a pane, AirPlay Receiver, a brew service
+  by `XPC_SERVICE_NAME`, a job by a LaunchAgent plist's program — plists
+  read from a temporary folder, none under test; a link and a FIFO never
+  read, a program behind a link resolved), an engine's listener on no
+  published port its host network, one number on two host addresses two
+  containers, a container's own row bound and given its URL as published
+  (and its collision with a checkout's server), one socket's holders one
+  row, connections paired by the 4-tuple — a socket two processes hold
+  paired once, a remote address never in a row's id, those past the cap
+  counted —, a tunnel client's "forwarded by" past the cap too, apps'
+  ephemeral listeners folded (never a server of the user's elsewhere) and
+  a filter finding them, the switcher and the count reading them,
+  Listening's filter keys, Open as https.
+- `PortCollisionsTests`: a port split across IPv4 and IPv6, a specific
+  address beside a wildcard (a dual-stack `::` counting, a v6-only one
+  not), `SO_REUSEPORT`, AirPlay Receiver beside a server — each said on
+  both rows from its side —, none for one holder, one shared socket,
+  another protocol or port, or a connection; the note on a built row and
+  in its VoiceOver label, `is:collision`.
+- `NettopListenersTests` (D-25): a pinned, hand-written fixture
+  (`Fixtures/nettop-listeners.txt`, every name invented) — a name with
+  spaces or dots, the pid after its last dot, `:` before an IPv4 port and
+  `.` before an IPv6 one, a zone left out, UDP without a state, a
+  connected UDP, an established TCP and QUIC no listeners, one listener
+  twice once —; anything else failing the whole parse; the blind check
+  (checked, unchecked, blind; 0 rows blind, a listener that closed while
+  it ran no proof); and a read through a stand-in the test writes — its
+  own child, nettop's arguments checked — while the real nettop is never
+  run under test (`Reader.unavailable`).
+- `LaunchdSocketsTests`: fixture plists in folders the test hands over
+  (`Fixtures/launchd-sockets/`: a number and a name, a dict and an array
+  of them, dgram as UDP, a unix socket's, none, a broken plist), names
+  through the fixture's services file; the user's own job only alone on
+  a number — beside another's, both named; `/Library/LaunchAgents`'
+  stopped in the gui domain; a unit test reads no launchd folder of the Mac's
+  (`AppEnvironment.launchdSocketFolders`).
+- `ActivityListenerSourcesTests`: over a fake Mac, a nettop reading's
+  rows — launchd's named and refused, the user's own LaunchAgent's its
+  service's stop, Bonjour by name, another user's the read route, the
+  user's own left to libproc, a pid the table lacks or one started after
+  the read left out, their Since, their ephemeral ones folded apart —; a
+  blind, narrow or mine-only read shows none; a typed `kubectl
+  port-forward`'s and `ssh -L`'s targets, clustered flags too (`-fNL`,
+  `-NR`), an `ssh -R`'s "forwarded by"; unix-socket listeners only
+  behind their setting, a co-holder, no Free; more known holders, a
+  user's own non-platform `sshd` theirs, and a brew service of a known
+  tool its service.
+- `ActivityMCPTests.testAPortNoneOfYoursHoldsIsReadThroughNettop`: an
+  agent's `port_holder` through a stand-in nettop — a believed read names
+  launchd's job, a blind one is unknown, a port the user holds starts no
+  nettop. `ActivityBriefTests`: a unix socket never in the brief.
+- `ProcessOpenFilesTests`: the Files block's read over a fake Mac —
+  files by path, sockets in words, pipes and kqueues named, an unreadable
+  path said —, another user's and a reused pid nothing; a path read
+  that never returns (the fake's call held) left behind, later reads
+  saying so at once.
+- `RunMarkersTests` (stage 3's groundwork, 6.9 and D-15): the run's
+  marker, its kind from the bundle's place, set over an inherited one
+  and taken off a login shell's answer; every argv sign spelt and read
+  back, through the masking too, and nothing that only looks like one;
+  the leftover check's rules — never the pid alone, a start before the
+  run's another's, a record younger than its process the pid taken again
+  — over a fake Mac, only the run's said and nothing of an environment
+  but the marker; lineage first — a person's `tail` or `grep` naming the
+  scratch folder under a shell older than the run never found, an
+  orphan's child found, a registry's pid and what is still under the app
+  only inside it —; and a real child of the test's (perl, its argv a
+  ControlPath) found by the live kernel; every spawn path's markers —
+  where each builds its child's environment, and printed by a real child
+  of the test's at the spawn through `ManagedProcess`, `KubeProcessRun`,
+  `TerraformRun`, `TerraformStreamRun` (both ways it starts), a detached
+  apply's launcher, `Git.run`, `env` as Docker's CLI runs it,
+  `DockerCLI.lines`, `SSHTunnel.open` (a stand-in ssh) and the login
+  shell's run; a pane's tag and run, never a helper; the tunnel's
+  ControlPath (short, under `_CS_DARWIN_USER_TEMP_DIR`, never made,
+  `none` when too long or expandable, or when its folder is a link or
+  another user could write in it); the kubectl socket folder named by pid and start, a
+  folder whose pid runs another process swept. `SSHTunnelTests`' spike:
+  the tunnel's own ssh through `FakeSSHHost` to a listener of the test's,
+  forwarded, its stderr silent about the path, nothing made there.
+
+**The isolated-run gate.** A unit test or an isolated run is guarded
+(`AppEnvironment.guardsSignals`), over every change Overterm makes to a
+process it didn't spawn — every signal, a priority (`setpriority`) and an
+app's Quit and Force Quit (`terminate`/`forceTerminate`, which the live
+kernel's `quitApp` checks the gate for itself), each through the same gate: Activity changes
+only what the run registered as its own (`ActivitySignalGate.register`, a child's pid and
+start read at spawn) and what runs under a `login` its own panes spawned.
+`ProcessSignals` refuses anything else before a token is taken, and the
+real kernel's sends refuse it again before their call, by the app's gate
+(`ActivitySignalGate.shared`) and this process, whatever gate or app a
+`ProcessSignals` was handed. A test that signals its own children
+registers them in `.shared` for the test's length. A real process that
+isn't the test's — the runner's parent — is only ever asked about through
+`RecordingKernel`, whose signals reach nothing but the test's own
+children, so not even a broken gate could signal it. The E2E scenario
+quits only applets it made and launched itself (`createsNewApplicationInstance`),
+registered with the gate, and takes each out of LaunchServices' database
+(`lsregister -u`) before its scratch folder goes.
+
+`ActivityProbeTests` is opt-in, run on each new macOS and on the oldest
+supported one (the support matrix of docs/design/activity/analysis.md,
+12): the structures' sizes, who answers each call and what it costs —
+`csops` against Security.framework's fallback among them — and the
+sampler's whole light and full ticks, cold and steady, and the light
+tick's cost a member over 8, 100 and 300 of its own children holding
+sockets; whether `proc_signal_with_audittoken` is there, and what a token
+and a whole send cost, a CONT to its own running child
+(`testTheSignalPath`, which answers the macOS 13 spike when run there);
+`testTheSupportMatrix` — `rusage_info_v6` and its energy for the user's
+processes, `csops`, the token call and the responsibility call (stage 1's
+grouping, D-31) present or not, and netstat's rows run by the probe and
+by an ad hoc-signed copy of `sh` against libproc's count of listeners,
+blind when the second is 0 (3.5); `testTheTicksEnergyAtEachQoS` — this
+process's `ri_energy_nj` a light and a full tick costs at `.userInitiated`
+and at `.utility` (D-8); `testThePagesRowsAndTheMeters` — the Activity
+page's rows made of a steady full tick, everyone's, and the meters' read.
+It reads the whole table, read only, and prints
+counts, errnos and timings, never a name or an argv:
+
+```
+OVERTERM_ACTIVITY_PROBES=1 swift test --filter ActivityProbeTests
+```
+
+Without `OVERTERM_ACTIVITY_PROBES=1` it is skipped, so `make test` and CI
+print nothing of this Mac's. Its timings are a debug build's — masking
+runs several times slower there — unless it runs in release, as the app
+does:
+
+```
+swift build -c release --build-tests -Xswiftc -enable-testing
+OVERTERM_ACTIVITY_PROBES=1 swift test -c release --skip-build --filter ActivityProbeTests
+```
+
+A tick's cost includes reading the processes that started since the last
+one: a build running beside it shows in the numbers, and the sampler's
+probe prints how many identities each tick read.
+
+**A build signed as a release would be** (3.11, D-4): `make signed-spike`
+signs a copy of `Overterm.app` in `dist/signed-spike` with hardened
+runtime and `SIGN_IDENTITY` (environment or `local.mk`; it refuses
+without one), the line a release would use — `make install`'s re-sign has
+no hardened runtime and `make app` signs ad hoc, so neither tests it.
+Then the copy's own scenarios check it, run as the harness runs them
+(credential variables and `GIT_*` left out of the environment):
+`OVERTERM_E2E=suspend dist/signed-spike/Overterm.app/Contents/MacOS/Overterm`
+— Suspend Tab stops and resumes through `ProcessSignals`, so audit tokens
+and `task_name_for_pid` answer under that signing — and `OVERTERM_E2E=
+splits`, whose `E2E INFO` line counts netstat's rows in a pane, 0 under ad
+hoc signing.
+
 ## End-to-end — `Sources/Overterm/E2E/E2ERunner.swift` + `Tests/OvertermE2ETests`
 
 `OVERTERM_E2E=<scenario> ./Overterm.app/Contents/MacOS/Overterm` runs one
@@ -441,10 +817,47 @@ What makes it end-to-end without being dangerous:
   they find there — the API panel once found a real Bruno collection.
 - **Scratch files** in a temp dir removed at the end; repos are created with
   a throwaway git identity.
+- **Nothing of a run is left running** (docs/design/activity/analysis.md,
+  10.5). Every scenario's app prints `E2E RUN <OVERTERM_RUN> <scratch>`
+  first, and at its end — once what quitting ends was ended — looks for
+  its own processes still there (`RunLeftovers`, `E2ERunner+Leftovers`):
+  the run's `OVERTERM_RUN` in their environment, a stand-in's record of
+  its own pid in the scratch folder's `spawned/` (written before it
+  `exec`s; `RunLeftovers.recordLine`), or an argv sign naming the run's
+  pid **and start** — the kubectl socket folder, Docker's ssh socket, the
+  tunnel's `ControlPath` — or its scratch folder (`ArgvSign`; Apple's perl
+  and ssh hide their environment), a helper registry's pid, or anything
+  still under the app — and only when its parents, each started since the
+  run, lead to the run or launchd (`RunLeftovers.lineage`): what the
+  person runs meanwhile, a `grep` naming the scratch folder, is never
+  found, said or signalled. Each is a failure (`at the end,
+  nothing of the run's is left running`, by pid and name), then is
+  stopped by its identity through `ProcessSignals`, the gate admitting it
+  as the run's own. Once the app has quit the harness looks again from
+  outside by the same rules, lineage too (`Tests/OvertermE2ETests/E2ELeftovers.swift`:
+  its own `KERN_PROC_ALL` and `KERN_PROCARGS2`, the marker matched as
+  bytes at an entry's start, the region cleared), against the start it
+  read of the app it launched — never a pid alone: a relaunched Overterm
+  can get the same pid — and ends what it finds, TERM then KILL, each
+  read again just before. Only this user's processes started since the
+  run are read, and nothing of one that isn't the run's is said. The
+  harness also drops an inherited `OVERTERM_RUN`/`OVERTERM_HELPER` from
+  the app's environment.
+- **Left Behind's checks** (`E2ERunner+ActivityLeftBehind`, in the
+  `activity` scenario) make every survivor a detached python of the run's
+  own that writes its pid and ends itself at the part's stop file (written
+  in a `defer`), so the leftover check finds none; a survivor ticked in a
+  close sheet, and the stand-in stopped for D-29's Resume offer, are
+  registered with the gate by pid and start before anything is sent. D-29
+  is checked through Activity's own Suspend and the writer: the file's bytes
+  (pid and start only, 0600), then the app forgetting while the file stays,
+  for the next launch's Resume offer. The
+  launch check (D-14) lists the Mac's processes and never runs in an
+  isolated run: `LeftBehindTests` checks it over a fake Mac instead.
 
 Scenarios: `terminal`, `tabs`, `rename`, `pin`, `close`, `editor`, `diff`,
 `branchDiff`, `why`, `diffStyle`, `layout`, `session`, `task`, `snippets`, `attention`,
-`marks`, `palette`, `reorder`, `info`, `claude`, `disk`, `clipboard`,
+`marks`, `palette`, `reorder`, `info`, `activity`, `claude`, `disk`, `clipboard`,
 `openWith`, `dropFiles`, `peek`, `groups`, `blocks`, `inbox`, `askAgent`,
 `dropSplit`, `settings`, `themes`, `browser` (the browser column, its tabs, a page's console,
 and the MCP server over real HTTP as an agent would use it), `fileActions` (the file tree's New File…, Rename…,
@@ -468,16 +881,29 @@ carries a fake password, made at run time and never typed — a script it
 writes execs it —, once after a token's flag with a `/` in front, once with
 a space in it as one word, and reads its row's tooltip from the popover's
 accessibility tree: masked, the password and every part of it nowhere.
-`info` then stops its server through the pane pill's own action (the
-header's `killPort`): Stop… asks, naming the process, its pid, the port,
-its command line and SIGTERM, and Cancel sends nothing; a listing gone
-stale — its pid listed with another start time, a port it doesn't hold,
-a start time never read — is said at once, nothing asked or sent;
-confirmed, the server stops and its pill goes. Two perl listeners of its
-own (30 s at most) check the answer's own read: the first ended while its
-question is up, the second on its port, and the yes sends nothing. A pid
-really reused can't be made on demand: `PortStopTests` lists a listener
-of its own, then signals it under another start time.
+`activity` opens the Activity page from View ▸ Activity: before its
+first rows the list and the header say "Reading…" (read from the
+accessibility tree); it lists the run's own sleep and python server in
+their tab and nothing outside the run's tabs, the meters a core each, the
+server's port in Listening with the note below the list, each row's
+VoiceOver label; hidden, before and after, the census's full level
+doesn't tick for 3 s while the light tick goes on, and its rows are gone;
+⌃⌘A with no page showing holds the full level, offers the server's port
+first, and its ↩ shows it on the page in Listening, the hold going with
+the palette; ⇥ onto Activity's tab in ⌘K holds it too, and ⇥ off lets
+go; with Activity off, ⌥⌘A opens Settings ▸ Activity and ⌘K has no
+Activity tab. Stage 4's checks (`E2ERunner+ActivityListenerSources`)
+type a stand-in `kubectl port-forward` and `ssh -L` (scripts named as the
+tools, listening on their own ports — never the real ones) and check
+each row's target; turn unix-socket listeners on and off over a socket
+of the run's own; point the page's nettop at a stand-in whose answer the
+scenario writes from the run's own listeners and launchd (pid 1) on a
+port nobody holds, with a fixture plist naming it
+(`LaunchdSockets.standIn`) — the row named, its Free refused, the note
+"checked" —, then an answer without the run's own (blind: unknown, no
+rows) and the setting off; and read the server's open files with `l`.
+The real nettop and this Mac's launchd folders are never read in a run.
+Its checks print counts, its own pids and port numbers only.
 `marks` leaves one tab in each activity state; with `OVERTERM_DUMP_PNG=<png>`
 it captures the window, for judging the look. Run one by hand while working
 on it:

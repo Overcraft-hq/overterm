@@ -31,8 +31,13 @@ enum MCPAsker {
         guard let pane else { return nil }
         guard let (tab, terminal) = locate(pane) else { return line(tab: nil, agent: nil) }
         var agent = tab.agent?.name
-        if agent == nil { agent = await Self.agent(root: SurfaceProcesses.shared.loginPID(of: terminal), tag: terminal.processTag) }
-        return line(tab: tab.title, checkout: tab.checkoutSource?.root.lastPathComponent, agent: agent)
+        if agent == nil {
+            // An agent typed into a plain tab: the census says which.
+            agent = await Self.agent(tab: tab.id, pane: terminal.processTag)
+        }
+        // Where its agent works now, read again first while its window is off screen.
+        let checkout = await TerminalWindowController.paneCheckout(pane) ?? tab.checkoutSource?.root
+        return line(tab: tab.title, checkout: checkout?.lastPathComponent, agent: agent)
     }
 
     /// The window the pane is in, else the main one, else any terminal
@@ -62,21 +67,19 @@ enum MCPAsker {
         return nil
     }
 
-    /// The agent running in the pane, read off the main thread, by its
-    /// process.
-    nonisolated private static func agent(root: pid_t?, tag: String) async -> String? {
-        await withCheckedContinuation { continuation in
-            DispatchQueue.global(qos: .userInitiated).async {
-                let inspector = ProcessInspector()
-                let node = TerminalWindowController.firstAgent(in: [(root, tag)]) { inspector.tree(root: $0, tag: $1) }
-                continuation.resume(returning: node.flatMap(agentName))
-            }
-        }
+    /// The agent running in the pane, by its process: a lookup in the
+    /// census (docs/design/activity/analysis.md, 7.8; 2.4 items 2 and 3) —
+    /// the light tick's snapshot of the pane's tab while it is fresh, one
+    /// tick of that tab else — on a GCD thread. The pane's `login` was
+    /// paired on the main actor by a scan of the app's children when it
+    /// wasn't yet, and a fresh inspector read every process's environment
+    /// again, ≈21 ms a confirmation: a pane not paired yet is paired from
+    /// the lookup's own snapshot (`PaneAgent.pairing`), and the census
+    /// reads an environment once per process, for its markers alone.
+    @MainActor static func agent(
+        tab: UUID, pane: String, census: ActivitySampler = .app, surfaces: SurfaceProcesses = .shared, monitor: ActivityMonitor = .shared
+    ) async -> String? {
+        await PaneAgent.read([(id: tab, tags: [pane])], census: census, folders: false, surfaces: surfaces, monitor: monitor)[tab]?.kind.name
     }
 
-    /// "Claude", "Codex", "Gemini"… for an agent's process (by name, else
-    /// argv: `argvAgent`, as `command` is masked).
-    nonisolated static func agentName(_ node: ProcessNode) -> String? {
-        AgentOverviewModel.agent(of: node)?.name
-    }
 }

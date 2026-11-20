@@ -45,20 +45,33 @@ final class AgentsTests: XCTestCase {
         XCTAssertNil(Agent.of(arguments: ["vim", "gemini.md"]), "a file named after it is no agent")
         XCTAssertNil(Agent.of(arguments: ["cat", "/x/@google/gemini-cli/README.md"]), "only an interpreter's script")
 
-        let gemini = ProcessNode(
-            pid: 5, parent: 1, name: "node", arguments: ["node", "/opt/homebrew/bin/gemini"], cpuPercent: 0, memory: 0, workingDirectory: nil)
+        func node(_ pid: pid_t, name: String, _ arguments: [String]) -> ProcessNode {
+            ProcessNode(
+                identity: ActivityProcessID(pid: pid, start: UInt64(pid)), parent: 1, name: name, maskedCommand: arguments.joined(separator: " "),
+                cpuPercent: 0, memory: 0, workingDirectory: nil, argvAgent: Agent.of(arguments: arguments))
+        }
+        let gemini = node(5, name: "node", ["node", "/opt/homebrew/bin/gemini"])
         XCTAssertTrue(TerminalWindowController.isAgent(gemini))
-        XCTAssertEqual(MCPAsker.agentName(gemini), "Gemini")
-        let pi = ProcessNode(pid: 6, parent: 1, name: "pi", arguments: ["pi"], cpuPercent: 0, memory: 0, workingDirectory: nil)
-        XCTAssertEqual(AgentOverviewModel.agent(of: pi), .pi)
+        XCTAssertEqual(AgentOverviewModel.agent(of: gemini)?.name, "Gemini")
+        XCTAssertEqual(AgentOverviewModel.agent(of: node(6, name: "pi", ["pi"])), .pi)
+        XCTAssertEqual(Agent.of(name: "bash", argv: nil, command: "node /opt/homebrew/bin/gemini"), .gemini, "by the masked command")
     }
 
     func testOnlyAgentsThatReadAClipboardImageGetControlV() {
-        let opencode = ProcessNode(pid: 7, parent: 1, name: "opencode", arguments: ["opencode"], cpuPercent: 0, memory: 0, workingDirectory: nil)
-        let gemini = ProcessNode(
-            pid: 8, parent: 1, name: "node", arguments: ["node", "/opt/homebrew/bin/gemini"], cpuPercent: 0, memory: 0, workingDirectory: nil)
-        XCTAssertFalse(ImagePaste.agentHasKeyboard(among: [opencode], foreground: 7, groupOf: { $0 }))
-        XCTAssertTrue(ImagePaste.agentHasKeyboard(among: [gemini], foreground: 8, groupOf: { $0 }))
+        let kernel = FakeActivityKernel(uid: 501)
+        func add(_ pid: pid_t, name: String, words: [String]) {
+            var process = FakeActivityKernel.Process(
+                record: FakeActivityKernel.record(pid: pid, start: UInt64(pid) * 1_000, parent: 1, group: pid, name: name))
+            process.name = name
+            process.arguments = FakeActivityKernel.arguments(executable: "/opt/acme/bin/\(name)", words)
+            kernel.add(process)
+        }
+        add(7, name: "opencode", words: ["opencode"])
+        add(8, name: "node", words: ["node", "/opt/homebrew/bin/gemini"])
+        add(9, name: "pi", words: ["pi"])
+        XCTAssertFalse(ImagePaste.agentHasKeyboard(foreground: 7, kernel: kernel), "opencode's ⌃V isn't established")
+        XCTAssertTrue(ImagePaste.agentHasKeyboard(foreground: 8, kernel: kernel), "Gemini CLI under node, by its script")
+        XCTAssertTrue(ImagePaste.agentHasKeyboard(foreground: 9, kernel: kernel))
     }
 
     // MARK: The bridge, per agent

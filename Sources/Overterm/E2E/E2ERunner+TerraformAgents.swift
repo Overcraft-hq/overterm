@@ -111,9 +111,22 @@ extension E2ERunner {
         check("nor is it offered as Ask Why's target", app.terraformAsking(agentTab))
         app.toggleInbox(nil)
         check("the mark goes with the prompt", await eventually(20) { agentTab.terraformAsk == nil && agentTab.activity.mark == .none }, "\(agentTab.activity.mark)")
-        if let sleeper = TerraformProcesses.descendants(of: SurfaceProcesses.shared.loginPID(of: pane) ?? 0).first(where: { TerraformProcesses.name(of: $0) == "sleep" }) {
-            kill(sleeper, SIGTERM)
+        // The stand-in agent's `sleep`, only under this pane's own `login`
+        // — never a walk from pid 0, which reaches every process on the Mac
+        // — by the identity read here, through ProcessSignals: the run's
+        // gate refuses whatever isn't the run's own.
+        await SurfaceProcesses.shared.pairWaiting()
+        guard let login = SurfaceProcesses.shared.pairedLoginPID(of: pane) else { return check("the agent's pane is paired", false) }
+        let kernel = LiveActivityKernel()
+        if let sleeper = TerraformProcesses.descendants(of: login).first(where: { TerraformProcesses.name(of: $0) == "sleep" }),
+            let identity = kernel.process(sleeper)?.identity
+        {
+            let answer = ProcessSignals(kernel: kernel).send(.term, to: ActivitySignalTarget(identity, path: nil), alone: true)
+            var sent = false
+            if case .sent = answer { sent = true }
+            check("its stand-in agent ended through ProcessSignals", sent)
         }
+        await offScreenAgentChecks(checkout: checkout, plain: plain, sentinel: sentinel)
 
         // 5.6 rule 6: a shell pane that ran `terraform output` (a stand-in
         // printing the sentinel, never the real one) keeps no scrollback,
@@ -195,6 +208,68 @@ extension E2ERunner {
         check("Ask Why is on the bar", await eventually(5) { Self.accessibilityPress("terraform.editor.askWhy", in: editor.view, press: true) })
         check("the brief names the root and the error", await eventually(10) { brief?.text.contains("envs/stage") == true && brief?.text.contains("acme_nme") == true }, brief?.text ?? "none")
         check("and tells the agent not to init, plan or apply", brief?.message.contains("don't run init, plan or apply") == true)
+    }
+
+    /// An agent that moves into a checkout with production roots while the
+    /// window is off screen (docs/design/activity/analysis.md, 7.8, 12): no
+    /// light tick reads the window's tabs then, yet the pane's checkout —
+    /// what `TerraformPaneMonitor` walks and classes an ask against —
+    /// follows its agent there (`OffScreenAgents`): a terraform it runs that
+    /// prints secrets marks the pane, and its ask is read, said as
+    /// production. Each step waits for a file the scenario writes, never a
+    /// moment; the stand-ins end themselves once told.
+    private func offScreenAgentChecks(checkout: URL, plain: URL, sentinel: String) async {
+        app.newTab(in: plain, agent: .claude, startAgent: false)
+        guard let tab = app.store.selected, tab.agent == .claude else { return check("an agent tab in a checkout with no Terraform", false) }
+        let pane = tab.terminal
+        check("its shell is up", await eventually(15) { pane.shellReported })
+        await pause(0.5)
+        app.lightTickVisibility = false
+        app.updateLightTick()
+        let census = ActivityMonitor.shared
+        check("the window off screen wants no light tick", await eventually(5) { !census.isTicking && !census.isSampling })
+        let folder = out("acme-offscreen")
+        let bin = folder.appendingPathComponent("bin", isDirectory: true)
+        try? FileManager.default.createDirectory(at: bin, withIntermediateDirectories: true)
+        func flag(_ name: String) -> URL { folder.appendingPathComponent(name) }
+        func raise(_ name: String) { try? "".write(to: flag(name), atomically: true, encoding: .utf8) }
+        defer {
+            for name in ["go", "printed", "done"] { raise(name) }
+            app.lightTickVisibility = nil
+            app.updateLightTick()
+        }
+        // Waits for the scenario's word, a minute at most.
+        func waitFor(_ name: String) -> String { "for i in $(/usr/bin/seq 1 600); do [ -f '\(flag(name).path)' ] && break; /bin/sleep 0.1; done" }
+        // terraform, a stand-in printing the sentinel (never the real one),
+        // running until the scenario has seen it.
+        let fake = bin.appendingPathComponent("terraform")
+        try? "#!/bin/bash\necho 'db_password = \"\(sentinel)\"'\n\(waitFor("printed"))\n".write(to: fake, atomically: true, encoding: .utf8)
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: fake.path)
+        let prompt = folder.appendingPathComponent("prompt.txt")
+        try? TerraformPromptTexts.claudeApply.write(to: prompt, atomically: true, encoding: .utf8)
+        // The agent: argv[0] claude, working in the checkout with production
+        // roots while its pane's shell stays in the one with none.
+        let agent = folder.appendingPathComponent("agent.sh")
+        try? [
+            waitFor("go"), "PATH='\(bin.path)':$PATH terraform output", "/usr/bin/seq 1 80", "/bin/cat '\(prompt.path)'", waitFor("done"),
+            "printf '\\033[2J\\033[H'", "",
+        ].joined(separator: "\n").write(to: agent, atomically: true, encoding: .utf8)
+        let launcher = folder.appendingPathComponent("launch.sh")
+        try? "cd '\(checkout.path)' && exec -a claude /bin/bash '\(agent.path)'\n".write(to: launcher, atomically: true, encoding: .utf8)
+        pane.insertText("bash '\(launcher.path)'")
+        pane.pressReturn()
+        let moved = checkout.resolvingSymlinksInPath().path
+        let followed = await eventually(15) { tab.agentDirectory.map { URL(fileURLWithPath: $0).resolvingSymlinksInPath().path } == moved }
+        check("its agent's move is followed while the window is off screen", followed, tab.agentDirectory == nil ? "not followed" : "followed elsewhere")
+        raise("go")
+        check("a terraform it runs there that prints secrets marks the pane", await eventually(20) { pane.terraformSensitive })
+        raise("printed")
+        let monitor = TerraformPaneMonitor.shared
+        check("its ask is read off screen", await eventually(20) { monitor.asks[pane.processTag] != nil })
+        check("said against the checkout it moved to: production", tab.terraformAsk?.isProduction == true, tab.terraformAsk?.summary ?? "none")
+        check("and still no light tick", !census.isTicking)
+        raise("done")
+        check("the mark goes with the prompt", await eventually(20) { tab.terraformAsk == nil })
     }
 
     private func toolText(_ name: String, _ arguments: [String: Any], pane: String) async -> String {

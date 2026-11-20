@@ -101,6 +101,28 @@ final class KubePortForwardTests: XCTestCase {
         XCTAssertEqual(spec.url?.absoluteString, "https://127.0.0.1:31443")
     }
 
+    /// Who can reach a forward is where kubectl listens (docs/design/
+    /// activity/analysis.md, 6.8's Scope), and Tab Info says the address of
+    /// one that isn't this Mac's alone: a pod forwarded to the whole network
+    /// or to one LAN address never looks like a loopback one.
+    func testAForwardsScopeIsWhereItListens() {
+        func port(_ address: String) -> ListeningPort? {
+            var spec = KubeForwardSpec(context: "fake-dev", namespace: "shop", target: .pod("web-1"), remotePort: 80, localPort: 31234)
+            spec.address = address
+            return KubeForward(spec: spec).listeningPort
+        }
+        let scopes: [(String, ListeningPort.Scope)] = [
+            ("127.0.0.1", .thisMac), ("localhost", .thisMac), ("::1", .thisMac), ("0.0.0.0", .network), ("::", .network), ("192.0.2.10", .oneAddress),
+        ]
+        for (address, scope) in scopes { XCTAssertEqual(port(address)?.scope, scope, address) }
+        XCTAssertEqual(port("0.0.0.0")?.reach, "Network")
+        XCTAssertNil(port("127.0.0.1").flatMap(TabInfoView.address(of:)), "loopback: nothing more to say")
+        XCTAssertNil(port("localhost").flatMap(TabInfoView.address(of:)))
+        XCTAssertEqual(port("0.0.0.0").flatMap(TabInfoView.address(of:)), "0.0.0.0", "the whole network, said")
+        XCTAssertEqual(port("::").flatMap(TabInfoView.address(of:)), "::")
+        XCTAssertEqual(port("192.0.2.10").flatMap(TabInfoView.address(of:)), "192.0.2.10")
+    }
+
     // MARK: Resolution
 
     func testAPodTargetIsItselfWhileItRuns() {
@@ -721,10 +743,26 @@ final class KubeForwardsTests: XCTestCase {
             said.hasPrefix(kubeconfig.path + "|port-forward pod/web-a \(local):8080 --context fake-dev --namespace shop --address 127.0.0.1 --cache-dir "),
             said)
         XCTAssertTrue(ListeningPorts.isBound(local), "it listens")
+        // Watched with the census's socket walk, never by binding it (6.8):
+        // a census of the test's own children — the forward's kubectl, and
+        // any one started again, is one — never of the Mac's every process
+        // (docs/design/activity/analysis.md, 10.1, 10.2).
+        let census = ActivitySampler()
+        func held() -> Bool {
+            let children = Set(ProcessInspector.children(of: getpid()).map { ActivityProcessID(pid: $0.pid, start: $0.start) })
+            guard let snapshot = census.tickNow(ActivityDemand(.focus(children)), context: ActivityContext()) else { return true }
+            return ListeningPorts.holder(of: local, in: snapshot) != nil
+        }
+        XCTAssertTrue(held(), "its kubectl holds it, one of the test's children")
         let pid = process.pid
         process.close()
         try await until("ended") { kill(pid, 0) != 0 }
-        try await until("not listening") { !ListeningPorts.isBound(local) }
+        var listening = true
+        for _ in 0..<50 where listening {
+            listening = held()
+            if listening { try await Task.sleep(for: .milliseconds(200)) }
+        }
+        XCTAssertFalse(listening, "not listening")
 
         // One that can't listen: kubectl's error, said.
         let blocker = Darwin.socket(AF_INET, SOCK_STREAM, 0)

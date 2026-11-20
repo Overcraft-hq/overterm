@@ -207,13 +207,12 @@ struct SidebarView: View {
     let terraformActions: TerraformPanelActions
     /// The Kubernetes page, from the panel's header.
     let openKubernetesPage: () -> Void
-    /// The gear at the foot of the rail.
-    let onSettings: () -> Void
-    let onClose: () -> Void
+    /// The buttons at the foot of the rail: Activity, the gear, Hide.
+    let railAction: (SidebarRailAction) -> Void
 
     var body: some View {
         HStack(spacing: 0) {
-            SidebarRail(sidebar: sidebar, theme: theme, onSettings: onSettings, onClose: onClose)
+            SidebarRail(sidebar: sidebar, theme: theme, perform: railAction)
             VStack(spacing: 0) {
                 switch sidebar.panel {
                 case .files: files

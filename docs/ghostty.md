@@ -17,9 +17,11 @@ from the executable to `Contents/Resources` with `terminfo/78/xterm-ghostty`
 as the sentinel — so only a bundled app gets `TERM=xterm-ghostty` and shell
 integration; a bare `.build/debug/Overterm` falls back to `xterm-256color`.
 
-Pinned to **v1.4.0 / Zig 0.17.0**, built with Xcode 16.4 (CI's and the
-release's). Ghostty's docs ask for Xcode 26 and the macOS 26 SDK — for its
-macOS *app*; the library (GhosttyKit) builds with Xcode 16. libtool warns of
+Pinned to **v1.4.0 / Zig 0.17.0**, built with Xcode 27.2 (CI's and the
+release's, Swift 6.4) against the macOS 27.2 SDK, with no workaround — built
+from scratch, every archive member and `ghostty_` symbol there. Ghostty's docs
+ask for Xcode 26 and the macOS 26 SDK — for its macOS *app*; we take only the
+library (GhosttyKit). libtool warns of
 a duplicate member (`ext.o`) as it merges the archive; the app links with
 nothing missing, which is what would show a member dropped.
 
@@ -34,10 +36,11 @@ Changes from v1.3.1 that reached Overterm:
 - **Its themes**: 819, among them every one `Resources/themes` added
   (identical) — that folder stays for the next theme Ghostty doesn't ship.
 
-With Xcode 26, v1.3.1's build (Zig 0.15.2) broke twice, and the script still
-works around both — untried with v1.4.0's Zig 0.17.0, which may need neither
-(`Scripts/ghosttykit-xcode26.py`, put in front on `PATH` as `xcrun` and
-`libtool`):
+With Xcode 26, v1.3.1's build (Zig 0.15.2) broke twice. v1.4.0's Zig 0.17.0
+needs neither workaround with Xcode 27.2 — it links against the SDK's
+arm64e-only stubs, and its archives survive libtool — so the script puts them
+in front only for a Zig 0.15 (`Scripts/ghosttykit-xcode26.py`, on `PATH` as
+`xcrun` and `libtool`):
 
 - **The SDK's stubs.** From the 26.4 SDK, `libsystem_c.tbd`,
   `libsystem_malloc.tbd` and others list only `arm64e-macos`. Zig 0.15.2's

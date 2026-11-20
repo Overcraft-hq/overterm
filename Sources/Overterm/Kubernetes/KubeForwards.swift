@@ -93,7 +93,8 @@ struct KubeForward: Identifiable, Equatable, Sendable {
             pid: pid ?? 0, process: "kubectl", port: spec.localPort, address: spec.address,
             forward: KubeForwardPill(
                 id: id, context: spec.context, namespace: spec.namespace, target: spec.target.description, pod: pod, https: spec.https,
-                forwarding: isForwarding, production: production, state: state.text))
+                forwarding: isForwarding, production: production, state: state.text),
+            scope: KubeForwardAddress.scope(spec.address))
     }
 }
 
@@ -655,9 +656,7 @@ final class KubeForwards: ObservableObject {
         let arguments = KubePortForwardCommand.arguments(
             pod: pinned.pod, localPort: spec.localPort, remotePort: pinned.remotePort, context: context.name, namespace: spec.namespace,
             address: spec.address, cacheDirectory: tool.cacheDirectory)
-        let launch = ManagedProcess.Launch(
-            executable: tool.kubectl, arguments: arguments, environment: tool.environment, readiness: .line(KubePortForwardCommand.isReady),
-            timeout: 30)
+        let launch = KubePortForwardCommand.launch(kubectl: tool.kubectl, arguments: arguments, environment: tool.environment)
         do {
             let process = try await ManagedProcess.start(launch)
             await proxies?.endShortLived(context.name, holds: holds, problem: nil, answered: true)

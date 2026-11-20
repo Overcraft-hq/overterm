@@ -1,0 +1,585 @@
+import SwiftUI
+
+/// A row of the page's one list: a process's or a listener's. One table for
+/// both sections, so the list keeps its place in the view tree — the
+/// keyboard and the scroll with it — as the section changes (6.4).
+enum ActivityListRow: ResourceTableRow, Sendable {
+    case process(ActivityProcessRow)
+    case port(ActivityPortRow)
+    /// A group's header, a container, "+N more" (6.5).
+    case group(ActivityGroupRow)
+
+    /// Processes' and Left Behind's item as a row.
+    init(_ item: ActivityListItem) {
+        switch item {
+        case .group(let row): self = .group(row)
+        case .process(let row): self = .process(row)
+        }
+    }
+
+    var id: String {
+        switch self {
+        case .process(let row): row.id
+        case .port(let row): row.id
+        case .group(let row): row.id
+        }
+    }
+
+    var height: CGFloat { 24 }
+
+    var spansColumns: Bool {
+        switch self {
+        case .group(let row): row.spansColumns
+        case .port(let row): row.spansColumns
+        case .process: false
+        }
+    }
+
+    var reuseKind: String {
+        switch self {
+        case .process: "process"
+        case .port(let row): row.kind == .folded ? "fold" : "port"
+        case .group(let row): row.kind == .container ? "container" : "group"
+        }
+    }
+
+    var accessibilityLabel: String {
+        switch self {
+        case .process(let row): row.accessibilityLabel
+        case .port(let row): row.accessibilityLabel
+        case .group(let row): row.accessibilityLabel
+        }
+    }
+}
+
+/// The Activity page (⌥⌘A; docs/design/activity/analysis.md, 6.4): the
+/// sections, the busiest and the meters down the left, the list beside.
+struct ActivityPageView: View {
+    @ObservedObject var page: ActivityPageModel
+    @ObservedObject var theme: ChromeTheme
+    /// What Activity stopped: the header's "2 stopped here — Resume All".
+    @ObservedObject var held = ActivityHeld.shared
+    /// ⌘C: the selection, as the window copies it.
+    let copy: ([String]) -> Void
+    /// The list given the keyboard back (the filter's ↩ and Esc).
+    var focusList: () -> Void = {}
+
+    @FocusState private var filterFocused: Bool
+
+    var body: some View {
+        HStack(spacing: 0) {
+            sidebar.frame(width: 210).background(theme.panelGround)
+            Rectangle().fill(theme.border).frame(width: 1)
+            VStack(spacing: 0) {
+                header
+                Rectangle().fill(theme.border).frame(height: 1)
+                list
+            }
+            // After the list, so the list keeps its place in the view tree
+            // — the keyboard and the scroll with it — as it comes and goes.
+            if page.showsDetail, let detail = page.detail {
+                Rectangle().fill(theme.border).frame(width: 1)
+                ActivityDetailView(detail: detail, theme: theme, page: page, verbs: page.verbs(for: page.selection, copy: copy), copy: { copy([$0]) })
+                    .frame(width: 300)
+            }
+        }
+        .background(Color(nsColor: GhosttyRuntime.shared.backgroundColor))
+        .environment(\.colorScheme, theme.isDark ? .dark : .light)
+        .overlay {
+            if page.cheatSheet {
+                ResourceKeySheet<ActivityKey>(theme: theme, identifier: "activity.keys", footnote: ActivityKey.foldHelp) { page.cheatSheet = false }
+            }
+        }
+        .onChange(of: page.focusFilter) { _ in filterFocused = true }
+        // A container of its own: an identifier on the whole page would
+        // otherwise be every child's, hiding the list's, the header's.
+        .accessibilityElement(children: .contain)
+        .accessibilityIdentifier("activity.page")
+    }
+
+    private var summary: ActivitySummary { page.content.summary }
+
+    // MARK: The left
+
+    /// The left, as a value of what it draws: a publish that changes none
+    /// of it — the rows' values, the detail — doesn't lay it out again (7.7).
+    private var sidebar: some View {
+        ActivitySidebar(
+            section: page.section, hasRead: page.hasRead, shown: summary.shown, listening: summary.listening, leftBehind: summary.leftBehind,
+            busiest: summary.busiest, meters: summary.meters, processes: summary.processes, threads: summary.threads, history: summary.history,
+            energy: page.columns(.processes).contains { $0.id == "energy" } ? summary.energy : nil, page: page, theme: theme, copy: copy,
+            themeID: ObjectIdentifier(theme)
+        )
+        .equatable()
+    }
+
+    private func caption(_ text: String) -> some View {
+        Text(text).font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+            .padding(.horizontal, 10)
+    }
+
+    // MARK: The header
+
+    private var header: some View {
+        HStack(spacing: 10) {
+            Text("Activity").font(.system(size: ChromeMetrics.text(14), weight: .semibold)).foregroundStyle(theme.text)
+            if page.hasRead {
+                Text(verbatim: counts).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2).lineLimit(1)
+                    .accessibilityIdentifier("activity.counts")
+            }
+            Spacer(minLength: 8)
+            if let scope = page.scopeTitle(page.section) {
+                HStack(spacing: 4) {
+                    Text(verbatim: scope).lineLimit(1)
+                    Button {
+                        page.setScope(.mac)
+                    } label: {
+                        Image(systemName: "xmark").font(.system(size: ChromeMetrics.text(9), weight: .bold))
+                    }
+                    .buttonStyle(.plain)
+                    .help("Back to the whole Mac (])")
+                }
+                .font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text)
+                .padding(.horizontal, 8).frame(height: ChromeMetrics.row(22))
+                .background(Capsule().fill(theme.selected))
+                .accessibilityElement(children: .combine)
+                .accessibilityIdentifier("activity.scope")
+            }
+            if page.section == .listening {
+                Toggle(isOn: $page.connections) {
+                    Text("Connections").font(.system(size: ChromeMetrics.text(11.5)))
+                }
+                .toggleStyle(.checkbox).controlSize(.small)
+                .help("Your established TCP connections too, each paired end to end where both ends are yours (c)")
+                .accessibilityIdentifier("activity.connections")
+            }
+            if page.section == .processes {
+                Button {
+                    page.grouping = page.grouping.next
+                } label: {
+                    Text(verbatim: "Group: \(page.grouping.title)").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
+                }
+                .buttonStyle(.plain)
+                .help("Group by checkout, tab, agent, app, user or none (G)")
+                .accessibilityIdentifier("activity.grouping")
+                Button {
+                    page.tree.toggle()
+                } label: {
+                    Text(page.tree ? "Tree" : "Flat").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
+                }
+                .buttonStyle(.plain)
+                .help("A tree of parents and children, or flat and sorted (t)")
+            }
+            Picker("", selection: Binding(get: { page.everyone ?? Settings.shared.activityEveryone }, set: { page.everyone = $0 })) {
+                Text("Yours").tag(false)
+                Text("All").tag(true)
+            }
+            .pickerStyle(.segmented).labelsHidden().frame(width: 104).controlSize(.small)
+            .help("Your processes only, or every user's (u)")
+            .accessibilityIdentifier("activity.everyone")
+            filterField
+            if Self.reading(hasRead: page.hasRead, summary) {
+                Text("Reading…").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text3)
+                    .accessibilityIdentifier("activity.reading")
+            }
+            if page.orderHeld, !page.paused {
+                Text("order held").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
+                    .help("The rows keep their places while you work the list; values still change. It lets go once the pointer rests 5 s.")
+                    .accessibilityIdentifier("activity.orderHeld")
+            }
+            if let freeing = page.freeing {
+                Text(verbatim: freeing).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.orangeText)
+                    .help("What became of the port after its owner's verb, watched by the census — never by binding it")
+                    .accessibilityIdentifier("activity.freeing")
+            }
+            if held.stoppedCount > 0 {
+                HStack(spacing: 6) {
+                    Text(verbatim: "\(held.stoppedCount) stopped here").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.signal)
+                    Button("Resume All") { page.actions.resumeAll() }.controlSize(.small)
+                        .accessibilityIdentifier("activity.resumeAll")
+                }
+                .help("Processes you suspended from Activity, still stopped: Resume All continues each, by the process it was stopped as")
+                .accessibilityElement(children: .contain)
+                .accessibilityIdentifier("activity.stoppedHere")
+            }
+            if page.hasRead, let others = Self.stoppedElsewhere(summary.stopped, here: held.stopped), others > 0 {
+                Button {
+                    page.section = .processes
+                    page.setFilter("state:stopped")
+                } label: {
+                    Text(verbatim: "\(others) stopped in tabs").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(TabStatusStyle.signal)
+                }
+                .buttonStyle(.plain)
+                .help("Stopped processes of your tabs and Left Behind that Activity didn't stop — a job's ⌃Z, or a stop a crash forgot. Lists them (state:stopped)")
+                .accessibilityIdentifier("activity.stoppedElsewhere")
+            }
+            if page.hasRead, let limit = summary.processLimitText {
+                Text(verbatim: limit).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.orangeText)
+                    .help("Near the per-user process limit (kern.maxprocperuid): a new process may fail to start, so Sample and Terminal in Its Folder wait")
+                    .accessibilityIdentifier("activity.processLimit")
+            }
+            if let said = page.linkSaid {
+                Text(verbatim: said).font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
+                    .help("A link asked for this port, and no tick lists it — another user's isn't listed")
+                    .accessibilityIdentifier("activity.linkSaid")
+            }
+            if page.following {
+                Text("following").font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(theme.text2)
+                    .help("The selection stays in view as it moves (F)")
+                    .accessibilityIdentifier("activity.following")
+            }
+            Button {
+                page.paused.toggle()
+            } label: {
+                HStack(spacing: 4) {
+                    Image(systemName: page.paused ? "play.fill" : "pause.fill").font(.system(size: ChromeMetrics.text(9)))
+                    Text(verbatim: page.paused ? "paused" : "every \(Self.seconds(page.interval))")
+                }
+                .font(.system(size: ChromeMetrics.text(11.5))).foregroundStyle(page.paused ? theme.text : theme.text3)
+            }
+            .buttonStyle(.plain)
+            .help(page.paused ? "Paused: nothing is read. Resume (Z)" : "How often the page reads the Mac while it shows: Settings ▸ Activity. Pause (Z)")
+            .accessibilityIdentifier("activity.pause")
+            Button {
+                page.cheatSheet.toggle()
+            } label: {
+                Image(systemName: "keyboard").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text2)
+            }
+            .buttonStyle(.plain)
+            .help("Keys (?)")
+        }
+        .padding(.horizontal, 14)
+        .frame(height: ChromeMetrics.row(40))
+    }
+
+    private var filterField: some View {
+        HStack(spacing: 4) {
+            Image(systemName: "line.3.horizontal.decrease").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
+            TextField("Filter  /", text: Binding(get: { page.filter(page.section) }, set: { page.setFilter($0) }))
+                .textFieldStyle(.plain)
+                .font(.system(size: ChromeMetrics.text(12)))
+                .focused($filterFocused)
+                .onSubmit { focusList() }
+                .onExitCommand {
+                    page.setFilter("")
+                    focusList()
+                }
+                .accessibilityIdentifier("activity.filter")
+        }
+        .padding(.horizontal, 8)
+        .frame(width: 200, height: 24)
+        .background(RoundedRectangle(cornerRadius: 6).fill(theme.rowHover.opacity(0.7)))
+        .help("name:node|bun cpu:>50 mem:>1g age:<5m port:3000 is:agent -user:root — ? lists the keys")
+    }
+
+    /// The header says "Reading…" until rows are made, while the churn
+    /// budget leaves processes for a later tick, and while no rate is in.
+    static func reading(hasRead: Bool, _ summary: ActivitySummary) -> Bool {
+        !hasRead || summary.unread > 0 || summary.firstSample
+    }
+
+    /// "1,297 processes · 864 yours · 23 listening · 2 zombies", or a test run's own.
+    private var counts: String { Self.counts(summary) }
+
+    static func counts(_ summary: ActivitySummary) -> String {
+        let number = { (value: Int) in value.formatted(.number.locale(Locale(identifier: "en_US"))) }
+        let zombies = summary.zombies > 0 ? " · \(number(summary.zombies)) zombie\(summary.zombies == 1 ? "" : "s")" : ""
+        if summary.scopedToRun {
+            return "\(number(summary.shown)) of this test run's tabs · \(number(summary.processes)) on this Mac, counted only · \(summary.listening) listening"
+                + zombies
+        }
+        return "\(number(summary.processes)) processes · \(number(summary.own)) yours · \(summary.listening) listening" + zombies
+    }
+
+    /// The tabs' and leftovers' stopped processes Activity didn't stop;
+    /// nil when there are none. Pure.
+    static func stoppedElsewhere(_ stopped: [ActivityProcessID], here: Set<ActivityProcessID>) -> Int? {
+        let others = stopped.count { !here.contains($0) }
+        return others > 0 ? others : nil
+    }
+
+    static func seconds(_ duration: Duration) -> String {
+        let seconds = duration.components.seconds
+        return seconds == 1 ? "1 s" : "\(seconds) s"
+    }
+
+    // MARK: The list
+
+    private var list: some View {
+        VStack(spacing: 0) {
+            // Its own view, observing only what it draws (7.7): a change of
+            // the detail, a verb's subject or "order held" leaves the table
+            // and its cells alone.
+            ActivityListView(list: page.list, page: page, theme: theme, copy: copy).equatable()
+            if page.section == .listening, page.hasRead {
+                // Every "none" must be true (6.4): what isn't read is said —
+                // below the list, never over its last row.
+                Rectangle().fill(theme.border).frame(height: 1)
+                Text(verbatim: Self.listeningNote(connections: page.connections, dropped: page.content.droppedConnections, others: summary.others))
+                    .font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3).padding(.horizontal, 14).padding(.vertical, 6)
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .accessibilityIdentifier("activity.listeningNote")
+            }
+        }
+    }
+
+    /// What isn't read, and the connections past the cap (6.8): said.
+    nonisolated static func listeningNote(connections: Bool, dropped: Int, others: ActivityOtherListeners = .off) -> String {
+        guard connections else { return "Your processes' listeners. \(others.sentence) Connections: c" }
+        let more = dropped > 0 ? " +\(dropped) more connection\(dropped == 1 ? "" : "s") not listed." : ""
+        return "Your processes' listeners and connections. \(others.sentence)\(more)"
+    }
+
+    /// What an empty section says: true of what was read (6.4).
+    nonisolated static func emptySentence(_ section: ActivityPageModel.Section, scopedToRun: Bool, filter: String = "") -> String {
+        let filter = filter.trimmingCharacters(in: .whitespaces)
+        if !filter.isEmpty { return "Nothing matches “\(filter)”." }
+        switch section {
+        case .processes:
+            return scopedToRun ? "Nothing runs in this test run's tabs." : "No processes to show."
+        case .listening:
+            return scopedToRun
+                ? "Nothing in this test run's tabs listens on a port." : "Nothing of yours listens on a port. Other users' listeners aren't read."
+        case .leftBehind:
+            return "Nothing was left behind: no closed tab's, ended agent's or earlier Overterm's process runs."
+        }
+    }
+
+    // MARK: Cells' words
+
+    /// At most three ports, then "+N".
+    nonisolated static func ports(_ ports: [Int]) -> String {
+        let shown = ports.prefix(3).map { ":\($0)" }.joined(separator: " ")
+        return ports.count > 3 ? "\(shown) +\(ports.count - 3)" : shown
+    }
+
+    /// The chips beside a process's name (6.5): its role, what it did.
+    static func chips(_ row: ActivityProcessRow) -> [String] {
+        var chips: [String] = []
+        if row.stoppedHere { chips.append("suspended here") }
+        if row.backgroundHere { chips.append("background") }
+        guard let owner = row.owner else { return chips }
+        if let counts = row.agentCounts, !counts.isEmpty { chips.append(counts) }
+        if owner.paneRole != .agent {
+            switch owner.role {
+            case .mcp: chips.append("MCP")
+            case .server: break
+            case .shell where owner.paneRole == .agentChild: chips.append("tool shell")
+            case .build: chips.append("build")
+            default: break
+            }
+        }
+        if owner.marks.contains(.detached) { chips.append("detached on purpose") }
+        if owner.marks.contains(.leftTerminal) { chips.append("↗ left its terminal") }
+        if owner.marks.contains(.nohup) { chips.append("nohup") }
+        if owner.marks.contains(.setsid), owner.paneRole != .agentChild { chips.append("setsid") }
+        return chips
+    }
+
+    /// What a strip says: its highest, since when.
+    static func stripHelp(_ row: ActivityProcessRow) -> String { stripHelp(row.strip, since: row.stripSince) }
+
+    static func stripHelp(_ strip: [Double?]?, since began: Date?) -> String {
+        guard let cells = strip else { return "No history: it wasn't read while the page or its tab showed" }
+        let read = cells.compactMap { $0 }
+        guard let high = read.max() else { return "Not read in the last 15 minutes" }
+        let since = began.map { " since \(ActivityRows.clock($0))" } ?? " over 15 min"
+        return "CPU\(since): at most \(ActivityRows.percent(high))%, \(read.count) of 60 cells read"
+    }
+
+    /// A rate as the page writes it: "—" unread.
+    nonisolated static func rate(_ value: Double?, unit: String) -> String {
+        guard let value else { return "—" }
+        if unit == "B/s" { return ActivityRows.bytes(UInt64(max(value, 0).rounded())) + "/s" }
+        return ActivityRows.fixed(value, digits: value >= 100 ? 0 : 1) + " " + unit
+    }
+
+
+}
+
+/// The page's left (6.4): the sections with their counts, the busiest
+/// five, the meters. Equal while what it draws is, so the page's other
+/// publishes skip it.
+struct ActivitySidebar: View, Equatable {
+    let section: ActivityPageModel.Section
+    let hasRead: Bool
+    let shown: Int
+    let listening: Int
+    let leftBehind: Int
+    let busiest: [ActivitySummary.Busy]
+    let meters: SystemMeters?
+    let processes: Int
+    let threads: Int
+    let history: [TimeChartData]
+    let energy: Double?
+    /// Read for its actions, never observed.
+    let page: ActivityPageModel
+    @ObservedObject var theme: ChromeTheme
+    let copy: ([String]) -> Void
+    /// The theme's identity, as `==` compares it: an observed object's
+    /// property is the main actor's, and `==` is nonisolated (Swift 6.1).
+    let themeID: ObjectIdentifier
+
+    nonisolated static func == (a: ActivitySidebar, b: ActivitySidebar) -> Bool {
+        a.section == b.section && a.hasRead == b.hasRead && a.shown == b.shown && a.listening == b.listening && a.leftBehind == b.leftBehind
+            && a.busiest == b.busiest && a.meters == b.meters && a.processes == b.processes && a.threads == b.threads && a.history == b.history
+            && a.energy == b.energy && a.page === b.page && a.themeID == b.themeID
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 2) {
+            ForEach(ActivityPageModel.Section.allCases) { section in
+                Button {
+                    page.section = section
+                } label: {
+                    HStack(spacing: 8) {
+                        Image(systemName: section.symbol).frame(width: 18)
+                        Text(section.title)
+                        Spacer()
+                        if hasRead {
+                            Text(verbatim: "\(section == .processes ? shown : section == .listening ? listening : leftBehind)")
+                                .foregroundStyle(theme.text3).font(.system(size: ChromeMetrics.text(11), design: .monospaced))
+                        }
+                    }
+                    .foregroundStyle(self.section == section ? theme.text : theme.text2)
+                    .padding(.horizontal, 10)
+                    .frame(height: ChromeMetrics.row(30))
+                    .background(RoundedRectangle(cornerRadius: 7).fill(self.section == section ? theme.selected : .clear))
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .help("\(section.title) (\(section.key))")
+                .accessibilityIdentifier("activity.section.\(section.rawValue)")
+            }
+            if !busiest.isEmpty {
+                caption("Busiest").padding(.top, 14)
+                ForEach(busiest, id: \.id) { busy in
+                    Button {
+                        page.reveal(busy.id, in: .processes)
+                    } label: {
+                        HStack(spacing: 6) {
+                            Text(verbatim: busy.name).lineLimit(1).truncationMode(.middle)
+                            Spacer(minLength: 4)
+                            Text(verbatim: "\(ActivityRows.percent(busy.cpu))%").font(.system(size: ChromeMetrics.text(11), design: .monospaced))
+                                .foregroundStyle(busy.cpu >= 50 ? TabStatusStyle.signal : theme.text3)
+                        }
+                        .font(.system(size: ChromeMetrics.text(11.5)))
+                        .foregroundStyle(theme.text2)
+                        .padding(.horizontal, 10)
+                        .frame(height: ChromeMetrics.row(20))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel(Text(verbatim: "\(busy.name), \(ActivityRows.percent(busy.cpu)) percent CPU"))
+                }
+            }
+            Spacer()
+            ActivityMetersView(
+                meters: meters, processes: processes, threads: threads, history: history, energy: energy, copy: { copy([$0]) }, theme: theme)
+        }
+        .padding(12)
+    }
+
+    private func caption(_ text: String) -> some View {
+        Text(text).font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+            .padding(.horizontal, 10)
+    }
+}
+
+/// The meters (6.4): CPU a bar a core, memory as Activity Monitor counts it,
+/// pressure, swap, load, uptime, thermal state and Low Power Mode, tasks and
+/// threads. "—" for what the census hasn't read yet.
+struct ActivityMetersView: View {
+    let meters: SystemMeters?
+    let processes: Int
+    let threads: Int
+    /// The Mac's 15 minutes: CPU and memory used (6.11).
+    var history: [TimeChartData] = []
+    /// The user's processes' energy, W: given only while the Energy column
+    /// is on (6.4).
+    var energy: Double?
+    /// Copy Values as CSV, the charts' menu.
+    var copy: ((String) -> Void)? = nil
+    @ObservedObject var theme: ChromeTheme
+    @StateObject private var cursor = TimeChartCursor()
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            readings
+            ForEach(history, id: \.id) { data in
+                TimeChartView(data: data, cursor: cursor, span: "last 15 min", height: 44, copy: copy, theme: theme).padding(.horizontal, 10)
+            }
+        }
+    }
+
+    private var readings: some View {
+        VStack(alignment: .leading, spacing: 5) {
+            Text("CPU").font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+            cpu
+            if let meters {
+                line("Memory", "\(ActivityRows.bytes(meters.used)) of \(ActivityRows.bytes(meters.memory))")
+                    .help(
+                        "Used: app memory \(ActivityRows.bytes(meters.app)), wired \(ActivityRows.bytes(meters.wired)), compressed \(ActivityRows.bytes(meters.compressed)). Cached files \(ActivityRows.bytes(meters.cached))."
+                    )
+                line("Pressure", meters.pressure.rawValue, meters.pressure == .normal || meters.pressure == .unknown ? nil : TabStatusStyle.signal)
+                line("Swap", meters.swapTotal == 0 ? "none" : "\(ActivityRows.bytes(meters.swapUsed)) of \(ActivityRows.bytes(meters.swapTotal))")
+                line("Load", meters.load.map { String(format: "%.2f", locale: Locale(identifier: "en_US_POSIX"), $0) }.joined(separator: " "))
+                line("Up", Self.uptime(meters.uptime))
+                line("Thermal", meters.thermal.rawValue, meters.thermal == .nominal ? nil : TabStatusStyle.signal)
+                if meters.lowPower { line("Low Power Mode", "on") }
+            }
+            if processes > 0 { line("Tasks", "\(processes) · \(threads) threads yours") }
+            if let energy {
+                line("Energy", String(format: "%.2f W yours, estimate", locale: Locale(identifier: "en_US_POSIX"), energy))
+                    .help("The sum of your processes' energy, from macOS's energy counter: an estimate")
+            }
+        }
+        .padding(.horizontal, 10)
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("activity.meters")
+    }
+
+    @ViewBuilder
+    private var cpu: some View {
+        if let meters, !meters.cores.isEmpty {
+            HStack(alignment: .bottom, spacing: 2) {
+                ForEach(Array(meters.cores.enumerated()), id: \.offset) { _, share in
+                    ZStack(alignment: .bottom) {
+                        RoundedRectangle(cornerRadius: 1.5).fill(theme.text3.opacity(0.25))
+                        RoundedRectangle(cornerRadius: 1.5).fill(share >= 0.8 ? TabStatusStyle.signal : theme.text2).frame(height: max(1, 22 * share))
+                    }
+                    .frame(height: 22)
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .accessibilityLabel(Text(verbatim: "CPU \(ActivityRows.percent((meters.cpu ?? 0) * 100)) percent"))
+            HStack {
+                Text(verbatim: "\(ActivityRows.percent((meters.cpu ?? 0) * 100))% of \(meters.cores.count) cores")
+                Spacer(minLength: 2)
+                if let performance = meters.performanceCores, let efficiency = meters.efficiencyCores {
+                    Text(verbatim: "P \(performance) · E \(efficiency)")
+                }
+            }
+            .font(.system(size: ChromeMetrics.text(10.5), design: .monospaced)).foregroundStyle(theme.text3)
+        } else {
+            Text(verbatim: "—").font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text3)
+        }
+    }
+
+    private func line(_ label: String, _ value: String, _ color: Color? = nil) -> some View {
+        HStack(spacing: 4) {
+            Text(label).foregroundStyle(theme.text3)
+            Spacer(minLength: 4)
+            Text(verbatim: value).foregroundStyle(color ?? theme.text2).lineLimit(1)
+        }
+        .font(.system(size: ChromeMetrics.text(11)))
+    }
+
+    static func uptime(_ seconds: TimeInterval) -> String {
+        let minutes = Int(seconds) / 60
+        let days = minutes / 1_440
+        let hours = (minutes % 1_440) / 60
+        if days > 0 { return "\(days) d \(hours) h" }
+        return hours > 0 ? "\(hours) h \(minutes % 60) min" : "\(minutes) min"
+    }
+}

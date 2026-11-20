@@ -314,7 +314,7 @@ struct SettingSpec: Identifiable, Sendable {
 /// Every setting, in the order Settings shows them.
 enum SettingsSchema {
     static let all: [SettingSpec] =
-        general + appearance + terminal + agents + editor + browser + api + notes + database + docker + kubernetes + terraform + notifications
+        general + appearance + terminal + agents + editor + browser + api + notes + database + docker + kubernetes + terraform + activity + notifications
         + updates
 
     static let byKey: [String: SettingSpec] = Dictionary(uniqueKeysWithValues: all.map { ($0.key, $0) })
@@ -876,6 +876,50 @@ enum SettingsSchema {
             help:
                 "What E runs beside a pod's container (kubectl debug --target) or on a node, in a tab — unless the context's own debugImage (a node: its nodeShellImage, then debugImage) says another. Only on writable contexts.",
             kind: .text(placeholder: "busybox:1.36", monospaced: true), defaultValue: .string("busybox:1.36"), requires: "kubernetes.enabled"),
+    ]
+
+    /// Activity (docs/design/activity/analysis.md, 6.13).
+    private static let activity: [SettingSpec] = [
+        SettingSpec(
+            key: "activity.enabled", section: .activity, group: "Activity", title: "Activity in Overterm",
+            help:
+                "Every process and port on this Mac, on a page of its own (⌥⌘A), read only while it shows. Off: no page, no switcher, no ⌘K items, no agents' reads. What keeps reading: Tab Info, the pane pills and the left-behind notes read your tabs' own processes while a window is visible, and briefly when a tab closes or an agent finishes; the Terraform header walks a pane where terraform runs; and a port's Free…, Docker's port check and a port's holder read the Mac once when you use them.",
+            kind: .toggle, defaultValue: .bool(true), heldWhenEditedOutside: true),
+        SettingSpec(
+            key: "activity.interval", section: .activity, group: "Activity", title: "Read every",
+            help:
+                "How often the page reads the Mac while it shows, and the tabs' own processes are read. Faster costs more: about 1% of one core at 2 s while the page shows, about twice that at 1 s (measured on an M1 Max).",
+            kind: .choice([.init(value: "1", label: "1 second"), .init(value: "2", label: "2 seconds"), .init(value: "5", label: "5 seconds")]),
+            defaultValue: .string("2")),
+        SettingSpec(
+            key: "activity.everyone", section: .activity, group: "Activity", title: "Other users' processes too",
+            help: "Other users' and macOS's processes, names only: their numbers are theirs.", kind: .toggle, defaultValue: .bool(true),
+            requires: "activity.enabled"),
+        SettingSpec(
+            key: "activity.appServices", section: .activity, group: "Activity", title: "Count apps' helper services under the app",
+            help:
+                "Count apps' helper services and virtual machines (WebKit content, Docker's VM) under the app responsible for them — a private interface; turns itself off if it fails.",
+            kind: .toggle, defaultValue: .bool(true), requires: "activity.enabled"),
+        SettingSpec(
+            key: "activity.otherListeners", section: .activity, group: "Activity", title: "Every user's listening ports",
+            help:
+                "Root's, macOS's and other users' listening ports in Listening, read by macOS's nettop every 10 s while Listening shows — names, pids and ports only. An answer that lacks your own listeners is said to be unknown, never believed.",
+            kind: .toggle, defaultValue: .bool(true), requires: "activity.enabled"),
+        SettingSpec(
+            key: "activity.unixSockets", section: .activity, group: "Activity", title: "Unix-socket listeners",
+            help:
+                "Unix-socket listeners in Listening: who holds a socket file (a database's /tmp/.s.PGSQL.5432, docker.sock, the kubectl proxies'). Your processes' only; hundreds on a busy Mac.",
+            kind: .toggle, defaultValue: .bool(false), requires: "activity.enabled"),
+        SettingSpec(
+            key: "activity.leftBehindNotice", section: .activity, group: "Activity", title: "Say what an agent left running",
+            help:
+                "When an agent finishes and leaves processes running — a server its tool started — the tab says so (\"Claude finished — left node :3001 running\"), in the Inbox too, with Show for Activity's Left Behind. Nothing is ever stopped on its own.",
+            kind: .toggle, defaultValue: .bool(true)),
+        SettingSpec(
+            key: "activity.agentAccess", section: .activity, group: "Agents", title: "Agents can read processes and ports",
+            help:
+                "Agents started from Overterm can ask who holds a port, which of their checkout's servers are theirs and what was left running, through MCP (port_holder, port_list, proc_mine, proc_left_behind, proc_list) — read only, masked; outside their own checkout, only a folder's name and processes' names, pids, owners and ports, other apps as totals.",
+            kind: .toggle, defaultValue: .bool(true), requires: "activity.enabled", heldWhenEditedOutside: true),
     ]
 
     private static let terraform: [SettingSpec] = [

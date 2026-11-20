@@ -83,6 +83,12 @@ enum TerraformRun {
         }
     }
 
+    /// What a terraform it starts is given: `environment`, marked as this
+    /// run's (D-15) — pure but for the run's own marker.
+    static func childEnvironment(_ environment: [String: String]) -> [String: String] {
+        OvertermRun.current.marking(environment, helper: .terraform)
+    }
+
     /// The same, blocking the calling thread (a GCD one). `stopper`: what
     /// stops it from elsewhere (a cancelled task); `interruptible`: whether
     /// quitting interrupts it at once (`stopAll`).
@@ -96,7 +102,7 @@ enum TerraformRun {
         let err = Pipe()
         let stdin = input.map { _ in Pipe() }
         let spawned = ProcessGroup.spawn(
-            binary, arguments, environment, directory: folder, stdout: out.fileHandleForWriting.fileDescriptor,
+            binary, arguments, childEnvironment(environment), directory: folder, stdout: out.fileHandleForWriting.fileDescriptor,
             stderr: err.fileHandleForWriting.fileDescriptor, stdin: stdin?.fileHandleForReading.fileDescriptor, descriptors: file.map { [3: $0] } ?? [:])
         // The child has its own copies; ours would keep the pipes open.
         try? out.fileHandleForWriting.close()

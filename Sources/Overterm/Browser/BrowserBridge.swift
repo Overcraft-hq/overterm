@@ -37,13 +37,13 @@ final class BrowserBridge {
     var resolveAPI: ((String) -> AgentAPI?)?
 
     /// Agents get the browser, the API client, the notes, the databases,
-    /// Docker, Kubernetes, Terraform — any of them: the server serves
+    /// Docker, Kubernetes, Terraform, Activity — any of them: the server serves
     /// whenever `BrowserMCP.offered` would list a tool.
     private var wanted: Bool { Self.wanted(in: .shared) }
 
     static func wanted(in settings: Settings) -> Bool {
         settings.browserAgentControl || settings.apiAgentControl || settings.notesAgentAccess || settings.databaseAgentAccess
-            || settings.dockerAgentAccess || settings.kubernetesAgentAccess || settings.terraformAgentAccess
+            || settings.dockerAgentAccess || settings.kubernetesAgentAccess || settings.terraformAgentAccess || settings.activityAgentAccess
     }
 
     private var server: BridgeServer?

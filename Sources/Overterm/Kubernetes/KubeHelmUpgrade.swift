@@ -419,7 +419,7 @@ enum KubeHelmTemplate {
         let environment = found.1
         let arguments = Self.arguments(release: release, chart: chart.path, namespace: namespace, capabilities: capabilities)
         let result = await KubeBlocking.run {
-            KubeProcessRun.run(helm, arguments, environment: environment, timeout: timeout, outputLimit: outputLimit, input: values)
+            KubeProcessRun.run(helm, arguments, environment: environment, timeout: timeout, outputLimit: outputLimit, input: values, helper: .helm)
         }
         guard let result else { throw Problem("helm template didn't finish in \(Int(timeout)) seconds.") }
         guard result.status == 0 else {

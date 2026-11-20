@@ -54,8 +54,13 @@ libghostty's own threads and git calls.
 
 "That checkout" is `Tab.checkoutSource`, in order: an **attached** checkout
 (Worktrees → Attach to This Tab), else where the tab's **agent** works
-(`Tab.agentDirectory`, polled every 2 s from the agent process's cwd —
-Claude Code chdirs into a worktree on EnterWorktree), else the **shell's**
+(`Tab.agentDirectory`, the agent process's cwd (any `Agent`) as the census's light
+tick reads it every 2 s for every tab of a window on screen, and — a window
+off screen has no light tick — `OffScreenAgents` for its tabs where an
+agent may work, and an agent's MCP call reads it again first, waiting for
+it (`TerminalWindowController.paneCheckout`) — Claude Code chdirs into a
+worktree on EnterWorktree, often while the person looks elsewhere), else
+the **shell's**
 directory (OSC 7 → `Tab.workingDirectory`). Each is turned into a root by
 `FileTreeModel.treeRoot(for:)`: the nearest ancestor with a `.git` (a file in a
 linked worktree), never promoted to `$HOME`.
@@ -525,23 +530,72 @@ gives the keyboard back to that page's list, not to the hidden terminal.
 ## Live ports and links
 
 A pane's header shows what anything in its process tree is listening on
-(`Info/ListeningPorts`, an `lsof`, run on every third tick of the poll
-that already walks the selected tab; each port with its process's start
-time, `ListeningPort.start`, read right after the listing). A pill opens
-a popover with the process, its pid, and Open / Copy URL / Stop….
-Stop… (`PortStop`, `stopListener`) asks first, every time — the process,
-its pid, the port, its command line masked as Tab Info's, SIGTERM — in
-the sheet every write uses (`WriteConfirmation`); then reads again, the
-pid's sockets (`lsof`) and its start time last, and sends SIGTERM to
-that pid alone, never a group or a pattern, only while it is still the
-process listed (the same pid and start time) and still holds the port.
-Otherwise nothing is sent and a sheet says why ("… has exited", "… no
-longer holds :3000"): the pid used to be signalled from an lsof up to
-6 s old, and after a server ended, whatever took its pid got it. A port
-whose start time couldn't be read can't be stopped from its pill. A
-forward's Stop is `KubeForwards`'; a checkout's containers have no pill.
-A tab that listens is a server, which is what its icon then says
-(`TabKind`).
+— its tree, and what carries its tag outside it (a nohup'd server). It
+comes from the census's light tick (docs/design/activity/analysis.md,
+D-5, 7.3; `TerminalWindowController.takeLightTick` over `TabLightRead`):
+while a window is on screen it wants the light level for its own tabs,
+every 2 s, and every snapshot that read them gives each tab its ports,
+each pane's, and where its agent works — every tab, a tab never selected
+too. A minimized or wholly covered window, or one on another Space, gives
+its want back, and its tabs are read again as it shows; with no window on
+screen there is no light tick — only the agents of its tabs where one may
+work are followed, every 2 s, by a lookup at the light level of those tabs
+alone (`OffScreenAgents`), since a tab's checkout follows its agent and
+`TerraformPaneMonitor`, the agents' tools and the marks by checkout read
+it while no window shows. No lsof: the ports are the census's socket
+walk (`ListeningPorts.of(_:in:)`). It replaced the agent poll, which
+walked the selected tab every 2 s at `.utility` and ran lsof every 6 s —
+about 1 s of CPU a minute a window, the light tick's being about 0.1 s
+(D-5's measure, docs/design/activity/analysis.md 15). A pill opens a popover with the
+process, its pid, and Open / Copy URL / Free…. Open goes through the
+window's `openLink`, so Settings ▸ Browser decides where (2.4 item 4).
+Free… (`TerminalWindowController+PortFree`, docs/design/activity/
+analysis.md 6.12) always asks — a `WriteConfirmation`, no setting skips
+it — and reads what holds the port again at the press, off the main
+thread: `ActivityPortFree.read` classes it as the policy sees it (the
+pane's `login` and shell, its agent and the agent's children, its jobs,
+what left its terminal, what chose to outlive it, an app, Overterm's
+helpers; a terraform write it runs under, whose plugin may hold the
+port, is the one interrupted) and `ActivitySignalCheck` decides: the
+pane's foreground job is interrupted — ⌃C typed into the pane as a key
+event (`TerminalView.pressControlC`), only while the surface's
+foreground group, read again at the button, is still the target's —,
+another job or an agent's child is stopped through `ProcessSignals` by
+the identity the census listed, the agent is Stop Agent (critical), a
+terraform write is interrupted only, the shell is the pane's own close,
+and what ignores SIGHUP, was detached on purpose or is an app is refused
+with why; Overterm's helpers are refused too, their routes on their own
+pages. The button reads the holder again and asks the policy again of
+it (`changedAtButton`): what changed while asked is sent nothing. A
+container's port is Stop Container and a forward's Stop Forward, each
+asked first now. After any Free the pill watches the port (`watchFreed`:
+the one-off census at its 2 s spacing, 10 s) by the process the pill
+listed there, and says it is free, came back as a pid started since,
+or is still held (`PortFreeing`). A tab that
+listens is a server, which is what its icon then says (`TabKind`).
+
+**netstat is no source here, nor a check in a pane.** Run under an ad
+hoc-signed parent — which `make app`'s Overterm is, and so every shell
+in its panes and everything they start — `netstat` prints no rows at all
+and exits 0, as if nothing listened (docs/design/activity/analysis.md
+3.5; the `splits` scenario counts 0 rows of `netstat -an -p tcp` in a
+pane, where Terminal's shell gets the Mac's). lsof and `nettop` are not
+affected — Activity reads every user's listeners through nettop, checked
+against libproc's (Activity, Every user's listeners). The ports above are libproc's, which sees every socket of the
+user's own processes; to ask from a pane who holds a port, `lsof -nP
+-iTCP:<port> -sTCP:LISTEN` answers, netstat doesn't.
+
+A port is opened where it listens (`ListeningPort.url`, docs/design/
+activity/analysis.md 6.8), from its sockets' bound addresses and families
+(`insi_vflag`): `localhost` only where both families listen on loopback —
+a dual-stack wildcard, or a socket each —, since `localhost` resolves to
+::1 first and a client without a fallback (Node 17–19's `fetch`) gets
+ECONNREFUSED from a v4-only server; `127.0.0.1` where only IPv4 does,
+`[::1]` where only IPv6 does, the one address a socket is bound to as
+that address (a LAN one isn't localhost, and a loopback alias such as
+127.0.0.2 isn't 127.0.0.1), and nothing to open for a link-local one,
+which needs a zone id: its address is copied. A container's is reached
+where it is published, as Docker's own pills are.
 
 No preview of the page, which the design draws: that is a WebView per
 pill for a thumbnail, and the process name answers the question the
@@ -695,9 +749,10 @@ folder names (every non-alphanumeric is `-`), so a folder is a candidate by
 prefix and kept only if the transcript's `cwd` is really inside a worktree —
 `repo-other` is not `repo`. Only the newest 60 are read, 128 KB of each end
 (`ClaudeActivity`). `SessionsModel.running` pairs tabs' Claude processes with
-sessions: the id its `--resume` or `-r` names (`ProcessNode.resumes`, taken
-off the raw argv as it is read — a valid id only; the masked `command` can
-lose it, `--fork-session -r <id>` masking the `-r`), else the newest session
+sessions: the id its `--resume` or `-r` names (`PaneAgent.resumes`, taken
+off the raw argv inside the census's read, `ProcessArguments.resumes` — a
+valid id only; the masked command can lose it, `--fork-session -r <id>`
+masking the `-r`), else the newest session
 in its directory. A click selects that tab, else opens one with
 `claude --resume <id>` (`Agent.claudeResume`, UUIDs only — it is typed into
 a shell).
@@ -786,20 +841,529 @@ Everything GitHub goes through the user's own `gh` (`Sources/Overterm/GitHub/`;
 Without a checkout only the terminal row is shown. Esc (or a click outside)
 ends the terminal search too; only choosing the terminal row keeps it.
 
-## Tab Info (⌘I, or Show Info… on a tab)
+## Tab Info (⌃⌘I, or Show Info… on a tab)
 
 A popover per tab, live while open (`TabInfoModel`, `Sources/Overterm/Info/`):
 
 | Section | Source |
 |---|---|
 | Location | tab cwd → checkout, branch, worktree-of, changed files (git) |
-| Running | `ProcessInspector`: everything under the tab's `login` (paired to its surface by `SurfaceProcesses`, since libghostty doesn't expose the pid), plus anything tagged `OVERTERM_TAB_ID` that left the tree. CPU% from task-time deltas (Mach ticks → ns) since the process's previous read, whoever made it — a split tab's panes are read in turn, the agent poll reads with the window's same inspector — its baseline kept by pid and start time while it runs (`CPUBaselines`), a rate over 15 s at most; resident memory. Links via sysctl KERN_PROC — proc_pidinfo refuses root's `login`. A row's tooltip is its argv masked as it was read (`ProcessNode.masked`: `Secrets.maskArguments` word by word — a flag's or an assignment's value whole, a password with a space in it too (`--password='a b'`, mysql's `-p'a b'`, curl's `-u'user:a b'`, `env PGPASSWORD='a b'`), a password's or a token's never taken for a path where it starts with `/` (`namesPassword`, `REDISCLI_AUTH` too), nor a key's or a secret's that is base64 after its `/` (`isPath`), a script's words in place, split as the shell splits them — quotes and `\` keep a blank in a word and hide no name or program, `eval`'s argument a script too (Claude Code's `zsh -c -l "… eval '<command>' …"`), what changed put back inside the word's quotes — (after a shell's `-c`, past its options' values — `bash -o pipefail -c` —, an assignment ends at its first space), and a value with a space in it kept as a path read as one too —, then the line's URLs and credentials, `maskURLs`, `scrubCredentials`) — only Tab Info's reads mask (`tree`'s `commands`), outside the inspector's lock the agent poll and Suspend Tab wait on; a read that only decides something (the agent poll, the Agent Overview, Sessions, a drop, an image paste, the MCP asker, Suspend Tab) leaves `command` empty —, once while the argv stays as it is (the masked line kept by pid, start time and the argv's hash: a compiler's thousands of words aren't masked every second); the raw words go with the read, once what the checks need is taken from them — the agent argv[0] names (`argvAgent`: `isAgent`, `agent(of:)`, MCPAsker, drops, image paste) and the session a Claude resumes (`resumes`: Sessions). |
-| Listening | `lsof` on the tab's pids, every 3 s; Open → localhost |
+| Running | The census's light slice for its tab (`ActivityMonitor`, docs/design/activity/analysis.md 6.12), every second while it is open — no scan of its own: each pane's tree under its `login` (paired to its surface by `SurfaceProcesses`, since libghostty doesn't expose the pid), and what carries the pane's `OVERTERM_TAB_ID` outside it. A split tab is a group a pane, labelled by what the pane runs (`CommandLedger.running`), else its title, masked; the shell its group's dimmed root; what left its terminal (nohup, disown) under its pane, marked ↗. CPU% since the census's last sample ("—" for a first one), a pane's baselines kept while its processes live, so a split tab reads every pane's; Memory the footprint, Activity Monitor's, real memory (RSS) in the tooltip. A row's tooltip: the command masked as it was read, its folder, its start. |
+| Listening | The census's socket walk of the tab's processes (`ListeningPorts.of(_:in:)`), no lsof — a process's sockets on one port one entry, with their families, scope and the holder's start; then its checkout's containers' and its forwards' ports, a forward's scope from the address kubectl listens on; the address said beside a port bound to one address that isn't loopback, and beside a forward that isn't this Mac's alone (`TabInfoView.address(of:)`: one to the whole network never looks like a loopback one); Open → where it listens (`ListeningPort.url`, Live ports and links); each row says "tcp · v4 + v6 · This Mac" (`TabInfoView.portWords`), its ⋯ Copy URL and Show in Activity. The header's gauge and a process's menu show it in Activity too (`showInActivity`); Tab Info itself signals nothing |
 | Claude session | `ClaudeUsageReader` on `~/.claude/projects/<cwd as ->/<session>.jsonl`: streamed, incremental, ends-of-line byte search, replies de-duplicated by id |
 | Disk | `DiskUsage` of the checkout only, cancellable, cached 60 s |
 
 macOS hides the environment of Apple-signed binaries (zsh, sleep, git) from
 other processes, so the env tag alone can't find a shell — hence the tree.
+
+## Activity
+
+What runs and what listens, one census for the app (`Sources/Overterm/
+Activity/`; the design is docs/design/activity/analysis.md, what was
+built its Section 15). Its page is Activity (⌥⌘A); Tab Info, the
+pane pills, the agent overview, Sessions, an MCP confirmation, a drop, a
+paste and Suspend Tab read it too. Terraform's close guard doesn't yet: it
+walks the closing panes' trees itself, on the main thread, at the close
+(an exception CLAUDE.md names; Section 15 says why it is still open).
+
+- **The census.** `ActivitySampler` ticks on one serial queue,
+  `Overterm.activity` at `.userInitiated` (D-8, measured: at `.utility` a
+  light tick cost about a quarter more energy and a full tick the same,
+  the thread's CPU time the same at both): one
+  `KERN_PROC_ALL` (`ProcessTable`, parents by start time), then for the
+  processes a level wants their usage (`ProcessUsage`, `rusage_info_v6`,
+  rates by the measured interval), their argv masked as it is read and
+  their environment scanned in place for four names only
+  (`ProcessArguments`), their sockets (`SocketScan`, bounded a process).
+  Everything is keyed by identity, pid and start (`ActivityProcessID`), so
+  a reused pid is a new process. `ActivityMonitor` (main actor, one for the
+  app) takes readers' wants — a level, its tabs, a cadence — and ticks once
+  for all of them at the fastest; nothing wanted, no tick. A one-off
+  `census(within:)`, at most one every 2 s, serves a read at a moment:
+  a port's holder (`ListeningPorts`), Docker's "held in a tab"
+  (`tabHolding`) and a pill's Free…. The close sheets and agents' calls
+  (`forAgents()`, with no caller yet) come with the later stages.
+- **Which pane is whose.** `ActivityContext`, rebuilt on the main actor
+  when panes, tabs or pairings change: each pane's tag, tab, window, its
+  `login` (paired by `SurfaceProcesses` from the census's list of the
+  app's children) and its pty's device (`TerminalView.terminalDevice`,
+  `ghostty_surface_tty_name`'s `st_rdev`, read once the `login` is paired:
+  right after `ghostty_surface_new` the IO thread hasn't opened the pty
+  yet). A pane's members through its pty are the same as through its
+  paired `login`'s tree; a process that left its session (`setsid`) is
+  found by the tree, or by the tag.
+- **The light tick** (D-5): while a window is on screen it wants the light
+  level for its own tabs, every 2 s — the process table, those tabs' own
+  processes and their listeners — and gives each tab its ports and its
+  agent's folder (Live ports and links). It replaced the window's agent
+  poll and its lsof.
+- **Signals** go through `ProcessSignals` alone (CLAUDE.md): one process by
+  the identity it was listed with, its audit token taken first and the
+  identity checked through it, the structural refusals (not the user's
+  alone, launchd, Overterm and its helpers, pid ≤ 1) before any call;
+  what to send is `ActivitySignalCheck`'s. In an isolated run or a unit
+  test the gate (`ActivitySignalGate`) refuses anything the run didn't
+  register or its panes didn't start (docs/testing.md, Activity).
+- **The page** (`WorkspaceOverlay.activity`, View ▸ Activity, ⌥⌘A;
+  `ActivityPageModel`/`ActivityPageView`, wired by
+  `TerminalWindowController+ActivityPage`): Processes and Listening
+  (`1`, `2`) in one `ResourceTable`, so the list keeps its place as the
+  section changes, and the meters down the left (`SystemMeters`, read in
+  the full tick: CPU a core between two reads, memory in Activity
+  Monitor's terms). It wants the full level only while it is the page on
+  screen in a window that shows, and gives it back when hidden: then it
+  reads nothing and builds no rows — a setting or a sort changed then
+  included — and its rows go with the want, so shown again it says
+  "Reading…" until a fresh tick's rows land. Its rows are made off the
+  main thread (`ActivityRows`, pure) from each full snapshot, the Started
+  column's words with them; a first sample's CPU is "—", and so are the
+  meters' cores after a gap longer than a rate may span. A tab's title is
+  masked as a command (design 9.3) before the Where column and a
+  group's header say it. In an
+  isolated run it lists only the run's own tabs' processes, the Mac as
+  counts (design 9.9). Each row says its name, pid, CPU and tab to
+  VoiceOver (`ResourceTable`'s `accessibilityLabel`). Settings ▸ Activity
+  holds `activity.enabled`, `interval` (the census's cadence, the light
+  tick's too), `everyone` and `appServices`.
+- **Owners** (`ActivityAttribution`, pure: one snapshot, the context,
+  what the main actor says of the tabs — title, checkout, branch, strip
+  order — through `ActivityTabFacts`). Design 6.5's rules in order, the
+  first that matches wins: Overterm and what it started (its children
+  that aren't a pane's `login`, the forwards by pid, the registries), a
+  pane's session and tree — its agent, the agent's MCP servers, tool
+  shells and servers (`ProcessRole`, read off the masked argv) —, what
+  left a pane through the pane's set (`ActivityPaneSet`: detached on
+  purpose, an app started from it, what carries its tag), engines by the
+  ports their running containers publish and by their VM, another
+  Overterm, apps by the outermost `.app` on the path, the XPC service or
+  VM an app is responsible for (D-31: `ProcessResponsibility`, the private
+  call looked up and off at its first failure; read once an identity, the
+  user's only, at the full level while `activity.appServices` is on and
+  the call answers, kept by the responsible process's identity — unread,
+  an XPC service is unknown, never macOS), macOS narrowly, other users', the user's
+  elsewhere. A child inherits its parent's owner unless a rule matches
+  it. Rules 8 and 11 (Left Behind) come with that section.
+- **Processes' list** (`ActivityRows+Groups`, pure, with the rows): by
+  checkout (default) — its tabs in the strips' order, a split tab's
+  panes, each pane's tree with parents linked by start time, "Left its
+  terminal", the checkout's running containers "in Docker's VM" with
+  their usage (Docker's model shown and `DockerUsageMonitor` wanted only
+  while Processes shows, a local engine's only; at the checkout's scope
+  and wider) —, then Overterm, another Overterm, your apps,
+  yours elsewhere, macOS and other users' (the last four folded). `G`
+  cycles checkout, tab, agent, app, user, none; `t` tree or flat. Group
+  order is stable, never by load; siblings follow the sort. Folds are
+  the page's, in memory; a group past 500 rows ends "+N more". The scope
+  ladder (`ActivityScope`: tab, checkout, all tabs, the Mac; `[` and `]`,
+  a chip with ✕) filters both sections; All tabs is remembered per
+  section, a tab or a checkout only for the launch.
+- **The table** (design 6.3–6.7). The filter (`ActivityFilter`, pure,
+  over `ResourceFilter`) is each section's own and never remembered:
+  Activity's keys, quantities with units (`mem:>1g`, `age:<5m`), `|`
+  ORing inside a value, text matched against the masked command only; in
+  a tree a match keeps its ancestors in its own tree (up to the pane's
+  login, never another group's), dimmed, and a group folded by default
+  opens on a match. Processes' filter narrows Processes alone: Listening,
+  the detail's listeners and the busiest read every row in scope
+  (`ActivityPageContent.listeners`, `identities`). The keys (`ActivityKey`,
+  `?` lists them): htop's sorts (`P` `M` `T` `N`, `I` inverts), `u`
+  yours or everyone's, `F` follow — without it the list never scrolls to
+  a selection that moves —, `Z` pause — the census given back while
+  paused, the rows kept —, `↩` its tab and pane, Space the detail, `o`
+  in the owner tab's browser column in the window that holds it (⌥o the
+  default browser, `WorkspacePage.optionPress`), `r`, `i`, `s` (`sample
+  <pid> 5 -file /dev/stdout` in a new tab), `e` and ⌥r (its folder); ← and → fold in `ResourceTable` itself
+  (`fold`). A row's verbs are one list (`ActivityPageModel.verbs`): the
+  detail's `ResourceActionBar` and the row's right-click menu. Columns
+  (`ActivityColumns`): every one 6.5 offers, picked in the header's menu,
+  moved and resized in the header — `ResourceTable` reports them
+  (`columnsChanged`) — and kept in `AppEnvironment.defaults`
+  (`activity.page.columns.v1`); User shows while All does, Where by the
+  grouping. The order is held while the list is
+  worked (`ActivityHold`: the pointer moving over it, a press, its menu,
+  a sheet, VoiceOver's focus in it; `ResourceTable.interacting`): a
+  tick's values land in the order shown (`ActivityRows.held`), its new
+  rows wait, the header says "order held", and it lets go once the
+  pointer rests 5 s; what the person asks for — a sort, a fold, the
+  filter — shows at once. The detail (`ActivityDetail`, pure, +
+  `ActivityDetailView`) without history: the masked command, where and
+  why, its tree — only through the page's rows, so a test run's stops at
+  its own tabs' (9.9) —, its listeners and connections counted, its
+  usage.
+  **Files** (`l`, or its button; `ProcessOpenFiles`): what the selection
+  holds open — files by path (`PROC_PIDFDVNODEPATHINFO`), sockets as the
+  census decodes them, pipes and the kernel's other kinds by name —, read
+  only when asked and again when the selection changes while it shows,
+  on a queue of its own, each path on a worker waited 200 ms: one that
+  doesn't come back (a hard-mounted share that stopped answering) is
+  left behind and stops the read ("a file isn't answering"), and later
+  reads say so at once, asking for no path, until it returns
+  (`ProcessOpenFiles.Stuck`); 2 s and 1,000 entries at most, each said;
+  the user's own only, a pid taken since shows nothing; one that ended
+  says so.
+- **Listening** (`ActivityPorts`, pure, with the rows; design 6.8): one
+  row per holder, protocol and port — its v4 and v6 sockets together
+  ("v4 + v6"), the processes that share the very socket (`soi_so`: a
+  pre-fork server's workers, a child that inherited it) "+N holders" —,
+  bound UDP too. The owner, the first that matches: a container by its
+  published host address, port and protocol (never the number alone;
+  Docker's model is shown while the page is, `ActivityContainerWant`),
+  "via" the holder (one number published on two host addresses a row
+  each) — or, nobody in scope seen holding it, the container's own row
+  "via the engine", at the Mac or its checkout's scope, bound as it is
+  published (`0.0.0.0` IPv4's wildcard, `::` IPv6's, both for every
+  address), so its collisions are found too —; a Kubernetes forward by kubectl's pid (its https kept); a
+  database tunnel by ssh's pid and port (`SSHTunnel.listed`); Overterm's
+  MCP bridge; a pane's process; then `KnownHolders` (AirPlay Receiver on
+  5000 and 7000, Continuity, adb, the engines), a launchd job
+  (`LaunchdJobs`: `XPC_SERVICE_NAME`'s label, else a LaunchAgent plist's
+  program, resolved by `realpath` — regular files only, opened
+  `O_NOFOLLOW`, under 1 MB; `AppEnvironment.launchAgentsDirectory`, none
+  in a test run;
+  `homebrew.mxcl.<formula>` a brew service), an app, macOS, another
+  user's, the user's elsewhere. The URL follows the bound families
+  (`ListeningPorts.host`), a container's own row's the families it is
+  published on (`localhost` only for both); `o` opens it in the owner
+  tab's browser column — a container's, a tab of its checkout —, and the
+  menu adds Open as https. Collisions (`PortCollisions`,
+  pure) are said on both rows in the Note column and to VoiceOver: one
+  port split across IPv4 and IPv6 by two holders, a specific address
+  beside a wildcard, two holders' own sockets on one address and port
+  (`SO_REUSEPORT`), AirPlay Receiver beside a server. `c` (or
+  `state:established`) adds the user's established TCP connections: two
+  of the user's ends paired by the 4-tuple are one line, the server the
+  end listening on its port, counted as the listener's Clients; one
+  socket two processes hold is one end, its oldest holder's; the rest a
+  line a process and remote end, counted, ≤ 500, those past it said below
+  the list — a remote address on the page only, never in a row's id. A
+  loopback listener a tunnel client (cloudflared, ngrok, `ssh -R`…) is
+  connected to reads "forwarded by", from every pair, listed or not.
+  Apps', macOS's and known holders' listeners in the ephemeral range
+  (`net.inet.ip.portrange.first`) fold into one line; a tab's, a server
+  of the user's elsewhere and a launchd job's never do, and a filter
+  shows them; other users' (nettop's) fold into a line of their own. The
+  header's count is every listener; the switcher lists the folded ones
+  too.
+- **Every user's listeners** (`NettopListeners`, design 6.8, D-25;
+  `activity.otherListeners`, on): libproc reads only the user's own
+  sockets and netstat prints nothing under the ad hoc-signed app, so
+  `nettop -L 1 -n -x -J state` — entitled, unaffected by its parent —
+  runs every fifth tick (10 s at 2 s) while Listening shows, and once for
+  an agent's `port_holder` that nothing of the user's answers (the read
+  of the last 10 s, else one now or the one running, waited for; checked
+  against the agent's snapshot, never older than 10 s): a
+  short-lived child through `KubeProcessRun` (a group of its own, 5 s, 1
+  MB, ended at quit; `OVERTERM_HELPER=nettop`), on a GCD thread, one at a
+  time (`NettopListeners.Reader`, the page's `readOthers`). Its text is
+  parsed strictly (`parse`, pure: `name.pid,,` the pid after the last
+  dot; `tcp4 127.0.0.1:8021<->*:*,Listen,`, IPv6's port after a dot;
+  anything else fails the read). **The blind check** (`check`): the
+  answer must hold every TCP listener of the user's that libproc found
+  as it began and still finds as it lands (a test run's own only); one
+  that lacks them is "unknown", never "nothing listens"; none to compare
+  is "unchecked", said. Believed, other users' rows (`ActivityPorts.others`)
+  show at the Mac's scope with everyone's, a row a holder, protocol and
+  port, by pid and start — a process started after the read began isn't
+  its holder; the user's own stay libproc's —: launchd's named from its
+  socket jobs (`LaunchdSockets`: each plist's `Sockets` — the port a
+  number or an `/etc/services` name, stream or dgram — from
+  `/System/Library/LaunchDaemons`, `/Library/LaunchDaemons`,
+  `/Library/LaunchAgents` and `~/Library/LaunchAgents`, read once, lazily,
+  off the main thread, regular files only; `AppEnvironment.launchdSocketFolders`,
+  a test's own alone in a test run; `/Library/LaunchAgents`' jobs load
+  into each user's gui domain, `Domain.agents`, said with `launchctl
+  bootout gui/<uid>/…`), its Free refused with the job and its switch
+  (`ActivityPortOwner.launchdSocket`), the user's own LaunchAgent's its
+  service's stop — only when no other job names the socket: when both
+  do, both are named and neither stopped; macOS's daemons by name
+  (`KnownHolders.macOSDaemons`: Bonjour, NetBIOS, printing, the Sharing
+  services…; never a kill), the rest by their user with the read route
+  (never for pid ≤ 1). The note under the list says what was read
+  (`ActivityOtherListeners`). A test run never runs the real nettop: the
+  reader's `standIn` alone.
+- **Known holders** (`KnownHolders`) also name people's tools whose
+  listeners aren't servers they asked for — ngrok's inspector on 4040,
+  Cloudflare Tunnel, Tailscale, Dropbox's LAN sync, Spotify Connect,
+  Ollama —; one that runs as the user's launchd job (a brew service) is
+  that service, macOS's daemons stay macOS's — by name only where the
+  binary is macOS's (a platform binary, or under `/usr`, `/System`,
+  `/Library/Apple`; `KnownHolders.isMacOSBinary`): a user's own `sshd`
+  is theirs, and Free asks.
+- **A forward typed in a terminal** (`ActivityTypedForwards`, pure, rule
+  6): a pane's or the user's `kubectl port-forward` or `ssh -L` says its
+  target from the masked argv's words — ssh's clustered flags read as
+  ssh reads them (`-fNL 5432:db:5432`) — "port-forward → svc/web:80 ·
+  namespace shop, context dev", "ssh -L → db:5432 via bastion", an `ssh
+  -D` a SOCKS proxy — past an interpreter running the tool's script,
+  never run (`ActivityPortRow.target`, after the owner's words). An `ssh
+  -R` that reaches a local server says where it is published on that
+  server's row ("forwarded by ssh -R to relay:8080 (pid N)").
+- **Unix-socket listeners** (D-32, `activity.unixSockets`, off): the walk
+  keeps a listening unix socket's path (`SO_ACCEPTCONN`, `unsi_addr`,
+  `SocketRecord.path`), and Listening lists the user's as rows
+  (`ActivityPorts.unix`, `ActivityPortRow.Kind.unix`) — the path, its
+  holder and what inherited the socket, the owner as a port's —; no URL,
+  no Free, no collision, never in agents' answers.
+- **Free :N** (`f` on a listener; design 6.8): through the owner's own
+  verb (`ActivityPortHolder`, pure; `TerminalWindowController+ActivityFree`)
+  — Stop Container (the Docker page's Stop), Stop Forward, Disconnect a
+  database's tunnel, a launchd or brew service's own stop typed and run in
+  a new tab, AirPlay Receiver's switch opened in System Settings, the read
+  route (`sudo lsof`, typed with no Return) for another user's —, each
+  asked (`WriteConfirmation`), the holder read again from a one-off census
+  as the sheet opens; afterwards the port is watched as a pill's is, never
+  by a bind (`watchPort`: the census's sockets; `ListeningPorts.bindProbes`
+  lets a test say so), and the header says what became of it. A port the
+  user's own process holds is Activity's own verb (`ActivityPortHolder.Plan`):
+  `.freePort`'s rule on the holder read from a fresh census — ⌃C typed for
+  a pane's foreground job, Stop for a background job, an agent's child or
+  one elsewhere, Stop Agent, an app's Quit, and for a terraform write that
+  runs the holder (its provider plugin) terraform interrupted, never the
+  plugin (`subject(of:)`); the sheet names every other holder of the port
+  and the supervisor, which is never sent to; the plan is made again at
+  the button, and the watch says free, came back as pid N, still held by
+  the one freed (Force Quit offered — never of a write's plugin, said
+  "still stopping" instead) or by one that held it with it
+  (`PortFreeing.State.inherited`). Every new tab the page opens — Terminal in Its Folder (`e`,
+  the selection's folder read at the focus level), Open Files, Sample, a
+  service's stop, the read route — goes through `activityTerminal`.
+- **The verbs that change a process** (design 6.10; `ActivityPageModel+Verbs`,
+  `TerminalWindowController+ActivitySignals`): `k` — Interrupt on a
+  pane's foreground job and a terraform write, Stop Agent on an agent,
+  else Stop, the pane's shell its close —, Interrupt Turn, `K` Force Quit,
+  `x` Send a Signal (each signal under the verb it equals), Stop Its Tree,
+  Group and Parent. One list with the row's other verbs, each greyed with
+  `ActivitySignalCheck`'s reason, decided on the latest snapshot
+  (`ActivityVerbSubject`, pure: the class by the owner, a terraform or
+  release write by the masked argv, the tree parents first, the group,
+  the supervisor). The sheet reads the process again from a one-off
+  census and asks the policy with those facts (`ActivityVerbQuestion`,
+  pure: every character, the executable, the command it equals; critical
+  past 10 targets, the count typed past 50); the button reads it again and
+  asks again — a process that changed while asked is refused, never sent
+  what was asked for what it was. Signals go through `ProcessSignals` by
+  the identity listed (a tree's members each by its own token, parents
+  first, `sendTree`); Interrupt is ⌃C typed into the pane, after the
+  pane's foreground group is read again — a raw-mode program reads it as
+  a key. `K` with no Stop in the last two minutes asks "Stop it first?".
+  After a Stop the header says stopped, still running — Force Quit…, or
+  came back as pid N (`ActivityStopWatch`, pure; five reads a second
+  apart). An app's `k` is Quit… and its `K` Force Quit
+  (`ProcessSignals.quitApp`: checked as a signal is, the token first, then
+  `NSRunningApplication.terminate`/`forceTerminate` by its pid only while
+  the app runs the executable the token names; what LaunchServices
+  doesn't list, can't be asked, runs another image than its bundle's
+  executable, or has no executable to read gets its verb's signal by the
+  token — D-23's fallback; a stopped app quit is continued after).
+  **Ask an Agent** (`a`, ⌘L; `ActivityBrief`, pure): the selected
+  process's detail as a brief — where and why, its state ("yours", never
+  the account's name) and usage now, its ports and its children by name,
+  its own text masked in a fenced block said to be data — offered only to
+  the agents of its own tab and checkout; one in no tab is offered to
+  every agent as `outside` (name, pid, ports, usage: never its command,
+  folder, tab or branch; design 8.4).
+- **The verbs that hold a process** (design 6.10;
+  `TerminalWindowController+ActivitySuspend`, `ActivityHeld`): `p`
+  Suspend — a pane's job with its pane, through Suspend Tab's own path
+  (`suspendPanes`: the shell stopped first, the cover, Resume Tab), what
+  runs outside the panes with its subtree, parents first, less what a bulk
+  leaves out (`ActivityVerbSubject.suspendMembers`) — the root alone
+  first, the rest only once it stopped (`ActivityHeld.stopTree`) —, asked
+  for an app, a helper inside one, a helm or pulumi write, Send a Signal ▸
+  STOP (a pane's job's too, its sheet naming the pane) and more than one
+  process — and Resume, only of what Activity stopped: a Suspension
+  continued whole from its root, children first, each by the identity it
+  was stopped as, planned again at the button (`stillHeld`: one let go
+  while its sheet was up is left alone); a ⌃Z job's is its shell's `fg`,
+  Suspend Tab's is Resume Tab. `ActivityHeld` (one for the app, memory only)
+  keeps what Activity stopped and put in the background, let go once a
+  census read after the change says it ended or runs again; the header
+  says "2 stopped here — Resume All", and quitting asks
+  (`activityQuitAlert`: Resume and Quit, the default, Quit, Cancel) —
+  first, but its Resume and Quit continues them only once every later
+  question has let the quit go; any not continued stays held and the
+  quit asks again (`notResumedQuestion`: Don't Quit, the default). `b`
+  Run in Background and Run Normally — the latter only for what Activity
+  put there, since nothing reads that state back — unasked for one
+  process; `n` Lower Priority ▸ +5, +10, 20, asked every time, upward
+  only — a step that gives nothing greyed with why, in the menu and `n`'s
+  chooser alike (`ActivityNiceStep.already`). The rows' "suspended here"
+  and "background" read `ActivityHeld` whatever is selected. Both through `ProcessSignals.setPriority`: checked as a signal is,
+  the token first, then `setpriority` by the pid, the gate in the
+  kernel's own call.
+- **Links** (`ActivityLink`, `showInActivity`): Tab Info's header, a
+  process's and a port's menu, a pane pill, the tab's menu, ⌘K's
+  Activity: This Tab, an Agents card and Docker's port-conflict box open
+  the page at the tab's scope, or with the process or port selected and
+  followed. A port opens at its tab's checkout — where the checkout's
+  containers are listed, which a tab's scope isn't — and is selected once
+  a tick lists it (`pendingPort`); a tick that doesn't widens the look to
+  the Mac's, and the Mac's not listing it either gives up and says ":N
+  isn't listed (another user's?)". The person's hand (a key, a selection,
+  a section) drops a link still waiting, so it never takes the selection
+  later. An Agents card also says its agent's CPU and memory — it and
+  everything under it, from the census the card was made from
+  (`AgentOverviewModel.usage`) — and its servers as pills that open.
+- **Whose run it was** (stage 3's groundwork; 6.9, D-15). `OvertermRun`
+  names this run — `<kind>.<pid>.<start µs>`, the kind `release` (the
+  installed `Overterm.app`), `dev` (any other build) or `isolated` — and
+  goes in every pane's environment as `OVERTERM_RUN` beside
+  `OVERTERM_TAB_ID` (`TerminalView.paneMarkers`), and with
+  `OVERTERM_HELPER=<kind>` on every child Overterm spawns, set over any
+  inherited one where each spawn path builds its child's environment:
+  `ManagedProcess.Launch.helper` (kubectl's proxy and port-forward,
+  Docker's ssh), `KubeProcessRun` (kubectl, helm), `TerraformRun`'s and
+  `TerraformStreamRun`'s `childEnvironment`, a detached apply's
+  `launchedEnvironment`, `Git.environment`, Docker's CLI (`env`'s words
+  over Git's), the login shell `ShellEnvironment` asks — its printed
+  answer unmarked before another child gets it —, a language server's
+  `processEnvironment`, the tunnel's ssh and Claude's usage ask. Apple's
+  ssh and perl hide their environment, so they name the run in their
+  argv by pid **and start** (`ArgvSign`): the kubectl socket folder
+  `/tmp/ot-kube-<uid>-<pid>-<start36>` (a folder whose pid now runs
+  another process swept as dead), Docker's `ot-docker-<pid>-<start36>-<key>.sock`,
+  the database tunnel's `ControlMaster=no` and `ControlPath=<user temp>/ot-run-<pid>-<start36>/db-<id>`
+  — a path nothing makes, ssh trying it only as a client, under
+  `_CS_DARWIN_USER_TEMP_DIR` (never `$TMPDIR`) and only while that folder
+  is this user's alone (`SSHTunnel.isPrivateFolder`), else `none` — and a
+  scenario's stand-in by its scratch folder. `RunLeftovers` is the rule
+  a run's leftovers are found by (never a pid alone, never what doesn't
+  descend from the run or launchd — `lineage`); the E2E harness
+  checks it at each scenario's end and after its app quits
+  (docs/testing.md).
+- **Left Behind** (stage 3; 6.9, D-14, D-16, D-17, D-29). What outlived
+  its tab, its agent or an earlier Overterm is placed by rules 8 and 11 of
+  6.5 (`LeftBehind`, pure: `LeftBehindSign` — a closed pane's tag, an
+  agent run's window, an earlier run's marker or argv sign, a test run's,
+  a dead group leader's orphan in a checkout no tab shows, "probably" —;
+  never one detached on purpose, an app, a launchd job, nor one the person
+  kept, which is theirs, "kept running — …"). `LeftBehindLedger` (one for
+  the app, memory only) keeps this run's retired panes (`retireForLeftBehind`
+  at every pane's close), the agents' runs the census sees in each pane
+  (`ActivityAgentRuns`, pure: the agent's identity first seen — its own
+  start —, the tick that found it gone; a pane not read says nothing) and
+  the kept identities, and fills the census's context with them. 2 s after
+  a run ends, one one-off census says what it left: the tab's `.done` note
+  (`TabActivity.leftBehind`, `fromLeftBehind`; `activity.leftBehindNotice`),
+  the Inbox's Show, the Agents card's "left N behind". The page's third
+  section (3) lists Processes' rows that are left behind by checkout
+  (`ActivityRows+LeftBehind`), with Keep and Stop All Certain in This
+  Checkout… — certain rows only, never one ignoring SIGHUP, detached, an
+  app, a terraform write or kept (`LeftBehind.isBulkEligible`), one sheet
+  listing each, SIGTERM by identity (`TerminalWindowController+LeftBehind`).
+  Every Left Behind send — that Stop All, a close sheet's ticked rows, a
+  worktree's removal, the launch's Stop All — reads each target again at
+  the button and asks the policy (`LeftBehindStop`, pure): kept ones and
+  what they started out, the bulk rule for a bulk, and only what
+  `ActivitySignalCheck`'s Stop answers with a plain SIGTERM sent — a
+  terraform write, an agent, an app or a release write named with why.
+  An agent's run ends where the census found it gone; found long after its
+  last sighting (a window off screen), its sign is only probably. Runs are
+  followed in the off-screen rounds' lookups too, and a finished command in
+  a pane with an agent brings one census 2 s on.
+  Closing a tab or a split pane reads a fresh census (≤ 1 s) and names what
+  will keep running and what its shell decides (`ActivitySurvivors`, pure),
+  a checkbox each, all unticked: ticked ones stopped by identity after the
+  close, unticked ones kept; under "only when something is running" a
+  tagged survivor counts (`hasSurvivors`), and the window's close and the
+  quit question name what goes on running (`survivorsListed`); a terraform
+  tool is named, never a checkbox. Removing a worktree lists what
+  runs in it by folder or open file (`WorktreeProcesses`: one census, then
+  each process's folder and its descriptors' paths — the kernel's
+  `vnodePath` — off the main thread in one sweep of both paths under a 3 s
+  deadline, waited for at most 4 s; a listing cut short says so), with
+  Cancel (the default), Remove Anyway, and Stop N and Remove…, asked again
+  in a `WriteConfirmation`; kept ones and terraform are never stopped there,
+  and an isolated run lists only its own; Clean Up Merged keeps such a
+  worktree, or one it couldn't read.
+  At launch — never in an isolated run — `ActivityPersistence` reads back
+  the kept and stopped identities (`ActivityPersisted`: pid and start only,
+  0600, never through a link, swept; until then every write keeps the
+  earlier run's record), offers Resume for what is still
+  stopped, and 10 s on lists what an earlier Overterm left
+  (`LeftBehindAtLaunch`), with a Stop All that asks again.
+- **Agents' reads** (stage 3; 8.2–8.5, D-18). `ActivityMCP` serves
+  `port_holder`, `port_list`, `proc_mine`, `proc_left_behind` and
+  `proc_list` on the bridge, routed by prefix (`port_`, `proc_`) in
+  `BrowserMCP.handle` behind `activity.agentAccess` (on, held when edited
+  outside; off with the page); `BrowserBridge.wanted` serves for it alone.
+  Read only: no tool signals (D-19, stage 5). Every call is its pane's —
+  `ActivityMCP.scene`, which the window answers
+  (`TerminalWindowController+ActivityMCP`: the pane's tab, its checkout by
+  `paneCheckout`, the rows' options as the page makes them, every window's
+  tabs) — and a pane no window has gets nothing. The answer comes from
+  `ActivityMonitor.forAgents` (a full snapshot at most one interval old:
+  one census an interval for the app), made into rows and JSON off the
+  main thread (`ActivityMCPAnswer`, pure): inside the caller's checkout
+  masked commands with its folder said `./`, tab titles, branches, CPU and
+  memory; outside it the folder's name and each process's name, pid,
+  class and ports; other apps summed by class; a collision in Overterm's
+  words only; another program's text through `ActivityText.forAgents`,
+  capped at 120 characters; a port nobody of the user's holds "not
+  listed", never "free". An isolated run's answers are its own tabs'.
+- **History** (stage 4; design 6.7, 6.11, D-21). `ActivityRing` (pure,
+  after `KubeUsageRing`) is merged into by the sampler at the end of each
+  tick, on its own queue, and each snapshot carries it on as a value
+  (`ActivitySnapshot.history`; `cost.history` the merge's time): a strip of
+  60 cells of 15 s for every rated process of the user's, each pane's
+  agent's subtree summed, each tab and the Mac — a cell's highest and
+  lowest CPU and its last footprint, 8 bytes, all ones where nothing was
+  read, so a gap is drawn as a gap; every strip's cells one flat buffer
+  written in place, so a tick copies it once (the last snapshot still holds
+  the old one), never an array a key. For at most 50 keys, picked once a
+  merge (`detailKeys`: the selection, the Mac, the agents, then the
+  busiest tabs — a key the merge feeds never pushes out another it feeds),
+  every sample for 15 minutes with breaks past
+  `ProcessUsage.maximumInterval`, and the minutes folded for an hour.
+  Times are the continuous clock (`ActivitySnapshot.historyTime`,
+  `CLOCK_MONOTONIC_RAW`, which runs while the Mac sleeps — a sleep is a
+  gap, never minutes moved up to now; a fake kernel's `sleep` drives it),
+  the rates still uptime's; `ActivitySnapshot.date(of:)` turns them into
+  the wall clock's. What is fed is what a level read: the visible windows'
+  tabs on every light tick, everything only while the page shows. A
+  process's history goes 15 minutes after it ends, a tab's when nothing fed
+  it for as long; both copies alive at once stay under 4 MB as `heldBytes`
+  counts them — ended strips first, then the quietest, then the details.
+  The rows draw their strip with `KubeHeatStripView.draw` (CPU, 15 min, on
+  by default); the detail and the meters draw `Charts/`' `TimeChartView`
+  (`ActivityHistoryCharts`, `activity.chart.<subject>.<measure>`, Copy
+  Values as CSV in their menu). The selection's charts and the summary Ask
+  an Agent sends (`ActivityDetailHistory`: CPU over 15 minutes and the
+  hour, least, mean and most, the footprint's trend, an agent's subtree's
+  too) are made off the main thread with the rows (`Options.historyOf`),
+  or on their own queue for a row just selected, from its strip's cells
+  until its own samples come. The same ticks give the Energy, Idle
+  Wake-ups, Disk Read and Write columns — the meters' Energy, the user's
+  processes' summed, shown while the Energy column is — and Preventing
+  Sleep from `IOPMCopyAssertionsByProcess` at the full level
+  (`ActivitySleepHold`, the assertions' types only). New and ended rows: a
+  process absent from the rows shown last (`ActivityRows.Options.previous`)
+  that started after their census (`shownAt`) is tinted for a tick, or 3 s
+  when ticks are faster, whatever its age at the tick; one gone since is
+  shown once more, dimmed, "ended" — never counted (a group's header, an
+  agent's counts, Left Behind's and a bulk Stop's), never in Listening, the
+  detail or its verbs but Copy and Copy PID. Chips (`ActivityChips`, pure):
+  a process of the user's that held a core (every cell's lowest 90% or more
+  for 5 minutes), an agent burning 50% or more for 5 minutes while its tab
+  waits — counted from the later of the two (`ActivityTabFacts.waitingSince`,
+  `TabActivity.waitingSince`, the agent's own waiting mark) —, and a moved
+  server (`ActivityMovedServers`: asked for P and listens on P+1…P+10, or
+  the later of two checkouts of one repository running the same server).
+- **The switcher** (⌃⌘A, `ActivitySwitcher`): the palette on the
+  listening ports, by number, then the ten busiest processes. It holds
+  the full level every second while the palette shows it, page or no
+  page, and stocks its rows until a read has rates, then keeps them as
+  ranked and lets the full level go — the palette re-ranks on a reorder,
+  which would move the selection. It follows the palette's scope: held on Activity's tab,
+  reached by ⌃⌘A or ⇥, let go on any other; with Activity off ⌘K has no
+  such tab. ↩ shows the row on the page; ⌥↩ opens a port where
+  Settings ▸ Browser says, or goes to a process's tab. Activity:
+  Listening (`activity.listening`, View menu, no key by default) opens
+  the page on its ports. Free a Port… (`activity.freePort`, View menu, no
+  key by default) opens ⌘K on its item, the port typed into its field
+  (`3000`, `:3000`, `5353/udp` — `ActivityPageModel.typedPort`): the page
+  on Listening at the Mac's scope, the port's row selected and its Free
+  asked as `f` asks it, the holder read again as the sheet opens.
 
 ## Agents
 
@@ -874,8 +1438,10 @@ the screen check (`AgentScreenCheck`, below).
 panes of its tabs that aren't in front of you, where something runs (an
 agent tab, or the ledger's running command), that haven't sent a
 notification or progress since their last command began. Which agent is
-in a pane's foreground group is a process walk off the main thread, at
-most every 10 s a pane; only a pane with an agent has its screen read —
+in a pane's foreground group is a lookup in the census off the main
+thread (`foregroundAgent(in:snapshot:)`: the pane's slice, the terminal's
+foreground group as the table read it — no walk of its own), at most
+every 10 s a pane; only a pane with an agent has its screen read —
 the viewport's text, on the main thread (a `ghostty_surface_read_text`,
 under a millisecond for a screenful) — and parsed off it. A question
 there — an approval in numbers (`AgentPrompt.isApproval`: a question, one
@@ -886,8 +1452,8 @@ notifies as an agent's notification would; gone from the screen, the
 mark goes (`agentAnswered`), unless something else marked the tab since.
 A tab in front of you is read only while such a question stands, to see
 it go. The cost, then: nothing for a tab you look at or one at its
-prompt; for a background agent that signals, one walk at its start; for
-one that doesn't, a walk every 10 s and a screen read every 3 s.
+prompt; for a background agent that signals, one lookup at its start; for
+one that doesn't, a lookup every 10 s and a screen read every 3 s.
 
 **Their questions** (`AgentPrompt`): Claude Code's `❯ 1. Yes`, Codex's
 `› 1. Yes, proceed (y)` with the command between the question and the
@@ -1028,12 +1594,13 @@ with a trailing space; the pane gets the keyboard.
   `(^|\s)@"([^"]+)"` and `(^|\s)@([^\s]+)\b`, cutting a `#L…` range off;
   its own completion quotes a path with a space.
 - **What runs in a pane** (`TerminalDrop.program`): the pane's process tree
-  (`ProcessInspector.tree` under its login) holds a Claude process — by name
-  or argv[0], as the agent overview finds one — in the tty's foreground
-  process group (the login's `e_tpgid`); one left running in the background
+  (its slice of the census, docs/design/activity/analysis.md, 7.8) holds a
+  Claude process — by name or argv[0], as the agent overview finds one — in
+  the tty's foreground process group (the surface's own,
+  `ghostty_surface_foreground_pid`); one left running in the background
   doesn't count. Per pane, looked at afresh at each drop and on entering, on
-  a serial queue: pairing a new pane with its login lists the app's children
-  off the main thread too. Drops are typed in the order they came
+  a serial queue: the light tick's snapshot of its tab while it is fresh and
+  has a member of that group, else one tick. Drops are typed in the order they came
   (`pendingDrops`), whatever each waited for.
 - **While dragging**: `DropHighlightView`, over the pane's frame in its
   superview, above a split's dims — an accent border and a label, "Drop to
@@ -2793,9 +3360,10 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   network's own record lists only running members).
 - **Ports in the panes** (`ComposeProjects.ports`, `Tab.containerPorts`):
   Docker's own process (`com.docker.backend`) holds a container's
-  published ports, so lsof never finds them under a tab. What the compose
-  projects of a tab's checkout publish is shown beside its own ports, with
-  a shippingbox; Stop goes through the engine, Docker shows it on the page.
+  published ports, so the census's socket walk never finds them under a
+  tab. What the compose projects of a tab's checkout publish is shown
+  beside its own ports, with a shippingbox, reached where it is published;
+  Stop goes through the engine, Docker shows it on the page.
   Kept apart from `ports`: a stack running doesn't make the shell a server.
   Tab Info lists them too, and the API client's discovery asks them for
   an OpenAPI document as it asks the tab's own ports.
@@ -2875,7 +3443,11 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   Docker saying only "port is already allocated" (or, for a process,
   "address already in use"). The detail says who holds the port — another
   container (its project and folder, usually another worktree's), a
-  process in one of the windows' tabs, or one outside them (lsof) — and
+  process in one of the windows' tabs (a one-off census of every pane,
+  `ListeningPorts.tab(holding:)`: a tab never visited, a hidden window's,
+  a server started since the last tick), or one outside them (the
+  census's socket walk, `ListeningPorts.holder`: any process of the
+  user's) — and
   offers the way out: stop that one and start this one, or show the tab.
   A compose container's detail also offers Up on Free Ports for its stack.
 - **A worktree's stack on its own ports** (`ComposePorts`, pure;
@@ -2893,10 +3465,15 @@ containers, grouped by compose project. Settings ▸ Docker turns it off
   `compose.override.yaml`. Given `-f`, Compose discovers nothing itself.
   Each port is looked for among the other stacks' containers (their own
   containers' ports are theirs: Docker binds them), then on this Mac: a
-  bind with SO_REUSEADDR on 0.0.0.0, 127.0.0.1, :: and ::1
-  (`ListeningPorts.isBound`) meets what Docker's own bind would, TIME_WAIT
-  aside, and never listens, so no firewall asks; lsof names the holder for
-  the question. A remote engine's are its containers only. A taken port of
+  bind with SO_REUSEADDR on 0.0.0.0, 127.0.0.1, :: and ::1, then on each
+  of this Mac's own addresses (a listener bound to one LAN, VPN or
+  link-local address alone is met only binding that one) —
+  `ListeningPorts.isBound` — meets what Docker's own bind would, TIME_WAIT
+  aside, and never listens, so no firewall asks. It is a probe at a
+  decision, never a watch: it binds the very port, and a bind during a
+  supervisor's rebind fails the restart (a port is watched with the
+  census's socket walk, `ListeningPorts.holder`); the census names the
+  holder for the question (`ListeningPorts.holder`, a one-off census). A remote engine's are its containers only. A taken port of
   a service that starts, or a name another checkout's stack has, asks
   first: Up on Free Ports, Up as Written, Cancel. Free Ports writes an
   override into Overterm's folder (`Compose/Ports`, never the repository),
@@ -4905,7 +5482,9 @@ context's own (`agentDefaultScope`); a tool that needs one namespace and
 gets all says so. Before both comes the calling pane's checkout's
 binding (`KubeMCP.binding(for:in:)`: the pane's tag — `BrowserMCP.handle`'s
 `pane`, from the bridge's path — to its tab's checkout through
-`KubeMCP.paneCheckout`, the windows' answer, then `KubeBindingStore`):
+`KubeMCP.paneCheckout`, the windows' answer — its agent's folder read
+again at the call's start while its window is off screen, `paneFollow` —,
+then `KubeBindingStore`):
 its context (`defaultContext`) and, on it, its namespace
 (`defaultScope`), when the kubeconfig has that context; `k8s_why` adds
 the bound checkout's deployed commit. Kinds are resolved
@@ -6552,7 +7131,9 @@ raw tier is: the rule keeps kube-state-metrics' `instance`. The fake's Prometheu
 node-exporter, kube-state-metrics 1.x, containerd, agent mode) answer the
 probe as fixtures; `refusePrometheusProxy` answers as the apiserver
 would (a 403, a 429 with its `Retry-After`).
-**A chart** (`KubePlot` (pure), `KubeChartView`; metrics.md 3, 5) is
+**A chart** (`KubePlot` (pure), `KubeChartView`; metrics.md 3, 5 —
+since Activity's stage 4 `Charts/`'s `TimePlot` and `TimeChartView`,
+which Kubernetes calls by these names, `KubeChartNames`) is
 `KubeChartData` — its series, each with a role (usage, or a reference
 line: request, limit, allocatable, capacity, quota, guide), the window,
 the unit, the step, a `version` its maker changes with the data — drawn
@@ -8757,7 +9338,9 @@ stage 2e, force unlock, and stage 2f, a review's Terraform section.
   - **The tools** (`TerraformMCP`, `terraform.agentAccess`, on; held): on
     the bridge beside Kubernetes' (`BrowserMCP`, both halves: `offered`
     and the `tf_` prefix's dispatch), the calling pane's checkout only
-    (`paneCheckout`; no pane, no tool). `tf_roots` (the panel's read: class
+    (`paneCheckout`, the pane's tab's — its agent's folder read again
+    first, and waited for, while its window is off screen:
+    `TerminalWindowController.paneCheckout`; no pane, no tool). `tf_roots` (the panel's read: class
     and why, workspace, backend, modules), `tf_fmt_check` (`fmt -check
     -diff`), `tf_validate` (only where the root's lock file is committed
     and unchanged and every module is installed — else "needs init: ask

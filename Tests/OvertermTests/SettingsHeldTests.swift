@@ -37,7 +37,8 @@ final class SettingsHeldTests: XCTestCase {
             [
                 "kubernetes.contexts", "kubernetes.agentWrites", "kubernetes.agentAccess", "kubernetes.kubectlPath",
                 "kubernetes.helmPath", "terraform.roots", "terraform.productionPattern", "terraform.productionAccounts", "terraform.path",
-                "terraform.enabled", "terraform.agentWriteGuard", "terraform.agentAccess",
+                "terraform.enabled", "terraform.agentWriteGuard", "terraform.agentAccess", "activity.enabled",
+                "activity.agentAccess",
             ])
         // Agents' access anywhere, and the binaries Overterm runs with a cluster's credentials.
         for spec in SettingsSchema.all where spec.key.hasPrefix("kubernetes.agent") || spec.key.hasSuffix("Path") && spec.key.hasPrefix("kubernetes.") {
@@ -152,6 +153,23 @@ final class SettingsHeldTests: XCTestCase {
         settings.set("terraform.enabled", .bool(false))
         XCTAssertTrue(settings.held.isEmpty)
         XCTAssertFalse(settings.terraformEnabled, "Settings' own toggle applies at once")
+    }
+
+    /// Activity turned off in the app, its agents' access left on as it
+    /// was: an agent writing `activity.enabled: true` into the file would
+    /// bring the port_/proc_ tools back with it. Held, as Terraform's is.
+    func testTurningActivityBackOnOutsideIsHeld() throws {
+        try write(#"{ "appearance.fontSize": 14 }"#)
+        let settings = Settings(url: url, watch: false)
+        settings.set("activity.enabled", .bool(false))
+        XCTAssertFalse(settings.activityAgentAccess)
+        try write(text().replacingOccurrences(of: "false", with: "true"))
+        settings.reload()
+        XCTAssertEqual(Set(settings.held.keys), ["activity.enabled"])
+        XCTAssertFalse(settings.activityEnabled, "off until a window's banner keeps it")
+        XCTAssertFalse(settings.activityAgentAccess, "and the agents' reads with it")
+        settings.keep(settings.held)
+        XCTAssertTrue(settings.activityAgentAccess)
     }
 
     /// A security setting removed, or given a value it can't hold, would

@@ -1,278 +1,328 @@
+import Darwin
 import XCTest
 
 @testable import Overterm
 
+/// A tab's processes, looked up in the census (docs/design/activity/
+/// analysis.md, 7.8): over a fake Mac, a split tab's two panes read in
+/// turn both reading their CPU, no new scan while a snapshot is a tick
+/// old, a tag alone, an agent's folder at once; then the test's own
+/// children through the real kernel, each through a census of its own —
+/// the app's would answer from another test's tick a moment ago.
 final class ProcessInspectorTests: XCTestCase {
-    private func spawn(_ script: String, tag: String?) throws -> Process {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/sh")
-        // "; true" keeps sh alive as the parent instead of exec'ing sleep.
-        p.arguments = ["-c", script + "; true"]
-        var env = ProcessInfo.processInfo.environment
-        env.removeValue(forKey: ProcessInspector.tagVariable)
-        if let tag { env[ProcessInspector.tagVariable] = tag }
-        p.environment = env
-        try p.run()
-        return p
+    private let kernel = FakeActivityKernel(uid: 501)
+    private let second: UInt64 = 1_000_000_000
+    private let app: pid_t = 1000
+
+    // MARK: A fake Mac
+
+    @discardableResult
+    private func add(
+        _ pid: pid_t, parent: pid_t, uid: uid_t = 501, name: String, words: [String]? = nil, environment: [String] = [], folder: String? = nil
+    ) -> ActivityProcessID {
+        let start = UInt64(pid) * 1_000
+        let path = "/opt/acme/bin/\(name)"
+        var process = FakeActivityKernel.Process(record: FakeActivityKernel.record(pid: pid, start: start, parent: parent, uid: uid, name: name))
+        process.name = name
+        process.path = path
+        process.codeSigning = ActivityCodeSigning(flags: ActivityCodeSigning.valid)
+        process.usage = FakeActivityKernel.usage(footprint: 6 << 20)
+        process.arguments = FakeActivityKernel.arguments(executable: path, words ?? [name], environment: environment)
+        process.folder = folder
+        kernel.add(process)
+        return ActivityProcessID(pid: pid, start: start)
     }
 
-    /// The main path: a tab is everything under its login.
-    func testDescendantsOfTheRoot() throws {
-        let mine = try spawn("sleep 20", tag: nil)
-        Thread.sleep(forTimeInterval: 0.3)
-        let inspector = ProcessInspector()
-        // This test process plays the part of `login`.
-        let roots = inspector.tree(root: getpid(), tag: nil)
-        defer {
-            roots.flatMap(\.flattened).filter { $0.name == "sleep" }.forEach { kill($0.pid, SIGTERM) }
-            mine.terminate()
+    private func burn(_ pid: pid_t, _ cpu: UInt64) {
+        kernel.update(pid) { process in
+            process.usage = FakeActivityKernel.usage(cpuTime: (process.usage?.cpuTime ?? 0) + cpu, footprint: 6 << 20)
         }
-        let sh = try XCTUnwrap(roots.first { $0.pid == mine.processIdentifier }, "the child is a root under us")
+    }
+
+    /// The app, and a pane: its root-owned `login` under the app, a shell under that.
+    private func pane(_ tag: String, login: pid_t, tab: UUID) -> ActivityContext.Pane {
+        let identity = add(login, parent: app, uid: 0, name: "login")
+        add(login + 1, parent: login, name: "zsh")
+        return ActivityContext.Pane(tag: tag, tab: tab, login: identity)
+    }
+
+    private func census(_ panes: [ActivityContext.Pane]) -> ActivitySampler {
+        add(1, parent: 0, uid: 0, name: "launchd")
+        add(app, parent: 1, name: "Overterm")
+        let sampler = ActivitySampler(kernel: kernel)
+        sampler.appContext = ActivityContext(panes: panes, appPID: app)
+        return sampler
+    }
+
+    /// The split-tab regression (2.4 item 1): a split tab's two panes asked
+    /// for in turn, as Tab Info and the poll asked, pane by pane — the old
+    /// scan kept only the tree it had just read's baselines, so each pane
+    /// evicted the other's and both read 0%. One tick reads both panes, and
+    /// each process's baseline lives as long as it does: both read their
+    /// busy child's CPU.
+    func testASplitTabsPanesReadInTurnBothReadTheirCPU() throws {
+        let tab = UUID()
+        let left = pane("pane-a", login: 1100, tab: tab)
+        let right = pane("pane-b", login: 1200, tab: tab)
+        let busyLeft = add(1102, parent: 1101, name: "node")
+        let busyRight = add(1202, parent: 1201, name: "python3")
+        let inspector = ProcessInspector(census: census([left, right]))
+        var cpu: [pid_t: Double] = [:]
+        for round in 0..<6 {
+            let (login, tag, busy) = round % 2 == 0 ? (left.login, "pane-a", busyLeft) : (right.login, "pane-b", busyRight)
+            let nodes = inspector.tree(root: login?.pid, tag: tag).flatMap(\.flattened)
+            cpu[busy.pid] = nodes.first { $0.identity == busy }?.cpuPercent
+            kernel.advance(second)
+            burn(busyLeft.pid, second)
+            burn(busyRight.pid, second)
+        }
+        XCTAssertEqual(cpu[busyLeft.pid] ?? 0, 100, accuracy: 1e-6, "the left pane's")
+        XCTAssertEqual(cpu[busyRight.pid] ?? 0, 100, accuracy: 1e-6, "the right pane's")
+    }
+
+    /// A lookup: no new scan while the latest snapshot is a tick old at
+    /// most and has the pane — every pane's lookups answered by one tick
+    /// (2.4 item 2) — then one, the tree as the table says it now.
+    func testNoNewScanWhileTheCensusIsFresh() throws {
+        let tab = UUID()
+        let left = pane("pane-a", login: 1100, tab: tab)
+        let right = pane("pane-b", login: 1200, tab: tab)
+        let job = add(1102, parent: 1101, name: "acme-dev", words: ["acme-dev", "--port", "3000"])
+        let inspector = ProcessInspector(census: census([left, right]))
+        let first = inspector.tree(root: 1100, tag: "pane-a")
+        XCTAssertEqual(first.map(\.name), ["zsh"])
+        XCTAssertEqual(first.first?.children.map(\.identity), [job])
+        XCTAssertEqual(first.first?.children.first?.maskedCommand, "acme-dev --port 3000")
+        XCTAssertEqual(first.first?.children.first?.footprint, 6 << 20)
+        XCTAssertEqual(kernel.count("processes"), 1)
+        _ = inspector.tree(root: 1200, tag: "pane-b")
+        _ = ProcessInspector(census: inspector.census).tree(root: 1100, tag: nil)
+        XCTAssertEqual(kernel.count("processes"), 1, "one tick answered every pane's")
+
+        let later = add(1103, parent: 1101, name: "acme-test")
+        XCTAssertFalse(inspector.tree(root: 1100, tag: "pane-a").flatMap(\.flattened).contains { $0.identity == later }, "a tick old: as it was")
+        kernel.advance(2 * second)
+        XCTAssertTrue(inspector.tree(root: 1100, tag: "pane-a").flatMap(\.flattened).contains { $0.identity == later }, "then read again")
+        XCTAssertEqual(kernel.count("processes"), 2)
+    }
+
+    /// A tag alone, or a root no pane has, is read as a pane of its own:
+    /// what carries the tag outside every tree with what it started, or the
+    /// root's descendants.
+    func testATagOrARootNoPaneHas() throws {
+        let tab = UUID()
+        let left = pane("pane-a", login: 1100, tab: tab)
+        let server = add(3000, parent: 1, name: "acme-server", environment: ["OVERTERM_TAB_ID=pane-z"])
+        let worker = add(3001, parent: 3000, name: "acme-worker")
+        let inspector = ProcessInspector(census: census([left]))
+        let tagged = inspector.tree(root: nil, tag: "pane-z")
+        XCTAssertEqual(tagged.map(\.identity), [server])
+        XCTAssertEqual(tagged.first?.children.map(\.identity), [worker])
+        XCTAssertEqual(inspector.tree(root: 3000, tag: nil).map(\.identity), [worker], "a root's descendants, not itself")
+        XCTAssertEqual(inspector.tree(root: 9999, tag: nil), [], "gone")
+    }
+
+    /// A tree is what the old scan listed (7.8's API kept): the user's
+    /// processes, never a zombie — what Suspend Tab stops by pid until its
+    /// own step, and what the agent readers look in. A setuid program the
+    /// shell runs (root's by its effective uid, the user's by its real one:
+    /// `kill(2)` would let a SIGSTOP through, 3.2) is left out, and so is
+    /// one that runs as the user for now with root kept as its saved uid,
+    /// and a zombie — an agent's, ended, is no agent running. What the
+    /// setuid program started as the user is the tab's still. Tab Info,
+    /// which signals nothing, names them all.
+    func testATreeLeavesOutASetuidProgramAndAZombie() throws {
+        let tab = UUID()
+        let left = pane("pane-a", login: 1100, tab: tab)
+        var setuid = FakeActivityKernel.Process(
+            record: FakeActivityKernel.record(pid: 1102, start: 1_102_000, parent: 1101, uid: 0, realUID: 501, name: "sudo"))
+        setuid.path = "/usr/bin/sudo"
+        kernel.add(setuid)
+        let started = add(1103, parent: 1102, name: "acme-tool")
+        var dropped = FakeActivityKernel.Process(
+            record: FakeActivityKernel.record(pid: 1104, start: 1_104_000, parent: 1101, uid: 501, realUID: 501, savedUID: 0, name: "acme-setuid"))
+        dropped.path = "/opt/acme/bin/acme-setuid"
+        kernel.add(dropped)
+        var zombie = FakeActivityKernel.Process(
+            record: FakeActivityKernel.record(pid: 1105, start: 1_105_000, parent: 1101, status: SZOMB, name: "claude"))
+        zombie.name = "claude"
+        kernel.add(zombie)
+        let sampler = census([left])
+        let tree = ProcessInspector(census: sampler).tree(root: 1100, tag: "pane-a")
+        XCTAssertEqual(tree.flatMap(\.flattened).map(\.pid).sorted(), [1101, 1103], "the shell, and what sudo started as the user")
+        XCTAssertTrue(tree.contains { $0.identity == started }, "a root of its own, its parent not listed")
+        XCTAssertNil(TerminalWindowController.firstAgent(in: [(1100, "pane-a")]) { _, _ in tree }, "an ended agent isn't running")
+        let snapshot = try XCTUnwrap(sampler.latest)
+        let slice = try XCTUnwrap(snapshot.pane("pane-a"))
+        XCTAssertEqual(TabSuspension.targets(of: slice, in: snapshot).map(\.identity.pid).sorted(), [1101, 1103], "what Suspend Tab would stop")
+        let named = ProcessInspector.nodes(slice.tree, in: snapshot)
+        XCTAssertEqual(named.flatMap(\.flattened).map(\.pid).sorted(), [1101, 1102, 1103, 1104, 1105], "Tab Info's own nodes name them all")
+        XCTAssertNotNil(TerminalWindowController.firstAgent(in: [(1100, "pane-a")]) { _, _ in named }, "the zombie is a claude by its name")
+    }
+
+    /// The pane's agent's folder is read at once (the overview, Sessions,
+    /// an MCP confirmation and a drop ask for it), though the census reads
+    /// folders off its queue and never waits.
+    func testAnAgentsFolderIsReadAtOnce() throws {
+        let tab = UUID()
+        let left = pane("pane-a", login: 1100, tab: tab)
+        let agent = add(1102, parent: 1101, name: "claude", folder: "/work/acme/.worktrees/feat")
+        let inspector = ProcessInspector(census: census([left]))
+        let node = inspector.tree(root: 1100, tag: "pane-a").flatMap(\.flattened).first { $0.identity == agent }
+        XCTAssertEqual(node?.workingDirectory, "/work/acme/.worktrees/feat")
+    }
+
+    // MARK: Assembly
+
+    func testAssembleNestsChildren() {
+        func node(_ pid: pid_t, _ parent: pid_t) -> ProcessNode {
+            ProcessNode(
+                identity: ActivityProcessID(pid: pid, start: UInt64(pid)), parent: parent, name: "p\(pid)", maskedCommand: "", cpuPercent: 1,
+                memory: 10, workingDirectory: nil)
+        }
+        let roots = ProcessInspector.assemble([10: node(10, 1), 11: node(11, 10), 12: node(12, 11), 20: node(20, 99)])
+        XCTAssertEqual(roots.map(\.pid), [10, 20])
+        XCTAssertEqual(roots[0].flattened.map(\.pid), [10, 11, 12])
+        XCTAssertEqual(roots[0].totalMemory, 30)
+    }
+
+    /// A pid comes round again within hours (docs/design/activity/
+    /// analysis.md, 2.4 item 10): whatever holds it next is another row,
+    /// its id not the old one's, so it inherits no selection and no menu
+    /// target — and a child hangs under the node holding its parent's pid
+    /// only when that one started no later: the old holder's children
+    /// never join the new one.
+    func testAReusedPidInheritsNothing() {
+        func node(_ pid: pid_t, start: UInt64, parent: pid_t) -> ProcessNode {
+            ProcessNode(
+                identity: ActivityProcessID(pid: pid, start: start), parent: parent, name: "p\(pid)", maskedCommand: "", cpuPercent: 0, memory: 0,
+                workingDirectory: nil)
+        }
+        let earlier = node(40, start: 100, parent: 1)
+        let later = node(40, start: 900, parent: 1)
+        XCTAssertEqual(earlier.id, "40:100")
+        XCTAssertNotEqual(earlier.id, later.id, "the same pid, another process")
+        // 41 started under the old holder of 40, before the new one began.
+        let roots = ProcessInspector.assemble([40: later, 41: node(41, start: 500, parent: 40), 42: node(42, start: 950, parent: 40)])
+        XCTAssertEqual(roots.map(\.id), ["41:500", "40:900"], "the old holder's child is a root, oldest first")
+        XCTAssertEqual(roots.first { $0.pid == 40 }?.children.map(\.id), ["42:950"])
+    }
+
+    // MARK: The test's own children
+
+    /// A census of the test's own, asked afresh at every call: the
+    /// children's trees form as the test waits.
+    private func realInspector() -> ProcessInspector {
+        ProcessInspector(census: ActivitySampler(kernel: LiveActivityKernel()), freshness: 0)
+    }
+
+    /// Ends what `child` started — each found in its tree, its identity
+    /// read again before the one SIGKILL — then `child`.
+    private func end(_ child: TestChild, _ inspector: ProcessInspector) {
+        for node in inspector.tree(root: child.pid, tag: nil).flatMap(\.flattened) where ProcessInspector.kinfo(node.pid)?.start == node.identity.start {
+            kill(node.pid, SIGKILL)
+        }
+        child.stop()
+    }
+
+    /// The main path: a tab is everything under its login — the test
+    /// process plays its part here.
+    func testDescendantsOfTheRoot() throws {
+        let child = try TestChild("/bin/sh", ["-c", "sleep 20; true"], environment: TestChild.cleanEnvironment)
+        let inspector = realInspector()
+        defer { end(child, inspector) }
+        var roots: [ProcessNode] = []
+        XCTAssertTrue(
+            TestChild.eventually {
+                roots = inspector.tree(root: getpid(), tag: nil)
+                return roots.first { $0.identity == child.identity }?.children.isEmpty == false
+            }, "the child and its sleep")
+        let sh = try XCTUnwrap(roots.first { $0.identity == child.identity }, "the child is a root under us")
         XCTAssertEqual(sh.children.map(\.name), ["sleep"])
         XCTAssertFalse(roots.contains { $0.pid == getpid() }, "the root itself is not listed")
     }
 
     /// The fallback: a process that left the tab's tree (nohup, disown) is
     /// still the tab's if its environment carries the tag — visible for
-    /// non-Apple binaries like a python or node dev server.
+    /// non-Apple binaries like a python or node dev server. Found by its
+    /// markers among every process's, read in the one call.
     func testFindsADaemonizedProcessByItsTag() throws {
-        let tag = "test-\(UUID().uuidString)"
-        func python(tag: String?) throws -> Process {
-            let p = Process()
-            p.executableURL = URL(fileURLWithPath: "/usr/bin/python3")
-            p.arguments = ["-c", "import time; time.sleep(20)"]
-            var env = ProcessInfo.processInfo.environment
-            env.removeValue(forKey: ProcessInspector.tagVariable)
-            if let tag { env[ProcessInspector.tagVariable] = tag }
-            p.environment = env
-            try p.run()
-            return p
-        }
-        let mine = try python(tag: tag)
-        let other = try python(tag: nil)
-        Thread.sleep(forTimeInterval: 1.0)
-        let inspector = ProcessInspector()
-        // No root: found by tag alone.
-        let found = inspector.tree(root: nil, tag: tag, commands: true).flatMap(\.flattened)
-        defer {
-            found.forEach { kill($0.pid, SIGTERM) }
-            [mine, other].forEach { $0.terminate() }
-        }
-        XCTAssertTrue(found.contains { $0.command.contains("time.sleep(20)") }, found.map(\.command).joined(separator: " | "))
-        XCTAssertFalse(found.contains { $0.pid == other.processIdentifier }, "untagged processes are not the tab's")
-        XCTAssertGreaterThan(found.first?.totalMemory ?? 0, 0)
+        let tag = "acme-tag-\(UUID().uuidString)"
+        var environment = TestChild.cleanEnvironment
+        environment[ProcessInspector.tagVariable] = tag
+        let mine = try TestChild("/usr/bin/python3", ["-c", "import time; time.sleep(20)"], environment: environment)
+        let other = try TestChild("/usr/bin/python3", ["-c", "import time; time.sleep(21)"], environment: TestChild.cleanEnvironment)
+        let inspector = realInspector()
+        defer { [mine, other].forEach { end($0, inspector) } }
+        var found: [ProcessNode] = []
+        XCTAssertTrue(
+            TestChild.eventually {
+                found = inspector.tree(root: nil, tag: tag).flatMap(\.flattened)
+                return found.contains { $0.maskedCommand.contains("time.sleep(20)") }
+            }, "the tagged python")
+        XCTAssertFalse(found.contains { $0.maskedCommand.contains("time.sleep(21)") || $0.identity == other.identity }, "untagged processes are not the tab's")
+        XCTAssertGreaterThan(found.first { $0.maskedCommand.contains("time.sleep(20)") }?.footprint ?? 0, 0)
     }
 
+    /// A busy child's CPU, between two of the census's samples.
     func testCPUIsMeasuredBetweenSamples() throws {
-        let tag = "test-\(UUID().uuidString)"
-        let busy = try spawn("while :; do :; done", tag: tag)
-        defer {
-            kill(busy.processIdentifier, SIGKILL)
-        }
-        let inspector = ProcessInspector()
-        _ = inspector.tree(root: getpid(), tag: nil)
-        Thread.sleep(forTimeInterval: 0.5)
-        let cpu = inspector.tree(root: getpid(), tag: nil).first { $0.pid == busy.processIdentifier }?.totalCPU ?? 0
+        let busy = try TestChild("/bin/sh", ["-c", "ulimit -c 0; ulimit -t 20; while :; do :; done"], environment: TestChild.cleanEnvironment)
+        defer { busy.stop() }
+        let inspector = realInspector()
         // Measured at all, not how much: a busy loop gets well under a core
         // on a loaded machine (41% at load 10), an idle process reads ~0.
-        XCTAssertGreaterThan(cpu, 10, "a busy loop's CPU shows between two samples")
+        XCTAssertTrue(
+            TestChild.eventually(30) {
+                (inspector.tree(root: getpid(), tag: nil).first { $0.identity == busy.identity }?.cpuPercent ?? 0) > 10
+            }, "a busy loop's CPU shows between two samples")
     }
 
-    /// What a test started, by pid and start time, children after their
-    /// parents: tearDown ends exactly these, each only while its pid is
-    /// still that process.
-    private var started: [(pid: pid_t, start: UInt64)] = []
-    private var roots: [Process] = []
-
-    override func tearDown() {
-        for process in started.reversed() where ProcessInspector.kinfo(process.pid)?.start == process.start {
-            kill(process.pid, SIGKILL)
-        }
-        roots.forEach { $0.waitUntilExit() }
-        started = []
-        roots = []
-        super.tearDown()
+    /// Two roots on one inspector, asked for in turn, both busy: the split
+    /// tab's case through the real kernel, each root read as a pane of its
+    /// own, neither evicting the other's baselines.
+    func testTwoRootsReadInTurnBothReadTheirCPU() throws {
+        let script = "(ulimit -c 0; ulimit -t 20; while :; do :; done) & wait"
+        let left = try TestChild("/bin/sh", ["-c", script], environment: TestChild.cleanEnvironment)
+        let right = try TestChild("/bin/sh", ["-c", script], environment: TestChild.cleanEnvironment)
+        let inspector = realInspector()
+        defer { [left, right].forEach { end($0, inspector) } }
+        var cpu: [pid_t: Double] = [:]
+        var turn = 0
+        XCTAssertTrue(
+            TestChild.eventually(30) {
+                let root = turn % 2 == 0 ? left : right
+                turn += 1
+                cpu[root.pid] = inspector.tree(root: root.pid, tag: nil).first?.cpuPercent ?? 0
+                return (cpu[left.pid] ?? 0) > 10 && (cpu[right.pid] ?? 0) > 10
+            }, "both read their busy child's CPU")
     }
 
-    /// A shell standing for a pane's `login`, and its one child: a subshell
-    /// spinning on builtins for 20 s at most, so a crash or ⌃C can't leave
-    /// it burning a core.
-    private func busyRoot() throws -> (root: pid_t, busy: pid_t) {
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/bash")
-        // The parenthesised loop is a subshell: a child, which bash waits for.
-        p.arguments = ["-c", "(while [ $SECONDS -lt 20 ]; do :; done); true"]
-        var env = ProcessInfo.processInfo.environment
-        env.removeValue(forKey: ProcessInspector.tagVariable)
-        p.environment = env
-        try p.run()
-        started.append((p.processIdentifier, try XCTUnwrap(ProcessInspector.kinfo(p.processIdentifier)?.start)))
-        roots.append(p)
-        let deadline = Date().addingTimeInterval(5)
-        var child = ProcessInspector.children(of: p.processIdentifier).first
-        while child == nil, Date() < deadline {
-            Thread.sleep(forTimeInterval: 0.02)
-            child = ProcessInspector.children(of: p.processIdentifier).first
-        }
-        let busy = try XCTUnwrap(child, "the busy subshell starts")
-        started.append((busy.pid, busy.start))
-        return (p.processIdentifier, busy.pid)
-    }
-
-    /// Tab Info reads a split tab pane by pane, and the window's agent poll
-    /// reads with the same inspector. Each read kept only its own tree's
-    /// baselines, so reading one root forgot the other's: two busy loops
-    /// read in turn read 0% at every round.
-    func testRootsReadInTurnAreEachMeasured() throws {
-        let panes = try [busyRoot(), busyRoot()]
-        let inspector = ProcessInspector()
-        // One round as Tab Info's: every root's tree, one after the other.
-        func round() -> [Double] {
-            panes.map { pane in inspector.tree(root: pane.root, tag: nil).flatMap(\.flattened).first { $0.pid == pane.busy }?.cpuPercent ?? 0 }
-        }
-        _ = round()  // every process's first sample reads 0
-        var readings: [Double] = []
-        let deadline = Date().addingTimeInterval(15)
-        repeat {
-            Thread.sleep(forTimeInterval: 0.25)
-            readings = round()
-        } while !readings.allSatisfy({ $0 > 10 }) && Date() < deadline
-        // Measured at all, not how much: a loaded machine gives a busy loop well under a core.
-        XCTAssertTrue(readings.allSatisfy { $0 > 10 }, "each root's busy loop, read in turn: \(readings.map { String(format: "%.1f%%", $0) }.joined(separator: ", "))")
-    }
-
-    /// A command is masked as it is read: a shell of the test's own, then
-    /// that same process exec'd with argv[0] `claude` (as the CLI's
-    /// appears), a fake password and a resumed session as later words.
-    /// The exec keeps the pid and the start time, so the line kept from the
-    /// first read must not be the second's. What the checks read of argv
-    /// is there still — masked, the `-r` after `--fork-session` goes —, and
-    /// a read that shows nothing masks nothing.
-    func testACommandIsMaskedWhenItIsRead() throws {
-        let parts = ["Zq8", "vX2", "mN7", "pL4"]
-        let id = "8f2c1e0a-1b2c-4d3e-9f00-aa11bb22cc33"
-        // The shell execs once the test has read it as it was started: when
-        // a file the test makes is there, 10 s at most.
-        let gate = FileManager.default.temporaryDirectory.appendingPathComponent("overterm-exec-\(UUID().uuidString)")
-        defer { try? FileManager.default.removeItem(at: gate) }
-        let p = Process()
-        p.executableURL = URL(fileURLWithPath: "/bin/bash")
-        // `; true` keeps the shell, its sleep 20 s at most.
-        p.arguments = [
-            "-c",
-            "while [ ! -e '\(gate.path)' ] && [ $SECONDS -lt 10 ]; do sleep 0.05; done; "
-                + "exec -a claude /bin/bash -c 'sleep 20; true' --fork-session -r \(id) --password \(parts.joined())",
-        ]
-        var env = ProcessInfo.processInfo.environment
-        env.removeValue(forKey: ProcessInspector.tagVariable)
-        p.environment = env
-        try p.run()
-        let start = try XCTUnwrap(ProcessInspector.kinfo(p.processIdentifier)?.start)
-        started.append((p.processIdentifier, start))
-        roots.append(p)
-        let inspector = ProcessInspector()
-        func read(commands: Bool = true) -> ProcessNode? {
-            inspector.tree(root: getpid(), tag: nil, commands: commands).flatMap(\.flattened).first { $0.pid == p.processIdentifier }
-        }
-        var before: ProcessNode?
-        let deadline = Date().addingTimeInterval(5)
-        repeat {
-            before = read()
-            if before == nil { Thread.sleep(forTimeInterval: 0.02) }
-        } while before == nil && Date() < deadline
-        let first = try XCTUnwrap(before, "the shell, before its exec")
-        XCTAssertTrue(first.command.hasPrefix("/bin/bash -c "), first.command)
-        XCTAssertFalse(parts.contains { first.command.contains($0) }, "no part of the password: \(first.command)")
-        XCTAssertNil(first.argvAgent)
-
-        try Data().write(to: gate)
-        var after: ProcessNode?
-        var child: (pid: pid_t, start: UInt64, name: String)?
-        let execDeadline = Date().addingTimeInterval(5)
-        repeat {
-            after = read().flatMap { $0.argvAgent == .claude ? $0 : nil }
-            // Once it has exec'd, its one child is the sleep 20.
-            child = after == nil ? nil : ProcessInspector.children(of: p.processIdentifier).first
-            if after == nil || child == nil { Thread.sleep(forTimeInterval: 0.02) }
-        } while (after == nil || child == nil) && Date() < execDeadline
-        if let child { started.append((child.pid, child.start)) }
-        let node = try XCTUnwrap(after, "the shell, exec'd as `claude`")
-        XCTAssertEqual(ProcessInspector.kinfo(p.processIdentifier)?.start, start, "the same process")
-        // The argv it exec'd into, masked again: not the line kept from before.
-        XCTAssertTrue(node.command.hasPrefix("claude -c "), node.command)
-        XCTAssertTrue(node.command.contains(Secrets.credentialMask), node.command)
-        XCTAssertFalse(parts.contains { node.command.contains($0) }, "no part of the password: \(node.command)")
-        XCTAssertTrue(TerminalWindowController.isAgent(node))
-        XCTAssertEqual(node.resumes, id)
-
-        // A read that only decides (the agent poll, a drop, an image paste):
-        // no command, the same answers.
-        let bare = try XCTUnwrap(read(commands: false))
-        XCTAssertEqual(bare.command, "")
-        XCTAssertEqual(bare.argvAgent, .claude)
-        XCTAssertEqual(bare.resumes, id)
-        XCTAssertTrue(TerminalWindowController.isAgent(bare))
-        XCTAssertEqual(AgentOverviewModel.agent(of: bare), .claude)
-        XCTAssertEqual(MCPAsker.agentName(bare), "Claude")
-    }
-
-    private let second: UInt64 = 1_000_000_000
-
-    /// A pid the system hands to another process: its first reading is 0,
-    /// as any process's is — never a rate made of the old one's CPU time.
-    func testAReusedPIDReadsZeroNotABorrowedRate() {
-        var cpu = ProcessInspector.CPUBaselines()
-        XCTAssertEqual(cpu.percent(pid: 4242, start: 100, cpu: 0, at: 10 * second), 0, "a first sample")
-        XCTAssertEqual(cpu.percent(pid: 4242, start: 100, cpu: second / 2, at: 11 * second), 50, accuracy: 0.001)
-        // It ends; one started later has its pid, and CPU time of its own.
-        XCTAssertEqual(cpu.percent(pid: 4242, start: 300, cpu: second * 3 / 4, at: 12 * second), 0, "not 25% borrowed from the one before")
-        XCTAssertEqual(cpu.percent(pid: 4242, start: 300, cpu: second, at: 13 * second), 25, accuracy: 0.001, "then its own rate")
-        XCTAssertEqual(cpu.count, 1)
-    }
-
-    /// Another caller's read (a split tab's other pane, the agent poll)
-    /// keeps a process's baseline: only its end, or its pid reused, drops it.
-    func testABaselineIsForgottenOnlyWhenItsProcessEnds() {
-        var cpu = ProcessInspector.CPUBaselines()
-        for pid: pid_t in [10, 11, 12] { _ = cpu.percent(pid: pid, start: 1, cpu: 0, at: second) }
-        // 10 runs on, 11 ended, and 12 is another process's pid now.
-        cpu.forgetEnded { [10: 1, 12: 2][$0] }
-        XCTAssertEqual(cpu.count, 1)
-        XCTAssertEqual(cpu.percent(pid: 10, start: 1, cpu: second / 4, at: 2 * second), 25, accuracy: 0.001, "kept: its rate since its own last sample")
-        XCTAssertEqual(cpu.percent(pid: 12, start: 2, cpu: second, at: 2 * second), 0, "the newcomer's first sample")
-    }
-
-    /// A baseline lives as long as its process: read again after a long
-    /// gap, a reading starts again rather than show the gap's average.
-    func testARateSpansAtMostTheLongestInterval() {
-        var cpu = ProcessInspector.CPUBaselines()
-        let longest = ProcessInspector.CPUBaselines.longestInterval
-        _ = cpu.percent(pid: 7, start: 1, cpu: 0, at: second)
-        XCTAssertEqual(cpu.percent(pid: 7, start: 1, cpu: second, at: second + longest), 100 * Double(second) / Double(longest), accuracy: 0.001, "within it, the rate")
-        XCTAssertEqual(cpu.percent(pid: 7, start: 1, cpu: 2 * second, at: 2 * second + 2 * longest), 0, "past it, a first sample again")
-        XCTAssertEqual(cpu.percent(pid: 7, start: 1, cpu: 3 * second, at: 3 * second + 2 * longest), 100, accuracy: 0.001, "then the rate")
-    }
-
-    func testParseProcArgs() {
-        var bytes: [UInt8] = []
-        var argc = Int32(2)
-        withUnsafeBytes(of: &argc) { bytes += $0 }
-        for part in ["/bin/zsh", "", "", "-zsh", "-l", "HOME=/Users/b", "OVERTERM_TAB_ID=abc", "", "ptr_munge="] {
-            bytes += Array(part.utf8) + [0]
-        }
-        let parsed = ProcessInspector.parseProcArgs(bytes)
-        XCTAssertEqual(parsed?.arguments, ["-zsh", "-l"])
-        XCTAssertEqual(parsed?.environment["OVERTERM_TAB_ID"], "abc")
-        XCTAssertNil(parsed?.environment["ptr_munge"], "apple strings after the environment are not env")
-    }
-
-    func testAssembleNestsChildren() {
-        func node(_ pid: pid_t, _ parent: pid_t) -> ProcessNode {
-            ProcessNode(pid: pid, parent: parent, name: "p\(pid)", arguments: [], cpuPercent: 1, memory: 10, workingDirectory: nil)
-        }
-        let roots = ProcessInspector.assemble([10: node(10, 1), 11: node(11, 10), 12: node(12, 11), 20: node(20, 99)])
-        XCTAssertEqual(roots.map(\.pid), [10, 20])
-        XCTAssertEqual(roots[0].flattened.map(\.pid), [10, 11, 12])
-        XCTAssertEqual(roots[0].totalMemory, 30)
+    /// A command is masked as it is read (2.4 item 8, 9.3): Tab Info's
+    /// tooltip showed the raw argv, a password on the command line among
+    /// it. A child of the test's carries an invented one in a secret flag;
+    /// its node and its tooltip say the flag, never the value, and the
+    /// rest of the line stays as it was. Its footprint, what Activity
+    /// Monitor calls Memory, is measured.
+    func testACommandIsMaskedAsItIsReadAndItsFootprintMeasured() throws {
+        // Invented, and made at run time: no token-shaped string in the source.
+        let planted = ["acme", "sentinel", String(4_242)].joined(separator: "-")
+        let child = try TestChild("/bin/sh", ["-c", "sleep 30; true", "acme-worker", "--password=\(planted)"], environment: TestChild.cleanEnvironment)
+        let inspector = realInspector()
+        defer { end(child, inspector) }
+        var node: ProcessNode?
+        XCTAssertTrue(
+            TestChild.eventually {
+                node = inspector.tree(root: getpid(), tag: nil).flatMap(\.flattened).first { $0.identity == child.identity }
+                return node?.maskedCommand.contains("acme-worker") == true
+            }, "the child is read")
+        let found = try XCTUnwrap(node)
+        XCTAssertTrue(found.maskedCommand.contains("--password=\(Secrets.credentialMask)"), "the flag is said, its value masked")
+        XCTAssertFalse(found.maskedCommand.contains(planted), "never the value")
+        XCTAssertTrue(found.maskedCommand.hasPrefix("/bin/sh -c sleep 30; true acme-worker"), "the rest as it was")
+        let help = TabInfoView.help(for: found)
+        XCTAssertFalse(help.contains(planted), "nor in the tooltip")
+        XCTAssertTrue(help.contains("acme-worker"))
+        XCTAssertGreaterThan(found.footprint, 0, "its footprint is measured")
+        XCTAssertGreaterThan(found.memory, 0, "and its real memory")
     }
 }

@@ -35,6 +35,17 @@ final class KeybindingsTests: XCTestCase {
         }
     }
 
+    /// Activity's commands (docs/design/activity/analysis.md, 6.3): Free a
+    /// Port… has no key by default, but can be bound — a menu command.
+    func testActivitysCommands() {
+        XCTAssertEqual(KeyCommands.byID["activity.page"]?.defaultKey, "alt+cmd+a")
+        XCTAssertEqual(KeyCommands.byID["activity.switch"]?.defaultKey, "ctrl+cmd+a")
+        let free = KeyCommands.byID["activity.freePort"]
+        XCTAssertEqual(free?.title, "Free a Port…")
+        XCTAssertNil(free?.defaultKey)
+        XCTAssertEqual(free?.group, "Panels")
+    }
+
     /// Every id is unique — `byID` is a dictionary, so a duplicate would
     /// silently lose one of them.
     func testEveryCommandHasItsOwnID() {

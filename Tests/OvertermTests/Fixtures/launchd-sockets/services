@@ -1,0 +1,5 @@
+# fake services for LaunchdSocketsTests
+fake-ssh        2222/tcp     fake-shell   # an invented remote login
+fake-ssh        2222/udp
+fake-sync       4111/udp
+fake-sync       4111/tcp

@@ -64,6 +64,65 @@ final class ManagedProcessTests: XCTestCase {
         XCTAssertFalse(family.contains(where: Self.alive), "every child ended: \(family.filter(Self.alive))")
     }
 
+    /// Its family from the census's child map (7.8), of one table: its
+    /// children and theirs, breadth first, bounded; a zombie left out, and
+    /// one holding a pid that started before its "parent" — a dead
+    /// parent's pid reused — isn't its. One table read for the whole walk.
+    func testItsFamilyFromOneTable() throws {
+        let kernel = FakeActivityKernel(uid: 501)
+        func add(_ pid: pid_t, parent: pid_t, start: UInt64? = nil, status: Int32 = SRUN) {
+            kernel.add(
+                FakeActivityKernel.Process(
+                    record: FakeActivityKernel.record(pid: pid, start: start ?? UInt64(pid) * 1_000, parent: parent, status: status, name: "fake-\(pid)")))
+        }
+        add(1, parent: 0)
+        add(500, parent: 1)
+        add(501, parent: 500)
+        add(502, parent: 500, status: SZOMB)
+        add(503, parent: 501)
+        add(504, parent: 500, start: 1)
+        add(600, parent: 1)
+        let table = try XCTUnwrap(ProcessTable.read(kernel))
+        XCTAssertEqual(kernel.count("processes"), 1)
+        let family = ManagedProcess.descendants(of: 500, in: table)
+        XCTAssertEqual(family.map(\.pid), [501, 503], "no zombie, no stranger holding a reused pid")
+        XCTAssertEqual(family.map(\.start), [501_000, 503_000])
+        XCTAssertEqual(ManagedProcess.descendants(of: 500, limit: 1, in: table).map(\.pid), [501])
+        XCTAssertTrue(ManagedProcess.descendants(of: 999, in: table).isEmpty, "none: nothing holds it")
+    }
+
+    /// A close on the main thread returns at once, no longer open; its
+    /// family is found and signalled on the closes' queue, and ends.
+    @MainActor
+    func testACloseOnTheMainThreadSignalsOffIt() async throws {
+        let process = try await ManagedProcess.start(
+            shell("/bin/sleep 30 & echo ready; wait", readiness: .line { $0 == "ready" }))
+        func waited(_ ok: () -> Bool) async throws {
+            let deadline = Date().addingTimeInterval(5)
+            while !ok(), Date() < deadline { try await Task.sleep(for: .milliseconds(20)) }
+        }
+        try await waited { ManagedProcess.descendants(of: process.pid).count >= 1 }
+        let family = ManagedProcess.descendants(of: process.pid).map(\.pid)
+        XCTAssertFalse(family.isEmpty)
+        let reads = TableReads()
+        // The closes' queue held: close must return before its work runs.
+        ManagedProcess.closing.suspend()
+        var held = true
+        defer { if held { ManagedProcess.closing.resume() } }
+        process.close(grace: 0.3) {
+            reads.add(Thread.isMainThread)
+            return ProcessTable.read(LiveActivityKernel())
+        }
+        XCTAssertFalse(ManagedProcess.openGroups.contains(process.pid), "closed when it returns")
+        XCTAssertTrue(reads.values.isEmpty, "returned before the table was read")
+        XCTAssertTrue(family.allSatisfy(Self.alive), "nothing signalled yet")
+        ManagedProcess.closing.resume()
+        held = false
+        try await waited { !family.contains(where: Self.alive) && !process.isRunning }
+        XCTAssertFalse(family.contains(where: Self.alive))
+        XCTAssertEqual(reads.values, [false], "one table read, off the main thread")
+    }
+
     /// It runs in a process group of its own: what it started and no
     /// longer parents — a plugin reparented once kubectl exited — ends
     /// with it, though no walk of its children finds it.
@@ -241,4 +300,12 @@ final class ManagedProcessTests: XCTestCase {
         }
         return fd
     }
+}
+
+/// Where each table read for a close ran, recorded from any thread.
+private final class TableReads: @unchecked Sendable {
+    private let lock = NSLock()
+    private var recorded: [Bool] = []
+    func add(_ onMain: Bool) { lock.withLock { recorded.append(onMain) } }
+    var values: [Bool] { lock.withLock { recorded } }
 }

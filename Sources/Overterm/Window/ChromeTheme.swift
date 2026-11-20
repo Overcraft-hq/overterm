@@ -53,6 +53,12 @@ final class ChromeTheme: ObservableObject {
     private(set) var text2: Color = Color.clear
     /// Tertiary text: metadata you read only when you look for it.
     private(set) var text3: Color = Color.clear
+    /// The two for AppKit (a list's text cells).
+    private(set) var text2NS: NSColor = NSColor.clear
+    private(set) var text3NS: NSColor = NSColor.clear
+    /// Counts the colours' changes: a view that keeps what it drew by a key
+    /// takes it in, so a theme picked draws it again.
+    private(set) var revision = 0
 
     // MARK: Fills
 
@@ -140,6 +146,7 @@ final class ChromeTheme: ObservableObject {
         }
         source = (background, foreground, opacity, chosen)
         objectWillChange.send()
+        revision += 1
         self.opacity = opacity
         let bg = background.usingColorSpace(.sRGB) ?? background
         let fg = foreground.usingColorSpace(.sRGB) ?? foreground
@@ -199,8 +206,10 @@ final class ChromeTheme: ObservableObject {
         // Text. One hue, three weights of presence.
         textNS = fg
         text = Color(nsColor: fg)
-        text2 = Color(nsColor: fg.withAlphaComponent(0.62))
-        text3 = Color(nsColor: fg.withAlphaComponent(0.54))
+        text2NS = fg.withAlphaComponent(0.62)
+        text3NS = fg.withAlphaComponent(0.54)
+        text2 = Color(nsColor: text2NS)
+        text3 = Color(nsColor: text3NS)
 
         // Fills.
         iconBg = veil(isDark ? 0.08 : 0.06)

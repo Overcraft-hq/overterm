@@ -103,10 +103,12 @@ enum ComposeProjects {
             for container in project.containers where container.state == .running {
                 for port in PublishedPort.of(container.Ports ?? []) where port.proto == "tcp" && seen.insert(port.hostPort).inserted {
                     let moved = moves.first { $0.service == container.composeService && $0.to == port.hostPort && $0.proto == port.proto }
+                    // Reached where it is published, as Docker's own pills do.
+                    let published = ListeningPorts.published(hostIP: port.hostIP)
                     ports.append(
                         ListeningPort(
                             pid: 0, process: container.composeService ?? container.name, port: port.hostPort, address: port.hostIP ?? "*",
-                            container: container.name, movedFrom: moved?.from))
+                            container: container.name, movedFrom: moved?.from, scope: published.scope, host: published.host))
                 }
             }
         }

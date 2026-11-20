@@ -102,6 +102,7 @@ struct DockerCLI: Sendable {
             let process = Process()
             process.executableURL = tool
             process.arguments = arguments
+            process.environment = OvertermRun.current.marking(ProcessInfo.processInfo.environment, helper: .dockerCLI)
             process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
             process.standardInput = FileHandle.nullDevice
             let pipe = Pipe()
@@ -208,7 +209,8 @@ struct DockerCLI: Sendable {
         let folder = executable.deletingLastPathComponent().path
         let path = ProcessInfo.processInfo.environment["PATH"] ?? "/usr/bin:/bin"
         let engine = (endpoint?.environment ?? [:]).sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }
-        return engine + ["PATH=\(folder):\(path)"]
+        // Over `Git.run`'s marker: which of Overterm's children it is (D-15).
+        return engine + ["PATH=\(folder):\(path)", "\(OvertermRun.helperVariable)=\(OvertermRun.Helper.dockerCLI.rawValue)"]
     }
 
     /// A runtime's own word on whether it is up, or `.unknown` when its tool

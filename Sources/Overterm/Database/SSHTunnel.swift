@@ -14,11 +14,27 @@ import Foundation
 /// would hang the connection.
 final class SSHTunnel: @unchecked Sendable {
     let localPort: UInt16
+    /// The connection's name: what Activity's Listening calls its port.
+    let name: String
+    /// The connection's id: what Activity's Disconnect closes — names
+    /// aren't unique, and a rename leaves an open tunnel's as it was.
+    let connection: UUID
     private let process: Process
 
-    private init(process: Process, localPort: UInt16) {
+    private init(process: Process, localPort: UInt16, name: String, connection: UUID) {
         self.process = process
         self.localPort = localPort
+        self.name = name
+        self.connection = connection
+    }
+
+    /// The tunnels open now — ssh's pid, its local port, the connection's
+    /// name and id: their ports' owner on Activity's Listening (docs/design/
+    /// activity/analysis.md, 6.8 rule 4).
+    static func listed() -> [(pid: pid_t, port: UInt16, name: String, connection: UUID)] {
+        lock.withLock { Array(open.values) }.compactMap { tunnel in
+            tunnel.process.isRunning ? (tunnel.process.processIdentifier, tunnel.localPort, tunnel.name, tunnel.connection) : nil
+        }
     }
 
     /// Every tunnel still open: closed when the app quits, or each ssh
@@ -38,6 +54,57 @@ final class SSHTunnel: @unchecked Sendable {
 
     /// Tests keep their hosts out of the user's ~/.ssh/known_hosts.
     nonisolated(unsafe) static var knownHostsFile: String?
+    /// Tests keep their hosts and keys out of ~/.ssh: `-F`, `-i`, before
+    /// the destination (`FakeSSHHost.options`).
+    nonisolated(unsafe) static var testOptions: [String] = []
+    /// The ssh it runs: a test's stand-in, to see what it was started with.
+    nonisolated(unsafe) static var executable = URL(fileURLWithPath: "/usr/bin/ssh")
+
+    /// The ControlPath its ssh is given: `<user temp>/ot-run-<pid>-<start36>/db-<id>`,
+    /// a path nothing creates. With `ControlMaster=no`, ssh only tries it as
+    /// a client of a master, finds none (ENOENT, said nowhere) and connects
+    /// itself — and a ControlMaster in the user's config can't make the
+    /// tunnel a passing client of another connection. Its argv names the
+    /// run that started it (`ArgvSign.databaseTunnel`): `/usr/bin/ssh`
+    /// hides its environment.
+    ///
+    /// ssh doesn't check who made a master's socket, and the path is built
+    /// from a pid and a start anyone can read: so its folder is the
+    /// system's own temporary folder for this user
+    /// (`userTemporaryDirectory`, never `$TMPDIR`, which a shell or
+    /// launchctl can point at /tmp), and only while that is a directory of
+    /// this user's that no one else can write (`isPrivateFolder`) — else
+    /// `none`, as where it wouldn't fit a unix socket's 104 bytes (ssh
+    /// refuses a longer one) or holds a character ssh expands.
+    static func controlPath(
+        for connection: UUID, run: ActivityProcessID = OvertermRun.current.identity, folder: URL? = userTemporaryDirectory
+    ) -> String {
+        guard let folder, isPrivateFolder(folder.path) else { return "none" }
+        let id = String(connection.uuidString.lowercased().prefix(8))
+        let path = folder.appendingPathComponent(ArgvSign.runFolder(run: run), isDirectory: true).appendingPathComponent("db-\(id)").path
+        guard path.utf8.count < 104, path.hasPrefix("/"), !path.contains("%"), !path.contains(" ") else { return "none" }
+        return path
+    }
+
+    /// This user's temporary folder as the system keeps it
+    /// (`_CS_DARWIN_USER_TEMP_DIR`, under /var/folders, 0700): what
+    /// `$TMPDIR` normally says, whatever the app inherited instead.
+    static let userTemporaryDirectory: URL? = {
+        let length = confstr(_CS_DARWIN_USER_TEMP_DIR, nil, 0)
+        guard length > 1 else { return nil }
+        var buffer = [CChar](repeating: 0, count: length)
+        guard confstr(_CS_DARWIN_USER_TEMP_DIR, &buffer, length) > 1 else { return nil }
+        return URL(fileURLWithPath: String(cString: buffer), isDirectory: true)
+    }()
+
+    /// Whether `path` is a directory — itself, not a link — owned by this
+    /// user and writable by no one else: where no other user can put a
+    /// socket (a sticky /tmp is refused too).
+    static func isPrivateFolder(_ path: String) -> Bool {
+        var info = stat()
+        guard lstat(path, &info) == 0 else { return false }
+        return info.st_mode & S_IFMT == S_IFDIR && info.st_uid == getuid() && info.st_mode & (S_IWGRP | S_IWOTH) == 0
+    }
 
     /// The arguments for a tunnel to `connection` from `localPort` — pure.
     static func arguments(_ connection: DatabaseConnection, localPort: UInt16, batch: Bool) -> [String] {
@@ -52,14 +119,25 @@ final class SSHTunnel: @unchecked Sendable {
             // person to; a changed key is still refused.
             "-o", "StrictHostKeyChecking=accept-new",
             "-o", "BatchMode=\(batch ? "yes" : "no")",
+            // Its own connection, and its run named in its argv (`controlPath`).
+            "-o", "ControlMaster=no",
+            "-o", "ControlPath=\(controlPath(for: connection.id))",
             "-L", "127.0.0.1:\(localPort):\(target):\(connection.port ?? connection.kind.defaultPort ?? 0)",
         ]
         if let knownHostsFile { arguments += ["-o", "UserKnownHostsFile=\(knownHostsFile)"] }
         if let port = connection.sshPort, port != 22 { arguments += ["-p", "\(port)"] }
         if !connection.sshKeyFile.isEmpty { arguments += ["-i", (connection.sshKeyFile as NSString).expandingTildeInPath] }
         if !connection.sshUser.isEmpty { arguments += ["-l", connection.sshUser] }
+        arguments += testOptions
         arguments.append(connection.sshHost)
         return arguments
+    }
+
+    /// What its ssh is given before a secret: the app's environment, marked
+    /// as this run's (D-15) — unseen while it runs, `/usr/bin/ssh` being a
+    /// platform binary: its `ControlPath` says the run (`controlPath`).
+    static func environment(_ inherited: [String: String]) -> [String: String] {
+        OvertermRun.current.marking(inherited, helper: .databaseTunnel)
     }
 
     /// Opens it, and returns once the local end takes connections — or
@@ -67,9 +145,9 @@ final class SSHTunnel: @unchecked Sendable {
     static func open(_ connection: DatabaseConnection, secret: String?) async throws -> SSHTunnel {
         let port = try freePort()
         let process = Process()
-        process.executableURL = URL(fileURLWithPath: "/usr/bin/ssh")
+        process.executableURL = executable
         process.arguments = arguments(connection, localPort: port, batch: secret == nil)
-        var environment = ProcessInfo.processInfo.environment
+        var environment = Self.environment(ProcessInfo.processInfo.environment)
         if let secret {
             environment["SSH_ASKPASS"] = try askpass().path
             environment["SSH_ASKPASS_REQUIRE"] = "force"
@@ -88,7 +166,7 @@ final class SSHTunnel: @unchecked Sendable {
         } catch {
             throw DatabaseError.failed("ssh couldn't start: \(error.localizedDescription)")
         }
-        let tunnel = SSHTunnel(process: process, localPort: port)
+        let tunnel = SSHTunnel(process: process, localPort: port, name: connection.name, connection: connection.id)
         lock.withLock { open[ObjectIdentifier(tunnel)] = tunnel }
         // Ready when the local end answers; ssh binds it only once it is in.
         let deadline = Date().addingTimeInterval(20)

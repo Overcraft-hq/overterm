@@ -1222,6 +1222,10 @@ final class ComposeProjectsTests: XCTestCase {
         XCTAssertEqual(ports.map(\.container), ["a-web-1", "a-db-1"])
         XCTAssertEqual(ports.first?.id, "a-web-1:8080", "not a pid's: there is none")
         XCTAssertEqual(ports.map(\.movedFrom), [nil, nil])
+        // Reached where published, as Docker's own pills are: localhost on
+        // every address, db's 127.0.0.1 — localhost may try ::1 first.
+        XCTAssertEqual(ports.map(\.url?.absoluteString), ["http://localhost:8080", "http://127.0.0.1:55432"])
+        XCTAssertEqual(ports.map(\.scope), [.network, .thisMac])
         // Up on Free Ports moved web's: its pill says where from.
         let moved = ComposePortOverride(
             folder: "/w/a", project: "a", fileName: "a", baseFiles: ["/w/a/compose.yaml"],
@@ -1277,8 +1281,9 @@ final class DockerCLITests: XCTestCase {
         let host = DockerEndpoint(address: .tcp(host: "10.0.0.2", port: 2375), context: nil, source: "docker.endpoint")
         XCTAssertEqual(DockerCLI.environment(for: host, executable: docker).first, "DOCKER_HOST=tcp://10.0.0.2:2375")
         let plain = DockerCLI.environment(for: DockerEndpoint(address: .unix("/var/run/docker.sock"), context: nil, source: "default"), executable: docker)
-        XCTAssertEqual(plain.count, 1)
+        XCTAssertEqual(plain.count, 2)
         XCTAssertTrue(plain[0].hasPrefix("PATH=/Users/me/.docker/bin:"), "plugins and credential helpers beside it are found")
+        XCTAssertEqual(plain[1], "OVERTERM_HELPER=docker-cli", "which of Overterm's children it is")
     }
 
     func testItRunsWithThatEnvironment() async throws {

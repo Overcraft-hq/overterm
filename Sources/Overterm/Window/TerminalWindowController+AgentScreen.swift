@@ -81,7 +81,8 @@ extension TerminalWindowController {
                 let inspector = ProcessInspector()
                 continuation.resume(
                     returning: asked.map { look in
-                        let agent: Agent?? = look.recheck ? .some(Self.foregroundAgent(login: look.login, inspector: inspector)) : .none
+                        let agent: Agent?? =
+                            look.recheck ? .some(Self.foregroundAgent(login: look.login, tag: look.tag, inspector: inspector)) : .none
                         return (look.tag, agent, look.screen.flatMap(AgentScreenCheck.question(in:)))
                     })
             }
@@ -112,12 +113,30 @@ extension TerminalWindowController {
         }
     }
 
-    /// The agent in a pane's foreground process group, if any. Blocking:
-    /// a walk of the pane's processes.
-    nonisolated static func foregroundAgent(login: pid_t, inspector: ProcessInspector) -> Agent? {
-        guard let foreground = ProcessInspector.foregroundGroup(of: login) else { return nil }
-        for node in inspector.tree(root: login, tag: nil).flatMap(\.flattened) {
-            if let agent = AgentOverviewModel.agent(of: node), ProcessInspector.processGroup(of: node.pid) == foreground { return agent }
+    /// The agent in a pane's foreground process group, if any: a lookup in
+    /// the census (`ProcessInspector.slice`, one tick at most), never a
+    /// walk of its own. Blocking: call off the main thread.
+    nonisolated static func foregroundAgent(login: pid_t, tag: String? = nil, inspector: ProcessInspector) -> Agent? {
+        guard let (slice, snapshot) = inspector.slice(root: login, tag: tag) else { return nil }
+        return foregroundAgent(in: slice, snapshot: snapshot)
+    }
+
+    /// The same over a pane's slice of a snapshot: the terminal's
+    /// foreground group as the census read it (the `login`'s, else its
+    /// tree's), and of its running members the first that is an agent
+    /// (`Agent.of`). Pure.
+    nonisolated static func foregroundAgent(in slice: ActivityPaneSlice, snapshot: ActivitySnapshot) -> Agent? {
+        let members = ProcessInspector.running(slice.tree, in: snapshot)
+        var foreground: pid_t?
+        for identity in [slice.login].compactMap({ $0 }) + members where foreground == nil {
+            if let group = snapshot.table.process(identity)?.terminalGroup, group > 0 { foreground = group }
+        }
+        guard let foreground else { return nil }
+        for identity in members {
+            guard let process = snapshot.table.process(identity), process.group == foreground else { continue }
+            let facts = snapshot.facts[identity]
+            let name = snapshot.name(of: identity) ?? process.shortName
+            if let agent = Agent.of(name: name, argv: facts?.argvAgent, command: facts?.command ?? "") { return agent }
         }
         return nil
     }

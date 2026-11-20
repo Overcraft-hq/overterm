@@ -513,6 +513,27 @@ final class Settings: ObservableObject {
     var dockerCheckPorts: Bool { dockerEnabled && bool("docker.checkPorts") }
     var dockerAgentAccess: Bool { dockerEnabled && bool("docker.agentAccess") }
     var dockerAgentWrites: Bool { dockerAgentAccess && bool("docker.agentWrites") }
+    /// Activity's page, switcher and ⌘K items (docs/design/activity/analysis.md, 6.13).
+    var activityEnabled: Bool { bool("activity.enabled") }
+    /// How often the census reads (`ActivityMonitor.interval`): 1, 2 or 5 s.
+    var activityInterval: Duration {
+        switch string("activity.interval") {
+        case "1": .seconds(1)
+        case "5": .seconds(5)
+        default: .seconds(2)
+        }
+    }
+    var activityEveryone: Bool { activityEnabled && bool("activity.everyone") }
+    var activityAppServices: Bool { activityEnabled && bool("activity.appServices") }
+    /// Every user's listeners from nettop (D-25), while Listening shows.
+    var activityOtherListeners: Bool { activityEnabled && bool("activity.otherListeners") }
+    /// The user's unix-socket listeners in Listening (D-32).
+    var activityUnixSockets: Bool { activityEnabled && bool("activity.unixSockets") }
+    /// A tab's note when an agent left processes running (6.9, D-17).
+    var activityLeftBehindNotice: Bool { bool("activity.leftBehindNotice") }
+    /// Agents' `port_` and `proc_` reads (ActivityMCP, 8.2): held when
+    /// edited outside the page.
+    var activityAgentAccess: Bool { activityEnabled && bool("activity.agentAccess") }
     var kubernetesEnabled: Bool { bool("kubernetes.enabled") }
     /// Agents' `k8s_` read tools (KubeMCP).
     var kubernetesAgentAccess: Bool { kubernetesEnabled && bool("kubernetes.agentAccess") }

@@ -23,14 +23,26 @@ extension E2ERunner {
 
         // A stand-in Claude Code: argv[0] claude, the first byte it reads, in hex.
         let got = scratch.appendingPathComponent("agent-byte")
-        // System bash under argv[0] claude: /usr/bin/python3 is a shim that
-        // runs Python under its own name.
-        // In a subshell: the pane's own shell must outlive it, or its tab
-        // closes and the run with it.
-        pane.insertText("(exec -a claude /bin/bash -c 'stty raw -echo; dd bs=1 count=1 2>/dev/null | xxd -p > \(got.path)')")
+        // A stand-in Claude Code named `node` (its npm install runs as
+        // node), built in the pane: a name that can't host an agent — bash,
+        // the stand-in's own shell — is never read for its argv inside the
+        // key equivalent, and the name a process runs as is its executable
+        // file's, never a link's (a copy of a system binary isn't allowed
+        // to run). It runs, under argv[0] claude, a shell that reads the
+        // byte: both in the pane's foreground group. /usr/bin/python3 is a
+        // shim that runs Python under its own name. In a subshell: the
+        // pane's own shell must outlive it, or its tab closes and the run
+        // with it.
+        let node = scratch.appendingPathComponent("node").path
+        pane.insertText(
+            "printf '#include <stdlib.h>\\nint main(int c, char **v) { return system(v[1]); }\\n' | cc -x c - -o \(node) && "
+                + "(exec -a claude \(node) 'stty raw -echo; dd bs=1 count=1 2>/dev/null | xxd -p > \(got.path)')")
         pane.pressReturn()
-        let login = SurfaceProcesses.shared.loginPID(of: pane)
-        check("the agent has the keyboard", await eventually(10) { ImagePaste.agentHasKeyboard(login: login) })
+        // As the key equivalent reads it: the surface's foreground group.
+        func agentHasKeyboard(_ pane: TerminalView) -> Bool {
+            ImagePaste.agentHasKeyboard(foreground: pane.surface.flatMap { ImagePaste.foregroundGroup(of: $0) })
+        }
+        check("the agent has the keyboard", await eventually(10) { agentHasKeyboard(pane) })
         await pause(0.3)
         check("⌘V is taken", pane.performKeyEquivalent(with: commandV()))
         let byte = await eventually(5) { (try? String(contentsOf: got, encoding: .utf8))?.trimmingCharacters(in: .whitespacesAndNewlines) == "16" }
@@ -41,8 +53,7 @@ extension E2ERunner {
         guard let shell = app.store.selected?.terminal, shell !== pane else { return check("a second pane", false) }
         check("its shell is up", await eventually { shell.shellReported })
         window.makeFirstResponder(shell)
-        let login2 = SurfaceProcesses.shared.loginPID(of: shell)
-        check("no agent there", !ImagePaste.agentHasKeyboard(login: login2))
-        check("so ⌘V is not turned into ⌃V", !ImagePaste.clipboardHasOnlyImage() || !ImagePaste.agentHasKeyboard(login: login2))
+        check("no agent there", !agentHasKeyboard(shell))
+        check("so ⌘V is not turned into ⌃V", !ImagePaste.clipboardHasOnlyImage() || !agentHasKeyboard(shell))
     }
 }

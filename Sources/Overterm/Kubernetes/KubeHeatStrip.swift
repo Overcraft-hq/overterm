@@ -237,15 +237,28 @@ struct KubeHeatStripView: View {
     /// A strip's cells drawn in `rect` (X4 draws fifty rows' in one Canvas).
     static func draw(_ percents: [Double?], in rect: CGRect, context: inout GraphicsContext, colours: [Color], track: Color) {
         context.fill(Path(rect), with: .color(track.opacity(0.08)))
+        for bar in bars(percents, in: rect) {
+            context.fill(Path(bar.rect), with: .color(bar.level.map { colours[$0.rawValue] } ?? track.opacity(0.3)))
+        }
+    }
+
+    /// Where `draw` puts each cell in `rect`, y down: a sampled one a bar
+    /// from the foot, as tall as its share (at least 2) in its level; an
+    /// unsampled one a 1-point tick at the foot, no level. Pure: the Canvas
+    /// and Activity's AppKit strip draw the same rects.
+    nonisolated static func bars(_ percents: [Double?], in rect: CGRect) -> [(rect: CGRect, level: KubeHeatStrip.Level?)] {
         let cell = rect.width / CGFloat(max(1, percents.count))
+        var bars: [(rect: CGRect, level: KubeHeatStrip.Level?)] = []
+        bars.reserveCapacity(percents.count)
         for (index, percent) in percents.enumerated() {
             let x = rect.minX + CGFloat(index) * cell
             guard let percent else {
-                context.fill(Path(CGRect(x: x, y: rect.maxY - 1, width: cell, height: 1)), with: .color(track.opacity(0.3)))
+                bars.append((CGRect(x: x, y: rect.maxY - 1, width: cell, height: 1), nil))
                 continue
             }
             let height = max(2, rect.height * CGFloat(min(percent, 100) / 100))
-            context.fill(Path(CGRect(x: x, y: rect.maxY - height, width: cell, height: height)), with: .color(colours[KubeHeatStrip.Level(percent).rawValue]))
+            bars.append((CGRect(x: x, y: rect.maxY - height, width: cell, height: height), KubeHeatStrip.Level(percent)))
         }
+        return bars
     }
 }

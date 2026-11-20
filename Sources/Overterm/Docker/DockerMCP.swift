@@ -259,7 +259,9 @@ enum DockerMCP {
     /// What a write's confirmation shows: every character visible — a
     /// control character or a direction override as its code, a long run
     /// of blank space said as such — so nothing that runs is out of sight.
-    static func displayed(_ text: String) -> String {
+    /// Pure, for any queue: Activity's text for agents is made off the
+    /// main thread.
+    nonisolated static func displayed(_ text: String) -> String {
         var out = ""
         var blank = ""
         func flushBlank() {

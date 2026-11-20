@@ -191,6 +191,32 @@ enum AppEnvironment {
     /// changes real infrastructure.
     static var guardsTerraform: Bool { isIsolated || isUnitTest }
 
+    /// Whether Activity's signal path keeps to this run's own processes: an
+    /// isolated run or a unit test (docs/design/activity/analysis.md, 6.10
+    /// step 11, 9.9). `ProcessSignals` then changes only what the run
+    /// registered as its own child (`ActivitySignalGate`) or what runs
+    /// under a `login` its own panes spawned — never the person's real
+    /// processes during `make e2e` or `make test`.
+    static var guardsSignals: Bool { isIsolated || isUnitTest }
+
+    /// The user's LaunchAgents folder, whose plists name a launchd job by
+    /// the program it runs (docs/design/activity/analysis.md, 6.8 rule 8;
+    /// `LaunchdJobs`): none in an isolated run or a unit test (9.9) — a
+    /// test hands its own fixtures to `LaunchdJobs.agents(in:)`.
+    static var launchAgentsDirectory: URL? {
+        guard !isIsolated, !isUnitTest else { return nil }
+        return FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/LaunchAgents", isDirectory: true)
+    }
+
+    /// The folders whose plists name launchd's socket-activated jobs
+    /// (`LaunchdSockets`, 6.8 rule 9): the system's and the user's
+    /// LaunchAgents; in an isolated run or a unit test only a test's own
+    /// (`LaunchdSockets.standIn`), else none (9.9).
+    static var launchdSocketFolders: [LaunchdSockets.Folder] {
+        guard !isIsolated, !isUnitTest else { return LaunchdSockets.standIn ?? [] }
+        return LaunchdSockets.defaultFolders(home: FileManager.default.homeDirectoryForCurrentUser)
+    }
+
     /// The terraform Overterm runs: guarded, `OVERTERM_TERRAFORM`'s (a
     /// scenario's recording wrapper) when it is an absolute path to an
     /// executable, else none; else the user's, searched for by

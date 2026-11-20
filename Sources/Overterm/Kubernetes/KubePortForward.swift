@@ -175,6 +175,14 @@ enum KubeForwardAddress {
         ["127.0.0.1", "localhost", "::1"].contains(address) || address.hasPrefix("127.")
     }
 
+    /// Who can reach a forward listening on `address` (docs/design/
+    /// activity/analysis.md, 6.8's Scope): a wildcard the network, loopback
+    /// this Mac, any other address that one.
+    static func scope(_ address: String) -> ListeningPort.Scope {
+        if ["0.0.0.0", "::", "*"].contains(address) { return .network }
+        return isLoopback(address) ? .thisMac : .oneAddress
+    }
+
     /// Where a browser reaches it: the address kubectl listens on, never
     /// `localhost` — which a browser may try as ::1 first, where a forward
     /// on 127.0.0.1 doesn't listen. A wildcard is reached on loopback; an
@@ -194,6 +202,12 @@ enum KubeForwardAddress {
 /// kubectl and credentials, never the proxy's socket, which refuses
 /// port-forward on every context. Pure.
 enum KubePortForwardCommand {
+    /// The forward as a process: ready when kubectl says it forwards — pure.
+    static func launch(kubectl: URL, arguments: [String], environment: [String: String]?) -> ManagedProcess.Launch {
+        ManagedProcess.Launch(
+            executable: kubectl, arguments: arguments, environment: environment, readiness: .line(isReady), timeout: 30, helper: .kubectlPortForward)
+    }
+
     static func arguments(
         pod: String, localPort: Int, remotePort: Int, context: String, namespace: String, address: String, cacheDirectory: String? = nil
     ) -> [String] {

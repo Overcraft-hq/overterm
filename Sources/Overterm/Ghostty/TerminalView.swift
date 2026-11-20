@@ -46,9 +46,29 @@ final class TerminalView: NSView {
     /// them (ProcessInspector).
     let processTag = UUID().uuidString
 
-    /// What Suspend Tab stopped in this pane, parents first (TabSuspension);
-    /// nil while it runs.
-    var suspendedPIDs: [pid_t]?
+    /// What every pane's environment carries first: its tag
+    /// (`OVERTERM_TAB_ID`) and this run's marker (`OVERTERM_RUN`) — never
+    /// `OVERTERM_HELPER`: a pane is no helper.
+    nonisolated static func paneMarkers(tag: String, run: OvertermRun = .current) -> [(key: String, value: String)] {
+        [(ProcessInspector.tagVariable, tag), (OvertermRun.variable, run.marker)]
+    }
+
+    /// What Suspend Tab stopped in this pane, parents first, each by the
+    /// identity it was listed with (TabSuspension); nil while it runs.
+    var suspended: [ActivitySignalTarget]?
+
+    /// Its pty's device (`st_rdev` of `ghostty_surface_tty_name`'s path),
+    /// which the census compares with every process's controlling terminal
+    /// (docs/design/activity/analysis.md, 7.10): read once, on the main
+    /// thread, once its `login` is paired (`readTerminalDeviceOncePaired`).
+    /// Nil until then, or when the name couldn't be read.
+    private(set) var terminalDevice: dev_t?
+    /// How often it was asked with no device to show for it: asked again
+    /// at each context build until `terminalDeviceAttempts`.
+    private var terminalDeviceAsks = 0
+    /// Enough for a pty its IO thread opens late; not a read at every
+    /// build for a pane whose name never comes.
+    static let terminalDeviceAttempts = 20
 
     /// Last directory the shell reported (OSC 7 via shell integration);
     /// the starting directory until it reports one.
@@ -112,9 +132,6 @@ final class TerminalView: NSView {
     /// The modifier keys, read when a drag moves and at the drop (⌥: plain
     /// paths). An E2E run stands in for the keyboard.
     static var dropModifierFlags: () -> NSEvent.ModifierFlags = { NSEvent.modifierFlags }
-    /// Where panes look at what runs in them: one scan at a time, so the
-    /// answers come back in the order asked.
-    private static let programQueue = DispatchQueue(label: "\(AppEnvironment.bundleIdentifier).pane-program", qos: .userInitiated)
 
     /// - Parameters:
     ///   - workingDirectory: where the shell starts; home when nil.
@@ -168,13 +185,16 @@ final class TerminalView: NSView {
         }
         config.working_directory = UnsafePointer(cwdC)
         config.initial_input = inputC.flatMap { UnsafePointer($0) }
-        let tagKey = strdup(ProcessInspector.tagVariable)
-        let tagValue = strdup(processTag)
+        // The pane's tag, and beside it the run that made the pane
+        // (`OVERTERM_RUN`, D-15): what outlives the pane says whose it was.
+        let markers = Self.paneMarkers(tag: processTag).map { (strdup($0.key), strdup($0.value)) }
         defer {
-            free(tagKey)
-            free(tagValue)
+            for (key, value) in markers {
+                free(key)
+                free(value)
+            }
         }
-        var env = [ghostty_env_var_s(key: tagKey, value: tagValue)]
+        var env = markers.map { ghostty_env_var_s(key: $0.0, value: $0.1) }
         // The bridge's MCP config and this pane's token, for an agent
         // started here (BrowserBridge): the token in this environment only.
         let mcp = (BrowserBridge.shared.environment(forPane: processTag) ?? [:]).sorted { $0.key < $1.key }.map { (strdup($0.key), strdup($0.value)) }
@@ -272,6 +292,7 @@ final class TerminalView: NSView {
         guard let surface else { return }
         self.surface = nil
         ghostty_surface_free(surface)
+        SurfaceProcesses.shared.closed(self)
     }
 
     /// What a new tab opened from this one should start with: the shell's
@@ -306,6 +327,28 @@ final class TerminalView: NSView {
         ev.action = GHOSTTY_ACTION_RELEASE
         _ = ghostty_surface_key(surface, ev)
     }
+
+    /// ⌃C as a key event to the surface, as a person presses it — what an
+    /// Interrupt sends (docs/design/activity/analysis.md, 6.10): the
+    /// terminal makes it SIGINT for the foreground job, and a full-screen
+    /// program that reads ⌃C as a byte gets the byte. Never a SIGINT to
+    /// the group from here.
+    func pressControlC() {
+        guard let surface else { return }
+        var ev = ghostty_input_key_s()
+        ev.keycode = 0x08  // kVK_ANSI_C
+        ev.mods = GHOSTTY_MODS_CTRL
+        ev.consumed_mods = GHOSTTY_MODS_NONE
+        ev.unshifted_codepoint = 0x63
+        ev.action = GHOSTTY_ACTION_PRESS
+        _ = ghostty_surface_key(surface, ev)
+        ev.action = GHOSTTY_ACTION_RELEASE
+        _ = ghostty_surface_key(surface, ev)
+    }
+
+    /// The pane's foreground process group (`tcgetpgrp` of its pty, through
+    /// libghostty); nil when it has none or no surface.
+    var foregroundGroup: pid_t? { surface.flatMap { ImagePaste.foregroundGroup(of: $0) } }
 
     /// Hidden tabs stop rendering; libghostty keeps the pty running.
     /// Becoming visible draws a frame at once, so nothing stale is shown.
@@ -637,7 +680,7 @@ final class TerminalView: NSView {
         // The paste key with only a picture to paste, into an agent: ⌃V,
         // which is how Claude Code, Codex, pi and Gemini CLI take an image (ImagePaste).
         if isPasteKey(event), ImagePaste.clipboardHasOnlyImage(),
-            ImagePaste.agentHasKeyboard(login: SurfaceProcesses.shared.loginPID(of: self)),
+            ImagePaste.agentHasKeyboard(foreground: ImagePaste.foregroundGroup(of: surface)),
             let down = ImagePaste.controlV(like: event, .keyDown), let up = ImagePaste.controlV(like: event, .keyUp)
         {
             keyDown(with: down)
@@ -996,27 +1039,20 @@ extension TerminalView {
         endDropHover()
     }
 
-    /// What runs in the pane now: a scan of its processes off the main
-    /// thread, the answer back on it.
+    /// What runs in the pane now: its terminal's foreground group read
+    /// here, from the surface; its processes looked up in the census off
+    /// the main thread (`TerminalDrop.program`), the answer back on it.
     func lookAtProgram(_ done: @escaping @MainActor (TerminalDrop.Program) -> Void) {
-        if let login = SurfaceProcesses.shared.pairedLoginPID(of: self) { return Self.scanProgram(login: login, done) }
-        // Not paired with its login yet: that lists the app's children, a
-        // scan too — made here, off the main thread; the pairing is quick.
-        Self.programQueue.async { [weak self] in
-            let children = ProcessInspector.children(of: getpid())
-            DispatchQueue.main.async {
-                MainActor.assumeIsolated {
-                    guard let self else { return }
-                    Self.scanProgram(login: SurfaceProcesses.shared.loginPID(of: self, children: children), done)
-                }
-            }
-        }
-    }
-
-    private static func scanProgram(login: pid_t?, _ done: @escaping @MainActor (TerminalDrop.Program) -> Void) {
-        programQueue.async {
-            let program = TerminalDrop.program(login: login)
-            DispatchQueue.main.async { MainActor.assumeIsolated { done(program) } }
+        let pane = processTag
+        let foreground = surface.flatMap { ImagePaste.foregroundGroup(of: $0) }
+        // A pane just made is in the context the lookup reads, and one not
+        // paired yet is paired from the lookup's snapshot and looked at
+        // again (`PaneAgent.pairing`).
+        Task { @MainActor in
+            done(
+                await PaneAgent.pairing(census: .app) {
+                    TerminalDrop.programAndSnapshot(pane: pane, foreground: foreground)
+                })
         }
     }
 
@@ -1070,5 +1106,41 @@ extension TerminalView {
         dropPayload = nil
         dropHighlight?.removeFromSuperview()
         dropHighlight = nil
+    }
+}
+
+// MARK: The pane's pty (docs/design/activity/analysis.md, 7.10)
+
+extension TerminalView {
+    /// `ghostty_surface_tty_name` into `terminalDevice`, once its `login`
+    /// is paired. Not sooner: libghostty opens the pty on the surface's IO
+    /// thread, which it starts as the surface is made, and right after
+    /// `ghostty_surface_new` the name wasn't there yet (none of the
+    /// `splits` scenario's panes had one) — a read racing that thread's
+    /// write. The `login` is forked after the pty is open, and a pty's name
+    /// doesn't change while it lives — but a pairing is by order, so two
+    /// surfaces made together (a restored split) may pair one with the
+    /// other's `login` before its own pty is open: an empty name is asked
+    /// again at the next build, bounded, never given up at once — the tty
+    /// is what shows such a pairing wrong.
+    func readTerminalDeviceOncePaired() {
+        guard terminalDevice == nil, terminalDeviceAsks < Self.terminalDeviceAttempts, let surface else { return }
+        terminalDeviceAsks += 1
+        let name = ghostty_surface_tty_name(surface)
+        // Allocated by libghostty, freed by it; an empty one holds nothing.
+        defer { ghostty_string_free(name) }
+        guard let pointer = name.ptr, name.len > 0 else { return }
+        let path = String(decoding: UnsafeRawBufferPointer(start: pointer, count: Int(name.len)), as: UTF8.self)
+        terminalDevice = Self.device(ofTerminal: path)
+    }
+
+    /// A terminal's device from its path: `st_rdev` of a character device
+    /// under `/dev`, what `KERN_PROC_ALL` says as `e_tdev`; nil for
+    /// anything else.
+    nonisolated static func device(ofTerminal path: String) -> dev_t? {
+        guard path.hasPrefix("/dev/"), !path.split(separator: "/").contains("..") else { return nil }
+        var info = stat()
+        guard stat(path, &info) == 0, info.st_mode & S_IFMT == S_IFCHR else { return nil }
+        return info.st_rdev
     }
 }

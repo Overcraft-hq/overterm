@@ -1,9 +1,12 @@
 import AppKit
+import Combine
 import UserNotifications
 
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
     private var windowController: TerminalWindowController?
+    /// The census's context from the app's windows (`wireActivityCensus`).
+    private var activityCensus: AnyCancellable?
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         // A scenario whose environment carries a credential variable stops
@@ -25,6 +28,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         try? FileManager.default.removeItem(at: APIWorkspace.draftsDirectory)
         // Before any pane: a pane learns the browser's MCP address as it is made.
         BrowserBridge.shared.start()
+        // Before any pane too: each one made is the census's context's.
+        activityCensus = TerminalWindowController.wireActivityCensus()
         // A drawing an agent made (notes_draw) opens in the front window's editor.
         DrawingConverter.open = { url in
             for window in NSApp.orderedWindows {
@@ -61,6 +66,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         windowController = controller
         controller.dumpLayoutIfRequested()
         if let scenario = AppEnvironment.e2eScenario { E2ERunner.start(scenario, app: controller) }
+        // What Activity kept and stopped before the last quit or crash (D-29).
+        ActivityPersistence.shared.start()
+        // …and, 10 s on, what an earlier Overterm left (D-14): never in an isolated run.
+        if !AppEnvironment.isIsolated {
+            Task { [weak controller] in
+                await controller?.activityRestoreAtLaunch()
+                try? await Task.sleep(for: TerminalWindowController.launchCheckDelay)
+                await controller?.leftBehindAtLaunch()
+            }
+        }
 
         // An isolated run stays in the background: it must not take the
         // keyboard from whatever the user is doing.
@@ -120,6 +135,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                 return .terminateCancel
             }
         }
+        // What Activity suspended stays stopped once Overterm is gone: asked,
+        // Resume and Quit the default (docs/design/activity/analysis.md, 6.10).
+        // The answer is kept: nothing is continued until every later question
+        // has let the quit go (`quitting`), or a Cancel there would leave the
+        // app open with what was suspended running again.
+        var resumeAtQuit = false
+        if let alert = TerminalWindowController.activityQuitAlert() {
+            switch alert.runModal() {
+            case .alertFirstButtonReturn: resumeAtQuit = true
+            case .alertSecondButtonReturn: break
+            default: return .terminateCancel
+            }
+        }
+        /// The quit, once nothing else holds it: Resume and Quit's resumes
+        /// now — any not continued asked about again, Don't Quit the default.
+        func quitting() -> NSApplication.TerminateReply {
+            guard resumeAtQuit, let again = TerminalWindowController.activityResumeAtQuit() else { return .terminateNow }
+            return again.runModal() == .alertSecondButtonReturn ? .terminateNow : .terminateCancel
+        }
         // Overterm's own applies go on, detached (4.7): said, never waited for.
         let applies = TerraformRunRegistry.shared.goingApplies.map { (name: $0.marker.name, since: $0.started) }
         if let question = TerraformCloseGuard.quitQuestion(applies) {
@@ -133,16 +167,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         guard let controller = windowController, !controller.closeConfirmed, !controller.store.tabs.isEmpty,
             TerminalWindowController.needsCloseConfirmation(controller.store.tabs, quitting: true)
-        else { return .terminateNow }
+        else { return quitting() }
         let tabs = controller.store.tabs
         let alert = NSAlert()
         alert.messageText = tabs.count == 1 ? "Quit Overterm?" : "Quit Overterm and close \(tabs.count) tabs?"
         alert.informativeText =
             TerminalWindowController.closeWarning(for: tabs, quitting: true) + " Tabs come back on the next launch; agents resume their conversation."
+            + {
+                // What goes on running is named: it may be why this asks (D-16).
+                let listed = TerminalWindowController.survivorsListed(tabs.flatMap(\.terminals))
+                return listed.isEmpty ? "" : "\n\n" + listed
+            }()
         alert.addButton(withTitle: "Quit")
         alert.addButton(withTitle: "Cancel")
         alert.alertStyle = .warning
-        return alert.runModal() == .alertFirstButtonReturn ? .terminateNow : .terminateCancel
+        return alert.runModal() == .alertFirstButtonReturn ? quitting() : .terminateCancel
     }
 
     func applicationWillTerminate(_ notification: Notification) {

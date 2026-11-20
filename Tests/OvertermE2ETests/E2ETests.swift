@@ -61,6 +61,10 @@ final class E2ETests: XCTestCase {
         // scenario's first typed key answered it — lost, or, were it Return,
         // a yes that updated the person's ~/.oh-my-zsh.
         env["DISABLE_AUTO_UPDATE"] = "true"
+        // Nor the markers of an Overterm the harness runs in: the app is no
+        // child of that one's (docs/design/activity/analysis.md, D-15).
+        env.removeValue(forKey: "OVERTERM_RUN")
+        env.removeValue(forKey: "OVERTERM_HELPER")
         extra.forEach { env[$0.key] = $0.value }
         process.environment = env
         let out = Pipe()
@@ -88,6 +92,9 @@ final class E2ETests: XCTestCase {
             collected.append(data)
         }
         try process.run()
+        // Its start, read while it runs: what the leftover check below
+        // compares every process's with — never its pid alone.
+        let started = E2ELeftovers.kinfo(process.processIdentifier)?.start ?? 0
 
         let deadline = Date().addingTimeInterval(timeout)
         while process.isRunning, Date() < deadline { Thread.sleep(forTimeInterval: 0.1) }
@@ -105,6 +112,21 @@ final class E2ETests: XCTestCase {
         // A child of the app still holding the pipe would keep it open: bounded.
         if ended.wait(timeout: .now() + 10) == .timedOut { out.fileHandleForReading.readabilityHandler = nil }
         let printed = String(decoding: collected.data, as: UTF8.self)
+        // Once it has quit, nothing of its run is left running (10.5): what
+        // is, is a failure, then ended by its exact identity.
+        let identity = E2ERunIdentity.make(pid: process.processIdentifier, start: started, printed: printed)
+        if identity.start > 0 {
+            // A git call in flight when the app exited ends by itself:
+            // given its moment, as the app gives its panes' shells theirs.
+            var left = E2ELeftovers.find(identity)
+            let settled = Date().addingTimeInterval(5)
+            while !left.isEmpty, Date() < settled {
+                Thread.sleep(forTimeInterval: 0.2)
+                left = E2ELeftovers.find(identity)
+            }
+            for one in left { XCTFail("\(scenario): left running after the app quit — \(one.name) (pid \(one.pid)): \(one.why)") }
+            E2ELeftovers.stop(left)
+        }
         let lines = printed.split(separator: "\n").map(String.init).filter { $0.hasPrefix("E2E ") }
         // Dead before a line, by a signal: launched in quick succession,
         // macOS's LaunchServices connection can trap in NSApplication's
@@ -358,6 +380,16 @@ final class E2ETests: XCTestCase {
     func testPalette() throws { try run("palette") }
     func testReorder() throws { try run("reorder") }
     func testInfo() throws { try run("info") }
+    /// Its stage 2 verbs' checks (a Stop's five-second watches among them)
+    /// take it past the default two minutes on a busy Mac.
+    func testActivity() throws { try run("activity", timeout: 300) }
+    /// The Activity page at this Mac's process count, from a fake of that
+    /// size: the census's CPU a tick, rows made, shown, held and scrolled.
+    func testActivityPerf() throws {
+        let printed = try run("activityPerf")
+        // Its numbers, counts and times only, in the test's output.
+        for line in printed.split(separator: "\n") where line.hasPrefix("E2E INFO activityPerf") { print(line) }
+    }
     func testClaudeInfo() throws { try run("claude") }
     func testDiskInfo() throws { try run("disk") }
     func testFollow() throws { try run("follow") }

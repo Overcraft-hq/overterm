@@ -29,6 +29,10 @@ struct WorkspacePage {
     /// typed: true when the page took it, before the menus do — false
     /// leaves it to them.
     var commandPress: (@MainActor (String) -> Bool)?
+    /// A key with ⌥ alone while its list has the keyboard, by the key's own
+    /// character (⌥o is `o`, not `ø`): true when the page took it — false
+    /// lets it go on.
+    var optionPress: (@MainActor (String) -> Bool)?
     /// ⌘L while it shows: its own answer (false beeps), never the terminal
     /// hidden under it.
     var askAboutSelection: (@MainActor () -> Bool)?

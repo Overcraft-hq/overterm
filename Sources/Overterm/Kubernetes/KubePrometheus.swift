@@ -462,12 +462,6 @@ enum KubePromQL {
     static func stamp(_ date: Date) -> String { String(Int(date.timeIntervalSince1970)) }
 }
 
-/// One point of a series.
-struct KubeSeriesPoint: Equatable, Sendable {
-    var time: Date
-    var value: Double
-}
-
 /// One series of an answer: its labels and points.
 struct KubeSeries: Equatable, Sendable {
     var labels: [String: String]

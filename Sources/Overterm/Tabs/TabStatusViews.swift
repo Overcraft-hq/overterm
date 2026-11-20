@@ -9,6 +9,7 @@ import SwiftUI
 enum TabStatusStyle {
     /// Signal yellow: the brand's "look here".
     static let signal = Color(red: 1.0, green: 0.882, blue: 0.29)
+    static let signalNS = NSColor(srgbRed: 1.0, green: 0.882, blue: 0.29, alpha: 1)
     /// Warning orange: an agent blocked *on you*. Distinct from `signal`
     /// because "it wants something" and "it is busy" are different news.
     static let waiting = Color(red: 1.0, green: 0.624, blue: 0.039)
@@ -16,6 +17,7 @@ enum TabStatusStyle {
     /// Work in progress: the system blue, which never means "act".
     static let working = Color(red: 0.039, green: 0.518, blue: 1.0)
     static let done = Color(red: 0.36, green: 0.78, blue: 0.44)
+    static let doneNS = NSColor(srgbRed: 0.36, green: 0.78, blue: 0.44, alpha: 1)
     static let failed = Color(red: 0.94, green: 0.36, blue: 0.34)
     /// GitHub's "merged" purple, so a merged worktree reads like its PR.
     static let merged = Color(red: 0.64, green: 0.47, blue: 0.96)

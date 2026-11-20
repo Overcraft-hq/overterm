@@ -8,6 +8,8 @@ struct InboxActions {
     var open: (Tab.ID) -> Void
     /// Ask Why on a cluster's mark (KubeAttention): the brief to the tab's agent.
     var askWhy: (Tab.ID) -> Void = { _ in }
+    /// Show on a Left Behind note: Activity's Left Behind for the tab.
+    var showLeftBehind: (Tab.ID) -> Void = { _ in }
     var close: () -> Void
 }
 
@@ -146,6 +148,7 @@ private struct InboxCard: View {
                 HStack {
                     Spacer(minLength: 0)
                     if entry.asksWhy { button("Ask Why") { actions.askWhy(entry.id) } }
+                    if entry.leftBehind { button("Show") { actions.showLeftBehind(entry.id) } }
                     button("Open tab") { actions.open(entry.id) }
                 }
             }

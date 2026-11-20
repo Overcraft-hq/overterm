@@ -13,9 +13,11 @@ struct PaletteItem: Identifiable {
         case kubernetes = "Kubernetes"
         /// Roots and their workspaces (⌃⌘E scopes the palette to them).
         case terraform = "Terraform"
+        /// Listening ports and the busiest processes (⌃⌘A scopes the palette to them).
+        case activity = "Activity"
 
         /// The scopes the field offers, in the order the designs have them.
-        static let scopes: [Group] = [.history, .snippet, .action, .container, .kubernetes, .terraform]
+        static let scopes: [Group] = [.history, .snippet, .action, .container, .kubernetes, .terraform, .activity]
     }
 
     let id: String
@@ -114,6 +116,7 @@ final class PaletteModel: ObservableObject {
             + PaletteItem.Group.scopes.filter {
                 ($0 != .snippet || Settings.shared.snippetsEnabled) && ($0 != .container || Settings.shared.dockerEnabled)
                     && ($0 != .kubernetes || Settings.shared.kubernetesEnabled) && ($0 != .terraform || Settings.shared.terraformEnabled)
+                    && ($0 != .activity || Settings.shared.activityEnabled)
             }
     }
 

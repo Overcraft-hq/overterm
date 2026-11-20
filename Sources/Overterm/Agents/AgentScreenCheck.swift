@@ -14,7 +14,7 @@ import Foundation
 ///   notification or progress since its last command began (`signalled`),
 ///   where something runs;
 /// - which agent is in the pane's foreground is read off the main thread
-///   (a process walk, `ProcessInspector.tree`), at most every
+///   (a lookup in the census, `foregroundAgent(in:snapshot:)`), at most every
 ///   `agentRecheck` per pane;
 /// - only a pane with an agent has its screen read (the viewport's text,
 ///   on the main thread — `ghostty_surface_read_text`, under a millisecond

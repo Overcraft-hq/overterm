@@ -28,6 +28,13 @@ enum TerraformCloseGuard {
         var place: String
         /// The pane's process tag: its header says "shutting down" after Interrupt.
         var tag: String? = nil
+        /// When it started, µs since 1970, and its executable, as `find`
+        /// read them: who Interrupt may reach (`ProcessSignals`). Nil when
+        /// unread — it had ended as `find` looked —, and then Interrupt
+        /// reaches nobody: whatever holds the pid by the press isn't the
+        /// terraform the close asked about.
+        var started: UInt64? = nil
+        var path: String? = nil
     }
 
     /// What the close asks.
@@ -101,15 +108,63 @@ enum TerraformCloseGuard {
                 found.append(
                     Running(
                         pid: process.pid, group: ProcessInspector.processGroup(of: process.pid), operation: process.line.operation ?? "apply",
-                        tool: process.line.tool, root: root, place: pane.place, tag: pane.tag))
+                        tool: process.line.tool, root: root, place: pane.place, tag: pane.tag, started: process.started,
+                        path: TerraformApplyMarker.executablePath(process.pid)))
             }
         }
         return found
     }
 
-    /// Interrupt: SIGINT to each, by pid or its own group.
-    static func interrupt(_ running: [Running]) {
-        for process in running { kill(interruptTarget(process), SIGINT) }
+    /// Interrupt: SIGINT to each, by pid or its own group
+    /// (`interruptTarget`, the rule kept exactly), through the one signal
+    /// path (docs/design/activity/analysis.md, 6.10): by the identity
+    /// `find` read, so a terraform that ended since leaves its pid's next
+    /// holder alone, and a group only when every member is terraform's —
+    /// its leader's session, started under it, the user's. A group that
+    /// isn't is refused and nothing is sent: the caller says so
+    /// (`notInterrupted`). What each send did, in `running`'s order.
+    @discardableResult
+    static func interrupt(_ running: [Running], signals: ProcessSignals = ProcessSignals()) -> [ActivitySignalAnswer] {
+        running.map { process in
+            guard let target = target(process) else { return .ended(now: nil) }
+            if interruptTarget(process) < 0 { return signals.sendToGroup(.int, leader: target) }
+            return signals.send(.int, to: target, alone: true)
+        }
+    }
+
+    /// Who `running` is, as `find` read it; nil when it read no start.
+    static func target(_ running: Running) -> ActivitySignalTarget? {
+        guard let started = running.started else { return nil }
+        return ActivitySignalTarget(ActivityProcessID(pid: running.pid, start: started), path: running.path)
+    }
+
+    /// Whether Interrupt reached it, or it had ended: either way the close
+    /// may wait for it to be gone.
+    static func reached(_ answer: ActivitySignalAnswer) -> Bool {
+        switch answer {
+        case .sent, .ended: true
+        case .refused, .failed, .ranAnotherProgram: false
+        }
+    }
+
+    /// What the window says when Interrupt didn't reach some of them —
+    /// refused, failed, or their pid running another program now: nothing
+    /// was sent to those, and the close isn't waiting on them. Nil when
+    /// every one was reached.
+    static func notInterrupted(_ running: [Running], answers: [ActivitySignalAnswer]) -> Question? {
+        let missed = zip(running, answers).filter { !reached($0.1) }
+        guard let (first, answer) = missed.first else { return nil }
+        let more = missed.count > 1 ? " and \(missed.count - 1) more" : ""
+        let why: String =
+            switch answer {
+            case .refused(let refusal): refusal.reason
+            case .failed(let errno): "macOS refused the signal (\(String(cString: strerror(errno))))."
+            case .ranAnotherProgram: "Its process runs another program now."
+            case .sent, .ended: ""
+            }
+        return Question(
+            title: "Interrupt didn't reach \(first.tool) \(first.operation) in \(first.root) (\(first.place))\(more).",
+            detail: "\(why) Nothing was sent to it. Close again to choose Close Anyway, or stop it in its pane.")
     }
 
     /// Whether any of them still runs.

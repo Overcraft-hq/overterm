@@ -261,12 +261,20 @@ extension TerminalWindowController {
         return alert
     }
 
-    /// The terraform writes in these tabs' panes, found now by pid.
+    /// The terraform writes in these tabs' panes, found now by pid — on the
+    /// main thread, since the close is answered now: a deliberate fresh
+    /// read at a decision point (CLAUDE.md, One census per tick), the
+    /// closing panes' trees alone. A pane not paired yet is paired from the
+    /// latest census first (microseconds); only one younger than that
+    /// census lists the app's children here, so that the guard fails
+    /// closed rather than miss a write.
     func terraformWrites(tabs: [Tab], panes: [TerminalView]? = nil, path: TerraformCloseGuard.Path) -> [TerraformCloseGuard.Running] {
+        let surfaces = SurfaceProcesses.shared
+        if surfaces.hasWaiting, let snapshot = ActivityMonitor.shared.sampler.latest, surfaces.pair(snapshot) { ActivityMonitor.shared.contextChanged() }
         var walked: [(login: pid_t, place: String, checkout: URL?, tag: String?)] = []
         for tab in tabs {
             for pane in tab.terminals where panes.map({ $0.contains { $0 === pane } }) ?? true {
-                guard let login = SurfaceProcesses.shared.loginPID(of: pane) else { continue }
+                guard let login = surfaces.pairedLoginPID(of: pane) ?? surfaces.loginPID(of: pane) else { continue }
                 let place = path == .pane ? "this pane" : "“\(tab.title)”"
                 walked.append((login, place, tab.checkoutSource?.root, pane.processTag))
             }
@@ -277,9 +285,14 @@ extension TerminalWindowController {
 
     /// Interrupt: SIGINT to each, the close held back; the panes' headers
     /// say "shutting down"; once they have stopped, a notice offers Close
-    /// Now — `proceed`, the close Interrupt held back — or keeps them.
+    /// Now — `proceed`, the close Interrupt held back — or keeps them. What
+    /// Interrupt didn't reach (`TerraformCloseGuard.notInterrupted`) is
+    /// said, never waited on as if interrupted.
     func interruptTerraform(_ running: [TerraformCloseGuard.Running], path: TerraformCloseGuard.Path, proceed: @escaping () -> Void) {
-        TerraformCloseGuard.interrupt(running)
+        let answers = TerraformCloseGuard.interrupt(running)
+        if let question = TerraformCloseGuard.notInterrupted(running, answers: answers) { terraformNotInterrupted(question) }
+        let running = zip(running, answers).filter { TerraformCloseGuard.reached($0.1) }.map(\.0)
+        guard !running.isEmpty else { return }
         terraformInterrupted = running
         TerraformPaneMonitor.shared.shuttingDown(running)
         Task { @MainActor [weak self] in
@@ -291,6 +304,24 @@ extension TerminalWindowController {
             guard let self, !TerraformCloseGuard.anyAlive(running) else { return }
             self.terraformInterrupted.removeAll { item in running.contains(item) }
             await self.terraformStoppedNotice(running, path: path, proceed: proceed)
+        }
+    }
+
+    /// "Interrupt didn't reach …": a sheet on the window once the close's
+    /// question has gone from it.
+    private func terraformNotInterrupted(_ question: TerraformCloseGuard.Question) {
+        let alert = NSAlert()
+        alert.messageText = question.title
+        alert.informativeText = question.detail
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "OK")
+        Task { @MainActor [weak self] in
+            for _ in 0..<240 {
+                guard let window = self?.window, window.attachedSheet != nil else { break }
+                try? await Task.sleep(for: .milliseconds(250))
+            }
+            guard let window = self?.window, window.attachedSheet == nil else { return }
+            alert.beginSheetModal(for: window) { _ in }
         }
     }
 

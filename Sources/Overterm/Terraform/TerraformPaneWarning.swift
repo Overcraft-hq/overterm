@@ -33,10 +33,15 @@ struct TerraformProcess: Equatable, Sendable {
             .standardizedFileURL
     }
 
-    /// The names read from a process's environment: nothing else is kept.
-    static func environmentNames(_ environment: [String: String]) -> (workspace: String?, dataDir: String?, profile: String?) {
-        func value(_ name: String) -> String? { environment[name].flatMap { $0.isEmpty ? nil : $0 } }
-        return (value("TF_WORKSPACE"), value("TF_DATA_DIR"), value("AWS_PROFILE"))
+    /// The names read from a process's environment, scanned for in place
+    /// (`ProcessArguments.facts`): no other entry becomes a `String`, and
+    /// only `ProcessArguments.ReaderName`'s may be asked for.
+    static let environmentNames: [ProcessArguments.ReaderName] = [.terraformWorkspace, .terraformDataFolder, .awsProfile]
+
+    /// Their values, in `environmentNames`' order: an empty one is none.
+    static func environment(_ values: [String?]) -> (workspace: String?, dataDir: String?, profile: String?) {
+        func value(_ index: Int) -> String? { values.indices.contains(index) ? values[index].flatMap { $0.isEmpty ? nil : $0 } : nil }
+        return (value(0), value(1), value(2))
     }
 }
 
@@ -83,15 +88,31 @@ enum TerraformProcesses {
         return String(decoding: buffer.prefix(Int(length)), as: UTF8.self)
     }
 
-    /// `pid` as a terraform process, or nil when it is none.
-    static func inspect(_ pid: pid_t, name: String? = nil, children: [pid_t]? = nil) -> TerraformProcess? {
+    /// `pid` as a terraform process, or nil when it is none. Its argv and
+    /// its environment come from one read of its area, in place
+    /// (`ProcessArguments.facts`): the words parsed into its command line
+    /// inside the read, and of the environment `TF_WORKSPACE`, `TF_DATA_DIR`
+    /// and `AWS_PROFILE` alone — an AWS key or a pane's MCP token beside
+    /// them never becomes a `String`.
+    static func inspect(
+        _ pid: pid_t, name: String? = nil, children: [pid_t]? = nil, kernel: some ActivityKernel = LiveActivityKernel()
+    ) -> TerraformProcess? {
         let name = name ?? self.name(of: pid) ?? ""
         guard TerraformCommandLine.tools.contains(name) || scriptShells.contains(name) else { return nil }
-        guard let args = ProcessInspector.procArgs(pid), let line = TerraformCommandLine.parse(arguments: args.arguments) else { return nil }
-        let names = TerraformProcess.environmentNames(args.environment)
+        // Its start before its argv, and again after: a pid taken by
+        // another process between the two is no answer — `started` is the
+        // process whose words were read, who the close guard's Interrupt
+        // may reach.
+        let started = kernel.process(pid)?.identity.start
+        let read = ProcessArguments.facts(of: pid, kernel: kernel, names: TerraformProcess.environmentNames, codeSigning: nil) { words, values in
+            TerraformCommandLine.parse(arguments: words).map { (line: $0, names: TerraformProcess.environment(values)) }
+        }
+        guard let read = read ?? nil else { return nil }
+        let cwd = kernel.workingDirectory(of: pid)
+        guard kernel.process(pid)?.identity.start == started else { return nil }
         var process = TerraformProcess(
-            pid: pid, line: line, cwd: ProcessInspector.workingDirectory(of: pid), workspaceVariable: names.workspace, dataDirVariable: names.dataDir,
-            awsProfile: names.profile, started: ProcessInspector.kinfo(pid)?.start)
+            pid: pid, line: read.line, cwd: cwd, workspaceVariable: read.names.workspace, dataDirVariable: read.names.dataDir,
+            awsProfile: read.names.profile, started: started)
         let below = children ?? descendants(of: pid, limit: 64)
         process.providers = below.filter { (self.name(of: $0) ?? "").hasPrefix("terraform-provider-") }.count
         return process
@@ -326,6 +347,9 @@ final class TerraformPaneMonitor: ObservableObject {
             processes = [:]
             return
         }
+        // A pane not paired yet is paired from a list read off the main
+        // thread; none is read while every pane is paired.
+        await SurfaceProcesses.shared.pairWaiting()
         var panes: [String: TerminalView] = [:]
         var candidates: [Candidate] = []
         var finished: [FinishedWrite] = []
@@ -333,10 +357,10 @@ final class TerraformPaneMonitor: ObservableObject {
             for tab in controller.store.tabs {
                 guard let checkout = tab.checkoutSource?.root, TerraformCheckouts.shared.hasRoots(checkout) != false else { continue }
                 finished += finishedWrites(in: tab, controller: controller, checkout: checkout)
-                // Paired once (a scan of the app's children), then kept.
+                // Paired above (or by the census), then kept: no scan here.
                 let running = tab.terminals.compactMap { pane -> (TerminalView, CommandBlock?, pid_t)? in
                     let command = controller.blocks(of: pane).ledger.running
-                    guard command != nil || tab.agent != nil, let login = SurfaceProcesses.shared.loginPID(of: pane) else { return nil }
+                    guard command != nil || tab.agent != nil, let login = SurfaceProcesses.shared.pairedLoginPID(of: pane) else { return nil }
                     return (pane, command, login)
                 }
                 guard !running.isEmpty else { continue }

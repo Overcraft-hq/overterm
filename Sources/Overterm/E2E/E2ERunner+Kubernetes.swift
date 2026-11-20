@@ -215,6 +215,12 @@ extension E2ERunner {
             "\(fake.requests.suffix(4))")
         check("what the cluster serves is read once, its CRDs watched", fake.watched.contains(KubernetesModel.crdName), "\(fake.watched)")
         await kubernetesPart("kubernetesStreamingLists") { await kubernetesStreamingLists(model, page, fake) }
+        // Pods' two rows: one selected, the other added with ⌘.
+        if await eventually(5, { Set(page.rows.map(\.id)).isSuperset(of: ["shop/web-7d9", "shop/worker-5c"]) }) {
+            await kubernetesCommandPressCheck(selected: "shop/web-7d9", adding: "shop/worker-5c")
+        } else {
+            check("the pods' two rows, to press", false, "\(page.rows.map(\.id))")
+        }
 
         // Keys, while the list has the keyboard.
         if let event = NSEvent.keyEvent(
@@ -801,8 +807,12 @@ extension E2ERunner {
             }
 
             """#
+        // Recorded at spawn, by itself: its pid in the run's scratch folder
+        // (the harness's leftover check, `RunLeftovers.recorded`); perl keeps it.
+        let scratch = folder.deletingLastPathComponent()
         let text = """
             #!/bin/sh
+            \(RunLeftovers.recordLine(in: scratch))
             printf '%s|%s\\n' "$KUBECONFIG" "$*" >> '\(log.path)'
             pod="${2#pod/}"
             ports="$3"
@@ -886,6 +896,7 @@ extension E2ERunner {
         }
         page.showKind(services)
         check("the Services list", await eventually(10) { page.rows.contains { $0.id == "shop/web" } }, "\(page.rows.map(\.id))")
+        await kubernetesPressChecks(id: "shop/web")
         page.selection = ["shop/web"]
         func verb(_ title: String, _ id: String = "shop/web") -> ResourceVerb? { page.verbs(for: [id]).first { $0.title == title } }
         check(
@@ -948,9 +959,15 @@ extension E2ERunner {
         check("drawn in the tab's pane header", await shownText(15) { $0.contains(":\(local)") && $0.contains("web-8k2") } != nil)
         app.showKubernetesPage()
         if let tab {
-            let info = TabInfoModel(tab: tab, inspector: ProcessInspector(), claudeReader: ClaudeUsageReader())
+            let info = TabInfoModel(tab: tab, claudeReader: ClaudeUsageReader())
             await info.refreshPorts()
             check("Tab Info lists it", info.ports.contains { $0.port == local && $0.forward?.pod == "web-8k2" }, "\(info.ports)")
+            // Its pill's Stop… asks (6.12): Cancel here, the button on the Quick Forward below.
+            if let pill = tab.forwardPorts.first(where: { $0.forward?.id == id }) {
+                await forwardFreeChecks(pill, in: tab, confirm: false)
+            } else {
+                check("the forward's pill, to free", false, "\(tab.forwardPorts.map(\.port))")
+            }
             // Closing the tab asks, even when Settings says only when something runs.
             check(
                 "closing its tab asks for its forward alone",
@@ -1004,7 +1021,8 @@ extension E2ERunner {
             "and forwards on the new local port", await eventually(15) { forwards.forward(id)?.isForwarding == true && forwards.forward(id)?.spec.localPort == moved },
             forwards.forward(id)?.state.text ?? "gone")
         check("which answers", await answer(moved) == "web-8k2")
-        check("the old one no longer listens", await eventually(5) { !ListeningPorts.isBound(local) })
+        // Watched with the census's socket walk, never by binding it (6.8).
+        check("the old one no longer listens", await eventuallyAsync(8) { await ListeningPorts.holder(of: local) == nil })
 
         // kubectl exits with the pod still there: started again on it.
         let third = forwards.forward(id)?.pid ?? 0
@@ -1060,6 +1078,12 @@ extension E2ERunner {
         check("nothing of it reached the API but GETs", fake.writes.isEmpty && !fake.requests.contains { $0.path.contains("portforward") })
         await kubernetesDatabaseAndIngress(model, page, fake, forwards: log)
         check("nor of d and o", fake.writes.isEmpty && !fake.requests.contains { $0.path.contains("portforward") })
+        // The Quick Forward's pill: Stop… asked, then confirmed.
+        if let tab, let quick, let pill = tab.forwardPorts.first(where: { $0.forward?.id == quick.id }) {
+            await forwardFreeChecks(pill, in: tab, confirm: true)
+        } else {
+            check("the Quick Forward's pill, to free", false, "\(tab?.forwardPorts.map(\.port) ?? [])")
+        }
         app.toggleKubernetesPage(nil)
         return forwards.forwards.compactMap(\.pid)
     }

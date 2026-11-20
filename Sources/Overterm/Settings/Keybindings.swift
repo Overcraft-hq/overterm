@@ -263,9 +263,17 @@ enum KeyCommands {
         .init("tabs.peek", "Tab Peek", group: "Tabs", key: "shift+cmd+e"),
         .init("agents.overview", "Agent Overview", group: "Tabs", key: "shift+cmd+a"),
         .init("view.presentation", "Presentation Mode", group: "Window", key: "ctrl+cmd+p"),
-        // Groups. The designs asked for ⇧⌘G and ⌥⌘I; Ghostty v1.3.1 binds
-        // both (navigate_search, inspector) and eats them before the menu,
-        // so these live on ⌃⌘, which is free apart from ⌃⌘[ and ⌃⌘].
+        // Groups. The designs asked for ⇧⌘G and ⌥⌘I; Ghostty binds both
+        // (navigate_search, inspector) and eats them before the menu, so
+        // these went to ⌃⌘ — which isn't free. Ghostty v1.4.0's macOS ⌃⌘
+        // defaults are the arrows (resize_split), = (equalize_splits) and
+        // F (toggle_fullscreen), and ⌃⇧⌘J; its ⌃⌘[ and ⌃⌘] are Linux's only
+        // (src/config/Config.zig). ⌃⌘F is taken over from Ghostty's
+        // fullscreen for Focus on This Group: a menu command with no Ghostty
+        // action, so `ghosttyLines` writes ⌃⌘F's unbind. ⌃⌘= stays Ghostty's
+        // action (`splits.equalize`, equalize_splits on its own key), and
+        // the arrows stay Ghostty's resize_split. A new ⌃⌘ shortcut takes
+        // none of those without saying so here.
         .init("groups.new", "Group Selected Tabs", group: "Groups", key: "ctrl+cmd+n"),
         .init("groups.switcher", "Group Switcher", group: "Groups", key: "ctrl+cmd+g"),
         .init("groups.focus", "Focus on This Group", group: "Groups", key: "ctrl+cmd+f"),
@@ -310,14 +318,22 @@ enum KeyCommands {
         .init("docker.composeRestart", "Compose Restart (the checkout's stack)", group: "Panels"),
         .init("docker.composeWatch", "Compose Watch (the checkout's stack)", group: "Panels"),
         .init("kubernetes.page", "Kubernetes", group: "Panels", key: "alt+cmd+j"),
-        // Not ⇧⌥⌘J, as Docker's ⇧⌥⌘P would have it: Ghostty v1.3.1 binds
-        // that (write_screen_file:open), and ⌘J, ⇧⌘J and ⌃⇧⌘J. Its ⌃⌘
-        // defaults are only [ and ].
+        // Not ⇧⌥⌘J, as Docker's ⇧⌥⌘P would have it: Ghostty v1.4.0 binds
+        // that (write_screen_file:open), and ⌘J, ⇧⌘J and ⌃⇧⌘J. ⌃⌘J is
+        // free: its macOS ⌃⌘ defaults are the arrows, = and F.
         .init("kubernetes.switch", "Kubernetes Switcher", group: "Panels", key: "ctrl+cmd+j"),
         // No key by default (the design's Section 7): the user can bind it.
         .init("kubernetes.terminal", "Terminal in Kubernetes Context…", group: "Panels"),
         // No key by default: ⇧⌘E is Tab Peek's.
         .init("kubernetes.exportCSV", "Export Kubernetes List as CSV…", group: "Panels"),
+        // ⌥⌘A and ⌃⌘A (docs/design/activity/analysis.md, 6.3): bound by
+        // neither KeyCommands nor Ghostty v1.4.0's macOS defaults (⌥⌘ only
+        // W, I and the arrows; ⌃⌘ the arrows, = and F).
+        .init("activity.page", "Activity", group: "Panels", key: "alt+cmd+a"),
+        .init("activity.switch", "Activity Switcher", group: "Panels", key: "ctrl+cmd+a"),
+        // No key by default (6.3): the user can bind it.
+        .init("activity.listening", "Activity: Listening", group: "Panels"),
+        .init("activity.freePort", "Free a Port…", group: "Panels"),
         // ⌥⌘E and ⌃⌘E: bound by neither KeyCommands nor Ghostty v1.4.0's
         // defaults (src/config/Config.zig: ⌘E is search_selection, ⇧⌘E Tab Peek's here).
         .init("terraform.show", "Terraform", group: "Panels", key: "alt+cmd+e"),

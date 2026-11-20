@@ -42,6 +42,8 @@ final class E2ERunner {
         "mongodb": { await $0.mongoScenario() },
         "mongoOps": { await $0.mongoOpsScenario() },
         "suspend": { await $0.suspendScenario() },
+        "activity": { await $0.activityScenario() },
+        "activityPerf": { await $0.activityPerfScenario() },
         "databaseAgent": { await $0.databaseAgentScenario() },
         "databaseTunnel": { await $0.databaseTunnelScenario() },
         "sessionGroups": { await $0.sessionGroupsScenario() },
@@ -143,6 +145,7 @@ final class E2ERunner {
         let runner = E2ERunner(app: app)
         Task { @MainActor in
             try? FileManager.default.createDirectory(at: runner.scratch, withIntermediateDirectories: true)
+            runner.announceRun()
             // Photographing (README's pictures): every scenario in one
             // fixed frame, so the pictures match whichever scenario took them.
             if ProcessInfo.processInfo.environment["OVERTERM_DUMP_PNG"]?.isEmpty == false { await runner.photoFrame() }
@@ -187,6 +190,8 @@ final class E2ERunner {
                 "at the end, every child it started is gone", gone,
                 "running: \(started.filter(\.isRunning).map(\.pid) + ManagedProcess.livePIDs + KubeProcessRun.livePIDs)")
         }
+        // And nothing else of the run's: its marker, a stand-in's record, a sign (10.5).
+        await checkNothingLeftRunning()
         if AppEnvironment.ownsSupportDirectory {
             try? FileManager.default.removeItem(at: AppEnvironment.supportDirectory)
         }
@@ -229,6 +234,16 @@ final class E2ERunner {
         while !condition() {
             if Date() > deadline { return false }
             try? await Task.sleep(nanoseconds: 50_000_000)
+        }
+        return true
+    }
+
+    /// `eventually`, for a condition that asks an actor.
+    func eventuallyAsync(_ timeout: TimeInterval, _ condition: () async -> Bool) async -> Bool {
+        let deadline = Date().addingTimeInterval(timeout)
+        while await !condition() {
+            if Date() > deadline { return false }
+            await pause(0.05)
         }
         return true
     }
@@ -3220,7 +3235,11 @@ final class E2ERunner {
         time.sleep(60)
         """.write(to: server, atomically: true, encoding: .utf8)
         func readPort() -> Int? { (try? String(contentsOf: portFile, encoding: .utf8)).flatMap { Int($0) } }
-        await run("python3 \(server.path) &", timeout: 10) { readPort() != nil }
+        // Its command line carries a password, invented and made here, never
+        // one contiguous string in the source: Tab Info's tooltip must not
+        // show it (2.4 item 8).
+        let planted = ["acme", "info", "sentinel", String(97_531)].joined(separator: "-")
+        await run("python3 \(server.path) --token=\(planted) &", timeout: 10) { readPort() != nil }
         let port = readPort()
         check("a dev server starts in the tab", port != nil)
         // A command line with a fake password in it, never typed: a script
@@ -3242,24 +3261,31 @@ final class E2ERunner {
         app.showInfo(for: first)
         check("the popover opens", await eventually(2) { self.app.infoPopover?.isShown == true })
         guard let model = app.infoModel else { return check("a model", false) }
-        let listed = await eventually { model.processes.flatMap(\.flattened).contains { $0.command.hasPrefix("sleep 61") } }
+        let listed = await eventually { model.processes.flatMap(\.flattened).contains { $0.maskedCommand.hasPrefix("sleep 61") } }
         let all = model.processes.flatMap(\.flattened)
-        // Its own sleep's pid and start time, read while it is still its
-        // shell's child: signalled at the end only while it is that process.
-        let sleeper = all.first { $0.command.hasPrefix("sleep 61") }.flatMap { node in
-            ProcessInspector.kinfo(node.pid).flatMap { $0.parent == node.parent ? (pid: node.pid, start: $0.start) : nil }
-        }
         // Counts only: the tab runs what the user's shell config starts too.
         check("its background job is listed", listed, "\(all.count) processes, \(all.filter { $0.name == "sleep" }.count) sleeps")
-        check("under its shell", model.processes.contains { ["zsh", "bash", "fish", "sh"].contains($0.name) && $0.flattened.contains { $0.command.hasPrefix("sleep 61") } })
-        check("the other tab's job is not", !all.contains { $0.command.hasPrefix("sleep 62") })
-        check("memory is measured", model.totalMemory > 0)
+        check("under its shell", model.processes.contains { ["zsh", "bash", "fish", "sh"].contains($0.name) && $0.flattened.contains { $0.maskedCommand.hasPrefix("sleep 61") } })
+        check("the other tab's job is not", !all.contains { $0.maskedCommand.hasPrefix("sleep 62") })
+        // Memory is the footprint, what Activity Monitor shows; real memory
+        // is in the tooltip.
+        check(
+            "memory is shown, as Activity Monitor counts it",
+            model.totalFootprint > 0 && all.contains { $0.maskedCommand.hasPrefix("sleep 61") && $0.footprint > 0 },
+            "footprint \(model.totalFootprint)")
+        let servers = await eventually(8) { model.processes.flatMap(\.flattened).contains { $0.maskedCommand.contains("server.py") } }
+        let serverNodes = model.processes.flatMap(\.flattened).filter { $0.maskedCommand.contains("server.py") }
+        check(
+            "the server's tooltip masks the password on its command line",
+            servers && serverNodes.allSatisfy { TabInfoView.help(for: $0).contains("--token=\(Secrets.credentialMask)") }
+                && !serverNodes.contains { TabInfoView.help(for: $0).contains(planted) || $0.maskedCommand.contains(planted) },
+            "\(serverNodes.count) server processes")
         check("the location is the tab's directory", await eventually { model.location?.directory == first.workingDirectory })
         if let port {
             let shown = await eventually(8) { model.ports.contains { $0.port == port } }
             check("its listening port is shown", shown, "ports \(model.ports.map(\.port)) want \(port)")
-            // And the pane header's pills, which come from the same scan
-            // (every third tick of the poll that walks the selected tab).
+            // And the pane header's pills, which come from the same census
+            // (the light tick, every tab of a window on screen).
             let onTheTab = await eventually(12) { first.ports.contains { $0.port == port } }
             check("and so is the tab's, for the pane header", onTheTab, "\(first.ports.map(\.port))")
             check(
@@ -3271,7 +3297,7 @@ final class E2ERunner {
         if let perl {
             func node() -> ProcessNode? { model.processes.flatMap(\.flattened).first { $0.pid == perl.pid && $0.name == "perl" } }
             let listed = await eventually { node() != nil }
-            let command = node()?.command ?? ""
+            let command = node()?.maskedCommand ?? ""
             check(
                 "a command with a password in it is listed masked", listed && command.contains(Secrets.credentialMask) && !command.contains(password),
                 command.replacingOccurrences(of: password, with: "<password>"))
@@ -3301,18 +3327,130 @@ final class E2ERunner {
         await eventually(2) { self.app.infoPopover == nil }
         check("closing it stops the refresh", app.infoModel == nil)
         await backgroundTabCPU(first: first)
-        // Leave nothing of its own behind, each by its pid while that is
-        // still its process — never another sleep the tab runs; the typed
-        // `kill %1` is its shell's own.
-        if let sleeper, ProcessInspector.kinfo(sleeper.pid)?.start == sleeper.start { kill(sleeper.pid, SIGTERM) }
+        // Its 1 s gone: the window's light tick at the interval — or at the
+        // 5 s a busy Mac stretches it to (7.3), which says nothing of Tab Info.
+        let monitor = ActivityMonitor.shared
+        check(
+            "and its reads, the census back to the window's light tick",
+            await eventually(5) { monitor.cadence >= monitor.interval && monitor.demand.focus.isEmpty && !monitor.demand.full && monitor.isTicking },
+            "every \(monitor.cadence), \(monitor.demand.focus.count) in focus")
+
+        // A tab that isn't selected: a server started in it shows on its
+        // pill without visiting it (2.4 item 7) — the light tick reads every
+        // tab of a window on screen, where the poll read the selected one.
+        if let second = app.store.tabs.first(where: { $0 !== first }) {
+            func server(_ name: String) -> (script: URL, port: () -> Int?) {
+                let file = out("\(name).port")
+                let script = out("\(name).py")
+                try? """
+                import socket, time
+                s = socket.socket()
+                s.bind(("127.0.0.1", 0))
+                s.listen()
+                open("\(file.path)", "w").write(str(s.getsockname()[1]))
+                time.sleep(60)
+                """.write(to: script, atomically: true, encoding: .utf8)
+                return (script, { (try? String(contentsOf: file, encoding: .utf8)).flatMap { Int($0) } })
+            }
+            let background = server("background")
+            second.terminal.insertText("python3 \(background.script.path) &")
+            second.terminal.pressReturn()
+            let started = await eventually(10) { background.port() != nil }
+            let backgroundPort = background.port() ?? -1
+            let shown = await eventually(10) { second.ports(of: second.terminal).contains { $0.port == backgroundPort } }
+            check(
+                "a server started in a tab that isn't selected shows on its pill", started && shown,
+                "\(second.ports.map(\.port)) want \(backgroundPort)")
+            check(
+                "which makes that tab a server, never selected", second.kind == .server && app.store.selected === first, "\(second.kind.rawValue)")
+            check(
+                "opened where it listens", second.ports.first { $0.port == backgroundPort }?.url?.absoluteString == "http://127.0.0.1:\(backgroundPort)",
+                second.ports.first { $0.port == backgroundPort }?.url?.absoluteString ?? "no URL")
+            if let pill = second.ports.first(where: { $0.port == backgroundPort }) {
+                await pillOpenChecks(pill, in: second)
+                await pillFreeChecks(pill, in: second)
+            }
+
+            // A window off screen gives the light tick back; its tabs are
+            // read again as it shows (7.9) — minimized here, so the window's
+            // own notifications give the want back and take it again (an
+            // isolated run's window ignores its occlusion). Nothing ticks
+            // meanwhile, so nothing of it can change: no moment is sampled.
+            window.miniaturize(nil)
+            check(
+                "a minimized window wants no light tick",
+                await eventually(5) { self.window.isMiniaturized && !self.app.lightTickWanted && !monitor.isTicking && !monitor.isSampling },
+                "minimized \(window.isMiniaturized), wanted \(app.lightTickWanted), ticking \(monitor.isTicking)")
+            let ticks = monitor.snapshot?.tick
+            let hidden = server("hidden")
+            second.terminal.insertText("python3 \(hidden.script.path) &")
+            second.terminal.pressReturn()
+            let hiddenUp = await eventually(10) { hidden.port() != nil }
+            let hiddenPort = hidden.port() ?? -1
+            check(
+                "its tabs aren't read while it is minimized",
+                hiddenUp && !monitor.isTicking && monitor.snapshot?.tick == ticks && !second.ports.contains { $0.port == hiddenPort },
+                "\(second.ports.map(\.port))")
+            window.deminiaturize(nil)
+            check(
+                "and are read again as it comes back",
+                await eventually(5) { !self.window.isMiniaturized && self.app.lightTickWanted && second.ports.contains { $0.port == hiddenPort } },
+                "\(second.ports.map(\.port)) want \(hiddenPort)")
+            // Its servers, by their identities as the census named them.
+            for port in second.ports where [backgroundPort, hiddenPort].contains(port.port) {
+                if let identity = port.identity, ProcessInspector.kinfo(identity.pid)?.start == identity.start { kill(identity.pid, SIGTERM) }
+            }
+        } else {
+            check("a second tab", false)
+        }
+
+        // A split tab: a group a pane, each pane's busy child reading its
+        // CPU — read pane by pane, each pane evicted the other's baselines,
+        // and both read 0% (2.4 item 1).
+        let busy = out("busy.sh")
+        // It ends itself after 15 s of CPU, whatever happens to the run.
+        try? "ulimit -c 0; ulimit -t 15; while :; do :; done\n".write(to: busy, atomically: true, encoding: .utf8)
+        func busyIn(_ pane: TerminalView) -> Bool {
+            ProcessInspector().tree(root: SurfaceProcesses.shared.loginPID(of: pane), tag: nil).flatMap(\.flattened).contains {
+                $0.maskedCommand.contains("busy.sh")
+            }
+        }
+        let leftPane = first.terminal
+        check("a busy loop in the first pane", await run("sh \(busy.path) &", timeout: 10) { busyIn(leftPane) })
+        app.splitRight(nil)
+        let rightPane = first.terminals.count == 2 ? first.terminals[1] : nil
+        if let rightPane {
+            await eventually(2) { self.window.firstResponder === rightPane }
+            check("and one in its neighbour", await run("sh \(busy.path) &", timeout: 10) { busyIn(rightPane) })
+        } else {
+            check("Split Right makes a second pane", false)
+        }
+        app.showInfo(for: first)
+        guard let split = app.infoModel else { return check("Tab Info on the split tab", false) }
+        func busyNodes(_ group: TabInfoModel.PaneGroup) -> [ProcessNode] {
+            group.processes.flatMap(\.flattened).filter { $0.maskedCommand.contains("busy.sh") }
+        }
+        let grouped = await eventually(10) { split.panes.count == 2 && split.panes.allSatisfy { !busyNodes($0).isEmpty } }
+        check(
+            "a group a pane, each with its own busy loop", grouped && split.rows.filter { if case .pane = $0.kind { true } else { false } }.count == 2,
+            "\(split.panes.count) groups")
+        let measured = await eventually(15) { split.panes.count == 2 && split.panes.allSatisfy { busyNodes($0).contains { ($0.cpuPercent ?? 0) > 0 } } }
+        check(
+            "both panes' busy loops read their CPU", measured,
+            split.panes.map { group in busyNodes(group).map { TabInfoView.cpu($0.cpuPercent) }.joined(separator: ",") }.joined(separator: " | "))
+        let busyIdentities = split.panes.flatMap(busyNodes).map(\.identity)
+        app.showSelectedTabInfo(nil)
+        await eventually(2) { self.app.infoPopover == nil }
+
+        // Leave nothing behind: what this scenario started, each found in its
+        // own panes and its identity read again before the signal.
+        let started = all.filter { $0.maskedCommand.hasPrefix("sleep 61") || $0.maskedCommand.contains("server.py") }.map(\.identity) + busyIdentities
+        for identity in started where ProcessInspector.kinfo(identity.pid)?.start == identity.start { kill(identity.pid, SIGTERM) }
         if let perl, ProcessInspector.kinfo(perl.pid)?.start == perl.start { kill(perl.pid, SIGTERM) }
         for tab in app.store.tabs {
             tab.terminal.insertText("kill %1 2>/dev/null")
             tab.terminal.pressReturn()
         }
-        // Last, the server's pill: Stop… asked, checked, then sent
-        // (E2ERunner+PortPill).
-        if let port { await portPillStop(in: first, port: port) }
     }
 
     /// Tab Info on a tab that isn't selected, while the window's agent poll
@@ -3502,6 +3640,29 @@ final class E2ERunner {
         tab.terminal.insertText("kill %1")
         tab.terminal.pressReturn()
         check("when the agent is gone, back to the shell's checkout", await eventually(10) { self.app.diff.root?.resolvingSymlinksInPath() == main })
+
+        // Off screen no light tick reads the tab (docs/design/activity/
+        // analysis.md, 7.9), and agents ask exactly then (7.1): an agent's
+        // MCP call reads its agent's folder again first and waits for it, so
+        // the worktree it moved into is its tools' scope at its first ask.
+        app.lightTickVisibility = false
+        app.updateLightTick()
+        let login = SurfaceProcesses.shared.loginPID(of: tab.terminal) ?? 0
+        func agentRuns() -> Bool { TerraformProcesses.descendants(of: login).contains { TerraformProcesses.name(of: $0) == "sleep" } }
+        let started = await run("bash \(script.path) &", timeout: 10) { agentRuns() }
+        let tag = tab.terminal.processTag
+        let asked = await TerraformMCP.paneCheckout?(tag)
+        check(
+            "off screen, an agent's tf_ call is scoped to the worktree it moved to, at its first ask",
+            started && asked?.resolvingSymlinksInPath() == feat, asked?.lastPathComponent ?? "none")
+        await KubeMCP.paneFollow?(tag)
+        check("and its k8s_ calls", KubeMCP.paneCheckout?(tag)?.resolvingSymlinksInPath() == feat)
+        check("its tab follows it there", await eventually(2) { self.app.diff.root?.resolvingSymlinksInPath() == feat })
+        tab.terminal.insertText("kill %1")
+        tab.terminal.pressReturn()
+        app.lightTickVisibility = nil
+        app.updateLightTick()
+        check("on screen again, back to the shell's checkout", await eventually(10) { self.app.diff.root?.resolvingSymlinksInPath() == main })
         check(
             "session keeps an attachment",
             {
@@ -3830,11 +3991,18 @@ final class E2ERunner {
         app.showInfo(for: tab)
         if let model = app.infoModel {
             let both = await eventually(8) {
-                let commands = model.processes.flatMap(\.flattened).map(\.command)
+                let commands = model.processes.flatMap(\.flattened).map(\.maskedCommand)
                 return commands.contains { $0.hasPrefix("sleep 71") } && commands.contains { $0.hasPrefix("sleep 72") }
             }
             // A count: the panes run what the user's shell config starts too.
             check("Tab Info lists every pane's processes", both, "\(model.processes.flatMap(\.flattened).count) processes")
+            // A group a pane: each pane's job under its own.
+            func job(_ index: Int, _ command: String) -> Bool {
+                model.panes.indices.contains(index) && model.panes[index].processes.flatMap(\.flattened).contains { $0.maskedCommand.hasPrefix(command) }
+            }
+            check(
+                "a group a pane, each pane's job in its own", model.panes.map(\.id) == tab.terminals.map(\.processTag) && job(0, "sleep 71") && job(1, "sleep 72"),
+                model.panes.map { "\($0.processes.flatMap(\.flattened).count)" }.joined(separator: " | "))
             // And measures them, though it reads the panes one after the
             // other: a read once kept only its own pane's CPU baselines, and
             // every pane's processes read 0%.
@@ -3858,6 +4026,14 @@ final class E2ERunner {
             "its port is the right pane's", await eventually(15) { tab.ports(of: right).contains { $0.port == 47819 } },
             "\(tab.ports.map(\.port))")
         check("not the left one's", !tab.ports(of: first).contains { $0.port == 47819 }, "\(tab.ports(of: first).map(\.port))")
+
+        // Stage 0's spikes (3.11): the pane's pty against the pairing, the
+        // bridge in the socket walk, netstat in a pane.
+        await paneTTYChecks(tab)
+        await bridgeInSocketWalkCheck()
+        await paneNetstatNote()
+        window.makeFirstResponder(right)
+        await eventually(2) { tab.terminal === right }
 
         right.perform(binding: "new_split:down")
         check("Ghostty's new_split makes a third", tab.terminals.count == 3)
@@ -4352,8 +4528,8 @@ final class E2ERunner {
         app.newTab(in: worktree)
         guard let claudeTab = app.store.selected else { return check("a tab", false) }
         await run("bash \(script.path) &", timeout: 6) {
-            ProcessInspector().tree(root: SurfaceProcesses.shared.loginPID(of: claudeTab.terminal), tag: claudeTab.terminal.processTag, commands: true)
-                .flatMap(\.flattened).contains { $0.command.contains("--resume") }
+            ProcessInspector().tree(root: SurfaceProcesses.shared.loginPID(of: claudeTab.terminal), tag: claudeTab.terminal.processTag)
+                .flatMap(\.flattened).contains { $0.maskedCommand.contains("--resume") }
         }
         app.refreshSessions()
         check("the running one is known, by its --resume id", await eventually(5) { self.app.sessions.running[ids.feature] == claudeTab.id })

@@ -52,6 +52,11 @@ enum AgentUsageCommand {
     /// request, and nothing waits for it.
     static let timeout: TimeInterval = 20
 
+    /// What it is given: the app's environment, marked as this run's (D-15).
+    static func environment(_ inherited: [String: String] = ProcessInfo.processInfo.environment) -> [String: String] {
+        OvertermRun.current.marking(inherited, helper: .agentUsage)
+    }
+
     /// Runs `claude -p "/usage"`. Blocking; call off the main thread.
     /// Returns what it printed, which is what the pane's numbers must
     /// agree with; the structured figures are read from the file it
@@ -62,6 +67,7 @@ enum AgentUsageCommand {
         let process = Process()
         process.executableURL = executable
         process.arguments = ["-p", "/usage"]
+        process.environment = environment()
         process.currentDirectoryURL = FileManager.default.homeDirectoryForCurrentUser
         let out = Pipe()
         process.standardOutput = out

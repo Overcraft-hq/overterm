@@ -26,6 +26,11 @@ struct DockerActions {
     var downloadFile: (DockerFileSource, String) -> Void = { _, _ in }
     /// A tab of the window, brought up.
     var showTab: (UUID) -> Void = { _ in }
+    /// A port's holder on the Activity page (6.12): Listening with the
+    /// port selected — its process's row when a pid is known — at the
+    /// holding tab's checkout when a tab holds it, else the Mac's; the
+    /// port's protocol, its conflict's.
+    var showInActivity: (Int, String, pid_t?, UUID?) -> Void = { _, _, _, _ in }
     /// A file on the Mac, in the editor.
     var edit: (URL) -> Void = { _ in }
     /// A copy made to be read, in the editor; removed when its tab closes.

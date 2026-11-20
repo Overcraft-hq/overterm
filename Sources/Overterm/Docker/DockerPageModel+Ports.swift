@@ -311,7 +311,7 @@ extension DockerPageModel {
     /// What the stack would run into now, and where its ports would go:
     /// its name, each port it wants among the other stacks' containers and
     /// on this Mac, the ports other overrides give out. `namingHolders`:
-    /// lsof names what holds a port (for the question).
+    /// the census names what holds a port (for the question).
     private func portPlan(
         _ config: ComposeConfig, _ setup: ComposeUpSetup, running: String?, _ request: UpRequest, keep: [ComposePortMove], namingHolders: Bool
     ) async -> ComposePortPlan {
@@ -341,12 +341,12 @@ extension DockerPageModel {
     }
 
     /// Who an unknown holder is: a process in one of the windows' tabs, or
-    /// lsof's (only the user's own processes; another's stays unknown).
+    /// the census's (only the user's own processes; another's stays unknown).
     private func refine(_ taken: [ComposePortKey: DockerPortConflict.Holder]) async -> [ComposePortKey: DockerPortConflict.Holder] {
         var refined = taken
         var asking: [ComposePortKey] = []
         for (key, holder) in taken where holder == .unknown {
-            if let (id, title, process) = ContainerSession.tabHolding(key.port) {
+            if let (id, title, process) = await ContainerSession.tabHolding(key.port) {
                 refined[key] = .tab(id: id, title: title, process: process)
             } else if key.proto == "tcp" {
                 asking.append(key)

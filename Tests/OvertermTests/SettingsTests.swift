@@ -27,6 +27,33 @@ final class SettingsTests: XCTestCase {
         try text.write(to: url, atomically: true, encoding: .utf8)
     }
 
+    /// Settings ▸ Activity (docs/design/activity/analysis.md, 6.13): its
+    /// six entries, on by default, the census every 2 s; the interval's
+    /// choices, an unknown one 2 s; everyone's and the apps' services off
+    /// with the page; the left-behind note not (6.9: it reads only the
+    /// tabs' own processes).
+    func testActivitysSettings() {
+        let settings = Settings(url: url, watch: false)
+        XCTAssertEqual(
+            SettingsSchema.specs(in: .activity).map(\.key),
+            [
+                "activity.enabled", "activity.interval", "activity.everyone", "activity.appServices", "activity.otherListeners", "activity.unixSockets", "activity.leftBehindNotice",
+                "activity.agentAccess",
+            ])
+        XCTAssertTrue(
+            settings.activityEnabled && settings.activityEveryone && settings.activityAppServices && settings.activityLeftBehindNotice
+                && settings.activityAgentAccess)
+        XCTAssertEqual(settings.activityInterval, .seconds(2))
+        settings.set("activity.interval", .string("1"))
+        XCTAssertEqual(settings.activityInterval, .seconds(1))
+        settings.set("activity.interval", .string("5"))
+        XCTAssertEqual(settings.activityInterval, .seconds(5))
+        settings.set("activity.enabled", .bool(false))
+        XCTAssertFalse(settings.activityEveryone || settings.activityAppServices || settings.activityAgentAccess)
+        XCTAssertTrue(settings.activityLeftBehindNotice)
+        XCTAssertTrue(SettingsSection.activity.matches("activity.interval"))
+    }
+
     func testDefaultsKeepTodaysBehaviour() {
         let settings = Settings(url: url, watch: false)
         XCTAssertTrue(settings.restoreTabs)

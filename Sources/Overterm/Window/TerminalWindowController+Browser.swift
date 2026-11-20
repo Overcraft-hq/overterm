@@ -182,7 +182,9 @@ extension TerminalWindowController {
     /// A link from Tab Info or a pane header's port: here or the system's,
     /// as Settings ▸ Browser says.
     func openLink(_ url: URL, for tab: Tab?) {
-        if BrowserLinks.opensInside(url, policy: Settings.shared.browserLinks) {
+        let inside = BrowserLinks.opensInside(url, policy: Settings.shared.browserLinks)
+        if let linkRecorder { return linkRecorder(url, inside) }
+        if inside {
             openInBrowser(url, for: tab)
         } else {
             NSWorkspace.shared.open(url)
