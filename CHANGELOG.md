@@ -6,6 +6,10 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
+## 1.6.3 — 2026-11-22
+
+- make test-changed runs under macOS's bash 3.2 and picks every test a change can reach
+
 ## 1.6.2 — 2026-11-19
 
 - Activity (⌥⌘A, its switcher ⌃⌘A — the listening ports and the busiest processes, `:5000` found with no page showing): every process and every open port on this Mac, by checkout, tab and agent — filtered (`name:node|bun cpu:>50 mem:>1g`), sorted with htop's keys, followed and paused, its columns picked, moved and kept, its order held while you point at it, the selected process's detail beside
