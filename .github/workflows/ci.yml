@@ -11,7 +11,9 @@
 #
 # Pull requests, and pushes to main too: the repository is public, so the
 # macOS minutes cost nothing, and commits land on main without a pull request
-# — the one above did. A newer run on the same ref cancels the older one.
+# — the one above did. On a pull request a newer push cancels the older run;
+# on main every commit's run goes to the end (its group is the commit): a
+# cancelled one saved no cache and left Release waiting on "CI is cancelled".
 #
 # The end-to-end scenarios (make e2e) open windows and are not run here;
 # docs/testing.md has them, run before calling a change done.
@@ -33,8 +35,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  group: ci-${{ github.event_name == 'push' && github.sha || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Least privilege: CI only reads the repository.
 permissions:
