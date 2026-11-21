@@ -143,13 +143,8 @@ jobs:
           ls -d /Applications/Xcode_*.app
           sudo xcode-select -s "/Applications/Xcode_$XCODE.app"
 
-      - name: Swift version
-        run: swift --version
-
       - name: Lint (swift-format, strict)
         run: swift format lint --strict --recursive Sources Tests
-
-      - uses: jdx/mise-action@v5  # Zig, pinned in mise.toml
 
       # The same cache as the Release workflow's: one key on both build
       # scripts, mise.toml (Zig) and the Xcode (its SDK and libtool).
@@ -159,6 +154,10 @@ jobs:
         with:
           path: Frameworks
           key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
+
+      # Zig, pinned in mise.toml: only GhosttyKit's build uses it.
+      - uses: jdx/mise-action@v5
+        if: steps.frameworks.outputs.cache-hit != 'true'
 
       # Ghostty's shaders need the Metal toolchain, a download of its own
       # since Xcode 26 (docs/ghostty.md) — fetched only if the image lacks it.
@@ -242,14 +241,16 @@ jobs:
           ls -d /Applications/Xcode_*.app
           sudo xcode-select -s "/Applications/Xcode_$XCODE.app"
 
-      - uses: jdx/mise-action@v5  # Zig, pinned in mise.toml
-
       - name: Restore GhosttyKit and TreeSitterKit
         id: frameworks
         uses: actions/cache@v6
         with:
           path: Frameworks
           key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
+
+      # Zig, pinned in mise.toml: only GhosttyKit's build uses it.
+      - uses: jdx/mise-action@v5
+        if: steps.frameworks.outputs.cache-hit != 'true'
 
       # Ghostty's shaders need the Metal toolchain, a download of its own
       # since Xcode 26 (docs/ghostty.md) — fetched only if the image lacks it.
