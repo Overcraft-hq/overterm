@@ -34,9 +34,10 @@ test:
 ## BASE (origin/main), what isn't committed yet too (Scripts/affected-tests.sh)
 BASE ?= origin/main
 test-changed:
-	@filter="$$( { git diff --name-only $(BASE)...HEAD; git diff --name-only HEAD; \
-		git ls-files --others --exclude-standard; } | sort -u | ./Scripts/affected-tests.sh )"; \
+	@filter="$$( { git diff --name-only --no-renames $(BASE)...HEAD; git diff --name-only --no-renames HEAD; \
+		git ls-files --others --exclude-standard; } | sort -u | ./Scripts/affected-tests.sh )" || exit 1; \
 	case "$$filter" in \
+		"") echo "Scripts/affected-tests.sh printed nothing." >&2; exit 1 ;; \
 		none) echo "No unit test is reached by the changes since $(BASE)." ;; \
 		all) swift test --skip OvertermE2ETests ;; \
 		*) echo "Running: $$filter"; swift test --skip OvertermE2ETests --filter "$$filter" ;; \

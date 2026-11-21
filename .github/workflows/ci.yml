@@ -98,13 +98,15 @@ jobs:
           BEFORE: ${{ github.event.before }}
         run: |
           case "$EVENT" in
-            pull_request) changed="$(git diff --name-only "$BASE"...HEAD)" ;;
+            # --no-renames: a moved file is its old path gone and its new one,
+            # so a Sources file moved away still says `all`.
+            pull_request) changed="$(git diff --name-only --no-renames "$BASE"...HEAD)" ;;
             push)
               # A new branch, or a push git can't see the start of: everything.
               if [[ "$BEFORE" =~ ^0+$ ]] || ! git cat-file -e "$BEFORE^{commit}" 2>/dev/null; then
                 changed="$(git ls-files)"
               else
-                changed="$(git diff --name-only "$BEFORE" HEAD)"
+                changed="$(git diff --name-only --no-renames "$BEFORE" HEAD)"
               fi ;;
             *) changed="$(git ls-files)" ;;
           esac

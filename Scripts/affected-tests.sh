@@ -9,13 +9,17 @@
 #   <regex> — a `swift test --filter` for the test classes reached
 #
 # A test class is reached when its file is changed, or when it names a type
-# a changed source file declares or extends. That is a test's direct reach,
-# not every caller's: something that changes behaviour three types away can
-# pass here and fail on main — which is why main runs everything.
+# a changed source file declares or extends, or a type, function or constant
+# a changed test file declares for the others (a helper, a fake). That is a
+# test's direct reach, not every caller's: something that changes behaviour
+# three types away can pass here and fail on main — which is why main runs
+# everything.
 #
 # Anything the whole app depends on (the package, its resources, the
-# scripts, a fixture, a deleted source file) is `all`. GNU and BSD tools
-# alike: CI runs it on Linux, people on macOS.
+# scripts, a fixture, a deleted source file, a source file with a top-level
+# function or global) is `all`; a rename is a deletion and an addition, so
+# callers pass `git diff --no-renames`. GNU and BSD tools alike, and bash
+# 3.2: CI runs it on Linux, people on macOS's /bin/bash.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -31,6 +35,16 @@ if ((${#changed[@]} == 0)); then
   exit 0
 fi
 
+# Top-level declarations only: a nested `Command` or `Action` would reach
+# every test that says the word, and its parent's name reaches its own.
+# (Kept out of the `<(…)` below: bash 3.2, macOS's, can't parse a quote or a
+# backtick in a comment inside a process substitution.)
+attributes='^(@[A-Za-z]+(\([^)]*\))?[[:space:]]+)*'
+type_pattern="${attributes}((public|private|fileprivate|internal|package|final|nonisolated|indirect)[[:space:]]+)*(class|struct|enum|actor|protocol|extension|typealias)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*"
+# A global, a function or a constant at the top level that another file can
+# see: whatever calls it is found by no type name.
+global_pattern="${attributes}((public|internal|package|nonisolated(\([a-z]+\))?)[[:space:]]+)*(func|let|var)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*"
+
 names=()
 files=()
 for path in "${changed[@]}"; do
@@ -40,7 +54,17 @@ for path in "${changed[@]}"; do
       exit 0
       ;;
     "$tests_dir"/*.swift)
-      [[ -f "$path" ]] && files+=("$path")
+      if [[ -f "$path" ]]; then
+        files+=("$path")
+        # What it declares for the other test files (a helper, a fake, an
+        # extension): those that name it are reached too. Its private ones
+        # are its own.
+        while IFS= read -r name; do names+=("$name"); done < <(
+          grep -oE "$type_pattern|$global_pattern" "$path" |
+            grep -vE '(^|[[:space:]])(private|fileprivate)[[:space:]]' |
+            awk '{print $NF}'
+        )
+      fi
       ;;
     Sources/*.swift)
       # A file gone: what named its types can't be found from it.
@@ -48,13 +72,14 @@ for path in "${changed[@]}"; do
         echo all
         exit 0
       fi
+      if grep -qE "$global_pattern" "$path"; then
+        echo all
+        exit 0
+      fi
       base="$(basename "$path" .swift)"
       names+=("${base%%+*}")
       while IFS= read -r name; do names+=("$name"); done < <(
-        # Top-level only: a nested `Command` or `Action` would reach every
-        # test that says the word, and its parent's name reaches its own.
-        grep -oE '^(@[A-Za-z]+[[:space:]]+)*((public|private|fileprivate|internal|package|final|nonisolated|indirect)[[:space:]]+)*(class|struct|enum|actor|protocol|extension)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*' "$path" |
-          awk '{print $NF}'
+        grep -oE "$type_pattern" "$path" | awk '{print $NF}'
       )
       ;;
   esac
@@ -74,7 +99,8 @@ fi
 
 classes="$(
   printf '%s\n' "${files[@]}" | sort -u | while IFS= read -r file; do
-    grep -oE '^(final[[:space:]]+)?class[[:space:]]+[A-Za-z0-9_]+[[:space:]]*:[[:space:]]*XCTestCase' "$file" |
+    # A helper with no test class of its own is no failure.
+    { grep -oE '^(final[[:space:]]+)?class[[:space:]]+[A-Za-z0-9_]+[[:space:]]*:[[:space:]]*XCTestCase' "$file" || true; } |
       sed -E 's/^(final[[:space:]]+)?class[[:space:]]+([A-Za-z0-9_]+).*/\2/'
   done | sort -u
 )"
