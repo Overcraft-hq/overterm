@@ -109,8 +109,10 @@ jobs:
             *) changed="$(git ls-files)" ;;
           esac
           printf '%s\n' "$changed"
-          # The bundle: only what goes into the app (the version rule's paths).
-          if grep -qE '^(Sources/|Resources/|Scripts/|Package\.swift$|Package\.resolved$|Makefile$|mise\.toml$|\.github/workflows/ci\.yml$)' <<<"$changed"; then
+          # The bundle: what goes into the app (the version rule's paths, which
+          # hold Scripts/make-dmg.sh), and every workflow — release.yml builds
+          # the same bundle, so an edit to it is checked before a release is.
+          if grep -qE '^(Sources/|Resources/|Scripts/|Package\.swift$|Package\.resolved$|Makefile$|mise\.toml$|\.github/workflows/)' <<<"$changed"; then
             bundle=true
           else
             bundle=false
