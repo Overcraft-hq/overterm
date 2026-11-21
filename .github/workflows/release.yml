@@ -122,7 +122,7 @@ jobs:
       # mise.toml and the Xcode — CI's key.
       - name: Restore GhosttyKit and TreeSitterKit
         id: frameworks
-        uses: actions/cache@v6
+        uses: actions/cache/restore@v6
         with:
           path: Frameworks
           key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
@@ -141,6 +141,15 @@ jobs:
             echo "::warning::the frameworks' build failed (attempt $attempt); trying again in 30 s"
             sleep 30
           done
+
+      # Saved as soon as it is built (CI's step): a later failure keeps it.
+      - name: Save GhosttyKit and TreeSitterKit
+        if: steps.frameworks.outputs.cache-hit != 'true'
+        continue-on-error: true
+        uses: actions/cache/save@v6
+        with:
+          path: Frameworks
+          key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
 
       # CI's release build on main (see the top): the newest for these
       # packages and this Xcode. Restored only — CI is what saves it.
