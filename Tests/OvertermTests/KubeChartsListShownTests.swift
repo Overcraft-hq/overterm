@@ -30,12 +30,22 @@ final class KubeChartsListShownTests: XCTestCase {
             headline: nil)
     }
 
-    private func settle(_ host: NSView) async throws {
-        for _ in 0..<10 {
+    /// Lays `host` out and draws it until `done` holds — at most the second
+    /// the fixed settle took (50 rounds of 20 ms) —, then says whether it did.
+    private func settle(_ host: NSView, until done: () -> Bool) async throws -> Bool {
+        for _ in 0..<50 {
             host.layoutSubtreeIfNeeded()
             host.displayIfNeeded()
-            try await Task.sleep(for: .milliseconds(100))
+            if done() { return true }
+            try await Task.sleep(for: .milliseconds(20))
         }
+        return done()
+    }
+
+    private func scrollView(_ view: NSView) -> NSScrollView? {
+        if let scroll = view as? NSScrollView { return scroll }
+        for subview in view.subviews { if let found = scrollView(subview) { return found } }
+        return nil
     }
 
     func testAHeaderBuiltBelowTheFoldIsNotOnScreen() {
@@ -99,28 +109,34 @@ final class KubeChartsListShownTests: XCTestCase {
             window.orderOut(nil)
             window.contentView = nil
         }
-        try await settle(host)
+        let asking = try await settle(host) { self.scrollView(host) == nil && host.frame.height == 581 }
+        XCTAssertTrue(asking, "laid out, asking Prometheus")
         host.rootView = tab(charts)
-        try await settle(host)
+        // The list laid out, its height the same five rounds running: the
+        // lazy stack has built what it builds ahead, and said what it says.
+        var heights: [CGFloat] = []
+        let built = try await settle(host) {
+            guard let scroll = self.scrollView(host), let height = scroll.documentView?.frame.height,
+                height > scroll.contentView.bounds.height, scroll.contentView.bounds.height > 0
+            else { return false }
+            heights.append(height)
+            return heights.suffix(5).count == 5 && Set(heights.suffix(5)).count == 1
+        }
+        XCTAssertTrue(built, "the list laid out: \(heights)")
         XCTAssertNotEqual(calls.shown(saved), true, "below the fold, never said shown: \(calls.said)")
 
-        func scrollView(_ view: NSView) -> NSScrollView? {
-            if let scroll = view as? NSScrollView { return scroll }
-            for subview in view.subviews { if let found = scrollView(subview) { return found } }
-            return nil
-        }
         let scroll = try XCTUnwrap(scrollView(host))
         let bottom = (scroll.documentView?.frame.height ?? 0) - scroll.contentView.bounds.height
         XCTAssertGreaterThan(bottom, 0, "the tab scrolls")
         let flipped = scroll.documentView?.isFlipped ?? true
         scroll.contentView.scroll(to: NSPoint(x: 0, y: flipped ? bottom : 0))
         scroll.reflectScrolledClipView(scroll.contentView)
-        try await settle(host)
+        _ = try await settle(host) { calls.shown(saved) == true }
         XCTAssertEqual(calls.shown(saved), true, "scrolled to, shown: \(calls.said)")
 
         scroll.contentView.scroll(to: NSPoint(x: 0, y: flipped ? 0 : bottom))
         scroll.reflectScrolledClipView(scroll.contentView)
-        try await settle(host)
+        _ = try await settle(host) { calls.shown(saved) == false }
         XCTAssertEqual(calls.shown(saved), false, "scrolled away, no longer: \(calls.said)")
     }
 }
