@@ -351,10 +351,14 @@ final class ActivityRowsTests: XCTestCase {
         let stocks = switcher.stocks
         burn(2000, 900_000_000)
         kernel.advance(1_000_000_000)
-        _ = await eventually { !monitor.isSampling }
+        let idle = await eventually { !monitor.isSampling }
+        XCTAssertTrue(idle, "the tick on its way landed")
+        // Given back, nothing wants a tick: a one-off census reads in full,
+        // with the new burn, and must not restock it.
         let later = monitor.fullTicks
-        _ = await monitor.tick()
-        _ = await eventually { monitor.fullTicks > later }
+        let census = await monitor.census(within: 0)
+        XCTAssertNotNil(census)
+        XCTAssertGreaterThan(monitor.fullTicks, later, "a full read landed")
         await Task.yield()
         XCTAssertEqual(switcher.stocks, stocks, "then kept as ranked")
         XCTAssertEqual(switcher.rows, frozen)
