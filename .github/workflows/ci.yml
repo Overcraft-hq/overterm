@@ -294,7 +294,7 @@ jobs:
       # Main's only: a pull request's would be its branch's alone. The debug
       # build (the tests') is left out — the release doesn't use it.
       - name: Save the Swift build
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' }}
         uses: actions/cache/save@v6
         with:
           path: |
