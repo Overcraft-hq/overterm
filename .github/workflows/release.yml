@@ -85,7 +85,7 @@ jobs:
           echo "VERSION=$version" >> "$GITHUB_ENV"
 
       # The unit tests are CI's: its run on this commit, waited for while it
-      # runs. Red, cancelled (a newer push cancels an older run) or missing,
+      # runs. Red, cancelled (by hand, or timed out) or missing,
       # the release stops — run CI on the commit (Actions → CI → Run
       # workflow), or release with run_tests.
       - name: CI passed on this commit
