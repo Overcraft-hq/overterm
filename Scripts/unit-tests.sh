@@ -22,6 +22,8 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 
 workers=${1:-$(sysctl -n hw.ncpu)}
+# Checked before arithmetic sees it: bash evaluates `a[$(…)]` there.
+[[ $workers =~ ^[1-9][0-9]*$ ]] || { echo "workers must be a positive integer, not '$workers'." >&2; exit 2; }
 regex=${2:-}
 bundle="$(swift build --show-bin-path)/OvertermTests.xctest"
 [[ -d "$bundle" ]] || { echo "No $bundle: run swift build --build-tests first." >&2; exit 1; }
