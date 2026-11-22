@@ -75,6 +75,19 @@ final class KubeClusterOverviewTests: XCTestCase {
         return model
     }
 
+    /// The open watches once their count has held for 300 ms (5 s at most).
+    private func settledWatches() async throws -> Int {
+        var count = api.openWatches
+        let deadline = Date().addingTimeInterval(5)
+        while Date() < deadline {
+            try await Task.sleep(for: .milliseconds(300))
+            let now = api.openWatches
+            if now == count { return now }
+            count = now
+        }
+        return count
+    }
+
     private func until(_ timeout: TimeInterval = 5, _ what: String = "", _ condition: () -> Bool) async throws {
         let deadline = Date().addingTimeInterval(timeout)
         while !condition() {
@@ -136,7 +149,9 @@ final class KubeClusterOverviewTests: XCTestCase {
         model.show()
         defer { model.hide() }
         try await until(5, "discovery") { model.discovery != nil && model.rows.count == 5 }
-        let before = api.openWatches
+        // The page's own watches all open first (a slow runner opened one after
+        // the count was taken, and the Overview's end never got back under it).
+        let before = try await settledWatches()
         XCTAssertEqual(page.clusterOverview.state, .idle, "not shown: nothing read")
 
         XCTAssertTrue(page.press("1"))
@@ -185,7 +200,7 @@ final class KubeClusterOverviewTests: XCTestCase {
 
         // Another section: every follow ends, nothing kept.
         XCTAssertTrue(page.press("2"))
-        try await until(5, "ended") { self.api.openWatches <= before }
+        try await until(15, "ended") { self.api.openWatches <= before }
         XCTAssertEqual(session.state, .idle)
         XCTAssertEqual(session.overview, KubeClusterOverview())
 
@@ -193,7 +208,7 @@ final class KubeClusterOverviewTests: XCTestCase {
         XCTAssertTrue(page.press("1"))
         try await until(5, "live again") { session.state == .live }
         page.visible = false
-        try await until(5, "hidden") { self.api.openWatches <= before && session.state == .idle }
+        try await until(15, "hidden") { self.api.openWatches <= before && session.state == .idle }
     }
 
     /// A workload's row carrying Argo CD's mark tells the context's GitOps
