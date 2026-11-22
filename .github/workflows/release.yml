@@ -165,9 +165,12 @@ jobs:
           restore-keys: |
             spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
 
+      # As many processes at once as CI's test job runs (ci.yml's
+      # TEST_WORKERS): make test's default, one a core, was never tried on
+      # this runner.
       - name: Unit tests
         if: ${{ inputs.run_tests }}
-        run: make test
+        run: make test TEST_WORKERS=4
 
       - name: Build Overterm.app and the DMG
         run: make app dmg
