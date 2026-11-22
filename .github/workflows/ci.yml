@@ -209,8 +209,10 @@ jobs:
       # `!.build/*/debug/…` kept everything (1.1 GB from main's run).
       # Left out: Overterm's intermediates (OvertermTests' and
       # OvertermE2ETests' are in Overterm.build too), its products (the app,
-      # the modules, OvertermTests.xctest, OvertermE2ETests.xctest), the
-      # testable object in ExecutableModules, the frameworks' libraries
+      # the modules, OvertermTests.xctest, OvertermE2ETests.xctest),
+      # ExecutableModules (the testable copy of an executable target the
+      # tests import: none since the app's code is a library, kept for an
+      # older entry's layout), the frameworks' libraries
       # copied in from Frameworks/ (lib*.a, 167 MB), the index store
       # (out/v5), and Products/Release.
       - name: Restore the debug build
