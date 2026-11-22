@@ -92,6 +92,21 @@ final class AffectedTestsTests: XCTestCase {
         XCTAssertEqual(global, "all")
     }
 
+    /// `let first = 1, second = 2` declares two names one match can't see
+    /// both of: the file runs everything. A private one is still its own.
+    func testATestFileSharingSeveralBindingsInOneDeclarationRunsEverything() async throws {
+        let dir = try scratchTree()
+        try write("let first = 1, second = 2\n", to: "Tests/OvertermTests/Shared.swift", in: dir)
+        let shared = try await affected(["Tests/OvertermTests/Shared.swift"], in: dir)
+        XCTAssertEqual(shared, "all")
+        try write("let (left, right) = (1, 2)\n", to: "Tests/OvertermTests/Tuple.swift", in: dir)
+        let tuple = try await affected(["Tests/OvertermTests/Tuple.swift"], in: dir)
+        XCTAssertEqual(tuple, "all")
+        try write(testClass("PairTests") + "\nprivate let a = 1, b = 2\n", to: "Tests/OvertermTests/PairTests.swift", in: dir)
+        let own = try await affected(["Tests/OvertermTests/PairTests.swift"], in: dir)
+        XCTAssertEqual(own, filter("PairTests"))
+    }
+
     /// A rename, as `git diff --no-renames` gives it: the old path gone, the new one there.
     func testASourceFileMovedAwayRunsEverything() async throws {
         let dir = try scratchTree()

@@ -45,6 +45,10 @@ type_pattern="${attributes}((public|private|fileprivate|internal|package|final|n
 # see: whatever calls it is found by no type name.
 global_pattern="${attributes}((public|internal|package|nonisolated(\([a-z]+\))?)[[:space:]]+)*(func|let|var)[[:space:]]+[A-Za-z_][A-Za-z0-9_]*"
 
+# Several bindings in one declaration (`let a = 1, b = 2`, `let (a, b)`)
+# give more names than one match finds: such a file runs everything.
+shared_bindings="${attributes}((public|internal|package|nonisolated(\([a-z]+\))?)[[:space:]]+)*(let|var)[[:space:]].*,"
+
 names=()
 files=()
 for path in "${changed[@]}"; do
@@ -55,6 +59,10 @@ for path in "${changed[@]}"; do
       ;;
     "$tests_dir"/*.swift)
       if [[ -f "$path" ]]; then
+        if grep -qE "$shared_bindings" "$path"; then
+          echo all
+          exit 0
+        fi
         files+=("$path")
         # What it declares for the other test files (a helper, a fake, an
         # extension): those that name it are reached too. Its private ones
