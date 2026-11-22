@@ -397,10 +397,11 @@ final class KubeGitOpsSessionTests: XCTestCase {
         XCTAssertTrue(read)
         try await Task.sleep(for: .milliseconds(300))
         XCTAssertTrue(names.allSatisfy { name in session.objects.first { $0.ref.name == name }?.state.isProblem == true })
-        // One flush a second from here: all 30 changes land before the
+        // One flush every 3 s from here: all 30 changes land before the
         // first, and its 20 GETs — five rounds of four, each held 40 ms —
-        // are answered well before the next (the ratio 3 s and 120 ms had).
-        session.flushInterval = .seconds(1)
+        // are answered seconds before the next, however slow the machine
+        // (a second left a loaded runner under a second to spare).
+        session.flushInterval = .seconds(3)
         try await Task.sleep(for: .milliseconds(100))
         let paths = names.map { "/apis/argoproj.io/v1alpha1/namespaces/argocd/applications/\($0)" }
         for path in paths { api.answerSlowly(path, milliseconds: 40) }
