@@ -281,6 +281,11 @@ final class KubeResizePageTests: XCTestCase {
         let ref = KubeObjectRef(context: "kind-fake", kind: try pods(page), namespace: "shop", name: "web-1")
         let verb = try XCTUnwrap(page.writeVerbs(for: ref).first { $0.title == KubeWriteVerb.resize.title })
         try await until("reviewed") { page.writeVerbs(for: ref).first { $0.title == KubeWriteVerb.resize.title }?.unavailable == nil }
+        // The menu's other verbs are reviewed each on its own time: all of
+        // them answered, so none arrives after the requests are forgotten.
+        try await until("every verb reviewed") {
+            page.writeVerbs(for: ref).allSatisfy { !($0.unavailable?.hasPrefix("Checking whether") ?? false) }
+        }
         verb.perform()
         try await until("read") { page.resizeDraft?.current != nil }
         XCTAssertEqual(page.resizeDraft?.typed.map(\.name), ["app", "sidecar-1"])
