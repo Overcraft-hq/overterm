@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Stage 2f: a review tab's Terraform section — the roots what is reviewed
 /// touches (directly, through modules, new ones), which checkout has its

@@ -3,6 +3,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Port-forwards (stage 1d): the target resolved — a pod itself, a
 /// Service's ready endpoints only, a Deployment's ready pods — the command

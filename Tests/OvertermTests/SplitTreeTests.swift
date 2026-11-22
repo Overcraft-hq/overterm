@@ -2,6 +2,7 @@ import CoreGraphics
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 private final class Pane: CustomStringConvertible {
     let name: String

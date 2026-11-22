@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// A collection on disk: found, its tree in Bruno's order, its environments;
 /// and the variables a request sees, layered as Bruno layers them.

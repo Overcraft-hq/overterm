@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// MongoDB's pure parts: BSON both ways, the shell's values and statements,
 /// what reads and what destroys, answers as rows, connection strings, SCRAM

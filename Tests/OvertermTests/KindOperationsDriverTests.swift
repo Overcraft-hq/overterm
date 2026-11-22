@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The Server page's reads, node editing and users of Neo4j, InfluxDB and
 /// RabbitMQ against Scripts/database-test-servers.sh's servers (and

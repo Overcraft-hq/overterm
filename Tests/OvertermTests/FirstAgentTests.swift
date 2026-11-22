@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Finding a tab's agent among its panes' process trees. A tree is read
 /// from the live process table, so it can answer differently from one read

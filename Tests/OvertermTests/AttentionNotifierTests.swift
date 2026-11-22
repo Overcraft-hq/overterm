@@ -2,6 +2,7 @@ import UserNotifications
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 final class AttentionNotifierTests: XCTestCase {
     /// UserNotifications answers the permission request on a queue of its

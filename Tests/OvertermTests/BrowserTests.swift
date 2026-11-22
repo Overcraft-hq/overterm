@@ -2,6 +2,7 @@ import AppKit
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 final class BrowserLinksTests: XCTestCase {
     func testWhatIsLocal() {

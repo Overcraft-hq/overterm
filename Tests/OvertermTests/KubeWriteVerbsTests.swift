@@ -3,6 +3,7 @@ import NIOHTTP1
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Stage 2a's other verbs, pure: rollout pause and resume, a CronJob
 /// triggered, suspended and resumed, a node cordoned and uncordoned, a

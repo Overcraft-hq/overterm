@@ -3,6 +3,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// nettop's listeners (docs/design/activity/analysis.md, 6.8, D-25): the
 /// pinned, hand-written fixture — every name invented —, the blind check,

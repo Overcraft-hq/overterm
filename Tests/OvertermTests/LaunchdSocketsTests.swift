@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// launchd's socket jobs (docs/design/activity/analysis.md, 6.8 rule 9):
 /// fixture plists in folders the test hands over — as `AppEnvironment`

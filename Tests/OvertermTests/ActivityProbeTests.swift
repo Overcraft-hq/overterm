@@ -2,6 +2,7 @@ import Darwin
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// What the census relies on, checked on the Mac it runs on (docs/design/
 /// activity/analysis.md, 12: measured on one macOS): the structures' sizes,

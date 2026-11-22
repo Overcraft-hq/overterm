@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// What the palette offers when you type. The ordering *is* the feature —
 /// a history that puts the right command fourth is a list you scroll.

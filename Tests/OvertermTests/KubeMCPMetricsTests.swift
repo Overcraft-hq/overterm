@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// `k8s_metrics` (docs/design/kubernetes/metrics.md 7; stage M11) against
 /// `FakeKubeAPI` and its fake Prometheus and metrics-server, never a

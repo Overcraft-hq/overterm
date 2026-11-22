@@ -2,6 +2,7 @@ import GhosttyKit
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 final class ClipboardConfirmationTests: XCTestCase {
     /// libghostty asks again about a request completed unconfirmed — Overterm

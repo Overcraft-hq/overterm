@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// A rename's links written again — only the ones that would break, with
 /// everything else about them kept.

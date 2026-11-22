@@ -3,6 +3,7 @@ import NIOHTTP1
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Stage 2b, pure (docs/design/kubernetes/analysis.md, 2.8 and 3.3): a
 /// manifest read, the server-side apply's requests (dry run, apply, force),

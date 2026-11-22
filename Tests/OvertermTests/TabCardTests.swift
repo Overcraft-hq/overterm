@@ -2,6 +2,7 @@ import SwiftUI
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The strip's card geometry.
 ///

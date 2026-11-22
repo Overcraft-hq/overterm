@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// In-place resize (stage 3b): what a pod's containers say, what is typed
 /// checked against it, the patch and the request it is, the kubectl it

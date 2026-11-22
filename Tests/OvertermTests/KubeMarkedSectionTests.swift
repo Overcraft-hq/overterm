@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// What the GitOps section says of the Argo CD apps read from their marks
 /// (docs/design/kubernetes/gitops.md, 14.2, 14.3; `KubeMarkedSection`):

@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 @MainActor
 final class OvergitModelTests: XCTestCase {

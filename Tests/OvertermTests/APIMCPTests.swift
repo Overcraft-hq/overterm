@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The API client's MCP tools, as an agent calls them: on a collection on
 /// disk, against a server on this machine.

@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The opener against the isolated stand-in for LaunchServices (what E2E
 /// runs use): nothing is launched, every open is recorded.

@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Oracle's and ClickHouse's Server page, editing and users against real
 /// servers, when OVERTERM_DB_TESTS=1: ClickHouse from

@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// A folder with more entries than a process may take arguments: listing it
 /// crashed the app (13 041 entries in the temporary folder).

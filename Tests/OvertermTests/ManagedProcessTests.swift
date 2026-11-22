@@ -3,6 +3,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// A long-lived child process (`ManagedProcess`) and the pool that keeps one
 /// a key: started and waited for, the reason it failed, closed by its own

@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Docker Model Runner's models: what its API answers, read as the Models
 /// section and `docker_models` read them; where the runner is found; and

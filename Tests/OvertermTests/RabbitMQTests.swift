@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// RabbitMQ's console language, its answers and its address pasted —
 /// offline; the driver against rabbitmq:3-management when

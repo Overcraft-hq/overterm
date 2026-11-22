@@ -3,6 +3,7 @@ import ImageIO
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The simulator pane's pure halves: what `simctl list` says there is, and
 /// the screenshot a polled frame is cut down to.

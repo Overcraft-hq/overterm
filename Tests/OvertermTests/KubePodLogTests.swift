@@ -2,6 +2,7 @@ import AppKit
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// A pod's log (stage 1c): the default container, the queries built, the
 /// pure pieces (lines out of bytes, older lines, the file's name, what an

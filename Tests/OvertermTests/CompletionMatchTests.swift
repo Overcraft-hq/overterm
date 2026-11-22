@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 final class CompletionMatchTests: XCTestCase {
     private func score(_ candidate: String, _ query: String) -> Int? {

@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 final class EditorDocumentTests: XCTestCase {
     private var dir: URL!

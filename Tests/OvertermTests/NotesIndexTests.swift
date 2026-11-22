@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Links resolved as Obsidian resolves them, and what the index answers.
 final class NotesIndexTests: XCTestCase {

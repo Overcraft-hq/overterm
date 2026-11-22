@@ -3,6 +3,7 @@ import SwiftUI
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The strip in the title bar: what its buttons cost in width, and who
 /// answers for the space around them.

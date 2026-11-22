@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// A drop in the Notes panel: what moves where.
 final class NoteMoveTests: XCTestCase {

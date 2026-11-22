@@ -2,6 +2,7 @@ import AppKit
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 final class StripClickTests: XCTestCase {
     private func kind(_ type: NSEvent.EventType, _ modifiers: NSEvent.ModifierFlags = []) -> StripClick? {

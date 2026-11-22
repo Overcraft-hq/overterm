@@ -3,6 +3,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Stage 4's listeners (docs/design/activity/analysis.md, 6.8, D-25,
 /// D-32) over a fake Mac: other users' from a nettop reading, launchd's

@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Stage M5's queue (docs/design/kubernetes/metrics.md, 6.3): 4 in
 /// flight, identical queries joined, a query nobody waits for dropped or

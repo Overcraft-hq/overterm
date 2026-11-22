@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The process runner itself: a hung tool, a chatty one, a burst, and a
 /// child left holding the pipes.

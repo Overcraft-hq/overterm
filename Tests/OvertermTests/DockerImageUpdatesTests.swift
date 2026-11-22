@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 private func digest(_ character: Character) -> String { "sha256:" + String(repeating: character, count: 64) }
 

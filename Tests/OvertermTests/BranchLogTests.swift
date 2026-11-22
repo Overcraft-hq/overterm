@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 final class BranchLogTests: XCTestCase {
     private let sha1 = String(repeating: "1", count: 40)

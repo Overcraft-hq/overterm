@@ -2,6 +2,7 @@ import Darwin
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Which Overterm started a process (docs/design/activity/analysis.md, 6.9,
 /// D-15, 10.5): the run's marker, the argv signs that name it, the

@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The GitOps section's rows, chips and words (docs/design/kubernetes/
 /// gitops.md, 2.1–2.7, 8.1), R3's policy (3.1) and the controllers'

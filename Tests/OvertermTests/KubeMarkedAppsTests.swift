@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Apps grouped from Argo CD's marks (docs/design/kubernetes/gitops.md,
 /// 14.1, decision D-5): by installation and instance name; an `ns_name`

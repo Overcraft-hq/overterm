@@ -3,6 +3,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Tab Info over the census's light slice for its tab (docs/design/activity/
 /// analysis.md, 6.12), on a fake Mac: a split tab one group per pane, each

@@ -3,6 +3,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// A process a census test started (docs/design/activity/analysis.md,
 /// 10.2, 10.6): in a process group of its own, never the runner's; its

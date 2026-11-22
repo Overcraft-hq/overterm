@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Finding and copying on the Kubernetes page: `field:` and `label:` sent
 /// to the server, Copy as kubectl and its quoting, the list as CSV, the

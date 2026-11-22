@@ -2,6 +2,7 @@ import Darwin
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Terminal in this context (docs/design/kubernetes/analysis.md, 3.11): the
 /// pin's file — what it holds and doesn't, its permissions — the shell's

@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// What a tab's icon says it is. The rule decides a glyph people read
 /// without looking, so it has to be boring and predictable.

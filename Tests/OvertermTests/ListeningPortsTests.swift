@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 final class ListeningPortsTests: XCTestCase {
     // MARK: Where a listener is reached (docs/design/activity/analysis.md, 6.8)

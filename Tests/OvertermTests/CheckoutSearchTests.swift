@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 final class CheckoutSearchTests: XCTestCase {
     private var repo: URL!

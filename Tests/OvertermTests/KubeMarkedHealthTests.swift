@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Argo CD's health of marked objects and of their app (docs/design/
 /// kubernetes/gitops.md, 14.5 and 14.12): each built-in rule from cells and

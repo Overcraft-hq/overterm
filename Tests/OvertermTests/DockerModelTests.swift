@@ -3,6 +3,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The app's Docker model against the fake engine: what it lists and how it
 /// groups it, kept current by events, an engine that goes and comes back.

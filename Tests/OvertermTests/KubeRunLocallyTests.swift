@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Run Locally and Scan (3.12): the Run window planned from fixture pods —
 /// a value given copied, a Secret's key asked hidden and never read, a

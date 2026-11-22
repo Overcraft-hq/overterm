@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// A chart's Copy PromQL and Copy Values as CSV, and the expanded chart's
 /// own identity (docs/design/kubernetes/metrics.md 2.1, 3.9; stage M9). Pure.

@@ -398,32 +398,6 @@ package actor MCPClient {
     }
 }
 
-extension JSONValue {
-    package subscript(_ key: String) -> JSONValue {
-        if case .object(let object) = self { return object[key] ?? .null }
-        return .null
-    }
-
-    package var string: String? { if case .string(let value) = self { value } else { nil } }
-    package var int: Int? {
-        switch self {
-        case .int(let value): value
-        case .double(let value): Int(value)
-        default: nil
-        }
-    }
-    package var bool: Bool? { if case .bool(let value) = self { value } else { nil } }
-    package var array: [JSONValue]? { if case .array(let value) = self { value } else { nil } }
-    package var object: [String: JSONValue]? { if case .object(let value) = self { value } else { nil } }
-
-    /// Indented, keys sorted: as the inspector shows a value.
-    package var pretty: String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        return (try? encoder.encode(self)).map { String(decoding: $0, as: UTF8.self) } ?? ""
-    }
-}
-
 /// An event stream's lines, the empty ones too: they end an event, and
 /// `AsyncBytes.lines` drops them — two events read as one, a reply never
 /// matched, and the call waited for ever.

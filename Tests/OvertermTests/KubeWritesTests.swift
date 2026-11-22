@@ -3,6 +3,7 @@ import NIOHTTP1
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The writes of stage 2a's first part, pure: which verb a kind has, the
 /// class check (read-only, production's switch, the typed name), each

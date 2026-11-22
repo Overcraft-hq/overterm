@@ -2,6 +2,7 @@ import Combine
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// A workload's merged logs (stage 2e, stern's way): the plan — the cap,
 /// streams kept in place, a pod joining, the include and exclude

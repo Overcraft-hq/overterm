@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Several namespaces at once: the scope's one spelling, the merge of a
 /// follow each, the cap (one watch across the cluster, filtered — refused

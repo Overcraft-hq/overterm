@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// What keeps Terraform off the user's own in isolated runs and unit tests
 /// (analysis 4.5, 5.13 rule 8).

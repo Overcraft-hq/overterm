@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 final class UpdatesTests: XCTestCase {
     func testVersionsCompareAsNumbers() {

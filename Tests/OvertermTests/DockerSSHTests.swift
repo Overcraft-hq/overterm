@@ -3,6 +3,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// A remote engine (`ssh://`): its URL, the forward's ssh arguments and
 /// what ssh says back, always; a real forward through a throwaway sshd on

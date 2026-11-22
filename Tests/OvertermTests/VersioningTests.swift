@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The app's version: VERSION and CHANGELOG.md, Scripts/bump-version.sh, and
 /// the git hooks that keep them in step with the code (.githooks; CLAUDE.md,

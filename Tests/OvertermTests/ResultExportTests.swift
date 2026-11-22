@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// A result's rows as the formats people paste and save.
 final class ResultExportTests: XCTestCase {

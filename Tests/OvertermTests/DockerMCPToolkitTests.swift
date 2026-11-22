@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Docker's MCP Toolkit as Overterm's agents see it: what `docker mcp
 /// client ls --global --json` says of Claude Code and Codex, and the

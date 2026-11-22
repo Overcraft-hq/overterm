@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The pod `shop/web-1` the tests' Metrics tabs ask about, and its plans.
 enum KubeTabTesting {

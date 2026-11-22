@@ -3,6 +3,7 @@ import SwiftUI
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The chrome's colour vocabulary. Every token is derived from the
 /// terminal's own background and foreground, so the only way to know a

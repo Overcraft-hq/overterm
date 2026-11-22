@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// A pod's Metrics tab, sampled (docs/design/kubernetes/metrics.md 2.3,
 /// 2.4, stage M3a): the containers in the Logs tab's order, references

@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The summary's decode is its allow-list (docs/design/kubernetes/
 /// gitops.md, 2.4, 8.1, decision 15): every struct's keys against a

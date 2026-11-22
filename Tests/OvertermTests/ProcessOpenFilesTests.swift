@@ -3,6 +3,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The detail's Files (docs/design/activity/analysis.md, 6.4, `l`) over a
 /// fake Mac: files by path, sockets as the census decodes them, pipes and

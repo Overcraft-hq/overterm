@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Helm's releases read from the cluster's own records (docs/design/
 /// kubernetes/analysis.md, 2.12, Section 4 and rule 9): a record decoded as

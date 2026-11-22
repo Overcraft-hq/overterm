@@ -3,6 +3,7 @@ import QuartzCore
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 final class TabPeekTests: XCTestCase {
     private let bounds = CGRect(x: 0, y: 0, width: 1200, height: 800)

@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// What an agent is told about a container that failed, or lines of its
 /// log: what is wrong with it, what its exit code means, how it ended —

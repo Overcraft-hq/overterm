@@ -2,6 +2,7 @@ import AppKit
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The pages over the body as declared (`WorkspacePage`) and made
 /// (`WorkspacePages`): no window, plain views.

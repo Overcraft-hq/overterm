@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 final class ShellEnvironmentTests: XCTestCase {
     private func output(_ fields: [String]) -> Data {

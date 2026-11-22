@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// A workload's change timeline (docs/design/kubernetes/analysis.md, 3.6,
 /// stage 3b): template revisions read from ReplicaSets and

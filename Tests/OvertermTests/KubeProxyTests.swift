@@ -6,6 +6,7 @@ import NIOPosix
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// What a context's `kubectl proxy` is told and given: the flags per class,
 /// the socket's folder and path, the environment (never the user's

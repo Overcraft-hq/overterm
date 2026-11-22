@@ -2,6 +2,7 @@ import Darwin
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Ask an Agent about a process (docs/design/activity/analysis.md, 8.6,
 /// 9.3, 9.4): the brief's words — where it runs and why, its usage now,

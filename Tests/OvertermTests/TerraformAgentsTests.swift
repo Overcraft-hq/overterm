@@ -2,6 +2,7 @@ import Darwin
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Terraform stage 1c (docs/design/terraform/analysis.md 3.3–3.5, 5.6,
 /// 5.10): the plan decoded through its allow-list and masked, an agent's

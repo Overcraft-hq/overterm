@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The page's guard path against the fake API server, over three fictional
 /// contexts on it: `kind-fake` (local, writable), `fake-dev` (remote, set

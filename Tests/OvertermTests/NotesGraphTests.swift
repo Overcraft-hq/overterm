@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The graph: which notes are in it, which lines join them, and a layout
 /// that keeps linked notes together.

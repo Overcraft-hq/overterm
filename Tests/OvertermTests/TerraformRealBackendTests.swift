@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The real terraform against `FakeTerraformBackend`, through the recording
 /// wrapper, in a sandbox of its own: that the fake answers as Terraform's

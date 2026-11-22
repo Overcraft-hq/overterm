@@ -3,6 +3,7 @@ import NIOHTTP1
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The proxies a context each (`KubeProxies`), over stand-in proxies whose
 /// answers the test writes: opened once and kept, `maxProxies` with the

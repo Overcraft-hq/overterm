@@ -5,6 +5,7 @@ import NIOPosix
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The shared transport over a real unix socket, against a small server of
 /// the test's own that checks the Host header as `kubectl proxy` does:

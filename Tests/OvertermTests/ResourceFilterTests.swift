@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// A page's filter field (`ResourceFilter`): words split and lowercased,
 /// `key:value` by a page's own keys and aliases, `-` negating, unknown

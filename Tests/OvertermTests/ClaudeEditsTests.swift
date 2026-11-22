@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Transcript lines in the shape Claude Code writes them (2.1.28x): one
 /// content part per assistant line (a message's parts share its id), the

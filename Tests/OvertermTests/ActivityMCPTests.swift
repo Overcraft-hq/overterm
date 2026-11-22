@@ -3,6 +3,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Activity's agents' reads (docs/design/activity/analysis.md, 8.2–8.5,
 /// D-18) over a fake Mac: an agent in acme-web's first tab asks. Inside its

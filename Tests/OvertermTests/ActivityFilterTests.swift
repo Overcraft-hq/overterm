@@ -3,6 +3,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The Activity page's filter (docs/design/activity/analysis.md, 6.6) over a
 /// fake Mac: `ResourceFilter`'s words with Activity's keys, quantities with

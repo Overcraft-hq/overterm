@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Argo CD's and Flux's objects summarised (docs/design/kubernetes/
 /// gitops.md, 2.3–2.5, 8.1): every fixture of `FakeKubeAPI+GitOps` on its

@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The Nodes list's heat strips (docs/design/kubernetes/metrics.md, 2.1,
 /// stage M3c): 60 cells of 15 s against allocatable, from the ring's

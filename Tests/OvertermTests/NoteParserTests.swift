@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// A note read as Obsidian reads it: properties, links, tags, headings,
 /// tasks — and nothing taken from code.

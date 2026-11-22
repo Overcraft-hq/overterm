@@ -2,6 +2,7 @@ import Darwin
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The pane pill's Free… by the class table (docs/design/activity/
 /// analysis.md, 6.10, 6.12, 10.1): every class a pill can name, and what

@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The recording wrapper, in front of a stand-in: what it records, what it
 /// passes on, and what it never writes down.

@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Docker's MCP tools, as an agent calls them, against the fake engine:
 /// what they say, and that a secret never leaves in an answer. The writes

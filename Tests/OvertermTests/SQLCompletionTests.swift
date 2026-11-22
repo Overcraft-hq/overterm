@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Completion in a console, from a catalog.
 final class SQLCompletionTests: XCTestCase {

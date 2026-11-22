@@ -2,6 +2,7 @@ import XCTest
 import Combine
 
 @testable import Overterm
+@testable import OvertermCore
 
 final class FileTreeTests: XCTestCase {
     private var dir: URL!

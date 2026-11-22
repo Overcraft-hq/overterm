@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// What typing in a note completes, and with what.
 final class NoteCompletionTests: XCTestCase {

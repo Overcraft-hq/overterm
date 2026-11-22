@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// A build followed while its detail shows, through a stub `docker` that
 /// answers as buildx would: no test runs buildx.

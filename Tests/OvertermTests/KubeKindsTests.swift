@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Every kind as a list: discovery read into kinds (groups, preferred
 /// versions, short names), the page's sections, the names the `:` bar

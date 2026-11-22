@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// What is deployed, compared with the checkout (docs/design/kubernetes/analysis.md,
 /// 3.2): the sources in their order of trust — an image's revision label

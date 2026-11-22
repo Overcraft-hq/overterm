@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// A manifest's keys for the cluster's docs (3.15): each key's path, the
 /// document's kind, where a key typed at the caret goes, and the unknown

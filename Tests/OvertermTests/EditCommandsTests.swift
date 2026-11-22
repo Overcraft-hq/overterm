@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Texts with their selections written in: `|` a caret, `«…»` a selection.
 /// (Not `[…]`: brackets are what half of these tests type.)

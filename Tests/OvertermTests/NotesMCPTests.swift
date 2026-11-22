@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// What an agent can do with the notes: find them, read them — nothing else.
 @MainActor

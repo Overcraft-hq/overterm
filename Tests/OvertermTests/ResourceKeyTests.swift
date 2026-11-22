@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// A page's list keys (`ResourceKey`): a typed character read by a page's
 /// table — the named keys, case, digits to sections, `?` and `/` — and an

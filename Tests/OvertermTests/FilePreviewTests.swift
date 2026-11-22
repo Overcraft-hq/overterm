@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// A stored file's preview, from its name and first bytes.
 final class FilePreviewTests: XCTestCase {

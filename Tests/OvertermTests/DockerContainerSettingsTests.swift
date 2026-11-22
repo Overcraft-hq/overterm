@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Sizes as `docker run --memory` reads them, and as the sheet writes them
 /// back.

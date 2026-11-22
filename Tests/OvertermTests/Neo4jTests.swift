@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Neo4j: Cypher's statements and checks, both HTTP APIs' answers as rows —
 /// offline; the driver against neo4j:5 when OVERTERM_DB_TESTS=1 and

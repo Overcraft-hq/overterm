@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 final class DiffModelTests: XCTestCase {
     private var repo: URL!

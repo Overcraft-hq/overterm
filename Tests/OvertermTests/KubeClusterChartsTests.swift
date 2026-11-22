@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The Overview's usage by namespace and node and a claim's fill forecast
 /// (docs/design/kubernetes/metrics.md 2.9, 4.6; stage M8): X1–X4's queries

@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Has this branch reached the cluster (docs/design/kubernetes/gitops.md,
 /// 4.3, 8.1): what each tool applied as a commit or not (`.gitopsRevision`,

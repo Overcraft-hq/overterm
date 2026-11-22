@@ -3,6 +3,7 @@ import GhosttyKit
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 final class GhosttyInputTests: XCTestCase {
     func testModsRoundTrip() {

@@ -2,6 +2,7 @@ import Darwin
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// `KERN_PROCARGS2` as the census reads it (docs/design/activity/analysis.md,
 /// 9.2, 9.3): argv masked at the read over its first 64 KB, the environment

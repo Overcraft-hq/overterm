@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// A workload's pods by owner, its top five and the rest, by revision; a
 /// namespace's top eight workloads, its pods by phase, its quota and what

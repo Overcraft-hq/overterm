@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// InfluxDB: the console's statements and checks, InfluxQL's JSON and
 /// Flux's annotated CSV as rows, the version from `/ping` — offline; the

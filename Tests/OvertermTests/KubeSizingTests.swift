@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Rightsizing's queries and card (docs/design/kubernetes/metrics.md 2.10,
 /// 4.6's R1; stage M10): per pod, never the workload's sum; memory from the

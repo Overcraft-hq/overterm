@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The Server page, editing and users against real servers, with
 /// OVERTERM_DB_TESTS=1: Scripts/database-test-servers.sh's MongoDB 7 (with

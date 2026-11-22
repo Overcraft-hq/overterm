@@ -2,6 +2,7 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Testcontainers' containers found by their labels, as each library
 /// writes them, and put in a run each. Pure.

@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// What a plan checks between the click and the process (analysis 2.8,
 /// 4.9, 5.5, 5.10, D-12, D-20): HCP's roots aren't planned here; the root

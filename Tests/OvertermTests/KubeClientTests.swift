@@ -4,6 +4,7 @@ import NIOHTTP1
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// The Kubernetes client against `FakeKubeAPI` on a socket of the test's
 /// own: the version, discovery (aggregated and the legacy walk), lists as

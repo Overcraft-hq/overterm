@@ -1,6 +1,7 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
 
 /// Bruno's file format, read and written — the promise being that the
 /// same file opens in Bruno, in `bru run` and here, and that an edit made
