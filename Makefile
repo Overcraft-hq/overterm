@@ -51,12 +51,15 @@ test-changed:
 	esac
 
 ## e2e: build the app, then run every end-to-end scenario in it (opens windows briefly)
+## (CONFIG=debug: against a debug build's app, as the nightly in CI does)
 e2e: app
 	OVERTERM_E2E_TESTS=1 swift test --filter OvertermE2ETests
 
-## app: assemble and ad-hoc sign $(APP)
+## app: assemble and ad-hoc sign $(APP) from the release build; CONFIG=debug
+## from the debug build (never shipped: the nightly E2E's, Scripts/make-app.sh)
+CONFIG ?= release
 app:
-	./Scripts/make-app.sh
+	CONFIG=$(CONFIG) ./Scripts/make-app.sh
 
 ## dmg: pack the built $(APP) as dist/Overterm-$(VERSION).dmg (VERSION as for make app)
 dmg:

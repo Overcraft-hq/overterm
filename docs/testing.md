@@ -7,6 +7,8 @@ make test   # unit + integration: pure logic, real git in temp repos (~1 min, se
 make e2e    # end-to-end: every scenario in the real, built app (~25 min, opens windows)
 ```
 
+E2E also runs nightly on main in CI, against a debug build (Nightly in CI).
+
 Both must run **outside the Bash tool's sandbox** (they spawn git, FSEvents,
 and for E2E the app itself).
 
@@ -1017,6 +1019,67 @@ as it is.
 Every user-visible feature gets a scenario; every bug found by hand gets a
 check that would have caught it (the rename focus loss, the 0-wide editor,
 closing without asking, the no-HEAD diff all have one).
+
+### Nightly in CI
+
+`.github/workflows/e2e-nightly.yml` runs every scenario on main once a
+night (00:30 UTC, 03:30 in Istanbul), on CI's `xcode-27` runner with
+Xcode 27.2, and by hand (Actions → Nightly E2E → Run workflow; `filter`
+runs one, `OvertermE2ETests.E2ETests/testTerminal`). A scheduled run is
+skipped when main has no commit since the last scheduled nightly that
+passed (a manual run, perhaps of one scenario, never counts).
+
+- **A debug build's app.** `make app CONFIG=debug` assembles the same
+  bundle around the debug binary (`Scripts/make-app.sh`): nothing in the
+  bundling or the harness needs a release build, and the debug build
+  reuses CI's caches — the frameworks and the compiled packages
+  (`spm-debug-…`), restored only, never saved, so this workflow can't evict
+  CI's entries. Never shipped: releases, `make install` and `make dmg`
+  take the default, `CONFIG=release`.
+- **The harness's switches** (`E2ETests`, all off by default):
+  `OVERTERM_E2E_SKIP` (scenario names, comma separated, skipped),
+  `OVERTERM_E2E_TIMEOUT_SCALE` (each scenario's whole timeout multiplied;
+  2 at night — the `eventually` waits inside a scenario are not scaled),
+  `OVERTERM_E2E_LOGS` (a folder: `<scenario>.out.log`, `.stderr.log`).
+  `OVERTERM_E2E_READ_DIR` saves a picture of the window when a read of it
+  fails, never while a Secret's value may show.
+- **Skipped at night**: `activityPerf`, `dockerPerf`, `kubernetesPerf`,
+  `kubernetesScale`, `reviewPerf`, `terraformPerf`, `performance`,
+  `throughput`, `bigFiles` — their budgets (CPU, main-thread stalls, a
+  thousand objects timed) are a release build's on a 10-core Mac. They stay
+  in `make e2e` here. Skipped by themselves as on any Mac without them: the
+  terraform scenarios without a terraform, the database pages without
+  `Scripts/database-test-servers.sh`'s servers, redis without
+  `redis-server`.
+- **On a failure** the logs and pictures are the run's `e2e-logs`
+  artifact (14 days; the repository is public, so anyone can download
+  them — the scenarios' data is their own fixtures), and an issue "Nightly
+  E2E failed" names the failing scenarios and their first checks — opened,
+  or commented on while one is open. Close it once main passes.
+- **Run one as the nightly does**:
+  `make app CONFIG=debug && OVERTERM_E2E_TESTS=1 OVERTERM_E2E_TIMEOUT_SCALE=2 swift test --filter OvertermE2ETests.E2ETests/testDocker`.
+
+What only the runner can tell (it is a VM: a window server and a logged-in
+session, but its own display, 3 cores, no Retina), and so the first nights'
+suspects:
+
+- **The window read as text** (Vision over the window's picture,
+  `readWindow`/`shownPhrase`): `docker`, `kubernetes`, `kubernetesCharts`
+  and the Kubernetes scenarios that share their parts — at scale 1 the text has
+  half the pixels it has on a Retina screen, and a display smaller than
+  1400×880 makes the window the screen's visible area.
+- **Time budgets left in**: `kubernetesCharts` (its chart budget),
+  `activity` (its table and history), `docker`; and every scenario's
+  `eventually` deadlines under an unoptimised build.
+- **The window server's own**: `fullScreen` (a Space of its own, the
+  toolbar's window), `layout` (hit tests at the strip's places),
+  `appearance` and `themes` (the system appearance), `peek`.
+- **Typing into a fresh shell** on a slow machine: `clipboard` (the
+  flakiest here too, Typing into a shell), and the scenarios that wait for
+  `settledPrompt`.
+- **The system's services**: `simulator` (the image's simulator runtimes,
+  CoreSimulator), `openFromFinder` and `openWith` (LaunchServices on a
+  fresh machine), `imagePaste` (the pasteboard).
 
 ## Looking at the UI
 
