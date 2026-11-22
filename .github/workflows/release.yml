@@ -7,11 +7,9 @@
 # Fast, because it repeats nothing CI did. The unit tests ran in CI on this
 # very commit with the same Xcode: the release asks for that run's result
 # (waiting if it is still going) instead of running them again — ten minutes
-# of a 30-minute release. The release build restores the package sources CI
-# saved on main, once per Package.resolved, so nothing is fetched again; the
-# compile itself runs every time (packages ≈2 min, then Overterm's own
-# whole-module ≈48 min) — a restored whole .build was not reused (ci.yml,
-# bundle). `run_tests` runs the tests here anyway; `clean_build` builds
+# of a 30-minute release. The release build restores main's CI build of this
+# commit — the packages and the app's modules compiled, the files dated by
+# their commits — so the app is only assembled (ci.yml, bundle). `run_tests` runs the tests here anyway; `clean_build` builds
 # without the cache.
 #
 # Manual only: a macOS runner is expensive, so nothing triggers it on push.
@@ -64,7 +62,13 @@ jobs:
     steps:
       - uses: actions/checkout@v7
         with:
-          fetch-depth: 0  # the build number counts commits; tags
+          fetch-depth: 0  # the build number counts commits; tags; the files' dates
+
+      # Each file dated by its last commit, as CI's jobs do: with main's
+      # build of this commit restored (below), nothing is compiled again
+      # (Scripts/restore-mtimes.sh).
+      - name: Date the files by their commits
+        run: Scripts/restore-mtimes.sh
 
       - name: Version, tag and notes
         run: |
@@ -151,19 +155,26 @@ jobs:
           path: Frameworks
           key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
 
-      # CI's release build on main (see the top): its package sources, for these
-      # pins and this Xcode. Restored only — CI is what saves it, with these
-      # very paths and key (ci.yml, bundle).
+      # CI's release build on main (see the top): the whole of it — the
+      # packages and the app's modules compiled, Swift Build's database —
+      # for this commit when main's CI saved it, else its newest. Restored
+      # only — CI is what saves it, with these very paths and keys (ci.yml,
+      # bundle). With this commit's, the app is only assembled.
       - name: Restore the Swift build
         if: ${{ !inputs.clean_build }}
         uses: actions/cache/restore@v6
         with:
           path: |
-            .build/checkouts
-            .build/repositories
-            .build/workspace-state.json
-          key: spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}
+            .build/*
+            !.build/out
+            .build/out/*
+            !.build/out/Products
+            !.build/out/v5
+            .build/out/Products/Release/*
+            !.build/out/Products/Release/lib*.a
+          key: spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
           restore-keys: |
+            spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
             spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-
 
       # As many processes at once as CI's test job runs (ci.yml's
