@@ -1,6 +1,12 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Stage 1b's pure parts (analysis 4.11, 4.12, 5.1, 3.2): what a folder's
 /// files say, the backends' identities, the classes, the roots and

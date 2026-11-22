@@ -1,0 +1,411 @@
+import AppKit
+import SwiftUI
+
+/// Tab Info: where the tab is, and what it is running.
+package struct TabInfoView: View {
+    @ObservedObject package var model: TabInfoModel
+    @ObservedObject package var theme: ChromeTheme
+    /// A port's Open: the window's browser when Settings ▸ Browser says so.
+    package var openURL: (URL) -> Void = { NSWorkspace.shared.open($0) }
+    /// Show in Activity (6.12): the page at the tab, a process or a port;
+    /// nil with Activity off. Tab Info itself signals nothing.
+    package var showInActivity: ((ActivityLink) -> Void)? = nil
+
+    /// A process row's Show in Activity (6.12): Processes, it selected
+    /// and followed, in its tab's scope. Pure.
+    package nonisolated static func processLink(_ node: ProcessNode, tab: UUID) -> ActivityLink {
+        .process(node.identity, tab: tab)
+    }
+
+    /// A port row's Show in Activity (6.12): Listening at the tab's
+    /// checkout, its holder's row when a process holds it — a container's
+    /// or a forward's has none. Pure.
+    package nonisolated static func portLink(_ port: ListeningPort, tab: UUID) -> ActivityLink {
+        .port(port.port, proto: port.proto, pid: port.pid > 0 ? port.pid : nil, tab: tab)
+    }
+
+    package var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            header
+            locationSection
+            processSection
+            terraformSection
+            portSection
+            claudeSection
+            diskSection
+        }
+        .padding(16)
+        .frame(width: 480)
+        .foregroundStyle(theme.text)
+        .background(theme.strip)
+    }
+
+    private var header: some View {
+        HStack(spacing: 8) {
+            Image(systemName: model.tab.agent?.symbol ?? "terminal").font(.system(size: ChromeMetrics.text(13)))
+            Text(model.tab.title).font(.system(size: ChromeMetrics.text(14), weight: .semibold)).lineLimit(1)
+            Spacer()
+            if let showInActivity {
+                Button {
+                    showInActivity(.tab(model.tab.id))
+                } label: {
+                    Image(systemName: "gauge.with.dots.needle.33percent").font(.system(size: ChromeMetrics.text(13)))
+                }
+                .buttonStyle(.borderless)
+                .help("Show in Activity (⌥⌘A): this tab's processes and ports, with every verb")
+                .accessibilityIdentifier("tabInfo.showInActivity")
+            }
+        }
+    }
+
+    @ViewBuilder private var locationSection: some View {
+        if let location = model.location {
+            VStack(alignment: .leading, spacing: 4) {
+                Label {
+                    Text((location.directory as NSString).abbreviatingWithTildeInPath)
+                        .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
+                        .lineLimit(1)
+                        .truncationMode(.middle)
+                        .textSelection(.enabled)
+                } icon: {
+                    Image(systemName: "folder")
+                }
+                if location.checkout != nil {
+                    HStack(spacing: 6) {
+                        Image(systemName: "arrow.triangle.branch").frame(width: 16)
+                        Text(location.branch ?? "(detached)")
+                        if let main = location.worktreeOf {
+                            Text("· worktree of \(main)").foregroundStyle(theme.dimText)
+                        }
+                        if let changed = location.changedFiles {
+                            Text(changed == 0 ? "· clean" : "· \(changed) changed").foregroundStyle(theme.dimText)
+                        }
+                    }
+                }
+            }
+            .font(.system(size: ChromeMetrics.text(12)))
+        }
+    }
+
+    private var processSection: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            HStack {
+                Text("Running").font(.system(size: ChromeMetrics.text(11), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.dimText)
+                Spacer()
+                Text("CPU").frame(width: 60, alignment: .trailing)
+                    .help("Share of one core since the last sample: 100% is a whole core, as htop counts")
+                Text("Memory").frame(width: 80, alignment: .trailing)
+                    .help("What Activity Monitor calls Memory: the footprint. Real memory (RSS) is in each row's tooltip")
+            }
+            .font(.system(size: ChromeMetrics.text(11)))
+            .foregroundStyle(theme.dimText)
+            let rows = model.rows
+            ScrollView {
+                VStack(spacing: 0) {
+                    if rows.isEmpty {
+                        Text(model.hasRead ? "Nothing runs here" : "Reading…").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.dimText)
+                            .frame(maxWidth: .infinity, alignment: .leading).frame(height: ChromeMetrics.row(20))
+                    }
+                    ForEach(rows) { row in
+                        switch row.kind {
+                        case .pane(let label):
+                            PaneLabelRow(label: label, theme: theme)
+                        case .process(let node, let depth, let isShell, let leftTerminal):
+                            ProcessRow(node: node, depth: depth, isShell: isShell, leftTerminal: leftTerminal, theme: theme)
+                                .contextMenu {
+                                    if let showInActivity {
+                                        Button("Show in Activity") { showInActivity(Self.processLink(node, tab: model.tab.id)) }
+                                    }
+                                }
+                        }
+                    }
+                }
+            }
+            // As tall as its rows, up to 12 of them; then it scrolls.
+            .frame(height: CGFloat(min(max(rows.count, 1), 12)) * 20)
+            Divider().opacity(0.4)
+            HStack {
+                Text("Total").font(.system(size: ChromeMetrics.text(12), weight: .semibold))
+                Spacer()
+                Text(verbatim: Self.cpu(model.totalCPU)).frame(width: 60, alignment: .trailing)
+                Text(verbatim: Self.memory(model.totalFootprint)).frame(width: 80, alignment: .trailing)
+                    .help("Real memory (RSS): \(Self.memory(model.totalMemory))")
+            }
+            .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
+        }
+    }
+
+    /// Terraform running here: what it does, the root and workspace, for how
+    /// long, its provider plugins and the root's `.terraform` on disk.
+    @ViewBuilder private var terraformSection: some View {
+        if !model.terraform.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Terraform").font(.system(size: ChromeMetrics.text(11), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.dimText)
+                ForEach(model.terraform, id: \.pid) { row in
+                    HStack(spacing: 8) {
+                        Text(verbatim: row.operation).font(.system(size: ChromeMetrics.text(12), weight: .semibold, design: .monospaced))
+                        Text(verbatim: "\(row.root) · workspace \(row.workspace)")
+                            .foregroundStyle(row.production ? KubernetesPageView.production : theme.dimText)
+                            .lineLimit(1).truncationMode(.middle)
+                        Spacer()
+                        if let since = row.started {
+                            Text(verbatim: TerraformInfoRow.elapsed(since: since)).foregroundStyle(theme.dimText)
+                        }
+                        if row.providers > 0 {
+                            Text(verbatim: "\(row.providers) provider\(row.providers == 1 ? "" : "s")").foregroundStyle(theme.dimText)
+                        }
+                        if let bytes = row.dataBytes {
+                            Text(verbatim: ".terraform " + ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)).foregroundStyle(theme.dimText)
+                        }
+                    }
+                    .font(.system(size: ChromeMetrics.text(12)))
+                    .accessibilityElement(children: .combine)
+                    .accessibilityIdentifier("tabInfo.terraform")
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private var portSection: some View {
+        if !model.ports.isEmpty {
+            VStack(alignment: .leading, spacing: 4) {
+                Text("Listening").font(.system(size: ChromeMetrics.text(11), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.dimText)
+                ForEach(model.ports) { port in
+                    HStack(spacing: 8) {
+                        Text(verbatim: ":\(port.port)").font(.system(size: ChromeMetrics.text(12), weight: .semibold, design: .monospaced))
+                        if let forward = port.forward {
+                            Label(
+                                "\(forward.target) → \(forward.pod ?? "…") · \(forward.context)/\(forward.namespace)",
+                                systemImage: "arrow.left.arrow.right"
+                            )
+                            .foregroundStyle(forward.production ? KubernetesPageView.production : theme.dimText)
+                            .help("kubectl port-forward · \(forward.state)")
+                        } else if let container = port.container {
+                            Label(container, systemImage: "shippingbox").foregroundStyle(theme.dimText)
+                        } else {
+                            Text(port.process).foregroundStyle(theme.dimText)
+                        }
+                        if let address = Self.address(of: port) {
+                            Text(verbatim: address).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText)
+                        }
+                        Text(verbatim: Self.portWords(port)).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText)
+                            .accessibilityIdentifier("tabInfo.portWords")
+                        Spacer()
+                        if let url = port.url {
+                            Button {
+                                openURL(url)
+                            } label: {
+                                Label("Open", systemImage: "arrow.up.forward.app")
+                            }
+                            .controlSize(.small)
+                            .help(url.absoluteString)
+                        }
+                        Menu {
+                            Button(port.url == nil ? "Copy Address" : "Copy URL") {
+                                NSPasteboard.general.clearContents()
+                                NSPasteboard.general.setString(port.url?.absoluteString ?? port.endpoint, forType: .string)
+                            }
+                            if let showInActivity {
+                                Button("Show in Activity") {
+                                    showInActivity(Self.portLink(port, tab: model.tab.id))
+                                }
+                            }
+                        } label: {
+                            Image(systemName: "ellipsis")
+                        }
+                        .menuStyle(.borderlessButton).menuIndicator(.hidden).fixedSize()
+                        .help("Copy its URL, or show it in Activity")
+                        .accessibilityIdentifier("tabInfo.port.\(port.proto).\(port.port)")
+                    }
+                    .font(.system(size: ChromeMetrics.text(12)))
+                }
+            }
+        }
+    }
+
+    @ViewBuilder private var claudeSection: some View {
+        if model.readingClaude {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Reading the Claude session…").foregroundStyle(theme.dimText)
+            }
+            .font(.system(size: ChromeMetrics.text(12)))
+        } else if let usage = model.claude {
+            VStack(alignment: .leading, spacing: 6) {
+                HStack(spacing: 6) {
+                    Text("Claude session").font(.system(size: ChromeMetrics.text(11), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.dimText)
+                    Spacer()
+                    if let modelName = usage.model {
+                        Text(verbatim: modelName.replacingOccurrences(of: "claude-", with: "")).foregroundStyle(theme.dimText)
+                    }
+                    if let started = usage.started, let last = usage.lastActivity {
+                        Text(verbatim: "· " + Self.duration(last.timeIntervalSince(started))).foregroundStyle(theme.dimText)
+                    }
+                }
+                .font(.system(size: ChromeMetrics.text(11)))
+                HStack(spacing: 14) {
+                    tokenStat("input", usage.input)
+                    tokenStat("output", usage.output)
+                    tokenStat("cache read", usage.cacheRead)
+                    tokenStat("cache write", usage.cacheWrite)
+                }
+                Text(verbatim: "\(usage.replies) replies · \(Self.tokens(usage.total)) tokens in all")
+                    .font(.system(size: ChromeMetrics.text(11)))
+                    .foregroundStyle(theme.dimText)
+            }
+        }
+    }
+
+    @ViewBuilder private var diskSection: some View {
+        if model.measuringDisk {
+            HStack(spacing: 6) {
+                ProgressView().controlSize(.small)
+                Text("Measuring the checkout on disk…").foregroundStyle(theme.dimText)
+            }
+            .font(.system(size: ChromeMetrics.text(12)))
+        } else if let disk = model.disk {
+            VStack(alignment: .leading, spacing: 4) {
+                HStack {
+                    Text("Disk").font(.system(size: ChromeMetrics.text(11), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.dimText)
+                    Spacer()
+                    Text(verbatim: (disk.partial ? "≥ " : "") + Self.memory(disk.total) + " · \(disk.files.formatted()) files")
+                        .font(.system(size: ChromeMetrics.text(11)))
+                        .foregroundStyle(theme.dimText)
+                }
+                ForEach(disk.largest, id: \.name) { entry in
+                    HStack(spacing: 8) {
+                        Text(verbatim: entry.name).lineLimit(1).frame(width: 130, alignment: .leading)
+                        GeometryReader { proxy in
+                            Capsule()
+                                .fill(theme.dimText.opacity(0.5))
+                                .frame(width: max(2, proxy.size.width * CGFloat(entry.bytes) / CGFloat(max(disk.total, 1))))
+                        }
+                        .frame(height: 5)
+                        Text(verbatim: Self.memory(entry.bytes)).frame(width: 70, alignment: .trailing)
+                    }
+                    .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
+                }
+            }
+        }
+    }
+
+    private func tokenStat(_ label: String, _ value: Int) -> some View {
+        VStack(alignment: .leading, spacing: 1) {
+            Text(verbatim: Self.tokens(value)).font(.system(size: ChromeMetrics.text(13), weight: .semibold, design: .monospaced))
+            Text(label).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText)
+        }
+    }
+
+    /// 1234 → 1.2K, 38_400_000 → 38M.
+    package nonisolated static func tokens(_ n: Int) -> String { TokenCount.text(n) }
+
+    package nonisolated static func duration(_ seconds: TimeInterval) -> String {
+        let formatter = DateComponentsFormatter()
+        formatter.allowedUnits = seconds >= 3600 ? [.hour, .minute] : [.minute, .second]
+        formatter.unitsStyle = .abbreviated
+        return formatter.string(from: seconds) ?? ""
+    }
+
+    /// "—" for none yet: a first sample has no rate, never 0 (7.5).
+    package nonisolated static func cpu(_ percent: Double?) -> String { InfoText.cpu(percent) }
+
+    /// The address said beside a listening port (docs/design/activity/
+    /// analysis.md, 6.8): a process's when it is bound to one address that
+    /// isn't loopback, a forward's wherever it isn't this Mac's alone — a
+    /// pod forwarded to the whole network (`0.0.0.0`, `::`) or to one LAN
+    /// address must never look like a loopback one. Pure.
+    package nonisolated static func address(of port: ListeningPort) -> String? {
+        if port.forward != nil { return port.scope == .thisMac ? nil : port.address }
+        return port.scope == .oneAddress ? port.address : nil
+    }
+
+    /// What a Listening row says of its socket (6.12): "tcp · v4 + v6 ·
+    /// This Mac" — its families only when read (a container's and a
+    /// forward's aren't). Pure.
+    package nonisolated static func portWords(_ port: ListeningPort) -> String {
+        var words = [port.proto]
+        switch (port.families.contains(.v4), port.families.contains(.v6)) {
+        case (true, true): words.append("v4 + v6")
+        case (true, false): words.append("v4")
+        case (false, true): words.append("v6")
+        default: break
+        }
+        words.append(port.scope == .thisMac ? "This Mac" : "Network")
+        return words.joined(separator: " · ")
+    }
+
+    package nonisolated static func memory(_ bytes: UInt64) -> String { InfoText.memory(bytes) }
+}
+
+private struct ProcessRow: View {
+    let node: ProcessNode
+    let depth: Int
+    /// The pane's shell: its group's root, dimmed.
+    let isShell: Bool
+    /// It carries the pane's tag outside its tree: it left its terminal.
+    let leftTerminal: Bool
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View {
+        HStack(spacing: 4) {
+            if depth > 0, leftTerminal {
+                Text(verbatim: "↗").foregroundStyle(theme.dimText).padding(.leading, CGFloat(depth - 1) * 14)
+                    .help("Left its terminal: it carries the pane's tag outside its tree (nohup, disown)")
+            } else if depth > 0 {
+                Text(verbatim: "└").foregroundStyle(theme.dimText).padding(.leading, CGFloat(depth - 1) * 14)
+            }
+            Text(verbatim: node.name).lineLimit(1).foregroundStyle(isShell ? theme.dimText : theme.text)
+            Text(verbatim: String(node.pid)).font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.dimText)
+            Spacer(minLength: 8)
+            Text(verbatim: TabInfoView.cpu(node.cpuPercent))
+                .foregroundStyle((node.cpuPercent ?? 0) >= 50 ? TabStatusStyle.signal : (isShell ? theme.dimText : theme.text))
+                .frame(width: 60, alignment: .trailing)
+            Text(verbatim: TabInfoView.memory(node.footprint)).frame(width: 80, alignment: .trailing)
+                .foregroundStyle(isShell ? theme.dimText : theme.text)
+                .help(TabInfoView.memoryHelp(for: node))
+        }
+        .font(.system(size: ChromeMetrics.text(12), design: .monospaced))
+        .frame(height: ChromeMetrics.row(20))
+        .help(TabInfoView.help(for: node))
+        .accessibilityElement(children: .combine)
+        .accessibilityIdentifier("tabInfo.process")
+    }
+}
+
+/// A split tab's pane, over its group: what it runs, else its title.
+private struct PaneLabelRow: View {
+    let label: String
+    @ObservedObject var theme: ChromeTheme
+
+    var body: some View {
+        HStack(spacing: 6) {
+            Image(systemName: "rectangle.split.2x1").font(.system(size: ChromeMetrics.text(10)))
+            Text(verbatim: label).lineLimit(1).truncationMode(.middle)
+            Spacer()
+        }
+        .font(.system(size: ChromeMetrics.text(11), weight: .semibold))
+        .foregroundStyle(theme.dimText)
+        .frame(height: ChromeMetrics.row(20))
+        .accessibilityIdentifier("tabInfo.pane")
+    }
+}
+
+extension TabInfoView {
+    /// A row's tooltip (6.12): its command as it was masked when read
+    /// (9.3) — a password on a command line is never a hover away on a
+    /// screen share — then where it works, when the census read it, and
+    /// when it started.
+    package nonisolated static func help(for node: ProcessNode) -> String {
+        var lines = [node.maskedCommand.isEmpty ? node.name : node.maskedCommand]
+        if let folder = node.workingDirectory { lines.append((folder as NSString).abbreviatingWithTildeInPath) }
+        let started = Date(timeIntervalSince1970: Double(node.identity.start) / 1_000_000)
+        lines.append("Started " + DateFormatter.localizedString(from: started, dateStyle: .short, timeStyle: .medium))
+        return lines.joined(separator: "\n")
+    }
+
+    /// The memory cell's: the footprint shown is Activity Monitor's Memory;
+    /// real memory, resident, beside it.
+    package nonisolated static func memoryHelp(for node: ProcessNode) -> String {
+        "Memory (footprint): \(memory(node.footprint)) · real memory (RSS): \(memory(node.memory))"
+    }
+}

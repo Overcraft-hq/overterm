@@ -3,7 +3,7 @@ import Foundation
 /// What an agent can do with a tab's browser — BrowserSession does it; the
 /// tests hand in a fake.
 @MainActor
-protocol AgentBrowser: AnyObject {
+package protocol AgentBrowser: AnyObject {
     func navigate(_ url: URL, timeout: TimeInterval) async throws
     func snapshot() async throws -> String
     func click(ref: String) async throws
@@ -26,15 +26,15 @@ protocol AgentBrowser: AnyObject {
 /// streams), one server per pane so a call reaches its own tab's browser.
 /// Pure of any transport: BrowserBridge carries the bytes.
 @MainActor
-enum BrowserMCP {
-    static let protocolVersion = "2025-06-18"
+package enum BrowserMCP {
+    package static let protocolVersion = "2025-06-18"
 
     /// The answer to one JSON-RPC message; nil for a notification. A
     /// pane's call runs with `MCPAsker.pane` set: every confirmation it
     /// asks names that pane's tab and agent.
-    static func handle(
+    package static func handle(
         _ message: [String: Any], browser: () -> AgentBrowser?, api: () -> AgentAPI? = { nil }, pane: String? = nil, settings: Settings = .shared,
-        kubernetes: KubernetesModel = .shared
+        kubernetes: (any Sendable)? = nil
     ) async -> [String: Any]? {
         guard let pane else { return await answer(message, browser: browser, api: api, pane: nil, settings: settings, kubernetes: kubernetes) }
         return await MCPAsker.$pane.withValue(pane) {
@@ -43,7 +43,7 @@ enum BrowserMCP {
     }
 
     private static func answer(
-        _ message: [String: Any], browser: () -> AgentBrowser?, api: () -> AgentAPI?, pane: String?, settings: Settings, kubernetes: KubernetesModel
+        _ message: [String: Any], browser: () -> AgentBrowser?, api: () -> AgentAPI?, pane: String?, settings: Settings, kubernetes: (any Sendable)?
     ) async -> [String: Any]? {
         let id = message["id"]
         let method = message["method"] as? String ?? ""
@@ -70,7 +70,7 @@ enum BrowserMCP {
             // a setting, not the contexts' state now, which changes after the
             // list was read (it isn't announced again): each call is refused
             // where the context isn't writable for agents.
-            if settings.kubernetesAgentAccess, !kubernetes.agentWrites.isEmpty { tools += KubeMCP.writeTools }
+            for provider in features where provider.enabled(settings) { tools += await provider.listed(settings, kubernetes) }
             return reply(["tools": tools])
         case "tools/call":
             guard let name = params["name"] as? String else { return failure(-32602, "No tool name.") }
@@ -87,52 +87,16 @@ enum BrowserMCP {
                     return reply(errorResult(error.localizedDescription))
                 }
             }
-            if name.hasPrefix("db_") || name.hasPrefix("storage_") {
-                guard settings.databaseAgentAccess else {
-                    return reply(errorResult("The databases aren't available to agents — Settings ▸ Database."))
-                }
+            if let provider = features.first(where: { $0.handles(name) }) {
+                guard provider.enabled(settings) else { return reply(errorResult(provider.unavailable)) }
+                // Read by the one call it is handed to, then dropped.
+                nonisolated(unsafe) let arguments = arguments
                 do {
-                    return reply(try await DatabaseMCP.call(name, arguments, model: DatabaseModel.shared))
+                    return reply(try await provider.call(name, arguments, pane, kubernetes))
                 } catch let error as ToolError {
                     return failure(-32602, error.message)
                 } catch {
-                    return reply(errorResult(error.localizedDescription))
-                }
-            }
-            if name.hasPrefix("docker_") {
-                guard settings.dockerAgentAccess else {
-                    return reply(errorResult("Docker isn't available to agents — Settings ▸ Docker."))
-                }
-                do {
-                    return reply(try await DockerMCP.call(name, arguments, docker: DockerModel.shared))
-                } catch let error as ToolError {
-                    return failure(-32602, error.message)
-                } catch {
-                    return reply(errorResult(error.localizedDescription))
-                }
-            }
-            if name.hasPrefix(KubeMCP.prefix) {
-                guard settings.kubernetesAgentAccess else {
-                    return reply(errorResult("Kubernetes isn't available to agents — Settings ▸ Kubernetes."))
-                }
-                do {
-                    return reply(try await KubeMCP.call(name, arguments, kubernetes: kubernetes, pane: pane))
-                } catch let error as ToolError {
-                    return failure(-32602, error.message)
-                } catch {
-                    return reply(errorResult(KubeMCPText.scrubbed(KubernetesModel.said(error))))
-                }
-            }
-            if name.hasPrefix(TerraformMCP.prefix) {
-                guard settings.terraformAgentAccess else {
-                    return reply(errorResult("Terraform isn't available to agents — Settings ▸ Terraform."))
-                }
-                do {
-                    return reply(try await TerraformMCP.call(name, arguments, pane: pane))
-                } catch let error as ToolError {
-                    return failure(-32602, error.message)
-                } catch {
-                    return reply(errorResult(TerraformMCP.scrubbed(error.localizedDescription)))
+                    return reply(errorResult(provider.said(error)))
                 }
             }
             if ActivityMCP.handles(name) {
@@ -174,8 +138,12 @@ enum BrowserMCP {
         }
     }
 
-    struct ToolError: Error {
-        let message: String
+    package struct ToolError: Error {
+        package let message: String
+
+        package init(message: String) {
+            self.message = message
+        }
     }
 
     private static func call(_ name: String, _ arguments: [String: Any], _ browser: AgentBrowser) async throws -> [String: Any] {
@@ -240,24 +208,21 @@ enum BrowserMCP {
     }
 
     /// The tools of what Settings gives agents: the browser's, the API client's, the notes', the databases', Docker's, Kubernetes', Terraform's, Activity's.
-    static var offered: [[String: Any]] { offered(in: .shared) }
+    package static var offered: [[String: Any]] { offered(in: .shared) }
 
-    static func offered(in settings: Settings) -> [[String: Any]] {
+    package static func offered(in settings: Settings) -> [[String: Any]] {
         var offered: [[String: Any]] = []
         if settings.browserAgentControl { offered += tools }
         if settings.apiAgentControl { offered += APIMCP.tools }
         if settings.notesAgentAccess { offered += NotesMCP.tools }
-        if settings.databaseAgentAccess { offered += DatabaseMCP.tools }
-        if settings.dockerAgentAccess { offered += DockerMCP.tools }
-        if settings.kubernetesAgentAccess { offered += KubeMCP.tools }
-        if settings.terraformAgentAccess { offered += TerraformMCP.tools }
+        for provider in features where provider.enabled(settings) { offered += provider.tools }
         if settings.activityAgentAccess { offered += ActivityMCP.tools }
         return offered
     }
 
-    static var instructions: String { instructions(in: .shared) }
+    package static var instructions: String { instructions(in: .shared) }
 
-    static func instructions(in settings: Settings) -> String {
+    package static func instructions(in settings: Settings) -> String {
         var parts: [String] = []
         if settings.browserAgentControl {
             parts.append(
@@ -277,22 +242,58 @@ enum BrowserMCP {
                         : "")
             )
         }
-        if settings.databaseAgentAccess {
-            parts.append(
-                "The user's databases and buckets (Overterm's Database panel): db_connections and db_schema show what is there, db_query runs one statement and returns rows — reads; storage_list and storage_read browse S3/GCS. Check real data instead of guessing a schema."
-            )
-        }
-        if settings.dockerAgentAccess { parts.append(DockerMCP.instructions) }
-        if settings.kubernetesAgentAccess { parts.append(KubeMCP.instructions) }
-        if settings.terraformAgentAccess { parts.append(TerraformMCP.instructions) }
+        for provider in features where provider.enabled(settings) { parts.append(provider.instructions) }
         if settings.activityAgentAccess { parts.append(ActivityMCP.instructions) }
         return parts.joined(separator: " ")
     }
 
-    static func textResult(_ text: String) -> [String: Any] { ["content": [["type": "text", "text": text]]] }
-    static func errorResult(_ text: String) -> [String: Any] { ["content": [["type": "text", "text": text]], "isError": true] }
+    /// A feature's agent tools (the databases', Docker's, Kubernetes',
+    /// Terraform's), in the order they are offered and asked: each its own
+    /// prefix, its setting, its words. Set at install (`OvertermFeatures`).
+    package struct Provider: Sendable {
+        package var handles: @MainActor @Sendable (String) -> Bool
+        package var enabled: @MainActor @Sendable (Settings) -> Bool
+        /// Said when its setting is off.
+        package var unavailable: String
+        @MainActor package var tools: [[String: Any]] { toolList() }
+        package var toolList: @MainActor @Sendable () -> [[String: Any]]
+        /// What `tools/list` adds now (Kubernetes' writes while a context allows them).
+        package var listed: @MainActor @Sendable (Settings, (any Sendable)?) async -> [[String: Any]] = { _, _ in [] }
+        @MainActor package var instructions: String { instructionText() }
+        package var instructionText: @MainActor @Sendable () -> String
+        /// The call: its name, arguments, the pane, a test's Kubernetes model.
+        package var call: @MainActor @Sendable (String, [String: Any], String?, (any Sendable)?) async throws -> Any
+        /// An error as the agent reads it.
+        package var said: @MainActor @Sendable (Error) -> String = { $0.localizedDescription }
 
-    static let tools: [[String: Any]] = [
+        package init(
+            handles: @escaping @MainActor @Sendable (String) -> Bool, enabled: @escaping @MainActor @Sendable (Settings) -> Bool, unavailable: String,
+            tools: @escaping @MainActor @Sendable () -> [[String: Any]], instructions: @escaping @MainActor @Sendable () -> String,
+            listed: @escaping @MainActor @Sendable (Settings, (any Sendable)?) async -> [[String: Any]] = { _, _ in [] },
+            call: @escaping @MainActor @Sendable (String, [String: Any], String?, (any Sendable)?) async throws -> Any,
+            said: @escaping @MainActor @Sendable (Error) -> String = { $0.localizedDescription }
+        ) {
+            self.handles = handles
+            self.enabled = enabled
+            self.unavailable = unavailable
+            self.toolList = tools
+            self.instructionText = instructions
+            self.listed = listed
+            self.call = call
+            self.said = said
+        }
+    }
+
+    package static var features: [Provider] {
+        FeatureHooks.ensure()
+        return featuresStorage
+    }
+    package nonisolated(unsafe) static var featuresStorage: [Provider] = []
+
+    package static func textResult(_ text: String) -> [String: Any] { ["content": [["type": "text", "text": text]]] }
+    package static func errorResult(_ text: String) -> [String: Any] { ["content": [["type": "text", "text": text]], "isError": true] }
+
+    package static let tools: [[String: Any]] = [
         tool(
             "browser_navigate", "Open a URL (or localhost:3000, :3000) in the browser and return the page's snapshot.",
             ["url": ["type": "string", "description": "The address, as you'd type it in a browser."]], required: ["url"]),

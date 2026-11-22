@@ -1,13 +1,19 @@
 import Foundation
 
 /// A saved command. `{{name}}` marks a value asked for when it is used.
-struct Snippet: Codable, Identifiable, Equatable {
-    var id = UUID()
-    var name: String
-    var command: String
+package struct Snippet: Codable, Identifiable, Equatable {
+    package var id = UUID()
+    package var name: String
+    package var command: String
+
+    package init(id: UUID = UUID(), name: String, command: String) {
+        self.id = id
+        self.name = name
+        self.command = command
+    }
 
     /// Placeholder names in order of first appearance, without repeats.
-    var placeholders: [String] {
+    package var placeholders: [String] {
         var seen: [String] = []
         for name in Self.placeholderNames(in: command) where !seen.contains(name) {
             seen.append(name)
@@ -17,7 +23,7 @@ struct Snippet: Codable, Identifiable, Equatable {
 
     /// The command with each `{{name}}` replaced by `values[name]`
     /// (missing ones left as they are).
-    func filled(with values: [String: String]) -> String {
+    package func filled(with values: [String: String]) -> String {
         var result = command
         for (name, value) in values {
             result = result.replacingOccurrences(of: "{{\(name)}}", with: value)
@@ -41,11 +47,11 @@ struct Snippet: Codable, Identifiable, Equatable {
 
 /// Snippets, kept as a JSON file you can also edit by hand.
 @MainActor
-final class SnippetStore: ObservableObject {
-    @Published private(set) var snippets: [Snippet] = []
-    let url: URL
+package final class SnippetStore: ObservableObject {
+    @Published package private(set) var snippets: [Snippet] = []
+    package let url: URL
 
-    static var defaultURL: URL {
+    package static var defaultURL: URL {
         AppEnvironment.supportDirectory.appendingPathComponent("snippets.json")
     }
 
@@ -63,11 +69,11 @@ final class SnippetStore: ObservableObject {
     ]
 
     /// `snippets` without the planted ones. Pure, so what it spares is tested.
-    static func withoutPlanted(_ snippets: [Snippet]) -> [Snippet] {
+    package static func withoutPlanted(_ snippets: [Snippet]) -> [Snippet] {
         snippets.filter { !planted.contains([$0.name, $0.command]) }
     }
 
-    init(url: URL = defaultURL) {
+    package init(url: URL = defaultURL) {
         self.url = url
         if let data = try? Data(contentsOf: url), let saved = try? JSONDecoder().decode([Snippet].self, from: data) {
             snippets = Self.withoutPlanted(saved)
@@ -83,7 +89,7 @@ final class SnippetStore: ObservableObject {
         }
     }
 
-    func upsert(_ snippet: Snippet) {
+    package func upsert(_ snippet: Snippet) {
         if let i = snippets.firstIndex(where: { $0.id == snippet.id }) {
             snippets[i] = snippet
         } else {
@@ -92,7 +98,7 @@ final class SnippetStore: ObservableObject {
         save()
     }
 
-    func delete(_ snippet: Snippet) {
+    package func delete(_ snippet: Snippet) {
         snippets.removeAll { $0.id == snippet.id }
         save()
     }

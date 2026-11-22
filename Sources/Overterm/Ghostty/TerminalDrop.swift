@@ -6,9 +6,9 @@ import UniformTypeIdentifiers
 ///
 /// A drop never runs anything: it is a paste (TerminalView.insertText),
 /// the references separated by spaces, with a trailing space.
-enum TerminalDrop {
+package enum TerminalDrop {
     /// One dragged thing.
-    enum Item: Equatable {
+    package enum Item: Equatable {
         /// A file or folder, by its absolute URL.
         case file(URL, isDirectory: Bool)
         /// A web URL or a plain string.
@@ -16,7 +16,7 @@ enum TerminalDrop {
     }
 
     /// What runs in a pane, as far as a drop cares.
-    enum Program: Equatable {
+    package enum Program: Equatable {
         /// A shell, an editor, Codex: anything but Claude Code.
         case other
         /// Claude Code has the pane's keyboard, working in `directory`.
@@ -26,18 +26,18 @@ enum TerminalDrop {
     /// What a drag carries: files (Finder, the sidebar); else files still to
     /// be written — promises: Photos, Safari, the screenshot thumbnail; else
     /// web URLs, else text.
-    enum Payload {
+    package enum Payload {
         case items([Item])
         case promises([NSFilePromiseReceiver])
     }
 
     /// The pasteboard types a pane takes.
-    static let draggedTypes: [NSPasteboard.PasteboardType] =
+    package static let draggedTypes: [NSPasteboard.PasteboardType] =
         [.fileURL, .URL, .string] + NSFilePromiseReceiver.readableDraggedTypes.map { NSPasteboard.PasteboardType($0) }
 
     /// What Claude Code takes for an image in a paste (its own test is
     /// `/\.(png|jpe?g|gif|webp)$/i`).
-    static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp"]
+    package static let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "gif", "webp"]
 
     // MARK: What a drop types in
 
@@ -50,7 +50,7 @@ enum TerminalDrop {
     ///   attaches it on submit.
     /// Text goes in as it is, without line breaks at either end: a drop
     /// never presses Return.
-    static func insertion(_ items: [Item], for program: Program, plainPaths: Bool = false) -> String {
+    package static func insertion(_ items: [Item], for program: Program, plainPaths: Bool = false) -> String {
         var words: [String] = []
         var images: [String] = []
         for item in items {
@@ -61,7 +61,7 @@ enum TerminalDrop {
             case .file(let url, let isDirectory):
                 let path = url.standardizedFileURL.path
                 guard case .claude(let directory) = program, !plainPaths else {
-                    words.append(TerminalWindowController.shellQuoted(path))
+                    words.append(ShellPaths.shellQuoted(path))
                     continue
                 }
                 if !isDirectory, isImage(path), let image = claudeImagePath(path) {
@@ -69,7 +69,7 @@ enum TerminalDrop {
                 } else {
                     let relative = relativePath(url.standardizedFileURL, to: directory)
                     let written = isDirectory && !relative.hasSuffix("/") ? relative + "/" : relative
-                    words.append(claudeMention(written) ?? TerminalWindowController.shellQuoted(path))
+                    words.append(claudeMention(written) ?? ShellPaths.shellQuoted(path))
                 }
             }
         }
@@ -83,7 +83,7 @@ enum TerminalDrop {
     }
 
     /// What the highlight over a pane says a drop there does.
-    static func label(_ items: [Item], for program: Program, plainPaths: Bool = false) -> String {
+    package static func label(_ items: [Item], for program: Program, plainPaths: Bool = false) -> String {
         let files = items.compactMap { item -> (path: String, isDirectory: Bool)? in
             if case .file(let url, let isDirectory) = item { return (url.path, isDirectory) }
             return nil
@@ -95,7 +95,7 @@ enum TerminalDrop {
         return files.count == 1 ? "Drop to insert \(noun)" : "Drop to insert \(files.count) \(noun)s"
     }
 
-    static func isImage(_ path: String) -> Bool {
+    package static func isImage(_ path: String) -> Bool {
         imageExtensions.contains((path as NSString).pathExtension.lowercased())
     }
 
@@ -104,7 +104,7 @@ enum TerminalDrop {
     /// path (it splits a paste before each " /", unescapes each part, and
     /// reads a part ending in an image extension as an image). nil for a
     /// path that splitting would cut: a line break, or " /" in it.
-    static func claudeImagePath(_ path: String) -> String? {
+    package static func claudeImagePath(_ path: String) -> String? {
         guard path.hasPrefix("/"), !path.contains(where: \.isNewline), !path.contains(" /") else { return nil }
         var escaped = ""
         for character in path {
@@ -121,7 +121,7 @@ enum TerminalDrop {
     /// path with a space). nil when neither form carries the path: a `#`
     /// starts a line range, a quote can't be escaped, and whitespace at
     /// either end is trimmed.
-    static func claudeMention(_ path: String) -> String? {
+    package static func claudeMention(_ path: String) -> String? {
         func isSpace(_ character: Character) -> Bool { character.isWhitespace || character == "\u{FEFF}" }
         guard let first = path.first, let last = path.last, !isSpace(first), !isSpace(last), !path.contains("#") else { return nil }
         let core = path.count > 1 && last == "/" ? path.dropLast() : Substring(path)
@@ -133,10 +133,10 @@ enum TerminalDrop {
 
     /// `url` relative to `directory` when inside it, else absolute — also
     /// when the two spell the same place differently (/var is /private/var).
-    static func relativePath(_ url: URL, to directory: String?) -> String {
-        let direct = TerminalWindowController.relativePath(url, cwd: directory)
+    package static func relativePath(_ url: URL, to directory: String?) -> String {
+        let direct = ShellPaths.relativePath(url, cwd: directory)
         guard direct.hasPrefix("/"), let directory else { return direct }
-        let resolved = TerminalWindowController.relativePath(
+        let resolved = ShellPaths.relativePath(
             url.resolvingSymlinksInPath(), cwd: URL(fileURLWithPath: directory).resolvingSymlinksInPath().path)
         return resolved.hasPrefix("/") ? direct : resolved
     }
@@ -144,7 +144,7 @@ enum TerminalDrop {
     // MARK: What a drag carries
 
     /// Reads a drag's pasteboard.
-    @MainActor static func payload(from pasteboard: NSPasteboard) -> Payload? {
+    @MainActor package static func payload(from pasteboard: NSPasteboard) -> Payload? {
         if let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL], !urls.isEmpty {
             return .items(
                 urls.map { url in
@@ -171,7 +171,7 @@ enum TerminalDrop {
 
     /// Stand-ins for the label while promised files have no names yet, only
     /// types.
-    @MainActor static func labelItems(_ payload: Payload) -> [Item] {
+    @MainActor package static func labelItems(_ payload: Payload) -> [Item] {
         switch payload {
         case .items(let items):
             return items
@@ -188,7 +188,7 @@ enum TerminalDrop {
 
     /// A new folder under AppEnvironment.dropsDirectory for one drop's
     /// promised files, so names never collide.
-    static func newDropFolder() throws -> URL {
+    package static func newDropFolder() throws -> URL {
         let folder = AppEnvironment.dropsDirectory.appendingPathComponent(UUID().uuidString, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         return folder
@@ -197,12 +197,12 @@ enum TerminalDrop {
     /// Stands in for the promises' sources: an E2E run can't start a real
     /// drag, and a promise is kept only at the end of one. Gets the promise
     /// and the folder, and calls back with each file written there.
-    @MainActor static var keepPromise: ((NSFilePromiseReceiver, URL, @escaping @Sendable (URL) -> Void) -> Void)?
+    @MainActor package static var keepPromise: ((NSFilePromiseReceiver, URL, @escaping @Sendable (URL) -> Void) -> Void)?
 
     /// Has every promise's files written into `folder`, then hands them to
     /// `done` on the main thread, in the order promised. A file that fails,
     /// or is still missing after `timeout`, is left out.
-    @MainActor static func receive(
+    @MainActor package static func receive(
         _ promises: [NSFilePromiseReceiver], into folder: URL, timeout: TimeInterval = 30, done: @escaping @MainActor ([URL]) -> Void
     ) {
         let collector = PromisedFiles(expected: promises.reduce(0) { $0 + max($1.fileTypes.count, 1) }, done: done)
@@ -232,7 +232,7 @@ enum TerminalDrop {
     /// group read from it. Blocking: call off the main thread. The pane is
     /// the app context's (`ActivityMonitor.context`): one it doesn't have
     /// yet is `.other`.
-    nonisolated static func program(pane: String, foreground: pid_t?, census: ActivitySampler = .app) -> Program {
+    package nonisolated static func program(pane: String, foreground: pid_t?, census: ActivitySampler = .app) -> Program {
         programAndSnapshot(pane: pane, foreground: foreground, census: census).0
     }
 
@@ -241,7 +241,7 @@ enum TerminalDrop {
     /// (`PaneAgent.pairing`) — a drop in a new pane's first moments. A
     /// snapshot made before the pairing the context has now answers
     /// nothing of the pane (`ActivitySnapshot.readPairings`).
-    nonisolated static func programAndSnapshot(pane: String, foreground: pid_t?, census: ActivitySampler = .app) -> (
+    package nonisolated static func programAndSnapshot(pane: String, foreground: pid_t?, census: ActivitySampler = .app) -> (
         Program, ActivitySnapshot?
     ) {
         let context = census.appContext
@@ -269,7 +269,7 @@ enum TerminalDrop {
     /// as the agent overview finds one) is in its terminal's foreground
     /// process group — not one left running in the background. Without a
     /// foreground group to go by, any Claude process counts.
-    nonisolated static func program(among nodes: [ProcessNode], foreground: pid_t?, groupOf: (pid_t) -> pid_t?) -> Program {
+    package nonisolated static func program(among nodes: [ProcessNode], foreground: pid_t?, groupOf: (pid_t) -> pid_t?) -> Program {
         let claudes = nodes.filter { AgentOverviewModel.agent(of: $0) == .claude }
         let claude = foreground.map { group in claudes.first { groupOf($0.pid) == group } } ?? claudes.first
         return claude.map { .claude(directory: $0.workingDirectory) } ?? .other

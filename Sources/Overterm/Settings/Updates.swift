@@ -4,19 +4,19 @@ import AppKit
 /// (private: asked through the user's gh), compared with this build's
 /// version; its DMG downloaded into ~/Downloads and opened on request.
 @MainActor
-final class UpdateChecker: ObservableObject {
-    static let shared = UpdateChecker()
+package final class UpdateChecker: ObservableObject {
+    package static let shared = UpdateChecker()
 
     /// Where releases are published (the Release workflow).
-    static let repository = "Overcraft-hq/overterm"
+    package static let repository = "Overcraft-hq/overterm"
 
-    struct Release: Equatable {
-        let version: String
-        let url: URL?
-        let dmgName: String?
+    package struct Release: Equatable {
+        package let version: String
+        package let url: URL?
+        package let dmgName: String?
     }
 
-    enum State: Equatable {
+    package enum State: Equatable {
         case idle, checking
         case upToDate
         case available(Release)
@@ -25,18 +25,18 @@ final class UpdateChecker: ObservableObject {
         case failed(String)
     }
 
-    @Published private(set) var state: State = .idle
+    @Published package private(set) var state: State = .idle
 
     /// This build's version (CFBundleShortVersionString, i.e. VERSION).
-    var currentVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0" }
+    package var currentVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "0.0.0" }
 
     /// The newer release, if the last check found one.
-    var available: Release? {
+    package var available: Release? {
         if case .available(let release) = state { return release }
         return nil
     }
 
-    func check() async {
+    package func check() async {
         state = .checking
         do {
             let data = try await GitHub.run(["api", "repos/\(Self.repository)/releases/latest"], in: FileManager.default.homeDirectoryForCurrentUser)
@@ -50,7 +50,7 @@ final class UpdateChecker: ObservableObject {
     }
 
     /// Once a day at launch, when Settings allows it; quiet unless newer.
-    func checkIfDue(defaults: UserDefaults = AppEnvironment.defaults, now: Date = Date()) {
+    package func checkIfDue(defaults: UserDefaults = AppEnvironment.defaults, now: Date = Date()) {
         guard Settings.shared.checkForUpdates, !AppEnvironment.isIsolated else { return }
         let key = "updates.lastCheck"
         if let last = defaults.object(forKey: key) as? Date, now.timeIntervalSince(last) < 24 * 3600 { return }
@@ -60,7 +60,7 @@ final class UpdateChecker: ObservableObject {
 
     /// The release's DMG into ~/Downloads (through gh: the repository is
     /// private), then opened — Finder mounts it; the app goes to Applications.
-    func download(_ release: Release, into folder: URL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]) async {
+    package func download(_ release: Release, into folder: URL = FileManager.default.urls(for: .downloadsDirectory, in: .userDomainMask)[0]) async {
         state = .downloading(release)
         do {
             _ = try await GitHub.run(
@@ -77,7 +77,7 @@ final class UpdateChecker: ObservableObject {
     // MARK: Pure
 
     /// `gh api …/releases/latest`: tag_name "v1.2.3", html_url, assets[].name.
-    nonisolated static func parse(latest data: Data) throws -> Release {
+    package nonisolated static func parse(latest data: Data) throws -> Release {
         struct Asset: Decodable { let name: String }
         struct Latest: Decodable {
             let tag_name: String
@@ -91,7 +91,7 @@ final class UpdateChecker: ObservableObject {
     }
 
     /// SemVer's MAJOR.MINOR.PATCH, compared as numbers (1.10.0 > 1.9.0).
-    nonisolated static func isNewer(_ candidate: String, than current: String) -> Bool {
+    package nonisolated static func isNewer(_ candidate: String, than current: String) -> Bool {
         func parts(_ version: String) -> [Int] {
             version.split(separator: ".").prefix(3).map { Int($0.prefix { $0.isNumber }) ?? 0 } + [0, 0, 0]
         }
@@ -102,13 +102,13 @@ final class UpdateChecker: ObservableObject {
 }
 
 /// CHANGELOG.md, bundled in the app (make-app.sh copies it).
-enum Changelog {
-    static var bundled: String? {
+package enum Changelog {
+    package static var bundled: String? {
         Bundle.main.url(forResource: "CHANGELOG", withExtension: "md").flatMap { try? String(contentsOf: $0, encoding: .utf8) }
     }
 
     /// A version's lines: "## 1.14.0 — 2026-09-26" up to the next heading.
-    static func entry(for version: String, in text: String) -> [String] {
+    package static func entry(for version: String, in text: String) -> [String] {
         var lines: [String] = []
         var inside = false
         for line in text.components(separatedBy: "\n") {

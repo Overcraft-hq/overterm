@@ -4,8 +4,10 @@ import Foundation
 /// ⌘F: one query across the terminal's scrollback, the checkout's file
 /// names and its file contents — and the notes vault's, when notes are on.
 @MainActor
-final class SpotlightModel: ObservableObject {
-    enum Row: Identifiable, Equatable {
+package final class SpotlightModel: ObservableObject {
+    package init() {}
+
+    package enum Row: Identifiable, Equatable {
         /// Find in the terminal: its match count (nil while unknown).
         case terminal(total: Int?)
         case file(String)
@@ -15,7 +17,7 @@ final class SpotlightModel: ObservableObject {
         /// All: the rest of a group, behind its tab.
         case more(Scope, count: Int)
 
-        var id: String {
+        package var id: String {
             switch self {
             case .terminal: "terminal"
             case .file(let path): "f:" + path
@@ -29,11 +31,11 @@ final class SpotlightModel: ObservableObject {
     /// Which results show: a few of each, or one kind in full. A query
     /// over a checkout found hundreds of lines, and the notes were under
     /// all of them.
-    enum Scope: String, CaseIterable, Identifiable {
+    package enum Scope: String, CaseIterable, Identifiable {
         case all, files, notes, terminal
 
-        var id: String { rawValue }
-        var title: String {
+        package var id: String { rawValue }
+        package var title: String {
             switch self {
             case .all: "All"
             case .files: "Files"
@@ -44,9 +46,9 @@ final class SpotlightModel: ObservableObject {
     }
 
     /// How many of each kind All shows before its "more" row.
-    nonisolated static let allLimit = 5
+    package nonisolated static let allLimit = 5
 
-    @Published var scope: Scope = .all {
+    @Published package var scope: Scope = .all {
         didSet {
             guard scope != oldValue else { return }
             // The notes' tab reads further than All does.
@@ -55,7 +57,7 @@ final class SpotlightModel: ObservableObject {
     }
 
     /// Each kind's count, for the tabs (nil: still looking, or none to look in).
-    func count(of scope: Scope) -> Int? {
+    package func count(of scope: Scope) -> Int? {
         switch scope {
         case .all: nil
         case .files: root == nil ? nil : names.count + contents.count
@@ -65,31 +67,31 @@ final class SpotlightModel: ObservableObject {
     }
 
     /// ⇥ and ⇧⇥: the next tab, the one before.
-    func cycleScope(_ offset: Int) {
+    package func cycleScope(_ offset: Int) {
         let all = Scope.allCases
         let index = all.firstIndex(of: scope) ?? 0
         scope = all[(index + offset + all.count) % all.count]
     }
 
-    @Published var query = "" {
+    @Published package var query = "" {
         didSet { if query != oldValue { search() } }
     }
-    @Published private(set) var rows: [Row] = []
-    @Published var selectedIndex = 0
-    @Published private(set) var root: URL?
+    @Published package private(set) var rows: [Row] = []
+    @Published package var selectedIndex = 0
+    @Published package private(set) var root: URL?
 
-    private(set) weak var terminal: TerminalView?
+    package private(set) weak var terminal: TerminalView?
     private var files: [String] = []
     private var names: [String] = []
     private var contents: [ContentMatch] = []
     private var noteRows: [ContentMatch] = []
     /// The vault and its index, when notes are on (the window's).
-    var notes: (() -> (NotesVault, NotesIndex)?)?
+    package var notes: (() -> (NotesVault, NotesIndex)?)?
     private var pending: Task<Void, Never>?
     private var totalSubscription: AnyCancellable?
 
     /// Starts over for a terminal and the checkout its tab shows.
-    func open(root: URL?, terminal: TerminalView, needle: String?) {
+    package func open(root: URL?, terminal: TerminalView, needle: String?) {
         self.root = root
         self.terminal = terminal
         files = []
@@ -115,21 +117,21 @@ final class SpotlightModel: ObservableObject {
     }
 
     /// Closing without choosing the terminal row ends its search.
-    func close(keepTerminalSearch: Bool) {
+    package func close(keepTerminalSearch: Bool) {
         pending?.cancel()
         totalSubscription = nil
         if !keepTerminalSearch { terminal?.search.end() }
     }
 
-    func move(_ offset: Int) {
+    package func move(_ offset: Int) {
         guard !rows.isEmpty else { return }
         selectedIndex = (selectedIndex + offset + rows.count) % rows.count
     }
 
-    var selected: Row? { rows.indices.contains(selectedIndex) ? rows[selectedIndex] : nil }
+    package var selected: Row? { rows.indices.contains(selectedIndex) ? rows[selectedIndex] : nil }
 
     /// The same query again — what it searches has arrived (the notes' index).
-    func refresh() { search() }
+    package func refresh() { search() }
 
     private func search() {
         terminal?.search.needle = query
@@ -181,7 +183,7 @@ final class SpotlightModel: ObservableObject {
     }
 
     /// The rows a tab shows. Pure: the tabs are tested without a terminal.
-    nonisolated static func rows(
+    package nonisolated static func rows(
         scope: Scope, query: String, terminalTotal: Int?, names: [String], contents: [ContentMatch], notes: [ContentMatch]
     ) -> [Row] {
         var rows: [Row] = []

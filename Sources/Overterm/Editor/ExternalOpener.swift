@@ -4,7 +4,7 @@ import UniformTypeIdentifiers
 /// Where apps are looked up and files opened: LaunchServices, or in an
 /// isolated run a stand-in that launches nothing (see ExternalOpener.catalog).
 @MainActor
-protocol AppCatalog: AnyObject {
+package protocol AppCatalog: AnyObject {
     /// The installed app with this bundle id (LaunchServices' pick when
     /// there are several copies).
     func app(bundleID: String) -> ExternalApp?
@@ -17,24 +17,24 @@ protocol AppCatalog: AnyObject {
 
 /// LaunchServices, through NSWorkspace.
 @MainActor
-final class SystemApps: AppCatalog {
+package final class SystemApps: AppCatalog {
     /// Files handed to a real app. An isolated run never gets here — its
     /// E2E scenario checks this stays 0.
-    private(set) static var launched = 0
+    package private(set) static var launched = 0
 
-    func app(bundleID: String) -> ExternalApp? {
+    package func app(bundleID: String) -> ExternalApp? {
         NSWorkspace.shared.urlForApplication(withBundleIdentifier: bundleID).flatMap(ExternalApp.init(appAt:))
     }
 
-    func apps(toOpen file: URL) -> [ExternalApp] {
+    package func apps(toOpen file: URL) -> [ExternalApp] {
         NSWorkspace.shared.urlsForApplications(toOpen: file).compactMap(ExternalApp.init(appAt:))
     }
 
-    func defaultApp(toOpen file: URL) -> ExternalApp? {
+    package func defaultApp(toOpen file: URL) -> ExternalApp? {
         NSWorkspace.shared.urlForApplication(toOpen: file).flatMap(ExternalApp.init(appAt:))
     }
 
-    func open(_ file: URL, with app: ExternalApp) async throws {
+    package func open(_ file: URL, with app: ExternalApp) async throws {
         Self.launched += 1
         _ = try await NSWorkspace.shared.open([file], withApplicationAt: app.url, configuration: NSWorkspace.OpenConfiguration())
     }
@@ -44,26 +44,31 @@ final class SystemApps: AppCatalog {
 /// and a log of what would have been opened. An E2E run must never launch a
 /// real app — as it never touches the real clipboard.
 @MainActor
-final class IsolatedApps: AppCatalog {
-    struct Opened: Equatable {
-        let file: URL
-        let bundleID: String
+package final class IsolatedApps: AppCatalog {
+    package struct Opened: Equatable {
+        package let file: URL
+        package let bundleID: String
+
+        package init(file: URL, bundleID: String) {
+            self.file = file
+            self.bundleID = bundleID
+        }
     }
 
-    var installed: [ExternalApp] = []
+    package var installed: [ExternalApp] = []
     /// Finder's default among them.
-    var defaultBundleID: String?
-    private(set) var opened: [Opened] = []
+    package var defaultBundleID: String?
+    package private(set) var opened: [Opened] = []
 
-    func app(bundleID: String) -> ExternalApp? { installed.first { $0.bundleID == bundleID } }
-    func apps(toOpen file: URL) -> [ExternalApp] { installed }
-    func defaultApp(toOpen file: URL) -> ExternalApp? { defaultBundleID.flatMap(app(bundleID:)) }
-    func open(_ file: URL, with app: ExternalApp) async throws { opened.append(Opened(file: file, bundleID: app.bundleID)) }
+    package func app(bundleID: String) -> ExternalApp? { installed.first { $0.bundleID == bundleID } }
+    package func apps(toOpen file: URL) -> [ExternalApp] { installed }
+    package func defaultApp(toOpen file: URL) -> ExternalApp? { defaultBundleID.flatMap(app(bundleID:)) }
+    package func open(_ file: URL, with app: ExternalApp) async throws { opened.append(Opened(file: file, bundleID: app.bundleID)) }
 }
 
 extension ExternalApp {
     /// The app bundle at `url`; nil without a bundle id to remember it by.
-    init?(appAt url: URL) {
+    package init?(appAt url: URL) {
         guard let bundleID = Bundle(url: url)?.bundleIdentifier else { return nil }
         self.init(bundleID: bundleID, name: OpenWith.appName(displayName: FileManager.default.displayName(atPath: url.path)), url: url)
     }
@@ -75,20 +80,20 @@ extension ExternalApp {
 /// answer is remembered (AppEnvironment.defaults) until another is picked
 /// from Open With.
 @MainActor
-final class ExternalOpener: ObservableObject {
+package final class ExternalOpener: ObservableObject {
     /// LaunchServices — or, in an isolated run, a stand-in whose apps the
     /// scenario installs and which only records what it would open (as an
     /// isolated run gets its own clipboard, GhosttyRuntime.pasteboard).
-    static let catalog: AppCatalog = AppEnvironment.isIsolated ? IsolatedApps() : SystemApps()
+    package static let catalog: AppCatalog = AppEnvironment.isIsolated ? IsolatedApps() : SystemApps()
 
-    let apps: AppCatalog
+    package let apps: AppCatalog
     private let defaults: UserDefaults
     /// Where the question and errors are shown.
-    weak var window: NSWindow?
+    package weak var window: NSWindow?
     /// The remembered app, while it is installed: what "Open in …" and ↗ name.
-    @Published private(set) var current: ExternalApp?
+    @Published package private(set) var current: ExternalApp?
 
-    init(apps: AppCatalog = ExternalOpener.catalog, defaults: UserDefaults = AppEnvironment.defaults) {
+    package init(apps: AppCatalog = ExternalOpener.catalog, defaults: UserDefaults = AppEnvironment.defaults) {
         self.apps = apps
         self.defaults = defaults
         current = remembered
@@ -105,7 +110,7 @@ final class ExternalOpener: ObservableObject {
     /// A double-click, "Open in …", ↗: the remembered app, or — nothing
     /// remembered, or it is gone — a sheet asking which. Nil when it asks.
     @discardableResult
-    func open(_ file: URL) -> Task<Void, Never>? {
+    package func open(_ file: URL) -> Task<Void, Never>? {
         let app = remembered
         if current != app { current = app }
         guard let app else {
@@ -117,14 +122,14 @@ final class ExternalOpener: ObservableObject {
 
     /// A pick from Open With or the sheet: open it there, and from now on.
     @discardableResult
-    func open(_ file: URL, with app: ExternalApp) -> Task<Void, Never> {
+    package func open(_ file: URL, with app: ExternalApp) -> Task<Void, Never> {
         defaults.set(app.bundleID, forKey: OpenWith.rememberedKey)
         if current != app { current = app }
         return launch(file, with: app)
     }
 
     /// Open With for `file`: its candidate apps, then Other….
-    func entries(for file: URL) -> [OpenWith.Entry] {
+    package func entries(for file: URL) -> [OpenWith.Entry] {
         let systemDefault = apps.defaultApp(toOpen: file)
         // Looked up again rather than `current`, which is not refreshed
         // here: this runs while a menu is built (in SwiftUI, during a view
@@ -137,7 +142,7 @@ final class ExternalOpener: ObservableObject {
     }
 
     /// Open With as a menu (right-click on the editor's ↗).
-    func menu(for file: URL) -> NSMenu {
+    package func menu(for file: URL) -> NSMenu {
         let menu = NSMenu()
         for entry in entries(for: file) {
             switch entry {
@@ -155,7 +160,7 @@ final class ExternalOpener: ObservableObject {
     }
 
     /// Other…: any application, from a panel.
-    func chooseApp(for file: URL) {
+    package func chooseApp(for file: URL) {
         guard let window else { return }
         let panel = NSOpenPanel()
         panel.allowedContentTypes = [.application]
@@ -168,7 +173,7 @@ final class ExternalOpener: ObservableObject {
         }
     }
 
-    func icon(for app: ExternalApp) -> NSImage {
+    package func icon(for app: ExternalApp) -> NSImage {
         let icon = NSWorkspace.shared.icon(forFile: app.url.path)
         icon.size = NSSize(width: 16, height: 16)
         return icon

@@ -2,6 +2,12 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The cluster's docs read from `FakeKubeAPI` on a socket of the test's own
 /// (3.15), never a real cluster: GETs only, read when asked and not before,

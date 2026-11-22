@@ -15,9 +15,9 @@ import Foundation
 /// reset instants rather than "Oct 16 at 2:20am (Europe/Istanbul)" to be
 /// parsed back. No credentials are read and no undocumented endpoint is
 /// called: the agent's own command does its own talking.
-enum AgentUsageCommand {
+package enum AgentUsageCommand {
     /// Set by the E2E runner: a stand-in that answers from a fixture.
-    nonisolated(unsafe) static var executableOverride: URL?
+    package nonisolated(unsafe) static var executableOverride: URL?
 
     /// Where a GUI app has to look. Its PATH is not the shell's: `claude`
     /// is as likely to be under nvm, bun or ~/.claude/local as anywhere,
@@ -26,7 +26,7 @@ enum AgentUsageCommand {
     private static let lock = NSLock()
     nonisolated(unsafe) private static var found: URL??
 
-    static func executable() -> URL? {
+    package static func executable() -> URL? {
         if let executableOverride { return executableOverride }
         // An isolated run (E2E, the layout dump) never runs the user's own
         // agent: it talked to their account and wrote their ~/.claude.json,
@@ -50,10 +50,10 @@ enum AgentUsageCommand {
 
     /// How long a refresh may take before it is given up on: it is one
     /// request, and nothing waits for it.
-    static let timeout: TimeInterval = 20
+    package static let timeout: TimeInterval = 20
 
     /// What it is given: the app's environment, marked as this run's (D-15).
-    static func environment(_ inherited: [String: String] = ProcessInfo.processInfo.environment) -> [String: String] {
+    package static func environment(_ inherited: [String: String] = ProcessInfo.processInfo.environment) -> [String: String] {
         OvertermRun.current.marking(inherited, helper: .agentUsage)
     }
 
@@ -62,7 +62,7 @@ enum AgentUsageCommand {
     /// agree with; the structured figures are read from the file it
     /// refreshes.
     @discardableResult
-    static func askClaude() -> String? {
+    package static func askClaude() -> String? {
         guard let executable = executable() else { return nil }
         let process = Process()
         process.executableURL = executable

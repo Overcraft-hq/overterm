@@ -2,6 +2,12 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Agents' write tools (stage 2a; docs/design/kubernetes/analysis.md, 3.5
 /// and rule 10) against `FakeKubeAPI` on a socket of the test's own, over

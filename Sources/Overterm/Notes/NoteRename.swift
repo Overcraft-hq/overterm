@@ -6,10 +6,10 @@ import Foundation
 /// moved folder and no other Plan.md is closer. Headings, blocks, aliases
 /// and embeds are kept; the new name is written the way the vault's "New
 /// link format" says. Pure.
-enum NoteRename {
+package enum NoteRename {
     /// Every file a rename moves, old path to new (a folder moves all of
     /// them), vault-relative.
-    static func moves(of old: String, to new: String, files: [String]) -> [String: String] {
+    package static func moves(of old: String, to new: String, files: [String]) -> [String: String] {
         var moves: [String: String] = [:]
         for file in files where file == old || file.hasPrefix(old + "/") {
             moves[file] = new + file.dropFirst(old.count)
@@ -21,7 +21,7 @@ enum NoteRename {
     /// the rename. `read` gives a note's text as it is now; `unsaved` the
     /// text of notes open with edits — links typed since the last save
     /// count, which the index hasn't seen.
-    static func rewrites(
+    package static func rewrites(
         index: NotesIndex, moves: [String: String], settings: ObsidianSettings, unsaved: [String: String] = [:],
         read: (String) -> String?
     ) -> [String: String] {
@@ -58,7 +58,7 @@ enum NoteRename {
     }
 
     /// The file a link names, wikilink or Markdown.
-    static func target(of link: NoteDocument.Link, from source: String, resolver: LinkResolver) -> String? {
+    package static func target(of link: NoteDocument.Link, from source: String, resolver: LinkResolver) -> String? {
         if link.target.isEmpty { return nil }
         if link.isMarkdown {
             let folder = LinkResolver.folder(of: source)
@@ -72,7 +72,7 @@ enum NoteRename {
     }
 
     /// The link again, naming `target`: its kind, anchor and alias kept.
-    static func written(
+    package static func written(
         _ link: NoteDocument.Link, to target: String, from source: String, resolver: LinkResolver, settings: ObsidianSettings, in text: String
     ) -> String {
         let original = (text as NSString).substring(with: link.range)

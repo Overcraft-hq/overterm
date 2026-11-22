@@ -3,8 +3,8 @@ import Foundation
 
 /// Who a process belongs to (docs/design/activity/analysis.md, 6.5,
 /// Owners): a place to show it, why, and how sure.
-struct ActivityOwner: Hashable, Sendable {
-    enum Place: Hashable, Sendable {
+package struct ActivityOwner: Hashable, Sendable {
+    package enum Place: Hashable, Sendable {
         /// Overterm itself and what it started (rules 1, 2; 13 for what it
         /// is responsible for).
         case overterm
@@ -27,13 +27,13 @@ struct ActivityOwner: Hashable, Sendable {
         case leftBehind
     }
 
-    enum Certainty: Hashable, Sendable {
+    package enum Certainty: Hashable, Sendable {
         case certain
         case probably
     }
 
     /// What a process is in its pane (6.5, rule 4).
-    enum PaneRole: Hashable, Sendable {
+    package enum PaneRole: Hashable, Sendable {
         /// The `login` libghostty spawned.
         case session
         /// The login's shell.
@@ -48,18 +48,19 @@ struct ActivityOwner: Hashable, Sendable {
     }
 
     /// Chips beside the name (6.5).
-    struct Marks: OptionSet, Hashable, Sendable {
-        let rawValue: UInt8
+    package struct Marks: OptionSet, Hashable, Sendable {
+        package let rawValue: UInt8
+        package init(rawValue: UInt8) { self.rawValue = rawValue }
         /// Rule 5: a session manager or a daemon started on purpose.
-        static let detached = Marks(rawValue: 1 << 0)
+        package static let detached = Marks(rawValue: 1 << 0)
         /// Rule 9: it left its terminal, carrying the pane's tag.
-        static let leftTerminal = Marks(rawValue: 1 << 1)
+        package static let leftTerminal = Marks(rawValue: 1 << 1)
         /// It ignores SIGHUP.
-        static let nohup = Marks(rawValue: 1 << 2)
+        package static let nohup = Marks(rawValue: 1 << 2)
         /// It leads a session of its own, with no terminal.
-        static let setsid = Marks(rawValue: 1 << 3)
+        package static let setsid = Marks(rawValue: 1 << 3)
         /// Rule 7: an app started from a pane.
-        static let fromPane = Marks(rawValue: 1 << 4)
+        package static let fromPane = Marks(rawValue: 1 << 4)
     }
 
     /// Its values, one reference shared by every copy until one of them
@@ -146,7 +147,7 @@ struct ActivityOwner: Hashable, Sendable {
 
     private var storage: Storage
 
-    init(
+    package init(
         place: Place, rule: Int, reason: String? = nil, certainty: Certainty = Certainty.certain, marks: Marks = [], tab: UUID? = nil, paneRole: PaneRole? = nil, agent: ActivityProcessID? = nil,
         agentKind: Agent? = nil, role: ProcessRole = ProcessRole.other, leftBehind: LeftBehindSign? = nil, kept: Bool = false
     ) {
@@ -161,65 +162,65 @@ struct ActivityOwner: Hashable, Sendable {
         return storage
     }
 
-    static func == (lhs: ActivityOwner, rhs: ActivityOwner) -> Bool {
+    package static func == (lhs: ActivityOwner, rhs: ActivityOwner) -> Bool {
         lhs.storage === rhs.storage || lhs.storage.same(as: rhs.storage)
     }
 
-    func hash(into hasher: inout Hasher) { storage.hash(into: &hasher) }
+    package func hash(into hasher: inout Hasher) { storage.hash(into: &hasher) }
 
 
-    var place: Place {
+    package var place: Place {
         get { storage.place }
         set { unique().place = newValue }
     }
     /// The rule of 6.5 that placed it.
-    var rule: Int {
+    package var rule: Int {
         get { storage.rule }
         set { unique().rule = newValue }
     }
-    var reason: String? {
+    package var reason: String? {
         get { storage.reason }
         set { unique().reason = newValue }
     }
-    var certainty: Certainty {
+    package var certainty: Certainty {
         get { storage.certainty }
         set { unique().certainty = newValue }
     }
-    var marks: Marks {
+    package var marks: Marks {
         get { storage.marks }
         set { unique().marks = newValue }
     }
     /// The tab of its pane — or of the pane it was started from (an app, a
     /// detached daemon).
-    var tab: UUID? {
+    package var tab: UUID? {
         get { storage.tab }
         set { unique().tab = newValue }
     }
-    var paneRole: PaneRole? {
+    package var paneRole: PaneRole? {
         get { storage.paneRole }
         set { unique().paneRole = newValue }
     }
     /// The agent it runs under, or is.
-    var agent: ActivityProcessID? {
+    package var agent: ActivityProcessID? {
         get { storage.agent }
         set { unique().agent = newValue }
     }
-    var agentKind: Agent? {
+    package var agentKind: Agent? {
         get { storage.agentKind }
         set { unique().agentKind = newValue }
     }
-    var role: ProcessRole {
+    package var role: ProcessRole {
         get { storage.role }
         set { unique().role = newValue }
     }
     /// Rules 8 and 11: the sign that put it in Left Behind (6.9).
-    var leftBehind: LeftBehindSign? {
+    package var leftBehind: LeftBehindSign? {
         get { storage.leftBehind }
         set { unique().leftBehind = newValue }
     }
     /// The person kept it (Keep, or unticked in a close sheet): never in a
     /// bulk Stop, never Left Behind again for its life (6.9).
-    var kept: Bool {
+    package var kept: Bool {
         get { storage.kept }
         set { unique().kept = newValue }
     }
@@ -227,46 +228,60 @@ struct ActivityOwner: Hashable, Sendable {
 
 /// What the main actor says of a tab, for owners and rows (6.5): the place
 /// a tab's processes are shown at. Values only.
-struct ActivityTabFacts: Hashable, Sendable {
-    let id: UUID
+package struct ActivityTabFacts: Hashable, Sendable {
+    package let id: UUID
     /// Masked as a command (`ActivityText.title`).
-    var title: String
+    package var title: String
     /// The checkout its sidebar shows, and its branch.
-    var checkout: String?
-    var branch: String?
+    package var checkout: String?
+    package var branch: String?
     /// The repository's name — its main worktree's folder — when known.
-    var repository: String?
+    package var repository: String?
     /// Its place in the strips: every window's, in window order.
-    var order = 0
+    package var order = 0
     /// The agent it was opened for.
-    var agent: Agent?
+    package var agent: Agent?
     /// Its agent waits for the person (`TabActivity`'s waiting mark, the
     /// agent's own): what "idle but burning" asks (6.11).
-    var waiting = false
+    package var waiting = false
     /// Since when it waits (`TabActivity.waitingSince`): the burn counts
     /// from then.
-    var waitingSince: Date?
+    package var waitingSince: Date?
+
+    package init(
+        id: UUID, title: String, checkout: String? = nil, branch: String? = nil, repository: String? = nil, order: Int = 0, agent: Agent? = nil, waiting: Bool = false, waitingSince: Date? = nil
+    ) {
+        self.id = id
+        self.title = title
+        self.checkout = checkout
+        self.branch = branch
+        self.repository = repository
+        self.order = order
+        self.agent = agent
+        self.waiting = waiting
+        self.waitingSince = waitingSince
+    }
 }
 
 /// Each process's owner, reason and certainty (6.5): pure, one snapshot,
 /// one context, the tabs' facts. The first rule that matches wins; a child
 /// inherits its parent's owner unless a rule above matches it. Nothing is
 /// read now, no file system walked: a path is a string.
-struct ActivityAttribution: Sendable {
-    let owners: [ActivityProcessID: ActivityOwner]
+package struct ActivityAttribution: Sendable {
+    package let owners: [ActivityProcessID: ActivityOwner]
 
-    subscript(_ identity: ActivityProcessID) -> ActivityOwner? { owners[identity] }
+    package subscript(_ identity: ActivityProcessID) -> ActivityOwner? { owners[identity] }
 
     /// What else it is told: the main actor's facts.
-    struct Inputs: Sendable {
-        var tabs: [UUID: ActivityTabFacts] = [:]
+    package struct Inputs: Sendable {
+        package var tabs: [UUID: ActivityTabFacts] = [:]
         /// Every known checkout: the tabs', the worktrees'.
-        var checkouts: [String] = []
+        package var checkouts: [String] = []
         /// Running apps' bundles by pid (`NSRunningApplication`): a deleted
         /// executable's place (rule 12).
-        var runningApps: [pid_t: String] = [:]
+        package var runningApps: [pid_t: String] = [:]
 
-        init(tabs: [UUID: ActivityTabFacts] = [:], checkouts: [String] = [], runningApps: [pid_t: String] = [:]) {
+        package init(tabs: [UUID: ActivityTabFacts] = [:], checkouts: [String] = [], runningApps: [pid_t: String] = [:]) {
             self.tabs = tabs
             self.checkouts = checkouts
             self.runningApps = runningApps
@@ -275,25 +290,25 @@ struct ActivityAttribution: Sendable {
 
     /// Engines and their VMs' port holders by executable (rule 6,
     /// `KnownHolders`), with the engine's name.
-    static let engineHolders: [String: String] = [
+    package static let engineHolders: [String: String] = [
         "com.docker.backend": "Docker", "com.docker.vpnkit": "Docker", "vpnkit-bridge": "Docker", "com.docker.krun": "Docker",
         "com.docker.virtualization": "Docker", "OrbStack Helper": "OrbStack", "OrbStack": "OrbStack", "limactl": "Lima", "colima": "Colima",
         "gvproxy": "Podman", "vfkit": "Podman", "krunkit": "Podman",
     ]
 
     /// Engines' apps, by bundle name: a VM they are responsible for is theirs.
-    static let engineApps: [String: String] = [
+    package static let engineApps: [String: String] = [
         "Docker": "Docker", "Docker Desktop": "Docker", "OrbStack": "OrbStack", "Podman Desktop": "Podman", "Rancher Desktop": "Rancher Desktop",
     ]
 
     /// macOS's agents by name, with what people know them as (rule 14).
-    static let appleAgents: [String: String] = [
+    package static let appleAgents: [String: String] = [
         "ControlCenter": "AirPlay Receiver (ControlCenter)", "rapportd": "Continuity (rapportd)", "Dock": "the Dock", "Finder": "the Finder",
         "SystemUIServer": "the menu bar (SystemUIServer)", "WindowServer": "the screen (WindowServer)", "sharingd": "AirDrop (sharingd)",
         "mDNSResponder": "Bonjour (mDNSResponder)", "launchd": "launchd",
     ]
 
-    static func of(_ snapshot: ActivitySnapshot, context: ActivityContext, inputs: Inputs = Inputs()) -> ActivityAttribution {
+    package static func of(_ snapshot: ActivitySnapshot, context: ActivityContext, inputs: Inputs = Inputs()) -> ActivityAttribution {
         var builder = Builder(snapshot: snapshot, context: context, inputs: inputs)
         builder.run()
         return ActivityAttribution(owners: builder.owners)
@@ -795,7 +810,7 @@ struct ActivityAttribution: Sendable {
     /// Rule 13's processes (6.5): an XPC service or a virtual machine —
     /// its path inside an `.xpc` bundle, or a Virtualization executable —
     /// with launchd as its parent.
-    static func isServiceOrVM(_ process: ActivityProcess, _ facts: ActivityFacts?) -> Bool {
+    package static func isServiceOrVM(_ process: ActivityProcess, _ facts: ActivityFacts?) -> Bool {
         guard process.parentPID == 1, let path = facts?.path else { return false }
         if ProcessRole.contains(path, ".xpc/") || ProcessRole.contains(path, "/XPCServices/") { return true }
         let file = fileName(path)
@@ -803,7 +818,7 @@ struct ActivityAttribution: Sendable {
     }
 
     /// Whether `socket` is what `published` names: host address, port, protocol.
-    static func matches(_ socket: SocketRecord, _ published: ActivityContext.PublishedPort) -> Bool {
+    package static func matches(_ socket: SocketRecord, _ published: ActivityContext.PublishedPort) -> Bool {
         guard Int(socket.localPort) == Int(published.port) else { return false }
         let proto = socket.kind == .tcp ? "tcp" : socket.kind == .udp ? "udp" : ""
         guard proto == published.proto.lowercased() else { return false }
@@ -816,7 +831,7 @@ struct ActivityAttribution: Sendable {
 
     /// The outermost `.app` on `path`, by its name without `.app`: a string
     /// walk bounded by its components, nothing read.
-    static func appName(of path: String?) -> String? {
+    package static func appName(of path: String?) -> String? {
         guard let path, ProcessRole.contains(path, ".app") else { return nil }
         for part in path.split(separator: "/", omittingEmptySubsequences: true) where part.hasSuffix(".app") && part.count > 4 {
             return String(part.dropLast(4))
@@ -825,13 +840,13 @@ struct ActivityAttribution: Sendable {
     }
 
     /// A path's last component, without Foundation.
-    static func fileName(_ path: String) -> String {
+    package static func fileName(_ path: String) -> String {
         guard let slash = path.lastIndex(of: "/") else { return path }
         return String(path[path.index(after: slash)...])
     }
 
     /// `OVERTERM_RUN`'s `<kind>.<pid>.<start>` (D-15): the run it names.
-    static func runIdentity(_ run: String) -> ActivityProcessID? {
+    package static func runIdentity(_ run: String) -> ActivityProcessID? {
         let parts = run.split(separator: ".")
         guard parts.count >= 3, let pid = pid_t(parts[parts.count - 2]), pid > 0, let start = UInt64(parts[parts.count - 1]) else { return nil }
         return ActivityProcessID(pid: pid, start: start)
@@ -841,7 +856,7 @@ struct ActivityAttribution: Sendable {
     nonisolated(unsafe) private static var deviceNames: [dev_t: String] = [:]
 
     /// A terminal's name (`ttys003`), kept for the app's life.
-    static func deviceName(_ device: dev_t) -> String? {
+    package static func deviceName(_ device: dev_t) -> String? {
         if let known = devices.withLock({ deviceNames[device] }) { return known.isEmpty ? nil : known }
         var buffer = [CChar](repeating: 0, count: 64)
         var name = devname_r(device, S_IFCHR, &buffer, Int32(buffer.count)) != nil ? String(cString: buffer) : ""

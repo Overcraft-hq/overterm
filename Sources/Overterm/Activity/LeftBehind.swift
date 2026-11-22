@@ -8,34 +8,34 @@ import Foundation
 /// the window was left by the run. `COMMAND_FINISHED` says only when a
 /// command ended, and the ledger's block names the pane's last title, which
 /// Claude Code rewrites: the census, not the ledger, says when the agent ran.
-struct ActivityAgentRun: Hashable, Sendable {
+package struct ActivityAgentRun: Hashable, Sendable {
     /// Its pane's tag and tab.
-    let tag: String
-    let tab: UUID
-    let agent: Agent
+    package let tag: String
+    package let tab: UUID
+    package let agent: Agent
     /// The agent's process: its start opens the window.
-    let identity: ActivityProcessID
+    package let identity: ActivityProcessID
     /// The last tick that saw it, µs since 1970 (the snapshot's date).
-    var lastSeen: UInt64
+    package var lastSeen: UInt64
     /// The tick that found it gone; nil while it runs.
-    var ended: Date?
+    package var ended: Date?
     /// It was its pane's foreground job each time it was seen: then nothing
     /// else could have started there in the window, and the sign is
     /// certain; else it is "probably".
-    var foreground: Bool
+    package var foreground: Bool
     /// The tick that found it gone came soon after the last that saw it —
     /// within two intervals: the window ends where the agent did. A tab
     /// read again after minutes off screen has a window covering whatever
     /// the person started meanwhile, so its sign is only "probably".
-    var exact = true
+    package var exact = true
 
     /// The window's end, µs: the tick that found it gone — it ended
     /// somewhere between `lastSeen` and then.
-    var end: UInt64? { ended.map(LeftBehind.micros) }
+    package var end: UInt64? { ended.map(LeftBehind.micros) }
 
     /// Whether `process` started inside the window: no earlier than the
     /// agent, no later than the tick that found it gone.
-    func covers(_ process: ActivityProcessID) -> Bool {
+    package func covers(_ process: ActivityProcessID) -> Bool {
         guard let end else { return false }
         return process.start >= identity.start && process.start <= end
     }
@@ -44,15 +44,15 @@ struct ActivityAgentRun: Hashable, Sendable {
 /// The agents' runs the census has seen in each pane (6.9): pure, one
 /// snapshot at a time. A pane the snapshot didn't read says nothing — its
 /// agent may still run.
-struct ActivityAgentRuns: Hashable, Sendable {
+package struct ActivityAgentRuns: Hashable, Sendable {
     /// What runs now, by its pane's tag.
-    private(set) var running: [String: ActivityAgentRun] = [:]
+    package private(set) var running: [String: ActivityAgentRun] = [:]
     /// What has ended, oldest first, at most `kept`.
-    private(set) var ended: [ActivityAgentRun] = []
+    package private(set) var ended: [ActivityAgentRun] = []
 
-    static let kept = 64
+    package static let kept = 64
     /// Two of the census's default intervals (2 s) and a second's slack, µs.
-    static let gap: UInt64 = 5_000_000
+    package static let gap: UInt64 = 5_000_000
 
     /// Takes `snapshot`: each pane it read whose agent is new is followed,
     /// each whose agent has gone — or is another one now — has its run
@@ -60,7 +60,7 @@ struct ActivityAgentRuns: Hashable, Sendable {
     /// the longest time between the last tick that saw an agent and the one
     /// that found it gone for its window to end where the agent did.
     @discardableResult
-    mutating func observe(_ snapshot: ActivitySnapshot, gap: UInt64 = ActivityAgentRuns.gap) -> [ActivityAgentRun] {
+    package mutating func observe(_ snapshot: ActivitySnapshot, gap: UInt64 = ActivityAgentRuns.gap) -> [ActivityAgentRun] {
         var endedNow: [ActivityAgentRun] = []
         let now = LeftBehind.micros(snapshot.date)
         var read = Set<String>()
@@ -91,13 +91,13 @@ struct ActivityAgentRuns: Hashable, Sendable {
     }
 
     /// A pane closed: what ran in it is the closed pane's to explain now.
-    mutating func forget(tag: String) {
+    package mutating func forget(tag: String) {
         running[tag] = nil
         ended.removeAll { $0.tag == tag }
     }
 
     /// The ended runs of the pane `tag`, newest first.
-    func ended(in tag: String) -> [ActivityAgentRun] { ended.filter { $0.tag == tag }.reversed() }
+    package func ended(in tag: String) -> [ActivityAgentRun] { ended.filter { $0.tag == tag }.reversed() }
 
     private static func inForeground(_ process: ActivityProcess) -> Bool {
         process.terminalGroup.map { $0 == process.group } ?? false
@@ -106,7 +106,7 @@ struct ActivityAgentRuns: Hashable, Sendable {
 
 /// Why a process is Left Behind (6.9): one of these signs, each with how
 /// sure it is. Nothing here is ever ended on its own.
-enum LeftBehindSign: Hashable, Sendable {
+package enum LeftBehindSign: Hashable, Sendable {
     /// It carries the tag of a pane this run closed.
     case closedPane(ActivityContext.RetiredPane)
     /// It carries a live pane's tag, outside its tree, and started inside
@@ -122,7 +122,7 @@ enum LeftBehindSign: Hashable, Sendable {
     /// parent, and it runs inside a known checkout no open tab is in.
     case deadLeader(checkout: String)
 
-    var certainty: ActivityOwner.Certainty {
+    package var certainty: ActivityOwner.Certainty {
         switch self {
         case .closedPane, .earlierRun, .testRun: .certain
         case .agentRun(let run, _): run.foreground && run.exact ? .certain : .probably
@@ -131,7 +131,7 @@ enum LeftBehindSign: Hashable, Sendable {
     }
 
     /// The checkout it belongs to, by its folder; nil when none is known.
-    var checkout: String? {
+    package var checkout: String? {
         switch self {
         case .closedPane(let retired): retired.pane.checkout
         case .agentRun: nil
@@ -141,7 +141,7 @@ enum LeftBehindSign: Hashable, Sendable {
     }
 
     /// The tab it came from: a closed pane's (gone now), an agent run's.
-    var tab: UUID? {
+    package var tab: UUID? {
         switch self {
         case .closedPane(let retired): retired.pane.tab
         case .agentRun(let run, _): run.tab
@@ -150,7 +150,7 @@ enum LeftBehindSign: Hashable, Sendable {
     }
 
     /// The row's reason (6.9): "left by Claude in “web”, which exited at 13:10".
-    var reason: String {
+    package var reason: String {
         switch self {
         case .closedPane(let retired):
             let title = "“\(retired.pane.title)”"
@@ -170,7 +170,7 @@ enum LeftBehindSign: Hashable, Sendable {
 
     /// Whether it is an earlier Overterm's (a test run's included): the
     /// launch check's (D-14).
-    var isEarlierRun: Bool {
+    package var isEarlierRun: Bool {
         switch self {
         case .earlierRun, .testRun: true
         default: false
@@ -179,12 +179,12 @@ enum LeftBehindSign: Hashable, Sendable {
 }
 
 /// The signs of 6.9, pure: one process, one snapshot, one context.
-enum LeftBehind {
+package enum LeftBehind {
     /// µs since 1970, as a process's start is kept.
-    static func micros(_ date: Date) -> UInt64 { UInt64(max(date.timeIntervalSince1970, 0) * 1_000_000) }
+    package static func micros(_ date: Date) -> UInt64 { UInt64(max(date.timeIntervalSince1970, 0) * 1_000_000) }
 
     /// "13:10".
-    static func clock(_ date: Date) -> String {
+    package static func clock(_ date: Date) -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "HH:mm"
@@ -195,7 +195,7 @@ enum LeftBehind {
     /// "Never"): detached on purpose, an app (with a bundle outside every
     /// checkout), a launchd job or brew service. Nil when none applies.
     /// `words`: what its path says, read already (`ActivityPathWords`).
-    static func neverReason(_ process: ActivityProcess, facts: ActivityFacts?, checkouts: [String], words: ActivityPathWords? = nil) -> String? {
+    package static func neverReason(_ process: ActivityProcess, facts: ActivityFacts?, checkouts: [String], words: ActivityPathWords? = nil) -> String? {
         let executable = words.map { words in words.file.flatMap { $0.isEmpty ? nil : $0 } ?? facts?.name ?? process.shortName }
         if ActivityPaneSet.isDetachedOnPurpose(process, facts: facts, executable: executable) { return "detached on purpose" }
         if let path = facts?.path, let bundle = words.map(\.bundle) ?? ActivityPaneSet.appBundle(of: path),
@@ -213,7 +213,7 @@ enum LeftBehind {
     /// shows. Rule 8 (an agent run's window) is `agentRun`'s, asked where
     /// the live pane's tagged processes are placed. `words`: what its path
     /// says, read already (`ActivityPathWords`).
-    static func sign(
+    package static func sign(
         of process: ActivityProcess, facts: ActivityFacts?, table: ProcessTable, context: ActivityContext, live: Set<String>,
         checkouts: [String], openCheckouts: Set<String>, words: ActivityPathWords? = nil
     ) -> LeftBehindSign? {
@@ -258,14 +258,14 @@ enum LeftBehind {
     }
 
     /// Rule 8 (6.5): the ended run of `tag`'s pane `process` started inside.
-    static func agentRun(_ process: ActivityProcessID, tag: String, runs: [ActivityAgentRun]) -> ActivityAgentRun? {
+    package static func agentRun(_ process: ActivityProcessID, tag: String, runs: [ActivityAgentRun]) -> ActivityAgentRun? {
         runs.last { $0.tag == tag && $0.covers(process) }
     }
 
     /// Whether the person kept `identity` or one of its ancestors: what a
     /// kept server started — its workers, a database's backends — is kept
     /// with it (6.9). Bounded.
-    static func isKept(_ identity: ActivityProcessID, kept: Set<ActivityProcessID>, table: ProcessTable) -> Bool {
+    package static func isKept(_ identity: ActivityProcessID, kept: Set<ActivityProcessID>, table: ProcessTable) -> Bool {
         guard !kept.isEmpty else { return false }
         var current = identity
         for _ in 0..<64 {
@@ -278,14 +278,14 @@ enum LeftBehind {
 
     /// Whether a run named by its identity is alive: its pid holds the
     /// same start.
-    static func isLive(_ identity: ActivityProcessID, in table: ProcessTable) -> Bool {
+    package static func isLive(_ identity: ActivityProcessID, in table: ProcessTable) -> Bool {
         table.process(identity).map { !$0.isZombie } ?? false
     }
 
     /// Whether a bulk Stop may take it (6.9): certain, and not one that
     /// ignores SIGHUP, detached on purpose, an app or a terraform write —
     /// nor one the person kept. A `setsid` leader stays eligible.
-    static func isBulkEligible(_ owner: ActivityOwner, process: ActivityProcess, terraformWrite: Bool, kept: Bool) -> Bool {
+    package static func isBulkEligible(_ owner: ActivityOwner, process: ActivityProcess, terraformWrite: Bool, kept: Bool) -> Bool {
         guard owner.place == .leftBehind, owner.certainty == .certain, !kept, !terraformWrite else { return false }
         if process.ignoresHangup || owner.marks.contains(.nohup) || owner.marks.contains(.detached) || owner.marks.contains(.fromPane) { return false }
         return true
@@ -294,18 +294,18 @@ enum LeftBehind {
 
 /// What an ended agent run left in its pane (6.9's tab note): each process
 /// by identity, its name and what it listens on.
-struct LeftBehindItem: Hashable, Sendable {
-    let identity: ActivityProcessID
-    let name: String
+package struct LeftBehindItem: Hashable, Sendable {
+    package let identity: ActivityProcessID
+    package let name: String
     /// Its listening TCP ports, sorted.
-    var ports: [Int] = []
+    package var ports: [Int] = []
 }
 
 extension LeftBehind {
     /// What `run` left, as `snapshot` read its pane: carrying the pane's
     /// tag outside its tree, started inside the run's window — never a
     /// process detached on purpose, an app, a launchd job, nor one kept.
-    static func left(by run: ActivityAgentRun, in snapshot: ActivitySnapshot, checkouts: [String], kept: Set<ActivityProcessID>) -> [LeftBehindItem] {
+    package static func left(by run: ActivityAgentRun, in snapshot: ActivitySnapshot, checkouts: [String], kept: Set<ActivityProcessID>) -> [LeftBehindItem] {
         guard let slice = snapshot.pane(run.tag) else { return [] }
         var items: [LeftBehindItem] = []
         for identity in slice.tagged where run.covers(identity) && !isKept(identity, kept: kept, table: snapshot.table) {
@@ -322,7 +322,7 @@ extension LeftBehind {
     /// A tab's leftovers after a run settled: `left` added to what its
     /// earlier runs, and its other panes', left and still runs — a run
     /// that left nothing takes none of theirs. Each once, at most `limit`.
-    static func merged(_ earlier: [LeftBehindItem], _ left: [LeftBehindItem], in snapshot: ActivitySnapshot, limit: Int) -> [LeftBehindItem] {
+    package static func merged(_ earlier: [LeftBehindItem], _ left: [LeftBehindItem], in snapshot: ActivitySnapshot, limit: Int) -> [LeftBehindItem] {
         let still = earlier.filter { item in
             !left.contains { $0.identity == item.identity } && snapshot.table.process(item.identity).map { !$0.isZombie } ?? false
         }
@@ -330,7 +330,7 @@ extension LeftBehind {
     }
 
     /// The tab's note (6.9, D-17): "Claude finished — left node :3001 running".
-    static func note(_ agent: Agent, left: [LeftBehindItem]) -> String {
+    package static func note(_ agent: Agent, left: [LeftBehindItem]) -> String {
         guard let first = left.first else { return "\(agent.name) finished" }
         var named = first.name
         if !first.ports.isEmpty { named += " " + first.ports.prefix(2).map { ":\($0)" }.joined(separator: " ") }
@@ -343,23 +343,23 @@ extension LeftBehind {
 /// one asked Stop All, a test run's apart; what ignores SIGHUP listed but
 /// never in the Stop All; kept identities left out (their owner says kept).
 /// Nothing is stopped automatically. Pure.
-struct LeftBehindAtLaunch: Hashable, Sendable {
-    struct Item: Hashable, Sendable {
-        let identity: ActivityProcessID
-        let name: String
-        let path: String?
+package struct LeftBehindAtLaunch: Hashable, Sendable {
+    package struct Item: Hashable, Sendable {
+        package let identity: ActivityProcessID
+        package let name: String
+        package let path: String?
         /// In the Stop All: certain, not ignoring SIGHUP, not detached, not
         /// a terraform tool.
-        let stops: Bool
+        package let stops: Bool
     }
 
-    var earlier: [Item] = []
-    var test: [Item] = []
+    package var earlier: [Item] = []
+    package var test: [Item] = []
 
-    var isEmpty: Bool { earlier.isEmpty && test.isEmpty }
-    var all: [Item] { earlier + test }
+    package var isEmpty: Bool { earlier.isEmpty && test.isEmpty }
+    package var all: [Item] { earlier + test }
 
-    static func of(_ snapshot: ActivitySnapshot, owners: ActivityAttribution) -> LeftBehindAtLaunch {
+    package static func of(_ snapshot: ActivitySnapshot, owners: ActivityAttribution) -> LeftBehindAtLaunch {
         var found = LeftBehindAtLaunch()
         for process in snapshot.table.processes {
             guard let owner = owners[process.identity], owner.place == .leftBehind, let sign = owner.leftBehind, sign.isEarlierRun else { continue }
@@ -375,7 +375,7 @@ struct LeftBehindAtLaunch: Hashable, Sendable {
     }
 
     /// "9 kubectl, 2 acme-server": by name, most first.
-    static func counted(_ items: [Item]) -> String {
+    package static func counted(_ items: [Item]) -> String {
         var counts: [String: Int] = [:]
         for item in items { counts[item.name, default: 0] += 1 }
         let named = counts.sorted { ($1.value, $0.key) < ($0.value, $1.key) }.prefix(4).map { "\($0.value) \($0.key)" }
@@ -384,13 +384,13 @@ struct LeftBehindAtLaunch: Hashable, Sendable {
     }
 
     /// The sheet's title: "Overterm's earlier run left 9 kubectl".
-    var title: String {
+    package var title: String {
         if !earlier.isEmpty { return "Overterm’s earlier run left \(Self.counted(earlier))" }
         return "A test run left \(Self.counted(test))"
     }
 
     /// The sheet's words: each group, what Stop All leaves.
-    var detail: String {
+    package var detail: String {
         var lines: [String] = []
         if !earlier.isEmpty, !test.isEmpty { lines.append("Left by a test run: \(Self.counted(test)).") }
         let unstopped = all.filter { !$0.stops }

@@ -3,6 +3,12 @@ import QuartzCore
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 final class TabPeekTests: XCTestCase {
     private let bounds = CGRect(x: 0, y: 0, width: 1200, height: 800)

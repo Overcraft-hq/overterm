@@ -3,8 +3,8 @@ import Foundation
 /// The REST Client / JetBrains `.http` format: requests apart by `###`, a
 /// request line, its headers, a blank line, its body; `@name = value`
 /// lines are variables; `# @name` names a request.
-enum HTTPFileImporter {
-    static func make(_ text: String, name: String) -> APIImport {
+package enum HTTPFileImporter {
+    package static func make(_ text: String, name: String) -> APIImport {
         var variables: [BruPair] = []
         var requests: [APIImport.Request] = []
         var notes: [String] = []
@@ -90,7 +90,7 @@ enum HTTPFileImporter {
 
     /// `{{host}}/items?x=1` or `https://h/items` → `/items`: a request's
     /// name when nothing names it.
-    static func displayPath(_ url: String) -> String {
+    package static func displayPath(_ url: String) -> String {
         var rest = Substring(url)
         if rest.hasPrefix("{{"), let close = rest.range(of: "}}") {
             rest = rest[close.upperBound...]

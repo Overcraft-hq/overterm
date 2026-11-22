@@ -3,6 +3,12 @@ import SwiftUI
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// A page's resource table (`ResourceTable`): its grouped rows, its order,
 /// what a press selects and what a right-click means — Docker's containers

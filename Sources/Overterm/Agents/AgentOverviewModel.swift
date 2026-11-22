@@ -5,58 +5,60 @@ import Foundation
 /// what the session is about, what you last asked, and what it last said
 /// or is doing right now. Refreshed every 2 s while shown.
 @MainActor
-final class AgentOverviewModel: ObservableObject {
-    struct Card: Identifiable, Equatable {
-        let id: Tab.ID
-        let title: String
-        let color: TabColor?
+package final class AgentOverviewModel: ObservableObject {
+    package init() {}
+
+    package struct Card: Identifiable, Equatable {
+        package let id: Tab.ID
+        package let title: String
+        package let color: TabColor?
         /// The agent the tab was opened for, or one found running in it.
-        let agent: Agent?
+        package let agent: Agent?
         /// An agent process is alive in one of its panes.
-        let agentRunning: Bool
-        let activity: TabActivity
+        package let agentRunning: Bool
+        package let activity: TabActivity
         /// Where the agent works, else the focused pane's directory.
-        let directory: String?
-        let branch: String?
-        let claude: ClaudeActivity?
-        let panes: Int
+        package let directory: String?
+        package let branch: String?
+        package let claude: ClaudeActivity?
+        package let panes: Int
         /// The agent's process, as the census found it running: where
         /// Show in Activity selects (6.12).
-        var agentProcess: ActivityProcessID? = nil
+        package var agentProcess: ActivityProcessID? = nil
         /// Its agent's CPU, footprint and servers, from the census's
         /// snapshot the card was made from (6.2, 6.12).
-        var usage: AgentUsage? = nil
+        package var usage: AgentUsage? = nil
         /// What its agents' ended runs left running (6.9): "left 2 behind".
-        var left = 0
+        package var left = 0
     }
 
     /// What an agent spends, it and everything under it (its tools, its
     /// MCP servers, the dev servers it started), from one census — no scan
     /// of the overview's own (docs/design/activity/analysis.md, 6.12).
-    struct AgentUsage: Equatable, Sendable {
+    package struct AgentUsage: Equatable, Sendable {
         /// 100 is one core; nil before a second sample gives a rate (7.5).
-        var cpu: Double?
+        package var cpu: Double?
         /// Activity Monitor's Memory, summed.
-        var footprint: UInt64
+        package var footprint: UInt64
         /// What it listens on: pills with Open.
-        var servers: [ListeningPort]
+        package var servers: [ListeningPort]
     }
 
-    @Published private(set) var cards: [Card] = []
+    @Published package private(set) var cards: [Card] = []
     /// A refresh still reading: the next poll skips rather than piling up
     /// (and landing out of order) behind a slow one.
-    private(set) var isRefreshing = false
+    package private(set) var isRefreshing = false
 
-    struct Snapshot: Sendable {
-        let id: Tab.ID
-        let title: String
-        let color: TabColor?
-        let agent: Agent?
-        let activity: TabActivity
-        let directory: String?
+    package struct Snapshot: Sendable {
+        package let id: Tab.ID
+        package let title: String
+        package let color: TabColor?
+        package let agent: Agent?
+        package let activity: TabActivity
+        package let directory: String?
         /// Its panes' tags, in the tab's order.
-        let tags: [String]
-        let panes: Int
+        package let tags: [String]
+        package let panes: Int
     }
 
     /// Every card again: each tab's agent a lookup in the app's census
@@ -66,7 +68,7 @@ final class AgentOverviewModel: ObservableObject {
     /// scan of its own (2.4 item 2: tabs × panes × 7 ms every 2 s). The
     /// lookup, the transcripts and the branches are read off the main
     /// thread, on a GCD thread.
-    func refresh(_ tabs: [Tab], census: ActivitySampler = .app) async {
+    package func refresh(_ tabs: [Tab], census: ActivitySampler = .app) async {
         guard !isRefreshing else { return }
         isRefreshing = true
         defer { isRefreshing = false }
@@ -94,7 +96,7 @@ final class AgentOverviewModel: ObservableObject {
 
     /// A tab's card, with the agent the census found running in it — and,
     /// from `census`, what that agent spends.
-    nonisolated static func card(for snapshot: Snapshot, agent running: PaneAgent?, snapshot census: ActivitySnapshot? = nil) -> Card {
+    package nonisolated static func card(for snapshot: Snapshot, agent running: PaneAgent?, snapshot census: ActivitySnapshot? = nil) -> Card {
         let agent = running?.kind ?? snapshot.agent
         let directory = running?.folder ?? snapshot.directory
         let claude =
@@ -110,7 +112,7 @@ final class AgentOverviewModel: ObservableObject {
     /// `agent`'s usage in `snapshot`: it and its descendants (at most
     /// 2,000), their rates summed where read, their footprints, their
     /// listening ports. Nil when the snapshot has no such process. Pure.
-    nonisolated static func usage(of agent: ActivityProcessID, in snapshot: ActivitySnapshot) -> AgentUsage? {
+    package nonisolated static func usage(of agent: ActivityProcessID, in snapshot: ActivitySnapshot) -> AgentUsage? {
         guard snapshot.table.process(agent) != nil else { return nil }
         let members = [agent] + snapshot.table.descendants(of: agent, limit: 2_000).map(\.identity)
         var cpu: Double?
@@ -123,7 +125,7 @@ final class AgentOverviewModel: ObservableObject {
         return AgentUsage(cpu: cpu, footprint: footprint, servers: ListeningPorts.of(members, in: snapshot))
     }
 
-    nonisolated static func agent(of node: ProcessNode) -> Agent? {
+    package nonisolated static func agent(of node: ProcessNode) -> Agent? {
         Agent.of(name: node.name, argv: node.argvAgent, command: node.maskedCommand)
     }
 
@@ -136,7 +138,7 @@ final class AgentOverviewModel: ObservableObject {
     /// with "/", and `/`'s parent is `/..`, so a folder with a `..` in it
     /// never got there — one such walk took 51 GB and the machine down.
     /// The path is standardized first, its `..`s gone.
-    nonisolated static func branch(in directory: String, limit: Int = 64) -> String? {
+    package nonisolated static func branch(in directory: String, limit: Int = 64) -> String? {
         var url = URL(fileURLWithPath: directory).standardizedFileURL
         for _ in 0..<max(limit, 0) where url.pathComponents.count > 1 {
             let git = url.appendingPathComponent(".git")
@@ -159,7 +161,7 @@ final class AgentOverviewModel: ObservableObject {
 
     /// Waiting for you first, then failed, working, done; tabs without an
     /// agent last. The tab order otherwise.
-    nonisolated static func ordered(_ cards: [Card]) -> [Card] {
+    package nonisolated static func ordered(_ cards: [Card]) -> [Card] {
         func rank(_ card: Card) -> Int {
             if card.activity.mark == .waiting { return 0 }
             if card.activity.mark == .failed { return 1 }

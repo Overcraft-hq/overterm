@@ -12,24 +12,24 @@ import AppKit
 /// A row's strip as drawn: its cells and since when (`ActivityProcessRow`'s
 /// own), the theme's colours. What its tooltip and VoiceOver say is made
 /// from the cells only when they changed.
-struct ActivityStripValue: Equatable {
-    var strip: [Double?]?
-    var since: Date?
-    var colours: [NSColor]
-    var track: NSColor
-    var alpha: CGFloat = 1
-    var ground: NSColor? = nil
+package struct ActivityStripValue: Equatable {
+    package var strip: [Double?]?
+    package var since: Date?
+    package var colours: [NSColor]
+    package var track: NSColor
+    package var alpha: CGFloat = 1
+    package var ground: NSColor? = nil
 }
 
-final class ActivityStripCell: ResourcePressCell {
-    private(set) var shown: ActivityStripValue?
+package final class ActivityStripCell: ResourcePressCell {
+    package private(set) var shown: ActivityStripValue?
     /// What VoiceOver and the scenarios find: `activity.strip`, as the
     /// SwiftUI cell's element was — the cell's own identifier is its row's.
     private let element = NSAccessibilityElement()
 
-    override var isFlipped: Bool { true }
+    package override var isFlipped: Bool { true }
 
-    init() {
+    package init() {
         super.init(frame: .zero)
         element.setAccessibilityRole(.image)
         element.setAccessibilityIdentifier("activity.strip")
@@ -37,16 +37,16 @@ final class ActivityStripCell: ResourcePressCell {
         setAccessibilityChildren([element])
     }
 
-    override func layout() {
+    package override func layout() {
         super.layout()
         element.setAccessibilityFrameInParentSpace(bounds)
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
+    package required init?(coder: NSCoder) { fatalError() }
 
     @discardableResult
-    func show(_ value: ActivityStripValue) -> Bool {
+    package func show(_ value: ActivityStripValue) -> Bool {
         guard value != shown else { return false }
         let old = shown
         shown = value
@@ -59,7 +59,7 @@ final class ActivityStripCell: ResourcePressCell {
         return true
     }
 
-    override func draw(_ dirtyRect: NSRect) {
+    package override func draw(_ dirtyRect: NSRect) {
         guard let shown else { return }
         let dirty = dirtyRect.intersection(bounds)
         if let ground = shown.ground {
@@ -74,10 +74,10 @@ final class ActivityStripCell: ResourcePressCell {
         context.setFillColor(shown.track.withAlphaComponent(shown.track.alphaComponent * 0.08).cgColor)
         context.fill(rect)
         // One fill a colour, not one a cell: 60 cells, five colours.
-        var byLevel = [[CGRect]](repeating: [], count: KubeHeatStrip.Level.allCases.count)
+        var byLevel = [[CGRect]](repeating: [], count: HeatStripLevel.allCases.count)
         var gaps: [CGRect] = []
         // CPU capped at 100 for the colour, as the Canvas drew it.
-        for bar in KubeHeatStripView.bars(strip.map { $0.map { min($0, 100) } }, in: rect) {
+        for bar in HeatStripBars.bars(strip.map { $0.map { min($0, 100) } }, in: rect) {
             if let level = bar.level { byLevel[level.rawValue].append(bar.rect) } else { gaps.append(bar.rect) }
         }
         if !gaps.isEmpty {
@@ -94,40 +94,40 @@ final class ActivityStripCell: ResourcePressCell {
 
 /// A process's name cell as drawn (6.5): its indent, its fold, its agent's
 /// symbol, the name in its colour, the chips, "ended".
-struct ActivityNameValue: Equatable {
-    struct Chip: Equatable {
-        var text: String
-        var color: NSColor
+package struct ActivityNameValue: Equatable {
+    package struct Chip: Equatable {
+        package var text: String
+        package var color: NSColor
         /// A filled capsule (a chip of what changed); else a stroked one.
-        var fill: NSColor?
-        var stroke: NSColor?
-        var bold = false
-        var help: String? = nil
-        var identifier: String? = nil
+        package var fill: NSColor?
+        package var stroke: NSColor?
+        package var bold = false
+        package var help: String? = nil
+        package var identifier: String? = nil
     }
 
-    var id: String
-    var depth: Int
+    package var id: String
+    package var depth: Int
     /// Nil: no fold, its room kept; else whether it is folded.
-    var folded: Bool?
-    var chevron: NSColor
-    var symbol: String?
-    var symbolColor: NSColor
-    var name: String
-    var nameColor: NSColor
-    var chips: [Chip]
+    package var folded: Bool?
+    package var chevron: NSColor
+    package var symbol: String?
+    package var symbolColor: NSColor
+    package var name: String
+    package var nameColor: NSColor
+    package var chips: [Chip]
     /// The owner's reason: the cell's tooltip.
-    var help: String
-    var size: CGFloat
-    var chipSize: CGFloat
-    var alpha: CGFloat = 1
-    var ground: NSColor? = nil
+    package var help: String
+    package var size: CGFloat
+    package var chipSize: CGFloat
+    package var alpha: CGFloat = 1
+    package var ground: NSColor? = nil
 }
 
-final class ActivityNameCell: ResourcePressCell {
+package final class ActivityNameCell: ResourcePressCell {
     /// The fold's click: the row's id and whether it was folded.
-    var toggle: ((String, Bool) -> Void)?
-    private(set) var shown: ActivityNameValue?
+    package var toggle: ((String, Bool) -> Void)?
+    package private(set) var shown: ActivityNameValue?
     private let chevron = FirstClickButton()
     private let symbol = NSImageView()
     private var nameElement = NSAccessibilityElement()
@@ -136,7 +136,7 @@ final class ActivityNameCell: ResourcePressCell {
     private var nameRect = CGRect.zero
     private var chipRects: [CGRect] = []
 
-    override var isFlipped: Bool { true }
+    package override var isFlipped: Bool { true }
 
     /// A button that takes the first click in a window behind others, as
     /// the hosted cells' did.
@@ -144,7 +144,7 @@ final class ActivityNameCell: ResourcePressCell {
         override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
     }
 
-    init() {
+    package init() {
         super.init(frame: .zero)
         chevron.isBordered = false
         chevron.bezelStyle = .regularSquare
@@ -163,7 +163,7 @@ final class ActivityNameCell: ResourcePressCell {
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
+    package required init?(coder: NSCoder) { fatalError() }
 
     @objc private func fold() {
         guard let shown, let folded = shown.folded else { return }
@@ -171,7 +171,7 @@ final class ActivityNameCell: ResourcePressCell {
     }
 
     /// The fold takes its own click; every other point is the row's press.
-    override func hitTest(_ point: NSPoint) -> NSView? {
+    package override func hitTest(_ point: NSPoint) -> NSView? {
         guard !isHidden, frame.contains(point) else { return nil }
         let inside = convert(point, from: superview)
         if !chevron.isHidden, chevron.frame.contains(inside) { return chevron }
@@ -179,7 +179,7 @@ final class ActivityNameCell: ResourcePressCell {
     }
 
     @discardableResult
-    func show(_ value: ActivityNameValue) -> Bool {
+    package func show(_ value: ActivityNameValue) -> Bool {
         guard value != shown else { return false }
         let old = shown
         shown = value
@@ -221,7 +221,7 @@ final class ActivityNameCell: ResourcePressCell {
     /// As the SwiftUI cell laid it out: 6 pt in, then the indent, the fold's
     /// 14 pt, the symbol, the name — which keeps its width first — and the
     /// chips while they fit, 4 pt apart.
-    override func layout() {
+    package override func layout() {
         super.layout()
         guard let shown else { return }
         var x: CGFloat = 6 + CGFloat(shown.depth) * 14 + 4
@@ -290,7 +290,7 @@ final class ActivityNameCell: ResourcePressCell {
         setAccessibilityChildren(children)
     }
 
-    override func draw(_ dirtyRect: NSRect) {
+    package override func draw(_ dirtyRect: NSRect) {
         guard let shown else { return }
         if let ground = shown.ground {
             ground.setFill()
@@ -323,7 +323,7 @@ final class ActivityNameCell: ResourcePressCell {
 }
 
 extension ActivityNameCell: NSViewToolTipOwner {
-    nonisolated func view(_ view: NSView, stringForToolTip tag: NSView.ToolTipTag, point: NSPoint, userData data: UnsafeMutableRawPointer?) -> String {
+    package nonisolated func view(_ view: NSView, stringForToolTip tag: NSView.ToolTipTag, point: NSPoint, userData data: UnsafeMutableRawPointer?) -> String {
         MainActor.assumeIsolated {
             guard let shown else { return "" }
             for (index, rect) in chipRects.enumerated() where rect.contains(point) { return shown.chips[index].help ?? "" }

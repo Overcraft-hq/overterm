@@ -2,6 +2,12 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The engine's pure parts: where it is, its frames and lines, its tar,
 /// what a stats sample means, ports once each, secrets hidden.

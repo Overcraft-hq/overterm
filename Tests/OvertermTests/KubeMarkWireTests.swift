@@ -1,6 +1,12 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// What a row keeps of Argo CD's marks, and what a GET keeps of a workload
 /// (docs/design/kubernetes/gitops.md, 14.4.3): the allow-lists — a row

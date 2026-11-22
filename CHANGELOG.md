@@ -6,6 +6,12 @@ version ([SemVer](https://semver.org)): a commit that changes the app bumps it
 `Scripts/bump-version.sh`, which adds the line here. The commit that brings a
 version is tagged `v<version>`.
 
+## 1.6.5 — 2026-11-22
+
+- activity: an agent's folder already read since its call is not read again
+- build: the shipped app no longer carries the end-to-end scenarios and the tests' fake servers (`#if E2E`; `make e2e` builds them in with the E2E trait) — a smaller binary and a shorter release build
+- build: the app is built as seven modules — the core, the shell, the database client, Docker, Kubernetes, Terraform and the window — so a release build optimises them side by side and a change rebuilds only what sits above it
+
 ## 1.6.4 — 2026-11-22
 
 - make test-changed runs under macOS's bash 3.2 and picks every test a change can reach

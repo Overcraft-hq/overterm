@@ -14,8 +14,8 @@ import ImageIO
 ///   framebuffer as a BMP three or four times a second. A picture, not a
 ///   simulator you can use, but never a blank pane.
 @MainActor
-final class SimulatorMirror: ObservableObject {
-    enum Status: Equatable {
+package final class SimulatorMirror: ObservableObject {
+    package enum Status: Equatable {
         case stopped
         /// Asked, nothing back yet — booting, or shutting down under us.
         case waiting
@@ -25,15 +25,15 @@ final class SimulatorMirror: ObservableObject {
         case live
     }
 
-    @Published private(set) var status: Status = .stopped
+    @Published package private(set) var status: Status = .stopped
     /// A frame for the layer: an IOSurface (live) or a CGImage (polled).
-    var onFrame: ((Any, CGSize) -> Void)?
+    package var onFrame: ((Any, CGSize) -> Void)?
     /// Live only: the device drew, so the layer should look again.
-    var onDamage: (() -> Void)?
+    package var onDamage: (() -> Void)?
     /// Live only: where taps and keys go.
-    private(set) var input: SimulatorInput?
+    package private(set) var input: SimulatorInput?
     /// The longest side polled frames are cut down to, in pixels.
-    var maxPixels = 1200
+    package var maxPixels = 1200
 
     private var device: SimulatorDevice?
     private var screen: SimulatorScreen?
@@ -41,13 +41,13 @@ final class SimulatorMirror: ObservableObject {
 
     /// One polled frame on its way to the layer. A CGImage is immutable
     /// and the decode is done off the main thread, so it crosses that hop.
-    struct Frame: @unchecked Sendable {
-        let image: CGImage
-        var size: CGSize { CGSize(width: image.width, height: image.height) }
+    package struct Frame: @unchecked Sendable {
+        package let image: CGImage
+        package var size: CGSize { CGSize(width: image.width, height: image.height) }
     }
 
     /// Shows `device`, from now until `stop()`.
-    func start(_ device: SimulatorDevice) {
+    package func start(_ device: SimulatorDevice) {
         guard self.device != device || status == .stopped else { return }
         stop()
         self.device = device
@@ -55,7 +55,7 @@ final class SimulatorMirror: ObservableObject {
         reading = Task { [weak self] in await self?.connect(device) }
     }
 
-    func stop() {
+    package func stop() {
         reading?.cancel()
         reading = nil
         screen?.stop()
@@ -66,7 +66,7 @@ final class SimulatorMirror: ObservableObject {
     }
 
     /// Starts again on the same device — it may have been rebooted.
-    func reconnect() {
+    package func reconnect() {
         guard let device else { return }
         self.device = nil
         start(device)
@@ -115,13 +115,13 @@ final class SimulatorMirror: ObservableObject {
         }
     }
 
-    nonisolated static func frame(_ data: Data, maxPixels: Int) -> Frame? {
+    package nonisolated static func frame(_ data: Data, maxPixels: Int) -> Frame? {
         image(data, maxPixels: maxPixels).map(Frame.init)
     }
 
     /// The screenshot as a frame the pane's size, with the device's
     /// proportions kept.
-    nonisolated static func image(_ data: Data, maxPixels: Int) -> CGImage? {
+    package nonisolated static func image(_ data: Data, maxPixels: Int) -> CGImage? {
         guard let source = CGImageSourceCreateWithData(data as CFData, nil) else { return nil }
         return CGImageSourceCreateThumbnailAtIndex(
             source, 0,

@@ -1,6 +1,12 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// MongoDB's pure parts: BSON both ways, the shell's values and statements,
 /// what reads and what destroys, answers as rows, connection strings, SCRAM

@@ -10,21 +10,23 @@ import Foundation
 /// **spend** walks every log touched in the window: only while the pane is
 /// open, as the inbox's column only polls while it shows.
 @MainActor
-final class UsageModel: ObservableObject {
-    @Published private(set) var providers: [UsageSnapshot] = []
-    @Published private(set) var isRefreshing = false
+package final class UsageModel: ObservableObject {
+    package init() {}
+
+    @Published package private(set) var providers: [UsageSnapshot] = []
+    @Published package private(set) var isRefreshing = false
     /// Set by the window when the pane is the one showing.
-    @Published var visible = false {
+    @Published package var visible = false {
         didSet { if visible != oldValue { refresh() } }
     }
-    @Published var scope: UsageScope = .today {
+    @Published package var scope: UsageScope = .today {
         didSet { if scope != oldValue { refresh() } }
     }
 
     /// How often the cheap half is re-read while the app is in front;
     /// openusage refreshes every five minutes and these files move less
     /// often than that.
-    static let meterInterval: TimeInterval = 120
+    package static let meterInterval: TimeInterval = 120
     private var poll: Timer?
     private let scanner = UsageTailScanner()
     /// A read still running: the next tick skips rather than piling up
@@ -34,17 +36,17 @@ final class UsageModel: ObservableObject {
     private var again = false
 
     /// Whether anything was found on this Mac to track at all.
-    var isAvailable: Bool { !providers.isEmpty }
+    package var isAvailable: Bool { !providers.isEmpty }
 
     /// What the strip's gauge shows: the session window that is fullest,
     /// over every provider.
-    func chipMeter(_ now: Date = Date()) -> (snapshot: UsageSnapshot, meter: UsageMeter)? {
+    package func chipMeter(_ now: Date = Date()) -> (snapshot: UsageSnapshot, meter: UsageMeter)? {
         let found = providers.compactMap { snapshot in snapshot.chipMeter(now).map { (snapshot: snapshot, meter: $0) } }
         return found.filter(\.meter.isSession).max { $0.meter.usedPercent < $1.meter.usedPercent }
             ?? found.max { $0.meter.usedPercent < $1.meter.usedPercent }
     }
 
-    func start() {
+    package func start() {
         refresh()
         poll?.invalidate()
         poll = Timer.scheduledTimer(withTimeInterval: Self.meterInterval, repeats: true) { [weak self] _ in
@@ -57,7 +59,7 @@ final class UsageModel: ObservableObject {
         }
     }
 
-    func stop() {
+    package func stop() {
         poll?.invalidate()
         poll = nil
     }
@@ -66,7 +68,7 @@ final class UsageModel: ObservableObject {
     /// The agents' own usage command runs first — every ten minutes, and
     /// at once when the ↻ button asks (`force`) — so the pane can never
     /// say something `/usage` doesn't.
-    func refresh(force: Bool = false) {
+    package func refresh(force: Bool = false) {
         guard !reading else {
             again = true
             return

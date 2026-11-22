@@ -2,6 +2,12 @@ import AppKit
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The list's plain cells as words (`ActivityCells`): which columns are
 /// AppKit text, what each says, its tint — what the table compares to skip

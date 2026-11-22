@@ -3,6 +3,12 @@ import SwiftUI
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The strip in the title bar: what its buttons cost in width, and who
 /// answers for the space around them.

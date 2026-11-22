@@ -3,21 +3,21 @@ import UniformTypeIdentifiers
 
 /// Which theme a pick in the gallery sets: the one theme, or — when the
 /// terminal follows macOS — its dark or its light half.
-enum ThemeSlot: String, CaseIterable, Identifiable, Sendable {
+package enum ThemeSlot: String, CaseIterable, Identifiable, Sendable {
     case dark, light
 
-    var id: String { rawValue }
+    package var id: String { rawValue }
 
     /// The setting it writes. The single theme and the dark one are the
     /// same key: turning "follow macOS" off leaves the theme you had.
-    var key: String {
+    package var key: String {
         switch self {
         case .dark: "appearance.theme"
         case .light: "appearance.themeLight"
         }
     }
 
-    var title: String {
+    package var title: String {
         switch self {
         case .dark: "Dark"
         case .light: "Light"
@@ -32,11 +32,11 @@ enum ThemeSlot: String, CaseIterable, Identifiable, Sendable {
 /// terminal — because that is the only way to judge a theme. The chrome
 /// around the terminal is drawn from the theme too, which is what each
 /// card shows: the strip, a terminal, the ANSI colours.
-struct ThemesSettings: View {
-    @ObservedObject var model: SettingsPageModel
-    @ObservedObject var settings: Settings
-    @ObservedObject var catalog: ThemeCatalog
-    @ObservedObject var theme: ChromeTheme
+package struct ThemesSettings: View {
+    @ObservedObject package var model: SettingsPageModel
+    @ObservedObject package var settings: Settings
+    @ObservedObject package var catalog: ThemeCatalog
+    @ObservedObject package var theme: ChromeTheme
 
     private var followsSystem: Bool { settings.value("appearance.followSystemAppearance")?.bool ?? false }
     private var slot: ThemeSlot { followsSystem ? model.themeSlot : .dark }
@@ -51,7 +51,7 @@ struct ThemesSettings: View {
         ThemeCatalog.filter(catalog.entries, search: model.themeSearch, showing: model.themeShowing)
     }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 18) {
             current
             controls
@@ -83,7 +83,7 @@ struct ThemesSettings: View {
         importThemes(panel.urls)
     }
 
-    func importThemes(_ urls: [URL]) {
+    package func importThemes(_ urls: [URL]) {
         let (saved, failure) = catalog.importFiles(urls)
         problem = failure
         guard let last = saved.last else { return }
@@ -96,7 +96,7 @@ struct ThemesSettings: View {
     /// nonisolated: the provider answers on a queue of its own, and a
     /// closure written in the view is main-actor-isolated — Swift 6 traps
     /// when the system calls it there (CLAUDE.md).
-    nonisolated static func loadURL(from provider: NSItemProvider, then: @escaping @MainActor @Sendable (URL) -> Void) {
+    package nonisolated static func loadURL(from provider: NSItemProvider, then: @escaping @MainActor @Sendable (URL) -> Void) {
         _ = provider.loadObject(ofClass: URL.self) { url, _ in
             guard let url else { return }
             DispatchQueue.main.async { MainActor.assumeIsolated { then(url) } }

@@ -1,0 +1,519 @@
+import Foundation
+import Security
+
+/// The databases the client speaks — and the object stores it browses.
+package enum DatabaseKind: String, Codable, CaseIterable, Identifiable, Sendable {
+    case postgres, mysql, sqlite, redshift, clickhouse, bigquery, redis
+    /// Metrics, logs and traces: queried over HTTP in their own languages
+    /// (PromQL, LogQL, TraceQL) over a window of time.
+    case prometheus, loki, tempo
+    /// 1.6.1's: document stores, search engines, AWS's key-value, a graph,
+    /// time series, a queue broker, and Oracle — each its own driver.
+    case mongodb, documentdb, mariadb, elasticsearch, opensearch, dynamodb, influxdb, neo4j, rabbitmq, oracle
+    /// Buckets and their files: S3 and everything that speaks it (Spaces,
+    /// MinIO, R2, B2, Wasabi, GCS's interoperability), and GCS's own API.
+    case s3, gcs
+
+    /// Files, not tables: its tree is buckets and folders, no console.
+    package var isStorage: Bool { self == .s3 || self == .gcs }
+
+    package var id: String { rawValue }
+
+    package var title: String {
+        switch self {
+        case .postgres: "PostgreSQL"
+        case .mysql: "MySQL"
+        case .sqlite: "SQLite"
+        case .redshift: "Amazon Redshift"
+        case .clickhouse: "ClickHouse"
+        case .bigquery: "BigQuery"
+        case .redis: "Redis"
+        case .prometheus: "Prometheus"
+        case .loki: "Loki"
+        case .tempo: "Tempo"
+        case .mongodb: "MongoDB"
+        case .documentdb: "Amazon DocumentDB"
+        case .mariadb: "MariaDB"
+        case .elasticsearch: "Elasticsearch"
+        case .opensearch: "OpenSearch"
+        case .dynamodb: "Amazon DynamoDB"
+        case .influxdb: "InfluxDB"
+        case .neo4j: "Neo4j"
+        case .rabbitmq: "RabbitMQ"
+        case .oracle: "Oracle Database"
+        case .s3: "S3-Compatible Storage"
+        case .gcs: "Google Cloud Storage"
+        }
+    }
+
+    /// Its port when nobody says otherwise; nil for those with no server.
+    package var defaultPort: Int? {
+        switch self {
+        case .postgres: 5432
+        case .mysql: 3306
+        case .redshift: 5439
+        // ClickHouse's HTTP interface; 8443 with TLS.
+        case .clickhouse: 8123
+        case .redis: 6379
+        case .prometheus: 9090
+        case .loki: 3100
+        case .tempo: 3200
+        case .mongodb, .documentdb: 27017
+        case .mariadb: 3306
+        case .elasticsearch, .opensearch: 9200
+        // DynamoDB Local's; AWS's own is a region's endpoint.
+        case .dynamodb: 8000
+        case .influxdb: 8086
+        // The HTTP API's; Bolt is 7687.
+        case .neo4j: 7474
+        // The management API's; AMQP is 5672.
+        case .rabbitmq: 15672
+        case .oracle: 1521
+        case .sqlite, .bigquery, .s3, .gcs: nil
+        }
+    }
+
+    /// A host, a port, a user and a password — the SQL servers, and Redis.
+    package var usesServer: Bool {
+        [
+            .postgres, .mysql, .redshift, .clickhouse, .redis, .prometheus, .loki, .tempo, .mongodb, .documentdb, .mariadb, .elasticsearch, .opensearch,
+            .dynamodb, .influxdb, .neo4j, .rabbitmq, .oracle,
+        ].contains(self)
+    }
+
+    /// Prometheus, Loki, Tempo: queries over a window of time, answered with
+    /// series, log lines or traces; they only read.
+    package var isObservability: Bool { self == .prometheus || self == .loki || self == .tempo }
+
+    /// Elasticsearch, OpenSearch: requests as Kibana's Dev Tools writes
+    /// them (`SearchText`), answered in JSON.
+    package var isSearch: Bool { self == .elasticsearch || self == .opensearch }
+
+    /// Its glyph in the panel.
+    package var symbol: String {
+        switch self {
+        case .redis: "bolt.horizontal"
+        case .mongodb, .documentdb: "leaf"
+        case .prometheus: "chart.xyaxis.line"
+        case .loki: "text.alignleft"
+        case .tempo: "point.3.connected.trianglepath.dotted"
+        case .elasticsearch, .opensearch: "magnifyingglass"
+        default: "cylinder"
+        }
+    }
+
+    /// Commands a line, not SQL: its console reads and checks them so.
+    package var isRedis: Bool { self == .redis }
+
+    /// The mongo shell's statements, not SQL: MongoDB, and DocumentDB which
+    /// speaks its protocol.
+    package var isMongo: Bool { self == .mongodb || self == .documentdb }
+
+    /// The schema a new connection starts on.
+    package var defaultSchema: String? {
+        switch self {
+        case .postgres, .redshift: "public"
+        default: nil
+        }
+    }
+}
+
+/// TLS, as libpq names the choices.
+package enum DatabaseSSLMode: String, Codable, CaseIterable, Identifiable, Sendable {
+    case disable, prefer, require, verifyFull = "verify-full"
+
+    package var id: String { rawValue }
+
+    package var title: String {
+        switch self {
+        case .disable: "Disable"
+        case .prefer: "Prefer"
+        case .require: "Require"
+        case .verifyFull: "Verify Full"
+        }
+    }
+}
+
+/// How BigQuery is signed in to.
+package enum BigQueryAuth: String, Codable, CaseIterable, Identifiable, Sendable {
+    /// A service account's JSON key, kept in the keychain.
+    case serviceAccount
+    /// Whoever `gcloud auth login` signed in on this Mac.
+    case gcloud
+
+    package var id: String { rawValue }
+    package var title: String { self == .gcloud ? "gcloud on this Mac" : "Service account" }
+}
+
+/// One saved connection. What it says is kept in Overterm's own folder
+/// (`DatabaseStore`); its password or service account key is not — that is
+/// in the keychain, found by the connection's id.
+package struct DatabaseConnection: Codable, Identifiable, Equatable, Hashable, Sendable {
+    package var id = UUID()
+    package var name: String
+    package var kind: DatabaseKind
+    package var host = "localhost"
+    package var port: Int?
+    package var user = ""
+    /// The database to connect to (ClickHouse's default database too).
+    package var database = ""
+    package var sslMode = DatabaseSSLMode.prefer
+    /// SQLite's file.
+    package var filePath = ""
+    /// BigQuery's project, the location its jobs run in, how it signs in.
+    package var project = ""
+    package var location = ""
+    package var bigQueryAuth = BigQueryAuth.serviceAccount
+    /// Only reads: anything that would write is refused before it is sent.
+    package var readOnly = false
+    /// S3: whose it is (its endpoint and addressing), bucket names in the
+    /// path rather than the host (MinIO), and credentials from an AWS CLI
+    /// profile instead of a key in the keychain.
+    package var provider = StorageProvider.aws
+    package var pathStyle = false
+    package var awsProfile = ""
+    /// Through a bastion: ssh to `sshHost` and forward to host:port from
+    /// there (SSHTunnel). Its password or key passphrase is a secret.
+    package var sshEnabled = false
+    package var sshHost = ""
+    package var sshPort: Int? = 22
+    package var sshUser = ""
+    package var sshKeyFile = ""
+    /// Prometheus, Loki, Tempo behind a proxy: the path their API is under
+    /// (`/prometheus`), empty at the root.
+    package var basePath = ""
+    /// MongoDB's and DocumentDB's: the database the user is defined in
+    /// (empty: admin), a CA bundle to verify the server's certificate with
+    /// (DocumentDB's `global-bundle.pem`), and whether `host` is a
+    /// `mongodb+srv://` name, its hosts read from DNS at each connect.
+    package var authSource = ""
+    package var caFile = ""
+    package var srv = false
+    /// Not saved: the name TLS checks when `host` is a tunnel's local end.
+    package var serverName: String?
+
+    package var usesTunnel: Bool { sshEnabled && kind.usesServer && !sshHost.isEmpty }
+
+    package init(name: String, kind: DatabaseKind) {
+        self.name = name
+        self.kind = kind
+        port = kind.defaultPort
+        if kind == .bigquery || kind == .gcs { bigQueryAuth = .gcloud }
+        if kind == .s3 { apply(.aws) }
+        // MongoDB doesn't negotiate TLS: on from the first byte or off.
+        // DocumentDB's clusters have it on, their certificates Amazon's.
+        if kind == .mongodb { sslMode = .disable }
+        if kind == .documentdb { sslMode = .verifyFull }
+    }
+
+    /// A provider's endpoint, region and addressing, as a starting point.
+    package mutating func apply(_ provider: StorageProvider) {
+        self.provider = provider
+        host = provider.endpoint(region: provider.defaultRegion)
+        location = provider.defaultRegion
+        pathStyle = provider.pathStyle
+        port = provider == .minio ? 9000 : nil
+        sslMode = provider == .minio ? .disable : .require
+    }
+
+    // Read field by field: a file written before a field existed still
+    // opens (a missing field takes its default) — every connection kept.
+    private enum CodingKeys: String, CodingKey {
+        case id, name, kind, host, port, user, database, sslMode, filePath, project, location, bigQueryAuth, readOnly, provider,
+            pathStyle, awsProfile, sshEnabled, sshHost, sshPort, sshUser, sshKeyFile, basePath, authSource, caFile, srv
+    }
+
+    package init(from decoder: Decoder) throws {
+        let c = try decoder.container(keyedBy: CodingKeys.self)
+        id = try c.decode(UUID.self, forKey: .id)
+        name = try c.decode(String.self, forKey: .name)
+        kind = try c.decode(DatabaseKind.self, forKey: .kind)
+        host = try c.decodeIfPresent(String.self, forKey: .host) ?? "localhost"
+        port = try c.decodeIfPresent(Int.self, forKey: .port)
+        user = try c.decodeIfPresent(String.self, forKey: .user) ?? ""
+        database = try c.decodeIfPresent(String.self, forKey: .database) ?? ""
+        sslMode = try c.decodeIfPresent(DatabaseSSLMode.self, forKey: .sslMode) ?? .prefer
+        filePath = try c.decodeIfPresent(String.self, forKey: .filePath) ?? ""
+        project = try c.decodeIfPresent(String.self, forKey: .project) ?? ""
+        location = try c.decodeIfPresent(String.self, forKey: .location) ?? ""
+        bigQueryAuth = try c.decodeIfPresent(BigQueryAuth.self, forKey: .bigQueryAuth) ?? .serviceAccount
+        readOnly = try c.decodeIfPresent(Bool.self, forKey: .readOnly) ?? false
+        provider = try c.decodeIfPresent(StorageProvider.self, forKey: .provider) ?? .aws
+        pathStyle = try c.decodeIfPresent(Bool.self, forKey: .pathStyle) ?? false
+        awsProfile = try c.decodeIfPresent(String.self, forKey: .awsProfile) ?? ""
+        sshEnabled = try c.decodeIfPresent(Bool.self, forKey: .sshEnabled) ?? false
+        sshHost = try c.decodeIfPresent(String.self, forKey: .sshHost) ?? ""
+        sshPort = try c.decodeIfPresent(Int.self, forKey: .sshPort) ?? 22
+        sshUser = try c.decodeIfPresent(String.self, forKey: .sshUser) ?? ""
+        sshKeyFile = try c.decodeIfPresent(String.self, forKey: .sshKeyFile) ?? ""
+        basePath = try c.decodeIfPresent(String.self, forKey: .basePath) ?? ""
+        authSource = try c.decodeIfPresent(String.self, forKey: .authSource) ?? ""
+        caFile = try c.decodeIfPresent(String.self, forKey: .caFile) ?? ""
+        srv = try c.decodeIfPresent(Bool.self, forKey: .srv) ?? false
+    }
+
+    /// Where it is, for its row and its tooltip.
+    package var summary: String {
+        switch kind {
+        case .sqlite: (filePath as NSString).abbreviatingWithTildeInPath
+        case .bigquery, .gcs: project.isEmpty ? "No project" : project
+        case .s3: provider == .aws ? "AWS \(location)" : host
+        default:
+            "\(user.isEmpty ? "" : user + "@")\(host)\(port.map { ":\($0)" } ?? "")\(database.isEmpty ? "" : "/" + database)"
+        }
+    }
+
+    /// What it can't be saved without, said plainly; nil when it can.
+    package var problem: String? {
+        if name.trimmingCharacters(in: .whitespaces).isEmpty { return "A name, please." }
+        switch kind {
+        case .sqlite: return filePath.isEmpty ? "Choose the database file." : nil
+        case .bigquery, .gcs: return project.isEmpty ? "The project, please." : nil
+        case .s3:
+            if host.trimmingCharacters(in: .whitespaces).isEmpty { return "The endpoint, please." }
+            if awsProfile.isEmpty, user.isEmpty { return "The access key, or an AWS profile." }
+            return nil
+        default:
+            if host.trimmingCharacters(in: .whitespaces).isEmpty { return "The host, please." }
+            if kind == .oracle, database.trimmingCharacters(in: .whitespaces).isEmpty {
+                return location == OracleDriver.sidMarker ? "The SID, please." : "The service name, please — FREEPDB1, XEPDB1, ORCLPDB1…"
+            }
+            if kind == .redis, !database.isEmpty, Int(database).map({ $0 >= 0 }) != true { return "The database is a number: 0, 1, 2…" }
+            if let port, !(1...65535).contains(port) { return "The port is 1 to 65535." }
+            if sshEnabled, sshHost.trimmingCharacters(in: .whitespaces).isEmpty { return "The SSH host, please." }
+            if sshEnabled, port == nil, kind.defaultPort == nil { return "The database's port, for the tunnel." }
+            if kind.isMongo, sshEnabled, srv || host.contains(",") {
+                return "Through a tunnel, one host: the cluster's endpoint or the primary — not an srv name or a list."
+            }
+            return nil
+        }
+    }
+}
+
+/// Whose S3 it is: the endpoint a region makes, and how buckets are named.
+package enum StorageProvider: String, Codable, CaseIterable, Identifiable, Sendable {
+    case aws, digitalocean, minio, r2, backblaze, wasabi, gcs, custom
+
+    package var id: String { rawValue }
+
+    package var title: String {
+        switch self {
+        case .aws: "Amazon S3"
+        case .digitalocean: "DigitalOcean Spaces"
+        case .minio: "MinIO"
+        case .r2: "Cloudflare R2"
+        case .backblaze: "Backblaze B2"
+        case .wasabi: "Wasabi"
+        case .gcs: "Google Cloud Storage (HMAC)"
+        case .custom: "Other S3-compatible"
+        }
+    }
+
+    package var defaultRegion: String {
+        switch self {
+        case .aws: "us-east-1"
+        case .digitalocean: "nyc3"
+        case .backblaze: "us-west-004"
+        case .wasabi: "us-east-1"
+        case .r2, .gcs: "auto"
+        case .minio, .custom: "us-east-1"
+        }
+    }
+
+    /// Its endpoint in a region; R2's needs the account's id in place of
+    /// `ACCOUNT_ID`.
+    package func endpoint(region: String) -> String {
+        switch self {
+        case .aws: "s3.\(region).amazonaws.com"
+        case .digitalocean: "\(region).digitaloceanspaces.com"
+        case .minio: "localhost"
+        case .r2: "ACCOUNT_ID.r2.cloudflarestorage.com"
+        case .backblaze: "s3.\(region).backblazeb2.com"
+        case .wasabi: "s3.\(region).wasabisys.com"
+        case .gcs: "storage.googleapis.com"
+        case .custom: ""
+        }
+    }
+
+    /// Bucket names in the path (`host/bucket/key`) rather than the host.
+    package var pathStyle: Bool { self == .minio || self == .custom || self == .r2 }
+}
+
+/// A connection's secret: its password, or BigQuery's service account key.
+package enum DatabaseSecretKind: String, Sendable {
+    case password, serviceAccount
+    /// The SSH tunnel's password, or its key's passphrase.
+    case ssh
+}
+
+/// Where secrets live — never in the connections' file.
+@MainActor
+package protocol DatabaseSecrets: AnyObject {
+    func value(_ kind: DatabaseSecretKind, for id: UUID) -> String?
+    /// Why the last read of it failed, when one is saved but couldn't be
+    /// had — nil when it was read, or there is none.
+    func readProblem(_ kind: DatabaseSecretKind, for id: UUID) -> String?
+    func set(_ value: String?, _ kind: DatabaseSecretKind, for id: UUID) throws
+}
+
+/// A keychain call that failed, in words.
+package struct DatabaseSecretError: LocalizedError, Equatable {
+    package let status: OSStatus
+    package let doing: String
+
+    package var errorDescription: String? {
+        let message = SecCopyErrorMessageString(status, nil) as String? ?? "status \(status)"
+        // A secret saved by another build of Overterm: an ad-hoc signed app
+        // is a new one to the keychain each release, and may not replace it.
+        if status == errSecDuplicateItem || status == errSecInvalidOwnerEdit || status == errSecAuthFailed {
+            return
+                "The keychain wouldn't let Overterm \(doing) (\(message)). The saved one was made by another build of Overterm: delete “Overterm database password” for this connection in Keychain Access, then save it again."
+        }
+        return "The keychain wouldn't let Overterm \(doing): \(message)"
+    }
+}
+
+/// The login keychain: one item a connection and secret.
+@MainActor
+package final class KeychainDatabaseSecrets: DatabaseSecrets {
+    package static let service = "\(AppEnvironment.bundleIdentifier).database"
+
+    private var problems: [String: String] = [:]
+
+    private func match(_ kind: DatabaseSecretKind, _ id: UUID) -> [String: Any] {
+        [
+            kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: Self.service,
+            kSecAttrAccount as String: "\(id.uuidString)|\(kind.rawValue)",
+        ]
+    }
+
+    package func value(_ kind: DatabaseSecretKind, for id: UUID) -> String? {
+        var query = match(kind, id)
+        query[kSecReturnData as String] = true
+        query[kSecMatchLimit as String] = kSecMatchLimitOne
+        var result: CFTypeRef?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        let key = "\(id)|\(kind.rawValue)"
+        switch status {
+        case errSecSuccess:
+            problems[key] = nil
+            return (result as? Data).flatMap { String(data: $0, encoding: .utf8) }
+        case errSecItemNotFound:
+            problems[key] = nil
+            return nil
+        default:
+            // Saved, but not handed over: said where it is asked for, never
+            // passed on as "no password" (the server's error said nothing).
+            problems[key] = DatabaseSecretError(status: status, doing: "read the saved \(kind.rawValue)").errorDescription
+            return nil
+        }
+    }
+
+    package func readProblem(_ kind: DatabaseSecretKind, for id: UUID) -> String? { problems["\(id)|\(kind.rawValue)"] }
+
+    package func set(_ value: String?, _ kind: DatabaseSecretKind, for id: UUID) throws {
+        let query = match(kind, id)
+        guard let value, !value.isEmpty else {
+            let status = SecItemDelete(query as CFDictionary)
+            guard status == errSecSuccess || status == errSecItemNotFound else {
+                throw DatabaseSecretError(status: status, doing: "remove the saved \(kind.rawValue)")
+            }
+            return
+        }
+        let label =
+            switch kind {
+            case .password: "Overterm database password"
+            case .serviceAccount: "Overterm BigQuery service account"
+            case .ssh: "Overterm database SSH tunnel"
+            }
+        let data = Data(value.utf8)
+        // Replaced where it is, else added: the delete-then-add this was
+        // failed silently on an item another build had made — the delete
+        // refused, the add a duplicate, and the new password went nowhere.
+        var status = SecItemUpdate(query as CFDictionary, [kSecValueData as String: data, kSecAttrLabel as String: label] as CFDictionary)
+        if status == errSecItemNotFound {
+            var item = query
+            item[kSecValueData as String] = data
+            item[kSecAttrLabel as String] = label
+            status = SecItemAdd(item as CFDictionary, nil)
+        }
+        guard status == errSecSuccess else { throw DatabaseSecretError(status: status, doing: "save the \(kind.rawValue)") }
+        problems["\(id)|\(kind.rawValue)"] = nil
+    }
+}
+
+/// For isolated runs and tests: nothing reaches the user's keychain.
+@MainActor
+package final class MemoryDatabaseSecrets: DatabaseSecrets {
+    private var values: [String: String] = [:]
+    /// What the tests make a read fail with.
+    package var failing: [String: String] = [:]
+    package func value(_ kind: DatabaseSecretKind, for id: UUID) -> String? {
+        failing["\(id)|\(kind.rawValue)"] == nil ? values["\(id)|\(kind.rawValue)"] : nil
+    }
+    package func readProblem(_ kind: DatabaseSecretKind, for id: UUID) -> String? { failing["\(id)|\(kind.rawValue)"] }
+    package func set(_ value: String?, _ kind: DatabaseSecretKind, for id: UUID) { values["\(id)|\(kind.rawValue)"] = value }
+}
+
+/// The saved connections: `connections.json` in Overterm's folder, its
+/// secrets in the keychain. One for the app — every window lists the same.
+@MainActor
+package final class DatabaseStore: ObservableObject {
+    package static let shared = DatabaseStore()
+
+    @Published package private(set) var connections: [DatabaseConnection] = []
+    package let secrets: DatabaseSecrets
+    package let file: URL
+
+    package init(file: URL? = nil, secrets: DatabaseSecrets? = nil) {
+        self.file =
+            file ?? AppEnvironment.supportDirectory.appendingPathComponent("Database", isDirectory: true).appendingPathComponent("connections.json")
+        self.secrets = secrets ?? (AppEnvironment.isIsolated ? MemoryDatabaseSecrets() : KeychainDatabaseSecrets())
+        load()
+    }
+
+    package func load() {
+        guard let data = try? Data(contentsOf: file),
+            let saved = try? JSONDecoder().decode(Saved.self, from: data)
+        else { return }
+        connections = saved.connections
+    }
+
+    /// Adds or replaces it; `secret` (nil: leave it as it is) goes to the keychain.
+    package func save(_ connection: DatabaseConnection, password: String? = nil, serviceAccount: String? = nil, sshSecret: String? = nil) throws {
+        // The secrets first: a connection saved without the password it was
+        // given would fail later with only the server's word for why.
+        if let password { try secrets.set(password, .password, for: connection.id) }
+        if let serviceAccount { try secrets.set(serviceAccount, .serviceAccount, for: connection.id) }
+        if let sshSecret { try secrets.set(sshSecret, .ssh, for: connection.id) }
+        if let index = connections.firstIndex(where: { $0.id == connection.id }) {
+            connections[index] = connection
+        } else {
+            connections.append(connection)
+        }
+        try write()
+    }
+
+    package func delete(_ connection: DatabaseConnection) throws {
+        connections.removeAll { $0.id == connection.id }
+        try write()
+        // Gone from the list either way; a secret the keychain keeps is said.
+        try secrets.set(nil, .password, for: connection.id)
+        try secrets.set(nil, .serviceAccount, for: connection.id)
+        try secrets.set(nil, .ssh, for: connection.id)
+    }
+
+    package func connection(_ id: UUID?) -> DatabaseConnection? { connections.first { $0.id == id } }
+
+    private struct Saved: Codable {
+        var version = 1
+        var connections: [DatabaseConnection]
+    }
+
+    private func write() throws {
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let encoder = JSONEncoder()
+        encoder.outputFormatting = [.prettyPrinted, .sortedKeys]
+        try encoder.encode(Saved(connections: connections)).write(to: file, options: .atomic)
+    }
+}

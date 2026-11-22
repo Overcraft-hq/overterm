@@ -4,11 +4,11 @@ import SwiftUI
 /// A request, as the editor shows a `.bru` file: method, URL and Send on
 /// top, Bruno's tabs under them, and the response below — the same parts
 /// as Bruno's, laid out for a pane half a window wide.
-struct APIRequestView: View {
-    @ObservedObject var model: APIRequestModel
-    @ObservedObject var theme: ChromeTheme
+package struct APIRequestView: View {
+    @ObservedObject package var model: APIRequestModel
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         if model.file.isGRPC, let workspace = model.workspace {
             GRPCRequestView(model: model, workspace: workspace, theme: theme)
         } else {
@@ -207,8 +207,8 @@ struct APIRequestView: View {
 }
 
 /// Method colours, as API clients have taught everyone to read them.
-enum APIMethodStyle {
-    static func color(_ method: String) -> Color {
+package enum APIMethodStyle {
+    package static func color(_ method: String) -> Color {
         switch method.uppercased() {
         case "GET": Color(red: 0.35, green: 0.78, blue: 0.45)
         case "POST": Color(red: 0.96, green: 0.70, blue: 0.25)
@@ -221,7 +221,7 @@ enum APIMethodStyle {
     }
 
     /// GET, POST, DEL… — short enough for a row.
-    static func short(_ method: String) -> String {
+    package static func short(_ method: String) -> String {
         switch method.uppercased() {
         case "DELETE": "DEL"
         case "OPTIONS": "OPT"
@@ -232,12 +232,12 @@ enum APIMethodStyle {
 }
 
 /// A row of tabs with what each holds counted, Bruno's way.
-struct APITabBar: View {
-    let tabs: [(id: String, title: String, count: Int)]
-    @Binding var selection: String
-    @ObservedObject var theme: ChromeTheme
+package struct APITabBar: View {
+    package let tabs: [(id: String, title: String, count: Int)]
+    @Binding package var selection: String
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: 2) {
                 ForEach(tabs, id: \.id) { tab in
@@ -272,11 +272,11 @@ struct APITabBar: View {
     }
 }
 
-struct APISectionTitle: View {
-    let title: String
-    @ObservedObject var theme: ChromeTheme
+package struct APISectionTitle: View {
+    package let title: String
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         Text(title.uppercased())
             .font(.system(size: ChromeMetrics.text(10), weight: .semibold))
             .foregroundStyle(theme.text3)
@@ -285,12 +285,12 @@ struct APISectionTitle: View {
     }
 }
 
-struct APISection<Content: View>: View {
-    let title: String
-    @ObservedObject var theme: ChromeTheme
-    @ViewBuilder var content: Content
+package struct APISection<Content: View>: View {
+    package let title: String
+    @ObservedObject package var theme: ChromeTheme
+    @ViewBuilder package var content: Content
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 2) {
             APISectionTitle(title: title, theme: theme)
             content
@@ -300,19 +300,19 @@ struct APISection<Content: View>: View {
 
 /// Key–value rows — params, headers, vars, form fields, assertions: a box
 /// to switch one off (Bruno's `~`), its name, its value, ✕.
-struct APIPairsEditor: View {
-    @Binding var pairs: [BruPair]
-    let keyPlaceholder: String
-    let valuePlaceholder: String
+package struct APIPairsEditor: View {
+    @Binding package var pairs: [BruPair]
+    package let keyPlaceholder: String
+    package let valuePlaceholder: String
     /// nil: rows come from elsewhere (path params come from the URL).
-    let addTitle: String?
-    @ObservedObject var theme: ChromeTheme
-    var scrolls = true
-    var fixedKeys = false
+    package let addTitle: String?
+    @ObservedObject package var theme: ChromeTheme
+    package var scrolls = true
+    package var fixedKeys = false
     /// Values are code (an expression, an assertion), else as typed.
-    var monospacedValues = true
+    package var monospacedValues = true
     /// A trailing control per row (multipart's file picker).
-    var accessory: ((Int) -> AnyView)?
+    package var accessory: ((Int) -> AnyView)?
     /// A row's identity, which moves with it: rows named by their index were
     /// rebound to the next pair when one above them went, and a field still
     /// being edited then wrote its text into that other pair.
@@ -322,7 +322,7 @@ struct APIPairsEditor: View {
         ids.count == pairs.count ? ids : Array((ids + (0..<max(0, pairs.count - ids.count)).map { _ in UUID() }).prefix(pairs.count))
     }
 
-    var body: some View {
+    package var body: some View {
         Group {
             if scrolls {
                 ScrollView { rows.padding(.vertical, 6) }
@@ -412,11 +412,11 @@ struct APIPairsEditor: View {
 }
 
 /// The Body tab: the kind of body, and the editor for that kind.
-struct APIBodyEditor: View {
-    @ObservedObject var model: APIRequestModel
-    @ObservedObject var theme: ChromeTheme
+package struct APIBodyEditor: View {
+    @ObservedObject package var model: APIRequestModel
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack {
                 Picker("", selection: Binding(get: { model.file.bodyMode }, set: { mode in model.update { $0.bodyMode = mode } })) {
@@ -529,11 +529,11 @@ struct APIBodyEditor: View {
 }
 
 /// The Auth tab: the mode, and its fields.
-struct APIAuthEditor: View {
-    @ObservedObject var model: APIRequestModel
-    @ObservedObject var theme: ChromeTheme
+package struct APIAuthEditor: View {
+    @ObservedObject package var model: APIRequestModel
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Picker("", selection: Binding(get: { model.file.authMode }, set: { mode in model.update { $0.authMode = mode } })) {
                 ForEach(BruFile.AuthMode.allCases, id: \.self) { mode in Text(mode.title).tag(mode) }
@@ -610,14 +610,14 @@ struct APIAuthEditor: View {
 /// A request's (or folder's, or collection's) `docs`, as Bruno keeps them:
 /// Markdown, read as it renders — the editor's preview (MarkdownRenderer),
 /// no web view — and the text behind it a click away.
-struct APIDocsView: View {
-    @Binding var text: String
-    @ObservedObject var theme: ChromeTheme
+package struct APIDocsView: View {
+    @Binding package var text: String
+    @ObservedObject package var theme: ChromeTheme
     /// Shown only (a folder's, in the panel's sheet): edited in its file.
-    var readOnly = false
+    package var readOnly = false
     @State private var editing = false
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             if !readOnly {
                 header

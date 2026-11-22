@@ -2,14 +2,14 @@ import AppKit
 import SwiftUI
 
 extension ThemeColor {
-    var nsColor: NSColor { NSColor(srgbRed: red, green: green, blue: blue, alpha: 1) }
-    var color: Color { Color(nsColor: nsColor) }
+    package var nsColor: NSColor { NSColor(srgbRed: red, green: green, blue: blue, alpha: 1) }
+    package var color: Color { Color(nsColor: nsColor) }
 }
 
 extension TerminalTheme {
     /// The chrome this theme would dress the window in — the same
     /// derivation the real window uses, so the preview is the thing.
-    @MainActor var chrome: ChromeTheme {
+    @MainActor package var chrome: ChromeTheme {
         ChromeTheme(background: background.nsColor, foreground: foreground.nsColor)
     }
 }
@@ -21,12 +21,12 @@ extension TerminalTheme {
 /// Drawn from the theme file, not from a screenshot, so all 473 of them
 /// cost nothing to carry and a theme dropped into
 /// `~/.config/ghostty/themes` looks like the rest at once.
-struct ThemePreview: View {
-    let theme: TerminalTheme
+package struct ThemePreview: View {
+    package let theme: TerminalTheme
     /// Scales the whole drawing; 1 is the gallery's card.
-    var scale: CGFloat = 1
+    package var scale: CGFloat = 1
 
-    var body: some View {
+    package var body: some View {
         let chrome = theme.chrome
         VStack(spacing: 0) {
             strip(chrome)

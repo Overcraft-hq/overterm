@@ -4,20 +4,20 @@ import Foundation
 /// hold comments and trailing commas (read as JSON5), edited by the app in
 /// place — a value replaced on its own line — so what a person wrote by
 /// hand, comments and order included, stays.
-enum SettingsJSON {
-    struct ParseError: Error, Equatable {
-        let message: String
+package enum SettingsJSON {
+    package struct ParseError: Error, Equatable {
+        package let message: String
     }
 
     /// The file's top-level object; an empty or blank file is an empty one.
-    static func object(from text: String) throws(ParseError) -> [String: Any] {
+    package static func object(from text: String) throws(ParseError) -> [String: Any] {
         guard let value = try parse(text) else { return [:] }
         guard let object = value as? [String: Any] else { throw ParseError(message: "settings.json must hold one object: { … }") }
         return object
     }
 
     /// The file's top-level array (keybindings.json); blank is empty.
-    static func array(from text: String) throws(ParseError) -> [Any] {
+    package static func array(from text: String) throws(ParseError) -> [Any] {
         guard let value = try parse(text) else { return [] }
         guard let array = value as? [Any] else { throw ParseError(message: "keybindings.json must hold one list: [ … ]") }
         return array
@@ -81,7 +81,7 @@ enum SettingsJSON {
     /// those before the closing bracket stay there. Without `members` such
     /// a value becomes `json`'s one line. Nil when the text isn't laid out
     /// so (a one-line object, say): the caller rewrites the whole file instead.
-    static func setting(_ text: String, key: String, json: String?, members: [(name: String, json: String)]? = nil) -> String? {
+    package static func setting(_ text: String, key: String, json: String?, members: [(name: String, json: String)]? = nil) -> String? {
         var lines = text.components(separatedBy: "\n")
         let quotedKey = "\"" + key.replacingOccurrences(of: "\"", with: "\\\"") + "\""
         // An existing entry: "key": value[,] [// comment]
@@ -139,7 +139,7 @@ enum SettingsJSON {
 
     /// A whole file holding `values`, sorted — for a new file, or when the
     /// text can't be edited in place.
-    static func text(of values: [String: SettingValue]) -> String {
+    package static func text(of values: [String: SettingValue]) -> String {
         guard !values.isEmpty else { return "{\n}\n" }
         let lines = values.keys.sorted().map { "  \"\($0)\": \(values[$0]!.json)" }
         return "{\n" + lines.joined(separator: ",\n") + "\n}\n"

@@ -3,7 +3,7 @@ import AppKit
 /// Every editor hears every server's diagnostics: one registry, any number
 /// of windows. Each takes the ones for files it has open.
 extension Notification.Name {
-    static let editorDiagnostics = Notification.Name("OvertermEditorDiagnostics")
+    package static let editorDiagnostics = Notification.Name("OvertermEditorDiagnostics")
 }
 
 extension EditorViewController {
@@ -11,7 +11,7 @@ extension EditorViewController {
 
     /// The language server for the buffer's file — nil when Settings turns
     /// them off, or the language has none on this machine.
-    func server(for buffer: EditorBuffer) -> LanguageServer? {
+    package func server(for buffer: EditorBuffer) -> LanguageServer? {
         // A cluster object's YAML is no file: no server hears of it.
         guard Settings.shared.editorLanguageServers, let url = buffer.url, buffer.document.unavailable == nil, !buffer.document.isVirtual else { return nil }
         if let cached = buffer.server, cached.state == .running || cached.state == .starting { return cached }
@@ -21,7 +21,7 @@ extension EditorViewController {
         return buffer.server
     }
 
-    func serverName(for buffer: EditorBuffer) -> String? {
+    package func serverName(for buffer: EditorBuffer) -> String? {
         guard buffer.serverOpen, let server = server(for: buffer) else { return nil }
         var name = server.command.executable.lastPathComponent
         // node runs the JavaScript servers: name the script, not node.
@@ -30,7 +30,7 @@ extension EditorViewController {
     }
 
     /// "gopls", not "gopls_0.23.0_go_1.27.0" (Zed's download) or "vtsls.js".
-    static func displayName(ofServer file: String) -> String {
+    package static func displayName(ofServer file: String) -> String {
         var name = file.hasSuffix(".js") ? String(file.dropLast(3)) : file
         if let version = name.range(of: #"[_-]v?[0-9]"#, options: .regularExpression) { name = String(name[..<version.lowerBound]) }
         return name.isEmpty ? file : name
@@ -47,7 +47,7 @@ extension EditorViewController {
         }
     }
 
-    func observeDiagnostics() {
+    package func observeDiagnostics() {
         NotificationCenter.default.addObserver(forName: .editorDiagnostics, object: nil, queue: .main) { [weak self] note in
             guard let url = note.userInfo?["url"] as? URL, let diagnostics = note.userInfo?["diagnostics"] as? [LSP.Diagnostic] else { return }
             MainActor.assumeIsolated { self?.receive(diagnostics, for: url) }
@@ -73,7 +73,7 @@ extension EditorViewController {
         updateStatus()
     }
 
-    func bufferDidOpen(_ buffer: EditorBuffer) {
+    package func bufferDidOpen(_ buffer: EditorBuffer) {
         refreshGitBase(buffer)
         openOnServer(buffer)
     }
@@ -88,22 +88,21 @@ extension EditorViewController {
         loadSymbols(buffer) { [weak self] _ in self?.updateBreadcrumb() }
     }
 
-    func bufferWillClose(_ buffer: EditorBuffer) {
+    package func bufferWillClose(_ buffer: EditorBuffer) {
         guard buffer.serverOpen, let url = buffer.url else { return }
         buffer.serverOpen = false
         LanguageServers.shared.existingServer(for: url)?.didClose(url)
     }
 
-    func bufferDidReload(_ buffer: EditorBuffer) {
+    package func bufferDidReload(_ buffer: EditorBuffer) {
         sendChange(buffer)
         refreshGitBase(buffer)
         if buffer === active { refreshChrome() }
     }
 
     /// An edit: the server hears it once typing pauses (or before any request).
-    func bufferDidChange(_ buffer: EditorBuffer) {
-        if buffer.kubeManifest != nil { scheduleKubeFieldMarks(buffer) }
-        if !buffer.terraformDiagnostics.isEmpty { dropTerraformDiagnostics(buffer) }
+    package func bufferDidChange(_ buffer: EditorBuffer) {
+        for hook in Self.hooks.didChange { hook(self, buffer) }
         guard buffer.serverOpen else { return }
         pendingServerChange?.cancel()
         let work = DispatchWorkItem { [weak self, weak buffer] in
@@ -121,27 +120,27 @@ extension EditorViewController {
 
     /// Before a request: the server must have the text the position is in —
     /// and the other files' edits the cancelled timer was holding.
-    func flushServerChange(_ buffer: EditorBuffer) {
+    package func flushServerChange(_ buffer: EditorBuffer) {
         pendingServerChange?.cancel()
         pendingServerChange = nil
         sendChange(buffer)
         buffers.forEach(sendChange)
     }
 
-    func sendChange(_ buffer: EditorBuffer) {
+    package func sendChange(_ buffer: EditorBuffer) {
         guard buffer.serverOpen, buffer.serverVersion != buffer.version, let url = buffer.url, let server = server(for: buffer) else { return }
         buffer.serverVersion = buffer.version
         server.didChange(url, version: buffer.serverVersion, text: buffer.storage.string)
     }
 
-    func bufferDidSave(_ buffer: EditorBuffer) {
-        terraformSaved(buffer)
+    package func bufferDidSave(_ buffer: EditorBuffer) {
+        for hook in Self.hooks.didSave { hook(self, buffer) }
         guard buffer.serverOpen, let url = buffer.url else { return }
         flushServerChange(buffer)
         server(for: buffer)?.didSave(url, text: buffer.storage.string)
     }
 
-    func languageServersSettingChanged() {
+    package func languageServersSettingChanged() {
         for buffer in buffers {
             if Settings.shared.editorLanguageServers {
                 if !buffer.serverOpen { openOnServer(buffer) }
@@ -163,23 +162,23 @@ extension EditorViewController {
     // MARK: Positions
 
     /// LSP positions are UTF-16 offsets within a line, as NSString counts.
-    func lspPosition(of offset: Int) -> LSP.Position {
+    package func lspPosition(of offset: Int) -> LSP.Position {
         let starts = gutter.lineStarts
         let line = LineIndex.line(of: offset, in: starts) - 1
         return LSP.Position(line: line, character: offset - starts[line])
     }
 
-    func offset(of position: LSP.Position) -> Int {
+    package func offset(of position: LSP.Position) -> Int {
         Self.offset(of: position, starts: gutter.lineStarts, length: (textView.string as NSString).length)
     }
 
-    func range(of range: LSP.Range) -> NSRange {
+    package func range(of range: LSP.Range) -> NSRange {
         let start = offset(of: range.start)
         return NSRange(location: start, length: max(0, offset(of: range.end) - start))
     }
 
     /// The same in `buffer`'s text — which may not be the one showing.
-    func range(of range: LSP.Range, in buffer: EditorBuffer) -> NSRange {
+    package func range(of range: LSP.Range, in buffer: EditorBuffer) -> NSRange {
         if buffer === active { return self.range(of: range) }
         let starts = LineIndex.starts(of: buffer.storage.string as NSString)
         let start = Self.offset(of: range.start, starts: starts, length: buffer.storage.length)
@@ -187,7 +186,7 @@ extension EditorViewController {
         return NSRange(location: start, length: end - start)
     }
 
-    static func offset(of position: LSP.Position, starts: [Int], length: Int) -> Int {
+    package static func offset(of position: LSP.Position, starts: [Int], length: Int) -> Int {
         guard position.line >= 0 else { return 0 }
         guard position.line < starts.count else { return length }
         let lineEnd = position.line + 1 < starts.count ? starts[position.line + 1] - 1 : length

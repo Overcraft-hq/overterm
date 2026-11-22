@@ -2,34 +2,58 @@ import AppKit
 import SwiftUI
 
 /// What the Overgit panel asks the window to do.
-struct OvergitActions {
+package struct OvergitActions {
     /// Show this commit in the right-hand pane.
-    var showCommit: (Commit) -> Void
+    package var showCommit: (Commit) -> Void
     /// Check a branch out in the checkout the panel is about.
-    var checkOut: (BranchRef) -> Void
+    package var checkOut: (BranchRef) -> Void
     /// A new worktree (and a tab) on this branch.
-    var newWorktree: (BranchRef) -> Void
+    package var newWorktree: (BranchRef) -> Void
     /// The right pane on the current checkout's pull request.
-    var showPullRequest: () -> Void
+    package var showPullRequest: () -> Void
     /// A pull request on github.com.
-    var openPullRequest: (PullRequestSummary) -> Void
+    package var openPullRequest: (PullRequestSummary) -> Void
     /// Any pull request of the repository, in the right-hand pane.
-    var showPullRequestNumber: (PullRequestSummary) -> Void = { _ in }
-    var applyStash: (Stash) -> Void
-    var dropStash: (Stash) -> Void
+    package var showPullRequestNumber: (PullRequestSummary) -> Void = { _ in }
+    package var applyStash: (Stash) -> Void
+    package var dropStash: (Stash) -> Void
     /// The changes pane, for the working tree.
-    var showChanges: () -> Void
+    package var showChanges: () -> Void
     /// The changes pane, at one file's diff.
-    var showChangedFile: (ChangedFile) -> Void = { _ in }
+    package var showChangedFile: (ChangedFile) -> Void = { _ in }
     /// What `head` has that `base` doesn't, in the right-hand pane.
-    var compare: (_ base: String, _ head: String) -> Void = { _, _ in }
+    package var compare: (_ base: String, _ head: String) -> Void = { _, _ in }
     /// Review tabs: commits `from` through `to` (either order), a branch
     /// against the base, a pull request.
-    var reviewCommits: (_ from: String, _ to: String) -> Void = { _, _ in }
-    var reviewBranch: (String) -> Void = { _ in }
-    var reviewPullRequest: (Int) -> Void = { _ in }
+    package var reviewCommits: (_ from: String, _ to: String) -> Void = { _, _ in }
+    package var reviewBranch: (String) -> Void = { _ in }
+    package var reviewPullRequest: (Int) -> Void = { _ in }
     /// Pull, push, branches, commits, tags, stashes (`overgit(_:)`).
-    var git: (OvergitCommand) -> Void = { _ in }
+    package var git: (OvergitCommand) -> Void = { _ in }
+
+    package init(
+        showCommit: @escaping (Commit) -> Void, checkOut: @escaping (BranchRef) -> Void, newWorktree: @escaping (BranchRef) -> Void, showPullRequest: @escaping () -> Void,
+        openPullRequest: @escaping (PullRequestSummary) -> Void, showPullRequestNumber: @escaping (PullRequestSummary) -> Void = { _ in }, applyStash: @escaping (Stash) -> Void,
+        dropStash: @escaping (Stash) -> Void, showChanges: @escaping () -> Void, showChangedFile: @escaping (ChangedFile) -> Void = { _ in },
+        compare: @escaping (_ base: String, _ head: String) -> Void = { _, _ in }, reviewCommits: @escaping (_ from: String, _ to: String) -> Void = { _, _ in },
+        reviewBranch: @escaping (String) -> Void = { _ in }, reviewPullRequest: @escaping (Int) -> Void = { _ in }, git: @escaping (OvergitCommand) -> Void = { _ in }
+    ) {
+        self.showCommit = showCommit
+        self.checkOut = checkOut
+        self.newWorktree = newWorktree
+        self.showPullRequest = showPullRequest
+        self.openPullRequest = openPullRequest
+        self.showPullRequestNumber = showPullRequestNumber
+        self.applyStash = applyStash
+        self.dropStash = dropStash
+        self.showChanges = showChanges
+        self.showChangedFile = showChangedFile
+        self.compare = compare
+        self.reviewCommits = reviewCommits
+        self.reviewBranch = reviewBranch
+        self.reviewPullRequest = reviewPullRequest
+        self.git = git
+    }
 }
 
 /// Overgit: one git home in the sidebar — where you are, what has
@@ -39,24 +63,39 @@ struct OvergitActions {
 /// Every section but the overview is collapsible and reads nothing while
 /// it is shut (`OvergitModel`). The rows are plain: a click opens the
 /// thing, the context menu does the rest.
-struct OvergitView: View {
-    @ObservedObject var model: OvergitModel
+package struct OvergitView: View {
+    @ObservedObject package var model: OvergitModel
     /// The working tree's own numbers and branch — already read, once, for
     /// the title bar's badge; Overgit does not ask again.
-    @ObservedObject var diff: DiffModel
-    @ObservedObject var worktrees: WorktreeModel
+    @ObservedObject package var diff: DiffModel
+    @ObservedObject package var worktrees: WorktreeModel
     /// Which tabs are in which worktree, for the Worktrees section.
-    @ObservedObject var store: TabStore
-    let currentRoot: URL?
-    let group: TabGroup?
-    @ObservedObject var theme: ChromeTheme
-    let actions: OvergitActions
-    let worktreeActions: WorktreeActions
+    @ObservedObject package var store: TabStore
+    package let currentRoot: URL?
+    package let group: TabGroup?
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: OvergitActions
+    package let worktreeActions: WorktreeActions
+
+    package init(
+        model: OvergitModel, diff: DiffModel, worktrees: WorktreeModel, store: TabStore, currentRoot: URL?, group: TabGroup?, theme: ChromeTheme, actions: OvergitActions,
+        worktreeActions: WorktreeActions
+    ) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._diff = ObservedObject(wrappedValue: diff)
+        self._worktrees = ObservedObject(wrappedValue: worktrees)
+        self._store = ObservedObject(wrappedValue: store)
+        self.currentRoot = currentRoot
+        self.group = group
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.actions = actions
+        self.worktreeActions = worktreeActions
+    }
 
     /// Fixed, because the graph's lines have to meet across rows.
-    static var commitRowHeight: CGFloat { ChromeMetrics.row(36) }
+    package static var commitRowHeight: CGFloat { ChromeMetrics.row(36) }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             PanelHeader(title: "Overgit", group: group, theme: theme, help: model.root?.path) {
                 if model.isReading {
@@ -329,15 +368,15 @@ struct OvergitView: View {
 // MARK: - The pieces
 
 /// A collapsible section's title row.
-struct OvergitSectionHeader: View {
-    let section: OvergitModel.Section
-    let open: Bool
-    let count: Int
-    @ObservedObject var theme: ChromeTheme
-    let onToggle: () -> Void
+package struct OvergitSectionHeader: View {
+    package let section: OvergitModel.Section
+    package let open: Bool
+    package let count: Int
+    @ObservedObject package var theme: ChromeTheme
+    package let onToggle: () -> Void
     @State private var hovering = false
 
-    var body: some View {
+    package var body: some View {
         Button(action: onToggle) {
             HStack(spacing: 5) {
                 Image(systemName: open ? "chevron.down" : "chevron.right")
@@ -366,11 +405,11 @@ struct OvergitSectionHeader: View {
 }
 
 /// What a section says when it has nothing in it.
-struct OvergitEmpty: View {
-    let text: String
-    @ObservedObject var theme: ChromeTheme
+package struct OvergitEmpty: View {
+    package let text: String
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         Text(verbatim: text)
             .font(.system(size: ChromeMetrics.text(11)))
             .foregroundStyle(theme.text3)
@@ -383,17 +422,17 @@ struct OvergitEmpty: View {
 }
 
 /// A row with nothing clever about it: a glyph, a name, a note.
-struct OvergitPlainRow: View {
-    let symbol: String
-    let title: String
-    let detail: String
-    let trailing: String?
-    @ObservedObject var theme: ChromeTheme
-    var help: String?
-    var onTap: (() -> Void)?
+package struct OvergitPlainRow: View {
+    package let symbol: String
+    package let title: String
+    package let detail: String
+    package let trailing: String?
+    @ObservedObject package var theme: ChromeTheme
+    package var help: String?
+    package var onTap: (() -> Void)?
     @State private var hovering = false
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 6) {
             Image(systemName: symbol).font(.system(size: ChromeMetrics.text(10))).frame(width: 14).foregroundStyle(theme.text3)
             Text(verbatim: title).font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text).lineLimit(1).truncationMode(.middle)

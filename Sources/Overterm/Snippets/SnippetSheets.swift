@@ -1,13 +1,20 @@
 import SwiftUI
 
 /// Add or edit a snippet.
-struct SnippetEditorView: View {
-    @State var snippet: Snippet
-    let isNew: Bool
-    let onSave: (Snippet) -> Void
-    let onCancel: () -> Void
+package struct SnippetEditorView: View {
+    @State package var snippet: Snippet
+    package let isNew: Bool
+    package let onSave: (Snippet) -> Void
+    package let onCancel: () -> Void
 
-    var body: some View {
+    package init(snippet: Snippet, isNew: Bool, onSave: @escaping (Snippet) -> Void, onCancel: @escaping () -> Void) {
+        self._snippet = State(initialValue: snippet)
+        self.isNew = isNew
+        self.onSave = onSave
+        self.onCancel = onCancel
+    }
+
+    package var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(isNew ? "New Snippet" : "Edit Snippet").font(.headline)
             Form {
@@ -36,16 +43,22 @@ struct SnippetEditorView: View {
 }
 
 /// Asks for a snippet's placeholder values, then runs or inserts it.
-struct SnippetFillView: View {
-    let snippet: Snippet
+package struct SnippetFillView: View {
+    package let snippet: Snippet
     /// (filled command, run?)
-    let onUse: (String, Bool) -> Void
-    let onCancel: () -> Void
+    package let onUse: (String, Bool) -> Void
+    package let onCancel: () -> Void
     @State private var values: [String: String] = [:]
+
+    package init(snippet: Snippet, onUse: @escaping (String, Bool) -> Void, onCancel: @escaping () -> Void) {
+        self.snippet = snippet
+        self.onUse = onUse
+        self.onCancel = onCancel
+    }
 
     private var filled: String { snippet.filled(with: values) }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text(snippet.name).font(.headline)
             Form {

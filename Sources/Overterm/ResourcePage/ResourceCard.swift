@@ -3,12 +3,12 @@ import SwiftUI
 /// The card a resource page's summary is drawn on (Kubernetes' Overview):
 /// the theme's card fill, a hairline border — tinted where the card is
 /// about something failing — and a 10 pt radius, in dark and light alike.
-struct ResourceCardStyle: ViewModifier {
-    @ObservedObject var theme: ChromeTheme
-    var tint: Color?
-    var padding: CGFloat
+package struct ResourceCardStyle: ViewModifier {
+    @ObservedObject package var theme: ChromeTheme
+    package var tint: Color?
+    package var padding: CGFloat
 
-    func body(content: Content) -> some View {
+    package func body(content: Content) -> some View {
         let shape = RoundedRectangle(cornerRadius: ResourceCard.radius, style: .continuous)
         content
             .padding(padding)
@@ -19,38 +19,50 @@ struct ResourceCardStyle: ViewModifier {
     }
 }
 
-enum ResourceCard {
-    static let radius: CGFloat = 10
+package enum ResourceCard {
+    package static let radius: CGFloat = 10
     /// Between cards, across and down.
-    static let spacing: CGFloat = 14
+    package static let spacing: CGFloat = 14
 }
 
 extension View {
     /// Drawn as a resource page's card (`ResourceCardStyle`).
-    func resourceCard(_ theme: ChromeTheme, tint: Color? = nil, padding: CGFloat = 14) -> some View {
+    package func resourceCard(_ theme: ChromeTheme, tint: Color? = nil, padding: CGFloat = 14) -> some View {
         modifier(ResourceCardStyle(theme: theme, tint: tint, padding: padding))
     }
 }
 
 /// A card's caption: small, upper case, the theme's quietest text.
-struct ResourceCardCaption: View {
-    let text: String
-    @ObservedObject var theme: ChromeTheme
+package struct ResourceCardCaption: View {
+    package let text: String
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package init(text: String, theme: ChromeTheme) {
+        self.text = text
+        self._theme = ObservedObject(wrappedValue: theme)
+    }
+
+    package var body: some View {
         Text(verbatim: text).font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).textCase(.uppercase).tracking(0.4).foregroundStyle(theme.text3)
     }
 }
 
 /// A small rounded capsule with a tinted fill: a status said in words.
-struct ResourcePill: View {
-    let text: String
+package struct ResourcePill: View {
+    package let text: String
     /// The words' colour; the fill is its tint.
-    let colour: Color
-    var symbol: String?
-    var monospaced = false
+    package let colour: Color
+    package var symbol: String?
+    package var monospaced = false
 
-    var body: some View {
+    package init(text: String, colour: Color, symbol: String? = nil, monospaced: Bool = false) {
+        self.text = text
+        self.colour = colour
+        self.symbol = symbol
+        self.monospaced = monospaced
+    }
+
+    package var body: some View {
         HStack(spacing: 4) {
             if let symbol { Image(systemName: symbol).font(.system(size: ChromeMetrics.text(9), weight: .bold)) }
             Text(verbatim: text).font(.system(size: ChromeMetrics.text(11), weight: .medium, design: monospaced ? .monospaced : .default)).lineLimit(1)
@@ -65,14 +77,21 @@ struct ResourcePill: View {
 
 /// A row in a card that is a button: the whole row takes the press, and
 /// it lights up under the pointer.
-struct ResourceCardRow<Content: View>: View {
-    @ObservedObject var theme: ChromeTheme
-    var help: String
-    let action: () -> Void
-    @ViewBuilder var content: () -> Content
+package struct ResourceCardRow<Content: View>: View {
+    @ObservedObject package var theme: ChromeTheme
+    package var help: String
+    package let action: () -> Void
+    @ViewBuilder package var content: () -> Content
     @State private var hovered = false
 
-    var body: some View {
+    package init(theme: ChromeTheme, help: String, action: @escaping () -> Void, @ViewBuilder content: @escaping () -> Content) {
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.help = help
+        self.action = action
+        self.content = content
+    }
+
+    package var body: some View {
         Button(action: action) {
             content()
                 .padding(.horizontal, 8)

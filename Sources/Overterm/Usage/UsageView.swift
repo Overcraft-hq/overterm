@@ -2,15 +2,22 @@ import SwiftUI
 
 /// The usage pane: what each agent has left of its quota, and what the
 /// logs on this Mac say the day cost.
-struct UsageView: View {
-    @ObservedObject var model: UsageModel
-    @ObservedObject var theme: ChromeTheme
-    @ObservedObject var settings: Settings
-    let onClose: () -> Void
+package struct UsageView: View {
+    @ObservedObject package var model: UsageModel
+    @ObservedObject package var theme: ChromeTheme
+    @ObservedObject package var settings: Settings
+    package let onClose: () -> Void
+
+    package init(model: UsageModel, theme: ChromeTheme, settings: Settings, onClose: @escaping () -> Void) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self._settings = ObservedObject(wrappedValue: settings)
+        self.onClose = onClose
+    }
 
     private var showsCost: Bool { settings.usageCost }
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             header
             if model.providers.isEmpty {
@@ -170,7 +177,7 @@ struct UsageView: View {
                         .font(.system(size: ChromeMetrics.text(12), weight: .semibold, design: .monospaced))
                         .foregroundStyle(theme.text)
                 }
-                Text(verbatim: "\(TabInfoView.tokens(spend.tokens.total)) tokens")
+                Text(verbatim: "\(TokenCount.text(spend.tokens.total)) tokens")
                     .font(.system(size: ChromeMetrics.text(11), design: .monospaced))
                     .foregroundStyle(theme.text2)
                 Text(verbatim: "· everything on this Mac")
@@ -185,7 +192,7 @@ struct UsageView: View {
                 }
             }
             if spend.unpriced > 0 {
-                Text(verbatim: "\(TabInfoView.tokens(spend.unpriced)) tokens of a model with no price here")
+                Text(verbatim: "\(TokenCount.text(spend.unpriced)) tokens of a model with no price here")
                     .font(.system(size: ChromeMetrics.text(10)))
                     .foregroundStyle(theme.text3)
             }

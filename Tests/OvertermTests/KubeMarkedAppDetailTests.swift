@@ -2,6 +2,12 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// An Argo CD app read from marks, its detail (docs/design/kubernetes/
 /// gitops.md, 14.2.3, D4). Pure: the tree — each workload's children under

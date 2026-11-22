@@ -17,13 +17,13 @@ import Foundation
 /// usage, never stacked, never summed into it. A projection (V1's fill
 /// forecast) is a reference drawn straight from the last point to where
 /// the trend reaches at the right edge, dotted — never stepped.
-enum TimeChartRole: String, Sendable, CaseIterable {
+package enum TimeChartRole: String, Sendable, CaseIterable {
     case usage, request, limit, allocatable, capacity, quota, guide, peak, projection
 
-    var isReference: Bool { self != .usage && self != .peak }
+    package var isReference: Bool { self != .usage && self != .peak }
 
     /// The reference's dash: request [3,3], limit [6,2], allocatable and capacity [1,2], quota [6,2,1,2].
-    var dash: [CGFloat] {
+    package var dash: [CGFloat] {
         switch self {
         case .request: [3, 3]
         case .limit: [6, 2]
@@ -36,7 +36,7 @@ enum TimeChartRole: String, Sendable, CaseIterable {
     }
 
     /// What the line is called at its right end and in the tooltip.
-    var label: String {
+    package var label: String {
         switch self {
         case .request: "request"
         case .limit: "limit"
@@ -52,7 +52,7 @@ enum TimeChartRole: String, Sendable, CaseIterable {
 }
 
 /// A chart's unit: how its values are said.
-enum TimeChartUnit: String, Sendable {
+package enum TimeChartUnit: String, Sendable {
     /// CPU cores, said in millicores as kubectl top does (`750m`).
     case cores
     case bytes
@@ -70,7 +70,7 @@ enum TimeChartUnit: String, Sendable {
     /// A duration: a saved query's latency (M8d).
     case seconds
 
-    func format(_ value: Double) -> String {
+    package func format(_ value: Double) -> String {
         // A saved query's numbers are anyone's (a process's 2⁶⁴ virtual
         // memory): past Int's range, `Int(…)` traps, so they are said plainly.
         guard value.isFinite else { return value.isNaN ? "NaN" : value > 0 ? "+Inf" : "-Inf" }
@@ -108,7 +108,7 @@ enum TimeChartUnit: String, Sendable {
     }
 
     /// The axis's top when every value is zero.
-    var emptyTop: Double {
+    package var emptyTop: Double {
         switch self {
         case .cores: 0.1
         case .bytes: 1_048_576
@@ -123,139 +123,194 @@ enum TimeChartUnit: String, Sendable {
 
 /// A stretch marked across a chart's plot — a node's pressure or its
 /// cordon (K5), an HPA's ScalingLimited (H1): a faint band, hover saying it.
-struct TimeChartBand: Equatable, Sendable, Identifiable {
-    var id: String
-    var title: String
-    var start: Date
-    var end: Date
+package struct TimeChartBand: Equatable, Sendable, Identifiable {
+    package var id: String
+    package var title: String
+    package var start: Date
+    package var end: Date
+
+    package init(id: String, title: String, start: Date, end: Date) {
+        self.id = id
+        self.title = title
+        self.start = start
+        self.end = end
+    }
 }
 
 /// One point of a series: Kubernetes' answers' (`KubeSeriesPoint`) and
 /// Activity's history's alike.
-struct TimeChartPoint: Equatable, Sendable {
-    var time: Date
-    var value: Double
+package struct TimeChartPoint: Equatable, Sendable {
+    package var time: Date
+    package var value: Double
+
+    package init(time: Date, value: Double) {
+        self.time = time
+        self.value = value
+    }
 }
 
 /// One series: its points in time order, broken where they are more than
 /// two steps apart.
-struct TimeChartSeries: Equatable, Sendable, Identifiable {
-    var id: String
-    var name: String
-    var role: TimeChartRole = .usage
-    var points: [TimeChartPoint]
+package struct TimeChartSeries: Equatable, Sendable, Identifiable {
+    package var id: String
+    package var name: String
+    package var role: TimeChartRole = .usage
+    package var points: [TimeChartPoint]
     /// The points that start again after a break their source recorded
     /// (`KubeUsageRing`'s): a run ends before each, whatever the step.
-    var breaks: Set<Date> = []
+    package var breaks: Set<Date> = []
     /// Hidden until its legend item is clicked (C2's RSS): never in the
     /// chart's totals.
-    var offByDefault = false
+    package var offByDefault = false
+
+    package init(id: String, name: String, role: TimeChartRole = .usage, points: [TimeChartPoint], breaks: Set<Date> = [], offByDefault: Bool = false) {
+        self.id = id
+        self.name = name
+        self.role = role
+        self.points = points
+        self.breaks = breaks
+        self.offByDefault = offByDefault
+    }
 }
 
 /// What one chart shows: its series over a window, in one unit.
-struct TimeChartData: Equatable, Sendable {
+package struct TimeChartData: Equatable, Sendable {
     /// The chart's identifier part: `<scope>.chart.<id>` (`<subject>.<measure>`,
     /// the subject naming its object: `cluster`, `pod.shop.web-8k2`, `volume.shop.data-db-0`).
-    var id: String
-    var title: String
-    var unit: TimeChartUnit
-    var series: [TimeChartSeries]
-    var start: Date
-    var end: Date
+    package var id: String
+    package var title: String
+    package var unit: TimeChartUnit
+    package var series: [TimeChartSeries]
+    package var start: Date
+    package var end: Date
     /// The points' spacing: two points further apart than two steps are a gap.
-    var step: TimeInterval
+    package var step: TimeInterval
     /// Usage series stacked, cumulative in legend order.
-    var stacked = false
+    package var stacked = false
     /// Where the numbers come from, as the caption and the dump say it.
-    var source = ""
-    var tier: String?
+    package var source = ""
+    package var tier: String?
     /// Changed by whoever makes the data whenever it changes: what the plot cache is keyed by.
-    var version = 0
+    package var version = 0
     /// The moments marked on it, oldest first.
-    var markers: [KubeChartMarker] = []
+    package var markers: [KubeChartMarker] = []
     /// Its series' breaks are marked (`breaks`): the step only spaces
     /// the points, it splits no run — the source's rule is the one.
-    var breaksMarked = false
+    package var breaksMarked = false
     /// Stretches marked across it, oldest first.
-    var bands: [TimeChartBand] = []
+    package var bands: [TimeChartBand] = []
     /// Its usage lines are counts that hold until the next reading (replicas, pods): drawn stepped.
-    var stepped = false
+    package var stepped = false
     /// Markers in the window past `KubeChartMarkers.cap`, the oldest: "+N earlier" at the left edge.
-    var earlierMarkers = 0
+    package var earlierMarkers = 0
     /// What the legend says of the markers: "events: last hour".
-    var markerNote: String?
+    package var markerNote: String?
     /// The queries a Prometheus chart was drawn from, as sent: what "Copy
     /// PromQL" gives (`KubeChartExport`); none for a sampled one.
-    var queries: [KubeChartQuery] = []
+    package var queries: [KubeChartQuery] = []
     /// The feature whose chart it is: its identifier's first part —
     /// `kubernetes`, `activity`.
-    var scope = "kubernetes"
+    package var scope = "kubernetes"
 
-    var identifier: String { scope + ".chart." + id }
+    package init(
+        id: String, title: String, unit: TimeChartUnit, series: [TimeChartSeries], start: Date, end: Date, step: TimeInterval, stacked: Bool = false, source: String = "", tier: String? = nil,
+        version: Int = 0, markers: [KubeChartMarker] = [], breaksMarked: Bool = false, bands: [TimeChartBand] = [], stepped: Bool = false, earlierMarkers: Int = 0, markerNote: String? = nil,
+        queries: [KubeChartQuery] = [], scope: String = "kubernetes"
+    ) {
+        self.id = id
+        self.title = title
+        self.unit = unit
+        self.series = series
+        self.start = start
+        self.end = end
+        self.step = step
+        self.stacked = stacked
+        self.source = source
+        self.tier = tier
+        self.version = version
+        self.markers = markers
+        self.breaksMarked = breaksMarked
+        self.bands = bands
+        self.stepped = stepped
+        self.earlierMarkers = earlierMarkers
+        self.markerNote = markerNote
+        self.queries = queries
+        self.scope = scope
+    }
+
+    package var identifier: String { scope + ".chart." + id }
     /// The markers inside the window: the ones drawn.
-    var shownMarkers: [KubeChartMarker] { markers.filter { $0.time >= start && $0.time <= end } }
-    var usage: [TimeChartSeries] { series.filter { $0.role == .usage } }
+    package var shownMarkers: [KubeChartMarker] { markers.filter { $0.time >= start && $0.time <= end } }
+    package var usage: [TimeChartSeries] { series.filter { $0.role == .usage } }
     /// Its peak bands (C1's): drawn behind the usage, in the legend beside it.
-    var peaks: [TimeChartSeries] { series.filter { $0.role == .peak } }
+    package var peaks: [TimeChartSeries] { series.filter { $0.role == .peak } }
     /// What the legend lists: the usage, then the peaks.
-    var legendSeries: [TimeChartSeries] { usage + peaks }
+    package var legendSeries: [TimeChartSeries] { usage + peaks }
     /// The series hidden until clicked.
-    var hiddenByDefault: Set<String> { Set(series.filter(\.offByDefault).map(\.id)) }
-    var references: [TimeChartSeries] { series.filter(\.role.isReference) }
+    package var hiddenByDefault: Set<String> { Set(series.filter(\.offByDefault).map(\.id)) }
+    package var references: [TimeChartSeries] { series.filter(\.role.isReference) }
 }
 
 /// An immutable path, handed from the queue that built it to the main thread.
-struct TimePlotPath: @unchecked Sendable {
-    let cgPath: CGPath
+package struct TimePlotPath: @unchecked Sendable {
+    package let cgPath: CGPath
 }
 
 /// A chart's geometry at one size: the scales, the ticks, a path per series
 /// and per stacked band, the reference steps and the points hover searches.
 /// Pure; built off the main thread (`TimeChartState`).
-struct TimePlot: Sendable {
-    struct Key: Hashable, Sendable {
-        var version: Int
-        var width: Int
-        var height: Int
-        var hidden: Set<String>
-        var hideReferences: Bool
+package struct TimePlot: Sendable {
+    package struct Key: Hashable, Sendable {
+        package var version: Int
+        package var width: Int
+        package var height: Int
+        package var hidden: Set<String>
+        package var hideReferences: Bool
+
+        package init(version: Int, width: Int, height: Int, hidden: Set<String>, hideReferences: Bool) {
+            self.version = version
+            self.width = width
+            self.height = height
+            self.hidden = hidden
+            self.hideReferences = hideReferences
+        }
     }
 
-    struct Line: Sendable {
-        var id: String
-        var name: String
-        var role: TimeChartRole
+    package struct Line: Sendable {
+        package var id: String
+        package var name: String
+        package var role: TimeChartRole
         /// Its place in the palette (usage series, in legend order).
-        var colour: Int
-        var stroke: TimePlotPath
-        var fill: TimePlotPath?
-        var points: Int
+        package var colour: Int
+        package var stroke: TimePlotPath
+        package var fill: TimePlotPath?
+        package var points: Int
     }
 
-    struct Reference: Sendable {
-        var id: String
-        var name: String
-        var role: TimeChartRole
-        var stroke: TimePlotPath
-        var last: Double
+    package struct Reference: Sendable {
+        package var id: String
+        package var name: String
+        package var role: TimeChartRole
+        package var stroke: TimePlotPath
+        package var last: Double
         /// Where its label sits: the line's right end.
-        var labelAt: CGPoint
+        package var labelAt: CGPoint
         /// What its label says — `allocatable = capacity` for lines that
         /// coincide, the first of them; empty for the others — and its
         /// text's centre: above the line (under it at the very top), moved
         /// down past a neighbour's (`labelled`).
-        var label = ""
-        var labelY: CGFloat = 0
+        package var label = ""
+        package var labelY: CGFloat = 0
     }
 
     /// The height a reference's label takes, so that two never overlap.
-    static let labelHeight: CGFloat = 11
+    package static let labelHeight: CGFloat = 11
 
     /// The right-end labels laid out: lines at the same height said once
     /// (`allocatable = capacity`), each label above its line or under it
     /// at the top, then pushed down past the one above it — never drawn
     /// over another. A projection's (labelled where it ends) keeps its own.
-    static func labelled(_ references: [Reference], frame: CGRect) -> [Reference] {
+    package static func labelled(_ references: [Reference], frame: CGRect) -> [Reference] {
         var references = references
         for index in references.indices {
             let y = references[index].labelAt.y
@@ -280,56 +335,56 @@ struct TimePlot: Sendable {
     }
 
     /// A band where it is drawn.
-    struct Band: Sendable {
-        var band: TimeChartBand
-        var minX: CGFloat
-        var maxX: CGFloat
+    package struct Band: Sendable {
+        package var band: TimeChartBand
+        package var minX: CGFloat
+        package var maxX: CGFloat
     }
 
     /// A marker where it is drawn.
-    struct Marker: Sendable {
-        var marker: KubeChartMarker
-        var x: CGFloat
+    package struct Marker: Sendable {
+        package var marker: KubeChartMarker
+        package var x: CGFloat
     }
 
     /// One series' values as hover reads them, in time order.
-    struct Track: Sendable {
-        var id: String
-        var name: String
-        var role: TimeChartRole
-        var colour: Int
-        var times: [Double]
-        var values: [Double]
+    package struct Track: Sendable {
+        package var id: String
+        package var name: String
+        package var role: TimeChartRole
+        package var colour: Int
+        package var times: [Double]
+        package var values: [Double]
     }
 
-    static let gutter: CGFloat = 40
-    static let topInset: CGFloat = 8
-    static let rightInset: CGFloat = 4
+    package static let gutter: CGFloat = 40
+    package static let topInset: CGFloat = 8
+    package static let rightInset: CGFloat = 4
 
-    var key: Key
-    var size: CGSize
+    package var key: Key
+    package var size: CGSize
     /// Where the lines are drawn, inside `size`; the gutter on its left holds the y labels.
-    var frame: CGRect
-    var start: Date
-    var end: Date
-    var unit: TimeChartUnit
-    var top: Double
-    var yTicks: [Double]
-    var timeTicks: [Date]
-    var lines: [Line]
+    package var frame: CGRect
+    package var start: Date
+    package var end: Date
+    package var unit: TimeChartUnit
+    package var top: Double
+    package var yTicks: [Double]
+    package var timeTicks: [Date]
+    package var lines: [Line]
     /// Peak bands: an area from 0 to each step's highest, behind the lines.
-    var peaks: [Line]
-    var references: [Reference]
-    var tracks: [Track]
-    var markers: [Marker]
-    var bands: [Band]
-    var stacked: Bool
+    package var peaks: [Line]
+    package var references: [Reference]
+    package var tracks: [Track]
+    package var markers: [Marker]
+    package var bands: [Band]
+    package var stacked: Bool
 
-    var pointCount: Int { lines.reduce(0) { $0 + $1.points } }
+    package var pointCount: Int { lines.reduce(0) { $0 + $1.points } }
 
     // MARK: Building
 
-    init(_ data: TimeChartData, size: CGSize, hidden: Set<String> = [], hideReferences: Bool = false, timeZone: TimeZone = .current) {
+    package init(_ data: TimeChartData, size: CGSize, hidden: Set<String> = [], hideReferences: Bool = false, timeZone: TimeZone = .current) {
         key = Key(version: data.version, width: Int(size.width.rounded()), height: Int(size.height.rounded()), hidden: hidden, hideReferences: hideReferences)
         self.size = size
         frame = CGRect(
@@ -511,7 +566,7 @@ struct TimePlot: Sendable {
 
     /// A series' runs, broken where two points are more than two steps
     /// apart (no step: never) and before each of `breaks`, with the band's base beside each.
-    static func runs(
+    package static func runs(
         _ upper: [TimeChartPoint], lower: [Double]?, step: TimeInterval, breaks: Set<Date> = []
     ) -> [(upper: [TimeChartPoint], lower: [TimeChartPoint]?)] {
         var out: [(upper: [TimeChartPoint], lower: [TimeChartPoint]?)] = []
@@ -531,7 +586,7 @@ struct TimePlot: Sendable {
 
     /// Min/max decimation: past one point a pixel column, each column keeps
     /// its lowest and its highest in time order — two a column, peaks kept.
-    static func decimate(_ points: [TimeChartPoint], columns: Int, start: Double, span: Double) -> [TimeChartPoint] {
+    package static func decimate(_ points: [TimeChartPoint], columns: Int, start: Double, span: Double) -> [TimeChartPoint] {
         guard columns > 0, points.count > columns, span > 0 else { return points }
         var out: [TimeChartPoint] = []
         out.reserveCapacity(2 * columns + 2)
@@ -578,7 +633,7 @@ struct TimePlot: Sendable {
 
     /// The axis's top rounded up to a nice value and its 3–5 ticks from 0;
     /// bytes in steps of a binary unit (Ki, Mi, Gi, Ti).
-    static func niceScale(_ highest: Double, unit: TimeChartUnit) -> (top: Double, ticks: [Double]) {
+    package static func niceScale(_ highest: Double, unit: TimeChartUnit) -> (top: Double, ticks: [Double]) {
         let highest = highest.isFinite && highest > 0 ? highest : unit.emptyTop
         var scale = 1.0
         if unit == .bytes || unit == .bytesPerSecond {
@@ -594,7 +649,7 @@ struct TimePlot: Sendable {
     }
 
     /// The time ticks: the smallest interval that keeps them 70 pt apart, on whole local minutes, hours or days.
-    static func timeTicks(start: Date, end: Date, width: CGFloat, timeZone: TimeZone) -> [Date] {
+    package static func timeTicks(start: Date, end: Date, width: CGFloat, timeZone: TimeZone) -> [Date] {
         let span = end.timeIntervalSince(start)
         guard span > 0, width > 0 else { return [] }
         let most = max(1, Int(width / 70))
@@ -613,20 +668,20 @@ struct TimePlot: Sendable {
 
     // MARK: Reading it back
 
-    func x(of time: Date) -> CGFloat {
+    package func x(of time: Date) -> CGFloat {
         let span = end.timeIntervalSince(start)
         return frame.minX + frame.width * CGFloat(span > 0 ? time.timeIntervalSince(start) / span : 0)
     }
 
-    func y(of value: Double) -> CGFloat { frame.maxY - frame.height * CGFloat(top > 0 ? min(max(value, 0), top) / top : 0) }
+    package func y(of value: Double) -> CGFloat { frame.maxY - frame.height * CGFloat(top > 0 ? min(max(value, 0), top) / top : 0) }
 
-    func time(atX x: CGFloat) -> Date {
+    package func time(atX x: CGFloat) -> Date {
         let fraction = Double(min(max((x - frame.minX) / max(frame.width, 1), 0), 1))
         return start.addingTimeInterval(end.timeIntervalSince(start) * fraction)
     }
 
     /// The point of a usage series nearest to `x`, by binary search in each one's times: the time hover snaps to.
-    func nearestTime(toX x: CGFloat) -> Date? {
+    package func nearestTime(toX x: CGFloat) -> Date? {
         let target = time(atX: x).timeIntervalSince1970
         var best: Double?
         for track in tracks where !track.role.isReference {
@@ -638,7 +693,7 @@ struct TimePlot: Sendable {
     }
 
     /// The index of the time nearest `target` in sorted `times`.
-    static func nearest(_ times: [Double], _ target: Double) -> Int? {
+    package static func nearest(_ times: [Double], _ target: Double) -> Int? {
         guard !times.isEmpty else { return nil }
         var low = 0
         var high = times.count - 1
@@ -652,7 +707,7 @@ struct TimePlot: Sendable {
 
     /// Each series' value at `time`: the point there, or within a step of
     /// it — none in a gap. A reference holds its last value before `time`.
-    func values(at time: Date, step: TimeInterval) -> [(track: Track, value: Double)] {
+    package func values(at time: Date, step: TimeInterval) -> [(track: Track, value: Double)] {
         let target = time.timeIntervalSince1970
         return tracks.compactMap { track in
             if track.role.isReference {
@@ -669,20 +724,20 @@ struct TimePlot: Sendable {
 
 /// The tooltip at a time: the time with its zone, each series by value,
 /// then the reference lines with the usage's share of each (metrics.md, 3.1).
-struct TimeChartTooltip: Equatable, Sendable {
-    struct Row: Equatable, Sendable {
-        var name: String
-        var value: String
-        var colour: Int?
-        var role: TimeChartRole
+package struct TimeChartTooltip: Equatable, Sendable {
+    package struct Row: Equatable, Sendable {
+        package var name: String
+        package var value: String
+        package var colour: Int?
+        package var role: TimeChartRole
     }
 
-    var time: String
-    var rows: [Row]
+    package var time: String
+    package var rows: [Row]
 
-    var text: String { ([time] + rows.map { "\($0.name) \($0.value)" }).joined(separator: "\n") }
+    package var text: String { ([time] + rows.map { "\($0.name) \($0.value)" }).joined(separator: "\n") }
 
-    static func at(_ time: Date, plot: TimePlot, step: TimeInterval, timeZone: TimeZone = .current) -> TimeChartTooltip {
+    package static func at(_ time: Date, plot: TimePlot, step: TimeInterval, timeZone: TimeZone = .current) -> TimeChartTooltip {
         let values = plot.values(at: time, step: step)
         let usage = values.filter { $0.track.role == .usage }.sorted { $0.value > $1.value }
         // Stacked, a band's own value is what it adds, not the sum under it.
@@ -701,7 +756,7 @@ struct TimeChartTooltip: Equatable, Sendable {
 }
 
 /// Times as the charts say them: local, the zone in the tooltip (decision 14).
-enum TimeChartTime {
+package enum TimeChartTime {
     private static let months = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
     private static func parts(_ date: Date, _ timeZone: TimeZone) -> DateComponents {
@@ -713,13 +768,13 @@ enum TimeChartTime {
     private static func two(_ value: Int?) -> String { String(format: "%02d", value ?? 0) }
 
     /// `Nov 7, 14:32:15 GMT+3`.
-    static func full(_ date: Date, timeZone: TimeZone = .current) -> String {
+    package static func full(_ date: Date, timeZone: TimeZone = .current) -> String {
         let p = parts(date, timeZone)
         return "\(months[((p.month ?? 1) - 1) % 12]) \(p.day ?? 1), \(two(p.hour)):\(two(p.minute)):\(two(p.second)) \(zone(timeZone, at: date))"
     }
 
     /// An axis tick: `14:30`, a day's start `Nov 8`; ticks a day or more apart are days.
-    static func tick(_ date: Date, interval: TimeInterval, timeZone: TimeZone = .current) -> String {
+    package static func tick(_ date: Date, interval: TimeInterval, timeZone: TimeZone = .current) -> String {
         let p = parts(date, timeZone)
         let day = "\(months[((p.month ?? 1) - 1) % 12]) \(p.day ?? 1)"
         if interval >= 86400 || (p.hour == 0 && p.minute == 0) { return day }
@@ -727,13 +782,13 @@ enum TimeChartTime {
     }
 
     /// `14:32`, for the summary.
-    static func clock(_ date: Date, timeZone: TimeZone = .current) -> String {
+    package static func clock(_ date: Date, timeZone: TimeZone = .current) -> String {
         let p = parts(date, timeZone)
         return "\(two(p.hour)):\(two(p.minute))"
     }
 
     /// `GMT+3`, `GMT+5:30`, `GMT-4`, `GMT`.
-    static func zone(_ timeZone: TimeZone, at date: Date) -> String {
+    package static func zone(_ timeZone: TimeZone, at date: Date) -> String {
         let seconds = timeZone.secondsFromGMT(for: date)
         guard seconds != 0 else { return "GMT" }
         let sign = seconds < 0 ? "-" : "+"
@@ -745,8 +800,8 @@ enum TimeChartTime {
 
 /// A chart said in a sentence, for VoiceOver and the dump:
 /// "CPU, last 1h: 120m now, peak 480m at 14:10, request 250m, limit 1000m".
-enum TimeChartSummary {
-    static func of(_ data: TimeChartData, span: String, timeZone: TimeZone = .current) -> String {
+package enum TimeChartSummary {
+    package static func of(_ data: TimeChartData, span: String, timeZone: TimeZone = .current) -> String {
         let total = totals(data)
         var parts: [String] = []
         if let last = total.last { parts.append("\(data.unit.format(last.value)) now") }
@@ -761,7 +816,7 @@ enum TimeChartSummary {
     }
 
     /// The usage series summed at each time they share (one series: itself).
-    static func totals(_ data: TimeChartData) -> [TimeChartPoint] {
+    package static func totals(_ data: TimeChartData) -> [TimeChartPoint] {
         let usage = data.usage.filter { !$0.offByDefault }
         guard usage.count > 1 else { return usage.first?.points ?? [] }
         var sums: [Double: Double] = [:]
@@ -771,7 +826,7 @@ enum TimeChartSummary {
 
     /// What `OVERTERM_DUMP_LAYOUT` and the scenarios read of a chart: its
     /// series and points, the axis's top, the references, the markers, the source and the tier.
-    static func dump(_ data: TimeChartData, plot: TimePlot?) -> String {
+    package static func dump(_ data: TimeChartData, plot: TimePlot?) -> String {
         let references = data.references.map { "\($0.role.label)=\(data.unit.format($0.points.last?.value ?? 0))" }
         let points = data.usage.reduce(0) { $0 + $1.points.count }
         return "chart \(data.identifier) series=\(data.usage.count) points=\(points)"
@@ -786,37 +841,37 @@ enum TimeChartSummary {
 /// The charts' categorical colours, ten a theme, each at least 3:1
 /// against its card (WCAG's non-text contrast), checked in both
 /// appearances (`KubePlotTests`); and the reference lines' fixed ones.
-enum TimeChartPalette {
-    struct RGB: Hashable, Sendable {
-        var red: Double
-        var green: Double
-        var blue: Double
+package enum TimeChartPalette {
+    package struct RGB: Hashable, Sendable {
+        package var red: Double
+        package var green: Double
+        package var blue: Double
 
-        init(_ hex: UInt32) {
+        package init(_ hex: UInt32) {
             red = Double(hex >> 16 & 0xFF) / 255
             green = Double(hex >> 8 & 0xFF) / 255
             blue = Double(hex & 0xFF) / 255
         }
 
         /// WCAG's relative luminance.
-        var luminance: Double {
+        package var luminance: Double {
             func linear(_ c: Double) -> Double { c <= 0.03928 ? c / 12.92 : pow((c + 0.055) / 1.055, 2.4) }
             return 0.2126 * linear(red) + 0.7152 * linear(green) + 0.0722 * linear(blue)
         }
 
-        func contrast(_ other: RGB) -> Double {
+        package func contrast(_ other: RGB) -> Double {
             let a = luminance
             let b = other.luminance
             return (max(a, b) + 0.05) / (min(a, b) + 0.05)
         }
     }
 
-    static let light: [RGB] = [0x2167C9, 0xC2570C, 0x0E8A7E, 0xB8327A, 0x6B4FD0, 0x8C5A2B, 0x6F7F12, 0x0F7FA8, 0xC23B4E, 0x59657A].map(RGB.init)
-    static let dark: [RGB] = [0x5AA3FF, 0xFF9A4D, 0x3DD6C3, 0xFF79C1, 0xA893FF, 0xD9A066, 0xB8CC4A, 0x4FC7EE, 0xFF7A8A, 0xA3B1C7].map(RGB.init)
+    package static let light: [RGB] = [0x2167C9, 0xC2570C, 0x0E8A7E, 0xB8327A, 0x6B4FD0, 0x8C5A2B, 0x6F7F12, 0x0F7FA8, 0xC23B4E, 0x59657A].map(RGB.init)
+    package static let dark: [RGB] = [0x5AA3FF, 0xFF9A4D, 0x3DD6C3, 0xFF79C1, 0xA893FF, 0xD9A066, 0xB8CC4A, 0x4FC7EE, 0xFF7A8A, 0xA3B1C7].map(RGB.init)
 
     /// A marker's colour by kind: an OOMKill red, as a limit is; a restart orange.
     /// A rollout and a Helm revision blue, a scale grey, a warning yellow.
-    static func marker(_ kind: KubeChartMarker.Kind, dark: Bool) -> RGB {
+    package static func marker(_ kind: KubeChartMarker.Kind, dark: Bool) -> RGB {
         switch kind {
         case .oom: reference(.limit, dark: dark)
         case .restart: RGB(dark ? 0xFF9A4D : 0xC2570C)
@@ -827,7 +882,7 @@ enum TimeChartPalette {
     }
 
     /// A reference line's colour by meaning: request green, limit red, allocatable and capacity grey, quota purple.
-    static func reference(_ role: TimeChartRole, dark: Bool) -> RGB {
+    package static func reference(_ role: TimeChartRole, dark: Bool) -> RGB {
         switch role {
         case .request: RGB(dark ? 0x4CC774 : 0x1C7F3C)
         case .limit: RGB(dark ? 0xFF6B6B : 0xC62828)

@@ -3,6 +3,12 @@ import NIOHTTP1
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Prometheus per context (stage 4; docs/design/kubernetes/analysis.md,
 /// 2.11, Section 4): the metrics proxy's `--accept-paths` (one Service's two

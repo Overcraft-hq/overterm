@@ -2,27 +2,27 @@ import Foundation
 
 /// What came back: status, headers in their order, the body's bytes, and
 /// where the time went.
-struct APIResponse: Equatable, Sendable {
-    var status: Int
-    var headers: [Header]
+package struct APIResponse: Equatable, Sendable {
+    package var status: Int
+    package var headers: [Header]
     /// Setting it formats it again (`display`): where it is set — the
     /// client, a post-response script — is off the main thread, so a large
     /// body is never parsed while the view draws.
-    var body: Data {
+    package var body: Data {
         didSet { (display, rawDisplay, isJSON) = Self.format(body) }
     }
     /// From the request leaving to the last byte, in milliseconds.
-    var duration: Double
-    var url: URL?
-    var timeline: Timeline?
+    package var duration: Double
+    package var url: URL?
+    package var timeline: Timeline?
     /// The body as the response pane shows it: JSON indented, else its
     /// text; past `displayLimit`, cut there.
-    private(set) var display: String = ""
+    package private(set) var display: String = ""
     /// The body as sent, cut the same way.
-    private(set) var rawDisplay: String = ""
-    private(set) var isJSON = false
+    package private(set) var rawDisplay: String = ""
+    package private(set) var isJSON = false
 
-    init(status: Int, headers: [Header], body: Data, duration: Double, url: URL? = nil, timeline: Timeline? = nil) {
+    package init(status: Int, headers: [Header], body: Data, duration: Double, url: URL? = nil, timeline: Timeline? = nil) {
         self.status = status
         self.headers = headers
         self.body = body
@@ -33,9 +33,9 @@ struct APIResponse: Equatable, Sendable {
     }
 
     /// What the pane shows of a body at most; Copy takes all of it.
-    static let displayLimit = 4_000_000
+    package static let displayLimit = 4_000_000
 
-    static func format(_ body: Data) -> (shown: String, raw: String, isJSON: Bool) {
+    package static func format(_ body: Data) -> (shown: String, raw: String, isJSON: Bool) {
         let text = String(decoding: body, as: UTF8.self)
         let isJSON = !body.isEmpty && (try? JSONSerialization.jsonObject(with: body, options: [.fragmentsAllowed])) != nil
         func cut(_ text: String) -> String {
@@ -46,29 +46,29 @@ struct APIResponse: Equatable, Sendable {
         return (cut(isJSON ? indentJSON(text) : text), cut(text), isJSON)
     }
 
-    struct Header: Equatable, Hashable, Sendable {
-        var name: String
-        var value: String
+    package struct Header: Equatable, Hashable, Sendable {
+        package var name: String
+        package var value: String
     }
 
     /// Milliseconds spent in each phase, where the system measured it (a
     /// reused connection has no DNS, connect or TLS).
-    struct Timeline: Equatable, Sendable {
-        var dns: Double?
-        var connect: Double?
-        var tls: Double?
-        var firstByte: Double?
-        var download: Double?
-        var redirects: Int
-        var protocolName: String?
-        var remoteAddress: String?
+    package struct Timeline: Equatable, Sendable {
+        package var dns: Double?
+        package var connect: Double?
+        package var tls: Double?
+        package var firstByte: Double?
+        package var download: Double?
+        package var redirects: Int
+        package var protocolName: String?
+        package var remoteAddress: String?
     }
 
     /// The reason phrase, as RFC 9110 words it — not Foundation's, which
     /// calls 200 "no error".
-    var statusText: String { Self.reasons[status] ?? HTTPURLResponse.localizedString(forStatusCode: status).capitalized }
+    package var statusText: String { Self.reasons[status] ?? HTTPURLResponse.localizedString(forStatusCode: status).capitalized }
 
-    static let reasons: [Int: String] = [
+    package static let reasons: [Int: String] = [
         100: "Continue", 101: "Switching Protocols", 200: "OK", 201: "Created", 202: "Accepted", 203: "Non-Authoritative Information",
         204: "No Content", 205: "Reset Content", 206: "Partial Content", 300: "Multiple Choices", 301: "Moved Permanently", 302: "Found",
         303: "See Other", 304: "Not Modified", 307: "Temporary Redirect", 308: "Permanent Redirect", 400: "Bad Request", 401: "Unauthorized",
@@ -80,16 +80,16 @@ struct APIResponse: Equatable, Sendable {
         502: "Bad Gateway", 503: "Service Unavailable", 504: "Gateway Timeout", 505: "HTTP Version Not Supported",
     ]
 
-    func header(_ name: String) -> String? {
+    package func header(_ name: String) -> String? {
         headers.first { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.value
     }
 
-    var contentType: String { header("Content-Type")?.lowercased() ?? "" }
+    package var contentType: String { header("Content-Type")?.lowercased() ?? "" }
 
-    var text: String { String(decoding: body, as: UTF8.self) }
+    package var text: String { String(decoding: body, as: UTF8.self) }
 
     /// The body as JSON, when it is JSON.
-    var json: Any? {
+    package var json: Any? {
         guard !body.isEmpty else { return nil }
         return try? JSONSerialization.jsonObject(with: body, options: [.fragmentsAllowed])
     }
@@ -97,11 +97,11 @@ struct APIResponse: Equatable, Sendable {
     /// The body as a person reads it: JSON indented — its keys in the order
     /// the server sent them, nothing in it re-encoded — anything else as it
     /// came. Formatted anew: for the whole of a large body (Copy).
-    var prettyText: String { isJSON ? Self.indentJSON(text) : text }
+    package var prettyText: String { isJSON ? Self.indentJSON(text) : text }
 
     /// Re-indents JSON text by two spaces, touching only the whitespace
     /// between tokens: parsing it into a dictionary loses its key order.
-    static func indentJSON(_ text: String) -> String {
+    package static func indentJSON(_ text: String) -> String {
         var out = ""
         out.reserveCapacity(text.utf8.count + text.utf8.count / 4)
         var depth = 0
@@ -160,13 +160,13 @@ struct APIResponse: Equatable, Sendable {
     }
 
     /// Size on the wire, as the body counts it.
-    var size: Int { body.count }
+    package var size: Int { body.count }
 
-    static func formatSize(_ bytes: Int) -> String {
+    package static func formatSize(_ bytes: Int) -> String {
         ByteCountFormatter.string(fromByteCount: Int64(bytes), countStyle: .file)
     }
 
-    static func formatDuration(_ milliseconds: Double) -> String {
+    package static func formatDuration(_ milliseconds: Double) -> String {
         milliseconds >= 1000 ? String(format: "%.2f s", milliseconds / 1000) : String(format: "%.0f ms", milliseconds)
     }
 }
@@ -174,17 +174,23 @@ struct APIResponse: Equatable, Sendable {
 /// Sends plans. One per collection, so its cookies stay together while the
 /// app runs (Bruno keeps a cookie jar the same way) and no other
 /// collection, nor Safari, sees them.
-final class APIClient: Sendable {
-    struct Options: Equatable, Sendable {
-        var timeout: TimeInterval = 30
-        var followRedirects = true
-        var verifyTLS = true
+package final class APIClient: Sendable {
+    package struct Options: Equatable, Sendable {
+        package var timeout: TimeInterval = 30
+        package var followRedirects = true
+        package var verifyTLS = true
+
+        package init(timeout: TimeInterval = 30, followRedirects: Bool = true, verifyTLS: Bool = true) {
+            self.timeout = timeout
+            self.followRedirects = followRedirects
+            self.verifyTLS = verifyTLS
+        }
     }
 
     private let session: URLSession
     private let delegate: APISessionDelegate
 
-    init() {
+    package init() {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.httpCookieAcceptPolicy = .always
         configuration.httpShouldSetCookies = true
@@ -200,14 +206,14 @@ final class APIClient: Sendable {
         session.invalidateAndCancel()
     }
 
-    var cookies: [HTTPCookie] { session.configuration.httpCookieStorage?.cookies ?? [] }
+    package var cookies: [HTTPCookie] { session.configuration.httpCookieStorage?.cookies ?? [] }
 
-    func clearCookies() {
+    package func clearCookies() {
         session.configuration.httpCookieStorage?.removeCookies(since: .distantPast)
     }
 
     /// Sends `plan`; cancelling the calling task cancels the request.
-    func send(_ plan: APIRequestPlan, options: Options = Options()) async throws -> APIResponse {
+    package func send(_ plan: APIRequestPlan, options: Options = Options()) async throws -> APIResponse {
         var request = URLRequest(url: plan.url, timeoutInterval: options.timeout)
         request.httpMethod = plan.method
         for header in plan.headers { request.setValue(header.value, forHTTPHeaderField: header.name) }
@@ -232,30 +238,30 @@ final class APIClient: Sendable {
 
 /// The session's own delegate: nothing to do but exist — every task carries
 /// its options in its own delegate (APITaskDelegate).
-final class APISessionDelegate: NSObject, URLSessionDelegate, Sendable {}
+package final class APISessionDelegate: NSObject, URLSessionDelegate, Sendable {}
 
 /// One request's delegate: its redirect and TLS options, and the metrics
 /// the system collects for it. Called on the session's queue, never the
 /// main actor's — so nothing here is main-actor isolated (CLAUDE.md).
-final class APITaskDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
-    let options: APIClient.Options
+package final class APITaskDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendable {
+    package let options: APIClient.Options
     private let lock = NSLock()
     private var collected: APIResponse.Timeline?
 
-    init(options: APIClient.Options) {
+    package init(options: APIClient.Options) {
         self.options = options
     }
 
-    var timeline: APIResponse.Timeline? { lock.withLock { collected } }
+    package var timeline: APIResponse.Timeline? { lock.withLock { collected } }
 
-    func urlSession(
+    package func urlSession(
         _ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
         newRequest request: URLRequest, completionHandler: @escaping @Sendable (URLRequest?) -> Void
     ) {
         completionHandler(options.followRedirects ? request : nil)
     }
 
-    func urlSession(
+    package func urlSession(
         _ session: URLSession, task: URLSessionTask, didReceive challenge: URLAuthenticationChallenge,
         completionHandler: @escaping @Sendable (URLSession.AuthChallengeDisposition, URLCredential?) -> Void
     ) {
@@ -268,7 +274,7 @@ final class APITaskDelegate: NSObject, URLSessionTaskDelegate, @unchecked Sendab
         }
     }
 
-    func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
+    package func urlSession(_ session: URLSession, task: URLSessionTask, didFinishCollecting metrics: URLSessionTaskMetrics) {
         guard let last = metrics.transactionMetrics.last else { return }
         func span(_ start: Date?, _ end: Date?) -> Double? {
             guard let start, let end else { return nil }

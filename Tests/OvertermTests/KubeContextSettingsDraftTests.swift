@@ -1,6 +1,12 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// A context's settings in one sheet: read from `kubernetes.contexts` and
 /// `kubernetes.agentWrites`, written back with the entry's other fields and

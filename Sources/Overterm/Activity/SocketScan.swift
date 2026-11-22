@@ -4,15 +4,15 @@ import Darwin
 /// (`::ffff:127.0.0.1`) taken as the IPv4 it maps (docs/design/activity/
 /// analysis.md, 6.8), so two ends of one connection pair whatever family
 /// each socket was made in.
-enum ActivityAddress: Hashable, Sendable, CustomStringConvertible {
+package enum ActivityAddress: Hashable, Sendable, CustomStringConvertible {
     /// Network byte order, as `in_addr` keeps it.
     case v4(UInt32)
     /// Network byte order: the address's 16 bytes, first 8 and last 8.
     case v6(UInt64, UInt64)
 
-    init(v4 address: in_addr) { self = .v4(address.s_addr) }
+    package init(v4 address: in_addr) { self = .v4(address.s_addr) }
 
-    init(v6 address: in6_addr) {
+    package init(v6 address: in6_addr) {
         let (high, low) = withUnsafeBytes(of: address) { raw in
             (raw.loadUnaligned(fromByteOffset: 0, as: UInt64.self), raw.loadUnaligned(fromByteOffset: 8, as: UInt64.self))
         }
@@ -26,7 +26,7 @@ enum ActivityAddress: Hashable, Sendable, CustomStringConvertible {
     }
 
     /// 0.0.0.0 or `::`: every address of the Mac.
-    var isWildcard: Bool {
+    package var isWildcard: Bool {
         switch self {
         case .v4(let address): address == 0
         case .v6(let high, let low): high == 0 && low == 0
@@ -34,7 +34,7 @@ enum ActivityAddress: Hashable, Sendable, CustomStringConvertible {
     }
 
     /// 127/8 or `::1`: this Mac only.
-    var isLoopback: Bool {
+    package var isLoopback: Bool {
         switch self {
         case .v4(let address): UInt32(bigEndian: address) >> 24 == 127
         case .v6(let high, let low): high == 0 && UInt64(bigEndian: low) == 1
@@ -42,13 +42,13 @@ enum ActivityAddress: Hashable, Sendable, CustomStringConvertible {
     }
 
     /// fe80::/10: needs a zone to be reached.
-    var isLinkLocal: Bool {
+    package var isLinkLocal: Bool {
         guard case .v6(let high, _) = self else { return false }
         return UInt64(bigEndian: high) >> 54 == 0x3FA
     }
 
     /// As `inet_ntop` writes it.
-    var description: String {
+    package var description: String {
         var text = [CChar](repeating: 0, count: Int(INET6_ADDRSTRLEN))
         switch self {
         case .v4(let address):
@@ -67,7 +67,7 @@ enum ActivityAddress: Hashable, Sendable, CustomStringConvertible {
 }
 
 /// A TCP socket's state, by `tcpsi_state`'s numbers (`TSI_S_*`).
-enum TCPState: Int32, Hashable, Sendable {
+package enum TCPState: Int32, Hashable, Sendable {
     case closed = 0
     case listen = 1
     case synSent = 2
@@ -82,8 +82,8 @@ enum TCPState: Int32, Hashable, Sendable {
 }
 
 /// One socket a process holds, decoded from `socket_fdinfo` (7.6).
-struct SocketRecord: Hashable, Sendable {
-    enum Kind: Hashable, Sendable {
+package struct SocketRecord: Hashable, Sendable {
+    package enum Kind: Hashable, Sendable {
         case tcp
         case udp
         /// Counted only (D-32): kept for the detail.
@@ -93,46 +93,47 @@ struct SocketRecord: Hashable, Sendable {
     }
 
     /// The families it serves (`insi_vflag`): a dual-stack socket both.
-    struct Families: OptionSet, Hashable, Sendable {
-        let rawValue: UInt8
-        static let v4 = Families(rawValue: 0x1)
-        static let v6 = Families(rawValue: 0x2)
+    package struct Families: OptionSet, Hashable, Sendable {
+        package let rawValue: UInt8
+        package init(rawValue: UInt8) { self.rawValue = rawValue }
+        package static let v4 = Families(rawValue: 0x1)
+        package static let v6 = Families(rawValue: 0x2)
     }
 
-    let descriptor: Int32
+    package let descriptor: Int32
     /// `soi_so`: the kernel's handle of the socket — the same one in every
     /// process that inherited it; a cache's check that a descriptor still
     /// holds the socket it held.
-    let socket: UInt64
-    let kind: Kind
-    let families: Families
+    package let socket: UInt64
+    package let kind: Kind
+    package let families: Families
     /// Nil for a unix or other socket.
-    let localAddress: ActivityAddress?
-    let localPort: UInt16
-    let remoteAddress: ActivityAddress?
-    let remotePort: UInt16
+    package let localAddress: ActivityAddress?
+    package let localPort: UInt16
+    package let remoteAddress: ActivityAddress?
+    package let remotePort: UInt16
     /// TCP's only.
-    let state: TCPState?
+    package let state: TCPState?
     /// Connections accepted by the kernel and not yet by the process
     /// (`soi_qlen`), against how many it may hold (`soi_qlimit`): a listener
     /// at its limit isn't accepting (6.8, Backlog).
-    let backlog: Int
-    let backlogLimit: Int
+    package let backlog: Int
+    package let backlogLimit: Int
     /// A unix socket's bound path (`unsi_addr`), when it listens
     /// (`SO_ACCEPTCONN`): what D-32's rows say. Nil for any other.
-    var path: String? = nil
+    package var path: String? = nil
 
-    var isListening: Bool { kind == .tcp && state == .listen }
+    package var isListening: Bool { kind == .tcp && state == .listen }
     /// UDP with a port and no peer: a UDP server's socket.
-    var isBoundUDP: Bool { kind == .udp && localPort != 0 && remotePort == 0 }
+    package var isBoundUDP: Bool { kind == .udp && localPort != 0 && remotePort == 0 }
     /// What the light level keeps: listeners and bound UDP (7.3).
-    var isListener: Bool { isListening || isBoundUDP }
+    package var isListener: Bool { isListening || isBoundUDP }
     /// A unix socket that accepts connections, with a path (D-32).
-    var isUnixListener: Bool { kind == .unix && path != nil }
+    package var isUnixListener: Bool { kind == .unix && path != nil }
 
     /// What the kernel's structure says, pure; nil for a structure that
     /// isn't a socket's.
-    static func classify(_ info: socket_fdinfo, descriptor: Int32) -> SocketRecord? {
+    package static func classify(_ info: socket_fdinfo, descriptor: Int32) -> SocketRecord? {
         let socket = info.psi
         func record(_ kind: Kind, _ internet: in_sockinfo? = nil, state: TCPState? = nil) -> SocketRecord {
             var families: Families = []
@@ -177,7 +178,7 @@ struct SocketRecord: Hashable, Sendable {
 
     /// `insi_lport` and `insi_fport` hold the port in network byte order in
     /// an `int`.
-    static func port(_ raw: Int32) -> UInt16 { UInt16(bigEndian: UInt16(truncatingIfNeeded: raw)) }
+    package static func port(_ raw: Int32) -> UInt16 { UInt16(bigEndian: UInt16(truncatingIfNeeded: raw)) }
 }
 
 /// The user's sockets, process by process (7.6): `PROC_PIDLISTFDS`, then
@@ -197,39 +198,39 @@ struct SocketRecord: Hashable, Sendable {
 ///
 /// A value the sampler keeps between ticks on its queue, never the main
 /// thread's.
-struct SocketScan: Sendable {
-    static let perProcessBudget = 2_000
+package struct SocketScan: Sendable {
+    package static let perProcessBudget = 2_000
     /// 10 s at the 2 s default (7.2).
-    static let refreshTicks = 5
+    package static let refreshTicks = 5
 
     /// One process's sockets, as far as they were read.
-    struct Sockets: Hashable, Sendable {
+    package struct Sockets: Hashable, Sendable {
         /// Its TCP and UDP sockets known now — and its listening unix ones
         /// with a path (D-32) —, by descriptor: read this tick
         /// or kept from an earlier one (a bounded process's listeners only).
-        var records: [SocketRecord]
+        package var records: [SocketRecord]
         /// Its descriptors of any kind.
-        var descriptors: Int
+        package var descriptors: Int
         /// How many of them are sockets.
-        var sockets: Int
+        package var sockets: Int
         /// Unix sockets among those known: counted only (D-32).
-        var unixSockets: Int
+        package var unixSockets: Int
         /// Set when it holds more sockets than a tick reads.
-        var bound: Bound?
+        package var bound: Bound?
 
-        var listeners: [SocketRecord] { records.filter(\.isListener) }
+        package var listeners: [SocketRecord] { records.filter(\.isListener) }
     }
 
     /// A process read in rotation, for its row (7.2: "48,000 sockets —
     /// listeners read every 10 s").
-    struct Bound: Hashable, Sendable {
-        let sockets: Int
+    package struct Bound: Hashable, Sendable {
+        package let sockets: Int
         /// Socket infos read a tick.
-        let perTick: Int
+        package let perTick: Int
         /// Ticks a whole pass takes.
-        let ticksPerPass: Int
+        package let ticksPerPass: Int
         /// Ticks between re-reads of the listeners it knows.
-        let listenerTicks: Int
+        package let listenerTicks: Int
     }
 
     private struct State: Sendable {
@@ -246,27 +247,35 @@ struct SocketScan: Sendable {
         var passedAt = Int.min / 2
         /// The tick a bounded process's listeners were last read.
         var listenersReadAt = Int.min / 2
+
+        package init(descriptors: Int = -1, records: [Int32: SocketRecord] = [:], unixDescriptors: Set<Int32> = [], next: Int32 = 0, pending: Int = 0) {
+            self.descriptors = descriptors
+            self.records = records
+            self.unixDescriptors = unixDescriptors
+            self.next = next
+            self.pending = pending
+        }
     }
 
     private var states: [ActivityProcessID: State] = [:]
-    private(set) var tick = 0
-    let budget: Int
-    let refreshTicks: Int
+    package private(set) var tick = 0
+    package let budget: Int
+    package let refreshTicks: Int
 
-    init(budget: Int = SocketScan.perProcessBudget, refreshTicks: Int = SocketScan.refreshTicks) {
+    package init(budget: Int = SocketScan.perProcessBudget, refreshTicks: Int = SocketScan.refreshTicks) {
         self.budget = max(budget, 1)
         self.refreshTicks = max(refreshTicks, 1)
     }
 
     /// A new tick: what is no longer `live` is forgotten.
-    mutating func advance(keeping live: Set<ActivityProcessID>) {
+    package mutating func advance(keeping live: Set<ActivityProcessID>) {
         tick += 1
         states = states.filter { live.contains($0.key) }
     }
 
     /// `process`'s sockets this tick; nil when its descriptors can't be
     /// listed (another user's, or gone).
-    mutating func read(_ process: ActivityProcessID, kernel: some ActivityKernel) -> Sockets? {
+    package mutating func read(_ process: ActivityProcessID, kernel: some ActivityKernel) -> Sockets? {
         guard let listed = kernel.descriptors(of: process.pid) else {
             states[process] = nil
             return nil

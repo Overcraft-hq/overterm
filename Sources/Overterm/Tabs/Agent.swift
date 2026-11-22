@@ -8,12 +8,12 @@ import Foundation
 /// What each CLI was checked against (docs/architecture.md, Agents):
 /// Claude Code 2.1, Codex (openai/codex c08843a), opencode 1.18.31,
 /// pi 0.73.1, Gemini CLI 0.40.1.
-enum Agent: String, CaseIterable, Identifiable, Codable, Sendable {
+package enum Agent: String, CaseIterable, Identifiable, Codable, Sendable {
     case claude, codex, opencode, pi, gemini
 
-    var id: String { rawValue }
+    package var id: String { rawValue }
 
-    var name: String {
+    package var name: String {
         switch self {
         case .claude: "Claude"
         case .codex: "Codex"
@@ -25,7 +25,7 @@ enum Agent: String, CaseIterable, Identifiable, Codable, Sendable {
 
     /// The CLI's own full name, where a heading names it (Activity's tab
     /// groups): "Claude Code", "Gemini CLI".
-    var productName: String {
+    package var productName: String {
         switch self {
         case .claude: "Claude Code"
         case .codex: "Codex"
@@ -36,14 +36,14 @@ enum Agent: String, CaseIterable, Identifiable, Codable, Sendable {
     }
 
     /// Typed into a fresh shell to start the agent.
-    var command: String { rawValue }
+    package var command: String { rawValue }
 
     /// Typed into a restored tab to pick the last conversation back up in
     /// that directory — each CLI's own flag (`--help`):
     /// `opencode --continue` ("continue the last session"), `pi --continue`
     /// (the newest session of the directory), `gemini --resume latest`
     /// (sessions are per project).
-    var resumeCommand: String {
+    package var resumeCommand: String {
         switch self {
         case .claude: "claude --continue"
         case .codex: "codex resume --last"
@@ -58,7 +58,7 @@ enum Agent: String, CaseIterable, Identifiable, Codable, Sendable {
     /// `/opt/homebrew/bin/codex` — or the script `node` runs, Gemini CLI);
     /// nil for anything else.
     /// The census's light tick and every reader of a tab's tree ask this.
-    static func of(name: String, command: String) -> Agent? {
+    package static func of(name: String, command: String) -> Agent? {
         of(name: name, argv: nil, command: command)
     }
 
@@ -66,7 +66,7 @@ enum Agent: String, CaseIterable, Identifiable, Codable, Sendable {
     /// read it (`ProcessArguments.agent`) — a masked first word may hide it
     /// (a long relative path reads as a base64 blob) —, else the masked
     /// command's first word.
-    static func of(name: String, argv: Agent?, command: String) -> Agent? {
+    package static func of(name: String, argv: Agent?, command: String) -> Agent? {
         if let agent = of(processName: name) { return agent }
         if let argv { return argv }
         return of(arguments: [command])
@@ -74,18 +74,18 @@ enum Agent: String, CaseIterable, Identifiable, Codable, Sendable {
 
     /// Picks one conversation back up (Claude Code's --resume); nil for
     /// an id that isn't one.
-    static func claudeResume(session id: String, launch: AgentLaunch = AgentLaunch()) -> String? {
+    package static func claudeResume(session id: String, launch: AgentLaunch = AgentLaunch()) -> String? {
         ClaudeSession.isValidID(id) ? launch.line("claude --resume \(id)") : nil
     }
 
     /// The command with what this launch adds (`AgentLaunch`: Settings ▸
     /// Agents' arguments, the bridge, the attention signal).
-    func command(_ launch: AgentLaunch) -> String { launch.line(command) }
-    func resumeCommand(_ launch: AgentLaunch) -> String { launch.line(resumeCommand) }
+    package func command(_ launch: AgentLaunch) -> String { launch.line(command) }
+    package func resumeCommand(_ launch: AgentLaunch) -> String { launch.line(resumeCommand) }
     /// With Settings ▸ Agents' arguments only.
-    func command(arguments: String) -> String { command(AgentLaunch(arguments: arguments)) }
+    package func command(arguments: String) -> String { command(AgentLaunch(arguments: arguments)) }
 
-    var symbol: String {
+    package var symbol: String {
         switch self {
         case .claude: "sparkle"
         case .codex: "chevron.left.forwardslash.chevron.right"
@@ -96,10 +96,10 @@ enum Agent: String, CaseIterable, Identifiable, Codable, Sendable {
     }
 
     /// Settings ▸ Agents' extra arguments for it.
-    var argumentsKey: String { "agents.\(rawValue)Arguments" }
+    package var argumentsKey: String { "agents.\(rawValue)Arguments" }
 
     /// The placeholder of that field: a flag the CLI's `--help` lists.
-    var argumentsPlaceholder: String {
+    package var argumentsPlaceholder: String {
         switch self {
         case .claude: "--model opus"
         case .codex: "-m gpt-5"
@@ -113,7 +113,7 @@ enum Agent: String, CaseIterable, Identifiable, Codable, Sendable {
     /// Codex; pi's README ("Ctrl+V to paste"), Gemini CLI's `input_paste`
     /// on ctrl+v with its clipboard-image read. opencode's isn't
     /// established, so ⌘V there is left alone.
-    var takesClipboardImage: Bool { self != .opencode }
+    package var takesClipboardImage: Bool { self != .opencode }
 
     // MARK: Recognising its process
 
@@ -121,7 +121,7 @@ enum Agent: String, CaseIterable, Identifiable, Codable, Sendable {
     /// Claude Code, Codex's native binary, opencode's compiled Bun binary,
     /// and pi (it sets `process.title = "pi"`). Gemini CLI runs as `node`
     /// — found by its argv (`of(arguments:)`).
-    static func of(processName name: String) -> Agent? {
+    package static func of(processName name: String) -> Agent? {
         switch name {
         case "claude": .claude
         case "codex": .codex
@@ -132,14 +132,14 @@ enum Agent: String, CaseIterable, Identifiable, Codable, Sendable {
     }
 
     /// Interpreters an agent's script runs under.
-    static let interpreters: Set<String> = ["node", "bun", "deno"]
+    package static let interpreters: Set<String> = ["node", "bun", "deno"]
 
     /// The agent an argv runs: its first word by base name (`claude`,
     /// `/opt/homebrew/bin/codex`), or — under `node` — the script it runs,
     /// past the interpreter's flags: `node /opt/homebrew/bin/gemini`, and
     /// Gemini CLI's relaunched child, `node --max-old-space-size=… …/
     /// @google/gemini-cli/bundle/gemini.js`. Pure.
-    static func of(arguments: [String]) -> Agent? {
+    package static func of(arguments: [String]) -> Agent? {
         // The words as the line splits them: a word may hold several.
         let words = arguments.flatMap { $0.split(separator: " ").map(String.init) }
         guard let first = words.first else { return nil }
@@ -151,7 +151,7 @@ enum Agent: String, CaseIterable, Identifiable, Codable, Sendable {
     }
 
     /// A script path an interpreter runs, by its name or its package.
-    static func of(script: String) -> Agent? {
+    package static func of(script: String) -> Agent? {
         var name = (script as NSString).lastPathComponent
         for suffix in [".js", ".mjs", ".cjs", ".ts"] where name.hasSuffix(suffix) { name.removeLast(suffix.count) }
         if let agent = Agent(rawValue: name) { return agent }

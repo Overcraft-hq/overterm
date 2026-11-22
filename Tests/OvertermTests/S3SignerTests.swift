@@ -1,6 +1,12 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// SigV4 against AWS's own documented examples (Signature Version 4,
 /// "Examples: Signature Calculations in AWS Signature Version 4").

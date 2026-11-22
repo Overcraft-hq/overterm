@@ -9,12 +9,12 @@ import Combine
 /// The toolbar's ↗ — or a double-click on the picture — brings Simulator.app
 /// forward, which is where taps go.
 @MainActor
-final class SimulatorViewController: NSViewController {
-    var onClose: (() -> Void)?
-    var onToggleZoom: (() -> Void)?
+package final class SimulatorViewController: NSViewController {
+    package var onClose: (() -> Void)?
+    package var onToggleZoom: (() -> Void)?
 
-    let chrome: ChromeTheme
-    let theme: EditorTheme
+    package let chrome: ChromeTheme
+    package let theme: EditorTheme
     private let mirror = SimulatorMirror()
     private let display = SimulatorDisplayView()
     private let deviceButton = NSButton()
@@ -26,32 +26,32 @@ final class SimulatorViewController: NSViewController {
     private let empty = NSStackView()
     private let emptyLabel = NSTextField(labelWithString: "")
     private let emptyAction = NSButton()
-    private(set) var zoomButton = NSButton()
+    package private(set) var zoomButton = NSButton()
 
-    private(set) var devices: [SimulatorDevice] = []
-    private(set) var selected: SimulatorDevice?
-    private(set) var isActive = false
+    package private(set) var devices: [SimulatorDevice] = []
+    package private(set) var selected: SimulatorDevice?
+    package private(set) var isActive = false
     /// Where the picture is coming from — the E2E scenario reads it.
-    var mirrorStatus: SimulatorMirror.Status { mirror.status }
+    package var mirrorStatus: SimulatorMirror.Status { mirror.status }
     /// Whether the device is taking what is done to the picture: this
     /// Xcode builds the events (`SimulatorInput`) and its CoreSimulator
     /// still carries them to the guest. The Home button and the cursor
     /// follow this, and so does the note that says why there are no taps.
-    var takesInput: Bool { mirror.input?.hasButtons == true && SimulatorHost.acceptsInput }
+    package var takesInput: Bool { mirror.input?.hasButtons == true && SimulatorHost.acceptsInput }
     private var observers: Set<AnyCancellable> = []
     private var poll: Timer?
 
-    init(chrome: ChromeTheme, background: NSColor) {
+    package init(chrome: ChromeTheme, background: NSColor) {
         self.chrome = chrome
         theme = EditorTheme(background: background)
         super.init(nibName: nil, bundle: nil)
     }
 
-    required init?(coder: NSCoder) {
+    package required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
-    override func loadView() {
+    package override func loadView() {
         let root = BrowserRootView(color: theme.background)
         let toolbar = BrowserBackground(color: chrome.stripNS)
         let text = theme.text
@@ -167,7 +167,7 @@ final class SimulatorViewController: NSViewController {
     /// The column is showing the simulator: find the devices and read the
     /// booted one's screen. Nothing is read while it isn't showing — a
     /// frame is a `simctl` call, and they would go on for ever.
-    func activate() {
+    package func activate() {
         guard !isActive else { return }
         isActive = true
         reloadDevices()
@@ -178,7 +178,7 @@ final class SimulatorViewController: NSViewController {
         }
     }
 
-    func deactivate() {
+    package func deactivate() {
         guard isActive else { return }
         isActive = false
         poll?.invalidate()
@@ -187,7 +187,7 @@ final class SimulatorViewController: NSViewController {
         display.clear()
     }
 
-    func setZoomed(_ zoomed: Bool) {
+    package func setZoomed(_ zoomed: Bool) {
         EditorHeaderView.style(
             zoomButton, zoomed ? "arrow.down.right.and.arrow.up.left" : "arrow.up.left.and.arrow.down.right",
             tip: zoomed ? "Unzoom Simulator" : "Zoom Simulator", color: theme.text, target: self, action: #selector(toggleZoom), size: 12)
@@ -346,13 +346,13 @@ final class SimulatorViewController: NSViewController {
 /// The picture: a layer holding the device's own surface (or a polled
 /// frame), kept to the device's proportions in the middle of the pane —
 /// and, when the simulator takes input, where clicks and keys go.
-final class SimulatorDisplayView: NSView {
-    var onOpenSimulator: (() -> Void)?
+package final class SimulatorDisplayView: NSView {
+    package var onOpenSimulator: (() -> Void)?
     /// The pane's longest side in pixels, as it changes — polled frames
     /// are cut down to it and no further.
-    var maxPixels: ((Int) -> Void)?
+    package var maxPixels: ((Int) -> Void)?
     /// Where a tap goes, while there is a live simulator to take it.
-    var input: (() -> SimulatorInput?)?
+    package var input: (() -> SimulatorInput?)?
     private let content = CALayer()
     /// The device's body around the screen, as Simulator.app draws one.
     private let body = CALayer()
@@ -361,7 +361,7 @@ final class SimulatorDisplayView: NSView {
     /// against one geometry even if the pane is resized under it.
     private var dragging = false
 
-    override init(frame frameRect: NSRect) {
+    package override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         wantsLayer = true
         // Since macOS 14 a subview draws past its bounds unless it is told
@@ -381,12 +381,12 @@ final class SimulatorDisplayView: NSView {
         layer?.addSublayer(content)
     }
 
-    required init?(coder: NSCoder) {
+    package required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
     }
 
     /// A frame — the device's IOSurface, or a CGImage of a screenshot.
-    func show(_ contents: Any, size: CGSize) {
+    package func show(_ contents: Any, size: CGSize) {
         let resized = size != natural
         natural = size
         CATransaction.begin()
@@ -402,7 +402,7 @@ final class SimulatorDisplayView: NSView {
     /// CoreAnimation has had since surfaces were first put in layers — and
     /// where it is missing, putting the surface back does the same for the
     /// price of a little more work.
-    func refresh() {
+    package func refresh() {
         guard content.contents != nil else { return }
         CATransaction.begin()
         CATransaction.setDisableActions(true)
@@ -418,13 +418,13 @@ final class SimulatorDisplayView: NSView {
 
     private static let contentsChanged = Selector(("setContentsChanged"))
 
-    func clear() {
+    package func clear() {
         content.contents = nil
         body.isHidden = true
         natural = .zero
     }
 
-    override func layout() {
+    package override func layout() {
         super.layout()
         place()
         // A tall pane deserves a tall frame: a polled screenshot is cut
@@ -438,7 +438,7 @@ final class SimulatorDisplayView: NSView {
     /// Where a point in the pane lands on the device: a ratio from the
     /// device's top left, or nil for a click beside the picture. Pure, so
     /// the mapping is a test and not a thing to find out by tapping.
-    static func ratio(of point: CGPoint, in picture: CGRect, flipped: Bool) -> CGPoint? {
+    package static func ratio(of point: CGPoint, in picture: CGRect, flipped: Bool) -> CGPoint? {
         // Inclusive of the far edges, which `CGRect.contains` is not: the
         // right-hand and top rows of pixels are the device's too.
         guard picture.width > 0, picture.height > 0,
@@ -453,11 +453,11 @@ final class SimulatorDisplayView: NSView {
         Self.ratio(of: convert(event.locationInWindow, from: nil), in: content.frame, flipped: isFlipped)
     }
 
-    override var acceptsFirstResponder: Bool { input?() != nil }
+    package override var acceptsFirstResponder: Bool { input?() != nil }
 
     /// A click in the pane is a tap on the device, and takes the keyboard
     /// so what you type next goes there too.
-    override func mouseDown(with event: NSEvent) {
+    package override func mouseDown(with event: NSEvent) {
         if event.clickCount == 2 && input?() == nil {
             onOpenSimulator?()
             return
@@ -468,12 +468,12 @@ final class SimulatorDisplayView: NSView {
         input.touchDown(at: point)
     }
 
-    override func mouseDragged(with event: NSEvent) {
+    package override func mouseDragged(with event: NSEvent) {
         guard dragging, let input = input?(), let point = ratio(for: event) else { return }
         input.touchMoved(to: point)
     }
 
-    override func mouseUp(with event: NSEvent) {
+    package override func mouseUp(with event: NSEvent) {
         guard dragging, let input = input?() else { return }
         dragging = false
         // A finger lifted outside the picture still lifted: the last point
@@ -492,7 +492,7 @@ final class SimulatorDisplayView: NSView {
 
     /// The wheel as a finger: iOS has no scroll, so a scroll here is a
     /// swipe that begins, follows the wheel and ends when it stops.
-    override func scrollWheel(with event: NSEvent) {
+    package override func scrollWheel(with event: NSEvent) {
         guard let input = input?(), let point = ratio(for: event) else { return }
         if !scrolling {
             scrolling = true
@@ -522,12 +522,12 @@ final class SimulatorDisplayView: NSView {
 
     // MARK: Typing into it
 
-    override func keyDown(with event: NSEvent) {
+    package override func keyDown(with event: NSEvent) {
         guard let input = input?() else { return super.keyDown(with: event) }
         input.key(.down, code: event.keyCode)
     }
 
-    override func keyUp(with event: NSEvent) {
+    package override func keyUp(with event: NSEvent) {
         guard let input = input?() else { return super.keyUp(with: event) }
         input.key(.up, code: event.keyCode)
     }
@@ -540,7 +540,7 @@ final class SimulatorDisplayView: NSView {
     /// (iPhone 17 Pro: 55 pt on a 402 pt screen), an iPad's barely, and
     /// the proportions say which this is without a table of models to keep
     /// up to date.
-    static func layout(natural: CGSize, in bounds: CGRect, thickness: CGFloat = 10) -> (screen: CGRect, body: CGRect, radius: CGFloat)? {
+    package static func layout(natural: CGSize, in bounds: CGRect, thickness: CGFloat = 10) -> (screen: CGRect, body: CGRect, radius: CGFloat)? {
         guard natural.width > 0, natural.height > 0, bounds.width > thickness * 3, bounds.height > thickness * 3 else { return nil }
         let room = bounds.insetBy(dx: thickness + 2, dy: thickness + 2)
         let scale = min(room.width / natural.width, room.height / natural.height)

@@ -1,6 +1,12 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The storage clients: S3's XML read offline, the AWS CLI's profiles,
 /// and the whole round trip against an S3 server (RustFS, in Docker) when

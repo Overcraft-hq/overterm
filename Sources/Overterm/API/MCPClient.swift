@@ -7,26 +7,26 @@ import Foundation
 ///
 /// Every message either way is handed to `onTraffic` as it goes, and a
 /// process's stderr too: the inspector's log.
-actor MCPClient {
-    struct Failure: LocalizedError, Equatable {
-        let message: String
-        var errorDescription: String? { message }
+package actor MCPClient {
+    package struct Failure: LocalizedError, Equatable {
+        package let message: String
+        package var errorDescription: String? { message }
     }
 
-    enum Direction: String, Sendable { case sent, received, stderr, note }
+    package enum Direction: String, Sendable { case sent, received, stderr, note }
 
     /// The protocol version asked for; the server answers with the one it speaks.
-    static let protocolVersion = "2025-06-18"
+    package static let protocolVersion = "2025-06-18"
 
-    let config: MCPServerConfig
+    package let config: MCPServerConfig
     private let environment: [String: String]
     private let onTraffic: @Sendable (Direction, String) -> Void
     private var nextID = 1
     private var pending: [Int: CheckedContinuation<JSONValue, Error>] = [:]
-    private(set) var serverInfo: JSONValue = .null
-    private(set) var capabilities: JSONValue = .null
-    private(set) var negotiatedVersion = ""
-    private(set) var instructions: String?
+    package private(set) var serverInfo: JSONValue = .null
+    package private(set) var capabilities: JSONValue = .null
+    package private(set) var negotiatedVersion = ""
+    package private(set) var instructions: String?
 
     // stdio
     private var process: Process?
@@ -39,7 +39,7 @@ actor MCPClient {
     private var endpoint: URL?
     private var stream: Task<Void, Never>?
 
-    init(_ config: MCPServerConfig, environment: [String: String], onTraffic: @escaping @Sendable (Direction, String) -> Void) {
+    package init(_ config: MCPServerConfig, environment: [String: String], onTraffic: @escaping @Sendable (Direction, String) -> Void) {
         self.config = config
         self.environment = environment
         self.onTraffic = onTraffic
@@ -50,7 +50,7 @@ actor MCPClient {
 
     // MARK: Connecting
 
-    func connect() async throws {
+    package func connect() async throws {
         switch config.transport {
         case .stdio(let command, let args, let env): try start(command, args, env)
         case .sse(let url, let headers): try await openStream(url, headers)
@@ -69,9 +69,9 @@ actor MCPClient {
         try await notify("notifications/initialized")
     }
 
-    nonisolated static var appVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev" }
+    package nonisolated static var appVersion: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "dev" }
 
-    func close() {
+    package func close() {
         stream?.cancel()
         stream = nil
         if let process, process.isRunning { process.terminate() }
@@ -92,7 +92,7 @@ actor MCPClient {
     }
 
     /// How long a request waits for its reply.
-    static let timeout: TimeInterval = 60
+    package static let timeout: TimeInterval = 60
 
     private func expire(_ id: Int, _ method: String) {
         pending.removeValue(forKey: id)?.resume(throwing: Failure(message: "No answer to \(method) in \(Int(Self.timeout)) s."))
@@ -107,7 +107,7 @@ actor MCPClient {
     // MARK: Messages
 
     /// A request, and its result — or the server's error.
-    func request(_ method: String, _ params: JSONValue? = nil) async throws -> JSONValue {
+    package func request(_ method: String, _ params: JSONValue? = nil) async throws -> JSONValue {
         let id = nextID
         nextID += 1
         var message: [String: JSONValue] = ["jsonrpc": "2.0", "id": .int(id), "method": .string(method)]
@@ -130,7 +130,7 @@ actor MCPClient {
         return reply["result"]
     }
 
-    func notify(_ method: String, _ params: JSONValue? = nil) async throws {
+    package func notify(_ method: String, _ params: JSONValue? = nil) async throws {
         var message: [String: JSONValue] = ["jsonrpc": "2.0", "method": .string(method)]
         if let params { message["params"] = params }
         let data = try JSONValue.object(message).encoded()
@@ -203,7 +203,7 @@ actor MCPClient {
     nonisolated(unsafe) private static var running: [ObjectIdentifier: Process] = [:]
     private static let lock = NSLock()
 
-    static func terminateAll() {
+    package static func terminateAll() {
         let all = lock.withLock { Array(running.values) }
         for process in all where process.isRunning { process.terminate() }
     }
@@ -370,7 +370,7 @@ actor MCPClient {
     // MARK: What the inspector asks
 
     /// Every page of a list: tools, resources, resource templates, prompts.
-    func list(_ method: String, key: String) async throws -> [JSONValue] {
+    package func list(_ method: String, key: String) async throws -> [JSONValue] {
         var items: [JSONValue] = []
         var cursor: String?
         repeat {
@@ -381,63 +381,37 @@ actor MCPClient {
         return items
     }
 
-    func callTool(_ name: String, arguments: JSONValue) async throws -> JSONValue {
+    package func callTool(_ name: String, arguments: JSONValue) async throws -> JSONValue {
         try await request("tools/call", ["name": .string(name), "arguments": arguments])
     }
 
-    func readResource(_ uri: String) async throws -> JSONValue {
+    package func readResource(_ uri: String) async throws -> JSONValue {
         try await request("resources/read", ["uri": .string(uri)])
     }
 
-    func getPrompt(_ name: String, arguments: [String: String]) async throws -> JSONValue {
+    package func getPrompt(_ name: String, arguments: [String: String]) async throws -> JSONValue {
         try await request("prompts/get", ["name": .string(name), "arguments": .object(arguments.mapValues(JSONValue.string))])
     }
 
-    func ping() async throws {
+    package func ping() async throws {
         _ = try await request("ping")
-    }
-}
-
-extension JSONValue {
-    subscript(_ key: String) -> JSONValue {
-        if case .object(let object) = self { return object[key] ?? .null }
-        return .null
-    }
-
-    var string: String? { if case .string(let value) = self { value } else { nil } }
-    var int: Int? {
-        switch self {
-        case .int(let value): value
-        case .double(let value): Int(value)
-        default: nil
-        }
-    }
-    var bool: Bool? { if case .bool(let value) = self { value } else { nil } }
-    var array: [JSONValue]? { if case .array(let value) = self { value } else { nil } }
-    var object: [String: JSONValue]? { if case .object(let value) = self { value } else { nil } }
-
-    /// Indented, keys sorted: as the inspector shows a value.
-    var pretty: String {
-        let encoder = JSONEncoder()
-        encoder.outputFormatting = [.prettyPrinted, .sortedKeys, .withoutEscapingSlashes]
-        return (try? encoder.encode(self)).map { String(decoding: $0, as: UTF8.self) } ?? ""
     }
 }
 
 /// An event stream's lines, the empty ones too: they end an event, and
 /// `AsyncBytes.lines` drops them — two events read as one, a reply never
 /// matched, and the call waited for ever.
-struct SSELines: AsyncSequence {
-    typealias Element = String
-    let bytes: URLSession.AsyncBytes
+package struct SSELines: AsyncSequence {
+    package typealias Element = String
+    package let bytes: URLSession.AsyncBytes
 
-    init(_ bytes: URLSession.AsyncBytes) { self.bytes = bytes }
+    package init(_ bytes: URLSession.AsyncBytes) { self.bytes = bytes }
 
-    struct AsyncIterator: AsyncIteratorProtocol {
-        var bytes: URLSession.AsyncBytes.AsyncIterator
-        var done = false
+    package struct AsyncIterator: AsyncIteratorProtocol {
+        package var bytes: URLSession.AsyncBytes.AsyncIterator
+        package var done = false
 
-        mutating func next() async throws -> String? {
+        package mutating func next() async throws -> String? {
             guard !done else { return nil }
             var line = Data()
             while let byte = try await bytes.next() {
@@ -452,5 +426,5 @@ struct SSELines: AsyncSequence {
         }
     }
 
-    func makeAsyncIterator() -> AsyncIterator { AsyncIterator(bytes: bytes.makeAsyncIterator()) }
+    package func makeAsyncIterator() -> AsyncIterator { AsyncIterator(bytes: bytes.makeAsyncIterator()) }
 }

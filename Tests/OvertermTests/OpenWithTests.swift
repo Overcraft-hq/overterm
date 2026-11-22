@@ -1,6 +1,12 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 final class OpenWithTests: XCTestCase {
     private static func app(_ bundleID: String, _ name: String, at path: String? = nil) -> ExternalApp {

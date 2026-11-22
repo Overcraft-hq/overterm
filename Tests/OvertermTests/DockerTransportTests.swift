@@ -2,6 +2,12 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The engine's calls over a real unix socket, against the fake engine:
 /// answers, errors, streams that go on, streams left early. Never the
@@ -170,7 +176,12 @@ final class DockerTransportTests: XCTestCase {
         // Each connection is closed whenever it arrives, which on a busy
         // runner (three test processes on three cores) can be seconds
         // after its task went: the count only has to come down.
-        try await waitUntil({ $0.openStreams == 0 }, timeout: .seconds(15))
+        do {
+            try await waitUntil({ $0.openStreams == 0 }, timeout: .seconds(15))
+        } catch {
+            // Which kind stayed open says where to look (CI saw it, never here).
+            return XCTFail("still open after 15 s: \(fake.streams)")
+        }
         let containers = try await engine.containers()
         XCTAssertEqual(containers.count, 1)
     }

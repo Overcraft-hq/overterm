@@ -2,6 +2,12 @@ import XCTest
 import _CryptoExtras
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The drivers against real databases. SQLite always; PostgreSQL, MySQL,
 /// MariaDB and ClickHouse when OVERTERM_DB_TESTS=1 and Scripts/database-test-servers.sh

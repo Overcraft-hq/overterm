@@ -1,6 +1,12 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 final class LineDiffTests: XCTestCase {
     private func hunks(_ base: [String], _ current: [String]) -> [GutterHunk] {
@@ -91,9 +97,9 @@ final class LineDiffTests: XCTestCase {
                 GutterHunk(kind: .added, lines: 49_000..<49_003),
             ])
         #if DEBUG
-            XCTAssertLessThan(elapsed, .milliseconds(500))
+        XCTAssertLessThan(elapsed, .milliseconds(500))
         #else
-            XCTAssertLessThan(elapsed, .milliseconds(15))
+        XCTAssertLessThan(elapsed, .milliseconds(15))
         #endif
     }
 

@@ -9,29 +9,31 @@ import Combine
 /// look at while scrolling — so it follows the same rule as the system's
 /// own.
 @MainActor
-final class PaneBlocks: ObservableObject {
-    @Published private(set) var ledger = CommandLedger()
+package final class PaneBlocks: ObservableObject {
+    package init() {}
+
+    @Published package private(set) var ledger = CommandLedger()
     /// The link under the pointer, if any. libghostty pushes the URL and
     /// nothing else — no rectangle — so this is all anyone can know about
     /// where it is, and the header is where it can be said.
-    @Published private(set) var hoveredLink: String?
+    @Published package private(set) var hoveredLink: String?
     /// Whether the map is drawn right now.
-    @Published private(set) var showMap = NSScroller.preferredScrollerStyle == .legacy
+    @Published package private(set) var showMap = NSScroller.preferredScrollerStyle == .legacy
     private var hiding: Task<Void, Never>?
     /// Told when a command finishes, so the palette's history gets it.
-    var onCommandFinished: ((CommandBlock) -> Void)?
+    package var onCommandFinished: ((CommandBlock) -> Void)?
 
     /// How long the map stays after the last scroll, matching the feel of
     /// an overlay scrollbar.
-    static let linger: Duration = .milliseconds(1200)
+    package static let linger: Duration = .milliseconds(1200)
 
     /// Bumped whenever the pane says something happened on screen — a
     /// scroll (new lines), a title, a bell, a notification, a command's end —
     /// not an agent's progress, which ticks while it works: the Terraform
     /// pane monitor reads a screen again only when it moved (3.2's budget).
-    private(set) var outputMark: UInt64 = 0
+    package private(set) var outputMark: UInt64 = 0
 
-    func handle(_ event: TerminalEvent) {
+    package func handle(_ event: TerminalEvent) {
         switch event {
         case .linkHover, .progress: break
         default: outputMark &+= 1
@@ -50,11 +52,19 @@ final class PaneBlocks: ObservableObject {
         }
     }
 
+    /// A command begun in a pane, as Kubernetes hears it (`KubeAmbientContexts`):
+    /// set at install (`OvertermFeatures`).
+    package static var commandNoticed: [@MainActor (_ title: String, _ cwd: String?, _ kubeconfig: String?) -> Void] {
+        FeatureHooks.ensure()
+        return commandNoticedStorage
+    }
+    package nonisolated(unsafe) static var commandNoticedStorage: [@MainActor (_ title: String, _ cwd: String?, _ kubeconfig: String?) -> Void] = []
+
     /// The shell set its title. With shell integration that is the command
     /// about to run — the only name a command ever gets — except when it
     /// is the directory, which means the prompt came back.
     /// `kubeconfig`: the pane's own `KUBECONFIG` (a pinned pane's).
-    func titleChanged(_ title: String, cwd: String?, kubeconfig: String? = nil) {
+    package func titleChanged(_ title: String, cwd: String?, kubeconfig: String? = nil) {
         outputMark &+= 1
         if CommandLedger.isPrompt(title, cwd: cwd) {
             ledger.prompted()
@@ -65,27 +75,27 @@ final class PaneBlocks: ObservableObject {
             if TerraformCommandLine.all(in: title).contains(where: \.printsSecrets) { printedTerraformSecrets = true }
             // A kubectl-family command: the files its context comes from are
             // read the first time (KubeAmbientContexts), never per command.
-            KubeAmbientContexts.shared.noticed(title, cwd: cwd, kubeconfig: kubeconfig)
+            for hook in Self.commandNoticed { hook(title, cwd, kubeconfig) }
         }
     }
 
     /// A command run here printed what Terraform keeps secret
     /// (`TerraformCommandLine.printsSecrets`): the pane's
     /// `terraformSensitive` reads it.
-    private(set) var printedTerraformSecrets = false
+    package private(set) var printedTerraformSecrets = false
 
     /// The folder the latest command began in: what a relative
     /// `--kubeconfig ./prod.yaml` in it is relative to.
-    private(set) var commandFolder: String?
+    package private(set) var commandFolder: String?
 
     /// The command running, else the last one run: what the header's
     /// Kubernetes warning is about (3.11): a quick `kubectl delete` ends
     /// before anyone reads a header, so what it reached stays said until
     /// the next command.
-    var latestCommand: String? { ledger.blocks.last?.command }
+    package var latestCommand: String? { ledger.blocks.last?.command }
 
     /// Shown while the pointer is over the right edge, as a scrollbar is.
-    func hoverMap(_ inside: Bool) {
+    package func hoverMap(_ inside: Bool) {
         hiding?.cancel()
         showMap = inside || NSScroller.preferredScrollerStyle == .legacy
     }

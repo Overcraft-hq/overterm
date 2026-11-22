@@ -3,6 +3,12 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The detail's Files (docs/design/activity/analysis.md, 6.4, `l`) over a
 /// fake Mac: files by path, sockets as the census decodes them, pipes and

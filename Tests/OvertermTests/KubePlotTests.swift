@@ -3,6 +3,12 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Stage M1 of docs/design/kubernetes/metrics.md (3.1, 3.6, 5.2): a chart's
 /// geometry as a value — the scale rounded to nice values and including

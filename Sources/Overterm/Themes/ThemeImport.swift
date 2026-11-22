@@ -10,25 +10,25 @@ import AppKit
 /// - A VS Code colour theme: JSON with comments (`colors` →
 ///   `terminal.ansiRed`…), falling back to the editor's background and
 ///   foreground for a theme that names no terminal colours.
-enum ThemeImport {
-    enum Failure: Error, Equatable {
+package enum ThemeImport {
+    package enum Failure: Error, Equatable {
         case unreadable(String)
         /// Neither a background nor a foreground: nothing to draw.
         case noColours
     }
 
     /// A theme's colours, by Ghostty's names.
-    struct Colours: Equatable {
-        var background: ThemeColor?
-        var foreground: ThemeColor?
-        var cursor: ThemeColor?
-        var cursorText: ThemeColor?
-        var selectionBackground: ThemeColor?
-        var selectionForeground: ThemeColor?
-        var palette: [Int: ThemeColor] = [:]
+    package struct Colours: Equatable {
+        package var background: ThemeColor?
+        package var foreground: ThemeColor?
+        package var cursor: ThemeColor?
+        package var cursorText: ThemeColor?
+        package var selectionBackground: ThemeColor?
+        package var selectionForeground: ThemeColor?
+        package var palette: [Int: ThemeColor] = [:]
 
         /// The theme file: Ghostty's keys, the sixteen as `palette = N=#…`.
-        func file(source: String) throws(Failure) -> String {
+        package func file(source: String) throws(Failure) -> String {
             guard let background, let foreground else { throw .noColours }
             var lines = ["# Imported by Overterm from \(source)"]
             for index in palette.keys.sorted() { lines.append("palette = \(index)=\(ThemeImport.hex(palette[index]!))") }
@@ -42,14 +42,14 @@ enum ThemeImport {
         }
     }
 
-    static func hex(_ colour: ThemeColor) -> String {
+    package static func hex(_ colour: ThemeColor) -> String {
         func byte(_ value: Double) -> Int { Int((min(max(value, 0), 1) * 255).rounded()) }
         return String(format: "#%02x%02x%02x", byte(colour.red), byte(colour.green), byte(colour.blue))
     }
 
     // MARK: iTerm2
 
-    static func iterm(_ data: Data) throws(Failure) -> Colours {
+    package static func iterm(_ data: Data) throws(Failure) -> Colours {
         guard let plist = try? PropertyListSerialization.propertyList(from: data, format: nil) as? [String: Any] else {
             throw .unreadable("not an .itermcolors property list")
         }
@@ -84,12 +84,12 @@ enum ThemeImport {
     // MARK: VS Code
 
     /// VS Code's terminal colours, in ANSI order.
-    static let vscodeANSI = [
+    package static let vscodeANSI = [
         "Black", "Red", "Green", "Yellow", "Blue", "Magenta", "Cyan", "White",
         "BrightBlack", "BrightRed", "BrightGreen", "BrightYellow", "BrightBlue", "BrightMagenta", "BrightCyan", "BrightWhite",
     ]
 
-    static func vscode(_ text: String) throws(Failure) -> (name: String?, colours: Colours) {
+    package static func vscode(_ text: String) throws(Failure) -> (name: String?, colours: Colours) {
         let object: [String: Any]
         do {
             object = try SettingsJSON.object(from: text)
@@ -120,7 +120,7 @@ enum ThemeImport {
     // MARK: Files
 
     /// A file of either kind: its theme's name and text.
-    static func theme(from url: URL) throws(Failure) -> (name: String, text: String) {
+    package static func theme(from url: URL) throws(Failure) -> (name: String, text: String) {
         guard let data = try? Data(contentsOf: url) else { throw .unreadable("can't be read") }
         let fileName = url.deletingPathExtension().lastPathComponent
         if url.pathExtension.lowercased() == "itermcolors" {
@@ -133,7 +133,7 @@ enum ThemeImport {
 
     /// Writes it into `directory` under `name` — or "name 2", "name 3"…
     /// beside a theme of that name already there. Returns the name used.
-    static func save(_ text: String, named name: String, in directory: URL) throws -> String {
+    package static func save(_ text: String, named name: String, in directory: URL) throws -> String {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         // A name is a file name: no folders in it.
         let base = name.replacingOccurrences(of: "/", with: "-").trimmingCharacters(in: .whitespaces)

@@ -2,6 +2,12 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// In-place resize (stage 3b): what a pod's containers say, what is typed
 /// checked against it, the patch and the request it is, the kubectl it
@@ -281,6 +287,11 @@ final class KubeResizePageTests: XCTestCase {
         let ref = KubeObjectRef(context: "kind-fake", kind: try pods(page), namespace: "shop", name: "web-1")
         let verb = try XCTUnwrap(page.writeVerbs(for: ref).first { $0.title == KubeWriteVerb.resize.title })
         try await until("reviewed") { page.writeVerbs(for: ref).first { $0.title == KubeWriteVerb.resize.title }?.unavailable == nil }
+        // The menu's other verbs are reviewed each on its own time: all of
+        // them answered, so none arrives after the requests are forgotten.
+        try await until("every verb reviewed") {
+            page.writeVerbs(for: ref).allSatisfy { !($0.unavailable?.hasPrefix("Checking whether") ?? false) }
+        }
         verb.perform()
         try await until("read") { page.resizeDraft?.current != nil }
         XCTAssertEqual(page.resizeDraft?.typed.map(\.name), ["app", "sidecar-1"])

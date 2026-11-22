@@ -2,6 +2,12 @@ import Combine
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The rail's GitOps part (docs/design/kubernetes/gitops.md, 4, 8.2)
 /// against `FakeKubeAPI` on a socket of the test's own, with Argo CD's

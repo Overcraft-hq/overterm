@@ -8,7 +8,7 @@ import Foundation
 /// so a later Overterm that gets the same pid isn't taken for the dead run.
 /// None is a secret. Pure: the names are made and read here, and nothing
 /// else spells them.
-enum ArgvSign: Hashable, Sendable {
+package enum ArgvSign: Hashable, Sendable {
     /// A kubectl proxy's or port-forward's socket folder,
     /// `/tmp/ot-kube-<uid>-<pid>-<start36>/` (`KubeSocketFolder`).
     case kubectl(ActivityProcessID)
@@ -23,36 +23,36 @@ enum ArgvSign: Hashable, Sendable {
     case testScratch(String)
 
     /// The run it names; nil for a scratch folder, which names a test run by its folder.
-    var run: ActivityProcessID? {
+    package var run: ActivityProcessID? {
         switch self {
         case .kubectl(let run), .dockerSSH(let run), .databaseTunnel(let run): run
         case .testScratch: nil
         }
     }
 
-    static let kubePrefix = "ot-kube-"
-    static let dockerPrefix = "ot-docker-"
-    static let runPrefix = "ot-run-"
-    static let scratchPrefix = "overterm-e2e-"
+    package static let kubePrefix = "ot-kube-"
+    package static let dockerPrefix = "ot-docker-"
+    package static let runPrefix = "ot-run-"
+    package static let scratchPrefix = "overterm-e2e-"
 
     /// `ot-kube-<uid>-<pid>-<start36>`.
-    static func kubeFolder(uid: uid_t, run: ActivityProcessID) -> String {
+    package static func kubeFolder(uid: uid_t, run: ActivityProcessID) -> String {
         "\(kubePrefix)\(uid)-\(run.pid)-\(OvertermRun.base36(run.start))"
     }
 
     /// `ot-docker-<pid>-<start36>-<key>.sock`.
-    static func dockerSocket(run: ActivityProcessID, key: String) -> String {
+    package static func dockerSocket(run: ActivityProcessID, key: String) -> String {
         "\(dockerPrefix)\(run.pid)-\(OvertermRun.base36(run.start))-\(key).sock"
     }
 
     /// `ot-run-<pid>-<start36>`: the database tunnel's ControlPath's folder.
-    static func runFolder(run: ActivityProcessID) -> String {
+    package static func runFolder(run: ActivityProcessID) -> String {
         "\(runPrefix)\(run.pid)-\(OvertermRun.base36(run.start))"
     }
 
     /// Every sign in `command` — argv joined, masked or not: the signs are
     /// paths, which masking keeps. Bounded by the command's length.
-    static func signs(in command: String) -> [ArgvSign] {
+    package static func signs(in command: String) -> [ArgvSign] {
         // Most commands carry none: one byte search for what every prefix
         // shares, before any walk by characters (a full tick asks it of
         // every process of the user's).

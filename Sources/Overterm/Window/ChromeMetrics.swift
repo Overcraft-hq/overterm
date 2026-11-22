@@ -9,14 +9,14 @@ import AppKit
 /// windows lay themselves out again (`TerminalWindowController.applyMetrics`).
 /// A view's literal stays where it was — `.system(size: ChromeMetrics.text(11))`
 /// reads as 11 at 100%.
-enum ChromeMetrics {
-    enum Density: String, CaseIterable, Sendable {
+package enum ChromeMetrics {
+    package enum Density: String, CaseIterable, Sendable {
         case compact, regular, comfortable
 
-        var label: String { rawValue.capitalized }
+        package var label: String { rawValue.capitalized }
 
         /// How a row's height moves with it.
-        var rowFactor: CGFloat {
+        package var rowFactor: CGFloat {
             switch self {
             case .compact: 0.86
             case .regular: 1
@@ -25,19 +25,19 @@ enum ChromeMetrics {
         }
     }
 
-    nonisolated(unsafe) private(set) static var density: Density = .regular
+    package nonisolated(unsafe) private(set) static var density: Density = .regular
     /// The interface's text size, 1 at 100%.
-    nonisolated(unsafe) private(set) static var textScale: CGFloat = 1
-    nonisolated(unsafe) private(set) static var cardGap: CGFloat = 10
-    nonisolated(unsafe) private(set) static var cardRadius: CGFloat = 10
+    package nonisolated(unsafe) private(set) static var textScale: CGFloat = 1
+    package nonisolated(unsafe) private(set) static var cardGap: CGFloat = 10
+    package nonisolated(unsafe) private(set) static var cardRadius: CGFloat = 10
 
-    enum TabWidth: String, CaseIterable, Sendable {
+    package enum TabWidth: String, CaseIterable, Sendable {
         case narrow, regular, wide
 
-        var label: String { rawValue.capitalized }
+        package var label: String { rawValue.capitalized }
         /// A tab's least and most width in the strip; between them, as wide
         /// as its name.
-        var range: (min: CGFloat, max: CGFloat) {
+        package var range: (min: CGFloat, max: CGFloat) {
             switch self {
             case .narrow: (56, 150)
             case .regular: (72, 220)
@@ -46,21 +46,21 @@ enum ChromeMetrics {
         }
     }
 
-    nonisolated(unsafe) private(set) static var tabWidth: TabWidth = .regular
+    package nonisolated(unsafe) private(set) static var tabWidth: TabWidth = .regular
     /// The × on every tab, not only the selected one and the one under the pointer.
-    nonisolated(unsafe) private(set) static var tabCloseAlways = false
+    package nonisolated(unsafe) private(set) static var tabCloseAlways = false
     /// What a tab is, as an icon before its name; off, only a badge when it has news.
-    nonisolated(unsafe) private(set) static var tabIcons = true
+    package nonisolated(unsafe) private(set) static var tabIcons = true
 
     /// The settings that are these.
-    static let keys: Set<String> = [
+    package static let keys: Set<String> = [
         "appearance.density", "appearance.interfaceScale", "appearance.cardGap", "appearance.cardRadius", "appearance.paneHeaders",
         "appearance.tabWidth", "appearance.tabClose", "appearance.tabIcons",
     ]
 
     /// From the settings; whether anything changed.
     @MainActor @discardableResult
-    static func apply(_ settings: Settings = .shared) -> Bool {
+    package static func apply(_ settings: Settings = .shared) -> Bool {
         let sizes = (density, textScale, cardGap, cardRadius)
         let tabs = (tabWidth, tabCloseAlways, tabIcons)
         tabWidth = TabWidth(rawValue: settings.string("appearance.tabWidth")) ?? .regular
@@ -74,14 +74,14 @@ enum ChromeMetrics {
     }
 
     /// A text size at the interface's scale, rounded to a half point.
-    static func text(_ size: CGFloat) -> CGFloat { (size * textScale * 2).rounded() / 2 }
+    package static func text(_ size: CGFloat) -> CGFloat { (size * textScale * 2).rounded() / 2 }
 
     /// A row's height: denser or roomier, and as tall as its text needs.
-    static func row(_ height: CGFloat) -> CGFloat { (height * density.rowFactor * max(1, textScale)).rounded() }
+    package static func row(_ height: CGFloat) -> CGFloat { (height * density.rowFactor * max(1, textScale)).rounded() }
 
     /// A tab, and the islands beside it, in the strip — which lives in the
     /// 52 pt title bar, so no taller than fits there.
-    static var tabHeight: CGFloat { min(row(36), 46) }
+    package static var tabHeight: CGFloat { min(row(36), 46) }
     /// Every terminal pane's header.
-    static var paneHeaderHeight: CGFloat { row(38) }
+    package static var paneHeaderHeight: CGFloat { row(38) }
 }

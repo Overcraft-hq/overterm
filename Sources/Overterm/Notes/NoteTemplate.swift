@@ -3,10 +3,10 @@ import Foundation
 /// Obsidian's core Templates: `{{title}}`, `{{date}}` and `{{time}}`, each
 /// in the format the vault's templates settings name, or one given after a
 /// colon — `{{date:dddd, MMMM Do}}`. Pure.
-enum NoteTemplate {
+package enum NoteTemplate {
     private static let cache = RegexCache()
 
-    static func apply(_ text: String, title: String, date: Date, settings: ObsidianSettings, locale: Locale = .current) -> String {
+    package static func apply(_ text: String, title: String, date: Date, settings: ObsidianSettings, locale: Locale = .current) -> String {
         guard let regex = cache.regex(#"\{\{\s*(title|date|time)\s*(?::([^}]*))?\}\}"#, [.caseInsensitive]) else { return text }
         let ns = text as NSString
         var out = ""
@@ -29,7 +29,7 @@ enum NoteTemplate {
 extension NotesVault {
     /// Where the daily note for `date` is: the folder and format of Obsidian's
     /// Daily notes settings (a format may hold folders: `YYYY/MM/DD`).
-    func dailyNote(for date: Date) -> URL {
+    package func dailyNote(for date: Date) -> URL {
         let name = MomentFormat.string(from: date, format: settings.dailyFormat)
         var folder = root
         let trimmed = settings.dailyFolder.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
@@ -39,7 +39,7 @@ extension NotesVault {
 
     /// A template named as Obsidian's settings name them: vault-relative,
     /// `.md` optional.
-    func template(_ path: String) -> URL? {
+    package func template(_ path: String) -> URL? {
         let trimmed = path.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
         guard !trimmed.isEmpty else { return nil }
         let url = root.appendingPathComponent(trimmed.hasSuffix(".md") ? trimmed : trimmed + ".md")
@@ -47,7 +47,7 @@ extension NotesVault {
     }
 
     /// The templates in the templates folder, for Insert Template.
-    var templates: [URL] {
+    package var templates: [URL] {
         let trimmed = settings.templatesFolder.trimmingCharacters(in: CharacterSet(charactersIn: "/ "))
         guard !trimmed.isEmpty else { return [] }
         let folder = root.appendingPathComponent(trimmed, isDirectory: true)
@@ -57,7 +57,7 @@ extension NotesVault {
     }
 
     /// `Untitled.md`, else `Untitled 1.md`… — a name nothing in `folder` has.
-    static func freeName(_ base: String, extension ext: String, in folder: URL) -> URL {
+    package static func freeName(_ base: String, extension ext: String, in folder: URL) -> URL {
         let suffix = ext.isEmpty ? "" : "." + ext
         var candidate = folder.appendingPathComponent(base + suffix)
         var number = 1
@@ -72,9 +72,9 @@ extension NotesVault {
 /// Files put into the vault from a note — a pasted image, a file dropped
 /// in — where Obsidian puts them, named as it names them. Pure but for
 /// the names already taken.
-enum NoteAttachments {
+package enum NoteAttachments {
     /// Obsidian's name for a pasted image: `Pasted image 20261025101500.png`.
-    static func pastedName(at date: Date, extension ext: String = "png") -> String {
+    package static func pastedName(at date: Date, extension ext: String = "png") -> String {
         let formatter = DateFormatter()
         formatter.locale = Locale(identifier: "en_US_POSIX")
         formatter.dateFormat = "yyyyMMddHHmmss"
@@ -83,7 +83,7 @@ enum NoteAttachments {
 
     /// The embed for a file put at `path` (vault-relative), from the note at
     /// `source`: `![[name]]`, or `![](path)` when the vault uses Markdown links.
-    static func embed(_ path: String, from source: String, resolver: LinkResolver, settings: ObsidianSettings) -> String {
+    package static func embed(_ path: String, from source: String, resolver: LinkResolver, settings: ObsidianSettings) -> String {
         if settings.useMarkdownLinks {
             let target =
                 settings.newLinkFormat == "relative" ? LinkResolver.relative(path, from: LinkResolver.folder(of: source)) : path
@@ -95,8 +95,8 @@ enum NoteAttachments {
 
 /// Terminal text put into a note: under the time and the command it came
 /// from, fenced so it reads as it printed. Pure.
-enum NoteAppend {
-    static func entry(_ text: String, command: String?, folder: String?, date: Date, settings: ObsidianSettings) -> String {
+package enum NoteAppend {
+    package static func entry(_ text: String, command: String?, folder: String?, date: Date, settings: ObsidianSettings) -> String {
         var heading = "#### " + MomentFormat.string(from: date, format: settings.templateTimeFormat)
         if let command, !command.isEmpty { heading += " — `\(command.replacingOccurrences(of: "`", with: "'"))`" }
         if let folder, !folder.isEmpty { heading += " in \((folder as NSString).abbreviatingWithTildeInPath)" }
@@ -107,7 +107,7 @@ enum NoteAppend {
     }
 
     /// `entry` after `existing`, a blank line between.
-    static func append(_ entry: String, to existing: String) -> String {
+    package static func append(_ entry: String, to existing: String) -> String {
         if existing.isEmpty { return entry }
         let trimmed = existing.hasSuffix("\n") ? existing : existing + "\n"
         return trimmed + (trimmed.hasSuffix("\n\n") ? "" : "\n") + entry
@@ -116,16 +116,16 @@ enum NoteAppend {
 
 /// A note kept for a branch of a repository — what the work on it is
 /// about, decisions, links — found again from any tab on that branch.
-enum BranchNote {
+package enum BranchNote {
     /// `Branches/<repo>/<branch>.md`, a branch's slashes as dashes.
-    static func path(repo: String, branch: String) -> String {
+    package static func path(repo: String, branch: String) -> String {
         func clean(_ name: String) -> String {
             name.replacingOccurrences(of: "/", with: "-").replacingOccurrences(of: ":", with: "-").trimmingCharacters(in: .whitespaces)
         }
         return "Branches/\(clean(repo))/\(clean(branch)).md"
     }
 
-    static func text(repo: String, branch: String, checkout: String, date: Date) -> String {
+    package static func text(repo: String, branch: String, checkout: String, date: Date) -> String {
         """
         ---
         repo: \(repo)

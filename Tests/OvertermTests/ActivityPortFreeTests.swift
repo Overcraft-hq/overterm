@@ -2,6 +2,12 @@ import Darwin
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The pane pill's Free… over a fake Mac (docs/design/activity/analysis.md,
 /// 6.10, 6.12, 10.1): what holds a pill's port is read at the press and

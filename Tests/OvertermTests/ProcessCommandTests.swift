@@ -2,6 +2,12 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// A process's command line as Tab Info's tooltip shows it: masked as the
 /// census reads it (`ProcessArguments`, docs/design/activity/analysis.md,

@@ -7,61 +7,61 @@ import Foundation
 /// and what its sheet names — its executable, command, children, the
 /// supervisor that may start it again, a tree's or a group's members. Pure:
 /// one snapshot, its owners, the main actor's few facts.
-struct ActivityVerbSubject: Sendable {
+package struct ActivityVerbSubject: Sendable {
     /// One member of a tree or a group, as its sheet lists it.
-    struct Member: Hashable, Sendable {
-        var signal: ActivitySignalTarget
-        var name: String
-        var target: ActivityTarget
+    package struct Member: Hashable, Sendable {
+        package var signal: ActivitySignalTarget
+        package var name: String
+        package var target: ActivityTarget
         /// Why a bulk Stop leaves it out (`ActivitySignalCheck.bulkRefusal`); nil: stopped with the rest.
-        var refusal: String?
+        package var refusal: String?
     }
 
-    var target: ActivityTarget
+    package var target: ActivityTarget
     /// Who a signal is for: its identity and the executable listed.
-    var signal: ActivitySignalTarget
-    var name: String
+    package var signal: ActivitySignalTarget
+    package var name: String
     /// argv masked as it was read (9.3).
-    var command: String?
+    package var command: String?
     /// Its pane's tag: where ⌃C is typed — the pane its owner places it in.
-    var pane: String?
-    var tab: UUID?
-    var agent: Agent?
+    package var pane: String?
+    package var tab: UUID?
+    package var agent: Agent?
     /// Its process group: ⌃C typed reaches it only while the pane's
     /// foreground group is this.
-    var group: pid_t
-    var parent: ActivityProcessID?
-    var parentName: String?
+    package var group: pid_t
+    package var parent: ActivityProcessID?
+    package var parentName: String?
     /// The parent as the policy sees it: Stop Its Parent's.
-    var parentTarget: ActivityTarget?
+    package var parentTarget: ActivityTarget?
     /// Its live children, which a Stop leaves running.
-    var children: Int
+    package var children: Int
     /// The TCP ports it listens on.
-    var listening: [Int]
+    package var listening: [Int]
     /// A parent that may start it again: neither a shell nor launchd nor
     /// Overterm (D-13: named, never stopped with it).
-    var supervisor: (pid: pid_t, name: String)?
+    package var supervisor: (pid: pid_t, name: String)?
     /// Its subtree, parents first, itself not among them.
-    var tree: [Member]
+    package var tree: [Member]
     /// Its process group's other members, when it leads one.
-    var groupMembers: [Member]
+    package var groupMembers: [Member]
     /// Its nice (`p_nice`): Lower Priority only raises it.
-    var nice: Int8 = 0
+    package var nice: Int8 = 0
 
     /// What the main actor knows that the census doesn't: running apps, the
     /// identities Activity stopped and put in the background, what Suspend
     /// Tab stopped.
-    struct Known: Sendable {
-        var appPID: pid_t = getpid()
-        var runningApps: [pid_t: String] = [:]
-        var stoppedHere: Set<ActivityProcessID> = []
-        var suspendedTab: Set<ActivityProcessID> = []
-        var backgroundHere: Set<ActivityProcessID> = []
+    package struct Known: Sendable {
+        package var appPID: pid_t = getpid()
+        package var runningApps: [pid_t: String] = [:]
+        package var stoppedHere: Set<ActivityProcessID> = []
+        package var suspendedTab: Set<ActivityProcessID> = []
+        package var backgroundHere: Set<ActivityProcessID> = []
         /// What Activity continued a moment ago: a census begun before
         /// still lists it stopped (`ActivityHeld.recentlyResumed`).
-        var resumedHere: Set<ActivityProcessID> = []
+        package var resumedHere: Set<ActivityProcessID> = []
 
-        init(
+        package init(
             appPID: pid_t = getpid(), runningApps: [pid_t: String] = [:], stoppedHere: Set<ActivityProcessID> = [],
             suspendedTab: Set<ActivityProcessID> = [], backgroundHere: Set<ActivityProcessID> = [], resumedHere: Set<ActivityProcessID> = []
         ) {
@@ -75,10 +75,10 @@ struct ActivityVerbSubject: Sendable {
     }
 
     /// How many of a tree's members a sheet lists before "and N more".
-    static let memberLimit = 512
+    package static let memberLimit = 512
 
     /// `identity` read in `snapshot`: nil once it is gone from the table.
-    static func read(_ identity: ActivityProcessID, in snapshot: ActivitySnapshot, owners: ActivityAttribution, known: Known) -> ActivityVerbSubject? {
+    package static func read(_ identity: ActivityProcessID, in snapshot: ActivitySnapshot, owners: ActivityAttribution, known: Known) -> ActivityVerbSubject? {
         let table = snapshot.table
         guard let process = table.process(identity) else { return nil }
         let reader = Reader(snapshot: snapshot, owners: owners, known: known)
@@ -122,7 +122,7 @@ struct ActivityVerbSubject: Sendable {
     /// answered "ran another program", never sent what it runs now. `fresh`,
     /// the button's read, only leaves out one that ended or is refused now.
     /// Pure.
-    static func treeSend(asked: ActivityVerbSubject, fresh: ActivityVerbSubject) -> [ActivitySignalTarget] {
+    package static func treeSend(asked: ActivityVerbSubject, fresh: ActivityVerbSubject) -> [ActivitySignalTarget] {
         let now = Set(fresh.tree.filter { $0.refusal == nil }.map(\.signal.identity))
         return [asked.signal] + asked.tree.filter { $0.refusal == nil && now.contains($0.signal.identity) }.map(\.signal)
     }
@@ -132,12 +132,12 @@ struct ActivityVerbSubject: Sendable {
     /// members that a bulk may reach and aren't stopped already — a
     /// terraform write, an app, what chose to outlive its terminal, a
     /// shell or an agent are left out, as a bulk Stop leaves them. Pure.
-    var suspendMembers: [ActivitySignalTarget] {
+    package var suspendMembers: [ActivitySignalTarget] {
         [signal] + tree.filter { $0.refusal == nil && $0.target.stopped == nil && $0.target.terraformWrite == nil }.map(\.signal)
     }
 
     /// Each member's name, by identity, itself included.
-    var memberNames: [ActivityProcessID: String] {
+    package var memberNames: [ActivityProcessID: String] {
         var names = [signal.identity: name]
         for member in tree { names[member.signal.identity] = member.name }
         return names

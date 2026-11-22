@@ -15,17 +15,17 @@ import AppKit
 ///
 /// The window's own background is clear meanwhile; opaque, this view is
 /// hidden and the window paints `ChromeTheme.winNS` as before.
-final class WindowGroundView: NSView {
-    var color: NSColor = .clear {
+package final class WindowGroundView: NSView {
+    package var color: NSColor = .clear {
         didSet { needsDisplay = true }
     }
 
-    override var isFlipped: Bool { true }
-    override var isOpaque: Bool { false }
+    package override var isFlipped: Bool { true }
+    package override var isOpaque: Bool { false }
     // Paint only: every click is for what lies over it.
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    package override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    override func draw(_ dirtyRect: NSRect) {
+    package override func draw(_ dirtyRect: NSRect) {
         guard color.alphaComponent > 0, let context = NSGraphicsContext.current?.cgContext else { return }
         var ground = CGPath(rect: bounds, transform: nil)
         for hole in holes() { ground = ground.subtracting(hole) }
@@ -35,7 +35,7 @@ final class WindowGroundView: NSView {
     }
 
     /// Each terminal on screen, as much of it as its card shows.
-    func holes() -> [CGPath] {
+    package func holes() -> [CGPath] {
         guard let root = window?.contentView else { return [] }
         var found: [CGPath] = []
         func walk(_ view: NSView) {
@@ -75,7 +75,7 @@ extension NSView {
 
 extension NSWindow {
     /// Something moved or showed a terminal: the ground's holes again.
-    func groundChanged() {
+    package func groundChanged() {
         for case let ground as WindowGroundView in contentView?.subviews ?? [] where !ground.isHidden { ground.needsDisplay = true }
     }
 }

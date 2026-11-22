@@ -21,21 +21,21 @@ import Foundation
 ///   of its own (`KubeProcessRun`: 5 s, 1 MB, ended at quit), on a GCD
 ///   thread, never twice at once. In an isolated run or a unit test the
 ///   real nettop never runs — only a stand-in the test names (9.9).
-enum NettopListeners {
+package enum NettopListeners {
     /// One listening socket as nettop prints it.
-    struct Listener: Hashable, Sendable {
+    package struct Listener: Hashable, Sendable {
         /// The process's name as nettop prints it (`p_comm`'s, cut).
-        let name: String
-        let pid: pid_t
+        package let name: String
+        package let pid: pid_t
         /// "tcp" or "udp".
-        let proto: String
-        let family: SocketRecord.Families
+        package let proto: String
+        package let family: SocketRecord.Families
         /// The local address; a wildcard of its family for `*`.
-        let address: ActivityAddress
-        let port: UInt16
+        package let address: ActivityAddress
+        package let port: UInt16
 
         /// As the census's own records are: what the rows are made of.
-        var record: SocketRecord {
+        package var record: SocketRecord {
             SocketRecord(
                 descriptor: -1, socket: 0, kind: proto == "udp" ? .udp : .tcp, families: family, localAddress: address, localPort: port,
                 remoteAddress: nil, remotePort: 0, state: proto == "udp" ? nil : .listen, backlog: 0, backlogLimit: 0)
@@ -44,14 +44,14 @@ enum NettopListeners {
 
     /// The command line: one sample (`-L 1`), numbers not names (`-n`),
     /// exact counts (`-x`), only the state column (`-J state`).
-    static let executable = URL(fileURLWithPath: "/usr/bin/nettop")
-    static let arguments = ["-L", "1", "-n", "-x", "-J", "state"]
+    package static let executable = URL(fileURLWithPath: "/usr/bin/nettop")
+    package static let arguments = ["-L", "1", "-n", "-x", "-J", "state"]
 
     // MARK: The text
 
     /// nettop's text as listeners: TCP in Listen and UDP bound to a port
     /// with no peer, each once; nil for text that isn't nettop's.
-    static func parse(_ text: String) -> [Listener]? {
+    package static func parse(_ text: String) -> [Listener]? {
         var lines = text.split(separator: "\n", omittingEmptySubsequences: false).map { $0.hasSuffix("\r") ? $0.dropLast() : $0 }
         while lines.last?.isEmpty == true { lines.removeLast() }
         guard let header = lines.first, header.trimmingCharacters(in: .whitespaces) == ",state," else { return nil }
@@ -120,7 +120,7 @@ enum NettopListeners {
     /// `127.0.0.1:8021`, `*:53`, `::1.8021`, `*.5353`, `fe80::1%lo0.5353`:
     /// IPv4's port after its last `:`, IPv6's after its last `.`; `*` the
     /// family's wildcard, a zone (`%en0`) left out.
-    static func endpoint(_ text: Substring, v6: Bool) -> (address: ActivityAddress, port: UInt16)? {
+    package static func endpoint(_ text: Substring, v6: Bool) -> (address: ActivityAddress, port: UInt16)? {
         guard let separator = text.lastIndex(of: v6 ? "." : ":") else { return nil }
         let portText = text[text.index(after: separator)...]
         let port: UInt16
@@ -141,13 +141,13 @@ enum NettopListeners {
 
     /// A TCP listener of the user's that libproc found: its port and every
     /// holder's pid — nettop names one.
-    struct Expected: Hashable, Sendable {
-        let port: UInt16
-        let pids: Set<pid_t>
+    package struct Expected: Hashable, Sendable {
+        package let port: UInt16
+        package let pids: Set<pid_t>
     }
 
     /// What a read's answer is worth.
-    enum Check: Hashable, Sendable {
+    package enum Check: Hashable, Sendable {
         /// It holds every listener of the user's libproc found.
         case checked
         /// None of the user's to compare it with: believed, said so.
@@ -157,7 +157,7 @@ enum NettopListeners {
     }
 
     /// `listeners` against the user's own TCP listeners libproc found then.
-    static func check(_ listeners: [Listener], expected: Set<Expected>) -> Check {
+    package static func check(_ listeners: [Listener], expected: Set<Expected>) -> Check {
         guard !expected.isEmpty else { return .unchecked }
         var byPort: [UInt16: Set<pid_t>] = [:]
         for listener in listeners where listener.proto == "tcp" { byPort[listener.port, default: []].insert(listener.pid) }
@@ -169,7 +169,7 @@ enum NettopListeners {
     /// nettop's answer must hold. `among`: only these processes' — a test
     /// run's own (9.9: it lists nothing else, and its stand-in can't know
     /// the rest).
-    static func expected(in snapshot: ActivitySnapshot, among: Set<ActivityProcessID>? = nil) -> Set<Expected> {
+    package static func expected(in snapshot: ActivitySnapshot, among: Set<ActivityProcessID>? = nil) -> Set<Expected> {
         var byPort: [UInt16: Set<pid_t>] = [:]
         for process in snapshot.table.processes where process.isOwn(by: snapshot.uid) && (among?.contains(process.identity) ?? true) {
             guard let records = snapshot.facts[process.identity]?.sockets?.records else { continue }
@@ -181,24 +181,24 @@ enum NettopListeners {
     // MARK: A read
 
     /// One read and what it is worth.
-    struct Reading: Sendable {
-        enum Outcome: Hashable, Sendable {
+    package struct Reading: Sendable {
+        package enum Outcome: Hashable, Sendable {
             case read(Check)
             /// It didn't run, ran past its time, or printed what isn't
             /// nettop's: why.
             case failed(String)
         }
 
-        var listeners: [Listener] = []
-        var outcome: Outcome
+        package var listeners: [Listener] = []
+        package var outcome: Outcome
         /// When it began.
-        var date: Date
+        package var date: Date
         /// What libproc found as it began: what the answer is checked with,
         /// less what has closed by then (`checked(against:)`).
-        var expected: Set<Expected> = []
+        package var expected: Set<Expected> = []
 
         /// Its listeners are shown: read, and not blind.
-        var isBelieved: Bool {
+        package var isBelieved: Bool {
             switch outcome {
             case .read(.checked), .read(.unchecked): true
             default: false
@@ -207,7 +207,7 @@ enum NettopListeners {
 
         /// The check made again against what libproc still finds: a
         /// listener that closed while nettop ran is no proof of blindness.
-        func checked(against now: Set<Expected>) -> Reading {
+        package func checked(against now: Set<Expected>) -> Reading {
             guard case .read = outcome else { return self }
             let nowByPort = Dictionary(now.map { ($0.port, $0.pids) }, uniquingKeysWith: { $0.union($1) })
             let still = Set(
@@ -223,7 +223,7 @@ enum NettopListeners {
     }
 
     /// `text` as a reading begun at `date`, against `expected`.
-    static func reading(_ text: String?, status: Int32, date: Date, expected: Set<Expected>) -> Reading {
+    package static func reading(_ text: String?, status: Int32, date: Date, expected: Set<Expected>) -> Reading {
         guard let text else { return Reading(outcome: .failed("nettop didn't answer in 5 s"), date: date, expected: expected) }
         guard status == 0 else { return Reading(outcome: .failed("nettop failed (exit \(status))"), date: date, expected: expected) }
         guard let listeners = parse(text) else { return Reading(outcome: .failed("nettop's answer couldn't be read"), date: date, expected: expected) }
@@ -231,9 +231,9 @@ enum NettopListeners {
     }
 
     /// Runs nettop, or the stand-in a test names, one read at a time.
-    final class Reader: @unchecked Sendable {
+    package final class Reader: @unchecked Sendable {
         /// The app's.
-        static let shared = Reader()
+        package static let shared = Reader()
 
         private let lock = NSLock()
         // Under `lock`.
@@ -244,18 +244,18 @@ enum NettopListeners {
 
         /// A test's nettop: the only one an isolated run or a unit test
         /// runs (9.9). Nil there: nothing is read.
-        var standIn: URL? {
+        package var standIn: URL? {
             get { lock.withLock { standInURL } }
             set { lock.withLock { standInURL = newValue } }
         }
 
         /// The last read, whoever asked.
-        var latest: Reading? { lock.withLock { last } }
+        package var latest: Reading? { lock.withLock { last } }
 
-        var isReading: Bool { lock.withLock { running } }
+        package var isReading: Bool { lock.withLock { running } }
 
         /// Why nothing can be read here; nil when it can.
-        var unavailable: String? {
+        package var unavailable: String? {
             let guarded = AppEnvironment.isIsolated || AppEnvironment.isUnitTest
             if guarded, standIn == nil { return "not read in a test run" }
             return nil
@@ -264,7 +264,7 @@ enum NettopListeners {
         /// One read on a GCD thread, `done` called there; false — nothing
         /// started — while one is running or nothing can be read.
         @discardableResult
-        func read(expected: Set<Expected>, done: @escaping @Sendable (Reading) -> Void) -> Bool {
+        package func read(expected: Set<Expected>, done: @escaping @Sendable (Reading) -> Void) -> Bool {
             let guarded = AppEnvironment.isIsolated || AppEnvironment.isUnitTest
             let started: URL? = lock.withLock {
                 guard !running else { return nil }
@@ -290,7 +290,7 @@ enum NettopListeners {
 
         /// `done` called with the read now running, as it lands; false —
         /// nothing waited for — when none is running.
-        func whenRead(_ done: @escaping @Sendable (Reading) -> Void) -> Bool {
+        package func whenRead(_ done: @escaping @Sendable (Reading) -> Void) -> Bool {
             lock.withLock {
                 guard running else { return false }
                 waiters.append(done)
@@ -300,7 +300,7 @@ enum NettopListeners {
 
         /// One read, here, waited for: `executable` with nettop's
         /// arguments, nothing of the app's environment.
-        static func run(_ executable: URL, expected: Set<Expected>) -> Reading {
+        package static func run(_ executable: URL, expected: Set<Expected>) -> Reading {
             let date = Date()
             let result = KubeProcessRun.run(
                 executable, NettopListeners.arguments, environment: ["PATH": "/usr/bin:/bin", "LC_ALL": "C"], timeout: 5, outputLimit: 1 << 20,

@@ -6,7 +6,7 @@ import SwiftUI
 /// Each page has its own table (Docker's is `DockerKey`); the window sends
 /// every key down by one path (`handlePageKey`, `WorkspacePage.press`) and
 /// the page reads it with `press(_:sheetShowing:)`. Pure.
-protocol ResourceKey: CaseIterable, Hashable, Sendable where AllCases: RandomAccessCollection {
+package protocol ResourceKey: CaseIterable, Hashable, Sendable where AllCases: RandomAccessCollection {
     /// What a digit goes to.
     associatedtype Section
     /// What is pressed: one character, or a key's name (`↩`, `Space`, `⌫`).
@@ -22,7 +22,7 @@ protocol ResourceKey: CaseIterable, Hashable, Sendable where AllCases: RandomAcc
 }
 
 /// What a key down means on a page's list.
-enum ResourceKeyPress<Key: ResourceKey> {
+package enum ResourceKeyPress<Key: ResourceKey> {
     /// The keys' sheet was showing: any key closes it, and does nothing else.
     case closeSheet
     case section(Key.Section)
@@ -35,7 +35,7 @@ enum ResourceKeyPress<Key: ResourceKey> {
 extension ResourceKey {
     /// The key a typed character is, if any. Case matters (Docker's `D` is
     /// compose down, `d` the Database panel).
-    static func of(_ characters: String) -> Self? {
+    package static func of(_ characters: String) -> Self? {
         let name = keyName(of: characters)
         // A key's name (`Space`) is not what is typed: one character, or
         // a named key's.
@@ -45,7 +45,7 @@ extension ResourceKey {
 
     /// A typed character as a table names it: ↩, Space, ⌫ (delete or
     /// backspace) and Esc by their names, anything else as itself.
-    static func keyName(of characters: String) -> String {
+    package static func keyName(of characters: String) -> String {
         switch characters {
         case "\r": "↩"
         case " ": "Space"
@@ -58,7 +58,7 @@ extension ResourceKey {
     /// A key down on the list: nil when it means nothing there and goes on
     /// to the list (arrows, ⌘C…). An open sheet of keys takes any key to
     /// close; a digit is its section; `?` and `/` are every page's.
-    static func press(_ characters: String, sheetShowing: Bool) -> ResourceKeyPress<Self>? {
+    package static func press(_ characters: String, sheetShowing: Bool) -> ResourceKeyPress<Self>? {
         if sheetShowing { return .closeSheet }
         guard let key = of(characters) else { return nil }
         if let section = key.section { return .section(section) }
@@ -68,13 +68,13 @@ extension ResourceKey {
     }
 
     /// No key twice, and every one a typed key can reach.
-    static var isWellFormed: Bool {
+    package static var isWellFormed: Bool {
         let keys = allCases.map(\.key)
         return Set(keys).count == keys.count && allCases.allSatisfy { of(typed(of: $0.key)) == $0 }
     }
 
     /// What is typed for a key's name: the inverse of `keyName(of:)`.
-    static func typed(of key: String) -> String {
+    package static func typed(of key: String) -> String {
         switch key {
         case "↩": "\r"
         case "Space": " "
@@ -87,14 +87,21 @@ extension ResourceKey {
 
 /// The sheet `?` shows over a page: its keys, as its table says them. Any
 /// key or a click closes it.
-struct ResourceKeySheet<Key: ResourceKey>: View {
-    @ObservedObject var theme: ChromeTheme
-    let identifier: String
+package struct ResourceKeySheet<Key: ResourceKey>: View {
+    @ObservedObject package var theme: ChromeTheme
+    package let identifier: String
     /// A line under the keys: what the list itself reads (← →).
-    var footnote: String? = nil
-    let close: () -> Void
+    package var footnote: String? = nil
+    package let close: () -> Void
 
-    var body: some View {
+    package init(theme: ChromeTheme, identifier: String, footnote: String? = nil, close: @escaping () -> Void) {
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.identifier = identifier
+        self.footnote = footnote
+        self.close = close
+    }
+
+    package var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             Text("Keys in the list").font(.system(size: ChromeMetrics.text(13), weight: .semibold)).foregroundStyle(theme.text).padding(.bottom, 4)
             ForEach(Array(Key.allCases), id: \.self) { key in

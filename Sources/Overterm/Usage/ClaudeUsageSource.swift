@@ -14,9 +14,9 @@ import Foundation
 /// The **spend** is ours: `~/.claude/projects/**.jsonl` carries every
 /// reply's tokens and model, read from the end backwards
 /// (`UsageTailScanner`) and priced by `ModelPricing`.
-enum ClaudeUsageSource {
+package enum ClaudeUsageSource {
     /// Whether there is anything of Claude's on this Mac to read.
-    static func isPresent() -> Bool {
+    package static func isPresent() -> Bool {
         configFiles.contains { FileManager.default.fileExists(atPath: $0.path) }
             || projectDirectories.contains { FileManager.default.fileExists(atPath: $0.path) }
     }
@@ -31,18 +31,18 @@ enum ClaudeUsageSource {
 
     /// Every Claude Code state file on this Mac: the main one, and each
     /// other config folder's (`AppEnvironment.otherClaudeConfigDirectories`).
-    static var configFiles: [URL] {
+    package static var configFiles: [URL] {
         [AppEnvironment.claudeConfigFile] + AppEnvironment.otherClaudeConfigDirectories.map(AppEnvironment.claudeConfigFile(of:))
     }
 
     /// Every folder of transcripts: the main one, and each other config
     /// folder's — sessions run under `CLAUDE_CONFIG_DIR` were left out.
-    static var projectDirectories: [URL] {
+    package static var projectDirectories: [URL] {
         [ClaudeUsageReader.projectsDirectory] + AppEnvironment.otherClaudeConfigDirectories.map { $0.appendingPathComponent("projects") }
     }
 
     /// The cached answer that is newest among `files`, and when it came.
-    static func freshestCache(in files: [URL]) -> (cached: [String: Any], asOf: Date?)? {
+    package static func freshestCache(in files: [URL]) -> (cached: [String: Any], asOf: Date?)? {
         var best: (cached: [String: Any], asOf: Date?)?
         for file in files {
             guard let data = try? Data(contentsOf: file),
@@ -58,7 +58,7 @@ enum ClaudeUsageSource {
     /// The windows Claude last heard about, and when it heard — from the
     /// state file that heard last, where there are several: one account's
     /// limits are the same in each, and the newest is the truest.
-    static func meters() -> (meters: [UsageMeter], asOf: Date?) {
+    package static func meters() -> (meters: [UsageMeter], asOf: Date?) {
         guard let best = freshestCache(in: configFiles) else { return lastGoodLock.withLock { lastGood } ?? ([], nil) }
         let read = (meters: windows(in: best.cached["utilization"] as? [String: Any] ?? [:]), asOf: best.asOf)
         lastGoodLock.withLock { lastGood = read }
@@ -70,7 +70,7 @@ enum ClaudeUsageSource {
     /// live $250 allowance. So: the array when it is there, else every
     /// object that has a percentage in it — rather than a list of names
     /// that goes quietly out of date.
-    static func windows(in utilization: [String: Any]) -> [UsageMeter] {
+    package static func windows(in utilization: [String: Any]) -> [UsageMeter] {
         if let limits = utilization["limits"] as? [[String: Any]], !limits.isEmpty {
             // `is_active` marks the one that is biting, not the ones that
             // exist: taking it as "show this" left a window at 90% and
@@ -164,7 +164,7 @@ enum ClaudeUsageSource {
     /// One transcript line, if it is a reply that cost something. Claude's
     /// `input_tokens` excludes what it read from the cache, so the counts
     /// add up as they stand.
-    static func line(_ line: UnsafeRawBufferPointer) -> UsageLine? {
+    package static func line(_ line: UnsafeRawBufferPointer) -> UsageLine? {
         guard UsageBytes.has(assistantKey, in: line), UsageBytes.find(usageKey, in: line) != nil,
             let at = UsageBytes.timestamp(timestampKey, in: line)
         else { return nil }
@@ -191,7 +191,7 @@ enum ClaudeUsageSource {
     /// Every transcript written since `since`: each project folder's
     /// sessions, and each session's subagents a level further down — a Task
     /// agent's tokens are nowhere in the session that started it.
-    static func transcripts(since: Date) -> [URL] {
+    package static func transcripts(since: Date) -> [URL] {
         let manager = FileManager.default
         let folders = projectDirectories.flatMap { (try? manager.contentsOfDirectory(at: $0, includingPropertiesForKeys: nil)) ?? [] }
         var found = [URL]()
@@ -216,7 +216,7 @@ enum ClaudeUsageSource {
     }
 
     /// What was spent since `since`, over every project.
-    static func spend(since: Date, scanner: UsageTailScanner) -> UsageSpend {
+    package static func spend(since: Date, scanner: UsageTailScanner) -> UsageSpend {
         var byModel = [String: UsageTokens]()
         for file in transcripts(since: since) {
             for (key, tokens) in scanner.slices(of: file, since: since, parse: line) {
@@ -230,12 +230,12 @@ enum ClaudeUsageSource {
     /// own `/usage` is a request to the service; every ten minutes is what
     /// openusage settles on too, and nobody needs a percentage to the
     /// second.
-    static let staleAfter: TimeInterval = 600
+    package static let staleAfter: TimeInterval = 600
 
     /// Asks Claude for fresh figures when what it last wrote down has
     /// aged, by running the command a person would run. Blocking; call
     /// off the main thread.
-    static func refresh(asking: Bool, force: Bool = false, now: Date = Date()) {
+    package static func refresh(asking: Bool, force: Bool = false, now: Date = Date()) {
         guard asking || force else { return }
         let age = meters().asOf.map { now.timeIntervalSince($0) } ?? .greatestFiniteMagnitude
         guard force || age > staleAfter else { return }
@@ -243,7 +243,7 @@ enum ClaudeUsageSource {
     }
 
     /// Everything the pane shows for Claude.
-    static func snapshot(scope: UsageScope, scanner: UsageTailScanner, cost: Bool, now: Date = Date()) -> UsageSnapshot? {
+    package static func snapshot(scope: UsageScope, scanner: UsageTailScanner, cost: Bool, now: Date = Date()) -> UsageSnapshot? {
         guard isPresent() else { return nil }
         var snapshot = UsageSnapshot(provider: .claude)
         (snapshot.meters, snapshot.metersAsOf) = meters()

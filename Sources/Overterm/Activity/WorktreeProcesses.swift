@@ -9,37 +9,37 @@ import Foundation
 /// off the main thread, under a deadline: each process's folder, then its
 /// descriptors' paths (sweep B, 3.7). Overterm's own helpers aren't listed;
 /// what a bulk Stop never takes is listed with why, and left unstopped.
-struct WorktreeProcess: Hashable, Sendable {
-    enum Via: Hashable, Sendable {
+package struct WorktreeProcess: Hashable, Sendable {
+    package enum Via: Hashable, Sendable {
         /// Its working folder is inside.
         case folder
         /// It holds a file open inside.
         case file
     }
 
-    let identity: ActivityProcessID
-    let name: String
-    let path: String?
-    let via: Via
+    package let identity: ActivityProcessID
+    package let name: String
+    package let path: String?
+    package let via: Via
     /// Why "Stop Them and Remove" leaves it running; nil when it stops it.
-    var excluded: String?
+    package var excluded: String?
 
     /// "acme-db (pid 4242) — a file open inside".
-    var line: String {
+    package var line: String {
         var words = "\(name) (pid \(identity.pid)) — " + (via == .folder ? "runs in it" : "a file open inside")
         if let excluded { words += "; not stopped: \(excluded)" }
         return words
     }
 }
 
-enum WorktreeProcesses {
+package enum WorktreeProcesses {
     /// Descriptors read a process, at most.
-    static let descriptorLimit = 4_096
+    package static let descriptorLimit = 4_096
 
     /// `folder`'s processes as `snapshot` lists them, read now through
     /// `kernel`. `deadline`: the kernel's clock (`uptime`) past which the
     /// read stops — `complete` false then.
-    static func read(
+    package static func read(
         _ folder: String, in snapshot: ActivitySnapshot, kernel: some ActivityKernel, app: pid_t, deadline: UInt64,
         kept: Set<ActivityProcessID> = [], only: Set<ActivityProcessID>? = nil
     ) -> (found: [WorktreeProcess], complete: Bool) {
@@ -50,7 +50,7 @@ enum WorktreeProcesses {
     /// resolved) in one sweep of each process's folder and descriptors.
     /// `kept`: what the person kept, never stopped here; `only`: a test
     /// run's own processes (`runsOwn`), the rest never read nor listed.
-    static func read(
+    package static func read(
         _ folders: [String], in snapshot: ActivitySnapshot, kernel: some ActivityKernel, app: pid_t, deadline: UInt64,
         kept: Set<ActivityProcessID> = [], only: Set<ActivityProcessID>? = nil
     ) -> (found: [WorktreeProcess], complete: Bool) {
@@ -89,7 +89,7 @@ enum WorktreeProcesses {
     /// what started it), a terraform tool — Interrupt only, never SIGTERM —,
     /// it ignores SIGHUP, is detached on purpose, an app, in another
     /// terminal, another Overterm's.
-    static func exclusion(
+    package static func exclusion(
         _ process: ActivityProcess, facts: ActivityFacts?, snapshot: ActivitySnapshot, kept: Set<ActivityProcessID> = []
     ) -> String? {
         if LeftBehind.isKept(process.identity, kept: kept, table: snapshot.table) { return "you kept it" }
@@ -112,7 +112,7 @@ enum WorktreeProcesses {
     /// run lists only what it spawned): registered with the signal gate,
     /// carrying the run's marker, in one of its panes' trees or carrying
     /// one of their tags — live or closed. Pure but for the gate's register.
-    static func runsOwn(
+    package static func runsOwn(
         in snapshot: ActivitySnapshot, tags: Set<String>, run: String?, gate: ActivitySignalGate = .shared
     ) -> Set<ActivityProcessID> {
         // Its panes' trees, and what carries their tags.

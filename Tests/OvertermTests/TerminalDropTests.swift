@@ -1,6 +1,12 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// What a drop onto a terminal types in. The Claude Code forms follow its
 /// CLI (2.1.282): a pasted image path is split off at " /", unquoted or

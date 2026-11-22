@@ -3,6 +3,12 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Listening's rows (docs/design/activity/analysis.md, 6.8) over a fake Mac:
 /// a holder's v4 and v6 as one row, UDP, the URL by the bound families; the

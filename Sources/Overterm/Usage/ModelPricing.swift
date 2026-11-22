@@ -8,17 +8,17 @@ import Foundation
 /// openai.com/api/pricing on 2026-10-15. A model nobody here knows has no
 /// price at all (`rate(for:) == nil`) — the pane then shows its tokens and
 /// says so, rather than a confident wrong number.
-enum ModelPricing {
+package enum ModelPricing {
     /// Dollars per million tokens.
-    struct Rate: Equatable, Sendable {
-        let input: Double
-        let output: Double
-        let cacheRead: Double
+    package struct Rate: Equatable, Sendable {
+        package let input: Double
+        package let output: Double
+        package let cacheRead: Double
         /// Writing into the five-minute cache, and into the hour-long one.
-        let cacheWrite5m: Double
-        let cacheWrite1h: Double
+        package let cacheWrite5m: Double
+        package let cacheWrite1h: Double
 
-        func cost(_ tokens: UsageTokens) -> Double {
+        package func cost(_ tokens: UsageTokens) -> Double {
             (Double(tokens.input) * input + Double(tokens.output) * output + Double(tokens.cacheRead) * cacheRead
                 + Double(tokens.cacheWrite5m) * cacheWrite5m + Double(tokens.cacheWrite1h) * cacheWrite1h) / 1_000_000
         }
@@ -55,7 +55,7 @@ enum ModelPricing {
 
     /// The rate for a model name as the logs write it, or nil for one this
     /// table has never heard of.
-    static func rate(for model: String) -> Rate? {
+    package static func rate(for model: String) -> Rate? {
         let name = model.lowercased()
         return
             rates
@@ -65,12 +65,12 @@ enum ModelPricing {
     }
 
     /// What `tokens` of `model` cost, or nil when the model has no rate.
-    static func cost(_ tokens: UsageTokens, model: String) -> Double? {
+    package static func cost(_ tokens: UsageTokens, model: String) -> Double? {
         rate(for: model)?.cost(tokens)
     }
 
     /// The name a person reads: "opus 5", "sonnet 5", "gpt-5.6".
-    static func shortName(_ model: String) -> String {
+    package static func shortName(_ model: String) -> String {
         var name = model
         for prefix in ["claude-", "anthropic/"] where name.hasPrefix(prefix) {
             name = String(name.dropFirst(prefix.count))

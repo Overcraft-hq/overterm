@@ -4,7 +4,7 @@ import Darwin
 /// 6.10): the pane pill's Free…, and the page's verbs — one per row of
 /// 6.10's verb table that changes a process. `ActivitySignalCheck` decides
 /// each for each class.
-enum ActivityVerb: Hashable, Sendable {
+package enum ActivityVerb: Hashable, Sendable {
     /// The pill's Free :N…: whatever ends the port's holder the way its
     /// class asks (6.12) — each asked.
     case free
@@ -41,7 +41,7 @@ enum ActivityVerb: Hashable, Sendable {
     case freePort
 
     /// Every verb, each signal of Send a Signal one.
-    static var allCases: [ActivityVerb] {
+    package static var allCases: [ActivityVerb] {
         [.free, .stop, .interrupt, .interruptTurn, .stopAgent, .forceQuit] + ActivitySignal.allCases.map { .send($0) }
             + [.stopTree, .stopGroup, .stopParent, .suspend, .resume, .background, .runNormally, .lowerPriority, .freePort]
     }
@@ -52,7 +52,7 @@ enum ActivityVerb: Hashable, Sendable {
 /// page any of them. Whose it is — root's, another user's, a setuid
 /// program's —, a zombie, a stopped process, an app, a terraform or a helm
 /// write, what chose to outlive its terminal are the target's facts.
-enum ActivityClass: Hashable, Sendable {
+package enum ActivityClass: Hashable, Sendable {
     /// A job in a pane: the user's, under its `login`.
     case paneJob
     /// The pane's agent: any `Agent`.
@@ -86,7 +86,7 @@ enum ActivityClass: Hashable, Sendable {
 
 /// Who stopped a stopped process (6.10's last row): only what Activity
 /// stopped is resumed here.
-enum ActivityStopper: Hashable, Sendable {
+package enum ActivityStopper: Hashable, Sendable {
     /// Activity's Suspend, kept by identity.
     case activity
     /// Suspend Tab: Resume Tab resumes it.
@@ -100,7 +100,7 @@ enum ActivityStopper: Hashable, Sendable {
 }
 
 /// Which of Overterm's helpers, for its own verb (6.10's helpers row).
-enum ActivityHelper: Hashable, Sendable, CaseIterable {
+package enum ActivityHelper: Hashable, Sendable, CaseIterable {
     /// A Kubernetes port-forward's kubectl (`KubeForwards`).
     case forward
     /// A database tunnel's ssh (`SSHTunnel`).
@@ -117,61 +117,61 @@ enum ActivityHelper: Hashable, Sendable, CaseIterable {
 
 /// A process as the policy sees it: its class, and the facts read fresh
 /// when the sheet opens (6.10 step 3).
-struct ActivityTarget: Hashable, Sendable {
-    var kind: ActivityClass
+package struct ActivityTarget: Hashable, Sendable {
+    package var kind: ActivityClass
     /// Its pid; 0 for a container's port, which none of the user's holds.
-    var pid: pid_t
+    package var pid: pid_t
     /// Its effective uid, read fresh: whose it is to the kernel's reads. A
     /// setuid program the user started — every terminal's `login` — is
     /// root's here.
-    var effectiveUID: uid_t
+    package var effectiveUID: uid_t
     /// Its real uid: the user's for a setuid program the user started,
     /// which `kill(2)` would let through (3.2).
-    var realUID: uid_t
+    package var realUID: uid_t
     /// Its saved uid: root's for a setuid-root program that set its
     /// effective uid to the user's for a while, and can take root back.
-    var savedUID: uid_t
-    var isZombie = false
+    package var savedUID: uid_t
+    package var isZombie = false
     /// Its process group is its pane's foreground group (`e_tpgid`): what
     /// ⌃C typed into the pane reaches.
-    var inForeground = false
+    package var inForeground = false
     /// Its process group holds an agent: a ⌃C or a SIGINT to the group
     /// reaches the agent too (Codex's children keep its group).
-    var groupHoldsAgent = false
+    package var groupHoldsAgent = false
     /// A terraform, tofu or terragrunt write — apply, destroy, import,
     /// `state …` — by its name and its masked argv's operation
     /// (`TerraformCommandLine.parse(arguments:)`, `isWrite`), wherever it
     /// runs: its words for the sheet, "terraform apply".
-    var terraformWrite: String?
+    package var terraformWrite: String?
     /// A helm or pulumi write — `helm upgrade`, `install` or `rollback`,
     /// `pulumi up` or `destroy` — by its name and its masked argv's
     /// operation (`releaseWrite(name:arguments:)`), wherever it runs, or
     /// what runs under one (pulumi's plugins hold its ports on 127.0.0.1):
     /// its words for the sheet, "helm upgrade". A release stopped
     /// mid-upgrade stays pending-upgrade (6.10).
-    var releaseWrite: String?
+    package var releaseWrite: String?
     /// It ignores SIGHUP (`p_sigignore`) or was detached on purpose (tmux,
     /// screen, ssh-agent, 6.5 rule 5): it chose to outlive its terminal.
-    var detached = false
+    package var detached = false
     /// A GUI app, anything inside an `.app`, or an app started from a pane.
-    var isApp = false
+    package var isApp = false
     /// Inside an `.app` without being the app (a helper): Stop warns, a
     /// Suspend asks — a stopped helper can freeze its app.
-    var insideApp = false
+    package var insideApp = false
     /// Stopped (T), and by whom; nil while it runs.
-    var stopped: ActivityStopper?
+    package var stopped: ActivityStopper?
     /// Activity put it in the background (3.9: nothing else can say so).
-    var backgroundedHere = false
+    package var backgroundedHere = false
     /// It leads its process group (`pgid == pid`).
-    var leadsGroup = false
+    package var leadsGroup = false
     /// Its group holds a process outside its subtree: Stop Its Group says
     /// more than Stop Its Tree.
-    var groupBeyondTree = false
+    package var groupBeyondTree = false
     /// What its group holds that no group Stop may reach — "a shell", "an
     /// agent", "a terraform write", "Overterm's own" —; nil when nothing.
-    var groupHolds: String?
+    package var groupHolds: String?
 
-    init(
+    package init(
         _ kind: ActivityClass, pid: pid_t, effectiveUID: uid_t, realUID: uid_t? = nil, savedUID: uid_t? = nil, isZombie: Bool = false,
         inForeground: Bool = false, groupHoldsAgent: Bool = false, terraformWrite: String? = nil, releaseWrite: String? = nil, detached: Bool = false,
         isApp: Bool = false, insideApp: Bool = false, stopped: ActivityStopper? = nil
@@ -195,10 +195,10 @@ struct ActivityTarget: Hashable, Sendable {
     /// Whether it runs as `user` and as nobody else — its effective, real
     /// and saved uids all `user`'s —, as `ProcessSignals` asks
     /// (`ActivityProcess.isWhollyOwn`).
-    func isWhollyOwn(by user: uid_t) -> Bool { effectiveUID == user && realUID == user && savedUID == user }
+    package func isWhollyOwn(by user: uid_t) -> Bool { effectiveUID == user && realUID == user && savedUID == user }
 
     /// The tools whose writes `releaseWrite` names, and those writes.
-    static let releaseWrites: [String: Set<String>] = [
+    package static let releaseWrites: [String: Set<String>] = [
         "helm": ["upgrade", "install", "rollback"],
         // `update` is `up`'s other name, `down` `destroy`'s.
         "pulumi": ["up", "update", "destroy", "down"],
@@ -207,7 +207,7 @@ struct ActivityTarget: Hashable, Sendable {
     /// Their global flags that take a value as the next word: what stands
     /// between the tool and its operation (`helm --kube-context acme-prod
     /// -n acme upgrade`, `pulumi -C infra up`).
-    static let releaseValueFlags: [String: Set<String>] = [
+    package static let releaseValueFlags: [String: Set<String>] = [
         "helm": [
             "--burst-limit", "--content-cache", "--kube-apiserver", "--kube-as-group", "--kube-as-user", "--kube-ca-file", "--kube-context",
             "--kube-tls-server-name", "--kube-token", "--kubeconfig", "-n", "--namespace", "--qps", "--registry-config", "--repository-cache",
@@ -222,7 +222,7 @@ struct ActivityTarget: Hashable, Sendable {
     /// anything else (`helm list`, `pulumi preview`, `helm template … --set
     /// mode=upgrade`). Its operation is the first word that is neither a
     /// flag nor a global flag's value. Pure.
-    static func releaseWrite(name: String, arguments: [String]) -> String? {
+    package static func releaseWrite(name: String, arguments: [String]) -> String? {
         guard let writes = releaseWrites[name] else { return nil }
         let valued = releaseValueFlags[name] ?? []
         var words = arguments.dropFirst()
@@ -241,7 +241,7 @@ struct ActivityTarget: Hashable, Sendable {
 /// What a verb does to a target (6.10): refused, with why; done — asked
 /// first, and how; or the owner's own verb, asked as the rule says. The
 /// class table is the only source of who is asked: each rule carries it.
-enum ActivityRule: Hashable, Sendable {
+package enum ActivityRule: Hashable, Sendable {
     /// Not offered: greyed, with why.
     case refused(String)
     /// Done as `action`, asked first when `confirm`, in a critical sheet
@@ -250,14 +250,14 @@ enum ActivityRule: Hashable, Sendable {
     /// The owner's own verb, asked by Activity first when `confirm`.
     case route(ActivityRoute, confirm: Bool)
 
-    var refusal: String? {
+    package var refusal: String? {
         if case .refused(let reason) = self { return reason }
         return nil
     }
 }
 
 /// What an allowed verb does.
-enum ActivityAction: Hashable, Sendable {
+package enum ActivityAction: Hashable, Sendable {
     /// ⌃C typed into the pane — a key event to its surface, never a SIGINT
     /// to its group: a full-screen program reads ⌃C as a byte. At the
     /// button the surface's foreground group must still be the target's.
@@ -287,7 +287,7 @@ enum ActivityAction: Hashable, Sendable {
 /// Whether Activity asks first is the rule's (`ActivityRule.route`): a
 /// container's and a forward's Stop act at once when called, the apply
 /// view's first Stop sends its SIGINT unasked.
-enum ActivityRoute: Hashable, Sendable {
+package enum ActivityRoute: Hashable, Sendable {
     /// Close This Pane… — Close Tab… for a tab of one pane: asked by
     /// Activity, then Terraform's close guard runs.
     case closePane
@@ -313,10 +313,10 @@ enum ActivityRoute: Hashable, Sendable {
 /// whole class table, the only source of who is asked. Pure, and tested
 /// verb by verb and class by class, as `KubeProcessCheck` is.
 /// `ProcessSignals` makes its own refusals under it, whatever it says.
-enum ActivitySignalCheck {
+package enum ActivitySignalCheck {
     /// What `verb` does to `target`. `parent`: Stop Its Parent's, read
     /// with the same facts — its own class decides.
-    static func rule(_ verb: ActivityVerb, for target: ActivityTarget, parent: ActivityTarget? = nil, user: uid_t = getuid()) -> ActivityRule {
+    package static func rule(_ verb: ActivityVerb, for target: ActivityTarget, parent: ActivityTarget? = nil, user: uid_t = getuid()) -> ActivityRule {
         switch verb {
         case .free: return free(target, user: user)
         case .stopParent: return stopParent(of: target, parent: parent, user: user)
@@ -347,51 +347,51 @@ enum ActivitySignalCheck {
 
     // MARK: Words
 
-    static let daemon = "Part of macOS; it would start again."
-    static let anotherOverterm = "Another Overterm: quit it there."
-    static let engine = "Docker's engine or its VM: it holds every container's ports, and containers run inside it — stop a container, or quit the app from its menu."
-    static let paneSession = "The pane's own shell: close the pane or the tab instead."
-    static let container = "A container: stop it on the Docker page."
-    static let terraformKill = "SIGKILL can leave the state locked and half written; Interrupt asks terraform to stop safely."
-    static let terraformOnly = "A terraform write: Interrupt only — SIGTERM, SIGKILL or any other signal can leave its state locked and half written."
-    static let terraformSuspend = "A terraform write: stopped, it holds its state's lock — Interrupt it instead."
-    static let terraformPriority = "A terraform write: Overterm changes nothing of it but Interrupt."
-    static let terraformBulk = "A terraform write is in no bulk Stop: Interrupt it alone."
-    static let notAnAgent = "Not an agent: Stop… instead."
-    static let agentNotForeground = "The agent isn't the pane's foreground job now: ⌃C typed into the pane would reach another."
-    static let notForeground = "Not the pane's foreground job: ⌃C typed into the pane would reach another — Stop… instead."
-    static let groupHoldsAgentWords = "Its process group holds the agent: ⌃C would reach the agent too — Stop… instead."
-    static let underAgent = "It runs under an agent: ⌃C would reach the agent — Stop… instead."
-    static let noPane = "It runs in no pane: ⌃C reaches only a pane's foreground job — Send a Signal ▸ INT instead."
-    static let appInterrupt = "An app: Quit… instead."
-    static let appBulk = "An app is never in a bulk Stop: Quit… it alone."
-    static let notLeader = "It doesn't lead its process group: Stop Its Tree… instead."
-    static let groupIsTree = "Its process group is its tree: Stop Its Tree… instead."
-    static let alreadyStopped = "It is stopped already."
-    static let notStopped = "It isn't stopped."
-    static let traced = "A debugger holds it: SIGCONT would interfere with the debugger."
-    static let jobControl = "Stopped by its shell (⌃Z): `fg` in its tab — a bare SIGCONT would run it behind a shell that still thinks it stopped."
-    static let notStoppedHere = "Activity didn't stop it: resume it where it was stopped."
-    static let notBackgrounded = "Activity didn't put it in the background: nothing to put back."
-    static let parentUnknown = "Its parent isn't known now."
-    static let parentLaunchd = "launchd is its parent: it collects it shortly."
-    static let parentOverterm = "Overterm is its parent: Overterm will collect it; report it if it stays."
-    static let parentStopped = "Its parent is stopped: Resume it first, or its zombies wait."
+    package static let daemon = "Part of macOS; it would start again."
+    package static let anotherOverterm = "Another Overterm: quit it there."
+    package static let engine = "Docker's engine or its VM: it holds every container's ports, and containers run inside it — stop a container, or quit the app from its menu."
+    package static let paneSession = "The pane's own shell: close the pane or the tab instead."
+    package static let container = "A container: stop it on the Docker page."
+    package static let terraformKill = "SIGKILL can leave the state locked and half written; Interrupt asks terraform to stop safely."
+    package static let terraformOnly = "A terraform write: Interrupt only — SIGTERM, SIGKILL or any other signal can leave its state locked and half written."
+    package static let terraformSuspend = "A terraform write: stopped, it holds its state's lock — Interrupt it instead."
+    package static let terraformPriority = "A terraform write: Overterm changes nothing of it but Interrupt."
+    package static let terraformBulk = "A terraform write is in no bulk Stop: Interrupt it alone."
+    package static let notAnAgent = "Not an agent: Stop… instead."
+    package static let agentNotForeground = "The agent isn't the pane's foreground job now: ⌃C typed into the pane would reach another."
+    package static let notForeground = "Not the pane's foreground job: ⌃C typed into the pane would reach another — Stop… instead."
+    package static let groupHoldsAgentWords = "Its process group holds the agent: ⌃C would reach the agent too — Stop… instead."
+    package static let underAgent = "It runs under an agent: ⌃C would reach the agent — Stop… instead."
+    package static let noPane = "It runs in no pane: ⌃C reaches only a pane's foreground job — Send a Signal ▸ INT instead."
+    package static let appInterrupt = "An app: Quit… instead."
+    package static let appBulk = "An app is never in a bulk Stop: Quit… it alone."
+    package static let notLeader = "It doesn't lead its process group: Stop Its Tree… instead."
+    package static let groupIsTree = "Its process group is its tree: Stop Its Tree… instead."
+    package static let alreadyStopped = "It is stopped already."
+    package static let notStopped = "It isn't stopped."
+    package static let traced = "A debugger holds it: SIGCONT would interfere with the debugger."
+    package static let jobControl = "Stopped by its shell (⌃Z): `fg` in its tab — a bare SIGCONT would run it behind a shell that still thinks it stopped."
+    package static let notStoppedHere = "Activity didn't stop it: resume it where it was stopped."
+    package static let notBackgrounded = "Activity didn't put it in the background: nothing to put back."
+    package static let parentUnknown = "Its parent isn't known now."
+    package static let parentLaunchd = "launchd is its parent: it collects it shortly."
+    package static let parentOverterm = "Overterm is its parent: Overterm will collect it; report it if it stays."
+    package static let parentStopped = "Its parent is stopped: Resume it first, or its zombies wait."
 
-    static let macOS = ActivitySignalRefusal.system.reason
-    static let overterm = ActivitySignalRefusal.overterm.reason
-    static let ended = "It has ended: its parent hasn't collected it yet."
-    static let detached =
+    package static let macOS = ActivitySignalRefusal.system.reason
+    package static let overterm = ActivitySignalRefusal.overterm.reason
+    package static let ended = "It has ended: its parent hasn't collected it yet."
+    package static let detached =
         "It chose to outlive its terminal — it ignores hangups, or was detached on purpose: stop it from Activity, where it is picked alone."
-    static let app = "An app: quit it from its menu, or from Activity."
-    static let kubectlProxy = "A kubectl proxy of Overterm's: it closes when idle, and at quit."
-    static let helper = ActivitySignalRefusal.helper.reason
+    package static let app = "An app: quit it from its menu, or from Activity."
+    package static let kubectlProxy = "A kubectl proxy of Overterm's: it closes when idle, and at quit."
+    package static let helper = ActivitySignalRefusal.helper.reason
 
     /// Why one that doesn't run as the user alone is refused: root's, a
     /// setuid program the user started — as root or another user, or as
     /// the user for now —, another user's, or root's running as the user
     /// for now.
-    static func notYours(_ target: ActivityTarget, user: uid_t) -> String {
+    package static func notYours(_ target: ActivityTarget, user: uid_t) -> String {
         if target.realUID == user, target.effectiveUID != user {
             let runsAs = target.effectiveUID == 0 ? "root" : "another user"
             return "It runs as \(runsAs) — a setuid program you started: Overterm signals only what runs as you."
@@ -628,7 +628,7 @@ enum ActivitySignalCheck {
     /// what isn't the user's alone, the pane itself, an agent, Overterm's
     /// own, an app, what chose to outlive its terminal. Nil: it is stopped
     /// with the rest.
-    static func bulkRefusal(_ member: ActivityTarget, user: uid_t = getuid()) -> String? {
+    package static func bulkRefusal(_ member: ActivityTarget, user: uid_t = getuid()) -> String? {
         if member.terraformWrite != nil { return "a terraform write: Interrupt it alone" }
         if member.pid <= 1 || !member.isWhollyOwn(by: user) { return "not yours alone" }
         if member.isZombie { return "it has ended" }
@@ -652,7 +652,7 @@ enum ActivitySignalCheck {
     /// what isn't the user's alone, the pane itself, an agent, Overterm's
     /// own, the engine, macOS's, an app or a helper inside one, what chose
     /// to outlive its terminal.
-    static func groupBlocker(_ member: ActivityTarget, user: uid_t = getuid()) -> String? {
+    package static func groupBlocker(_ member: ActivityTarget, user: uid_t = getuid()) -> String? {
         if member.pid <= 1 { return "part of macOS" }
         if member.terraformWrite != nil { return "a terraform write" }
         if !member.isWhollyOwn(by: user) { return "another user's process" }

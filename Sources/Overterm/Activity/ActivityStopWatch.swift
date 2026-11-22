@@ -7,28 +7,36 @@ import Foundation
 /// back as pid N" — a process started since the Stop with the same
 /// executable and parent, or holding one of its ports. Pure: each read is
 /// handed in.
-enum ActivityStopWatch {
+package enum ActivityStopWatch {
     /// The process a Stop was sent to, as it was listed.
-    struct Listed: Hashable, Sendable {
-        var identity: ActivityProcessID
+    package struct Listed: Hashable, Sendable {
+        package var identity: ActivityProcessID
         /// What the sheet called it.
-        var name: String
-        var path: String?
+        package var name: String
+        package var path: String?
         /// Its parent's pid when it was listed.
-        var parent: pid_t
+        package var parent: pid_t
         /// The ports it listened on.
-        var ports: [Int] = []
+        package var ports: [Int] = []
+
+        package init(identity: ActivityProcessID, name: String, path: String? = nil, parent: pid_t, ports: [Int] = []) {
+            self.identity = identity
+            self.name = name
+            self.path = path
+            self.parent = parent
+            self.ports = ports
+        }
     }
 
     /// One of the user's processes a read found: what a comeback is told by.
-    struct Seen: Hashable, Sendable {
-        var identity: ActivityProcessID
-        var path: String?
-        var parent: pid_t
-        var ports: [Int] = []
+    package struct Seen: Hashable, Sendable {
+        package var identity: ActivityProcessID
+        package var path: String?
+        package var parent: pid_t
+        package var ports: [Int] = []
     }
 
-    enum State: Hashable, Sendable {
+    package enum State: Hashable, Sendable {
         /// Asked to stop; not ended yet.
         case stopping
         /// It ended, and nothing took its place.
@@ -42,15 +50,15 @@ enum ActivityStopWatch {
     }
 
     /// How long the watch reads, once a second (6.10 step 10).
-    static let watch: Duration = .seconds(5)
+    package static let watch: Duration = .seconds(5)
     /// How long Force Quit is offered for what a Stop didn't end (D-11).
-    static let forceQuitWindow: TimeInterval = 120
+    package static let forceQuitWindow: TimeInterval = 120
 
     /// What a read says: `alive`, the listed identity is still there and
     /// not a zombie; `seen`, the user's processes the read found; `sentAt`,
     /// when the Stop was sent, µs since 1970 as a start is; `final`, the
     /// watch's last read.
-    static func state(_ listed: Listed, alive: Bool, seen: [Seen], sentAt: UInt64, final: Bool) -> State {
+    package static func state(_ listed: Listed, alive: Bool, seen: [Seen], sentAt: UInt64, final: Bool) -> State {
         if alive { return final ? .stillRunning : .stopping }
         let ports = Set(listed.ports)
         let back = seen.filter { process in
@@ -63,8 +71,8 @@ enum ActivityStopWatch {
     }
 
     /// What the page's header says of it.
-    static func label(_ state: State, _ listed: Listed) -> String {
-        let name = "“\(DockerMCP.displayed(listed.name))” (pid \(listed.identity.pid))"
+    package static func label(_ state: State, _ listed: Listed) -> String {
+        let name = "“\(VisibleText.displayed(listed.name))” (pid \(listed.identity.pid))"
         switch state {
         case .stopping: return "Stopping \(name)…"
         case .stopped: return "Stopped \(name)"
@@ -75,7 +83,7 @@ enum ActivityStopWatch {
 
     /// The user's processes in `snapshot`, with their executables and the
     /// ports they listen on: what `state` is told.
-    static func seen(in snapshot: ActivitySnapshot) -> [Seen] {
+    package static func seen(in snapshot: ActivitySnapshot) -> [Seen] {
         snapshot.table.processes.compactMap { process in
             guard process.isOwn(by: snapshot.uid), !process.isZombie else { return nil }
             let facts = snapshot.facts[process.identity]
@@ -85,7 +93,7 @@ enum ActivityStopWatch {
     }
 
     /// Whether `identity` is alive in `snapshot`.
-    static func alive(_ identity: ActivityProcessID, in snapshot: ActivitySnapshot) -> Bool {
+    package static func alive(_ identity: ActivityProcessID, in snapshot: ActivitySnapshot) -> Bool {
         snapshot.table.process(identity).map { !$0.isZombie } ?? false
     }
 }

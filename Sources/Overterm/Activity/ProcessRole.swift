@@ -3,7 +3,7 @@ import Foundation
 /// What a process is to the agent or the pane it runs under (docs/design/
 /// activity/analysis.md, 6.5, Roles), read from its name and its masked
 /// argv — never the raw one. Pure.
-enum ProcessRole: String, Hashable, Sendable, CaseIterable {
+package enum ProcessRole: String, Hashable, Sendable, CaseIterable {
     /// An MCP server: `mcp` a word of its argv (`@playwright/mcp`,
     /// `acme-mcp-server`), `@modelcontextprotocol/…`.
     case mcp
@@ -17,7 +17,7 @@ enum ProcessRole: String, Hashable, Sendable, CaseIterable {
     case other
 
     /// Its words in the agent row's counts.
-    func counted(_ count: Int) -> String {
+    package func counted(_ count: Int) -> String {
         switch self {
         case .mcp: "\(count) MCP"
         case .shell: count == 1 ? "1 shell" : "\(count) shells"
@@ -27,13 +27,13 @@ enum ProcessRole: String, Hashable, Sendable, CaseIterable {
         }
     }
 
-    static let shells: Set<String> = ["zsh", "bash", "sh", "dash", "fish", "ksh"]
-    static let packageRunners: Set<String> = ["npm", "pnpm", "yarn", "bun"]
-    static let builders: Set<String> = ["cargo", "xcodebuild", "pytest"]
+    package static let shells: Set<String> = ["zsh", "bash", "sh", "dash", "fish", "ksh"]
+    package static let packageRunners: Set<String> = ["npm", "pnpm", "yarn", "bun"]
+    package static let builders: Set<String> = ["cargo", "xcodebuild", "pytest"]
 
     /// `name`'s role, its masked `command` read word by word, `listensTCP`
     /// whether it holds a TCP listener now.
-    static func of(name: String, command: String?, listensTCP: Bool) -> ProcessRole {
+    package static func of(name: String, command: String?, listensTCP: Bool) -> ProcessRole {
         let command = command ?? ""
         // An app's helper carries kilobytes of flags: its words are split
         // only where `mcp` occurs at all, and only the first few are read.
@@ -60,30 +60,30 @@ enum ProcessRole: String, Hashable, Sendable, CaseIterable {
 
     /// Whether `text` holds `needle` whatever its case: `strcasestr` over
     /// the string's own bytes, no copy of a native string.
-    static func contains(_ text: String, _ needle: String) -> Bool {
+    package static func contains(_ text: String, _ needle: String) -> Bool {
         text.withCString { haystack in needle.withCString { strcasestr(haystack, $0) != nil } }
     }
 
     /// A role as read for an identity, listening on TCP or not: what
     /// attribution keeps between ticks (`cached`).
-    struct Cached: Sendable {
+    package struct Cached: Sendable {
         /// What it was read from: a role is read again when either changed
         /// (an argv read since, an `exec`).
-        let name: String
-        let command: String?
-        let quiet: ProcessRole
-        let listening: ProcessRole
+        package let name: String
+        package let command: String?
+        package let quiet: ProcessRole
+        package let listening: ProcessRole
     }
 
     private static let lock = NSLock()
     nonisolated(unsafe) private static var roles: [ActivityProcessID: Cached] = [:]
 
     /// The roles read so far, by identity.
-    static func cached() -> [ActivityProcessID: Cached] { lock.withLock { roles } }
+    package static func cached() -> [ActivityProcessID: Cached] { lock.withLock { roles } }
 
     /// `made` kept; the lot dropped when it grows past four times what
     /// lives (`live`) and 4,096 — ended identities go with it.
-    static func remember(_ made: [ActivityProcessID: Cached], live: Int) {
+    package static func remember(_ made: [ActivityProcessID: Cached], live: Int) {
         lock.withLock {
             if roles.count + made.count > max(4 * live, 4_096) { roles = [:] }
             roles.merge(made) { _, new in new }
@@ -92,17 +92,17 @@ enum ProcessRole: String, Hashable, Sendable, CaseIterable {
 
     /// Whether `text` holds `needle`, byte for byte: `strstr` over the
     /// string's own bytes.
-    static func containsBytes(_ text: String, _ needle: String) -> Bool {
+    package static func containsBytes(_ text: String, _ needle: String) -> Bool {
         text.withCString { haystack in needle.withCString { strstr(haystack, $0) != nil } }
     }
 
     /// The bytes of an argv a role is read from: an MCP server says so in
     /// its first words; past them an Electron helper's kilobytes of flags.
-    static let scanLimit = 4_096
+    package static let scanLimit = 4_096
 
     /// Whether the first `scanLimit` bytes of `command` hold `mcp` or
     /// `modelcontextprotocol`, whatever their case: one pass, no copy.
-    static func mentionsMCP(_ command: String) -> Bool {
+    package static func mentionsMCP(_ command: String) -> Bool {
         func scan(_ bytes: UnsafeBufferPointer<UInt8>) -> Bool {
             let count = min(bytes.count, scanLimit)
             var index = 0
@@ -123,7 +123,7 @@ enum ProcessRole: String, Hashable, Sendable, CaseIterable {
 
     /// A word naming an MCP server: `mcp` one of its alphanumeric runs, or
     /// the protocol's own scope.
-    static func isMCP(_ word: String) -> Bool {
+    package static func isMCP(_ word: String) -> Bool {
         let lower = word.lowercased()
         if lower.contains("@modelcontextprotocol/") || lower.contains("mcp-server") { return true }
         guard lower.contains("mcp") else { return false }

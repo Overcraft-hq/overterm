@@ -2,43 +2,69 @@ import AppKit
 import SwiftUI
 
 /// What the Notes panel asks the window to do.
-struct NotesActions {
-    var open: (URL) -> Void
+package struct NotesActions {
+    package var open: (URL) -> Void
     /// A new note in a folder (nil: where Obsidian's settings say), opened.
-    var newNote: (URL?) -> Void
+    package var newNote: (URL?) -> Void
     /// A new Excalidraw drawing in a folder (nil: where Obsidian
     /// Excalidraw's settings say), opened.
-    var newDrawing: (URL?) -> Void = { _ in }
-    var newFolder: (URL?) -> Void
+    package var newDrawing: (URL?) -> Void = { _ in }
+    package var newFolder: (URL?) -> Void
     /// Today's note, made from the daily template if it isn't there yet.
-    var dailyNote: () -> Void
+    package var dailyNote: () -> Void
     /// Asks for a new name; a note's links follow it.
-    var rename: (URL) -> Void
+    package var rename: (URL) -> Void
     /// Asks, then moves it to the Trash.
-    var trash: (URL) -> Void
+    package var trash: (URL) -> Void
     /// Types its path into the selected terminal.
-    var insertPath: (URL) -> Void
+    package var insertPath: (URL) -> Void
     /// A new terminal tab whose shell starts in this folder.
-    var newTab: (URL) -> Void = { _ in }
+    package var newTab: (URL) -> Void = { _ in }
     /// Another folder as the vault, picked in an open panel.
-    var chooseVault: () -> Void
+    package var chooseVault: () -> Void
     /// Opens a note at a line (0-based).
-    var openAt: (URL, Int) -> Void = { _, _ in }
+    package var openAt: (URL, Int) -> Void = { _, _ in }
     /// Ticks the task on a line of a note (with these words), where it is written.
-    var toggleTask: (URL, Int, String) -> Void = { _, _, _ in }
+    package var toggleTask: (URL, Int, String) -> Void = { _, _, _ in }
     /// Notes, files or folders dropped on a folder: moved into it, the links
     /// to them written again.
-    var move: ([URL], URL) -> Void = { _, _ in }
+    package var move: ([URL], URL) -> Void = { _, _ in }
+
+    package init(
+        open: @escaping (URL) -> Void, newNote: @escaping (URL?) -> Void, newDrawing: @escaping (URL?) -> Void = { _ in }, newFolder: @escaping (URL?) -> Void, dailyNote: @escaping () -> Void,
+        rename: @escaping (URL) -> Void, trash: @escaping (URL) -> Void, insertPath: @escaping (URL) -> Void, newTab: @escaping (URL) -> Void = { _ in }, chooseVault: @escaping () -> Void,
+        openAt: @escaping (URL, Int) -> Void = { _, _ in }, toggleTask: @escaping (URL, Int, String) -> Void = { _, _, _ in }, move: @escaping ([URL], URL) -> Void = { _, _ in }
+    ) {
+        self.open = open
+        self.newNote = newNote
+        self.newDrawing = newDrawing
+        self.newFolder = newFolder
+        self.dailyNote = dailyNote
+        self.rename = rename
+        self.trash = trash
+        self.insertPath = insertPath
+        self.newTab = newTab
+        self.chooseVault = chooseVault
+        self.openAt = openAt
+        self.toggleTask = toggleTask
+        self.move = move
+    }
 }
 
 /// The sidebar's Notes panel: the vault's folders and notes, Obsidian's
 /// order, a filter, and the vault switcher in the header.
-struct NotesPanelView: View {
-    @ObservedObject var model: NotesModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: NotesActions
+package struct NotesPanelView: View {
+    @ObservedObject package var model: NotesModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: NotesActions
 
-    var body: some View {
+    package init(model: NotesModel, theme: ChromeTheme, actions: NotesActions) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.actions = actions
+    }
+
+    package var body: some View {
         GeometryReader { geometry in
             VStack(spacing: 0) {
                 header
@@ -178,16 +204,16 @@ struct NotesPanelView: View {
 
     // MARK: The tree
 
-    struct Row: Identifiable {
-        let item: NoteItem
-        let depth: Int
-        let isExpanded: Bool
-        var id: String { item.id }
+    package struct Row: Identifiable {
+        package let item: NoteItem
+        package let depth: Int
+        package let isExpanded: Bool
+        package var id: String { item.id }
     }
 
     /// The tree as rows: open folders' children under them; every folder
     /// open while filtering, so a match is never hidden.
-    static func rows(_ root: NoteItem, query: String, expanded: Set<String>, tagged: Set<String>? = nil) -> [Row] {
+    package static func rows(_ root: NoteItem, query: String, expanded: Set<String>, tagged: Set<String>? = nil) -> [Row] {
         // A tag picked: its notes, flat, by name.
         if let tagged {
             return root.allNotes.filter { tagged.contains($0.url.standardizedFileURL.path) }
@@ -234,7 +260,7 @@ struct NotesPanelView: View {
         return Set(model.index.notes(tagged: tag).map { model.url(of: $0).standardizedFileURL.path })
     }
 
-    @ViewBuilder func folderMenu(_ folder: URL) -> some View {
+    @ViewBuilder package func folderMenu(_ folder: URL) -> some View {
         Button("New Note") { actions.newNote(folder) }
         Button("New Drawing") { actions.newDrawing(folder) }
         Button("New Folder") { actions.newFolder(folder) }

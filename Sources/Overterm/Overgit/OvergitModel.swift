@@ -15,15 +15,15 @@ import Foundation
 /// `gh` once a minute for the whole repository, and a second asker would
 /// double the rate limit for the same answer.
 @MainActor
-final class OvergitModel: ObservableObject {
+package final class OvergitModel: ObservableObject {
     /// The panel's collapsible parts, in the order they are drawn. The
     /// overview above them is not one: it is always there.
-    enum Section: String, CaseIterable, Identifiable {
+    package enum Section: String, CaseIterable, Identifiable {
         case changes, commits, branches, pullRequests, worktrees, stashes, tags, remotes
 
-        var id: String { rawValue }
+        package var id: String { rawValue }
 
-        var title: String {
+        package var title: String {
             switch self {
             case .changes: "Changes"
             case .commits: "Commits"
@@ -36,7 +36,7 @@ final class OvergitModel: ObservableObject {
             }
         }
 
-        var symbol: String {
+        package var symbol: String {
             switch self {
             case .changes: "plusminus.circle"
             case .commits: "clock.arrow.circlepath"
@@ -51,76 +51,76 @@ final class OvergitModel: ObservableObject {
 
         /// Asked of git, rather than of something the window already has.
         /// The changes are DiffModel's, the pull requests and worktrees WorktreeModel's.
-        var isRead: Bool { self != .pullRequests && self != .worktrees && self != .changes }
+        package var isRead: Bool { self != .pullRequests && self != .worktrees && self != .changes }
     }
 
     private static let sectionsKey = "overgitSections"
     private static let defaultSections: Set<Section> = [.changes, .commits, .branches, .pullRequests, .worktrees]
 
-    @Published private(set) var commits: [Commit] = []
-    @Published private(set) var graph: [GraphRow] = []
-    @Published private(set) var branches: [BranchRef] = []
-    @Published private(set) var stashes: [Stash] = []
-    @Published private(set) var tags: [TagRef] = []
-    @Published private(set) var remotes: [Remote] = []
+    @Published package private(set) var commits: [Commit] = []
+    @Published package private(set) var graph: [GraphRow] = []
+    @Published package private(set) var branches: [BranchRef] = []
+    @Published package private(set) var stashes: [Stash] = []
+    @Published package private(set) var tags: [TagRef] = []
+    @Published package private(set) var remotes: [Remote] = []
     /// The folder is not in a repository: the panel says so instead of
     /// showing seven empty sections.
-    @Published private(set) var isRepository = false
+    @Published package private(set) var isRepository = false
     /// What git said when it refused, in its own words.
-    @Published private(set) var error: String?
-    @Published private(set) var isReading = false
+    @Published package private(set) var error: String?
+    @Published package private(set) var isReading = false
     /// The checked-out branch against its upstream, for Pull and Push —
     /// read every refresh, whichever sections are open.
-    @Published private(set) var tracking = BranchTracking()
+    @Published package private(set) var tracking = BranchTracking()
     /// A merge, rebase, cherry-pick or revert stopped half way.
-    @Published private(set) var inProgress: GitInProgress?
+    @Published package private(set) var inProgress: GitInProgress?
     /// What a command of the panel's is doing ("Pulling…"), while it runs.
-    @Published var running: String?
+    @Published package var running: String?
     /// Which sections are open, remembered between launches.
-    @Published private(set) var expanded: Set<Section>
+    @Published package private(set) var expanded: Set<Section>
     /// Which folders of the branch tree are open (`feature`, `origin`).
-    @Published var expandedBranchFolders: Set<String> = []
+    @Published package var expandedBranchFolders: Set<String> = []
     /// The Branches section's filter: the names holding its words.
-    @Published var branchQuery = ""
+    @Published package var branchQuery = ""
     /// The commit whose detail the right-hand pane is showing.
-    @Published var selected: String?
+    @Published package var selected: String?
 
     /// The Commits section's search (CommitSearch): the commits already read
     /// filter at once, and `git log` searches the whole history after a pause.
-    @Published var commitQuery = "" {
+    @Published package var commitQuery = "" {
         didSet { if commitQuery != oldValue { searchCommits() } }
     }
     /// A branch, tag or commit picked with "Select for Compare".
-    @Published var compareBase: String?
+    @Published package var compareBase: String?
     /// A commit picked as one end of a run to review (Review from Here…).
-    @Published var reviewStart: Commit?
+    @Published package var reviewStart: Commit?
     /// What the search found — nil while there is no query.
-    @Published private(set) var searchResults: [Commit]?
-    @Published private(set) var isSearching = false
+    @Published package private(set) var searchResults: [Commit]?
+    @Published package private(set) var isSearching = false
     private var search: Task<Void, Never>?
 
     /// Set while the panel is the one on screen and the sidebar is open.
-    var visible = false {
+    package var visible = false {
         didSet {
             guard visible != oldValue, visible else { return }
             Task { await refresh() }
         }
     }
 
-    private(set) var root: URL?
+    package private(set) var root: URL?
     /// Guards against two reads at once, and remembers that another was
     /// asked for while one ran — `UsageModel` and `DiffModel` both do this.
     private var reading = false
     private var again: Set<Section> = []
 
-    init() {
+    package init() {
         let saved = AppEnvironment.defaults.stringArray(forKey: Self.sectionsKey)
         expanded = saved.map { Set($0.compactMap(Section.init(rawValue:))) } ?? Self.defaultSections
     }
 
     /// The checkout the panel is about — the same one the sidebar's file
     /// tree and the changes pane follow.
-    func setRoot(_ url: URL?) {
+    package func setRoot(_ url: URL?) {
         guard url?.standardizedFileURL != root?.standardizedFileURL else { return }
         root = url
         commits = []
@@ -138,10 +138,10 @@ final class OvergitModel: ObservableObject {
         Task { await refresh() }
     }
 
-    func isExpanded(_ section: Section) -> Bool { expanded.contains(section) }
+    package func isExpanded(_ section: Section) -> Bool { expanded.contains(section) }
 
     /// Opening a section reads it; closing one keeps what it read.
-    func toggle(_ section: Section) {
+    package func toggle(_ section: Section) {
         if expanded.contains(section) {
             expanded.remove(section)
         } else {
@@ -152,7 +152,7 @@ final class OvergitModel: ObservableObject {
     }
 
     /// `sections` nil means every open one.
-    func refresh(_ sections: Set<Section>? = nil) async {
+    package func refresh(_ sections: Set<Section>? = nil) async {
         guard let root, visible else { return }
         let wanted = (sections ?? Set(Section.allCases)).intersection(expanded).filter(\.isRead)
         guard !wanted.isEmpty || sections == nil else { return }
@@ -264,7 +264,7 @@ final class OvergitModel: ObservableObject {
     }
 
     /// The branch's own row, for the overview card's ahead/behind.
-    func branch(named name: String?) -> BranchRef? {
+    package func branch(named name: String?) -> BranchRef? {
         guard let name else { return nil }
         return branches.first { !$0.isRemote && $0.name == name }
     }
@@ -272,9 +272,9 @@ final class OvergitModel: ObservableObject {
     /// The commit a row shows, with the graph row beside it. Both lists are
     /// built from the same read, so they are the same length — but a view
     /// must not crash if a refresh lands between two draws.
-    func graphRow(at index: Int) -> GraphRow? {
+    package func graphRow(at index: Int) -> GraphRow? {
         index < graph.count ? graph[index] : nil
     }
 
-    var gutterLanes: Int { GraphLayout.width(of: graph) }
+    package var gutterLanes: Int { GraphLayout.width(of: graph) }
 }

@@ -3,10 +3,10 @@ import SwiftUI
 /// The graph in the right-hand pane: the open note and what it links (or
 /// the whole vault), a dot a note — bigger the more it links — a click
 /// opening it. Scroll or pinch to zoom, drag to move.
-struct NotesGraphView: View {
-    @ObservedObject var model: NotesModel
-    @ObservedObject var theme: ChromeTheme
-    let open: (URL) -> Void
+package struct NotesGraphView: View {
+    @ObservedObject package var model: NotesModel
+    @ObservedObject package var theme: ChromeTheme
+    package let open: (URL) -> Void
 
     @State private var graph = NotesGraph(nodes: [], edges: [])
     @State private var local = true
@@ -18,9 +18,15 @@ struct NotesGraphView: View {
     @State private var generation = 0
     @State private var layout: Task<NotesGraph, Never>?
 
+    package init(model: NotesModel, theme: ChromeTheme, open: @escaping (URL) -> Void) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.open = open
+    }
+
     private var center: String? { local ? model.current.map(model.path(of:)) : nil }
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             controls
             GeometryReader { geometry in

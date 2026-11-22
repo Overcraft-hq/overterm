@@ -6,13 +6,13 @@ import SwiftUI
 /// mark cleared by looking at the tab left the chip saying "1 need you",
 /// and its list, read afresh when opened, empty.
 @MainActor
-final class AttentionWatch: ObservableObject {
+package final class AttentionWatch: ObservableObject {
     /// Blocked first, then failed, then finished — the order you want to
     /// deal with them in. `Mark` is already ordered by urgency.
-    @Published private(set) var waiting: [Tab] = []
+    @Published package private(set) var waiting: [Tab] = []
     private var subscription: AnyCancellable?
 
-    init(store: TabStore) {
+    package init(store: TabStore) {
         waiting = Self.waiting(in: store.tabs)
         subscription = store.$tabs
             .map { tabs in Publishers.MergeMany(tabs.map { $0.$activity.map { _ in () } }).prepend(()) }
@@ -26,7 +26,7 @@ final class AttentionWatch: ObservableObject {
             }
     }
 
-    static func waiting(in tabs: [Tab]) -> [Tab] {
+    package static func waiting(in tabs: [Tab]) -> [Tab] {
         tabs.filter(\.activity.needsAttention).sorted { $0.activity.mark > $1.activity.mark }
     }
 }
@@ -38,14 +38,14 @@ final class AttentionWatch: ObservableObject {
 /// collapsed or scrolled out of the strip say nothing at all. This counts
 /// them in one place and takes you to any of them — the strip's answer to
 /// "what is outstanding", next to the Dock badge's.
-struct AttentionChip: View {
-    @ObservedObject var store: TabStore
+package struct AttentionChip: View {
+    @ObservedObject package var store: TabStore
     @StateObject private var attention: AttentionWatch
-    @ObservedObject var theme: ChromeTheme
-    let select: (Tab) -> Void
+    @ObservedObject package var theme: ChromeTheme
+    package let select: (Tab) -> Void
     @State private var showing = false
 
-    init(store: TabStore, theme: ChromeTheme, select: @escaping (Tab) -> Void) {
+    package init(store: TabStore, theme: ChromeTheme, select: @escaping (Tab) -> Void) {
         self.store = store
         self.theme = theme
         self.select = select
@@ -54,7 +54,7 @@ struct AttentionChip: View {
 
     private var waiting: [Tab] { attention.waiting }
 
-    var body: some View {
+    package var body: some View {
         if !waiting.isEmpty {
             Button {
                 showing.toggle()

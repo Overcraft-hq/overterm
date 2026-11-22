@@ -3,6 +3,12 @@ import GhosttyKit
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 final class GhosttyInputTests: XCTestCase {
     func testModsRoundTrip() {

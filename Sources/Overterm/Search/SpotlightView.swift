@@ -1,13 +1,20 @@
 import SwiftUI
 
 /// The ⌘F overlay, over the terminal: a query and grouped results.
-struct SpotlightView: View {
-    @ObservedObject var model: SpotlightModel
-    @ObservedObject var theme: ChromeTheme
-    let onChoose: (SpotlightModel.Row) -> Void
-    let onDismiss: () -> Void
+package struct SpotlightView: View {
+    @ObservedObject package var model: SpotlightModel
+    @ObservedObject package var theme: ChromeTheme
+    package let onChoose: (SpotlightModel.Row) -> Void
+    package let onDismiss: () -> Void
 
-    var body: some View {
+    package init(model: SpotlightModel, theme: ChromeTheme, onChoose: @escaping (SpotlightModel.Row) -> Void, onDismiss: @escaping () -> Void) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.onChoose = onChoose
+        self.onDismiss = onDismiss
+    }
+
+    package var body: some View {
         ZStack(alignment: .top) {
             Color.black.opacity(0.001).onTapGesture(perform: onDismiss)
             VStack(spacing: 0) {

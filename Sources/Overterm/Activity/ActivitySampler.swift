@@ -47,43 +47,43 @@ import Foundation
 /// reads join `sample` where its comments say: the meters at the full
 /// level, nettop's listeners every 5th tick while Listening shows (stage
 /// 4), other users' coalitions (stage 5).
-final class ActivitySampler: @unchecked Sendable {
+package final class ActivitySampler: @unchecked Sendable {
     /// What a tick may read.
-    struct Limits: Sendable {
+    package struct Limits: Sendable {
         /// Identities read a tick (7.3).
-        var identitiesPerTick = 200
+        package var identitiesPerTick = 200
         /// …and the time those reads may take, on the kernel's clock: at
         /// the light level 4 ms, a quarter of what makes a tick slow, at
         /// the full level twice its budget — the reads alone never make a
         /// tick slow.
-        var lightReadTime: UInt64 = 4_000_000
-        var fullReadTime: UInt64 = 2 * ActivityCadence.fullBudget
+        package var lightReadTime: UInt64 = 4_000_000
+        package var fullReadTime: UInt64 = 2 * ActivityCadence.fullBudget
         /// Identities whose reads are kept (7.3).
-        var cacheLimit = 8_192
+        package var cacheLimit = 8_192
         /// Security.framework's code signing a tick, where `csops` can't
         /// answer: 1.2–1.4 ms each (measured).
-        var signingFallbacks = 4
+        package var signingFallbacks = 4
         /// The longest interval a CPU rate spans: a baseline older than this
         /// begins again, "—" (`ProcessUsage.maximumInterval`).
-        var baselineAge = ProcessUsage.maximumInterval
+        package var baselineAge = ProcessUsage.maximumInterval
         /// Working folders asked of the file system a tick (7.2): the panes'
         /// agents' first, the rest at a later tick.
-        var foldersPerTick = 200
+        package var foldersPerTick = 200
         /// Processes started since the last tick that a read pane's tree
         /// reads at once at the light level, a tick (7.3): the rest of a
         /// burst a tick later, if they still run.
-        var lightNewPerPane = 16
+        package var lightNewPerPane = 16
 
-        init() {}
+        package init() {}
     }
 
-    let kernel: any ActivityKernel
-    let limits: Limits
+    package let kernel: any ActivityKernel
+    package let limits: Limits
     /// Where every tick runs and the caches live, at `ActivitySampler.qos`
     /// (D-8); another only for the probe that compares them.
-    let queue: DispatchQueue
+    package let queue: DispatchQueue
     /// The working folders, on a queue of their own (7.7).
-    let folders: ProcessFolders
+    package let folders: ProcessFolders
 
     // On `queue` only.
     private var known: [ActivityProcessID: Known] = [:]
@@ -109,7 +109,7 @@ final class ActivitySampler: @unchecked Sendable {
     /// The app's census: what `ActivityMonitor.shared` ticks, and what the
     /// old API's lookups read between its ticks (`ProcessInspector`, 7.8).
     /// It reads nothing until asked.
-    static let app = ActivitySampler()
+    package static let app = ActivitySampler()
 
     private let shared = NSLock()
     // Under `shared`.
@@ -121,9 +121,9 @@ final class ActivitySampler: @unchecked Sendable {
     /// light tick cost about 1.0 mJ there against 1.2–1.3 mJ at `.utility`,
     /// and a full tick the same at both (about 15 mJ): `.utility` saves
     /// nothing.
-    static let qos = DispatchQoS.userInitiated
+    package static let qos = DispatchQoS.userInitiated
 
-    init(kernel: any ActivityKernel = LiveActivityKernel(), limits: Limits = Limits(), qos: DispatchQoS = ActivitySampler.qos) {
+    package init(kernel: any ActivityKernel = LiveActivityKernel(), limits: Limits = Limits(), qos: DispatchQoS = ActivitySampler.qos) {
         self.kernel = kernel
         self.limits = limits
         self.queue = DispatchQueue(label: "Overterm.activity", qos: qos)
@@ -134,18 +134,18 @@ final class ActivitySampler: @unchecked Sendable {
     // MARK: Lookups
 
     /// The latest snapshot any tick made, whoever asked for it.
-    var latest: ActivitySnapshot? { shared.withLock { lastSnapshot } }
+    package var latest: ActivitySnapshot? { shared.withLock { lastSnapshot } }
 
     /// The context the app's monitor last built (`ActivityMonitor.context`):
     /// a lookup's tick reads the app's panes with it, so one tick answers
     /// every pane's lookups until it is a tick old.
-    var appContext: ActivityContext {
+    package var appContext: ActivityContext {
         get { shared.withLock { lastContext } }
         set { shared.withLock { lastContext = newValue } }
     }
 
     /// Whether `snapshot` is younger than `within`, on the kernel's clock.
-    func isFresh(_ snapshot: ActivitySnapshot, within: UInt64) -> Bool {
+    package func isFresh(_ snapshot: ActivitySnapshot, within: UInt64) -> Bool {
         let now = kernel.uptime()
         return now < snapshot.time || now - snapshot.time < within
     }
@@ -165,7 +165,7 @@ final class ActivitySampler: @unchecked Sendable {
     /// of the cadence (`ActivityCadence`) — a window off screen's, whose
     /// app may be napped: slow ticks then say nothing of the Mac, and would
     /// keep its window's cadence stretched a minute after it shows.
-    func lookup(
+    package func lookup(
         within: UInt64, demand: ActivityDemand, context: ActivityContext, rounds: Int = 8, paced: Bool = true,
         answers: (ActivitySnapshot) -> Bool
     ) -> ActivitySnapshot? {
@@ -194,7 +194,7 @@ final class ActivitySampler: @unchecked Sendable {
     /// says false (7.3, the in-flight guard). Nil too when the table can't
     /// be read.
     @discardableResult
-    func submit(_ demand: ActivityDemand, context: ActivityContext, done: @escaping @Sendable (ActivitySnapshot?) -> Void) -> Bool {
+    package func submit(_ demand: ActivityDemand, context: ActivityContext, done: @escaping @Sendable (ActivitySnapshot?) -> Void) -> Bool {
         let free = flight.withLock {
             guard !inFlight else { return false }
             inFlight = true
@@ -213,7 +213,7 @@ final class ActivitySampler: @unchecked Sendable {
     }
 
     /// `submit`, awaited: the snapshot, or nil when skipped or unreadable.
-    func tick(_ demand: ActivityDemand, context: ActivityContext) async -> ActivitySnapshot? {
+    package func tick(_ demand: ActivityDemand, context: ActivityContext) async -> ActivitySnapshot? {
         await withCheckedContinuation { continuation in
             submit(demand, context: context) { continuation.resume(returning: $0) }
         }
@@ -221,7 +221,7 @@ final class ActivitySampler: @unchecked Sendable {
 
     /// A tick, waited for on the calling thread: the tests' and the
     /// probes'. Never from the queue itself.
-    func tickNow(_ demand: ActivityDemand, context: ActivityContext) -> ActivitySnapshot? {
+    package func tickNow(_ demand: ActivityDemand, context: ActivityContext) -> ActivitySnapshot? {
         dispatchPrecondition(condition: .notOnQueue(queue))
         let done = DispatchSemaphore(value: 0)
         let result = Result()
@@ -242,13 +242,13 @@ final class ActivitySampler: @unchecked Sendable {
     }
 
     /// How many identities the cache holds: the tests' and the probes'.
-    var cachedIdentities: Int {
+    package var cachedIdentities: Int {
         dispatchPrecondition(condition: .notOnQueue(queue))
         return queue.sync { known.count }
     }
 
     /// Which identities the cache holds: the tests'.
-    var cached: Set<ActivityProcessID> {
+    package var cached: Set<ActivityProcessID> {
         dispatchPrecondition(condition: .notOnQueue(queue))
         return queue.sync { Set(known.keys) }
     }
@@ -310,7 +310,7 @@ final class ActivitySampler: @unchecked Sendable {
     /// cadence (`lookup`'s). `defers` false: no burst waits a tick
     /// (`Limits.lightNewPerPane`) — a lookup's, whose caller wants the
     /// pane read now, in one round.
-    func sample(_ demand: ActivityDemand, context: ActivityContext, paced: Bool = true, defers: Bool = true) -> ActivitySnapshot? {
+    package func sample(_ demand: ActivityDemand, context: ActivityContext, paced: Bool = true, defers: Bool = true) -> ActivitySnapshot? {
         dispatchPrecondition(condition: .onQueue(queue))
         let cpuStart = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
         let started = kernel.uptime()
@@ -682,7 +682,7 @@ final class ActivitySampler: @unchecked Sendable {
     /// The file is made a native string: an `NSString`'s, made anew each
     /// tick, compared with last tick's — the owners' caches — took the
     /// slow, normalizing path (10.4).
-    static func name(comm: String, procName: String?, path: String?) -> String {
+    package static func name(comm: String, procName: String?, path: String?) -> String {
         let file = path.map { path -> String in
             var file = (path as NSString).lastPathComponent
             file.makeContiguousUTF8()
@@ -716,7 +716,7 @@ final class ActivitySampler: @unchecked Sendable {
     }
 
     /// `root`'s descendants, depth first, oldest child first; at most `limit`.
-    static func depthFirst(below root: ActivityProcessID, in table: ProcessTable, limit: Int = 10_000) -> [ActivityProcessID] {
+    package static func depthFirst(below root: ActivityProcessID, in table: ProcessTable, limit: Int = 10_000) -> [ActivityProcessID] {
         var found: [ActivityProcessID] = []
         var stack = table.children(of: root).reversed().map(\.identity)
         while let next = stack.popLast(), found.count < limit {
@@ -728,7 +728,7 @@ final class ActivitySampler: @unchecked Sendable {
 
     /// Overterm's helpers: the app's children that aren't a pane's `login`
     /// (6.5, rule 2), and everything below them.
-    static func helpers(of context: ActivityContext, in table: ProcessTable) -> [ActivityProcessID] {
+    package static func helpers(of context: ActivityContext, in table: ProcessTable) -> [ActivityProcessID] {
         guard let app = table.process(pid: context.appPID) else { return [] }
         let logins = Set(context.panes.compactMap(\.login))
         var found: [ActivityProcessID] = []
@@ -746,43 +746,43 @@ final class ActivitySampler: @unchecked Sendable {
 /// stretches to 5 s, and the page says so; a minute of normal ticks brings
 /// it back. A tick's cost is its wall time on the kernel's clock: what a
 /// busy Mac makes longer. A value on the sampler's queue.
-struct ActivityCadence: Hashable, Sendable {
+package struct ActivityCadence: Hashable, Sendable {
     /// A tick's budget at each level (7.3). The light one is what it costs
     /// in the app, 2 s apart (docs/design/activity/analysis.md, 15): the
     /// core wakes for each tick, 4.6 ms median for a window of shells,
     /// where 7.3's 2 ms was the work alone, back to back — so a tick over
     /// 8 ms was "slow" at under twice its idle cost, and the cadence
     /// stretched on a Mac that wasn't busy.
-    static let lightBudget: UInt64 = 4_000_000
-    static let fullBudget: UInt64 = 12_000_000
+    package static let lightBudget: UInt64 = 4_000_000
+    package static let fullBudget: UInt64 = 12_000_000
     /// What a light tick's budget grows by for each process whose usage
     /// and sockets it read (15: a member is 7–9 µs of work back to back,
     /// about 6.5 µs more of a tick 2 s apart): a window of agents' tabs
     /// with their MCP servers, 300 members, is no busier a Mac than one of
     /// shells, and its ticks keep their cadence. The full level reads every
     /// process of the user's: its budget is for all of them.
-    static let lightMemberBudget: UInt64 = 10_000
+    package static let lightMemberBudget: UInt64 = 10_000
 
     /// A tick's budget at its level, the light one's with `members`.
-    static func budget(full: Bool, members: Int) -> UInt64 {
+    package static func budget(full: Bool, members: Int) -> UInt64 {
         full ? fullBudget : lightBudget + UInt64(max(members, 0)) * lightMemberBudget
     }
     /// Over this many times its budget, a tick is slow.
-    static let slowFactor: UInt64 = 4
+    package static let slowFactor: UInt64 = 4
     /// Slow ticks in a row that stretch it.
-    static let slowRun = 3
+    package static let slowRun = 3
     /// The cadence stretched.
-    static let stretched: Duration = .seconds(5)
+    package static let stretched: Duration = .seconds(5)
     /// How long it takes normal ticks to bring it back.
-    static let recovery: UInt64 = 60_000_000_000
+    package static let recovery: UInt64 = 60_000_000_000
 
-    private(set) var isStretched = false
+    package private(set) var isStretched = false
     private var slowInARow = 0
     private var lastSlow: UInt64 = 0
 
     /// A tick at `time` that cost `cost` at its level, having read
     /// `members` processes' usage and sockets.
-    mutating func record(cost: UInt64, full: Bool, members: Int = 0, at time: UInt64) {
+    package mutating func record(cost: UInt64, full: Bool, members: Int = 0, at time: UInt64) {
         let budget = Self.budget(full: full, members: members)
         if cost > budget * Self.slowFactor {
             slowInARow += 1

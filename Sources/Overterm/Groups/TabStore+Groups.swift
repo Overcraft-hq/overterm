@@ -15,7 +15,7 @@ extension TabStore {
 
     /// The strip in order: islands and the loose tabs between them. Stashed
     /// groups are not here — their tabs are out of the strip.
-    var strip: [TabStrip] {
+    package var strip: [TabStrip] {
         var result: [TabStrip] = []
         var index = 0
         while index < tabs.count {
@@ -35,19 +35,19 @@ extension TabStore {
         return result
     }
 
-    func group(_ id: TabGroup.ID?) -> TabGroup? {
+    package func group(_ id: TabGroup.ID?) -> TabGroup? {
         guard let id else { return nil }
         return groups.first { $0.id == id }
     }
 
-    func group(of tab: Tab) -> TabGroup? { group(tab.groupID) }
+    package func group(of tab: Tab) -> TabGroup? { group(tab.groupID) }
 
-    func tabs(in group: TabGroup) -> [Tab] { tabs.filter { $0.groupID == group.id } }
+    package func tabs(in group: TabGroup) -> [Tab] { tabs.filter { $0.groupID == group.id } }
 
     /// The group a new tab opened in `directory` should join: the one bound
     /// to that folder, or to a folder it sits under. Only a group whose
     /// binding was ticked is here — `TabGroup.folder` is nil otherwise.
-    func group(forDirectory directory: String?) -> TabGroup? {
+    package func group(forDirectory directory: String?) -> TabGroup? {
         guard let directory else { return nil }
         return
             groups
@@ -62,11 +62,11 @@ extension TabStore {
     }
 
     /// Tabs the strip shows: everything but a stashed group's.
-    var visibleTabs: [Tab] { tabs.filter { group(of: $0)?.isStashed != true } }
+    package var visibleTabs: [Tab] { tabs.filter { group(of: $0)?.isStashed != true } }
 
     /// Where a new tab opened from `anchor`, in `directory`, belongs
     /// (`NewTabGroup` holds the rule; this reads the strip for it).
-    func placementForNewTab(
+    package func placementForNewTab(
         _ opening: NewTabGroup.Opening, after anchor: Tab?, in directory: String?
     ) -> NewTabGroup.Placement {
         let anchorGroup = anchor?.groupID
@@ -86,7 +86,7 @@ extension TabStore {
     /// Puts `members` in a new island, in the order they are in the strip,
     /// where the first of them sits now.
     @discardableResult
-    func addToNewGroup(_ members: [Tab], name: String? = nil, color: TabColor? = nil, folder: String? = nil) -> TabGroup? {
+    package func addToNewGroup(_ members: [Tab], name: String? = nil, color: TabColor? = nil, folder: String? = nil) -> TabGroup? {
         let members = ordered(members)
         guard !members.isEmpty else { return nil }
         // The checkout they share names the island, but it does not bind
@@ -104,7 +104,7 @@ extension TabStore {
     }
 
     /// Moves `members` into `group`, at its end.
-    func add(_ members: [Tab], to group: TabGroup) {
+    package func add(_ members: [Tab], to group: TabGroup) {
         let members = ordered(members).filter { $0.groupID != group.id }
         guard !members.isEmpty else { return }
         for tab in members where tab.isPinned { setPinned(tab, false) }
@@ -125,7 +125,7 @@ extension TabStore {
     }
 
     /// Out of its island, staying where it is in the strip.
-    func removeFromGroup(_ members: [Tab]) {
+    package func removeFromGroup(_ members: [Tab]) {
         let touched = members.filter { $0.groupID != nil }
         guard !touched.isEmpty else { return }
         touched.forEach { $0.groupID = nil }
@@ -133,7 +133,7 @@ extension TabStore {
     }
 
     /// The island goes, its tabs stay where they are.
-    func ungroup(_ group: TabGroup) {
+    package func ungroup(_ group: TabGroup) {
         tabs(in: group).forEach { $0.groupID = nil }
         groups.removeAll { $0.id == group.id }
         normalize()
@@ -143,7 +143,7 @@ extension TabStore {
     /// but not while a session is coming back (`restoring`): its islands are
     /// all there before their tabs, and the first tab of the first one
     /// pruned the rest.
-    func pruneEmptyGroups() {
+    package func pruneEmptyGroups() {
         guard !restoring else { return }
         let alive = Set(tabs.compactMap(\.groupID))
         groups.removeAll { !alive.contains($0.id) && !$0.isStashed }
@@ -152,7 +152,7 @@ extension TabStore {
     // MARK: Moving
 
     /// Moves a whole island so it sits where `target`'s island is.
-    func move(_ group: TabGroup, before target: TabGroup) {
+    package func move(_ group: TabGroup, before target: TabGroup) {
         guard group.id != target.id else { return }
         let moving = tabs(in: group)
         guard !moving.isEmpty, let anchor = tabs.firstIndex(where: { $0.groupID == target.id }) else { return }
@@ -166,7 +166,7 @@ extension TabStore {
 
     // MARK: Collapsing, stashing, focusing
 
-    func setCollapsed(_ group: TabGroup, _ collapsed: Bool) {
+    package func setCollapsed(_ group: TabGroup, _ collapsed: Bool) {
         guard group.isCollapsed != collapsed else { return }
         group.isCollapsed = collapsed
         // A collapsed island must not keep the selection: the selected tab
@@ -179,7 +179,7 @@ extension TabStore {
 
     /// Out of the strip; the processes carry on. The selection moves out
     /// first, so nothing invisible stays selected.
-    func stash(_ group: TabGroup) {
+    package func stash(_ group: TabGroup) {
         guard !group.isStashed else { return }
         if let selected, selected.groupID == group.id { selectFirstOutside(group) }
         group.isStashed = true
@@ -187,7 +187,7 @@ extension TabStore {
         objectWillChange.send()
     }
 
-    func restore(_ group: TabGroup) {
+    package func restore(_ group: TabGroup) {
         guard group.isStashed else { return }
         group.isStashed = false
         group.stashedAt = nil
@@ -195,11 +195,11 @@ extension TabStore {
         objectWillChange.send()
     }
 
-    var stashedGroups: [TabGroup] { groups.filter(\.isStashed) }
+    package var stashedGroups: [TabGroup] { groups.filter(\.isStashed) }
 
     /// Only this group's tabs are in the strip; the rest are out of the way
     /// without being stashed. Nil shows everything again.
-    func setFocused(_ group: TabGroup?) {
+    package func setFocused(_ group: TabGroup?) {
         guard focusedGroupID != group?.id else { return }
         focusedGroupID = group?.id
         if let group, let selected, selected.groupID != group.id, let first = tabs(in: group).first {
@@ -207,10 +207,10 @@ extension TabStore {
         }
     }
 
-    var focusedGroup: TabGroup? { group(focusedGroupID) }
+    package var focusedGroup: TabGroup? { group(focusedGroupID) }
 
     /// What the strip draws: focus narrows it to one island.
-    var focusedStrip: [TabStrip] {
+    package var focusedStrip: [TabStrip] {
         guard let id = focusedGroupID else { return strip }
         return strip.filter { if case .group(let g, _) = $0 { return g.id == id } else { return false } }
     }
@@ -225,7 +225,7 @@ extension TabStore {
     /// The horizontal span an island occupies in the strip: its chip and
     /// its tabs together. Pure — the drop rule is geometry and should be
     /// readable without a strip to run it against.
-    nonisolated static func span(chip: CGRect?, members: [CGRect]) -> ClosedRange<CGFloat>? {
+    package nonisolated static func span(chip: CGRect?, members: [CGRect]) -> ClosedRange<CGFloat>? {
         let rects = ([chip].compactMap { $0 }) + members
         guard let first = rects.first else { return nil }
         let low = rects.reduce(first.minX) { Swift.min($0, $1.minX) }
@@ -236,12 +236,12 @@ extension TabStore {
     /// Which island a pointer at `x` is over, if any. The innermost match
     /// would be ambiguous between neighbours, so spans never overlap: the
     /// first containing one wins and the strip lays them out in order.
-    nonisolated static func island(at x: CGFloat, spans: [(id: TabGroup.ID, span: ClosedRange<CGFloat>)]) -> TabGroup.ID? {
+    package nonisolated static func island(at x: CGFloat, spans: [(id: TabGroup.ID, span: ClosedRange<CGFloat>)]) -> TabGroup.ID? {
         spans.first { $0.span.contains(x) }?.id
     }
 
     /// Where each island is right now, in strip coordinates.
-    var islandSpans: [(id: TabGroup.ID, span: ClosedRange<CGFloat>)] {
+    package var islandSpans: [(id: TabGroup.ID, span: ClosedRange<CGFloat>)] {
         groups.compactMap { group in
             let members = tabs(in: group).compactMap { tabFrames[$0.id] }
             guard let span = Self.span(chip: groupChipFrames[group.id], members: members) else { return nil }
@@ -253,7 +253,7 @@ extension TabStore {
     /// leaves the one it was in when it is dropped between them. Ordering
     /// happens first and `normalize` then pulls the island's run back
     /// together around it, so the tab keeps the place the pointer gave it.
-    func drop(_ tab: Tab, atPointerX x: CGFloat) {
+    package func drop(_ tab: Tab, atPointerX x: CGFloat) {
         let target = Self.island(at: x, spans: islandSpans)
         if tab.groupID != target { tab.groupID = target }
         dragMove(tab, toPointerX: x)
@@ -262,7 +262,7 @@ extension TabStore {
 
     /// A whole island dragged by its chip, left or right, past loose tabs
     /// and other islands alike.
-    func dragMove(_ group: TabGroup, toPointerX x: CGFloat) {
+    package func dragMove(_ group: TabGroup, toPointerX x: CGFloat) {
         let moving = tabs(in: group)
         guard !moving.isEmpty else { return }
         // The strip as pieces — each other island whole, each loose tab —
@@ -294,7 +294,7 @@ extension TabStore {
         normalize()
     }
 
-    func normalize() {
+    package func normalize() {
         var seen: [TabGroup.ID] = []
         var runs: [TabGroup.ID: [Tab]] = [:]
         var order: [Tab] = []

@@ -3,47 +3,47 @@ import AppKit
 /// One tab: its terminals (one, or several split panes) and what the tab
 /// bar shows for it.
 @MainActor
-final class Tab: ObservableObject, Identifiable {
-    let id = UUID()
+package final class Tab: ObservableObject, Identifiable {
+    package let id = UUID()
     /// The pane with the keyboard — the tab's only terminal until it is
     /// split. Typing, search, the title and the directory follow it; what
     /// concerns the whole tab (closing, its processes) goes over `terminals`.
-    @Published private(set) var terminal: TerminalView
+    @Published package private(set) var terminal: TerminalView
     /// The tab's panes.
-    @Published private(set) var splits: SplitTree<TerminalView>
+    @Published package private(set) var splits: SplitTree<TerminalView>
     /// A pane shown alone, filling the tab (toggle_split_zoom).
-    @Published var zoomed: TerminalView?
+    @Published package var zoomed: TerminalView?
 
-    var terminals: [TerminalView] { splits.leaves }
-    var isSplit: Bool { terminals.count > 1 }
+    package var terminals: [TerminalView] { splits.leaves }
+    package var isSplit: Bool { terminals.count > 1 }
 
     /// What the shell last set via OSC 0/2 (shell integration sets it to the
     /// running command or the cwd).
-    @Published var shellTitle: String
+    @Published package var shellTitle: String
 
     /// The shell's current directory, as last reported.
-    @Published var workingDirectory: String?
+    @Published package var workingDirectory: String?
 
     /// Where the tab's agent is working, when that differs
     /// from the shell — Claude Code chdirs into a worktree on EnterWorktree.
     /// The census's light tick reads it for every tab of a window on screen
     /// (`TerminalWindowController.takeLightTick`).
-    @Published var agentDirectory: String?
+    @Published package var agentDirectory: String?
 
     /// A checkout the user attached to this tab: tree, diff and worktree
     /// highlight show it instead of following the shell or the agent.
-    @Published var attachedCheckout: URL?
+    @Published package var attachedCheckout: URL?
 
     /// What the sidebar and diff show for this tab: an attached checkout,
     /// else where its agent works, else the shell's directory.
-    var checkoutSource: (root: URL, reason: CheckoutReason)? {
+    package var checkoutSource: (root: URL, reason: CheckoutReason)? {
         Self.checkoutSource(workingDirectory: workingDirectory, agentDirectory: agentDirectory, attached: attachedCheckout, agent: agent)
     }
 
     /// The same, from given values — for subscribers: @Published emits
     /// before the property is set, so reading the tab back in a sink sees
     /// the old value.
-    static func checkoutSource(
+    package static func checkoutSource(
         workingDirectory: String?, agentDirectory: String?, attached: URL?, agent: Agent?
     ) -> (root: URL, reason: CheckoutReason)? {
         if let attached { return (attached, .attached) }
@@ -52,37 +52,37 @@ final class Tab: ObservableObject, Identifiable {
     }
 
     /// A name the user gave the tab; overrides the shell title while set.
-    @Published var customTitle: String?
+    @Published package var customTitle: String?
 
-    @Published var color: TabColor?
+    @Published package var color: TabColor?
     /// Pinned tabs sit at the left of the strip and are not closed by ⌘W or
     /// the close-others/right actions — only by their process exiting.
     /// Set through TabStore.setPinned, which keeps pinned tabs first.
-    @Published var isPinned = false
+    @Published package var isPinned = false
 
-    @Published var activity = TabActivity()
+    @Published package var activity = TabActivity()
 
     /// What its checkout deploys has failed (attention marks, 3.13): the
     /// newest first — Ask Why on the mark asks about the first.
-    @Published var kubeAlerts: [KubeAttentionAlert] = []
+    @Published package var kubeAlertsStorage: [AnyHashable] = []
     /// Why its checkout's failures won't mark it now ("not watched");
     /// nil while they will, or nothing is bound.
-    @Published var kubeNotWatched: String?
+    @Published package var kubeNotWatched: String?
     /// One of its panes asks for a Terraform write (TerraformPrompt, 3.3):
     /// its tab's mark and the Inbox's card; never answered by Overterm.
-    @Published var terraformAsk: TerraformAsk?
+    @Published package var terraformAskStorage: Any?
     /// What an agent that sent no signal asks on one of its panes' screens
     /// (`AgentScreenCheck`), as last read; nil when nothing.
-    var screenAsk: String?
+    package var screenAsk: String?
 
     /// The island this tab belongs to, if any. The group is looked up in
     /// `TabStore.groups`; the store keeps a group's tabs contiguous.
-    @Published var groupID: TabGroup.ID?
+    @Published package var groupID: TabGroup.ID?
 
     /// The agent this tab was opened for, if any.
-    let agent: Agent?
+    package let agent: Agent?
 
-    init(terminal: TerminalView, agent: Agent? = nil) {
+    package init(terminal: TerminalView, agent: Agent? = nil) {
         self.terminal = terminal
         self.splits = .leaf(terminal)
         self.agent = agent
@@ -94,48 +94,51 @@ final class Tab: ObservableObject, Identifiable {
     /// (`TerminalWindowController.takeLightTick`, docs/design/activity/
     /// analysis.md 7.3): every tab of a window on screen, a tab never
     /// selected too, every 2 s; a hidden window's catch up as it shows.
-    @Published var ports: [ListeningPort] = []
+    @Published package var ports: [ListeningPort] = []
     /// `ports` by the pane whose tree listens on each: a pane's header says
     /// its own, never its neighbour's server.
-    @Published var panePorts: [ObjectIdentifier: [ListeningPort]] = [:]
+    @Published package var panePorts: [ObjectIdentifier: [ListeningPort]] = [:]
 
-    func ports(of pane: TerminalView) -> [ListeningPort] { panePorts[ObjectIdentifier(pane)] ?? [] }
+    package func ports(of pane: TerminalView) -> [ListeningPort] { panePorts[ObjectIdentifier(pane)] ?? [] }
     /// What the compose projects of its checkout publish (DockerModel).
     /// Apart from `ports`: they don't make the tab a server.
-    @Published var containerPorts: [ListeningPort] = []
+    @Published package var containerPorts: [ListeningPort] = []
     /// The Kubernetes port-forwards started from this tab (`KubeForwards`):
     /// pills naming the pod each is pinned to. Apart from `ports` too.
-    @Published var forwardPorts: [ListeningPort] = []
+    @Published package var forwardPorts: [ListeningPort] = []
     /// The ports a pane's pill freed, watched until they are
     /// (`TerminalWindowController.watchFreed`): the header says when.
-    @Published var portFreeing: [PortFreeing] = []
+    @Published package var portFreeing: [PortFreeing] = []
 
-    func portFreeing(of pane: TerminalView) -> [PortFreeing] { portFreeing.filter { $0.pane == ObjectIdentifier(pane) } }
+    package func portFreeing(of pane: TerminalView) -> [PortFreeing] { portFreeing.filter { $0.pane == ObjectIdentifier(pane) } }
 
     /// What this tab is, for the glyph in its icon tile.
-    var kind: TabKind {
+    package var kind: TabKind {
         TabKind.of(
             agent: agent, title: shellTitle, hasPort: !ports.isEmpty, pinned: kubeBadge != nil, terraform: terminals.contains { $0.terraformRoot != nil })
     }
 
-    /// The Kubernetes context the focused pane is pinned to — Terminal in
-    /// this context. A pane moved in from another tab keeps its own, so
-    /// the tab as a whole is `kubeBadge`.
-    var kubePin: KubeTerminalPin? { terminal.kubePin }
+    /// What the strip says of the panes' contexts: one, `mixed`, or a lost
+    /// pin (Kubernetes' `Tab.kubeBadgeHook`).
+    package var kubeBadge: KubeTabBadge? { Tab.kubeBadgeOf?(self) }
 
-    /// What the strip says of the panes' contexts: one, `mixed`, or a lost pin.
-    var kubeBadge: KubeTabBadge? { KubeTabBadge.of(terminals.map { KubeTabBadge.Pane(pin: $0.kubePin, lost: $0.kubePinLost) }) }
+    /// Kubernetes' reading of a tab's pins (`KubeTabBadge.of`).
+    package static var kubeBadgeOf: (@MainActor (Tab) -> KubeTabBadge?)? {
+        FeatureHooks.ensure()
+        return kubeBadgeHook
+    }
+    package nonisolated(unsafe) static var kubeBadgeHook: (@MainActor (Tab) -> KubeTabBadge?)?
 
     /// What the strip shows: the name you gave it, else the shell's title
     /// shortened to the folder itself. Shells (and themes) set the title to
     /// the whole path, which fills a tab with `~/Documents/opensource/`
     /// and hides the part that tells them apart.
-    var title: String { customTitle ?? Self.shortened(shellTitle) }
+    package var title: String { customTitle ?? Self.shortened(shellTitle) }
 
     /// The last component of a title that is nothing but a path; anything
     /// else is left alone — `pnpm dev` and `nvim src/main.swift` say what
     /// they say, and cutting them would lose it.
-    static func shortened(_ title: String) -> String {
+    package static func shortened(_ title: String) -> String {
         let trimmed = title.trimmingCharacters(in: .whitespaces)
         guard trimmed.contains("/"), !trimmed.contains(" ") else { return title }
         // A path and nothing else: /src/app, ~/src/app, src/app, with any
@@ -147,7 +150,7 @@ final class Tab: ObservableObject, Identifiable {
     }
 
     /// `pane` has the keyboard now; the tab shows its title and directory.
-    func focus(_ pane: TerminalView) {
+    package func focus(_ pane: TerminalView) {
         guard pane !== terminal, splits.contains(pane) else { return }
         terminal = pane
         if let title = pane.title { shellTitle = title }
@@ -156,7 +159,7 @@ final class Tab: ObservableObject, Identifiable {
 
     /// A new layout. The focused pane stays focused while it is still in
     /// it, else the first pane is; a zoomed pane that left unzooms.
-    func setSplits(_ splits: SplitTree<TerminalView>) {
+    package func setSplits(_ splits: SplitTree<TerminalView>) {
         self.splits = splits
         if let zoomed, !splits.contains(zoomed) { self.zoomed = nil }
         if !splits.contains(terminal), let first = splits.leaves.first { focus(first) }
@@ -164,7 +167,7 @@ final class Tab: ObservableObject, Identifiable {
 }
 
 /// Why a tab shows the checkout it shows.
-enum CheckoutReason: Equatable {
+package enum CheckoutReason: Equatable {
     case shell
     case agent(Agent)
     case attached

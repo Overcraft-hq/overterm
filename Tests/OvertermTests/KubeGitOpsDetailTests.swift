@@ -2,6 +2,12 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// A GitOps object's detail and its Ask Why (docs/design/kubernetes/
 /// gitops.md, 2.9, 6.2, G3): the header's state sentence, sources,

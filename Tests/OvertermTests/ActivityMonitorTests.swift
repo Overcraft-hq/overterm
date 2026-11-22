@@ -3,6 +3,12 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The census's readers (docs/design/activity/analysis.md, 7.1, 7.3, 7.9)
 /// over a fake Mac: wants counted by owner, one tick for every reader at

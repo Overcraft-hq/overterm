@@ -4,6 +4,12 @@ import SwiftUI
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The dependency tree in a detail's Overview (docs/design/kubernetes/
 /// analysis.md, 3.7, stage 3b) and Argo CD's and Flux's trees: which kinds

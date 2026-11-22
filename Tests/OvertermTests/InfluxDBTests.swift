@@ -2,6 +2,12 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// InfluxDB: the console's statements and checks, InfluxQL's JSON and
 /// Flux's annotated CSV as rows, the version from `/ping` — offline; the

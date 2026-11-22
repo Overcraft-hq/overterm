@@ -2,6 +2,12 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// A context's saved queries (docs/design/kubernetes/metrics.md, decision
 /// 11; stage M8d): read from `kubernetes.contexts`' `charts`, checked

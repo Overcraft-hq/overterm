@@ -11,20 +11,20 @@ import Darwin
 /// lies — and only over at least `minimumInterval`: two readers 10 ms
 /// apart would read noise. An identity's first sample has no rate: "—",
 /// never 0.
-enum ProcessUsage {
+package enum ProcessUsage {
     /// 250 ms (7.3).
-    static let minimumInterval: UInt64 = 250_000_000
+    package static let minimumInterval: UInt64 = 250_000_000
     /// The longest interval a rate spans: three times the slowest cadence
     /// the census ticks at (5 s, `activity.interval`'s longest and a busy
     /// Mac's stretched one). Past it, a rate would be the average over a gap
     /// shown as now — the page opened again 20 minutes after it closed, an
     /// agent's census after a quiet hour — so `UsageBaselines` begins
     /// again: "—" for one sample (6.11: a gap is a gap).
-    static let maximumInterval: UInt64 = 15_000_000_000
+    package static let maximumInterval: UInt64 = 15_000_000_000
 
     /// `pid`'s usage now; nil when refused or gone. A plain synchronous call
     /// for the sampler's queue.
-    static func read(_ pid: pid_t, kernel: some ActivityKernel) -> ActivityUsage? {
+    package static func read(_ pid: pid_t, kernel: some ActivityKernel) -> ActivityUsage? {
         kernel.usage(of: pid)
     }
 
@@ -32,7 +32,7 @@ enum ProcessUsage {
     /// there is no `previous` (a first sample), or less than
     /// `minimumInterval` lies between them, or a counter went back (not the
     /// same process's).
-    static func rates(from previous: ActivityUsage?, to current: ActivityUsage) -> ActivityRates? {
+    package static func rates(from previous: ActivityUsage?, to current: ActivityUsage) -> ActivityRates? {
         guard let previous, current.time > previous.time, current.time - previous.time >= minimumInterval,
             current.cpuTime >= previous.cpuTime, current.idleWakeups >= previous.idleWakeups,
             current.interruptWakeups >= previous.interruptWakeups, current.diskRead >= previous.diskRead,
@@ -68,24 +68,24 @@ enum ProcessUsage {
 /// after the baseline begins again, "—": kept for every live identity, a
 /// baseline is as old as the last time anything asked about it. A value
 /// for the sampler's queue.
-struct UsageBaselines: Sendable {
+package struct UsageBaselines: Sendable {
     /// The longest interval a rate spans (`ProcessUsage.maximumInterval`).
-    let maximumAge: UInt64
+    package let maximumAge: UInt64
     private var samples: [ActivityProcessID: ActivityUsage] = [:]
     private var published: [ActivityProcessID: ActivityRates] = [:]
 
-    init(maximumAge: UInt64 = ProcessUsage.maximumInterval) {
+    package init(maximumAge: UInt64 = ProcessUsage.maximumInterval) {
         self.maximumAge = maximumAge
     }
 
     /// How many identities have a baseline.
-    var count: Int { samples.count }
+    package var count: Int { samples.count }
 
     /// The rates to show for `identity` after `usage`: new ones over the
     /// interval since its baseline, else the last published; nil for its
     /// first sample, and for one further from its baseline than
     /// `maximumAge` — which begins again from it.
-    mutating func record(_ usage: ActivityUsage, for identity: ActivityProcessID) -> ActivityRates? {
+    package mutating func record(_ usage: ActivityUsage, for identity: ActivityProcessID) -> ActivityRates? {
         guard let baseline = samples[identity] else {
             samples[identity] = usage
             return nil
@@ -107,10 +107,10 @@ struct UsageBaselines: Sendable {
     }
 
     /// The rates last published for `identity`, without a new sample.
-    func rates(of identity: ActivityProcessID) -> ActivityRates? { published[identity] }
+    package func rates(of identity: ActivityProcessID) -> ActivityRates? { published[identity] }
 
     /// Forget what is no longer in the process table — and only that.
-    mutating func prune(keeping live: Set<ActivityProcessID>) {
+    package mutating func prune(keeping live: Set<ActivityProcessID>) {
         samples = samples.filter { live.contains($0.key) }
         published = published.filter { live.contains($0.key) }
     }

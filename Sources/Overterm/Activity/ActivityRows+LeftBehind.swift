@@ -7,7 +7,7 @@ import Foundation
 extension ActivityRows {
     /// Where a Left Behind row is grouped: its checkout's path, or one of
     /// the fixed keys.
-    static func leftBehindGroup(_ row: ActivityProcessRow, tabs: [UUID: ActivityTabFacts]) -> String {
+    package static func leftBehindGroup(_ row: ActivityProcessRow, tabs: [UUID: ActivityTabFacts]) -> String {
         guard let sign = row.owner?.leftBehind else { return "-" }
         if let checkout = sign.checkout ?? row.owner?.tab.flatMap({ tabs[$0]?.checkout }) { return checkout }
         if sign == .testRun { return "~test" }
@@ -15,7 +15,7 @@ extension ActivityRows {
         return "-"
     }
 
-    static func leftBehindTitle(_ key: String) -> String {
+    package static func leftBehindTitle(_ key: String) -> String {
         switch key {
         case "~test": "Left by a test run"
         case "~earlier": "Left by an earlier Overterm"
@@ -25,7 +25,7 @@ extension ActivityRows {
     }
 
     /// The section's list: `rows` already scoped and filtered.
-    static func leftBehindList(_ rows: [ActivityProcessRow], tabs: [UUID: ActivityTabFacts], options: Options) -> [ActivityListItem] {
+    package static func leftBehindList(_ rows: [ActivityProcessRow], tabs: [UUID: ActivityTabFacts], options: Options) -> [ActivityListItem] {
         let left = rows.filter { $0.owner?.place == .leftBehind }
         guard !left.isEmpty else { return [] }
         let groups = Dictionary(grouping: left) { leftBehindGroup($0, tabs: tabs) }
@@ -64,7 +64,7 @@ extension ActivityRows {
     /// The rows "Stop All Certain in This Checkout…" takes for `row`'s
     /// group (6.9): certain ones only, never one kept, ignoring SIGHUP,
     /// detached, an app or a terraform write — a probably row is picked by hand.
-    static func certainInGroup(of row: ActivityProcessRow, in rows: [ActivityProcessRow], tabs: [UUID: ActivityTabFacts]) -> [ActivityProcessRow] {
+    package static func certainInGroup(of row: ActivityProcessRow, in rows: [ActivityProcessRow], tabs: [UUID: ActivityTabFacts]) -> [ActivityProcessRow] {
         let key = leftBehindGroup(row, tabs: tabs)
         return rows.filter { $0.owner?.place == .leftBehind && $0.bulkEligible && !$0.ended && leftBehindGroup($0, tabs: tabs) == key }
     }
@@ -73,7 +73,7 @@ extension ActivityRows {
 /// Left Behind's own verbs on a row (6.9): Keep, and Stop All Certain in
 /// This Checkout… — each process's Stop is the class's, in the list above.
 extension ActivityPageModel {
-    func leftBehindVerbs(for row: ActivityProcessRow) -> [ResourceVerb] {
+    package func leftBehindVerbs(for row: ActivityProcessRow) -> [ResourceVerb] {
         guard let owner = row.owner, owner.place == .leftBehind || owner.kept else { return [] }
         var verbs: [ResourceVerb] = []
         verbs.append(

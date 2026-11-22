@@ -3,6 +3,12 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// D-29 (docs/design/activity/analysis.md, 6.9): the kept and stopped
 /// identities across a crash — pid and start only, 0600, never through a

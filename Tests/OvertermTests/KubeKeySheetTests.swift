@@ -1,6 +1,12 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// `?` on the Kubernetes page: the keys grouped, generated from
 /// `KubernetesKey` and the window's Kubernetes commands. Pure.

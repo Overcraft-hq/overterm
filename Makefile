@@ -50,16 +50,21 @@ test-changed:
 		*) echo "Running: $$filter"; $(MAKE) test TEST_FILTER="$$filter" ;; \
 	esac
 
-## e2e: build the app, then run every end-to-end scenario in it (opens windows briefly)
-## (CONFIG=debug: against a debug build's app, as the nightly in CI does)
-e2e: app
+## e2e: build the app with its scenarios (a release build with the E2E trait,
+## which a shipped one lacks), then run every end-to-end scenario in it (opens
+## windows briefly). CONFIG=debug: against a debug build's app, as the nightly
+## in CI does.
+e2e:
+	$(MAKE) app TRAITS=E2E
 	OVERTERM_E2E_TESTS=1 swift test --filter OvertermE2ETests
 
 ## app: assemble and ad-hoc sign $(APP) from the release build; CONFIG=debug
-## from the debug build (never shipped: the nightly E2E's, Scripts/make-app.sh)
+## from the debug build (never shipped: the nightly E2E's, Scripts/make-app.sh);
+## TRAITS=E2E with the scenarios in a release build (make e2e's)
 CONFIG ?= release
+TRAITS ?=
 app:
-	CONFIG=$(CONFIG) ./Scripts/make-app.sh
+	CONFIG=$(CONFIG) TRAITS=$(TRAITS) ./Scripts/make-app.sh
 
 ## dmg: pack the built $(APP) as dist/Overterm-$(VERSION).dmg (VERSION as for make app)
 dmg:

@@ -13,12 +13,12 @@ import Combine
 /// Rows become points through the cell's height, which libghostty reports,
 /// and the viewport's top row, which it pushes on every scroll. Both move
 /// on the same beat, so the frame stays with its output.
-final class BlockFrameView: NSView {
+package final class BlockFrameView: NSView {
     private let blocks: PaneBlocks
     private let cellHeight: () -> CGFloat
     private var watch: AnyCancellable?
 
-    init(blocks: PaneBlocks, cellHeight: @escaping () -> CGFloat) {
+    package init(blocks: PaneBlocks, cellHeight: @escaping () -> CGFloat) {
         self.blocks = blocks
         self.cellHeight = cellHeight
         super.init(frame: .zero)
@@ -29,13 +29,13 @@ final class BlockFrameView: NSView {
         }
     }
 
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+    package required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
-    override var isFlipped: Bool { true }
+    package override var isFlipped: Bool { true }
     /// Never takes the mouse: the terminal underneath owns every point.
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+    package override func hitTest(_ point: NSPoint) -> NSView? { nil }
 
-    override func draw(_ dirtyRect: NSRect) {
+    package override func draw(_ dirtyRect: NSRect) {
         let ledger = blocks.ledger
         let cell = cellHeight()
         guard cell > 0, ledger.rows > 0 else { return }

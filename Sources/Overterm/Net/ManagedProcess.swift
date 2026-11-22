@@ -11,39 +11,53 @@ import Foundation
 /// started by their own pids (found before it is closed, by pid and start
 /// time: one that left the group); never by a pattern (`pkill -f` once
 /// killed the shell running the tests).
-final class ManagedProcess: @unchecked Sendable {
+package final class ManagedProcess: @unchecked Sendable {
     /// What says it is ready.
-    enum Readiness: Sendable {
+    package enum Readiness: Sendable {
         /// A unix socket at this path takes a connection.
         case socket(String)
         /// A line on its stdout says so (`Starting to serve on …`).
         case line(@Sendable (String) -> Bool)
     }
 
-    struct Launch: Sendable {
-        var executable: URL
-        var arguments: [String]
+    package struct Launch: Sendable {
+        package var executable: URL
+        package var arguments: [String]
         /// Nil: this process's own.
-        var environment: [String: String]? = nil
-        var directory: URL? = nil
-        var readiness: Readiness
+        package var environment: [String: String]? = nil
+        package var directory: URL? = nil
+        package var readiness: Readiness
         /// How long it may take to become ready.
-        var timeout: TimeInterval = 20
+        package var timeout: TimeInterval = 20
         /// Files it makes (its socket): removed before it starts — one left
         /// by a process that died is no use — and when it is closed.
-        var removing: [String] = []
+        package var removing: [String] = []
         /// Which of Overterm's children it is: `OVERTERM_HELPER`, beside the
         /// run's `OVERTERM_RUN` (docs/design/activity/analysis.md, D-15).
-        var helper: OvertermRun.Helper = .managed
+        package var helper: OvertermRun.Helper = .managed
+
+        package init(
+            executable: URL, arguments: [String], environment: [String: String]? = nil, directory: URL? = nil, readiness: Readiness, timeout: TimeInterval = 20, removing: [String] = [],
+            helper: OvertermRun.Helper = .managed
+        ) {
+            self.executable = executable
+            self.arguments = arguments
+            self.environment = environment
+            self.directory = directory
+            self.readiness = readiness
+            self.timeout = timeout
+            self.removing = removing
+            self.helper = helper
+        }
 
         /// The environment it is started with: the launch's, or this
         /// process's, marked as this run's `helper`.
-        var markedEnvironment: [String: String] {
+        package var markedEnvironment: [String: String] {
             OvertermRun.current.marking(environment ?? ProcessInfo.processInfo.environment, helper: helper)
         }
     }
 
-    enum Failure: Error, Equatable {
+    package enum Failure: Error, Equatable {
         /// It couldn't be started at all (no such executable).
         case couldNotStart(String)
         /// It exited before it was ready: its status, and what it said on stderr.
@@ -62,8 +76,8 @@ final class ManagedProcess: @unchecked Sendable {
     /// (`Process` held them before).
     private let pipes: [Pipe]
     /// What it said on stderr, and on stdout when a line says it is ready.
-    let stderr: Output
-    let stdout: Output
+    package let stderr: Output
+    package let stdout: Output
 
     private init(process: ProcessGroup.Child, removing: [String], pipes: [Pipe], stderr: Output, stdout: Output) {
         self.process = process
@@ -74,9 +88,9 @@ final class ManagedProcess: @unchecked Sendable {
         self.stdout = stdout
     }
 
-    var isRunning: Bool { process.isRunning }
-    var pid: pid_t { process.pid }
-    var terminationStatus: Int32 { process.terminationStatus }
+    package var isRunning: Bool { process.isRunning }
+    package var pid: pid_t { process.pid }
+    package var terminationStatus: Int32 { process.terminationStatus }
 
     /// Ends it — SIGTERM to its process group, and to what it started that
     /// left it (an exec plugin kubectl ran: kubelogin waiting for the
@@ -93,11 +107,11 @@ final class ManagedProcess: @unchecked Sendable {
     /// reads the process table, and `KubeForwards.end` closes a forward on
     /// the main thread (docs/design/activity/analysis.md, 2.4 item 3).
     /// `closeAll` waits for them.
-    func close() { close(grace: 2) }
+    package func close() { close(grace: 2) }
 
     /// `table`: how the family's table is read — on `closing`, never the
     /// caller's thread; the tests' records where it ran.
-    func close(grace: TimeInterval, table: @escaping @Sendable () -> ProcessTable? = { ProcessTable.read(LiveActivityKernel()) }) {
+    package func close(grace: TimeInterval, table: @escaping @Sendable () -> ProcessTable? = { ProcessTable.read(LiveActivityKernel()) }) {
         let process = self.process
         let started = self.started
         Self.closing.async(execute: Self.ending(process, started: started, grace: grace, table: table))
@@ -107,7 +121,7 @@ final class ManagedProcess: @unchecked Sendable {
 
     /// Where closes find their families and signal them, one after another
     /// (a test holds it to see a close return before its work runs).
-    static let closing = DispatchQueue(label: "\(AppEnvironment.bundleIdentifier).managed-process-close", qos: .userInitiated)
+    package static let closing = DispatchQueue(label: "\(AppEnvironment.bundleIdentifier).managed-process-close", qos: .userInitiated)
 
     /// The close's work, for `closing`: the family found — its group's
     /// leader by its start, what it started from one read of the process
@@ -133,14 +147,14 @@ final class ManagedProcess: @unchecked Sendable {
     /// table read now, where each node was a read of its own (16 ms a node
     /// as a walk of every pid). Now, not a tick old: a close counts on what
     /// has just started. Blocking: never the main thread.
-    static func descendants(of pid: pid_t, limit: Int = 64) -> [(pid: pid_t, start: UInt64)] {
+    package static func descendants(of pid: pid_t, limit: Int = 64) -> [(pid: pid_t, start: UInt64)] {
         guard let table = ProcessTable.read(LiveActivityKernel()) else { return [] }
         return descendants(of: pid, limit: limit, in: table)
     }
 
     /// The same, from `table`: whatever holds `pid` there, then everything
     /// below it, parents linked by start time; a zombie left out. Pure.
-    static func descendants(of pid: pid_t, limit: Int = 64, in table: ProcessTable) -> [(pid: pid_t, start: UInt64)] {
+    package static func descendants(of pid: pid_t, limit: Int = 64, in table: ProcessTable) -> [(pid: pid_t, start: UInt64)] {
         guard let root = table.process(pid: pid) else { return [] }
         let live = table.descendants(of: root.identity).filter { !$0.isZombie }.prefix(max(limit, 0))
         return live.map { (pid: $0.pid, start: $0.identity.start) }
@@ -168,7 +182,7 @@ final class ManagedProcess: @unchecked Sendable {
     /// Starts it, and returns once it is ready — or throws why not, having
     /// closed it: cancelled while it waits, it is closed at once and
     /// `CancellationError` thrown.
-    static func start(_ launch: Launch) async throws -> ManagedProcess {
+    package static func start(_ launch: Launch) async throws -> ManagedProcess {
         launch.removing.forEach { unlink($0) }
         let stderr = Output()
         let stdout = Output()
@@ -226,7 +240,7 @@ final class ManagedProcess: @unchecked Sendable {
         throw Failure.timedOut
     }
 
-    static func isReady(_ readiness: Readiness, stdout: Output) -> Bool {
+    package static func isReady(_ readiness: Readiness, stdout: Output) -> Bool {
         switch readiness {
         case .socket(let path): accepts(path)
         case .line(let says): stdout.text.components(separatedBy: .newlines).contains(where: says)
@@ -250,7 +264,7 @@ final class ManagedProcess: @unchecked Sendable {
     }
 
     /// Whether a unix socket at `path` takes a connection.
-    static func accepts(_ path: String) -> Bool {
+    package static func accepts(_ path: String) -> Bool {
         let fd = Darwin.socket(AF_UNIX, SOCK_STREAM, 0)
         guard fd >= 0 else { return false }
         defer { Darwin.close(fd) }
@@ -274,7 +288,7 @@ final class ManagedProcess: @unchecked Sendable {
     private static let lock = NSLock()
 
     /// Closes every one; at quit.
-    static func closeAll() {
+    package static func closeAll() {
         let all = lock.withLock {
             defer { live = [] }
             return live
@@ -286,39 +300,39 @@ final class ManagedProcess: @unchecked Sendable {
     }
 
     /// The pids of those running, for tests.
-    static var livePIDs: [pid_t] { lock.withLock { live.filter(\.isRunning).map(\.pid) } }
+    package static var livePIDs: [pid_t] { lock.withLock { live.filter(\.isRunning).map(\.pid) } }
 
     /// Those running, for an end-to-end run to see each gone after quitting.
-    static var liveProcesses: [ManagedProcess] { lock.withLock { live.filter(\.isRunning) } }
+    package static var liveProcesses: [ManagedProcess] { lock.withLock { live.filter(\.isRunning) } }
 
     /// The process groups of those not closed yet, each its leader's pid,
     /// while the group is still its own (`groupIsOurs`): what one started
     /// stays in it — an exec plugin even once kubectl exited and it was
     /// reparented —, so Activity's signal path refuses it as Overterm's
     /// own (docs/design/activity/analysis.md, 6.5 rule 2). Any thread.
-    static var openGroups: [pid_t] { lock.withLock { live }.filter { groupIsOurs($0.process) }.map(\.pid) }
+    package static var openGroups: [pid_t] { lock.withLock { live }.filter { groupIsOurs($0.process) }.map(\.pid) }
 
     /// What it said on a stream — its last 16 KB: a process lives as long
     /// as the app, and ssh adds a line for every refused connection.
-    final class Output: @unchecked Sendable {
-        static let limit = 16 << 10
+    package final class Output: @unchecked Sendable {
+        package static let limit = 16 << 10
         private let lock = NSLock()
         private var data = Data()
         private var ended = false
-        func append(_ more: Data) {
+        package func append(_ more: Data) {
             lock.withLock {
                 data.append(more)
                 if data.count > Self.limit { data = Data(data.suffix(Self.limit)) }
             }
         }
-        func finish() { lock.withLock { ended = true } }
-        var finished: Bool { lock.withLock { ended } }
-        var text: String { lock.withLock { String(decoding: data, as: UTF8.self) } }
+        package func finish() { lock.withLock { ended = true } }
+        package var finished: Bool { lock.withLock { ended } }
+        package var text: String { lock.withLock { String(decoding: data, as: UTF8.self) } }
     }
 }
 
 /// What a pool keeps: something over a managed process.
-protocol ManagedResource: AnyObject, Sendable {
+package protocol ManagedResource: AnyObject, Sendable {
     var isOpen: Bool { get }
     func close()
 }
@@ -326,19 +340,19 @@ protocol ManagedResource: AnyObject, Sendable {
 /// One process a key (a host, a context), opened by the first use and again
 /// on the next use after it has gone (the network changed, the Mac slept);
 /// uses that arrive while it opens wait for that one.
-actor ManagedProcessPool<Key: Hashable & Sendable, Value: ManagedResource> {
+package actor ManagedProcessPool<Key: Hashable & Sendable, Value: ManagedResource> {
     private let open: @Sendable (Key) async throws -> Value
     private var values: [Key: Value] = [:]
     private var opening: [Key: Task<Value, Error>] = [:]
     /// Every one opened, for `closeAll` from outside the actor.
     private let all = Opened()
 
-    init(open: @escaping @Sendable (Key) async throws -> Value) {
+    package init(open: @escaping @Sendable (Key) async throws -> Value) {
         self.open = open
     }
 
     /// The open one for `key`, opened now if there is none.
-    func value(for key: Key) async throws -> Value {
+    package func value(for key: Key) async throws -> Value {
         if let value = values[key], value.isOpen { return value }
         values[key]?.close()
         values[key] = nil
@@ -359,15 +373,15 @@ actor ManagedProcessPool<Key: Hashable & Sendable, Value: ManagedResource> {
     }
 
     /// The one for `key` if it was opened, open or not.
-    func existing(_ key: Key) -> Value? { values[key] }
+    package func existing(_ key: Key) -> Value? { values[key] }
 
     /// Closes the one for `key`, when it is no longer wanted.
-    func close(_ key: Key) {
+    package func close(_ key: Key) {
         values.removeValue(forKey: key)?.close()
     }
 
     /// Closes every one this pool opened.
-    nonisolated func closeAll() { all.closeAll() }
+    package nonisolated func closeAll() { all.closeAll() }
 
     private final class Opened: @unchecked Sendable {
         private let lock = NSLock()

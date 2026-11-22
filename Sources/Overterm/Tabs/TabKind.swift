@@ -13,12 +13,12 @@ import Foundation
 /// truncated anyway.
 ///
 /// Pure, so the rule can be read and tested without a process tree.
-enum TabKind: String, Equatable {
+package enum TabKind: String, Equatable {
     case agent, server, shell, ssh, container, pod, kubernetes, terraform
 
     /// The SF Symbol for the tile. An agent tab uses its own agent's symbol
     /// instead (`Agent.symbol`); this is the fallback.
-    var symbol: String {
+    package var symbol: String {
         switch self {
         case .agent: "sparkles"
         case .server: "cube"
@@ -31,7 +31,7 @@ enum TabKind: String, Equatable {
         }
     }
 
-    var name: String {
+    package var name: String {
         switch self {
         case .agent: "Agent"
         case .server: "Server"
@@ -51,7 +51,7 @@ enum TabKind: String, Equatable {
     /// its shell's `KUBECONFIG` pins a context — what that tab is, unless
     /// it is in a container, a pod or on another machine now. `terraform`:
     /// opened as Terminal in this root (Terraform's panel).
-    static func of(agent: Agent?, title: String, hasPort: Bool, pinned: Bool = false, terraform: Bool = false) -> TabKind {
+    package static func of(agent: Agent?, title: String, hasPort: Bool, pinned: Bool = false, terraform: Bool = false) -> TabKind {
         if agent != nil { return .agent }
         if isContainer(title) { return .container }
         if isPod(title) { return .pod }

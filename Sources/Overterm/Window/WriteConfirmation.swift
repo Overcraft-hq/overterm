@@ -7,42 +7,61 @@ import AppKit
 /// object's name, then the button and Cancel. Nothing is sent until the
 /// button; what was typed goes back for the caller to check.
 @MainActor
-struct WriteConfirmation {
-    var title: String
+package struct WriteConfirmation {
+    /// How a production scope begins, wherever one is asked.
+    package nonisolated static let productionMark = "PRODUCTION · "
+
+    package var title: String
     /// The context and namespace (or another scope) the write changes;
     /// nil when there is none to say.
-    var scope: String?
-    var production = false
-    var detail: String
-    var button: String
-    var cancel = "Cancel"
+    package var scope: String?
+    package var production = false
+    package var detail: String
+    package var button: String
+    package var cancel = "Cancel"
     /// The name to type, shown as the field's placeholder; nil, no field.
-    var typedName: String?
+    package var typedName: String?
     /// An image, in a field of its own above the name's: prefilled, and
     /// what it says when the button is pressed goes back with the name.
-    var image: String? = nil
+    package var image: String? = nil
     /// The critical style: production, or a name asked.
-    var critical = false
+    package var critical = false
     /// Who asks, when an agent's MCP call does (`MCPAsker`): the tab and
     /// the agent, "asked through MCP". `ask(on:)` fills it in for a call.
-    var asker: String? = nil
+    package var asker: String? = nil
+
+    package init(
+        title: String, scope: String? = nil, production: Bool = false, detail: String, button: String, cancel: String = "Cancel", typedName: String? = nil, image: String? = nil,
+        critical: Bool = false, asker: String? = nil
+    ) {
+        self.title = title
+        self.scope = scope
+        self.production = production
+        self.detail = detail
+        self.button = button
+        self.cancel = cancel
+        self.typedName = typedName
+        self.image = image
+        self.critical = critical
+        self.asker = asker
+    }
 
     /// Production's colour, as the Kubernetes page draws it.
-    static let productionRed = NSColor(srgbRed: 0.86, green: 0.17, blue: 0.17, alpha: 1)
+    package static let productionRed = NSColor(srgbRed: 0.86, green: 0.17, blue: 0.17, alpha: 1)
     /// The asker's line's identifier, for the scenario.
-    static let askerLabel = "write.asker"
+    package static let askerLabel = "write.asker"
     /// The typed-name field's identifier, for the scenario.
-    static let typedNameField = "write.typedName"
+    package static let typedNameField = "write.typedName"
     /// The image field's identifier, for the scenario.
-    static let imageField = "write.image"
+    package static let imageField = "write.image"
     /// A detail longer than this goes in a scroll view, all of it.
-    static let shortDetail = 600
+    package static let shortDetail = 600
 
     /// A detail whose first line is a production scope ("PRODUCTION ·
     /// fake-prod · namespace shop"): that line as the scope, drawn red.
-    static func splittingProduction(title: String, detail: String, button: String) -> WriteConfirmation {
+    package static func splittingProduction(title: String, detail: String, button: String) -> WriteConfirmation {
         let lines = detail.split(separator: "\n", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
-        guard let first = lines.first, first.hasPrefix(KubeWriteConfirmation.productionMark) else {
+        guard let first = lines.first, first.hasPrefix(WriteConfirmation.productionMark) else {
             return WriteConfirmation(title: title, detail: detail, button: button)
         }
         return WriteConfirmation(
@@ -50,13 +69,13 @@ struct WriteConfirmation {
     }
 
     /// The alert, and its typed-name field when one is asked.
-    func alert() -> (NSAlert, NSTextField?) {
+    package func alert() -> (NSAlert, NSTextField?) {
         let (alert, field, _) = alertWithImage()
         return (alert, field)
     }
 
     /// The alert, its typed-name field and its image field, each when asked.
-    func alertWithImage() -> (NSAlert, NSTextField?, NSTextField?) {
+    package func alertWithImage() -> (NSAlert, NSTextField?, NSTextField?) {
         let alert = NSAlert()
         alert.messageText = title
         alert.alertStyle = critical || production ? .critical : .warning
@@ -142,12 +161,12 @@ struct WriteConfirmation {
 
     /// Asked on `window` as a sheet: `then` gets what was typed ("" when no
     /// name was asked) once the button is pressed; Cancel calls nothing.
-    func present(on window: NSWindow, then: @escaping (String) -> Void) {
+    package func present(on window: NSWindow, then: @escaping (String) -> Void) {
         presentAnswer(on: window) { then($0.typed) }
     }
 
     /// The same, with the image field's text too (nil when it had none).
-    func presentAnswer(on window: NSWindow, then: @escaping (KubeWriteAnswer) -> Void) {
+    package func presentAnswer(on window: NSWindow, then: @escaping (KubeWriteAnswer) -> Void) {
         let (alert, field, imageField) = alertWithImage()
         alert.beginSheetModal(for: window) { response in
             guard response == .alertFirstButtonReturn else { return }
@@ -157,7 +176,7 @@ struct WriteConfirmation {
 
     /// Asked on `window` (else on its own): what was typed, nil when cancelled.
     /// An agent's MCP call's confirmation says so, naming its tab and agent.
-    func ask(on window: NSWindow?) async -> String? {
+    package func ask(on window: NSWindow?) async -> String? {
         var asked = self
         if asked.asker == nil { asked.asker = await MCPAsker.current() }
         let (alert, field) = asked.alert()
@@ -167,4 +186,19 @@ struct WriteConfirmation {
         }
         return response == .alertFirstButtonReturn ? field?.stringValue ?? "" : nil
     }
+}
+
+/// What a write's confirmation answered, once its button was pressed: the
+/// name typed ("" when none was asked), and the image field's text where
+/// it had one. A string literal is a typed name alone.
+package struct KubeWriteAnswer: Equatable, Sendable, ExpressibleByStringLiteral {
+    package var typed: String
+    package var image: String?
+
+    package init(typed: String, image: String? = nil) {
+        self.typed = typed
+        self.image = image
+    }
+
+    package init(stringLiteral value: String) { self.init(typed: value) }
 }

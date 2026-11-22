@@ -7,17 +7,26 @@ import SwiftUI
 /// something that is already running — ⌘D makes an empty one. The zones
 /// are shown rather than guessed at because five targets in one rectangle
 /// is one too many to feel out.
-struct DropZonesView: View {
+package struct DropZonesView: View {
     /// The pane being dropped onto, in this view's coordinates.
-    let pane: CGRect
-    let active: DropZone?
+    package let pane: CGRect
+    package let active: DropZone?
     /// What is being dragged, shown following the pointer.
-    let title: String
-    let symbol: String
-    let pointer: CGPoint
-    @ObservedObject var theme: ChromeTheme
+    package let title: String
+    package let symbol: String
+    package let pointer: CGPoint
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package init(pane: CGRect, active: DropZone?, title: String, symbol: String, pointer: CGPoint, theme: ChromeTheme) {
+        self.pane = pane
+        self.active = active
+        self.title = title
+        self.symbol = symbol
+        self.pointer = pointer
+        self._theme = ObservedObject(wrappedValue: theme)
+    }
+
+    package var body: some View {
         ZStack(alignment: .topLeading) {
             Color.clear
             ForEach(DropZone.allCases, id: \.self) { zone in

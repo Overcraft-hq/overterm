@@ -2,6 +2,12 @@ import Darwin
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// A pane's pty as the census compares it (docs/design/activity/
 /// analysis.md, 7.10): the device of the path libghostty names, what

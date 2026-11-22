@@ -1,0 +1,221 @@
+import AppKit
+import SwiftUI
+
+/// The detail's tabs.
+package enum ContainerTab: String, CaseIterable, Identifiable {
+    case overview, logs, files, inspect, stats
+
+    package var id: String { rawValue }
+    package var title: String { rawValue.capitalized }
+}
+
+/// The Files tab: a folder at a time, a file to the editor (saved back
+/// into the container), or to the Mac (`DockerFolderList`); or what
+/// changed since it started.
+package struct DockerFilesPane: View {
+    package let container: ContainerSummary
+    @ObservedObject package var session: ContainerSession
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DockerActions
+    @State private var showingChanges = false
+
+    package var body: some View {
+        Group {
+            if showingChanges {
+                VStack(spacing: 0) {
+                    HStack(spacing: 2) {
+                        picker
+                        Spacer(minLength: 6)
+                    }
+                    .padding(.horizontal, 12)
+                    .frame(height: ChromeMetrics.row(28))
+                    Rectangle().fill(theme.border).frame(height: 1)
+                    changes
+                }
+            } else {
+                DockerFolderList(browser: session, source: .of(container), theme: theme, actions: actions, leading: AnyView(picker))
+            }
+        }
+        .onChange(of: showingChanges) { on in if on { session.loadChanges() } }
+    }
+
+    private var picker: some View {
+        Picker("", selection: $showingChanges) {
+            Text("Folders").tag(false)
+            Text("Changes").tag(true)
+        }
+        .pickerStyle(.segmented).labelsHidden().fixedSize().controlSize(.small)
+        .help("What it wrote, added and deleted since it started")
+    }
+
+    /// Since it started: added, modified, deleted — a file a click from
+    /// the editor.
+    private var changes: some View {
+        List {
+            if let changes = session.changes {
+                if changes.isEmpty { Text("Nothing changed since it started.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3) }
+                ForEach(changes, id: \.Path) { change in
+                    let (mark, color): (String, Color) =
+                        switch change.Kind {
+                        case .added: ("A", TabStatusStyle.done)
+                        case .modified: ("M", TabStatusStyle.waiting)
+                        case .deleted: ("D", TabStatusStyle.failed)
+                        }
+                    Button {
+                        if change.Kind != .deleted { actions.openFile(.of(container), change.Path) }
+                    } label: {
+                        HStack(spacing: 8) {
+                            Text(verbatim: mark).font(.system(size: ChromeMetrics.text(11), weight: .bold, design: .monospaced)).foregroundStyle(color).frame(width: 14)
+                            Text(verbatim: change.Path).font(.system(size: ChromeMetrics.text(12), design: .monospaced)).foregroundStyle(theme.text).lineLimit(1)
+                                .truncationMode(.head)
+                            Spacer()
+                        }
+                        .frame(height: ChromeMetrics.row(20))
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                }
+            } else {
+                ProgressView().controlSize(.small)
+            }
+        }
+        .listStyle(.plain)
+        .scrollContentBackground(.hidden)
+        .accessibilityIdentifier("docker.changes")
+    }
+}
+
+/// The Inspect tab: the engine's JSON, secrets taken out.
+package struct DockerInspectPane: View {
+    @ObservedObject package var session: ContainerSession
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: DockerActions
+
+    package var body: some View {
+        VStack(spacing: 0) {
+            HStack {
+                Text("As the engine says it, secrets hidden").font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text3)
+                Spacer()
+                Button("Copy") { if let json = session.json { actions.copy(json) } }.font(.system(size: ChromeMetrics.text(11.5))).disabled(session.json == nil)
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+            Rectangle().fill(theme.border).frame(height: 1)
+            if let json = session.json {
+                let lines = json.split(separator: "\n", omittingEmptySubsequences: false)
+                LogTextView(
+                    count: lines.count, revision: json.hashValue, render: { range in lines[range].map { Self.line(String($0), theme: theme) } },
+                    wrap: false, follow: false, identifier: "docker.text")
+            } else {
+                ProgressView().controlSize(.small).frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .onAppear { session.loadJSON() }
+    }
+
+    /// A key in the text colour, its value dimmer.
+    package static func line(_ text: String, theme: ChromeTheme) -> NSAttributedString {
+        let out = NSMutableAttributedString(string: text, attributes: [.font: LogStyle.font, .foregroundColor: theme.textNS.withAlphaComponent(0.7)])
+        if let range = text.range(of: #"^\s*"[^"]+"(?= :)"#, options: .regularExpression) {
+            out.addAttribute(.foregroundColor, value: theme.textNS, range: NSRange(range, in: text))
+        }
+        return out
+    }
+}
+
+/// The Stats tab: a sample a second while it is open.
+package struct DockerStatsPane: View {
+    package let container: ContainerSummary
+    @ObservedObject package var session: ContainerSession
+    @ObservedObject package var theme: ChromeTheme
+
+    package var body: some View {
+        ScrollView {
+            if container.state != .running {
+                Text("Stats are read while it runs.").font(.system(size: ChromeMetrics.text(12))).foregroundStyle(theme.text3).padding(20)
+            } else if let usage = session.usage {
+                VStack(spacing: 12) {
+                    tile(
+                        "CPU", String(format: "%.1f%%", usage.cpuPercent), detail: "of one core",
+                        values: session.history.map(\.cpuPercent))
+                    tile(
+                        "Memory", Self.bytes(usage.memoryBytes),
+                        detail: usage.memoryLimit > 0 ? String(format: "of %@ — %.1f%%", Self.bytes(usage.memoryLimit), usage.memoryPercent) : "",
+                        values: session.history.map { Double($0.memoryBytes) })
+                    HStack(alignment: .top, spacing: 12) {
+                        tile("Network", "↓ \(Self.bytes(usage.networkIn))", detail: "↑ \(Self.bytes(usage.networkOut))", values: [])
+                        tile("Disk", "R \(Self.bytes(usage.diskRead))", detail: "W \(Self.bytes(usage.diskWrite))", values: [])
+                        tile("Processes", "\(usage.processes)", detail: " ", values: [])
+                    }
+                    .fixedSize(horizontal: false, vertical: true)
+                    if let top = session.processes { processes(top) }
+                }
+                .padding(16)
+            } else {
+                ProgressView().controlSize(.small).padding(20)
+            }
+        }
+        .accessibilityIdentifier("docker.stats")
+    }
+
+    package static func bytes(_ count: Int) -> String { DockerBytes.string(count, memory: true) }
+
+    /// `top`'s table: its own columns, its command last and widest.
+    private func processes(_ top: (titles: [String], rows: [[String]])) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text("Processes").font(.system(size: ChromeMetrics.text(11), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+            Grid(alignment: .leading, horizontalSpacing: 12, verticalSpacing: 3) {
+                GridRow {
+                    ForEach(Array(top.titles.enumerated()), id: \.offset) { _, title in
+                        Text(verbatim: title).font(.system(size: ChromeMetrics.text(10.5), weight: .semibold)).foregroundStyle(theme.text3)
+                    }
+                }
+                ForEach(Array(top.rows.prefix(100).enumerated()), id: \.offset) { _, row in
+                    GridRow {
+                        ForEach(Array(row.enumerated()), id: \.offset) { index, cell in
+                            Text(verbatim: cell).font(.system(size: ChromeMetrics.text(11), design: .monospaced)).foregroundStyle(theme.text)
+                                .lineLimit(1).truncationMode(.middle).textSelection(.enabled)
+                                .frame(maxWidth: index == row.count - 1 ? .infinity : nil, alignment: .leading)
+                        }
+                    }
+                }
+            }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(theme.rowHover.opacity(0.6)))
+        .accessibilityIdentifier("docker.processes")
+    }
+
+    private func tile(_ title: String, _ value: String, detail: String, values: [Double]) -> some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(title).font(.system(size: ChromeMetrics.text(11), weight: .semibold)).textCase(.uppercase).foregroundStyle(theme.text3)
+            Text(verbatim: value).font(.system(size: ChromeMetrics.text(18), weight: .medium, design: .rounded)).foregroundStyle(theme.text).monospacedDigit()
+            if !detail.isEmpty { Text(verbatim: detail).font(.system(size: ChromeMetrics.text(11))).foregroundStyle(theme.text2) }
+            if values.count > 1 { DockerSparkline(values: values, color: TabStatusStyle.working).frame(height: ChromeMetrics.row(34)).padding(.top, 4) }
+        }
+        .padding(12)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .background(RoundedRectangle(cornerRadius: 8).fill(theme.rowHover.opacity(0.6)))
+    }
+}
+
+/// The last minute as a line, its lowest at the bottom.
+package struct DockerSparkline: View {
+    package let values: [Double]
+    package let color: Color
+
+    package var body: some View {
+        GeometryReader { geometry in
+            let top = max(values.max() ?? 1, 0.0001)
+            let step = geometry.size.width / CGFloat(max(values.count - 1, 1))
+            Path { path in
+                for (index, value) in values.enumerated() {
+                    let point = CGPoint(x: CGFloat(index) * step, y: geometry.size.height * (1 - CGFloat(value / top)))
+                    if index == 0 { path.move(to: point) } else { path.addLine(to: point) }
+                }
+            }
+            .stroke(color, lineWidth: 1.5)
+        }
+    }
+}

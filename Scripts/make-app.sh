@@ -5,6 +5,10 @@
 # (.github/workflows/e2e-nightly.yml), which reuses CI's debug build cache
 # rather than spend 35–60 min on a release build. Never shipped: releases,
 # make install and make dmg take the default.
+#
+# TRAITS=E2E builds the end-to-end scenarios and the tests' fake servers into
+# a release build (Package.swift's trait; a debug build always has them):
+# make e2e's app. make-dmg.sh refuses such a bundle.
 set -euo pipefail
 
 CONFIG="${CONFIG:-release}"
@@ -15,6 +19,19 @@ case "$CONFIG" in
     exit 1
     ;;
 esac
+TRAITS="${TRAITS:-}"
+case "$TRAITS" in
+  "" | E2E) ;;
+  *)
+    echo "error: TRAITS is empty or E2E, not '$TRAITS'" >&2
+    exit 1
+    ;;
+esac
+# Only a release build is given the trait: a debug build defines E2E itself,
+# and the flag would make it another build than make test's.
+TRAIT_ARGS=()
+if [[ -n "$TRAITS" && "$CONFIG" == release ]]; then TRAIT_ARGS=(--traits "$TRAITS"); fi
+if [[ "$CONFIG" == debug ]]; then TRAITS=E2E; fi
 
 APP_NAME="Overterm"
 # The SPM executable product (Package.swift: the OvertermApp target, its
@@ -50,10 +67,10 @@ fi
 BUILD_DATE="$(date +%Y-%m-%d)"
 echo "==> Overterm $VERSION ($BUILD), commit $COMMIT, $BUILD_DATE"
 
-echo "==> swift build -c $CONFIG"
-swift build -c "$CONFIG"
+echo "==> swift build -c $CONFIG ${TRAIT_ARGS[*]+${TRAIT_ARGS[*]}}"
+swift build -c "$CONFIG" ${TRAIT_ARGS[@]+"${TRAIT_ARGS[@]}"}
 
-BIN_PATH="$(swift build -c "$CONFIG" --show-bin-path)/${PRODUCT}"
+BIN_PATH="$(swift build -c "$CONFIG" ${TRAIT_ARGS[@]+"${TRAIT_ARGS[@]}"} --show-bin-path)/${PRODUCT}"
 if [[ ! -x "$BIN_PATH" ]]; then
   echo "error: built binary not found at $BIN_PATH" >&2
   exit 1
@@ -69,7 +86,7 @@ SDK_VERSION="$(xcrun --sdk macosx --show-sdk-version)"
 if [[ "$(recorded_sdk "$BIN_PATH")" != "$SDK_VERSION" ]]; then
   MIN_OS="$(sed -nE 's/.*\.macOS\(\.v([0-9]+)\).*/\1.0/p' Package.swift | head -1)"
   echo "==> linking again against the macOS $SDK_VERSION SDK (it said $(recorded_sdk "$BIN_PATH"))"
-  swift build -c "$CONFIG" -Xlinker -platform_version -Xlinker macos -Xlinker "$MIN_OS" -Xlinker "$SDK_VERSION"
+  swift build -c "$CONFIG" ${TRAIT_ARGS[@]+"${TRAIT_ARGS[@]}"} -Xlinker -platform_version -Xlinker macos -Xlinker "$MIN_OS" -Xlinker "$SDK_VERSION"
   if [[ "$(recorded_sdk "$BIN_PATH")" != "$SDK_VERSION" ]]; then
     echo "error: $BIN_PATH says SDK $(recorded_sdk "$BIN_PATH"), not $SDK_VERSION" >&2
     exit 1
@@ -142,6 +159,9 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <!-- release or debug: make-dmg.sh packs only a release one. -->
     <key>OvertermBuildConfiguration</key>
     <string>${CONFIG}</string>
+    <!-- E2E when the scenarios are in it: make-dmg.sh packs none. -->
+    <key>OvertermBuildTraits</key>
+    <string>${TRAITS}</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleIconFile</key>

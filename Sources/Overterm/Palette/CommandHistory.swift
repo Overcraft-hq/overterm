@@ -1,23 +1,23 @@
 import Foundation
 
 /// A command you have run, and how it went.
-struct HistoryEntry: Codable, Identifiable, Equatable {
-    var command: String
+package struct HistoryEntry: Codable, Identifiable, Equatable {
+    package var command: String
     /// Where it was run, for "this folder first".
-    var folder: String?
-    var exit: Int?
-    var seconds: Double?
-    var lastRun: Date
-    var runs: Int
+    package var folder: String?
+    package var exit: Int?
+    package var seconds: Double?
+    package var lastRun: Date
+    package var runs: Int
 
-    var id: String { command }
-    var failed: Bool { (exit ?? 0) != 0 }
+    package var id: String { command }
+    package var failed: Bool { (exit ?? 0) != 0 }
 
     /// "2 h ago", "yesterday" — coarse, like a stashed group's.
-    func ago(_ now: Date = Date()) -> String { TabGroup.stashedAgo(lastRun, now: now) }
+    package func ago(_ now: Date = Date()) -> String { TabGroup.stashedAgo(lastRun, now: now) }
 
     /// "exit 0 · 48 s", for the detail pane.
-    var outcome: String {
+    package var outcome: String {
         var parts: [String] = []
         if let exit { parts.append("exit \(exit)") }
         if let seconds { parts.append(seconds < 10 ? String(format: "%.1f s", seconds) : "\(Int(seconds.rounded())) s") }
@@ -37,16 +37,16 @@ struct HistoryEntry: Codable, Identifiable, Equatable {
 /// every command with its exit, its duration and its folder) and seeded
 /// once from the shell's own history file so it is not empty on day one.
 @MainActor
-final class CommandHistory: ObservableObject {
+package final class CommandHistory: ObservableObject {
     /// Past this the oldest go. Large enough to cover weeks, small enough
     /// to rank in a keystroke.
-    static nonisolated let limit = 2000
+    package static nonisolated let limit = 2000
 
-    @Published private(set) var entries: [HistoryEntry] = []
+    @Published package private(set) var entries: [HistoryEntry] = []
     private let url: URL
     private var saving: Task<Void, Never>?
 
-    init(url: URL = AppEnvironment.supportDirectory.appendingPathComponent("history.json")) {
+    package init(url: URL = AppEnvironment.supportDirectory.appendingPathComponent("history.json")) {
         self.url = url
         if let data = try? Data(contentsOf: url), let saved = try? JSONDecoder().decode([HistoryEntry].self, from: data) {
             entries = saved
@@ -59,7 +59,7 @@ final class CommandHistory: ObservableObject {
     /// A command that finished. The same command run again is the same
     /// entry, moved to the front with its new outcome — a list with
     /// `git status` in it forty times is not a history, it is a wall.
-    func record(_ block: CommandBlock, folder: String?) {
+    package func record(_ block: CommandBlock, folder: String?) {
         let command = block.command.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !command.isEmpty, !CommandLedger.isPrompt(command, cwd: folder) else { return }
         var next = entries
@@ -76,7 +76,7 @@ final class CommandHistory: ObservableObject {
 
     /// What the palette shows for a query. Pure, because the ordering is
     /// the whole feature.
-    nonisolated static func rank(
+    package nonisolated static func rank(
         _ entries: [HistoryEntry], query: String, folder: String?, now: Date, limit: Int = 12
     ) -> [HistoryEntry] {
         let scored: [(HistoryEntry, Int)] = entries.compactMap { entry in
@@ -101,7 +101,7 @@ final class CommandHistory: ObservableObject {
         return scored.sorted { $0.1 > $1.1 }.prefix(limit).map(\.0)
     }
 
-    func ranked(query: String, folder: String?, limit: Int = 12) -> [HistoryEntry] {
+    package func ranked(query: String, folder: String?, limit: Int = 12) -> [HistoryEntry] {
         Self.rank(entries, query: query, folder: folder, now: Date(), limit: limit)
     }
 
@@ -110,7 +110,7 @@ final class CommandHistory: ObservableObject {
     /// The shell's own history, once, so the palette is useful before you
     /// have run anything in Overterm. No folders, no exit codes — that is
     /// all the file has.
-    nonisolated static func fromShellHistory(
+    package nonisolated static func fromShellHistory(
         file: URL? = nil, now: Date = Date(), limit: Int = 2000
     ) -> [HistoryEntry] {
         let candidates =
@@ -140,7 +140,7 @@ final class CommandHistory: ObservableObject {
     }
 
     /// `: 1699999999:0;git status` — zsh's extended format, when it is on.
-    nonisolated static func unextended(_ line: String) -> String {
+    package nonisolated static func unextended(_ line: String) -> String {
         let line = line.trimmingCharacters(in: .whitespaces)
         guard line.hasPrefix(":"), let semicolon = line.firstIndex(of: ";") else { return line }
         return String(line[line.index(after: semicolon)...]).trimmingCharacters(in: .whitespaces)

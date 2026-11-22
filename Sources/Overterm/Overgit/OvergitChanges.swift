@@ -9,15 +9,15 @@ import SwiftUI
 /// title bar's badge already keeps, and staging goes through it too
 /// (CLAUDE.md: what a panel can get from a model the window has, it must
 /// not ask git for a second time).
-struct OvergitChanges: View {
-    @ObservedObject var diff: DiffModel
-    @ObservedObject var theme: ChromeTheme
+package struct OvergitChanges: View {
+    @ObservedObject package var diff: DiffModel
+    @ObservedObject package var theme: ChromeTheme
     /// How far the branch is ahead of its upstream (Push shows then).
-    let ahead: Int
-    let hasUpstream: Bool
-    let onOpen: (ChangedFile) -> Void
+    package let ahead: Int
+    package let hasUpstream: Bool
+    package let onOpen: (ChangedFile) -> Void
     /// Committed or pushed: the panel's history reads again.
-    let onCommitted: () -> Void
+    package let onCommitted: () -> Void
     @State private var message = ""
     @State private var amend = false
     @State private var busy: String?
@@ -27,7 +27,7 @@ struct OvergitChanges: View {
     private var staged: [ChangedFile] { diff.files.filter(\.isStaged) }
     private var unstaged: [ChangedFile] { diff.files.filter { !$0.isStaged || $0.hasUnstaged } }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             if diff.files.isEmpty {
                 OvergitEmpty(text: "No changes to commit", theme: theme)
@@ -218,11 +218,11 @@ private struct ChangeRow: View {
 }
 
 /// The search over Overgit's commits, with what it understands in its help.
-struct CommitSearchField: View {
-    @ObservedObject var model: OvergitModel
-    @ObservedObject var theme: ChromeTheme
+package struct CommitSearchField: View {
+    @ObservedObject package var model: OvergitModel
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "magnifyingglass").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
             TextField("Search commits", text: $model.commitQuery)
@@ -262,11 +262,11 @@ struct CommitSearchField: View {
 }
 
 /// The Branches section's filter, as the commits have theirs.
-struct BranchSearchField: View {
-    @ObservedObject var model: OvergitModel
-    @ObservedObject var theme: ChromeTheme
+package struct BranchSearchField: View {
+    @ObservedObject package var model: OvergitModel
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package var body: some View {
         HStack(spacing: 4) {
             Image(systemName: "magnifyingglass").font(.system(size: ChromeMetrics.text(10))).foregroundStyle(theme.text3)
             TextField("Filter branches", text: $model.branchQuery)

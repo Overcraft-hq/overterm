@@ -4,6 +4,12 @@ import UniformTypeIdentifiers
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Files and folders into and out of a container: the archive a drop
 /// becomes, read back in any cut, written to the Mac without leaving its

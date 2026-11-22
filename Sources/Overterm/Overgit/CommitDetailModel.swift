@@ -8,39 +8,41 @@ import Foundation
 /// in the same card `git diff` does. Nothing here stages or discards —
 /// what it shows has already happened.
 @MainActor
-final class CommitDetailModel: ObservableObject {
+package final class CommitDetailModel: ObservableObject {
+    package init() {}
+
     /// As many files as the changes pane diffs, for the same reason: a
     /// commit that moved a vendored tree would otherwise run git a
     /// thousand times.
-    static let maxFiles = DiffModel.maxDiffedFiles
+    package static let maxFiles = DiffModel.maxDiffedFiles
 
-    enum Phase: Equatable {
+    package enum Phase: Equatable {
         case idle, loading, loaded
         case failed(String)
     }
 
-    @Published private(set) var phase: Phase = .idle
-    @Published private(set) var detail: CommitDetail?
-    @Published private(set) var diffs: [String: DiffModel.FileDiff] = [:]
-    @Published private(set) var folded: Set<String> = []
+    @Published package private(set) var phase: Phase = .idle
+    @Published package private(set) var detail: CommitDetail?
+    @Published package private(set) var diffs: [String: DiffModel.FileDiff] = [:]
+    @Published package private(set) var folded: Set<String> = []
     /// The sha asked for, whether or not it has arrived.
-    @Published private(set) var sha: String?
+    @Published package private(set) var sha: String?
     private var root: URL?
 
     /// Shown only while the pane is on it: a commit's files are a dozen
     /// `git show` calls, and nobody should pay them for a pane behind
     /// another tab.
-    var visible = false {
+    package var visible = false {
         didSet {
             guard visible != oldValue, visible else { return }
             Task { await load() }
         }
     }
 
-    var shortSHA: String? { detail?.commit.shortSHA ?? sha.map { String($0.prefix(7)) } }
+    package var shortSHA: String? { detail?.commit.shortSHA ?? sha.map { String($0.prefix(7)) } }
 
     /// Picks the commit to show. Reading waits until the pane is visible.
-    func show(root: URL?, sha: String?) {
+    package func show(root: URL?, sha: String?) {
         guard root != self.root || sha != self.sha else { return }
         self.root = root
         self.sha = sha
@@ -51,11 +53,11 @@ final class CommitDetailModel: ObservableObject {
         Task { await load() }
     }
 
-    func toggleFold(_ path: String) {
+    package func toggleFold(_ path: String) {
         if folded.contains(path) { folded.remove(path) } else { folded.insert(path) }
     }
 
-    func isFolded(_ path: String) -> Bool { folded.contains(path) }
+    package func isFolded(_ path: String) -> Bool { folded.contains(path) }
 
     private func load() async {
         guard visible, let root, let sha, detail == nil else { return }

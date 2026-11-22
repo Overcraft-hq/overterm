@@ -2,6 +2,12 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Usage from metrics.k8s.io (stage 2d; docs/design/kubernetes/analysis.md,
 /// 2.11): quantities read as the API writes them, metrics-server's lists

@@ -4,102 +4,102 @@ import AppKit
 /// in), its own undo history, its syntax tree, and where you were in it.
 /// The pane holds several, as Zed's tabs.
 @MainActor
-final class EditorBuffer {
-    let document = EditorDocument()
-    let storage = NSTextStorage()
-    let undo = UndoManager()
+package final class EditorBuffer {
+    package let document = EditorDocument()
+    package let storage = NSTextStorage()
+    package let undo = UndoManager()
     /// The storage's delegate: an edit noted once, whichever editor made
     /// it, and every editor showing the buffer told.
-    let relay = EditorStorageRelay()
-    private(set) var language: EditorLanguage?
-    private(set) var syntax: SyntaxDocument?
+    package let relay = EditorStorageRelay()
+    package private(set) var language: EditorLanguage?
+    package private(set) var syntax: SyntaxDocument?
 
     /// Bumped on every edit: highlights computed for an older text are dropped.
-    var version = 0
+    package var version = 0
     /// Edits the syntax tree hasn't been told about yet.
-    var pendingEdit: SyntaxEdit?
+    package var pendingEdit: SyntaxEdit?
     /// What has colours for the current version.
-    var painted = IndexSet()
+    package var painted = IndexSet()
 
-    var selection: [NSRange] = [NSRange(location: 0, length: 0)]
-    var scroll: NSPoint?
+    package var selection: [NSRange] = [NSRange(location: 0, length: 0)]
+    package var scroll: NSPoint?
     /// Spaces per indent level and whether a Tab inserts a tab.
-    var indentWidth = 4
-    var usesTabs = false
+    package var indentWidth = 4
+    package var usesTabs = false
     /// ⌥Z's choice for this file, over the setting.
-    var wrapOverride: Bool?
+    package var wrapOverride: Bool?
     /// Markdown shown rendered instead of its text (⇧⌘V); a Bruno request
     /// shown as one (APIRequestView).
-    var showsPreview = false
+    package var showsPreview = false
     /// A `.bru` request's model, while the file is one.
-    var request: APIRequestModel?
+    package var request: APIRequestModel?
     /// A note of the vault: its preview is the reading view (NoteReaderView).
-    var isNote = false
+    package var isNote = false
     /// An Excalidraw drawing: shown as its canvas (DrawingView) over its text.
-    var drawing: DrawingModel?
+    package var drawing: DrawingModel?
     /// A `.sql` file: the console under it (connection, results).
-    var sqlConsole: SQLConsole?
+    package var consolePart: (any EditorConsole)?
     /// A Kubernetes manifest — a cluster object's copy (`y`), a checkout's
     /// file, a kustomization: the bar under it (Diff with Cluster, Apply).
-    var kubeManifest: KubeManifestSession?
+    package var manifestPart: (any EditorManifest)?
     /// A cluster object's YAML (`KubeResourceBuffer`): one buffer for the
     /// resource, shown by the detail's YAML tab and by the editor's tab `y`
     /// opens — never a file.
-    weak var resource: KubeResourceBuffer?
+    package weak var resourcePart: (any EditorResource)?
     /// A note shown as Obsidian's Live Preview (NoteLivePreview) — on by default.
-    var livePreview = false
+    package var livePreview = false
     /// The caret's lines when Live Preview last styled them: their markup shows.
-    var liveEditing: [NSRange] = []
+    package var liveEditing: [NSRange] = []
     /// The note's frontmatter and code blocks, for the text's `version`.
-    var liveBlocks: (version: Int, blocks: [NoteLivePreview.Block])?
+    package var liveBlocks: (version: Int, blocks: [NoteLivePreview.Block])?
 
     /// A Terraform file: its module folder — validate, Format — and the bar under it.
-    var terraform: TerraformFolder?
+    package var terraformPart: AnyObject?
     /// Validate asked for while it had edits: it is saved first, and its
     /// folder validated once the save has written it (format on save
     /// writes later than `save` returns).
-    var terraformValidatesOnSave = false
+    package var terraformValidatesOnSave = false
 
     /// The language server's problems, the fields a Kubernetes manifest's
     /// cluster doesn't know (3.15), and `terraform validate`'s: shown together.
-    var diagnostics: [EditorDiagnostic] {
+    package var diagnostics: [EditorDiagnostic] {
         get { serverDiagnostics + kubeDiagnostics + terraformDiagnostics }
         set { serverDiagnostics = newValue }
     }
-    var serverDiagnostics: [EditorDiagnostic] = []
-    var kubeDiagnostics: [EditorDiagnostic] = []
+    package var serverDiagnostics: [EditorDiagnostic] = []
+    package var kubeDiagnostics: [EditorDiagnostic] = []
     /// The last validate's, laid over the text it was saved as — never over
     /// one edited since that validate started (`TerraformFolder.describes`):
     /// dropped at the next edit, which they no longer describe.
-    var terraformDiagnostics: [EditorDiagnostic] = []
+    package var terraformDiagnostics: [EditorDiagnostic] = []
     /// The file as the last commit has it; nil outside git or when new.
-    var gitBase: String?
-    var gitMarks: [GitGutterMark] = []
+    package var gitBase: String?
+    package var gitMarks: [GitGutterMark] = []
     /// The version a language server last heard.
-    var serverVersion = 0
-    var serverOpen = false
+    package var serverVersion = 0
+    package var serverOpen = false
     /// The server found for it, kept: looking one up walks the folders up
     /// for its root, and the status bar asks on every caret move.
-    var server: LanguageServer?
+    package var server: LanguageServer?
 
-    var url: URL? { document.url }
-    var name: String { document.name }
+    package var url: URL? { document.url }
+    package var name: String { document.name }
 
-    init() {
+    package init() {
         relay.buffer = self
         storage.delegate = relay
     }
 
     /// Text that is no file's (`EditorDocument.loadVirtual`), coloured as
     /// `url`'s language.
-    func loadVirtual(_ url: URL, text: String, attributes: [NSAttributedString.Key: Any]) {
+    package func loadVirtual(_ url: URL, text: String, attributes: [NSAttributedString.Key: Any]) {
         document.loadVirtual(url, text: text)
         language = EditorLanguage.language(for: url)
         syntax = language.map { SyntaxDocument(language: $0) }
         setText(text, attributes: attributes)
     }
 
-    func load(_ url: URL, attributes: [NSAttributedString.Key: Any]) {
+    package func load(_ url: URL, attributes: [NSAttributedString.Key: Any]) {
         document.load(url)
         language = EditorLanguage.language(for: url)
         syntax = language.map { SyntaxDocument(language: $0) }
@@ -107,7 +107,7 @@ final class EditorBuffer {
     }
 
     /// Replaces the whole text (a load, a reload from disk).
-    func setText(_ text: String, attributes: [NSAttributedString.Key: Any]) {
+    package func setText(_ text: String, attributes: [NSAttributedString.Key: Any]) {
         storage.beginEditing()
         storage.setAttributedString(NSAttributedString(string: text, attributes: attributes))
         storage.endEditing()
@@ -120,7 +120,7 @@ final class EditorBuffer {
     }
 
     /// The storage changed `oldLength` characters at `location` into `newLength`.
-    func noteEdit(location: Int, oldLength: Int, newLength: Int) {
+    package func noteEdit(location: Int, oldLength: Int, newLength: Int) {
         version += 1
         painted = IndexSet()
         if pendingEdit == nil {
@@ -131,13 +131,13 @@ final class EditorBuffer {
     }
 
     /// Hands the edits so far to the parser (once per run-loop pass).
-    func flushEdits() {
+    package func flushEdits() {
         guard let edit = pendingEdit else { return }
         pendingEdit = nil
         syntax?.update(Self.utf16(storage.string as NSString), edit: edit, version: version)
     }
 
-    static func utf16(_ text: NSString) -> [UInt16] {
+    package static func utf16(_ text: NSString) -> [UInt16] {
         var buffer = [UInt16](repeating: 0, count: text.length)
         buffer.withUnsafeMutableBufferPointer { text.getCharacters($0.baseAddress!, range: NSRange(location: 0, length: text.length)) }
         return buffer
@@ -145,7 +145,7 @@ final class EditorBuffer {
 
     /// The file's own indentation (IndentStyle.detect: tabs, or its step
     /// of spaces); Go and Makefiles are tabs whatever they hold.
-    func detectIndent() {
+    package func detectIndent() {
         switch IndentStyle.detect(in: storage.string as NSString, languageID: languageID) {
         case .tabs:
             usesTabs = true
@@ -156,11 +156,11 @@ final class EditorBuffer {
         }
     }
 
-    var indentStyle: IndentStyle { usesTabs ? .tabs : .spaces(indentWidth) }
+    package var indentStyle: IndentStyle { usesTabs ? .tabs : .spaces(indentWidth) }
     /// EditCommands' name for the language ("swift", "make", "markdown").
-    var languageID: String? { url.flatMap { EditCommands.languageID(forFileName: $0.lastPathComponent) } }
+    package var languageID: String? { url.flatMap { EditCommands.languageID(forFileName: $0.lastPathComponent) } }
 
-    var indentUnit: String { usesTabs ? "\t" : String(repeating: " ", count: indentWidth) }
+    package var indentUnit: String { usesTabs ? "\t" : String(repeating: " ", count: indentWidth) }
 }
 
 /// A buffer's storage delegate. The editors that show the buffer — the
@@ -168,13 +168,13 @@ final class EditorBuffer {
 /// each hold a layout manager on the one storage; an edit made in either
 /// is noted once (`noteEdit`) and every one of them repaints.
 @MainActor
-final class EditorStorageRelay: NSObject, NSTextStorageDelegate {
-    weak var buffer: EditorBuffer?
-    let editors = NSHashTable<EditorViewController>.weakObjects()
+package final class EditorStorageRelay: NSObject, NSTextStorageDelegate {
+    package weak var buffer: EditorBuffer?
+    package let editors = NSHashTable<EditorViewController>.weakObjects()
     /// An edit landed (any editor's, or a reload's).
-    var onEdit: (() -> Void)?
+    package var onEdit: (() -> Void)?
 
-    nonisolated func textStorage(
+    package nonisolated func textStorage(
         _ textStorage: NSTextStorage, didProcessEditing editedMask: NSTextStorageEditActions, range editedRange: NSRange,
         changeInLength delta: Int
     ) {
@@ -193,22 +193,22 @@ final class EditorStorageRelay: NSObject, NSTextStorageDelegate {
 /// Every line as tall as the setting asks, the text centred in it — Zed's
 /// "comfortable" spacing. A layout manager delegate, not a paragraph style:
 /// a style's extra height all goes above the text.
-final class EditorLineHeight: NSObject, NSLayoutManagerDelegate, @unchecked Sendable {
-    var font: NSFont
-    var multiple: CGFloat
+package final class EditorLineHeight: NSObject, NSLayoutManagerDelegate, @unchecked Sendable {
+    package var font: NSFont
+    package var multiple: CGFloat
 
-    init(font: NSFont, multiple: CGFloat) {
+    package init(font: NSFont, multiple: CGFloat) {
         self.font = font
         self.multiple = multiple
     }
 
     /// A note in Live Preview: each line as tall as its largest font (a
     /// heading's), not the code font's one height for every line.
-    var variable = false
+    package var variable = false
 
-    var height: CGFloat { ((font.ascender - font.descender + font.leading) * multiple).rounded() }
+    package var height: CGFloat { ((font.ascender - font.descender + font.leading) * multiple).rounded() }
 
-    func layoutManager(
+    package func layoutManager(
         _ layoutManager: NSLayoutManager, shouldSetLineFragmentRect lineFragmentRect: UnsafeMutablePointer<NSRect>,
         lineFragmentUsedRect: UnsafeMutablePointer<NSRect>, baselineOffset: UnsafeMutablePointer<CGFloat>,
         in textContainer: NSTextContainer, forGlyphRange glyphRange: NSRange
@@ -232,7 +232,7 @@ final class EditorLineHeight: NSObject, NSLayoutManagerDelegate, @unchecked Send
     }
 
     /// Live Preview's hidden markup (`.noteHidden`): laid out as nothing.
-    func layoutManager(
+    package func layoutManager(
         _ layoutManager: NSLayoutManager, shouldGenerateGlyphs glyphs: UnsafePointer<CGGlyph>,
         properties: UnsafePointer<NSLayoutManager.GlyphProperty>, characterIndexes: UnsafePointer<Int>, font: NSFont,
         forGlyphRange glyphRange: NSRange

@@ -7,38 +7,56 @@ import SwiftUI
 /// it only frames them, from the very same rectangles (`TabPeek.placements`)
 /// the controller gave their layers.
 @MainActor
-final class TabPeekModel: ObservableObject {
+package final class TabPeekModel: ObservableObject {
+    package init() {}
+
     /// What a card's title bar shows. Taken from the tab, not from a
     /// process scan: the peek has to keep up with a finger.
-    struct Entry: Equatable {
-        let title: String
-        let color: TabColor?
-        let activity: TabActivity
-        let agent: Agent?
-        let panes: Int
+    package struct Entry: Equatable {
+        package let title: String
+        package let color: TabColor?
+        package let activity: TabActivity
+        package let agent: Agent?
+        package let panes: Int
+
+        package init(title: String, color: TabColor?, activity: TabActivity, agent: Agent?, panes: Int) {
+            self.title = title
+            self.color = color
+            self.activity = activity
+            self.agent = agent
+            self.panes = panes
+        }
     }
 
-    @Published var cards: [TabPeek.Card] = []
-    @Published var entries: [Tab.ID: Entry] = [:]
+    @Published package var cards: [TabPeek.Card] = []
+    @Published package var entries: [Tab.ID: Entry] = [:]
     /// What Return would choose, and where the arrow keys are.
-    @Published var highlighted: Tab.ID?
-    @Published var progress: Double = 0
+    @Published package var highlighted: Tab.ID?
+    @Published package var progress: Double = 0
     /// The checkout the tabs belong to, above the grid.
-    @Published var group: String = ""
+    @Published package var group: String = ""
 }
 
-struct TabPeekView: View {
-    @ObservedObject var model: TabPeekModel
-    @ObservedObject var theme: ChromeTheme
-    let onChoose: (Tab.ID) -> Void
-    let onClose: (Tab.ID) -> Void
-    let onDismiss: () -> Void
+package struct TabPeekView: View {
+    @ObservedObject package var model: TabPeekModel
+    @ObservedObject package var theme: ChromeTheme
+    package let onChoose: (Tab.ID) -> Void
+    package let onClose: (Tab.ID) -> Void
+    package let onDismiss: () -> Void
+
+    package init(model: TabPeekModel, theme: ChromeTheme, onChoose: @escaping (Tab.ID) -> Void, onClose: @escaping (Tab.ID) -> Void, onDismiss: @escaping () -> Void) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.onChoose = onChoose
+        self.onClose = onClose
+        self.onDismiss = onDismiss
+    }
 
     /// 0 in the strip, 1 in the grid — the group title and the deeper dim
     /// belong to the second stage.
     private var deep: Double { min(max(model.progress - 1, 0), 1) }
 
-    var body: some View {
+    package var body: some View {
         ZStack(alignment: .topLeading) {
             Color.black.opacity(0.2 + 0.25 * deep)
                 .contentShape(Rectangle())
@@ -156,28 +174,28 @@ private struct TabPeekCard: View {
 /// the arrows move between cards (there is no text field to catch them). It
 /// also keeps receiving the trackpad, so a swipe that started on a terminal
 /// carries on once the peek is over it.
-final class TabPeekHostingView<Content: View>: NSHostingView<Content> {
-    var onEscape: (() -> Void)?
-    var onKey: ((NSEvent) -> Bool)?
+package final class TabPeekHostingView<Content: View>: NSHostingView<Content> {
+    package var onEscape: (() -> Void)?
+    package var onKey: ((NSEvent) -> Bool)?
     /// `(fingers, averageY, ended)`; see TabPeekGesture.
-    var onTouches: ((Int, CGFloat, Bool) -> Void)?
+    package var onTouches: ((Int, CGFloat, Bool) -> Void)?
 
-    override var acceptsFirstResponder: Bool { true }
+    package override var acceptsFirstResponder: Bool { true }
 
-    override func keyDown(with event: NSEvent) {
+    package override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { return onEscape?() ?? () }
         if onKey?(event) == true { return }
         super.keyDown(with: event)
     }
 
-    override func cancelOperation(_ sender: Any?) { onEscape?() }
+    package override func cancelOperation(_ sender: Any?) { onEscape?() }
 
     // MARK: The trackpad
 
-    override func touchesBegan(with event: NSEvent) { report(event, ended: false) }
-    override func touchesMoved(with event: NSEvent) { report(event, ended: false) }
-    override func touchesEnded(with event: NSEvent) { report(event, ended: true) }
-    override func touchesCancelled(with event: NSEvent) { report(event, ended: true) }
+    package override func touchesBegan(with event: NSEvent) { report(event, ended: false) }
+    package override func touchesMoved(with event: NSEvent) { report(event, ended: false) }
+    package override func touchesEnded(with event: NSEvent) { report(event, ended: true) }
+    package override func touchesCancelled(with event: NSEvent) { report(event, ended: true) }
 
     private func report(_ event: NSEvent, ended: Bool) {
         let touches = event.touches(matching: .touching, in: self)
@@ -187,8 +205,8 @@ final class TabPeekHostingView<Content: View>: NSHostingView<Content> {
 
 /// Reading a touch set, kept apart from the views so both the terminal and
 /// the peek report the same thing.
-enum TabPeekTouches {
-    static func averageY(_ touches: Set<NSTouch>) -> CGFloat {
+package enum TabPeekTouches {
+    package static func averageY(_ touches: Set<NSTouch>) -> CGFloat {
         guard !touches.isEmpty else { return 0 }
         return touches.reduce(0) { $0 + $1.normalizedPosition.y } / CGFloat(touches.count)
     }

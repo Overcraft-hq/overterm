@@ -1,6 +1,6 @@
 import Foundation
 
-enum LanguageServerError: LocalizedError, Equatable {
+package enum LanguageServerError: LocalizedError, Equatable {
     case launchFailed(String)
     /// Stopped, or died and not (yet) restarted.
     case notRunning
@@ -11,7 +11,7 @@ enum LanguageServerError: LocalizedError, Equatable {
     /// modified are routine: the answer is stale, ask again or drop it).
     case response(code: Int, message: String)
 
-    var errorDescription: String? {
+    package var errorDescription: String? {
         switch self {
         case .launchFailed(let why): "language server didn't start: \(why)"
         case .notRunning: "language server isn't running"
@@ -33,15 +33,15 @@ enum LanguageServerError: LocalizedError, Equatable {
 /// Documents are tracked here as well as sent: what was opened before the
 /// server answered `initialize` is opened once it has, and a restarted
 /// server gets every open document again — the editor never re-sends.
-final class LanguageServer: @unchecked Sendable {
+package final class LanguageServer: @unchecked Sendable {
     /// How to launch it.
-    struct Command: Sendable, Hashable {
-        var executable: URL
-        var arguments: [String]
+    package struct Command: Sendable, Hashable {
+        package var executable: URL
+        package var arguments: [String]
         /// Added to the app's environment.
-        var environment: [String: String]
+        package var environment: [String: String]
 
-        init(executable: URL, arguments: [String] = [], environment: [String: String] = [:]) {
+        package init(executable: URL, arguments: [String] = [], environment: [String: String] = [:]) {
             self.executable = executable
             self.arguments = arguments
             self.environment = environment
@@ -49,24 +49,24 @@ final class LanguageServer: @unchecked Sendable {
     }
 
     /// What the server said it does, from its `initialize` answer.
-    struct Capabilities: Sendable, Equatable {
-        var completion = false
+    package struct Capabilities: Sendable, Equatable {
+        package var completion = false
         /// Typing one of these should ask for completions at once.
-        var completionTriggerCharacters: [String] = []
-        var hover = false
-        var definition = false
-        var references = false
-        var documentSymbol = false
-        var formatting = false
+        package var completionTriggerCharacters: [String] = []
+        package var hover = false
+        package var definition = false
+        package var references = false
+        package var documentSymbol = false
+        package var formatting = false
         /// 0 none, 1 full text, 2 incremental (sent as full text too — legal).
-        var textDocumentSync = 1
-        var openClose = true
-        var save = true
-        var saveIncludesText = false
+        package var textDocumentSync = 1
+        package var openClose = true
+        package var save = true
+        package var saveIncludesText = false
 
-        init() {}
+        package init() {}
 
-        init(json: [String: Any]) {
+        package init(json: [String: Any]) {
             func provided(_ key: String) -> Bool {
                 switch json[key] {
                 case let flag as Bool: flag
@@ -102,7 +102,7 @@ final class LanguageServer: @unchecked Sendable {
         }
     }
 
-    enum State: Sendable, Equatable {
+    package enum State: Sendable, Equatable {
         case idle
         /// Launched; `initialize` not answered yet.
         case starting
@@ -113,29 +113,29 @@ final class LanguageServer: @unchecked Sendable {
         case stopped
     }
 
-    let name: String
-    let command: Command
+    package let name: String
+    package let command: Command
     /// The workspace root it was started for.
-    let root: URL
+    package let root: URL
     /// `initialize`'s `initializationOptions`, when the server takes some.
-    let initializationOptions: JSONValue?
+    package let initializationOptions: JSONValue?
     /// Variables set in its environment over the app's and the command's
     /// (terraform-ls: `CHECKPOINT_DISABLE`, a scratch `HOME`).
-    let environmentAdded: [String: String]
+    package let environmentAdded: [String: String]
     /// Names taken out of its environment — the app's, the command's and the
     /// added alike; `AWS_*` takes every name it begins.
-    let environmentRemoved: [String]
+    package let environmentRemoved: [String]
 
     /// Every publishDiagnostics, on the main actor: the file and its whole
     /// current list (an empty list clears it).
-    @MainActor var onDiagnostics: (@MainActor (URL, [LSP.Diagnostic]) -> Void)?
+    @MainActor package var onDiagnostics: (@MainActor (URL, [LSP.Diagnostic]) -> Void)?
 
     /// How long a feature request may take. A hover that comes after 10 s is
     /// no use; the request is cancelled at the server too.
-    static let requestTimeout: TimeInterval = 10
+    package static let requestTimeout: TimeInterval = 10
     /// Starting can be slow (node, a cold cache); its answer may take this long.
-    static let initializeTimeout: TimeInterval = 60
-    static let stderrLineLimit = 200
+    package static let initializeTimeout: TimeInterval = 60
+    package static let stderrLineLimit = 200
 
     private let lock = NSLock()
     private var _state = State.idle
@@ -173,7 +173,7 @@ final class LanguageServer: @unchecked Sendable {
         var owners = 1
     }
 
-    init(
+    package init(
         name: String, command: Command, root: URL, initializationOptions: JSONValue? = nil, environmentAdded: [String: String] = [:],
         environmentRemoved: [String] = []
     ) {
@@ -199,7 +199,7 @@ final class LanguageServer: @unchecked Sendable {
     /// the spec's `setting` over both, then `removed` taken out of all three
     /// — a removed name wins; `X*` takes every name it begins, `*X` every
     /// name it ends, `*X*` every name it is in.
-    static func environment(
+    package static func environment(
         _ base: [String: String], adding: [String: String], setting: [String: String] = [:], removing: [String]
     ) -> [String: String] {
         var environment = base.merging(adding) { _, new in new }.merging(setting) { _, new in new }
@@ -211,7 +211,7 @@ final class LanguageServer: @unchecked Sendable {
     /// What its process is given: `environment(_:adding:setting:removing:)`
     /// over `inherited`, then marked as this run's (D-15) — after the
     /// removals, so no pattern takes the markers.
-    func processEnvironment(_ inherited: [String: String]) -> [String: String] {
+    package func processEnvironment(_ inherited: [String: String]) -> [String: String] {
         OvertermRun.current.marking(
             Self.environment(inherited, adding: command.environment, setting: environmentAdded, removing: environmentRemoved), helper: .languageServer)
     }
@@ -219,7 +219,7 @@ final class LanguageServer: @unchecked Sendable {
     /// `environmentRemoved`'s patterns: a name, `X*`, `*X`, `*X*` — in
     /// any case: a credential spelt `aws_secret_access_key` is still one
     /// (`TerraformGuards.isCredential` reads names the same way).
-    static func pattern(_ pattern: String, matches name: String) -> Bool {
+    package static func pattern(_ pattern: String, matches name: String) -> Bool {
         let name = name.uppercased()
         let pattern = pattern.uppercased()
         let leading = pattern.hasPrefix("*")
@@ -234,19 +234,19 @@ final class LanguageServer: @unchecked Sendable {
         }
     }
 
-    var state: State { lock.withLock { _state } }
+    package var state: State { lock.withLock { _state } }
     /// nil until `initialize` is answered.
-    var capabilities: Capabilities? { lock.withLock { _capabilities } }
-    var processIdentifier: Int32? { lock.withLock { process?.isRunning == true ? process?.processIdentifier : nil } }
-    var restartCount: Int { lock.withLock { _restartCount } }
+    package var capabilities: Capabilities? { lock.withLock { _capabilities } }
+    package var processIdentifier: Int32? { lock.withLock { process?.isRunning == true ? process?.processIdentifier : nil } }
+    package var restartCount: Int { lock.withLock { _restartCount } }
     /// The last lines it wrote to stderr: why it failed, when it did.
-    var stderrLines: [String] { lock.withLock { stderrTail } }
+    package var stderrLines: [String] { lock.withLock { stderrTail } }
 
     // MARK: - Lifecycle
 
     /// Launches the process and sends `initialize`; returns at once. Requests
     /// made meanwhile wait for the answer. Throws only if it can't launch.
-    func start() throws {
+    package func start() throws {
         let process = Process()
         process.executableURL = command.executable
         process.arguments = command.arguments
@@ -293,7 +293,7 @@ final class LanguageServer: @unchecked Sendable {
 
     /// Launches it again after it died, with every open document. The
     /// registry decides whether it should (once, not in a loop).
-    func restart() throws {
+    package func restart() throws {
         let state = state
         guard state == .dead || state == .idle else { return }
         lock.withLock { _restartCount += 1 }
@@ -302,7 +302,7 @@ final class LanguageServer: @unchecked Sendable {
 
     /// shutdown, exit, and the process gone — killed if it hasn't left in
     /// 2 s. Blocks for up to ~4 s; call it off the main thread, or at quit.
-    func stop() {
+    package func stop() {
         let (state, process, exited) = lock.withLock { (_state, self.process, self.exited) }
         guard state == .starting || state == .running, let process else { return }
         let answered = DispatchSemaphore(value: 0)
@@ -349,7 +349,7 @@ final class LanguageServer: @unchecked Sendable {
 
     /// What this client can take. Completion resolve isn't offered, so
     /// servers put documentation and additional edits in the list itself.
-    static let clientCapabilities: JSONValue = [
+    package static let clientCapabilities: JSONValue = [
         "general": ["positionEncodings": ["utf-16"]],
         "workspace": [
             "configuration": true,
@@ -437,7 +437,7 @@ final class LanguageServer: @unchecked Sendable {
     }
 
     /// The capabilities once it's initialized; throws if it dies first.
-    func waitUntilReady() async throws -> Capabilities {
+    package func waitUntilReady() async throws -> Capabilities {
         try await withCheckedThrowingContinuation { continuation in
             lock.lock()
             switch _state {
@@ -459,7 +459,7 @@ final class LanguageServer: @unchecked Sendable {
 
     /// Opened again by another editor: one more owner, and its text as a
     /// change — the server knows the document once.
-    func didOpen(_ url: URL, languageID: String, version: Int, text: String) {
+    package func didOpen(_ url: URL, languageID: String, version: Int, text: String) {
         let alreadyOpen = lock.withLock { () -> Bool in
             guard documents[url] != nil else { return false }
             documents[url]?.owners += 1
@@ -475,7 +475,7 @@ final class LanguageServer: @unchecked Sendable {
     /// without a range, which the protocol allows. The version sent is the
     /// server's own count, always rising: editors in two windows count
     /// their own, and a lower one would be ignored.
-    func didChange(_ url: URL, version: Int, text: String) {
+    package func didChange(_ url: URL, version: Int, text: String) {
         let opened: (LSP.Capabilities?, Int)? = lock.withLock {
             guard var document = documents[url] else { return nil }
             document.version = max(document.version + 1, version)
@@ -492,7 +492,7 @@ final class LanguageServer: @unchecked Sendable {
             ])
     }
 
-    func didSave(_ url: URL, text: String) {
+    package func didSave(_ url: URL, text: String) {
         let capabilities: Capabilities? = lock.withLock {
             documents[url]?.text = text
             return documents[url] != nil && _state == .running ? _capabilities : nil
@@ -504,7 +504,7 @@ final class LanguageServer: @unchecked Sendable {
     }
 
     /// The last owner closing it closes it on the server.
-    func didClose(_ url: URL) {
+    package func didClose(_ url: URL) {
         let capabilities: Capabilities? = lock.withLock {
             guard let document = documents[url] else { return nil }
             if document.owners > 1 {
@@ -543,7 +543,7 @@ final class LanguageServer: @unchecked Sendable {
 
     /// Completions at `position`; `trigger` is the character just typed if
     /// it's one of the server's trigger characters.
-    func completion(_ url: URL, at position: LSP.Position, trigger: String? = nil) async throws -> LSP.CompletionList {
+    package func completion(_ url: URL, at position: LSP.Position, trigger: String? = nil) async throws -> LSP.CompletionList {
         guard try await waitUntilReady().completion else { return LSP.CompletionList(items: [], isIncomplete: false) }
         let context: JSONValue = trigger.map { ["triggerKind": 2, "triggerCharacter": .string($0)] } ?? ["triggerKind": 1]
         var params = Self.positionParams(url, position)
@@ -551,37 +551,37 @@ final class LanguageServer: @unchecked Sendable {
         return try await request("textDocument/completion", .object(params), as: LSP.CompletionList.self)
     }
 
-    func completion(_ url: URL, at position: LSP.Position) async throws -> [LSP.CompletionItem] {
+    package func completion(_ url: URL, at position: LSP.Position) async throws -> [LSP.CompletionItem] {
         try await completion(url, at: position, trigger: nil).items
     }
 
-    func hover(_ url: URL, at position: LSP.Position) async throws -> LSP.Hover? {
+    package func hover(_ url: URL, at position: LSP.Position) async throws -> LSP.Hover? {
         guard try await waitUntilReady().hover else { return nil }
         let hover = try await request("textDocument/hover", .object(Self.positionParams(url, position)), as: LSP.Hover?.self)
         guard let hover, !hover.contents.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
         return hover
     }
 
-    func definition(_ url: URL, at position: LSP.Position) async throws -> [LSP.Location] {
+    package func definition(_ url: URL, at position: LSP.Position) async throws -> [LSP.Location] {
         guard try await waitUntilReady().definition else { return [] }
         return try await request("textDocument/definition", .object(Self.positionParams(url, position)), as: LSP.Locations.self).items
     }
 
-    func references(_ url: URL, at position: LSP.Position, includeDeclaration: Bool = true) async throws -> [LSP.Location] {
+    package func references(_ url: URL, at position: LSP.Position, includeDeclaration: Bool = true) async throws -> [LSP.Location] {
         guard try await waitUntilReady().references else { return [] }
         var params = Self.positionParams(url, position)
         params["context"] = ["includeDeclaration": .bool(includeDeclaration)]
         return try await request("textDocument/references", .object(params), as: LSP.Locations.self).items
     }
 
-    func documentSymbols(_ url: URL) async throws -> [LSP.Symbol] {
+    package func documentSymbols(_ url: URL) async throws -> [LSP.Symbol] {
         guard try await waitUntilReady().documentSymbol else { return [] }
         return try await request("textDocument/documentSymbol", ["textDocument": ["uri": .string(LSP.uri(for: url))]], as: LSP.Symbols.self)
             .items
     }
 
     /// The edits that format the document; apply with `LSP.apply(_:to:)`.
-    func formatting(_ url: URL, tabSize: Int, insertSpaces: Bool) async throws -> [LSP.TextEdit] {
+    package func formatting(_ url: URL, tabSize: Int, insertSpaces: Bool) async throws -> [LSP.TextEdit] {
         guard try await waitUntilReady().formatting else { return [] }
         let params: JSONValue = [
             "textDocument": ["uri": .string(LSP.uri(for: url))],
@@ -602,7 +602,7 @@ final class LanguageServer: @unchecked Sendable {
     /// Any request, its result decoded as `T`. Waits for initialization.
     /// Times out after `timeout`; cancelling the task cancels it at the
     /// server (`$/cancelRequest`) and throws CancellationError.
-    func request<T: Decodable>(_ method: String, _ params: JSONValue, as type: T.Type, timeout: TimeInterval = requestTimeout) async throws -> T {
+    package func request<T: Decodable>(_ method: String, _ params: JSONValue, as type: T.Type, timeout: TimeInterval = requestTimeout) async throws -> T {
         _ = try await waitUntilReady()
         let data = try await rawRequest(method, params, timeout: timeout)
         return try JSONDecoder().decode(T.self, from: data)
@@ -834,7 +834,7 @@ extension LanguageServer {
     }
 
     /// The folders watched for it now: for tests and Tab Info.
-    @MainActor var watchedFileFolders: [String] { watchedFolders }
+    @MainActor package var watchedFileFolders: [String] { watchedFolders }
 
     private func filesChanged(_ events: [DirectoryWatcher.Event]) {
         watchQueue.async { [weak self] in self?.sendWatchedChanges(events) }
@@ -860,5 +860,5 @@ extension LanguageServer {
 }
 
 extension LSP {
-    typealias Capabilities = LanguageServer.Capabilities
+    package typealias Capabilities = LanguageServer.Capabilities
 }

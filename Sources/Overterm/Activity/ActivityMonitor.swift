@@ -20,10 +20,10 @@ import Foundation
 /// debounced (`contextChanged`) — and first thing at a tick that finds a
 /// rebuild waiting — and goes to each tick whole.
 @MainActor
-final class ActivityMonitor: ObservableObject {
+package final class ActivityMonitor: ObservableObject {
     /// The app's: over the app's census, which the old API's lookups read
     /// too (`ActivitySampler.app`).
-    static let shared = ActivityMonitor(sampler: .app)
+    package static let shared = ActivityMonitor(sampler: .app)
 
     /// One reader's want: its owner held weakly, so a reader that goes
     /// without saying so stops wanting.
@@ -33,24 +33,24 @@ final class ActivityMonitor: ObservableObject {
         var every: Duration
     }
 
-    let sampler: ActivitySampler
+    package let sampler: ActivitySampler
     /// The latest snapshot, whoever's tick made it.
-    @Published private(set) var snapshot: ActivitySnapshot?
+    @Published package private(set) var snapshot: ActivitySnapshot?
     /// The latest full one: what agents' reads and one-off censuses are
     /// served from.
-    private(set) var lastFull: ActivitySnapshot?
+    package private(set) var lastFull: ActivitySnapshot?
     /// `activity.interval` (7.3): the cadence a reader gets by default, and
     /// how old a snapshot an agent's read may be served.
-    var interval: Duration = .seconds(2)
+    package var interval: Duration = .seconds(2)
     /// How long a burst of context changes must be quiet before the
     /// context is rebuilt…
-    var debounce: Duration = .milliseconds(100)
+    package var debounce: Duration = .milliseconds(100)
     /// …and the longest a burst that never quiets holds the rebuild back
     /// from its first change: a title an agent rewrites several times a
     /// second rebuilds it once a second, not at every change.
-    var debounceLimit: Duration = .seconds(1)
+    package var debounceLimit: Duration = .seconds(1)
     /// One-off censuses come at most this often, ns (7.1).
-    nonisolated static let oneOffSpacing: UInt64 = 2_000_000_000
+    package nonisolated static let oneOffSpacing: UInt64 = 2_000_000_000
 
     private var wants: [ObjectIdentifier: Want] = [:]
     private var loop: Task<Void, Never>?
@@ -70,25 +70,25 @@ final class ActivityMonitor: ObservableObject {
     private var lastTick: ContinuousClock.Instant?
     /// What each tick is given — and the sampler's lookups between ticks,
     /// which read the app's panes with it (`ActivitySampler.appContext`).
-    private(set) var context = ActivityContext() {
+    package private(set) var context = ActivityContext() {
         didSet { sampler.appContext = context }
     }
     /// Builds the context from the app as it stands: set by the app.
-    var contextSource: (@MainActor () -> ActivityContext)?
+    package var contextSource: (@MainActor () -> ActivityContext)?
     private var rebuild: Task<Void, Never>?
     private var rebuildGeneration = 0
     /// The latest change the waiting rebuild has heard of.
     private var lastChange: ContinuousClock.Instant?
     /// Ticks the in-flight guard spared (7.3): a tick asked for while one
     /// was on its way, and a round or a census that waited on it instead.
-    private(set) var skippedTicks = 0
+    package private(set) var skippedTicks = 0
     /// Times the context was rebuilt from `contextSource`.
-    private(set) var contextBuilds = 0
+    package private(set) var contextBuilds = 0
     /// Full ticks that landed, a one-off's too: what the page's "reads
     /// nothing while hidden" is checked by (10.3, check 10).
-    private(set) var fullTicks = 0
+    package private(set) var fullTicks = 0
 
-    init(sampler: ActivitySampler = ActivitySampler()) {
+    package init(sampler: ActivitySampler = ActivitySampler()) {
         self.sampler = sampler
     }
 
@@ -102,7 +102,7 @@ final class ActivityMonitor: ObservableObject {
     /// wants (tabs restored, a window's tabs changing) makes one tick;
     /// processes newly in focus wait for the next tick, so a list's rows
     /// changing as it scrolls make none.
-    func want(_ owner: AnyObject, _ levels: ActivityLevel..., every: Duration? = nil) {
+    package func want(_ owner: AnyObject, _ levels: ActivityLevel..., every: Duration? = nil) {
         let fastest = self.fastest
         wants[ObjectIdentifier(owner)] = Want(owner: owner, demand: ActivityDemand(levels), every: every ?? interval)
         var wider = demand
@@ -117,11 +117,11 @@ final class ActivityMonitor: ObservableObject {
     }
 
     /// Wants that asked for an early tick.
-    private(set) var earlyTicks = 0
+    package private(set) var earlyTicks = 0
 
     /// An early tick waits this long after the last one began: rates need
     /// 250 ms anyway (7.3).
-    static let earliest: Duration = .milliseconds(250)
+    package static let earliest: Duration = .milliseconds(250)
 
     /// How long until an early tick may come.
     private var soonest: Duration {
@@ -132,7 +132,7 @@ final class ActivityMonitor: ObservableObject {
 
     /// `owner` reads no more. At the last reader the ticks stop; one on its
     /// way still lands.
-    func unwant(_ owner: AnyObject) {
+    package func unwant(_ owner: AnyObject) {
         wants[ObjectIdentifier(owner)] = nil
         pruneOwners()
         if wants.isEmpty { stopTicks() }
@@ -140,25 +140,25 @@ final class ActivityMonitor: ObservableObject {
 
     /// Nothing wants it: the ticks and a waiting rebuild stop (quitting,
     /// the tests).
-    func stop() {
+    package func stop() {
         wants = [:]
         stopTicks()
         dropRebuild()
     }
 
-    var isTicking: Bool { loop != nil }
+    package var isTicking: Bool { loop != nil }
 
     /// A tick is on its way.
-    var isSampling: Bool { running != nil }
+    package var isSampling: Bool { running != nil }
 
     /// Every reader's want, merged.
-    var demand: ActivityDemand {
+    package var demand: ActivityDemand {
         wants.values.filter { $0.owner != nil }.reduce(ActivityDemand()) { $0.merged($1.demand) }
     }
 
     /// How often the ticks come: the fastest any reader asks, stretched to
     /// 5 s while the sampler says the Mac is busy (7.3).
-    var cadence: Duration {
+    package var cadence: Duration {
         guard snapshot?.isStretched == true else { return fastest }
         return max(fastest, ActivityCadence.stretched)
     }
@@ -217,7 +217,7 @@ final class ActivityMonitor: ObservableObject {
     /// one at a time. Nil while one is in flight — this one is skipped,
     /// nothing read — or when nothing is wanted.
     @discardableResult
-    func tick() async -> ActivitySnapshot? {
+    package func tick() async -> ActivitySnapshot? {
         guard running == nil else {
             skippedTicks += 1
             return nil
@@ -235,7 +235,7 @@ final class ActivityMonitor: ObservableObject {
     /// tick, it takes a waiting context rebuild first, so it sees the app
     /// as it stands. Nil when the table can't be read: an older snapshot is
     /// never passed off as one, where a sheet or an agent counts on its age.
-    func census(within: UInt64 = ActivityMonitor.oneOffSpacing) async -> ActivitySnapshot? {
+    package func census(within: UInt64 = ActivityMonitor.oneOffSpacing) async -> ActivitySnapshot? {
         while true {
             if let lastFull, age(of: lastFull) < within { return lastFull }
             guard let running else { break }
@@ -250,14 +250,14 @@ final class ActivityMonitor: ObservableObject {
     /// snapshot while it is at most one interval old, else a census that no
     /// older one answers — not the one-offs' 2 s, two intervals at 1 s — at
     /// most one an interval for the app, however often agents call.
-    func forAgents() async -> ActivitySnapshot? {
+    package func forAgents() async -> ActivitySnapshot? {
         let interval = Self.nanoseconds(self.interval)
         if let lastFull, age(of: lastFull) <= interval { return lastFull }
         return await census(within: interval)
     }
 
     /// How old `snapshot` is, ns, on the sampler's clock.
-    func age(of snapshot: ActivitySnapshot) -> UInt64 {
+    package func age(of snapshot: ActivitySnapshot) -> UInt64 {
         let now = sampler.kernel.uptime()
         return now > snapshot.time ? now - snapshot.time : 0
     }
@@ -314,7 +314,7 @@ final class ActivityMonitor: ObservableObject {
         }
     }
 
-    nonisolated static func nanoseconds(_ duration: Duration) -> UInt64 {
+    package nonisolated static func nanoseconds(_ duration: Duration) -> UInt64 {
         let (seconds, attoseconds) = duration.components
         guard seconds >= 0 else { return 0 }
         return UInt64(seconds) * 1_000_000_000 + UInt64(max(attoseconds, 0) / 1_000_000_000)
@@ -328,7 +328,7 @@ final class ActivityMonitor: ObservableObject {
     /// the first of them, and before then at the start of any tick. A sink
     /// calling this uses what it was emitted, not the object read back:
     /// `@Published` emits before the change.
-    func contextChanged() {
+    package func contextChanged() {
         let now = ContinuousClock.now
         lastChange = now
         guard rebuild == nil else { return }
@@ -358,7 +358,7 @@ final class ActivityMonitor: ObservableObject {
     /// context is rebuilt, and while readers want ticks the next comes
     /// early — `earliest` after the last one began — so a new pane's tree,
     /// its ports and its agent are read then, not a cadence later.
-    func surfacesPaired() {
+    package func surfacesPaired() {
         contextChanged()
         guard loop != nil else { return }
         stopTicks()
@@ -367,16 +367,16 @@ final class ActivityMonitor: ObservableObject {
     }
 
     /// A rebuild waiting is made now: every tick's first step.
-    func flushContext() {
+    package func flushContext() {
         guard rebuild != nil else { return }
         rebuildContext()
     }
 
     /// A rebuild is waiting for its debounce.
-    var hasPendingContext: Bool { rebuild != nil }
+    package var hasPendingContext: Bool { rebuild != nil }
 
     /// The context as given, a waiting rebuild dropped: the tests'.
-    func setContext(_ context: ActivityContext) {
+    package func setContext(_ context: ActivityContext) {
         dropRebuild()
         self.context = context
     }

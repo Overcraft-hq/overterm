@@ -4,7 +4,7 @@ import Foundation
 /// A process's row on the Activity page (docs/design/activity/analysis.md,
 /// 6.4, 6.5): what one full snapshot said of it. Values only; a first
 /// sample's CPU is nil, drawn "—", never 0.
-struct ActivityProcessRow: ResourceTableRow, Sendable {
+package struct ActivityProcessRow: ResourceTableRow, Sendable {
     /// Its values, one reference shared by every copy until one of them
     /// changes (10.4): a build copies a row many times — sorted, grouped,
     /// Listening's, the held merge —, each copy a retain.
@@ -195,7 +195,7 @@ struct ActivityProcessRow: ResourceTableRow, Sendable {
 
     private var storage: Storage
 
-    init(
+    package init(
         id: String, identity: ActivityProcessID, name: String, cpu: Double? = nil, memory: UInt64?, threads: Int32?, state: ActivityState, started: Date, startedText: String, user: String,
         isOwn: Bool, tab: UUID?, tabTitle: String?
     ) {
@@ -210,230 +210,230 @@ struct ActivityProcessRow: ResourceTableRow, Sendable {
         return storage
     }
 
-    static func == (lhs: ActivityProcessRow, rhs: ActivityProcessRow) -> Bool {
+    package static func == (lhs: ActivityProcessRow, rhs: ActivityProcessRow) -> Bool {
         lhs.storage === rhs.storage || lhs.storage.same(as: rhs.storage)
     }
 
     /// Its identity's "pid:start": the selection's key, never the pid alone.
-    var id: String { storage.id }
-    var identity: ActivityProcessID { storage.identity }
-    var name: String { storage.name }
-    var cpu: Double? {
+    package var id: String { storage.id }
+    package var identity: ActivityProcessID { storage.identity }
+    package var name: String { storage.name }
+    package var cpu: Double? {
         get { storage.cpu }
         set { unique().cpu = newValue }
     }
     /// The footprint, Activity Monitor's Memory; nil for another user's.
-    var memory: UInt64? { storage.memory }
-    var threads: Int32? { storage.threads }
-    var state: ActivityState { storage.state }
+    package var memory: UInt64? { storage.memory }
+    package var threads: Int32? { storage.threads }
+    package var state: ActivityState { storage.state }
     /// `p_starttime`.
-    var started: Date { storage.started }
+    package var started: Date { storage.started }
     /// The Started column's words: today's start as its time, an earlier
     /// one as its date — made with the rows, off the main thread.
-    var startedText: String { storage.startedText }
+    package var startedText: String { storage.startedText }
     /// Its effective user's name.
-    var user: String { storage.user }
-    var isOwn: Bool { storage.isOwn }
+    package var user: String { storage.user }
+    package var isOwn: Bool { storage.isOwn }
     /// The tab it runs in (a pane's tree, or what carries the pane's tag),
     /// by its title; nil outside every tab.
-    var tab: UUID? { storage.tab }
-    var tabTitle: String? { storage.tabTitle }
+    package var tab: UUID? { storage.tab }
+    package var tabTitle: String? { storage.tabTitle }
     /// Who it belongs to, and why (6.5).
-    var owner: ActivityOwner? {
+    package var owner: ActivityOwner? {
         get { storage.owner }
         set { unique().owner = newValue }
     }
     /// Its tab's checkout, by its folder's name.
-    var checkout: String? {
+    package var checkout: String? {
         get { storage.checkout }
         set { unique().checkout = newValue }
     }
     /// The Where column's words: tab · checkout · agent, or its owner.
-    var whereText: String {
+    package var whereText: String {
         get { storage.whereText }
         set { unique().whereText = newValue }
     }
     /// The TCP ports it listens on, by number.
-    var listening: [Int] {
+    package var listening: [Int] {
         get { storage.listening }
         set { unique().listening = newValue }
     }
     /// Its depth in the list's tree, whether it has children there, and
     /// whether they are folded.
-    var depth: Int {
+    package var depth: Int {
         get { storage.depth }
         set { unique().depth = newValue }
     }
-    var hasChildren: Bool {
+    package var hasChildren: Bool {
         get { storage.hasChildren }
         set { unique().hasChildren = newValue }
     }
-    var folded: Bool {
+    package var folded: Bool {
         get { storage.folded }
         set { unique().folded = newValue }
     }
     /// An agent's row: what runs under it, counted ("12 MCP · 3 shells").
-    var agentCounts: String? {
+    package var agentCounts: String? {
         get { storage.agentCounts }
         set { unique().agentCounts = newValue }
     }
     /// Kept in a filtered tree only as a match's ancestor: drawn dimmed,
     /// so the match keeps its place (6.6).
-    var dimmed: Bool {
+    package var dimmed: Bool {
         get { storage.dimmed }
         set { unique().dimmed = newValue }
     }
 
     // What the other columns, the filter and the detail read (6.5, 6.6):
     // kinfo's record, the masked command, the usage beyond the footprint.
-    var parentPID: pid_t {
+    package var parentPID: pid_t {
         get { storage.parentPID }
         set { unique().parentPID = newValue }
     }
-    var group: pid_t {
+    package var group: pid_t {
         get { storage.group }
         set { unique().group = newValue }
     }
-    var nice: Int8 {
+    package var nice: Int8 {
         get { storage.nice }
         set { unique().nice = newValue }
     }
     /// Its controlling terminal's name (`ttys003`); nil without one.
-    var terminal: String? {
+    package var terminal: String? {
         get { storage.terminal }
         set { unique().terminal = newValue }
     }
     /// argv masked as it was read (9.3); nil for another user's, or unread.
-    var command: String? {
+    package var command: String? {
         get { storage.command }
         set { unique().command = newValue }
     }
     /// An interpreter's label (`ActivityText.label`).
-    var label: String? {
+    package var label: String? {
         get { storage.label }
         set { unique().label = newValue }
     }
-    var path: String? {
+    package var path: String? {
         get { storage.path }
         set { unique().path = newValue }
     }
-    var residentSize: UInt64? {
+    package var residentSize: UInt64? {
         get { storage.residentSize }
         set { unique().residentSize = newValue }
     }
     /// User and system CPU time, ns.
-    var cpuTime: UInt64? {
+    package var cpuTime: UInt64? {
         get { storage.cpuTime }
         set { unique().cpuTime = newValue }
     }
-    var priority: Int32? {
+    package var priority: Int32? {
         get { storage.priority }
         set { unique().priority = newValue }
     }
     /// W, an estimate.
-    var energy: Double? {
+    package var energy: Double? {
         get { storage.energy }
         set { unique().energy = newValue }
     }
     /// Idle wake-ups a second (`ri_pkg_idle_wkups`, Activity Monitor's).
-    var idleWakeups: Double? {
+    package var idleWakeups: Double? {
         get { storage.idleWakeups }
         set { unique().idleWakeups = newValue }
     }
     /// Bytes a second.
-    var diskRead: Double? {
+    package var diskRead: Double? {
         get { storage.diskRead }
         set { unique().diskRead = newValue }
     }
-    var diskWritten: Double? {
+    package var diskWritten: Double? {
         get { storage.diskWritten }
         set { unique().diskWritten = newValue }
     }
     /// What its power assertions keep awake; nil where nothing was read.
-    var sleepHold: ActivitySleepHold? {
+    package var sleepHold: ActivitySleepHold? {
         get { storage.sleepHold }
         set { unique().sleepHold = newValue }
     }
     /// Its CPU, 15 min, a cell of 15 s each (`ActivityRing`), nil where not
     /// sampled; nil without any history. `stripSince`: when it began, when
     /// that is inside the 15 minutes.
-    var strip: [Double?]? {
+    package var strip: [Double?]? {
         get { storage.strip }
         set { unique().strip = newValue }
     }
-    var stripSince: Date? {
+    package var stripSince: Date? {
         get { storage.stripSince }
         set { unique().stripSince = newValue }
     }
     /// New since the rows shown last (6.7): tinted for a tick, or 3 s
     /// when ticks are faster — since `newSince`.
-    var isNew: Bool {
+    package var isNew: Bool {
         get { storage.isNew }
         set { unique().isNew = newValue }
     }
-    var newSince: Date? {
+    package var newSince: Date? {
         get { storage.newSince }
         set { unique().newSince = newValue }
     }
     /// Gone since the last census: shown once more, dimmed, "ended".
-    var ended: Bool {
+    package var ended: Bool {
         get { storage.ended }
         set { unique().ended = newValue }
     }
     /// What changed, on this row (6.11).
-    var chips: [ActivityRowChip] {
+    package var chips: [ActivityRowChip] {
         get { storage.chips }
         set { unique().chips = newValue }
     }
     /// Intel code under Rosetta.
-    var translated: Bool {
+    package var translated: Bool {
         get { storage.translated }
         set { unique().translated = newValue }
     }
-    var ignoresHangup: Bool {
+    package var ignoresHangup: Bool {
         get { storage.ignoresHangup }
         set { unique().ignoresHangup = newValue }
     }
     /// Its pane's number in its tab, from 1.
-    var pane: Int? {
+    package var pane: Int? {
         get { storage.pane }
         set { unique().pane = newValue }
     }
-    var branch: String? {
+    package var branch: String? {
         get { storage.branch }
         set { unique().branch = newValue }
     }
     /// The UDP ports it is bound on.
-    var boundUDP: [Int] {
+    package var boundUDP: [Int] {
         get { storage.boundUDP }
         set { unique().boundUDP = newValue }
     }
     /// It holds an established TCP connection.
-    var connected: Bool {
+    package var connected: Bool {
         get { storage.connected }
         set { unique().connected = newValue }
     }
     /// Activity stopped it, or put it in the background (6.10): only those
     /// are said so — the background state can't be read back (3.9).
-    var stoppedHere: Bool {
+    package var stoppedHere: Bool {
         get { storage.stoppedHere }
         set { unique().stoppedHere = newValue }
     }
-    var backgroundHere: Bool {
+    package var backgroundHere: Bool {
         get { storage.backgroundHere }
         set { unique().backgroundHere = newValue }
     }
     /// Left Behind (6.9): a bulk Stop may take it — certain, not ignoring
     /// SIGHUP, detached, an app nor a terraform write, nor kept.
-    var bulkEligible: Bool {
+    package var bulkEligible: Bool {
         get { storage.bulkEligible }
         set { unique().bulkEligible = newValue }
     }
 
-    var height: CGFloat { 24 }
+    package var height: CGFloat { 24 }
 
     /// What VoiceOver says of it (6.4): name, pid, CPU, where.
-    var accessibilityLabel: String {
+    package var accessibilityLabel: String {
         var words = ["\(name), pid \(identity.pid)"]
         if let cpu { words.append("\(ActivityRows.percent(cpu)) percent CPU") }
         if let tabTitle {
@@ -451,117 +451,117 @@ struct ActivityProcessRow: ResourceTableRow, Sendable {
 
 /// What the page says around its lists (6.4): the counts, the busiest
 /// five, the meters, whether the census is still reading.
-struct ActivitySummary: Equatable, Sendable {
+package struct ActivitySummary: Equatable, Sendable {
     /// Every process the table listed, and the user's.
-    var processes = 0
-    var own = 0
+    package var processes = 0
+    package var own = 0
     /// The rows shown: fewer than `processes` in a test run (its own tabs')
     /// or with other users' left out.
-    var shown = 0
+    package var shown = 0
     /// Left Behind's rows in scope (6.9).
-    var leftBehind = 0
-    var listening = 0
+    package var leftBehind = 0
+    package var listening = 0
     /// The rows the filter matched, its dimmed ancestors left out: `shown`
     /// when there is no filter.
-    var matched = 0
+    package var matched = 0
     /// The user's processes' threads, summed.
-    var threads = 0
+    package var threads = 0
     /// The user's processes' energy, summed (6.4): W, an estimate; nil
     /// where none was rated.
-    var energy: Double?
+    package var energy: Double?
     /// The five busiest rows shown, CPU first: names, pids and rates only.
-    var busiest: [Busy] = []
-    var meters: SystemMeters?
+    package var busiest: [Busy] = []
+    package var meters: SystemMeters?
     /// The meters' 15 minutes (6.11): the Mac's CPU and memory used.
-    var history: [TimeChartData] = []
+    package var history: [TimeChartData] = []
     /// Identities the churn budget left for a later tick: still reading.
-    var unread = 0
+    package var unread = 0
     /// No rates yet: the first full tick.
-    var firstSample = true
+    package var firstSample = true
     /// A test run lists only its own tabs' processes (9.9).
-    var scopedToRun = false
+    package var scopedToRun = false
     /// What was read of every user's listeners (D-25).
-    var others = ActivityOtherListeners.off
+    package var others = ActivityOtherListeners.off
     /// The user's zombies: ended, not yet reaped by their parent (6.4).
-    var zombies = 0
+    package var zombies = 0
     /// Every stopped process of the tabs and the leftovers, whoever
     /// stopped it (`state:stopped`): the header counts those Activity
     /// didn't stop beside "stopped here", so a stop a crash forgot still
     /// shows (6.4). At most 1,000.
-    var stopped: [ActivityProcessID] = []
+    package var stopped: [ActivityProcessID] = []
     /// `kern.maxprocperuid`, read once; nil where it couldn't be.
-    var processLimit: Int?
+    package var processLimit: Int?
 
     /// Past 80% of the per-user limit (6.4): a new process may fail, and
     /// the verbs that would start one say so.
-    var nearProcessLimit: Bool {
+    package var nearProcessLimit: Bool {
         guard let processLimit, processLimit > 0 else { return false }
         return own * 5 > processLimit * 4
     }
 
     /// "9,100 of 10,666 processes", near the limit; nil otherwise.
-    var processLimitText: String? {
+    package var processLimitText: String? {
         guard nearProcessLimit, let processLimit else { return nil }
         let number = { (value: Int) in value.formatted(.number.locale(Locale(identifier: "en_US"))) }
         return "\(number(own)) of \(number(processLimit)) processes"
     }
 
-    struct Busy: Equatable, Sendable {
-        let id: String
-        let name: String
-        let cpu: Double
+    package struct Busy: Equatable, Sendable {
+        package let id: String
+        package let name: String
+        package let cpu: Double
     }
 }
 
 /// What one full snapshot makes of the page: its rows, sorted, and what is
 /// said around them. Pure, run off the main thread (7.7).
-struct ActivityPageContent: Sendable {
+package struct ActivityPageContent: Sendable {
     /// Every process row in scope, flat, sorted: the switcher's, ⌘C's.
-    var processes: [ActivityProcessRow] = []
+    package var processes: [ActivityProcessRow] = []
     /// Processes as the page lists them: grouped, as a tree (6.5).
-    var list: [ActivityListItem] = []
+    package var list: [ActivityListItem] = []
     /// Left Behind's section (6.9): its rows by checkout, by the same filter.
-    var leftBehind: [ActivityListItem] = []
-    var ports: [ActivityPortRow] = []
+    package var leftBehind: [ActivityListItem] = []
+    package var ports: [ActivityPortRow] = []
     /// Every listener of the rows in scope, whatever either filter says:
     /// the detail's, `o`'s (6.6 keeps each section's filter its own).
-    var listeners: [ActivityPortRow] = []
+    package var listeners: [ActivityPortRow] = []
     /// Connection lines past Listening's cap (500): said below the list.
-    var droppedConnections = 0
+    package var droppedConnections = 0
     /// Every process row in scope before the filter: where the detail's
     /// tree stops (9.9 — a test run's own tabs' processes alone).
-    var identities: Set<ActivityProcessID> = []
-    var summary = ActivitySummary()
+    package var identities: Set<ActivityProcessID> = []
+    package var summary = ActivitySummary()
     /// The selection's process as a verb sees it (6.10): read here, off the
     /// main thread, with every owner of the snapshot — not only the rows
     /// a scope or a filter left —, so the list and the sheet class it alike.
-    var subject: ActivityVerbSubject?
+    package var subject: ActivityVerbSubject?
     /// When its census was read: a process started after it is new to
     /// the next rows (6.7).
-    var madeAt: Date?
+    package var madeAt: Date?
     /// Every row id it shows, Processes', its list's and Listening's: made
     /// off the main thread with the rows, what the selection is kept to.
     /// Nil where it wasn't made.
-    var shownIDs: Set<String>?
+    package var shownIDs: Set<String>?
     /// The selection's history (`Options.historyOf`), made with the rows.
-    var detailHistory: ActivityDetailHistory?
+    package var detailHistory: ActivityDetailHistory?
     /// The snapshot's owners when they were read: a selection made between
     /// two publishes is read with them (`ActivityRows.subject`).
-    var attribution: ActivityAttribution?
+    package var attribution: ActivityAttribution?
     /// What making it cost, by part (10.4): times only.
-    var cost = ActivityRows.Cost()
+    package var cost = ActivityRows.Cost()
     /// Each section's rows as the list draws them, made with the rest off
     /// the main thread (`ActivityRows.listRows`, 7.7); empty until made.
-    var processRows = ActivityListRows()
-    var leftBehindRows = ActivityListRows()
-    var portRows = ActivityListRows()
+    package var processRows = ActivityListRows()
+    package var leftBehindRows = ActivityListRows()
+    package var portRows = ActivityListRows()
     /// Whether the three above were made: a content made elsewhere (a
     /// test's) has its rows mapped when asked.
-    var listRowsMade = false
+    package var listRowsMade = false
 
     /// `section`'s rows as the list draws them: those made with the
     /// content, else mapped now.
-    func listRows(_ section: ActivityPageModel.Section) -> ActivityListRows {
+    package func listRows(_ section: ActivityPageModel.Section) -> ActivityListRows {
         if listRowsMade {
             switch section {
             case .processes: return processRows
@@ -581,17 +581,17 @@ struct ActivityPageContent: Sendable {
 /// their ids in order and each id's place — made with the content off the
 /// main thread, so the table neither compares every id nor looks the
 /// selection up row by row on it.
-struct ActivityListRows: Sendable {
-    private(set) var rows: [ActivityListRow] = []
+package struct ActivityListRows: Sendable {
+    package private(set) var rows: [ActivityListRow] = []
     /// The ids in order, hashed with their count: equal for the same
     /// order (`ResourceTable.order`).
-    private(set) var order = 0
+    package private(set) var order = 0
     /// Each id's row, the first where an id comes twice.
-    private(set) var index: [String: Int] = [:]
+    package private(set) var index: [String: Int] = [:]
 
-    init() {}
+    package init() {}
 
-    init(_ rows: [ActivityListRow]) {
+    package init(_ rows: [ActivityListRow]) {
         self.rows = rows
         var hasher = Hasher()
         hasher.combine(rows.count)
@@ -606,117 +606,160 @@ struct ActivityListRows: Sendable {
 
     /// These rows in their order with `next`'s values where it has them
     /// (6.7's held order): the order and the places are these.
-    func taking(_ next: ActivityListRows) -> ActivityListRows {
+    package func taking(_ next: ActivityListRows) -> ActivityListRows {
         var out = self
         out.rows = rows.map { row in next.index[row.id].map { next.rows[$0] } ?? row }
         return out
     }
 }
 
-enum ActivityRows {
+package enum ActivityRows {
     /// How long a new process is tinted at least (6.7): 3 s, and never
     /// less than a tick.
-    static let newFor: TimeInterval = 3
+    package static let newFor: TimeInterval = 3
 
     /// What a build of the rows cost, by part (10.4), ns of the kernel's
     /// clock (`CLOCK_UPTIME_RAW`): the owners, the rows, the list (filter,
     /// sort, groups, Left Behind, the selection's), Listening, the summary.
-    struct Cost: Hashable, Sendable {
-        var attribution: UInt64 = 0
-        var rows: UInt64 = 0
-        var list: UInt64 = 0
-        var ports: UInt64 = 0
-        var summary: UInt64 = 0
+    package struct Cost: Hashable, Sendable {
+        package var attribution: UInt64 = 0
+        package var rows: UInt64 = 0
+        package var list: UInt64 = 0
+        package var ports: UInt64 = 0
+        package var summary: UInt64 = 0
     }
 
     /// The kernel's clock, ns: what `Cost` counts in.
-    static func now() -> UInt64 { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) }
+    package static func now() -> UInt64 { clock_gettime_nsec_np(CLOCK_UPTIME_RAW) }
 
     /// What the page lists of `snapshot`.
-    struct Options: Sendable {
+    package struct Options: Sendable {
         /// Tabs' titles, by id, every window's.
-        var titles: [UUID: String] = [:]
+        package var titles: [UUID: String] = [:]
         /// What the main actor says of each tab: its title, checkout,
         /// branch, its place in the strips. `titles` makes them when empty.
-        var tabs: [UUID: ActivityTabFacts] = [:]
+        package var tabs: [UUID: ActivityTabFacts] = [:]
         /// The census's context the owners are read against (6.5).
-        var context = ActivityContext()
+        package var context = ActivityContext()
         /// Every known checkout (the tabs', the worktrees'), and running
         /// apps' bundles by pid.
-        var checkouts: [String] = []
-        var runningApps: [pid_t: String] = [:]
+        package var checkouts: [String] = []
+        package var runningApps: [pid_t: String] = [:]
         /// How Processes is grouped and whether as a tree; nil: no list
         /// (the switcher's).
-        var grouping: ActivityGrouping? = .checkout
-        var tree = true
-        var scope = ActivityScope.mac
+        package var grouping: ActivityGrouping? = .checkout
+        package var tree = true
+        package var scope = ActivityScope.mac
         /// Folds by row id (true folded); a row not in it takes its default.
-        var folds: [String: Bool] = [:]
+        package var folds: [String: Bool] = [:]
         /// The containers running, with their usage (`DockerUsageMonitor`).
-        var containers: [ActivityContainer] = []
+        package var containers: [ActivityContainer] = []
         /// A row a link shows: the groups holding it unfolded.
-        var reveal: String?
+        package var reveal: String?
         /// Process rows a group shows before "+N more".
-        var groupLimit = 500
+        package var groupLimit = 500
         /// Other users' processes too (`activity.everyone`).
-        var everyone = true
+        package var everyone = true
         /// A test run (`AppEnvironment.isIsolated`): only the run's own
         /// tabs' processes are rows, the rest counted (6.4, 9.9).
-        var isolated = false
-        var processSort: ResourceSort? = ResourceSort(column: "cpu", ascending: false)
-        var portSort: ResourceSort? = ResourceSort(column: "port")
+        package var isolated = false
+        package var processSort: ResourceSort? = ResourceSort(column: "cpu", ascending: false)
+        package var portSort: ResourceSort? = ResourceSort(column: "port")
         /// The process the page lists verbs for — the selection's —, and
         /// what the main actor knows of stopped and backgrounded ones.
-        var subjectOf: ActivityProcessID?
+        package var subjectOf: ActivityProcessID?
         /// The selection whose history the detail charts (6.11): made here,
         /// off the main thread, with the rows.
-        var historyOf: ActivityProcessID?
-        var known = ActivityVerbSubject.Known()
+        package var historyOf: ActivityProcessID?
+        package var known = ActivityVerbSubject.Known()
         /// What each section's filter field says (6.6).
-        var processFilter = ""
-        var portFilter = ""
+        package var processFilter = ""
+        package var portFilter = ""
         /// Listening's connections (`c`), the LaunchAgents' programs
         /// (`LaunchdJobs`), the ephemeral range's first port.
-        var connections = false
-        var launchAgents: [LaunchdJobs.Agent] = []
-        var ephemeralFirst = 49_152
+        package var connections = false
+        package var launchAgents: [LaunchdJobs.Agent] = []
+        package var ephemeralFirst = 49_152
         /// Every user's listeners as nettop last read them (D-25), and
         /// what was read of them: shown only where believed. launchd's
         /// socket jobs name pid 1's (`LaunchdSockets`).
-        var others: NettopListeners.Reading?
-        var othersState = ActivityOtherListeners.off
-        var launchdSockets: [LaunchdSockets.Job] = []
+        package var others: NettopListeners.Reading?
+        package var othersState = ActivityOtherListeners.off
+        package var launchdSockets: [LaunchdSockets.Job] = []
         /// The user's unix-socket listeners in Listening (D-32).
-        var unixSockets = false
+        package var unixSockets = false
         /// `kern.maxprocperuid` (6.4): the header's warning past 80%.
-        var processLimit: Int? = ActivityProcessLimit.perUser
+        package var processLimit: Int? = ActivityProcessLimit.perUser
         /// The rows shown before this census: what has gone since is shown
         /// once more, "ended" (6.7); one absent from them is new. Empty on
         /// a first build.
-        var previous: [ActivityProcessRow] = []
+        package var previous: [ActivityProcessRow] = []
         /// Rows were shown before: a process absent from them that started
         /// after `shownAt` is new to the person, not merely to a page just
         /// opened.
-        var marksNew = false
+        package var marksNew = false
         /// When the census `previous` was made of was read: a process
         /// started before it was there to be shown — a wider scope, a
         /// filter cleared, isn't new.
-        var shownAt: Date?
+        package var shownAt: Date?
         /// The same census made again (a sort, a fold): `previous`'s ended
         /// rows stay as they were, still once.
-        var repeatsEnded = false
+        package var repeatsEnded = false
+
+        package init(
+            titles: [UUID: String] = [:], tabs: [UUID: ActivityTabFacts] = [:], context: ActivityContext = ActivityContext(), checkouts: [String] = [], runningApps: [pid_t: String] = [:],
+            grouping: ActivityGrouping? = .checkout, tree: Bool = true, scope: ActivityScope = ActivityScope.mac, folds: [String: Bool] = [:], containers: [ActivityContainer] = [],
+            reveal: String? = nil, groupLimit: Int = 500, everyone: Bool = true, isolated: Bool = false, processSort: ResourceSort? = ResourceSort(column: "cpu", ascending: false),
+            portSort: ResourceSort? = ResourceSort(column: "port"), subjectOf: ActivityProcessID? = nil, historyOf: ActivityProcessID? = nil, processFilter: String = "", portFilter: String = "",
+            connections: Bool = false, launchAgents: [LaunchdJobs.Agent] = [], ephemeralFirst: Int = 49_152, others: NettopListeners.Reading? = nil,
+            othersState: ActivityOtherListeners = ActivityOtherListeners.off, launchdSockets: [LaunchdSockets.Job] = [], unixSockets: Bool = false, processLimit: Int? = ActivityProcessLimit.perUser,
+            previous: [ActivityProcessRow] = [], marksNew: Bool = false, shownAt: Date? = nil, repeatsEnded: Bool = false
+        ) {
+            self.titles = titles
+            self.tabs = tabs
+            self.context = context
+            self.checkouts = checkouts
+            self.runningApps = runningApps
+            self.grouping = grouping
+            self.tree = tree
+            self.scope = scope
+            self.folds = folds
+            self.containers = containers
+            self.reveal = reveal
+            self.groupLimit = groupLimit
+            self.everyone = everyone
+            self.isolated = isolated
+            self.processSort = processSort
+            self.portSort = portSort
+            self.subjectOf = subjectOf
+            self.historyOf = historyOf
+            self.processFilter = processFilter
+            self.portFilter = portFilter
+            self.connections = connections
+            self.launchAgents = launchAgents
+            self.ephemeralFirst = ephemeralFirst
+            self.others = others
+            self.othersState = othersState
+            self.launchdSockets = launchdSockets
+            self.unixSockets = unixSockets
+            self.processLimit = processLimit
+            self.previous = previous
+            self.marksNew = marksNew
+            self.shownAt = shownAt
+            self.repeatsEnded = repeatsEnded
+        }
     }
 
     /// `row`'s 15 minutes from the history (6.11): one of the user's, its
     /// strip and since when it began.
-    static func strip(_ row: inout ActivityProcessRow, in snapshot: ActivitySnapshot) {
+    package static func strip(_ row: inout ActivityProcessRow, in snapshot: ActivitySnapshot) {
         row.strip = snapshot.history.cpuStrip(.process(row.identity), now: snapshot.historyNow)
         row.stripSince = snapshot.history.since(.process(row.identity), now: snapshot.historyNow).map { snapshot.date(of: $0) }
     }
 
     /// `items` with a strip on each of the user's process rows that has none
     /// yet: what the list draws, a few hundred rows at most of thousands.
-    static func withStrips(_ items: [ActivityListItem], in snapshot: ActivitySnapshot) -> [ActivityListItem] {
+    package static func withStrips(_ items: [ActivityListItem], in snapshot: ActivitySnapshot) -> [ActivityListItem] {
         items.map { item in
             guard case .process(var row) = item, row.isOwn, row.strip == nil else { return item }
             strip(&row, in: snapshot)
@@ -735,7 +778,7 @@ enum ActivityRows {
     }
 
     /// Whether `owner` is Left Behind by this run's own pane or agent (6.9).
-    static func isRunsOwnLeftover(_ owner: ActivityOwner?) -> Bool {
+    package static func isRunsOwnLeftover(_ owner: ActivityOwner?) -> Bool {
         switch owner?.leftBehind {
         case .closedPane?, .agentRun?: true
         default: false
@@ -753,14 +796,14 @@ enum ActivityRows {
     /// `identity` as a verb sees it (6.10) in `snapshot`, with every owner:
     /// `attribution` when the rows read it, else read here. Off the main
     /// thread — the page's selection between two publishes.
-    static func subject(_ identity: ActivityProcessID, of snapshot: ActivitySnapshot, _ options: Options, attribution: ActivityAttribution?)
+    package static func subject(_ identity: ActivityProcessID, of snapshot: ActivitySnapshot, _ options: Options, attribution: ActivityAttribution?)
         -> ActivityVerbSubject?
     {
         let owners = attribution ?? owners(of: snapshot, options, tabs: tabFacts(options))
         return ActivityVerbSubject.read(identity, in: snapshot, owners: owners, known: options.known)
     }
 
-    static func content(of snapshot: ActivitySnapshot, _ options: Options) -> ActivityPageContent {
+    package static func content(of snapshot: ActivitySnapshot, _ options: Options) -> ActivityPageContent {
         var cost = Cost()
         var mark = now()
         func lap(_ part: inout UInt64) {
@@ -1007,7 +1050,7 @@ enum ActivityRows {
     /// (6.6) — up to the first parent another group or owner holds: a
     /// pane's process up to the pane's login, never Overterm or launchd
     /// pulled into their groups.
-    static func filtered(
+    package static func filtered(
         _ rows: [ActivityProcessRow], by filter: ActivityFilter, now: Date, ancestorsIn table: ProcessTable?, grouping: ActivityGrouping? = nil
     ) -> [ActivityProcessRow] {
         var keep = Set<ActivityProcessID>()
@@ -1038,7 +1081,7 @@ enum ActivityRows {
 
     /// Whether `above` sits in `row`'s tree as the list draws it: the same
     /// owner's place and the same group.
-    static func sameTree(_ above: ActivityProcessRow, _ row: ActivityProcessRow, grouping: ActivityGrouping?) -> Bool {
+    package static func sameTree(_ above: ActivityProcessRow, _ row: ActivityProcessRow, grouping: ActivityGrouping?) -> Bool {
         guard above.owner?.place == row.owner?.place else { return false }
         switch grouping {
         case .agent?: return above.owner?.agent == row.owner?.agent
@@ -1057,7 +1100,7 @@ enum ActivityRows {
     nonisolated(unsafe) private static var terminalNames: [dev_t: String] = [:]
 
     /// A terminal's name (`ttys003`), `devname_r`, kept for the app's life.
-    static func terminalName(_ device: dev_t) -> String? {
+    package static func terminalName(_ device: dev_t) -> String? {
         if let known = terminals.withLock({ terminalNames[device] }) { return known.isEmpty ? nil : known }
         var buffer = [CChar](repeating: 0, count: 64)
         let name = devname_r(device, S_IFCHR, &buffer, Int32(buffer.count)).map { String(cString: $0) } ?? ""
@@ -1070,7 +1113,7 @@ enum ActivityRows {
     /// list draws alike keep their places — the order they came in, the
     /// table's — and a re-sort moves a row only for a change a person can
     /// see (6.7).
-    static func sorted(_ rows: [ActivityProcessRow], by sort: ResourceSort?) -> [ActivityProcessRow] {
+    package static func sorted(_ rows: [ActivityProcessRow], by sort: ResourceSort?) -> [ActivityProcessRow] {
         guard let sort else { return rows }
         switch sort.column {
         case "name": return sort.sorted(rows) { $0.name.lowercased() }
@@ -1102,7 +1145,7 @@ enum ActivityRows {
         }
     }
 
-    static func sorted(_ rows: [ActivityPortRow], by sort: ResourceSort?) -> [ActivityPortRow] {
+    package static func sorted(_ rows: [ActivityPortRow], by sort: ResourceSort?) -> [ActivityPortRow] {
         guard let sort else { return rows }
         switch sort.column {
         case "port": return sort.sorted(rows) { $0.port }
@@ -1122,13 +1165,13 @@ enum ActivityRows {
 
     /// A value as the list writes it, as a number that sorts as the words
     /// do: equal when they read alike. Pure.
-    enum Shown {
+    package enum Shown {
         /// `percent`'s tenths.
-        static func percent(_ value: Double) -> Int { Int((value * 10).rounded()) }
+        package static func percent(_ value: Double) -> Int { Int((value * 10).rounded()) }
 
         /// `bytes`' unit and its digits: tenths below 100 of a unit, whole
         /// ones above, the unit first.
-        static func bytes(_ value: UInt64) -> Int {
+        package static func bytes(_ value: UInt64) -> Int {
             var amount = Double(value)
             var unit = 0
             while amount >= 1024, unit < 4 {
@@ -1144,16 +1187,16 @@ enum ActivityRows {
     /// day (10.4): a crowded Mac's rows format 5,000 dates a tick otherwise,
     /// every tick the same ones. A time of day is its minute's, a date its
     /// day's; a new day starts it again.
-    enum StartedWords {
+    package enum StartedWords {
         private static let lock = NSLock()
         nonisolated(unsafe) private static var day = Date.distantPast
         nonisolated(unsafe) private static var words: [UInt64: String] = [:]
 
         /// The words made for `today`, none for another day.
-        static func cached(today: Date) -> [UInt64: String] { lock.withLock { day == today ? words : [:] } }
+        package static func cached(today: Date) -> [UInt64: String] { lock.withLock { day == today ? words : [:] } }
 
         /// `made` kept for `today`; the lot dropped past 16,384 minutes.
-        static func remember(_ made: [UInt64: String], today: Date) {
+        package static func remember(_ made: [UInt64: String], today: Date) {
             guard !made.isEmpty else { return }
             lock.withLock {
                 if day != today || words.count + made.count > 16_384 {
@@ -1180,17 +1223,17 @@ enum ActivityRows {
     }()
 
     /// A time of today as the page says it: "14:02".
-    static func clock(_ date: Date) -> String { timeFormat.string(from: date) }
+    package static func clock(_ date: Date) -> String { timeFormat.string(from: date) }
 
     /// A start as the Started column says it: since `today`'s midnight as
     /// its time, earlier as its date.
-    static func startedText(_ date: Date, today: Date) -> String {
+    package static func startedText(_ date: Date, today: Date) -> String {
         (date >= today && date < today.addingTimeInterval(86_400) ? timeFormat : dayFormat).string(from: date)
     }
 
     /// A CPU share as the page writes it: one decimal, a dot whatever the
     /// locale (`Text(verbatim:)` draws it).
-    static func percent(_ value: Double) -> String { fixed(value, digits: 1) }
+    package static func percent(_ value: Double) -> String { fixed(value, digits: 1) }
 
     /// `value` with `digits` (0–2) decimals as `%.Nf` writes it in the
     /// POSIX locale — a dot whatever the person's —, made from integers:
@@ -1198,7 +1241,7 @@ enum ActivityRows {
     /// formatter, most of what a list's cell cost to write (7.7). A value a
     /// hair from a half, where only the exact binary value says which way
     /// `%f` rounds, and a huge one are Foundation's still. Pure.
-    static func fixed(_ value: Double, digits: Int) -> String {
+    package static func fixed(_ value: Double, digits: Int) -> String {
         let scale: Int64 = digits == 0 ? 1 : digits == 1 ? 10 : 100
         let scaled = value * Double(scale)
         let fraction = scaled - scaled.rounded(.down)
@@ -1219,7 +1262,7 @@ enum ActivityRows {
     private static let posixLocale = Locale(identifier: "en_US_POSIX")
 
     /// A footprint in Activity Monitor's units.
-    static func bytes(_ value: UInt64) -> String {
+    package static func bytes(_ value: UInt64) -> String {
         let units = ["B", "KB", "MB", "GB", "TB"]
         var amount = Double(value)
         var unit = 0
@@ -1235,7 +1278,7 @@ enum ActivityRows {
 
     /// A uid's login name (`getpwuid_r`), kept for the app's life; its
     /// number where it has none.
-    static func userName(_ uid: uid_t) -> String {
+    package static func userName(_ uid: uid_t) -> String {
         if let known = users.withLock({ userNames[uid] }) { return known }
         var entry = passwd()
         var result: UnsafeMutablePointer<passwd>?
@@ -1249,7 +1292,7 @@ enum ActivityRows {
 
 /// What Listening knows of every user's listeners (D-25), said under the
 /// list: every "none" must be true (6.4).
-enum ActivityOtherListeners: Equatable, Sendable {
+package enum ActivityOtherListeners: Equatable, Sendable {
     /// `activity.otherListeners` is off.
     case off
     /// Nothing can be read here: why ("not read in a test run").
@@ -1268,7 +1311,7 @@ enum ActivityOtherListeners: Equatable, Sendable {
 
     /// Its state for a reading, against what libproc finds now; reads
     /// every `period` seconds (5 × `activity.interval`).
-    static func of(_ reading: NettopListeners.Reading?, period: TimeInterval) -> ActivityOtherListeners {
+    package static func of(_ reading: NettopListeners.Reading?, period: TimeInterval) -> ActivityOtherListeners {
         guard let reading else { return .reading }
         switch reading.outcome {
         case .read(.checked): return .checked(reading.date, period: period)
@@ -1285,7 +1328,7 @@ enum ActivityOtherListeners: Equatable, Sendable {
     }
 
     /// The note's sentence.
-    var sentence: String {
+    package var sentence: String {
         switch self {
         case .off: return "Other users' listeners — root's, macOS's — aren't read (Settings ▸ Activity)."
         case .unavailable(let why): return "Other users' listeners: \(why)."
@@ -1301,8 +1344,8 @@ enum ActivityOtherListeners: Equatable, Sendable {
 }
 
 /// The per-user process limit (6.4): `kern.maxprocperuid`, read once.
-enum ActivityProcessLimit {
-    static let perUser: Int? = {
+package enum ActivityProcessLimit {
+    package static let perUser: Int? = {
         var value: Int32 = 0
         var size = MemoryLayout<Int32>.size
         guard sysctlbyname("kern.maxprocperuid", &value, &size, nil, 0) == 0, value > 0 else { return nil }

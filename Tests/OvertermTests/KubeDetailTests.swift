@@ -2,6 +2,12 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// A Kubernetes object's detail: the rollout read as `kubectl rollout
 /// status` reads it, the YAML as kubectl writes it and stripped as the tab

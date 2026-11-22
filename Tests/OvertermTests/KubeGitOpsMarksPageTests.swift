@@ -2,6 +2,12 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// The GitOps section on a spoke, through the page (docs/design/
 /// kubernetes/gitops.md, 14.2, stages D3 and D4) against the fake API server —

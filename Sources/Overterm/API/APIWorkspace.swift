@@ -9,64 +9,64 @@ import Combine
 /// It reads the disk only while its panel is on screen or a request is
 /// open (CLAUDE.md: a panel reads nothing while it is not the one on screen).
 @MainActor
-final class APIWorkspace: ObservableObject {
-    @Published private(set) var root: URL?
-    @Published private(set) var collections: [BrunoCollection] = []
-    @Published var selectedRoot: URL? {
+package final class APIWorkspace: ObservableObject {
+    @Published package private(set) var root: URL?
+    @Published package private(set) var collections: [BrunoCollection] = []
+    @Published package var selectedRoot: URL? {
         didSet { if selectedRoot != oldValue { loadEnvironment() } }
     }
     /// The environment picked for the selected collection; nil for none.
-    @Published var environmentName: String? {
+    @Published package var environmentName: String? {
         didSet {
             guard environmentName != oldValue, let collection else { return }
             AppEnvironment.defaults.set(environmentName, forKey: Self.environmentKey(collection.root))
         }
     }
-    @Published private(set) var isLoading = false
+    @Published package private(set) var isLoading = false
     /// The last result of each request file, for the view that shows it.
-    @Published private(set) var results: [URL: APIExecution.Result] = [:]
+    @Published package private(set) var results: [URL: APIExecution.Result] = [:]
     /// Requests in flight, by file.
-    @Published private(set) var sending: Set<URL> = []
+    @Published package private(set) var sending: Set<URL> = []
     /// GraphQL schemas, by the endpoint they were read from: kept for the
     /// session, read again on Refresh.
-    @Published private(set) var graphQLSchemas: [String: GraphQLSchemaState] = [:]
+    @Published package private(set) var graphQLSchemas: [String: GraphQLSchemaState] = [:]
     /// gRPC: each source's services and methods, each request's last call.
-    @Published var grpcSchemas: [String: GRPCSchemaState] = [:]
-    @Published var grpcResults: [URL: GRPCResult] = [:]
-    var grpcTasks: [URL: Task<Void, Never>] = [:]
+    @Published package var grpcSchemas: [String: GRPCSchemaState] = [:]
+    @Published package var grpcResults: [URL: GRPCResult] = [:]
+    package var grpcTasks: [URL: Task<Void, Never>] = [:]
     /// The MCP servers the panel lists, and the one inspected.
-    let mcp = MCPInspector.make()
-    @Published var search = ""
+    package let mcp = MCPInspector.make()
+    @Published package var search = ""
     /// Specs, collections and servers to import from (APIDiscovery).
-    @Published private(set) var discovered: [APIDiscovery.Source] = []
+    @Published package private(set) var discovered: [APIDiscovery.Source] = []
     /// The APIs Kubernetes forwards serve (`KubeForwards.openAPI`): offered
     /// whichever checkout shows — the window keeps them.
-    @Published var forwardSources: [APIDiscovery.Source] = []
+    @Published package var forwardSources: [APIDiscovery.Source] = []
     /// What the panel offers to import: what was found here, then the forwards'.
-    var importable: [APIDiscovery.Source] {
+    package var importable: [APIDiscovery.Source] {
         discovered + forwardSources.filter { source in !discovered.contains { $0.id == source.id } }
     }
     /// The ports the selected tab listens on — the window answers.
-    var ports: () -> [Int] = { [] }
+    package var ports: () -> [Int] = { [] }
 
-    var visible = false {
+    package var visible = false {
         didSet { if visible && !oldValue { reload() } }
     }
 
     /// The last collection or folder run, for the right-hand pane.
-    let runner = APIRunner()
-    let secrets: APISecretStore
-    let scripts: APIScriptRuntime
+    package let runner = APIRunner()
+    package let secrets: APISecretStore
+    package let scripts: APIScriptRuntime
     /// What runs leave behind for the next — runtime variables, setEnvVar
     /// values, cookies — shared by every workspace of the window (APISession).
-    let session: APISession
+    package let session: APISession
     private var tasks: [URL: Task<Void, Never>] = [:]
     private var loadGeneration = 0
 
     /// My Requests' folder; nil for none (tests, an agent's checkout).
-    let personalRoot: URL?
+    package let personalRoot: URL?
 
-    init(
+    package init(
         secrets: APISecretStore = AppEnvironment.makeSecretStore(), scripts: APIScriptRuntime = .shared,
         personalRoot: URL? = APIWorkspace.defaultPersonalRoot, session: APISession = APISession()
     ) {
@@ -76,7 +76,7 @@ final class APIWorkspace: ObservableObject {
         self.personalRoot = personalRoot
     }
 
-    var collection: BrunoCollection? {
+    package var collection: BrunoCollection? {
         collections.first { $0.root.standardizedFileURL == selectedRoot?.standardizedFileURL } ?? collections.first
     }
 
@@ -85,7 +85,7 @@ final class APIWorkspace: ObservableObject {
     private var elsewhere: [BrunoCollection] = []
 
     /// The collection a file is in, by path.
-    func collection(containing url: URL) -> BrunoCollection? {
+    package func collection(containing url: URL) -> BrunoCollection? {
         let path = Self.canonicalPath(place(of: url))
         return (collections + elsewhere).filter { path.hasPrefix(Self.canonicalPath($0.root) + "/") }
             .max { $0.root.path.count < $1.root.path.count }
@@ -94,7 +94,7 @@ final class APIWorkspace: ObservableObject {
     /// A path to compare by. standardizedFileURL takes /private off /var
     /// only for a path that exists, so a file not written yet (an agent's
     /// one-off request) is standardized by its folder.
-    nonisolated static func canonicalPath(_ url: URL) -> String {
+    package nonisolated static func canonicalPath(_ url: URL) -> String {
         if FileManager.default.fileExists(atPath: url.path) { return url.standardizedFileURL.path }
         return url.deletingLastPathComponent().standardizedFileURL.path + "/" + url.lastPathComponent
     }
@@ -104,7 +104,7 @@ final class APIWorkspace: ObservableObject {
     // MARK: Loading
 
     /// The checkout the window shows now.
-    func setRoot(_ url: URL?) {
+    package func setRoot(_ url: URL?) {
         guard url?.standardizedFileURL != root?.standardizedFileURL else { return }
         root = url
         collections = []
@@ -121,12 +121,12 @@ final class APIWorkspace: ObservableObject {
     /// Requests of your own, as Postman keeps them: a Bruno collection in
     /// Overterm's own folder, not the checkout's — there whatever the
     /// checkout has, nothing committed. Agents aren't shown it.
-    nonisolated static var defaultPersonalRoot: URL {
+    package nonisolated static var defaultPersonalRoot: URL {
         AppEnvironment.supportDirectory.appendingPathComponent("api/My Requests", isDirectory: true)
     }
 
     /// The personal collection at `root`, made the first time it is asked for.
-    nonisolated static func personalCollection(at root: URL) -> BrunoCollection? {
+    package nonisolated static func personalCollection(at root: URL) -> BrunoCollection? {
         let config = root.appendingPathComponent(BrunoCollection.configName)
         if !FileManager.default.fileExists(atPath: config.path) {
             let environments = root.appendingPathComponent("environments", isDirectory: true)
@@ -144,7 +144,7 @@ final class APIWorkspace: ObservableObject {
 
     /// The checkout's collections, and yours after them: My Requests, and
     /// every other collection made beside it in Overterm's folder.
-    nonisolated static func loadAll(in root: URL, personal: URL?) -> [BrunoCollection] {
+    package nonisolated static func loadAll(in root: URL, personal: URL?) -> [BrunoCollection] {
         // Anything in the personal folder is yours, even when the checkout
         // holds it (a home folder opened as one).
         let personalParent = personal.map { $0.deletingLastPathComponent().standardizedFileURL.path + "/" }
@@ -157,7 +157,7 @@ final class APIWorkspace: ObservableObject {
 
     /// Personal collections other than My Requests: the folders beside it
     /// with a bruno.json, by name.
-    nonisolated static func otherPersonalCollections(beside myRequests: URL) -> [BrunoCollection] {
+    package nonisolated static func otherPersonalCollections(beside myRequests: URL) -> [BrunoCollection] {
         let parent = myRequests.deletingLastPathComponent()
         let folders = (try? FileManager.default.contentsOfDirectory(at: parent, includingPropertiesForKeys: nil)) ?? []
         return
@@ -173,7 +173,7 @@ final class APIWorkspace: ObservableObject {
     }
 
     /// The checkout's own: what agents, imports and the runner's bru see.
-    var checkoutCollections: [BrunoCollection] { collections.filter { !$0.isPersonal } }
+    package var checkoutCollections: [BrunoCollection] { collections.filter { !$0.isPersonal } }
 
     /// Picked when nothing else is: the checkout's first, else yours.
     private func defaultRoot(_ found: [BrunoCollection]) -> URL? {
@@ -181,7 +181,7 @@ final class APIWorkspace: ObservableObject {
     }
 
     /// Finds the collections again and reads them — off the main thread.
-    func reload() {
+    package func reload() {
         mcp.reload(checkout: root)
         guard let root else {
             collections = []
@@ -209,7 +209,7 @@ final class APIWorkspace: ObservableObject {
 
     /// Reads the collections now, on this thread — for an agent's call,
     /// which needs them before it can answer. The walk is bounded.
-    func loadNow() {
+    package func loadNow() {
         guard let root else { return }
         apply(Self.loadAll(in: root, personal: personalRoot), for: root)
     }
@@ -232,7 +232,7 @@ final class APIWorkspace: ObservableObject {
     /// Files, say): its collection is read now, so its environment, auth,
     /// headers and scripts apply. Only for a file in the checkout, and
     /// only when it isn't known yet — the panel still reads nothing idle.
-    func ensureLoaded(for url: URL) {
+    package func ensureLoaded(for url: URL) {
         // A draft's collection is where it will be saved, not where it sits.
         let url = place(of: url)
         guard collection(containing: url) == nil else { return }
@@ -261,13 +261,13 @@ final class APIWorkspace: ObservableObject {
     }
 
     /// The checkout the collections were last read for.
-    private(set) var loadedRoot: URL?
+    package private(set) var loadedRoot: URL?
 
     /// Reads the collections off the main thread unless they have been
     /// read for this checkout already — an agent's call waits on it; the
     /// walk lists every folder four down, too many in a monorepo to do on
     /// the main thread each time.
-    func loadIfNeeded() async {
+    package func loadIfNeeded() async {
         guard let root, loadedRoot?.standardizedFileURL != root.standardizedFileURL else { return }
         let personal = personalRoot
         let found = await Task.detached(priority: .userInitiated) { Self.loadAll(in: root, personal: personal) }.value
@@ -285,7 +285,7 @@ final class APIWorkspace: ObservableObject {
 
     /// Looks for what could be imported: files in the checkout, and —
     /// if Settings allows — an API the selected tab serves.
-    func discover() {
+    package func discover() {
         guard let root else { return }
         let ports = Settings.shared.apiDiscoverServers ? ports() : []
         Task { [weak self] in
@@ -297,16 +297,16 @@ final class APIWorkspace: ObservableObject {
 
     // MARK: Importing
 
-    struct Imported {
+    package struct Imported {
         /// The collection, or the folder in it, that was written.
-        let folder: URL
+        package let folder: URL
         /// Its first request, to open.
-        let firstRequest: URL?
-        let notes: [String]
+        package let firstRequest: URL?
+        package let notes: [String]
     }
 
     /// Where an import goes.
-    enum Destination {
+    package enum Destination {
         /// The collection picked in the panel — a personal one too: a file
         /// you import, into My Requests if that is where you are.
         case picked
@@ -318,7 +318,7 @@ final class APIWorkspace: ObservableObject {
     /// none, as a collection of its own in the checkout's `bruno/`.
     /// Imported with My Requests picked, a Postman export went into the
     /// checkout's collection whatever was picked.
-    func write(_ imported: APIImport, into destination: Destination = .picked) throws -> Imported {
+    package func write(_ imported: APIImport, into destination: Destination = .picked) throws -> Imported {
         guard let root else { throw FileError.exists("No checkout") }
         let folder: URL
         let target =
@@ -361,7 +361,7 @@ final class APIWorkspace: ObservableObject {
         return nil
     }
 
-    func importSource(_ source: APIDiscovery.Source) async throws -> Imported {
+    package func importSource(_ source: APIDiscovery.Source) async throws -> Imported {
         switch source {
         // Found in the checkout or served by it: the checkout's API.
         case .file(let url, _):
@@ -376,7 +376,7 @@ final class APIWorkspace: ObservableObject {
     /// A request from a cURL command, in the collection picked — My
     /// Requests when the checkout has none, so nothing lands in the repo
     /// unasked; its file.
-    func importCurl(_ command: String) throws -> URL {
+    package func importCurl(_ command: String) throws -> URL {
         var file = try CurlParser.parse(command)
         if collection == nil, let personal = personalRoot.flatMap(Self.personalCollection(at:)) {
             collections.append(personal)
@@ -392,7 +392,7 @@ final class APIWorkspace: ObservableObject {
 
     // MARK: Environments
 
-    func environmentFile(_ name: String?, in collection: BrunoCollection) -> BruFile? {
+    package func environmentFile(_ name: String?, in collection: BrunoCollection) -> BruFile? {
         guard let name, let ref = collection.environments.first(where: { $0.name == name }) else { return nil }
         return (try? String(contentsOf: ref.url, encoding: .utf8)).map(BruFile.init(parsing:))
     }
@@ -401,7 +401,7 @@ final class APIWorkspace: ObservableObject {
     /// and what scripts set on it this run.
     /// - Parameter includeSecrets: false for a request an agent wrote
     ///   itself — it names the host, so a secret could leave with it.
-    func environmentValues(_ collection: BrunoCollection, name: String?, includeSecrets: Bool = true) -> [String: String] {
+    package func environmentValues(_ collection: BrunoCollection, name: String?, includeSecrets: Bool = true) -> [String: String] {
         guard let name, let file = environmentFile(name, in: collection) else { return [:] }
         var values = APIVariables.map(file.variables)
         for secret in file.secretNames {
@@ -417,7 +417,7 @@ final class APIWorkspace: ObservableObject {
     /// Saves an environment's secrets: the names into its file's
     /// `vars:secret` (and out of its `vars`, so no value stays committed),
     /// the values into the keychain.
-    func saveSecrets(_ names: [String], values: [String: String], environment: String, in collection: BrunoCollection) throws {
+    package func saveSecrets(_ names: [String], values: [String: String], environment: String, in collection: BrunoCollection) throws {
         guard let ref = collection.environments.first(where: { $0.name == environment }) else { return }
         var file = BruFile(parsing: try String(contentsOf: ref.url, encoding: .utf8))
         let before = file.secretNames
@@ -431,14 +431,14 @@ final class APIWorkspace: ObservableObject {
     }
 
     /// Hands a request and what came back to an agent — the window answers.
-    var askAgent: ((String, URL?) -> Void)?
+    package var askAgent: ((String, URL?) -> Void)?
 
-    func runtimeVariables(_ collection: BrunoCollection) -> [String: String] { session.runtime[collection.root] ?? [:] }
+    package func runtimeVariables(_ collection: BrunoCollection) -> [String: String] { session.runtime[collection.root] ?? [:] }
 
     /// Every secret value the checkout's collections could fill in — each
     /// environment's, from the keychain and as scripts set them — to keep
     /// out of what agents are told, whichever environment a run used.
-    func allSecretValues() -> [String] {
+    package func allSecretValues() -> [String] {
         checkoutCollections.flatMap { collection in
             collection.environments.flatMap { ref -> [String] in
                 guard let file = environmentFile(ref.name, in: collection) else { return [] }
@@ -450,14 +450,14 @@ final class APIWorkspace: ObservableObject {
         }
     }
 
-    func clearRuntimeVariables() {
+    package func clearRuntimeVariables() {
         guard let collection else { return }
         session.runtime[collection.root] = [:]
         session.runtimeJSON[collection.root] = [:]
         objectWillChange.send()
     }
 
-    func client(for root: URL?) -> APIClient {
+    package func client(for root: URL?) -> APIClient {
         let key = root ?? URL(fileURLWithPath: "/")
         if let client = session.clients[key] { return client }
         let client = APIClient()
@@ -467,7 +467,7 @@ final class APIWorkspace: ObservableObject {
 
     // MARK: Sending
 
-    var options: APIClient.Options {
+    package var options: APIClient.Options {
         APIClient.Options(
             timeout: TimeInterval(Settings.shared.apiTimeout), followRedirects: Settings.shared.apiFollowRedirects,
             verifyTLS: Settings.shared.apiVerifyTLS)
@@ -476,7 +476,7 @@ final class APIWorkspace: ObservableObject {
     /// Which environment a run uses. Spelled out, because nil meant two
     /// things — "the panel's" and "none" — and the difference sent requests
     /// to the wrong server: an agent's or a run's choice is always fixed.
-    enum EnvironmentChoice: Equatable, Sendable {
+    package enum EnvironmentChoice: Equatable, Sendable {
         /// What the panel has picked for the request's collection, now.
         case panel
         case none
@@ -485,7 +485,7 @@ final class APIWorkspace: ObservableObject {
 
     /// The environment picked for `collection`: the panel's pick for the
     /// one it shows, else the pick it was left with last.
-    func pickedEnvironment(for collection: BrunoCollection) -> String? {
+    package func pickedEnvironment(for collection: BrunoCollection) -> String? {
         let name =
             collection.root.standardizedFileURL == self.collection?.root.standardizedFileURL
             ? environmentName : AppEnvironment.defaults.string(forKey: Self.environmentKey(collection.root))
@@ -493,7 +493,7 @@ final class APIWorkspace: ObservableObject {
     }
 
     /// The choice made fixed: what `.panel` means now.
-    func fixed(_ choice: EnvironmentChoice, for collection: BrunoCollection) -> EnvironmentChoice {
+    package func fixed(_ choice: EnvironmentChoice, for collection: BrunoCollection) -> EnvironmentChoice {
         guard choice == .panel else { return choice }
         return pickedEnvironment(for: collection).map(EnvironmentChoice.named) ?? .none
     }
@@ -501,7 +501,7 @@ final class APIWorkspace: ObservableObject {
     /// Everything a request file needs to be run, read now.
     /// - Parameter environment: fixed for this run (an agent's, the
     ///   runner's); the panel's pick for `.panel`. Never changes the pick.
-    func setup(for url: URL?, file: BruFile, environment choice: EnvironmentChoice = .panel, includeSecrets: Bool = true)
+    package func setup(for url: URL?, file: BruFile, environment choice: EnvironmentChoice = .panel, includeSecrets: Bool = true)
         -> APIExecution.Setup
     {
         var setup = APIExecution.Setup(file: file)
@@ -541,7 +541,7 @@ final class APIWorkspace: ObservableObject {
     }
 
     /// Sends the request in `file` (its text as the editor holds it, saved or not).
-    func send(_ file: BruFile, at url: URL) {
+    package func send(_ file: BruFile, at url: URL) {
         let url = Self.key(url)
         tasks[url]?.cancel()
         sending.insert(url)
@@ -558,7 +558,7 @@ final class APIWorkspace: ObservableObject {
     }
 
     /// Runs a request and waits for it — the runner's and agents' way in.
-    func run(_ file: BruFile, at url: URL?, environment: EnvironmentChoice = .panel) async -> APIExecution.Result {
+    package func run(_ file: BruFile, at url: URL?, environment: EnvironmentChoice = .panel) async -> APIExecution.Result {
         let setup = setup(for: url, file: file, environment: environment)
         let result = await APIExecution.run(setup, client: client(for: setup.collectionRoot), scripts: scripts)
         // A run replaced meanwhile: its result would put back the runtime
@@ -568,7 +568,7 @@ final class APIWorkspace: ObservableObject {
         return result
     }
 
-    func cancel(_ url: URL) {
+    package func cancel(_ url: URL) {
         let url = Self.key(url)
         tasks[url]?.cancel()
         tasks[url] = nil
@@ -596,9 +596,9 @@ final class APIWorkspace: ObservableObject {
 
     // MARK: Files
 
-    enum FileError: LocalizedError {
+    package enum FileError: LocalizedError {
         case exists(String)
-        var errorDescription: String? {
+        package var errorDescription: String? {
             switch self {
             case .exists(let name): "“\(name)” is already there."
             }
@@ -612,25 +612,25 @@ final class APIWorkspace: ObservableObject {
     /// outside every collection — nothing lands in the checkout or in My
     /// Requests until it is saved — but sent as if it were in the folder it
     /// was started from, with that collection's environment and settings.
-    nonisolated static var draftsDirectory: URL {
+    package nonisolated static var draftsDirectory: URL {
         draftsOverride ?? AppEnvironment.supportDirectory.appendingPathComponent("api-drafts", isDirectory: true)
     }
     /// Unit tests' own: they aren't an isolated run, and must not write
     /// into the user's support folder.
-    nonisolated(unsafe) static var draftsOverride: URL?
+    package nonisolated(unsafe) static var draftsOverride: URL?
 
     /// Each draft, by its path, and the folder it belongs in.
-    private(set) var drafts: [String: URL] = [:]
+    package private(set) var drafts: [String: URL] = [:]
 
-    func isDraft(_ url: URL) -> Bool { drafts[Self.canonicalPath(url)] != nil }
+    package func isDraft(_ url: URL) -> Bool { drafts[Self.canonicalPath(url)] != nil }
 
     /// Where a request is sent from: a draft's folder, else its own place.
-    func place(of url: URL) -> URL {
+    package func place(of url: URL) -> URL {
         drafts[Self.canonicalPath(url)].map { $0.appendingPathComponent(url.lastPathComponent) } ?? url
     }
 
     /// A new request, unnamed and unsaved, ready to send.
-    func newDraft(in folder: URL, url: String = "", kind: BruFile.RequestKind = .http) throws -> URL {
+    package func newDraft(in folder: URL, url: String = "", kind: BruFile.RequestKind = .http) throws -> URL {
         try FileManager.default.createDirectory(at: Self.draftsDirectory, withIntermediateDirectories: true)
         let name = kind == .http ? "New Request" : "New \(kind.title) Request"
         let file = APIImport.unique(Self.draftsDirectory.appendingPathComponent("\(name).bru"), isFolder: false)
@@ -647,7 +647,7 @@ final class APIWorkspace: ObservableObject {
 
     /// Saves a draft as `name` in the folder it was started from; the
     /// request's file there.
-    func saveDraft(_ draft: URL, named name: String) throws -> URL {
+    package func saveDraft(_ draft: URL, named name: String) throws -> URL {
         guard let folder = drafts[Self.canonicalPath(draft)] else { throw FileError.exists("Not a draft") }
         var file = BruFile(parsing: try String(contentsOf: draft, encoding: .utf8))
         file.name = name
@@ -661,13 +661,13 @@ final class APIWorkspace: ObservableObject {
     }
 
     /// A draft closed without saving: gone.
-    func discardDraft(_ draft: URL) {
+    package func discardDraft(_ draft: URL) {
         guard drafts.removeValue(forKey: Self.canonicalPath(draft)) != nil else { return }
         try? FileManager.default.removeItem(at: draft)
     }
 
     @discardableResult
-    func newRequest(named name: String, in folder: URL, method: String = "get", url: String = "") throws -> URL {
+    package func newRequest(named name: String, in folder: URL, method: String = "get", url: String = "") throws -> URL {
         let file = folder.appendingPathComponent(Self.fileName(name) + ".bru")
         guard !FileManager.default.fileExists(atPath: file.path) else { throw FileError.exists(file.lastPathComponent) }
         let seq = (collection(containing: file)?.item(at: folder)?.children?.compactMap(\.seq).max() ?? 0) + 1
@@ -677,7 +677,7 @@ final class APIWorkspace: ObservableObject {
     }
 
     @discardableResult
-    func newFolder(named name: String, in parent: URL) throws -> URL {
+    package func newFolder(named name: String, in parent: URL) throws -> URL {
         let folder = parent.appendingPathComponent(Self.fileName(name), isDirectory: true)
         guard !FileManager.default.fileExists(atPath: folder.path) else { throw FileError.exists(folder.lastPathComponent) }
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: false)
@@ -692,7 +692,7 @@ final class APIWorkspace: ObservableObject {
     /// `bruno/`, or beside it when that is taken — a second one had nowhere
     /// to go.
     @discardableResult
-    func newCheckoutCollection(named name: String) throws -> URL {
+    package func newCheckoutCollection(named name: String) throws -> URL {
         guard let root else { throw FileError.exists("No checkout") }
         let preferred = root.appendingPathComponent("bruno", isDirectory: true)
         let folder =
@@ -705,7 +705,7 @@ final class APIWorkspace: ObservableObject {
     /// A new collection of your own, beside My Requests in Overterm's
     /// folder: nothing of it lands in the checkout.
     @discardableResult
-    func newPersonalCollection(named name: String) throws -> URL {
+    package func newPersonalCollection(named name: String) throws -> URL {
         guard let personalRoot else { throw FileError.exists("No place for personal collections") }
         let parent = personalRoot.deletingLastPathComponent()
         let folder = APIImport.unique(parent.appendingPathComponent(Self.fileName(name), isDirectory: true), isFolder: true)
@@ -715,7 +715,7 @@ final class APIWorkspace: ObservableObject {
     /// A new collection in `folder` (made if missing): bruno.json, a Local
     /// environment, a first request.
     @discardableResult
-    func newCollection(named name: String, at folder: URL, baseURL: String = "http://localhost:3000") throws -> URL {
+    package func newCollection(named name: String, at folder: URL, baseURL: String = "http://localhost:3000") throws -> URL {
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
         let config = folder.appendingPathComponent(BrunoCollection.configName)
         guard !FileManager.default.fileExists(atPath: config.path) else { throw FileError.exists(BrunoCollection.configName) }
@@ -733,7 +733,7 @@ final class APIWorkspace: ObservableObject {
     }
 
     /// Renames a request (its meta name and its file) or a folder.
-    func rename(_ item: APIItem, to name: String) throws -> URL {
+    package func rename(_ item: APIItem, to name: String) throws -> URL {
         let parent = item.url.deletingLastPathComponent()
         if item.isFolder {
             let target = parent.appendingPathComponent(Self.fileName(name), isDirectory: true)
@@ -763,22 +763,22 @@ final class APIWorkspace: ObservableObject {
 
     /// The one spelling results are kept under: links resolved — the
     /// panel's tree lists /private/var where the editor opened /var.
-    nonisolated static func key(_ url: URL) -> URL {
+    package nonisolated static func key(_ url: URL) -> URL {
         FileManager.default.fileExists(atPath: url.path)
             ? url.resolvingSymlinksInPath()
             : url.deletingLastPathComponent().resolvingSymlinksInPath().appendingPathComponent(url.lastPathComponent)
     }
 
     /// Whether the request at `url` is out, however it is spelled.
-    func isSending(_ url: URL) -> Bool { sending.contains(Self.key(url)) }
+    package func isSending(_ url: URL) -> Bool { sending.contains(Self.key(url)) }
 
     /// The last result of the request at `url`, however it is spelled.
-    func result(for url: URL) -> APIExecution.Result? { results[Self.key(url)] }
+    package func result(for url: URL) -> APIExecution.Result? { results[Self.key(url)] }
 
     /// Results of what was at `old` (a request, or the requests of a folder)
     /// are now those of what is at `new` — matched with links resolved, as
     /// the editor and the tree spell the same path differently.
-    func moveResults(from old: URL, resolved oldResolved: String, to new: URL) {
+    package func moveResults(from old: URL, resolved oldResolved: String, to new: URL) {
         for (url, result) in results {
             let resolved = url.resolvingSymlinksInPath().path
             // Gone from disk: resolved by its folder, which is still there.
@@ -790,7 +790,7 @@ final class APIWorkspace: ObservableObject {
     }
 
     /// A copy beside it, named "<name> copy".
-    func duplicate(_ item: APIItem) throws -> URL {
+    package func duplicate(_ item: APIItem) throws -> URL {
         guard !item.isFolder else { return item.url }
         var file = BruFile(parsing: try String(contentsOf: item.url, encoding: .utf8))
         var name = item.name + " copy"
@@ -809,7 +809,7 @@ final class APIWorkspace: ObservableObject {
     }
 
     /// A name as a file may be called: no slashes or colons.
-    nonisolated static func fileName(_ name: String) -> String {
+    package nonisolated static func fileName(_ name: String) -> String {
         let cleaned = name.trimmingCharacters(in: .whitespacesAndNewlines).replacingOccurrences(of: "/", with: "-")
             .replacingOccurrences(of: ":", with: "-")
         return cleaned.isEmpty ? "Untitled" : cleaned
@@ -821,23 +821,23 @@ final class APIWorkspace: ObservableObject {
 /// shared by its workspaces — the panel's and an agent's on another
 /// checkout — so a login an agent ran is still there after a tab switch.
 @MainActor
-final class APISession {
-    var runtime: [URL: [String: String]] = [:]
+package final class APISession {
+    package var runtime: [URL: [String: String]] = [:]
     /// The same values as JavaScript had them, JSON-encoded.
-    var runtimeJSON: [URL: [String: String]] = [:]
+    package var runtimeJSON: [URL: [String: String]] = [:]
     /// Per collection path and environment name.
-    var environmentOverrides: [String: [String: String]] = [:]
-    var clients: [URL: APIClient] = [:]
+    package var environmentOverrides: [String: [String: String]] = [:]
+    package var clients: [URL: APIClient] = [:]
 }
 
 /// What a run started from, to tell what it changed.
-struct APIRunSnapshot {
-    let collectionRoot: URL?
-    let environmentName: String?
-    let runtime: [String: String]
-    let runtimeJSON: [String: String]
+package struct APIRunSnapshot {
+    package let collectionRoot: URL?
+    package let environmentName: String?
+    package let runtime: [String: String]
+    package let runtimeJSON: [String: String]
 
-    init(_ setup: APIExecution.Setup) {
+    package init(_ setup: APIExecution.Setup) {
         collectionRoot = setup.collectionRoot
         environmentName = setup.environmentName
         runtime = setup.runtime
@@ -847,7 +847,7 @@ struct APIRunSnapshot {
 
 // MARK: GraphQL
 
-enum GraphQLSchemaState: Equatable {
+package enum GraphQLSchemaState: Equatable {
     case loading
     case loaded(GraphQLSchema)
     case failed(String)
@@ -855,7 +855,7 @@ enum GraphQLSchemaState: Equatable {
 
 extension APIWorkspace {
     /// Where a GraphQL request's schema is read from: its URL, variables filled.
-    func graphQLEndpoint(_ file: BruFile, at url: URL) -> String? {
+    package func graphQLEndpoint(_ file: BruFile, at url: URL) -> String? {
         try? graphQLPlan(file, at: url).url.absoluteString
     }
 
@@ -879,12 +879,12 @@ extension APIWorkspace {
         return plan
     }
 
-    func graphQLSchema(_ file: BruFile, at url: URL) -> GraphQLSchemaState? {
+    package func graphQLSchema(_ file: BruFile, at url: URL) -> GraphQLSchemaState? {
         graphQLEndpoint(file, at: url).flatMap { graphQLSchemas[$0] }
     }
 
     /// Reads the schema, unless it was read already (or `force`).
-    func loadGraphQLSchema(_ file: BruFile, at url: URL, force: Bool = false) {
+    package func loadGraphQLSchema(_ file: BruFile, at url: URL, force: Bool = false) {
         let plan: APIRequestPlan
         do {
             plan = try graphQLPlan(file, at: url)

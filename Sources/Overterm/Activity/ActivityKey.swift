@@ -12,7 +12,7 @@ import Foundation
 /// its open files and sockets, read when asked. `e` opens a terminal in the
 /// selection's folder, read at the focus level. ⌥o and ⌥r are
 /// `ActivityPageModel.pressOption`'s. Pure.
-enum ActivityKey: String, ResourceKey {
+package enum ActivityKey: String, ResourceKey {
     case processes, listening, leftBehind
     case goTo, detail, filter, help
     case open, reveal, tabInfo, sample, terminal, files
@@ -21,7 +21,7 @@ enum ActivityKey: String, ResourceKey {
     case stop, forceQuit, signal, suspend, background, lower, ask
     case sortCPU, sortMemory, sortTime, sortPID, invert
 
-    var section: ActivityPageModel.Section? {
+    package var section: ActivityPageModel.Section? {
         switch self {
         case .processes: .processes
         case .listening: .listening
@@ -30,7 +30,7 @@ enum ActivityKey: String, ResourceKey {
         }
     }
 
-    var key: String {
+    package var key: String {
         switch self {
         case .processes: "1"
         case .listening: "2"
@@ -69,7 +69,7 @@ enum ActivityKey: String, ResourceKey {
         }
     }
 
-    var title: String {
+    package var title: String {
         switch self {
         case .processes: "Processes"
         case .listening: "Listening"
@@ -109,5 +109,5 @@ enum ActivityKey: String, ResourceKey {
     }
 
     /// ← and →, which `ResourceTable` reads: listed by `?`, never typed here.
-    static let foldHelp = "← → fold or unfold the row"
+    package static let foldHelp = "← → fold or unfold the row"
 }

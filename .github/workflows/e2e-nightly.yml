@@ -100,7 +100,13 @@ jobs:
     env:
       E2E_LOGS: ${{ github.workspace }}/e2e-logs
     steps:
+      # The whole history: each file is dated by its last commit.
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Date the files by their commits
+        run: Scripts/restore-mtimes.sh
 
       - name: Use Xcode ${{ env.XCODE }}
         run: |
@@ -136,8 +142,9 @@ jobs:
             sleep 30
           done
 
-      # CI's debug build, its paths and key exactly (ci.yml, test): restored
-      # only.
+      # CI's debug build of this commit, its paths and keys exactly (ci.yml,
+      # test): restored only. With the files dated by their commits, nothing
+      # main's CI compiled is compiled again.
       - name: Restore the debug build
         uses: actions/cache/restore@v6
         with:
@@ -145,17 +152,14 @@ jobs:
             .build/*
             !.build/out
             .build/out/*
-            !.build/out/Intermediates.noindex
             !.build/out/Products
             !.build/out/v5
-            .build/out/Intermediates.noindex/*
-            !.build/out/Intermediates.noindex/Overterm.build
             .build/out/Products/Debug/*
-            !.build/out/Products/Debug/Overterm*
             !.build/out/Products/Debug/ExecutableModules
             !.build/out/Products/Debug/lib*.a
-          key: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}
+          key: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
           restore-keys: |
+            spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
             spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-
 
       - name: Assemble the app from the debug build

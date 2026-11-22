@@ -5,16 +5,65 @@ libghostty's own threads and git calls.
 
 ## Targets
 
-Package.swift has the app's code as a library, `Overterm` (`Sources/Overterm`),
-and a thin executable, `OvertermApp` (`Sources/OvertermApp/main.swift`, which
-calls `AppMain.run()`), whose product keeps the binary's name, `Overterm`
-(`.build/debug/Overterm`, what `Scripts/make-app.sh` copies into the bundle).
-The tests `@testable import Overterm`, the library. It was one executable
-target: then Swift Build compiled the whole app twice for a test build — the
-executable, and a testable copy for the tests to link — 1,128 s of CPU where
-one compile is 631. `AppMain` is `package`, the one thing the executable needs
-from the library; nothing else changed its access. Resources are the bundle's
-(`Bundle.main`), as before: the library has none of SwiftPM's.
+The app's code is a stack of library modules in one package, each over the
+ones below it, so a release build optimises them on several cores (whole
+module, each its own) and a change rebuilds what is above it only:
+
+| Module | What |
+|---|---|
+| `OvertermCore` | what depends on nothing else of the app: the parsers and pure models (BruFile, Protobuf, TerraformPlan and its kin, EditCommands, Vim, LSPGlob, BSON, SQLText…), git's readers, the shell's words, the transport, `Secrets` |
+| `Overterm` | the shell under the features: tabs, terminals and Ghostty, splits, the editor, settings, the sidebar's panels, Activity, the API client, notes, the browser — and the few pieces of a feature it holds itself (`Sources/Overterm/Kubernetes/`: `KubeForwardPill`, `KubeLogScrub`…) |
+| `OvertermDatabase` | the database client |
+| `OvertermDocker` | Docker (over the databases: its containers' clients) |
+| `OvertermKubernetes` | Kubernetes (over Docker: its images and CLI) |
+| `OvertermTerraform` | Terraform (over Kubernetes: a context's class) |
+| `OvertermShell` | the window and what holds the features together: `TerminalWindowController` and its extensions, the app delegate, the menus, the right slot, the sidebar, Tab Info, the Inbox's view, the review page, the E2E scenarios; `OvertermFeatures` |
+
+`OvertermApp` (`Sources/OvertermApp/main.swift`) calls `AppMain.run()`; its
+product keeps the binary's name, `Overterm` (`.build/debug/Overterm`, what
+`Scripts/make-app.sh` copies into the bundle). Each module re-exports the
+ones below it (`Exports.swift`), so no file names them, and says
+`Settings` and `Tab` are the app's (SwiftUI has both names too). The tests
+`@testable import` every module.
+
+What a module shares is `package`, not `internal`: every declaration a
+type's members or the top level make, marked once by a SwiftSyntax rewriter
+(a new one is written `package`). SwiftPM's implicit memberwise
+initialiser is internal whatever the struct's access, so a struct built
+from above says its own `package init`, with the same parameters and
+defaults; a class with none says `init()`.
+
+The shell can't name a feature above it. Where it asks one something, the
+feature answers through a hook it sets in `OvertermFeatures.install`
+(`Sources/OvertermShell/Features.swift`, each feature's `…Feature.install`),
+which `FeatureHooks.ensure()` looks up by its Objective-C name the first time
+a hook is read — the app and a unit test (which never runs `AppMain`) get
+them alike; install sets storage only, never reads a hook. The editor's
+(`EditorHooks`: a buffer's console, manifest or Terraform folder attached,
+shown, completed, formatted, saved), an agent's tools (`BrowserMCP.Provider`,
+in the order they are offered), a tab's Kubernetes badge
+(`Tab.kubeBadgeHook`), a setting's entry fields
+(`SettingsSchema.entryFields`), terraform-ls's environment, what a pane's
+command tells Kubernetes (`PaneBlocks.commandNoticed`). A feature's field on
+a shell type is kept there untyped (`Tab.kubeAlertsStorage`,
+`EditorBuffer.consolePart`, `TerminalView.kubePinStorage`) and read typed by
+the feature's extension (`Tab+Kubernetes.swift`, `DatabaseEditor.swift`); a
+window the shell reaches is a `TerminalWindowHost`. Resources are the
+bundle's (`Bundle.main`): no module has SwiftPM's.
+
+The end-to-end scenarios (`Sources/OvertermShell/E2E`) and the tests' fake servers
+(every `Fake*.swift`: `FakeDockerEngine`, `FakeSSHHost`, `FakeKubeAPI` and its
+parts, `FakeTerraformBackend`) are `#if E2E`, about 45,000 lines a shipped app
+never runs. Package.swift defines `E2E` in every debug build, and in a release
+build only with the package's `E2E` trait (`swift build -c release --traits
+E2E`, `make app TRAITS=E2E` — `make e2e`'s app). A release build without it,
+the one released, carries none of them and doesn't spend its optimiser on
+them; launched with `OVERTERM_E2E` it says it has no scenarios and quits (2).
+`make-app.sh` writes the build's configuration and traits into Info.plist
+(`OvertermBuildConfiguration`, `OvertermBuildTraits`) and `make-dmg.sh` packs
+only a release one without traits. swift-format leaves `#if` blocks
+unindented (`indentConditionalCompilationBlocks`), so a file wrapped whole
+keeps its lines as they were.
 
 ## Window layout
 
@@ -3962,7 +4011,7 @@ A log tab's pieces, whoever writes the log (`Sources/Overterm/Logs/`):
 
 The design is `docs/design/kubernetes/analysis.md` (its Section 15 says
 what was built and where the build departs from it); this is what exists,
-in `Sources/Overterm/Kubernetes/`. Overterm reads the kubeconfigs kubectl
+in `Sources/OvertermKubernetes/`. Overterm reads the kubeconfigs kubectl
 reads and tells production apart (Contexts), and reaches a cluster only
 through a `kubectl proxy` of its own per context, whose flags refuse what
 Overterm never sends and, on a read-only context, every method but GET —

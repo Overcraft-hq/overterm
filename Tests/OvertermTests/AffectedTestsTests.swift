@@ -1,6 +1,12 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Scripts/affected-tests.sh, which picks the unit tests a change reaches
 /// (`make test-changed`, CI's `changes` job). It runs for real with macOS's

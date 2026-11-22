@@ -1,13 +1,21 @@
 import AppKit
 import SwiftUI
 
-struct SelectionActions {
-    var ask: () -> Void
-    var copy: () -> Void
-    var copyAsMarkdown: () -> Void
-    var search: () -> Void
+package struct SelectionActions {
+    package var ask: () -> Void
+    package var copy: () -> Void
+    package var copyAsMarkdown: () -> Void
+    package var search: () -> Void
     /// Into today's note — nil while notes are off.
-    var toNote: (() -> Void)? = nil
+    package var toNote: (() -> Void)? = nil
+
+    package init(ask: @escaping () -> Void, copy: @escaping () -> Void, copyAsMarkdown: @escaping () -> Void, search: @escaping () -> Void, toNote: (() -> Void)? = nil) {
+        self.ask = ask
+        self.copy = copy
+        self.copyAsMarkdown = copyAsMarkdown
+        self.search = search
+        self.toNote = toNote
+    }
 }
 
 /// The strip that appears over a selection: the four things you do with
@@ -17,11 +25,16 @@ struct SelectionActions {
 /// reports a position for (`ghostty_text_s.tl_px_x/y`) — and only while
 /// it is on screen, which is also the only time a toolbar over it would
 /// make sense.
-struct SelectionBar: View {
-    @ObservedObject var theme: ChromeTheme
-    let actions: SelectionActions
+package struct SelectionBar: View {
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: SelectionActions
 
-    var body: some View {
+    package init(theme: ChromeTheme, actions: SelectionActions) {
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.actions = actions
+    }
+
+    package var body: some View {
         HStack(spacing: 2) {
             Button(action: actions.ask) {
                 HStack(spacing: 6) {
@@ -65,13 +78,20 @@ struct SelectionBar: View {
 }
 
 /// Where the selection goes, what goes with it, and what to say about it.
-struct AskAgentView: View {
-    @ObservedObject var model: AskAgentModel
-    @ObservedObject var theme: ChromeTheme
-    let send: () -> Void
-    let cancel: () -> Void
+package struct AskAgentView: View {
+    @ObservedObject package var model: AskAgentModel
+    @ObservedObject package var theme: ChromeTheme
+    package let send: () -> Void
+    package let cancel: () -> Void
 
-    var body: some View {
+    package init(model: AskAgentModel, theme: ChromeTheme, send: @escaping () -> Void, cancel: @escaping () -> Void) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.send = send
+        self.cancel = cancel
+    }
+
+    package var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             label("Send to")
             VStack(alignment: .leading, spacing: 2) {

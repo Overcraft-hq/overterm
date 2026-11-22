@@ -2,6 +2,12 @@ import Combine
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// A workload's merged logs (stage 2e, stern's way): the plan — the cap,
 /// streams kept in place, a pod joining, the include and exclude

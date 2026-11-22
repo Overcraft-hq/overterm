@@ -4,19 +4,19 @@ import Foundation
 /// The vault as Obsidian's graph draws it: notes as dots, links as lines,
 /// laid out by force — linked notes pull together, every two push apart.
 /// Pure and deterministic: the same vault lays out the same way.
-struct NotesGraph: Equatable, Sendable {
-    struct Node: Equatable, Sendable {
-        var path: String
-        var degree: Int
-        var position: CGPoint
+package struct NotesGraph: Equatable, Sendable {
+    package struct Node: Equatable, Sendable {
+        package var path: String
+        package var degree: Int
+        package var position: CGPoint
     }
 
-    var nodes: [Node]
+    package var nodes: [Node]
     /// Pairs of node indices.
-    var edges: [[Int]]
+    package var edges: [[Int]]
 
     /// Every note, or the notes within `depth` links of `center`.
-    static func make(from index: NotesIndex, center: String? = nil, depth: Int = 1, orphans: Bool = true) -> NotesGraph {
+    package static func make(from index: NotesIndex, center: String? = nil, depth: Int = 1, orphans: Bool = true) -> NotesGraph {
         var neighbours: [String: Set<String>] = [:]
         for path in index.paths {
             for link in index.document(path)?.links ?? [] {
@@ -58,7 +58,7 @@ struct NotesGraph: Equatable, Sendable {
 
     /// Fruchterman–Reingold, its steps fewer as the graph grows (each is
     /// every pair).
-    mutating func layout() {
+    package mutating func layout() {
         let n = nodes.count
         guard n > 1 else {
             if n == 1 { nodes[0].position = .zero }
@@ -116,7 +116,7 @@ struct NotesGraph: Equatable, Sendable {
     }
 
     /// The box around every node.
-    var bounds: CGRect {
+    package var bounds: CGRect {
         guard let first = nodes.first else { return .zero }
         var box = CGRect(origin: first.position, size: .zero)
         for node in nodes { box = box.union(CGRect(origin: node.position, size: .zero)) }

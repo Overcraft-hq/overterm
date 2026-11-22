@@ -7,13 +7,20 @@ import SwiftUI
 /// whether to move it in, so Escape is a real answer and nothing waits on
 /// one. Whichever way it goes, it goes for the island: the strip stops
 /// asking, and Group Settings can change its mind.
-struct NewTabPrompt: View {
-    @ObservedObject var group: TabGroup
-    @ObservedObject var theme: ChromeTheme
-    let keepOut: () -> Void
-    let join: () -> Void
+package struct NewTabPrompt: View {
+    @ObservedObject package var group: TabGroup
+    @ObservedObject package var theme: ChromeTheme
+    package let keepOut: () -> Void
+    package let join: () -> Void
 
-    var body: some View {
+    package init(group: TabGroup, theme: ChromeTheme, keepOut: @escaping () -> Void, join: @escaping () -> Void) {
+        self._group = ObservedObject(wrappedValue: group)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.keepOut = keepOut
+        self.join = join
+    }
+
+    package var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("Where does this tab belong?")
                 .font(.system(size: ChromeMetrics.text(13), weight: .semibold))

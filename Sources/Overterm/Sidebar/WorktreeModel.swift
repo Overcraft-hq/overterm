@@ -2,27 +2,29 @@ import Foundation
 
 /// The worktrees of the repository the selected tab is in.
 @MainActor
-final class WorktreeModel: ObservableObject {
-    @Published private(set) var worktrees: [Worktree] = []
+package final class WorktreeModel: ObservableObject {
+    package init() {}
+
+    @Published package private(set) var worktrees: [Worktree] = []
     /// Branches of linked worktrees that are merged (see MergedWorktrees).
-    @Published private(set) var merged: [String: MergedWorktrees.Reason] = [:]
+    @Published package private(set) var merged: [String: MergedWorktrees.Reason] = [:]
     /// Each branch's pull request (gh), when there is one.
-    @Published private(set) var pullRequests: [String: PullRequestSummary] = [:]
+    @Published package private(set) var pullRequests: [String: PullRequestSummary] = [:]
     /// Why pull requests aren't shown (no gh, not logged in, no remote) —
     /// for the repository shown now, never one asked about before: an error
     /// left over from a tab outside a repository (or a worktree whose .git
     /// points nowhere) hid the list of the next one.
-    @Published private(set) var pullRequestError: String?
+    @Published package private(set) var pullRequestError: String?
     private var pullRequestErrors: [URL: String] = [:]
     /// gh is network: a tab switch reuses what a minute-old list said.
     private var pullRequestCache: [URL: (at: Date, byBranch: [String: PullRequestSummary])] = [:]
-    static let pullRequestMaxAge: TimeInterval = 60
+    package static let pullRequestMaxAge: TimeInterval = 60
     /// What the selected tab shows, and why (set by the window).
-    @Published var showing: (root: URL, reason: CheckoutReason)?
+    @Published package var showing: (root: URL, reason: CheckoutReason)?
     /// A directory inside the repository (the file tree's root).
-    private(set) var anchor: URL?
+    package private(set) var anchor: URL?
 
-    func setAnchor(_ url: URL?) {
+    package func setAnchor(_ url: URL?) {
         guard url != anchor else { return }
         anchor = url
         Task { await refresh() }
@@ -32,7 +34,7 @@ final class WorktreeModel: ObservableObject {
     /// `fetch` first runs `git fetch --prune` (network), so merges made on
     /// the remote show up.
     /// `fetch` also asks GitHub again for pull requests.
-    func refresh(fetch: Bool = false) async {
+    package func refresh(fetch: Bool = false) async {
         guard let anchor else {
             worktrees = []
             merged = [:]
@@ -66,13 +68,13 @@ final class WorktreeModel: ObservableObject {
 
     /// Asks gh again for the current repository's pull requests (CI moves on
     /// while nothing local changes).
-    func refreshPullRequests() async {
+    package func refreshPullRequests() async {
         if let repo = main?.path { pullRequestCache[repo] = nil }
         await refresh()
     }
 
     /// Open pull requests asked for at most — more than a repository has open.
-    static let maxOpenPullRequests = 500
+    package static let maxOpenPullRequests = 500
 
     private func pullRequests(in repo: URL, force: Bool) async -> [String: PullRequestSummary] {
         if !force, let cached = pullRequestCache[repo], Date().timeIntervalSince(cached.at) < Self.pullRequestMaxAge {
@@ -111,10 +113,10 @@ final class WorktreeModel: ObservableObject {
 
     /// Linked worktrees there is no reason to keep: merged, or their
     /// directory already gone.
-    var cleanable: [Worktree] {
+    package var cleanable: [Worktree] {
         worktrees.filter { !$0.isMain && ($0.isPrunable || $0.branch.map { merged[$0] != nil } == true) }
     }
 
     /// The main worktree — where new worktrees are created from.
-    var main: Worktree? { worktrees.first { $0.isMain } }
+    package var main: Worktree? { worktrees.first { $0.isMain } }
 }

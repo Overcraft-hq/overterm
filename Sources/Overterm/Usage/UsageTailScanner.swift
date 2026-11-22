@@ -3,16 +3,21 @@ import Foundation
 /// Tokens cut by the hour they were spent in and the model that spent
 /// them: an hour falls on one side of "today" wherever you are, and the
 /// model is what gives tokens a price.
-struct UsageSlice: Equatable, Sendable {
-    struct Key: Hashable, Sendable {
-        let hour: Date
+package struct UsageSlice: Equatable, Sendable {
+    package struct Key: Hashable, Sendable {
+        package let hour: Date
         /// Empty when the log never named a model.
-        let model: String
+        package let model: String
+
+        package init(hour: Date, model: String) {
+            self.hour = hour
+            self.model = model
+        }
     }
 
-    let hour: Date
-    let model: String
-    var tokens: UsageTokens
+    package let hour: Date
+    package let model: String
+    package var tokens: UsageTokens
 }
 
 /// Reads the end of a log, backwards, until it is older than you asked for.
@@ -32,7 +37,7 @@ struct UsageSlice: Equatable, Sendable {
 ///
 /// What a scan found is kept against the file's size and modification date,
 /// so a log nobody has written to since is never read twice.
-final class UsageTailScanner: @unchecked Sendable {
+package final class UsageTailScanner: @unchecked Sendable {
     /// What one file's tail added up to, and what it was when we read it.
     private struct Scanned {
         let size: UInt64
@@ -49,24 +54,24 @@ final class UsageTailScanner: @unchecked Sendable {
 
     private let lock = NSLock()
     private var scanned = RecentlyUsed<URL, Scanned>(capacity: 240)
-    var tracked: Int { lock.withLock { scanned.count } }
+    package var tracked: Int { lock.withLock { scanned.count } }
 
     /// Bytes per step of the walk back. A day of one transcript fits in the
     /// first of these; the loop takes another when it hasn't reached far
     /// enough back yet.
-    static let step = 256 << 10
+    package static let step = 256 << 10
     /// Where a walk gives up, so a pathological file can't hold the pane
     /// forever. It was 64 MB — "two months of the busiest transcript" —
     /// until one transcript passed 2 GB and a month left most of it
     /// uncounted. A file is read this deep once; after that only what it
     /// grew by (`covered`).
-    static let limit: UInt64 = 16 << 30
+    package static let limit: UInt64 = 16 << 30
     /// How many of the newest replies' ids a file keeps between reads.
-    static let recentIDCount = 256
+    package static let recentIDCount = 256
 
     /// Adds up `file`'s tokens from `since` onwards, by the hour and the
     /// model they were spent on. Blocking; call off the main thread.
-    func slices(of file: URL, since: Date, parse: (UnsafeRawBufferPointer) -> UsageLine?) -> [UsageSlice.Key: UsageTokens] {
+    package func slices(of file: URL, since: Date, parse: (UnsafeRawBufferPointer) -> UsageLine?) -> [UsageSlice.Key: UsageTokens] {
         // From the file system each time: a URL keeps the resource values
         // it read once, and a transcript grows under it.
         let attributes = try? FileManager.default.attributesOfItem(atPath: file.path)
@@ -185,18 +190,18 @@ final class UsageTailScanner: @unchecked Sendable {
     }
 
     /// The hour an instant falls in — the grain everything is bucketed at.
-    static func hour(of date: Date) -> Date {
+    package static func hour(of date: Date) -> Date {
         Date(timeIntervalSince1970: (date.timeIntervalSince1970 / 3600).rounded(.down) * 3600)
     }
 }
 
 /// One line of a log that carries usage, whoever wrote it.
-struct UsageLine {
+package struct UsageLine {
     /// When it was written.
-    let at: Date
+    package let at: Date
     /// What to charge it to, as the log names it; nil when it doesn't.
-    var model: String?
+    package var model: String?
     /// The reply's id, where the log repeats a reply (Claude Code does).
-    var id: String?
-    var tokens: UsageTokens
+    package var id: String?
+    package var tokens: UsageTokens
 }

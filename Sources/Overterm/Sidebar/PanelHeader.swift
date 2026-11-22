@@ -8,16 +8,24 @@ import SwiftUI
 /// the sidebar is scoped to the tab you are in, so it has to say which
 /// island that is — otherwise the worktrees and sessions it lists look like
 /// all of them.
-struct PanelHeader<Trailing: View>: View {
-    let title: String
+package struct PanelHeader<Trailing: View>: View {
+    package let title: String
     /// The island the panel is about, if the selected tab is in one.
-    let group: TabGroup?
-    @ObservedObject var theme: ChromeTheme
+    package let group: TabGroup?
+    @ObservedObject package var theme: ChromeTheme
     /// What the title points at, for the tooltip — a path, usually.
-    var help: String?
-    @ViewBuilder var trailing: Trailing
+    package var help: String?
+    @ViewBuilder package var trailing: Trailing
 
-    var body: some View {
+    package init(title: String, group: TabGroup?, theme: ChromeTheme, help: String? = nil, @ViewBuilder trailing: () -> Trailing) {
+        self.title = title
+        self.group = group
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.help = help
+        self.trailing = trailing()
+    }
+
+    package var body: some View {
         HStack(spacing: 6) {
             Text(title)
                 .font(.system(size: ChromeMetrics.text(11), weight: .semibold))
@@ -55,13 +63,20 @@ private struct GroupTag: View {
 }
 
 /// A plain icon button in a panel header.
-struct PanelHeaderButton: View {
-    let symbol: String
-    let help: String
-    let action: () -> Void
-    @ObservedObject var theme: ChromeTheme
+package struct PanelHeaderButton: View {
+    package let symbol: String
+    package let help: String
+    package let action: () -> Void
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package init(symbol: String, help: String, action: @escaping () -> Void, theme: ChromeTheme) {
+        self.symbol = symbol
+        self.help = help
+        self.action = action
+        self._theme = ObservedObject(wrappedValue: theme)
+    }
+
+    package var body: some View {
         Button(action: action) {
             Image(systemName: symbol)
                 .font(.system(size: ChromeMetrics.text(11)))

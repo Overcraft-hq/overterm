@@ -1,6 +1,12 @@
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// An agent's folder's checkout, walked off the main thread (docs/design/
 /// activity/analysis.md, 7.2): the main thread is answered from what was

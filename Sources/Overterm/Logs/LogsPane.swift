@@ -3,12 +3,12 @@ import SwiftUI
 
 /// What the log shows: a word in it, how bad a line must be, and — for
 /// merged logs (a compose project's) — whose. Pure.
-struct LogFilter: Equatable {
-    enum Level: String, CaseIterable, Identifiable {
+package struct LogFilter: Equatable {
+    package enum Level: String, CaseIterable, Identifiable {
         case all, warnings, errors
 
-        var id: String { rawValue }
-        var title: String {
+        package var id: String { rawValue }
+        package var title: String {
             switch self {
             case .all: "All levels"
             case .warnings: "Warnings+"
@@ -17,39 +17,47 @@ struct LogFilter: Equatable {
         }
     }
 
-    var text = ""
-    var level = Level.all
+    package var text = ""
+    package var level = Level.all
     /// One source's lines (a service's); nil, every one's.
-    var source: String?
+    package var source: String?
     /// The text is a regular expression (case aside).
-    var regex = false
+    package var regex = false
     /// The text marks the lines it matches rather than picking them out.
-    var highlight = false
+    package var highlight = false
+
+    package init(text: String = "", level: Level = Level.all, source: String? = nil, regex: Bool = false, highlight: Bool = false) {
+        self.text = text
+        self.level = level
+        self.source = source
+        self.regex = regex
+        self.highlight = highlight
+    }
 
     /// Whether the text picks lines: it marks them instead, highlighting.
-    var picksByText: Bool { !text.isEmpty && !highlight }
-    var isEmpty: Bool { !picksByText && level == .all && source == nil }
+    package var picksByText: Bool { !text.isEmpty && !highlight }
+    package var isEmpty: Bool { !picksByText && level == .all && source == nil }
 
     /// The text as a regular expression: itself, or escaped. Nil when
     /// there's none, or it isn't one (`problem` says).
-    var expression: NSRegularExpression? {
+    package var expression: NSRegularExpression? {
         guard !text.isEmpty else { return nil }
         return try? NSRegularExpression(pattern: regex ? text : NSRegularExpression.escapedPattern(for: text), options: [.caseInsensitive])
     }
 
     /// What is wrong with the text: a regular expression that isn't one.
-    var problem: String? { regex && !text.isEmpty && expression == nil ? "Not a regular expression" : nil }
+    package var problem: String? { regex && !text.isEmpty && expression == nil ? "Not a regular expression" : nil }
 
-    func matches(_ line: LogLine) -> Bool { matcher().matches(line) }
+    package func matches(_ line: LogLine) -> Bool { matcher().matches(line) }
 
     /// The filter, its expression made once: a log's thousands of lines go through it.
-    func matcher() -> Matcher { Matcher(filter: self, expression: regex && picksByText ? expression : nil) }
+    package func matcher() -> Matcher { Matcher(filter: self, expression: regex && picksByText ? expression : nil) }
 
-    struct Matcher {
-        let filter: LogFilter
-        let expression: NSRegularExpression?
+    package struct Matcher {
+        package let filter: LogFilter
+        package let expression: NSRegularExpression?
 
-        func matches(_ line: LogLine) -> Bool {
+        package func matches(_ line: LogLine) -> Bool {
             if let source = filter.source, line.source != source { return false }
             switch filter.level {
             case .all: break
@@ -73,46 +81,74 @@ struct LogFilter: Equatable {
 
 /// How a log is shown, besides its filter: kept per window by a page that
 /// keeps them (Kubernetes'), else the pane's own.
-struct LogViewOptions: Equatable {
-    var wrap = true
-    var timestamps = true
-    var newestFirst = false
-    var regex = false
-    var highlight = false
+package struct LogViewOptions: Equatable {
+    package var wrap = true
+    package var timestamps = true
+    package var newestFirst = false
+    package var regex = false
+    package var highlight = false
+
+    package init(wrap: Bool = true, timestamps: Bool = true, newestFirst: Bool = false, regex: Bool = false, highlight: Bool = false) {
+        self.wrap = wrap
+        self.timestamps = timestamps
+        self.newestFirst = newestFirst
+        self.regex = regex
+        self.highlight = highlight
+    }
 }
 
 /// A Logs tab: followed, filtered, coloured by level — one source's (a
 /// container's), or several merged (a compose project's services').
-struct LogsPane: View {
-    @ObservedObject var feed: LogFeed
-    @ObservedObject var theme: ChromeTheme
+package struct LogsPane: View {
+    @ObservedObject package var feed: LogFeed
+    @ObservedObject package var theme: ChromeTheme
     /// Its accessibility identifiers' first word: `docker` makes
     /// `docker.logs.filter`, `docker.logs.service` and `docker.text`.
-    let identifier: String
+    package let identifier: String
     /// Types a command into a new terminal tab: the feed's
     /// `terminalCommand`, Follow in a Terminal Tab.
-    let runInTerminal: (String) -> Void
+    package let runInTerminal: (String) -> Void
     /// The merged feed's sources, for the picker; with `source`, the one
     /// shown (the project's session keeps it).
-    var sources: [String] = []
-    var source: Binding<String?>? = nil
+    package var sources: [String] = []
+    package var source: Binding<String?>? = nil
     /// What a source is called in the picker: a service.
-    var noun = "service"
+    package var noun = "service"
     /// Lines picked out of it, to an agent (`LogLinesTextView`).
-    var ask: ((String) -> Void)? = nil
+    package var ask: ((String) -> Void)? = nil
     /// The options a page keeps for its window; nil, the pane's own.
-    var options: Binding<LogViewOptions>? = nil
+    package var options: Binding<LogViewOptions>? = nil
     /// Save As…: the lines shown, as text. Nil: not offered.
-    var save: ((String) -> Void)? = nil
+    package var save: ((String) -> Void)? = nil
     /// Scrolled to the oldest line: older ones asked for. Nil: none to ask for.
-    var older: (() -> Void)? = nil
+    package var older: (() -> Void)? = nil
     /// What Stopped means, said on it.
-    var stoppedHelp = "Nothing runs: its log is followed again when it starts"
+    package var stoppedHelp = "Nothing runs: its log is followed again when it starts"
     /// Bumped by the page to give the filter field the keyboard (⌘F).
-    var focusFilter = 0
+    package var focusFilter = 0
     @State private var filter = LogFilter()
     @FocusState private var filterFocused: Bool
     @State private var ownOptions = LogViewOptions()
+
+    package init(
+        feed: LogFeed, theme: ChromeTheme, identifier: String, runInTerminal: @escaping (String) -> Void, sources: [String] = [], source: Binding<String?>? = nil, noun: String = "service",
+        ask: ((String) -> Void)? = nil, options: Binding<LogViewOptions>? = nil, save: ((String) -> Void)? = nil, older: (() -> Void)? = nil,
+        stoppedHelp: String = "Nothing runs: its log is followed again when it starts", focusFilter: Int = 0
+    ) {
+        self._feed = ObservedObject(wrappedValue: feed)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.identifier = identifier
+        self.runInTerminal = runInTerminal
+        self.sources = sources
+        self.source = source
+        self.noun = noun
+        self.ask = ask
+        self.options = options
+        self.save = save
+        self.older = older
+        self.stoppedHelp = stoppedHelp
+        self.focusFilter = focusFilter
+    }
 
     private var view: Binding<LogViewOptions> { options ?? $ownOptions }
 
@@ -126,7 +162,7 @@ struct LogsPane: View {
         return filter
     }
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             toolbar
             Rectangle().fill(theme.border).frame(height: 1)
@@ -160,7 +196,7 @@ struct LogsPane: View {
     /// from the source picked — a filter over the merged feed, said rather
     /// than left blank. Each source keeps its last lines there
     /// (`LogFeed.keepEach`), so none is none. Nil: the lines. Pure.
-    nonisolated static func note(lines: Int, shown: Int, filter: LogFilter, following: Bool) -> String? {
+    package nonisolated static func note(lines: Int, shown: Int, filter: LogFilter, following: Bool) -> String? {
         if lines == 0 { return following ? "Nothing written yet." : "No logs." }
         guard shown == 0, let source = filter.source else { return nil }
         return filter.text.isEmpty && filter.level == .all ? "Nothing from \(source) yet." : "Nothing from \(source) matches."

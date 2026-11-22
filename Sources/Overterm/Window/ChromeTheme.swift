@@ -18,84 +18,84 @@ import SwiftUI
 /// the cards' fills, the dividers) are repainted by hand, since a layer
 /// colour is nobody's binding.
 @MainActor
-final class ChromeTheme: ObservableObject {
+package final class ChromeTheme: ObservableObject {
     /// Whether the terminal theme is dark — AppKit chrome (popovers, their
     /// buttons) takes the matching appearance.
-    private(set) var isDark: Bool = false
+    package private(set) var isDark: Bool = false
 
     // MARK: Grounds
 
     /// The window itself: what shows in the gaps between the cards.
-    private(set) var win: Color = Color.clear
-    private(set) var winNS: NSColor = NSColor.clear
+    package private(set) var win: Color = Color.clear
+    package private(set) var winNS: NSColor = NSColor.clear
     /// The hairline just inside the window's rounded edge.
-    private(set) var winEdge: Color = Color.clear
+    package private(set) var winEdge: Color = Color.clear
     /// A panel card — the sidebar, the changes pane, a popover's body.
-    private(set) var card: Color = Color.clear
-    private(set) var cardNS: NSColor = NSColor.clear
+    package private(set) var card: Color = Color.clear
+    package private(set) var cardNS: NSColor = NSColor.clear
     /// The terminal's own background, and so a terminal card's fill.
-    private(set) var term: Color = Color.clear
-    private(set) var termNS: NSColor = NSColor.clear
+    package private(set) var term: Color = Color.clear
+    package private(set) var termNS: NSColor = NSColor.clear
     /// The hairline around a card, and between a card's header and body.
-    private(set) var border: Color = Color.clear
-    private(set) var borderNS: NSColor = NSColor.clear
+    package private(set) var border: Color = Color.clear
+    package private(set) var borderNS: NSColor = NSColor.clear
     /// What a card drops onto the window. Clear in a dark theme, where
     /// the hairline carries the separation on its own.
-    private(set) var cardShadow: Color = Color.clear
+    package private(set) var cardShadow: Color = Color.clear
 
     // MARK: Text
 
     /// Body text.
-    private(set) var text: Color = Color.clear
+    package private(set) var text: Color = Color.clear
     /// The text colour for AppKit (and SyntaxPalette, which fades it for comments).
-    private(set) var textNS: NSColor = NSColor.clear
+    package private(set) var textNS: NSColor = NSColor.clear
     /// Secondary text: a label beside the thing it names.
-    private(set) var text2: Color = Color.clear
+    package private(set) var text2: Color = Color.clear
     /// Tertiary text: metadata you read only when you look for it.
-    private(set) var text3: Color = Color.clear
+    package private(set) var text3: Color = Color.clear
     /// The two for AppKit (a list's text cells).
-    private(set) var text2NS: NSColor = NSColor.clear
-    private(set) var text3NS: NSColor = NSColor.clear
+    package private(set) var text2NS: NSColor = NSColor.clear
+    package private(set) var text3NS: NSColor = NSColor.clear
     /// Counts the colours' changes: a view that keeps what it drew by a key
     /// takes it in, so a theme picked draws it again.
-    private(set) var revision = 0
+    package private(set) var revision = 0
 
     // MARK: Fills
 
     /// The tile behind a small glyph (a tab's kind icon).
-    private(set) var iconBg: Color = Color.clear
+    package private(set) var iconBg: Color = Color.clear
     /// A selected row in a list.
-    private(set) var rowSel: Color = Color.clear
+    package private(set) var rowSel: Color = Color.clear
     /// A hovered row in a list.
-    private(set) var rowHover: Color = Color.clear
+    package private(set) var rowHover: Color = Color.clear
     /// The selected tab, which sits proud of the strip.
-    private(set) var tabSel: Color = Color.clear
+    package private(set) var tabSel: Color = Color.clear
     /// Its hairline and its drop shadow.
-    private(set) var tabSelEdge: Color = Color.clear
-    private(set) var tabSelShadow: Color = Color.clear
+    package private(set) var tabSelEdge: Color = Color.clear
+    package private(set) var tabSelShadow: Color = Color.clear
     /// A menu's body and its edge — translucent, over anything.
-    private(set) var menu: Color = Color.clear
-    private(set) var menuEdge: Color = Color.clear
+    package private(set) var menu: Color = Color.clear
+    package private(set) var menuEdge: Color = Color.clear
     /// The chip stack on a collapsed group, and an idle segment in its
     /// progress strip.
-    private(set) var stackBg: Color = Color.clear
-    private(set) var segIdle: Color = Color.clear
+    package private(set) var stackBg: Color = Color.clear
+    package private(set) var segIdle: Color = Color.clear
 
     // MARK: Status
 
     /// Behind "N need you".
-    private(set) var attnBg: Color = Color.clear
+    package private(set) var attnBg: Color = Color.clear
     /// Status text, legible on `win` in both themes — the status *fills*
     /// stay the same hue in both (`TabStatusStyle`), only text shifts.
-    private(set) var orangeText: Color = Color.clear
-    private(set) var greenText: Color = Color.clear
-    private(set) var accentText: Color = Color.clear
+    package private(set) var orangeText: Color = Color.clear
+    package private(set) var greenText: Color = Color.clear
+    package private(set) var accentText: Color = Color.clear
 
     // MARK: Charts
 
     /// The charts' ten categorical colours, the appearance's
-    /// (`KubeChartPalette`: each 3:1 at least against its card).
-    var chartPalette: [Color] { (isDark ? KubeChartPalette.dark : KubeChartPalette.light).map(\.color) }
+    /// (`TimeChartPalette`: each 3:1 at least against its card).
+    package var chartPalette: [Color] { (isDark ? TimeChartPalette.dark : TimeChartPalette.light).map(\.color) }
 
     // MARK: Compatibility
     //
@@ -108,19 +108,19 @@ final class ChromeTheme: ObservableObject {
     /// floats over the window — the palette, the switcher, Tab Info — and
     /// the panes that frame their own content (the changes pane, the
     /// editor's header and status bar).
-    var strip: Color { win }
-    var stripNS: NSColor { winNS }
+    package var strip: Color { win }
+    package var stripNS: NSColor { winNS }
     /// Translucent, the window's ground (WindowGroundView); clear, opaque.
-    private(set) var groundNS: NSColor = .clear
+    package private(set) var groundNS: NSColor = .clear
     /// A panel's own background inside a card (the changes, the usage,
     /// Settings' list): `strip`, or nothing over a translucent ground.
-    private(set) var panelGround: Color = .clear
-    private(set) var panelGroundNS: NSColor = .clear
-    var selected: Color { tabSel }
-    var hover: Color { rowHover }
-    var dimText: Color { text2 }
+    package private(set) var panelGround: Color = .clear
+    package private(set) var panelGroundNS: NSColor = .clear
+    package var selected: Color { tabSel }
+    package var hover: Color { rowHover }
+    package var dimText: Color { text2 }
 
-    init(background: NSColor, foreground: NSColor, opacity: CGFloat = 1, accent: NSColor? = nil) {
+    package init(background: NSColor, foreground: NSColor, opacity: CGFloat = 1, accent: NSColor? = nil) {
         apply(background: background, foreground: foreground, opacity: opacity, accent: accent)
     }
 
@@ -128,8 +128,8 @@ final class ChromeTheme: ObservableObject {
     /// opacity), kept so the same can be recognised and ignored.
     private var source: (background: NSColor, foreground: NSColor, opacity: CGFloat, accent: NSColor?)?
     /// Below 1, the window is translucent (Settings ▸ Appearance ▸ Opacity).
-    private(set) var opacity: CGFloat = 1
-    var isTranslucent: Bool { opacity < 1 }
+    package private(set) var opacity: CGFloat = 1
+    package var isTranslucent: Bool { opacity < 1 }
 
     /// Recomputes every colour from a terminal theme's two. One signal for
     /// the lot: they only ever change together.
@@ -138,7 +138,7 @@ final class ChromeTheme: ObservableObject {
     /// reloaded for reasons that have nothing to do with colour (a
     /// keybinding, the font), and a view redrawn for no reason can take
     /// the keyboard away from the terminal.
-    func apply(background: NSColor, foreground: NSColor, opacity: CGFloat = 1, accent chosen: NSColor? = nil) {
+    package func apply(background: NSColor, foreground: NSColor, opacity: CGFloat = 1, accent chosen: NSColor? = nil) {
         if let source, source.background == background, source.foreground == foreground, source.opacity == opacity,
             source.accent == chosen
         {
@@ -245,12 +245,12 @@ final class ChromeTheme: ObservableObject {
     }
 
     /// The accent, as a fill: a selected thing, a primary button.
-    private(set) var accentNS: NSColor = .systemBlue
-    private(set) var accent: Color = .blue
+    package private(set) var accentNS: NSColor = .systemBlue
+    package private(set) var accent: Color = .blue
 
     /// `colour` moved in brightness until text in it reads on the ground:
     /// at least 0.72 on a dark one, at most 0.55 on a light one.
-    nonisolated static func legible(_ colour: NSColor, onDark: Bool) -> NSColor {
+    package nonisolated static func legible(_ colour: NSColor, onDark: Bool) -> NSColor {
         let rgb = colour.usingColorSpace(.sRGB) ?? colour
         var hue: CGFloat = 0
         var saturation: CGFloat = 0
@@ -265,17 +265,21 @@ final class ChromeTheme: ObservableObject {
 
 /// The strip's background: the window's colour, or nothing over a
 /// translucent window's ground. A view, so it follows the theme.
-struct StripGround: View {
-    @ObservedObject var theme: ChromeTheme
+package struct StripGround: View {
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View { theme.isTranslucent ? Color.clear : theme.strip }
+    package init(theme: ChromeTheme) {
+        self._theme = ObservedObject(wrappedValue: theme)
+    }
+
+    package var body: some View { theme.isTranslucent ? Color.clear : theme.strip }
 }
 
 /// Settings ▸ Appearance ▸ Accent colour.
-enum ChromeAccent: String, CaseIterable, Sendable {
+package enum ChromeAccent: String, CaseIterable, Sendable {
     case overterm, system, terminal, blue, purple, pink, red, orange, yellow, green, teal, graphite
 
-    var label: String {
+    package var label: String {
         switch self {
         case .overterm: "Overterm blue"
         case .system: "macOS accent"
@@ -285,7 +289,7 @@ enum ChromeAccent: String, CaseIterable, Sendable {
     }
 
     /// nil: Overterm's own, as before there was a choice.
-    @MainActor func color(isDark: Bool) -> NSColor? {
+    @MainActor package func color(isDark: Bool) -> NSColor? {
         switch self {
         case .overterm: nil
         case .system: NSColor.controlAccentColor

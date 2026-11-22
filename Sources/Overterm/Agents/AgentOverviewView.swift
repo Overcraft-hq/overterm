@@ -2,18 +2,31 @@ import SwiftUI
 
 /// ⇧⌘A: every tab as a card over the window — agents waiting for you
 /// first. A click goes to the tab.
-struct AgentOverviewView: View {
-    @ObservedObject var model: AgentOverviewModel
-    @ObservedObject var worktrees: WorktreeModel
-    @ObservedObject var theme: ChromeTheme
-    let onChoose: (Tab.ID) -> Void
+package struct AgentOverviewView: View {
+    @ObservedObject package var model: AgentOverviewModel
+    @ObservedObject package var worktrees: WorktreeModel
+    @ObservedObject package var theme: ChromeTheme
+    package let onChoose: (Tab.ID) -> Void
     /// Show in Activity (6.12): the page at the card's agent.
-    var onActivity: ((AgentOverviewModel.Card) -> Void)? = nil
+    package var onActivity: ((AgentOverviewModel.Card) -> Void)? = nil
     /// A server's pill: its URL opened as a link in that tab is (6.12).
-    var onOpen: ((AgentOverviewModel.Card, URL) -> Void)? = nil
-    let onDismiss: () -> Void
+    package var onOpen: ((AgentOverviewModel.Card, URL) -> Void)? = nil
+    package let onDismiss: () -> Void
 
-    var body: some View {
+    package init(
+        model: AgentOverviewModel, worktrees: WorktreeModel, theme: ChromeTheme, onChoose: @escaping (Tab.ID) -> Void, onActivity: ((AgentOverviewModel.Card) -> Void)? = nil,
+        onOpen: ((AgentOverviewModel.Card, URL) -> Void)? = nil, onDismiss: @escaping () -> Void
+    ) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._worktrees = ObservedObject(wrappedValue: worktrees)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.onChoose = onChoose
+        self.onActivity = onActivity
+        self.onOpen = onOpen
+        self.onDismiss = onDismiss
+    }
+
+    package var body: some View {
         ZStack {
             Color.black.opacity(0.35).onTapGesture(perform: onDismiss)
             VStack(alignment: .leading, spacing: 12) {
@@ -173,7 +186,7 @@ private struct AgentCard: View {
     private func usageRow(_ usage: AgentOverviewModel.AgentUsage) -> some View {
         HStack(spacing: 6) {
             Image(systemName: "cpu").font(.system(size: ChromeMetrics.text(10)))
-            Text(verbatim: "\(TabInfoView.cpu(usage.cpu)) · \(TabInfoView.memory(usage.footprint))")
+            Text(verbatim: "\(InfoText.cpu(usage.cpu)) · \(InfoText.memory(usage.footprint))")
                 .help("Its agent and every process under it: CPU (100% is one core) and memory, as Activity Monitor counts it")
                 .accessibilityIdentifier("overview.usage")
             ForEach(usage.servers.prefix(4)) { server in
@@ -218,11 +231,11 @@ private struct AgentCard: View {
 
 /// The overview's host: takes the keyboard while shown so Esc closes it
 /// (there is no text field to catch it).
-final class AgentOverviewHostingView<Content: View>: NSHostingView<Content> {
-    var onEscape: (() -> Void)?
-    override var acceptsFirstResponder: Bool { true }
-    override func keyDown(with event: NSEvent) {
+package final class AgentOverviewHostingView<Content: View>: NSHostingView<Content> {
+    package var onEscape: (() -> Void)?
+    package override var acceptsFirstResponder: Bool { true }
+    package override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { onEscape?() } else { super.keyDown(with: event) }
     }
-    override func cancelOperation(_ sender: Any?) { onEscape?() }
+    package override func cancelOperation(_ sender: Any?) { onEscape?() }
 }

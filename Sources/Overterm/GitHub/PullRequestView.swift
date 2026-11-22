@@ -4,19 +4,27 @@ import SwiftUI
 /// The Pull Request pane: the checkout's PR — state, checks, description,
 /// conversation, review threads by file and line — with a comment box and
 /// a reply box per thread.
-struct PullRequestView: View {
-    @ObservedObject var model: PullRequestModel
-    @ObservedObject var theme: ChromeTheme
-    let onClose: () -> Void
+package struct PullRequestView: View {
+    @ObservedObject package var model: PullRequestModel
+    @ObservedObject package var theme: ChromeTheme
+    package let onClose: () -> Void
     /// A thread's file, at its line, in the editor.
-    let onOpenFile: (String, Int?) -> Void
+    package let onOpenFile: (String, Int?) -> Void
     /// The pull request's changes in a review tab.
-    var onReview: (Int) -> Void = { _ in }
+    package var onReview: (Int) -> Void = { _ in }
     @State private var draft = ""
     @State private var replies: [Int: String] = [:]
     @State private var checksOpen = false
 
-    var body: some View {
+    package init(model: PullRequestModel, theme: ChromeTheme, onClose: @escaping () -> Void, onOpenFile: @escaping (String, Int?) -> Void, onReview: @escaping (Int) -> Void = { _ in }) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.onClose = onClose
+        self.onOpenFile = onOpenFile
+        self.onReview = onReview
+    }
+
+    package var body: some View {
         VStack(spacing: 0) {
             header
             if model.picked != nil { pickedBar }
@@ -317,10 +325,10 @@ struct PullRequestView: View {
 }
 
 /// open / draft / merged / closed, in GitHub's colours.
-struct StatePill: View {
-    let state: PullRequestSummary.State
+package struct StatePill: View {
+    package let state: PullRequestSummary.State
 
-    var body: some View {
+    package var body: some View {
         Text(label).font(.system(size: ChromeMetrics.text(10), weight: .semibold)).foregroundStyle(.white)
             .padding(.horizontal, 6).padding(.vertical, 2)
             .background(Capsule().fill(color))
@@ -335,9 +343,9 @@ struct StatePill: View {
         }
     }
 
-    var color: Color { Self.color(state) }
+    package var color: Color { Self.color(state) }
 
-    static func color(_ state: PullRequestSummary.State) -> Color {
+    package static func color(_ state: PullRequestSummary.State) -> Color {
         switch state {
         case .open: Color(red: 0.14, green: 0.63, blue: 0.29)
         case .draft: Color.gray
@@ -348,10 +356,14 @@ struct StatePill: View {
 }
 
 /// CI at a glance: ✓ passing, ✗ failing, ● running.
-struct CIGlyph: View {
-    let overall: CheckSummary.Overall
+package struct CIGlyph: View {
+    package let overall: CheckSummary.Overall
 
-    var body: some View {
+    package init(overall: CheckSummary.Overall) {
+        self.overall = overall
+    }
+
+    package var body: some View {
         switch overall {
         case .passing: Image(systemName: "checkmark").foregroundStyle(DiffColors.added)
         case .failing: Image(systemName: "xmark").foregroundStyle(DiffColors.removed)

@@ -3,43 +3,49 @@ import Foundation
 /// Who asks an Activity tool (docs/design/activity/analysis.md, 8.2): the
 /// pane the bridge's path names, its tab, and the checkout that tab works
 /// in — the scope every answer is cut to, as `TerraformMCP`'s is.
-struct ActivityMCPCaller: Hashable, Sendable {
+package struct ActivityMCPCaller: Hashable, Sendable {
     /// The pane's tag (`TerminalView.processTag`).
-    let pane: String
-    let tab: UUID
+    package let pane: String
+    package let tab: UUID
     /// The checkout's folder, standardized as the tabs' facts say it; nil
     /// when the tab works in none — then only its own tab is inside.
-    let checkout: String?
+    package let checkout: String?
+
+    package init(pane: String, tab: UUID, checkout: String?) {
+        self.pane = pane
+        self.tab = tab
+        self.checkout = checkout
+    }
 }
 
 /// One call, its arguments read and checked (8.2): what the pure answer is
 /// made from, off the main thread.
-enum ActivityMCPRequest: Hashable, Sendable {
+package enum ActivityMCPRequest: Hashable, Sendable {
     case portHolder(port: Int, proto: String)
     case portList(scope: PortScope, proto: String?)
     case procMine
     case procLeftBehind(all: Bool)
     case procList(sort: Sort, limit: Int)
 
-    enum PortScope: String, Sendable, CaseIterable {
+    package enum PortScope: String, Sendable, CaseIterable {
         case mine, checkout, all
     }
 
-    enum Sort: String, Sendable, CaseIterable {
+    package enum Sort: String, Sendable, CaseIterable {
         case cpu, memory
     }
 
     /// `proc_list`'s most rows a list (8.2).
-    static let listLimit = 50
+    package static let listLimit = 50
 
     /// An argument the tool can't take: its words, Overterm's own.
-    struct Invalid: Error, Equatable {
-        let message: String
+    package struct Invalid: Error, Equatable {
+        package let message: String
     }
 
     /// `name`'s call with `arguments`, each checked: unknown values are
     /// refused, never guessed at.
-    static func parse(_ name: String, _ arguments: [String: Any]) throws -> ActivityMCPRequest {
+    package static func parse(_ name: String, _ arguments: [String: Any]) throws -> ActivityMCPRequest {
         func proto(_ fallback: String?) throws -> String? {
             guard let value = arguments["proto"] else { return fallback }
             guard let text = value as? String, ["tcp", "udp"].contains(text.lowercased()) else {
@@ -107,30 +113,43 @@ enum ActivityMCPRequest: Hashable, Sendable {
 /// each through `ActivityText.forAgents`: masked again, one line with every
 /// character visible, capped at 120 characters. The instructions call them
 /// data, never instructions.
-enum ActivityMCPAnswer {
+package enum ActivityMCPAnswer {
     /// The facts an answer is made from.
-    struct Scene: Sendable {
-        let caller: ActivityMCPCaller
-        let content: ActivityPageContent
-        let snapshot: ActivitySnapshot
-        let tabs: [UUID: ActivityTabFacts]
+    package struct Scene: Sendable {
+        package let caller: ActivityMCPCaller
+        package let content: ActivityPageContent
+        package let snapshot: ActivitySnapshot
+        package let tabs: [UUID: ActivityTabFacts]
         /// The containers running, with their compose projects' folders:
         /// whose checkout a container's port is, by path.
-        var containers: [ActivityContainer] = []
+        package var containers: [ActivityContainer] = []
         /// A test run lists only its own tabs' processes (9.9).
-        var isolated = false
-        var home = ActivityText.home
+        package var isolated = false
+        package var home = ActivityText.home
+
+        package init(
+            caller: ActivityMCPCaller, content: ActivityPageContent, snapshot: ActivitySnapshot, tabs: [UUID: ActivityTabFacts], containers: [ActivityContainer] = [], isolated: Bool = false,
+            home: String = ActivityText.home
+        ) {
+            self.caller = caller
+            self.content = content
+            self.snapshot = snapshot
+            self.tabs = tabs
+            self.containers = containers
+            self.isolated = isolated
+            self.home = home
+        }
     }
 
     /// The most entries a list gives; the rest counted.
-    static let listCap = 200
+    package static let listCap = 200
 
     /// `request`'s answer, as JSON text.
-    static func text(_ request: ActivityMCPRequest, _ scene: Scene) -> String {
+    package static func text(_ request: ActivityMCPRequest, _ scene: Scene) -> String {
         json(answer(request, scene))
     }
 
-    static func answer(_ request: ActivityMCPRequest, _ scene: Scene) -> [String: Any] {
+    package static func answer(_ request: ActivityMCPRequest, _ scene: Scene) -> [String: Any] {
         let reading = Reading(scene)
         switch request {
         case .portHolder(let port, let proto): return reading.portHolder(port, proto: proto)
@@ -144,7 +163,7 @@ enum ActivityMCPAnswer {
     /// `folder` as `word` where a path starts with it — the folder itself
     /// or below it, `ActivityText.replacingHome`'s boundary: never
     /// `/src/web-api` for `/src/web`.
-    static func replacing(folder: String, with word: String, in text: String) -> String {
+    package static func replacing(folder: String, with word: String, in text: String) -> String {
         var out = ""
         var rest = Substring(text)
         while let range = rest.range(of: folder) {
@@ -158,7 +177,7 @@ enum ActivityMCPAnswer {
     }
 
     /// Keys sorted, so an answer reads the same each time.
-    static func json(_ object: [String: Any]) -> String {
+    package static func json(_ object: [String: Any]) -> String {
         guard JSONSerialization.isValidJSONObject(object),
             let data = try? JSONSerialization.data(withJSONObject: object, options: [.sortedKeys, .withoutEscapingSlashes])
         else { return "{}" }

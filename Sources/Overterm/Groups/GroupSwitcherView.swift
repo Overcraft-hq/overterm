@@ -5,13 +5,24 @@ import SwiftUI
 ///
 /// The design asked for ⇧⌘G; Ghostty binds that to `navigate_search` and
 /// eats it before the menu sees it (docs/ghostty.md), hence ⌃⌘G.
-struct GroupSwitcherView: View {
-    @ObservedObject var store: TabStore
-    @ObservedObject var theme: ChromeTheme
-    let onChoose: (TabGroup) -> Void
-    let onChooseTab: (Tab) -> Void
-    let onMoveHere: (TabGroup) -> Void
-    let onDismiss: () -> Void
+package struct GroupSwitcherView: View {
+    @ObservedObject package var store: TabStore
+    @ObservedObject package var theme: ChromeTheme
+    package let onChoose: (TabGroup) -> Void
+    package let onChooseTab: (Tab) -> Void
+    package let onMoveHere: (TabGroup) -> Void
+    package let onDismiss: () -> Void
+
+    package init(
+        store: TabStore, theme: ChromeTheme, onChoose: @escaping (TabGroup) -> Void, onChooseTab: @escaping (Tab) -> Void, onMoveHere: @escaping (TabGroup) -> Void, onDismiss: @escaping () -> Void
+    ) {
+        self._store = ObservedObject(wrappedValue: store)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.onChoose = onChoose
+        self.onChooseTab = onChooseTab
+        self.onMoveHere = onMoveHere
+        self.onDismiss = onDismiss
+    }
 
     private var groups: [TabGroup] {
         // Strip order, so the list reads as the strip does; stashed last.
@@ -22,7 +33,7 @@ struct GroupSwitcherView: View {
 
     private var highlighted: TabGroup? { store.group(store.switcherHighlight) ?? groups.first }
 
-    var body: some View {
+    package var body: some View {
         ZStack {
             Color.black.opacity(0.35).onTapGesture(perform: onDismiss)
             HStack(alignment: .top, spacing: 0) {
@@ -161,8 +172,8 @@ private struct TabStateGlyph: View {
 /// "4 tabs · 1 waiting for approval · 1 working" — pure, so the wording is
 /// checked without a window.
 @MainActor
-enum GroupSummary {
-    static func line(_ tabs: [Tab]) -> String {
+package enum GroupSummary {
+    package static func line(_ tabs: [Tab]) -> String {
         var parts = ["\(tabs.count) tab\(tabs.count == 1 ? "" : "s")"]
         let waiting = tabs.filter { $0.activity.mark == .waiting }.count
         let working = tabs.filter(\.activity.isWorking).count
@@ -176,17 +187,17 @@ enum GroupSummary {
 }
 
 /// Takes the keyboard while shown, as the agent overview's host does.
-final class GroupSwitcherHostingView<Content: View>: NSHostingView<Content> {
-    var onEscape: (() -> Void)?
-    var onKey: ((NSEvent) -> Bool)?
+package final class GroupSwitcherHostingView<Content: View>: NSHostingView<Content> {
+    package var onEscape: (() -> Void)?
+    package var onKey: ((NSEvent) -> Bool)?
 
-    override var acceptsFirstResponder: Bool { true }
+    package override var acceptsFirstResponder: Bool { true }
 
-    override func keyDown(with event: NSEvent) {
+    package override func keyDown(with event: NSEvent) {
         if event.keyCode == 53 { return onEscape?() ?? () }
         if onKey?(event) == true { return }
         super.keyDown(with: event)
     }
 
-    override func cancelOperation(_ sender: Any?) { onEscape?() }
+    package override func cancelOperation(_ sender: Any?) { onEscape?() }
 }

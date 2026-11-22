@@ -11,45 +11,45 @@ import Foundation
 /// palette re-ranks on a reorder, which would move the selection, and a
 /// changed CPU figure alone is never shown (`PaletteModel.restock`).
 @MainActor
-final class ActivitySwitcher {
-    struct Row: Equatable, Sendable {
-        enum Target: Equatable, Sendable {
+package final class ActivitySwitcher {
+    package struct Row: Equatable, Sendable {
+        package enum Target: Equatable, Sendable {
             case port(url: URL?)
             case process
         }
 
         /// The page's row id: a port's or a process's.
-        let id: String
-        let title: String
-        let subtitle: String
-        let target: Target
-        let tab: UUID?
+        package let id: String
+        package let title: String
+        package let subtitle: String
+        package let target: Target
+        package let tab: UUID?
     }
 
-    let monitor: ActivityMonitor
+    package let monitor: ActivityMonitor
     /// Its rows, once a full read is made into them; nil while closed.
-    private(set) var rows: [Row]?
+    package private(set) var rows: [Row]?
     /// Whether it is open: its rows held while the palette shows them.
-    private(set) var holding = false
+    package private(set) var holding = false
     /// Whether it wants the census's full level now: from its opening
     /// until a read with rates is made into its rows.
-    private(set) var wanting = false
+    package private(set) var wanting = false
     /// Rows stocked, a scenario's count.
-    private(set) var stocks = 0
+    package private(set) var stocks = 0
     private var rated = false
     private var latest = 0
     private var snapshots: AnyCancellable?
     /// What the window does when the rows change: the palette restocked.
-    var stocked: @MainActor () -> Void = {}
-    var tabTitles: @MainActor () -> [UUID: String] = { [:] }
-    var isolated = AppEnvironment.isIsolated
+    package var stocked: @MainActor () -> Void = {}
+    package var tabTitles: @MainActor () -> [UUID: String] = { [:] }
+    package var isolated = AppEnvironment.isIsolated
 
-    init(monitor: ActivityMonitor = .shared) {
+    package init(monitor: ActivityMonitor = .shared) {
         self.monitor = monitor
     }
 
     /// The palette opened on it: the full level, every second, while it shows.
-    func open() {
+    package func open() {
         guard !holding else { return }
         holding = true
         rated = false
@@ -63,7 +63,7 @@ final class ActivitySwitcher {
     }
 
     /// The palette closed: the hold given back, the rows dropped.
-    func close() {
+    package func close() {
         guard holding else { return }
         holding = false
         letGo()
@@ -105,7 +105,7 @@ final class ActivitySwitcher {
     }
 
     /// Ports by number, then the ten busiest with a rate. Pure.
-    nonisolated static func rows(of content: ActivityPageContent) -> [Row] {
+    package nonisolated static func rows(of content: ActivityPageContent) -> [Row] {
         func place(_ title: String?) -> String { title.map { " — “\($0)”" } ?? "" }
         // Every listener, the folded ephemeral ones too.
         let ports = content.listeners.filter { $0.kind == .listener }.sorted { ($0.port, $0.proto) < ($1.port, $1.proto) }

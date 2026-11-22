@@ -5,10 +5,10 @@ import SwiftUI
 /// methods as reflection or the collection's .proto files say), its
 /// messages as JSON, its metadata, auth and docs — and what came back: the
 /// status, every message (a stream's as they arrive), headers and trailers.
-struct GRPCRequestView: View {
-    @ObservedObject var model: APIRequestModel
-    @ObservedObject var workspace: APIWorkspace
-    @ObservedObject var theme: ChromeTheme
+package struct GRPCRequestView: View {
+    @ObservedObject package var model: APIRequestModel
+    @ObservedObject package var workspace: APIWorkspace
+    @ObservedObject package var theme: ChromeTheme
     @State private var tab = "messages"
     @State private var responseTab = "messages"
 
@@ -18,7 +18,7 @@ struct GRPCRequestView: View {
     private var method: Protobuf.Method? { registry?.method(path: model.file.grpcMethod)?.1 }
     private var streamsIn: Bool { method?.clientStreaming ?? (model.file.grpcMethodType == "client-streaming" || model.file.grpcMethodType == "bidi-streaming") }
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             addressBar
             Rectangle().fill(theme.border).frame(height: 1)
@@ -239,7 +239,7 @@ struct GRPCRequestView: View {
                     }
                     Spacer()
                     Text(verbatim: "\(result.received.count) received").foregroundStyle(theme.text3)
-                    if !result.running { Text(verbatim: SQLConsoleView.duration(result.duration)).foregroundStyle(theme.text3) }
+                    if !result.running { Text(verbatim: InfoText.duration(result.duration)).foregroundStyle(theme.text3) }
                 }
                 .font(.system(size: ChromeMetrics.text(11.5)))
                 .padding(.horizontal, 10).frame(height: ChromeMetrics.row(30))

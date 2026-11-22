@@ -5,54 +5,63 @@ import Foundation
 /// sets reaching the next, `bru.setNextRequest` jumping, `skipRequest`
 /// and `stopExecution` honoured. What ran, and how, stays for the pane.
 @MainActor
-final class APIRunner: ObservableObject {
-    struct Entry: Identifiable, Equatable {
-        enum State: Equatable { case waiting, running, done, skipped }
-        let url: URL
-        let name: String
-        let method: String
+package final class APIRunner: ObservableObject {
+    package struct Entry: Identifiable, Equatable {
+        package enum State: Equatable { case waiting, running, done, skipped }
+        package let url: URL
+        package let name: String
+        package let method: String
         /// Where it sits, for the row: "Users / Admin".
-        let folder: String
-        var state: State = .waiting
-        var result: APIExecution.Result?
-        var id: String { url.path }
+        package let folder: String
+        package var state: State = .waiting
+        package var result: APIExecution.Result?
 
-        var passed: Bool { result?.succeeded == true }
+        package init(url: URL, name: String, method: String, folder: String, state: State = .waiting, result: APIExecution.Result? = nil) {
+            self.url = url
+            self.name = name
+            self.method = method
+            self.folder = folder
+            self.state = state
+            self.result = result
+        }
+        package var id: String { url.path }
+
+        package var passed: Bool { result?.succeeded == true }
     }
 
-    enum Filter: String, CaseIterable, Identifiable {
+    package enum Filter: String, CaseIterable, Identifiable {
         case all, passed, failed
-        var id: String { rawValue }
-        var title: String { rawValue.capitalized }
+        package var id: String { rawValue }
+        package var title: String { rawValue.capitalized }
     }
 
-    @Published private(set) var entries: [Entry] = []
-    @Published private(set) var title = ""
-    @Published private(set) var isRunning = false
-    @Published private(set) var started: Date?
-    @Published private(set) var duration: TimeInterval = 0
-    @Published var filter: Filter = .all
+    @Published package private(set) var entries: [Entry] = []
+    @Published package private(set) var title = ""
+    @Published package private(set) var isRunning = false
+    @Published package private(set) var started: Date?
+    @Published package private(set) var duration: TimeInterval = 0
+    @Published package var filter: Filter = .all
     /// What a run that was asked for covers, to run it again.
-    private(set) var lastItems: [APIItem] = []
-    private(set) var collectionRoot: URL?
+    package private(set) var lastItems: [APIItem] = []
+    package private(set) var collectionRoot: URL?
     /// The environment the run was asked for (an agent's), nil for the panel's.
-    private(set) var lastEnvironment: String?
+    package private(set) var lastEnvironment: String?
     /// The environment the run uses, fixed when it starts: the picker
     /// changed mid-run must not send the rest elsewhere. Shown in the pane.
-    @Published private(set) var environment: String?
+    @Published package private(set) var environment: String?
     private var task: Task<Void, Never>?
     /// Which run the state is: a cancelled one that wakes up after another
     /// has started must not touch it.
-    private(set) var runID = UUID()
+    package private(set) var runID = UUID()
 
-    var hasRun: Bool { !entries.isEmpty }
-    var done: Int { entries.filter { $0.state == .done || $0.state == .skipped }.count }
-    var passedCount: Int { entries.filter(\.passed).count }
-    var failedCount: Int { entries.filter { $0.state == .done && !$0.passed }.count }
-    var testsPassed: Int { entries.compactMap(\.result).reduce(0) { $0 + $1.passed } }
-    var testsTotal: Int { entries.compactMap(\.result).reduce(0) { $0 + $1.tests.count } }
+    package var hasRun: Bool { !entries.isEmpty }
+    package var done: Int { entries.filter { $0.state == .done || $0.state == .skipped }.count }
+    package var passedCount: Int { entries.filter(\.passed).count }
+    package var failedCount: Int { entries.filter { $0.state == .done && !$0.passed }.count }
+    package var testsPassed: Int { entries.compactMap(\.result).reduce(0) { $0 + $1.passed } }
+    package var testsTotal: Int { entries.compactMap(\.result).reduce(0) { $0 + $1.tests.count } }
 
-    var shown: [Entry] {
+    package var shown: [Entry] {
         switch filter {
         case .all: entries
         case .passed: entries.filter(\.passed)
@@ -61,12 +70,12 @@ final class APIRunner: ObservableObject {
     }
 
     /// A ceiling on steps: setNextRequest can send a run round in a circle.
-    static let maxSteps = 1000
+    package static let maxSteps = 1000
 
     /// Runs `items` (requests, folders) through `workspace`, in order;
     /// the run's identity, to wait on it.
     @discardableResult
-    func run(
+    package func run(
         _ items: [APIItem], title: String, in collection: BrunoCollection, workspace: APIWorkspace, environment: String? = nil
     ) -> UUID {
         cancel()
@@ -92,12 +101,12 @@ final class APIRunner: ObservableObject {
         return id
     }
 
-    func isRunning(_ id: UUID) -> Bool { runID == id && isRunning }
+    package func isRunning(_ id: UUID) -> Bool { runID == id && isRunning }
 
     /// The entries of run `id`, or none once another has replaced it.
-    func entries(of id: UUID) -> [Entry] { runID == id ? entries : [] }
+    package func entries(of id: UUID) -> [Entry] { runID == id ? entries : [] }
 
-    func runAgain(workspace: APIWorkspace) {
+    package func runAgain(workspace: APIWorkspace) {
         guard let collection = workspace.collections.first(where: { $0.root == collectionRoot }) else { return }
         // Fresh items: names and order may have changed since.
         let items = lastItems.compactMap { collection.item(at: $0.url) }
@@ -105,13 +114,13 @@ final class APIRunner: ObservableObject {
         run(items.isEmpty ? lastItems : items, title: title, in: collection, workspace: workspace)
     }
 
-    func cancel() {
+    package func cancel() {
         task?.cancel()
         task = nil
         if isRunning { finish(runID) }
     }
 
-    func clear() {
+    package func clear() {
         cancel()
         entries = []
         title = ""
@@ -164,7 +173,7 @@ final class APIRunner: ObservableObject {
 
     /// `bru` on this machine — for collections whose scripts need npm
     /// packages, which run under Bruno's own CLI, in a terminal tab.
-    static func bruExecutable() -> String? {
+    package static func bruExecutable() -> String? {
         let paths = ["/opt/homebrew/bin/bru", "/usr/local/bin/bru", NSHomeDirectory() + "/.npm-global/bin/bru"]
         if let found = paths.first(where: { FileManager.default.isExecutableFile(atPath: $0) }) { return found }
         for dir in (ProcessInfo.processInfo.environment["PATH"] ?? "").split(separator: ":") {
@@ -175,7 +184,7 @@ final class APIRunner: ObservableObject {
     }
 
     /// The command that runs the same thing under bru, from the collection's folder.
-    static func bruCommand(for items: [APIItem], in collection: BrunoCollection, environment: String?) -> String {
+    package static func bruCommand(for items: [APIItem], in collection: BrunoCollection, environment: String?) -> String {
         func quote(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'" }
         let rootPath = collection.root.standardizedFileURL.path
         let targets = items.map { item -> String in

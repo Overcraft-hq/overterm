@@ -12,8 +12,8 @@ import Foundation
 /// Platform binaries hide their environment (`CS_RESTRICT`), so `/usr/bin/ssh`
 /// and Apple's perl carry it unseen: those children name the run in their
 /// argv instead (`ArgvSigns`), by the same pid and start (`start36`).
-struct OvertermRun: Hashable, Sendable {
-    enum Kind: String, Sendable, CaseIterable {
+package struct OvertermRun: Hashable, Sendable {
+    package enum Kind: String, Sendable, CaseIterable {
         /// An installed Overterm: `Overterm.app` in /Applications or ~/Applications.
         case release
         /// Any other build: the repository's, Overterm Dev beside the release.
@@ -23,7 +23,7 @@ struct OvertermRun: Hashable, Sendable {
         case isolated
 
         /// This process's kind, from its bundle's path — pure.
-        static func of(isolated: Bool, bundlePath: String, home: String) -> Kind {
+        package static func of(isolated: Bool, bundlePath: String, home: String) -> Kind {
             if isolated { return .isolated }
             let url = URL(fileURLWithPath: bundlePath)
             guard url.lastPathComponent == "Overterm.app" else { return .dev }
@@ -34,7 +34,7 @@ struct OvertermRun: Hashable, Sendable {
 
     /// Which of Overterm's children it is: `OVERTERM_HELPER`'s value. One a
     /// spawn path; none is a secret.
-    enum Helper: String, Sendable, CaseIterable {
+    package enum Helper: String, Sendable, CaseIterable {
         case kubectlProxy = "kubectl-proxy"
         case kubectlPortForward = "kubectl-port-forward"
         /// `kubectl auth can-i`, `kubectl apply`, `kustomize` (`KubeProcessRun`).
@@ -60,24 +60,24 @@ struct OvertermRun: Hashable, Sendable {
         case managed
     }
 
-    static let variable = "OVERTERM_RUN"
-    static let helperVariable = "OVERTERM_HELPER"
+    package static let variable = "OVERTERM_RUN"
+    package static let helperVariable = "OVERTERM_HELPER"
 
-    let kind: Kind
-    let identity: ActivityProcessID
+    package let kind: Kind
+    package let identity: ActivityProcessID
 
-    var pid: pid_t { identity.pid }
-    var start: UInt64 { identity.start }
+    package var pid: pid_t { identity.pid }
+    package var start: UInt64 { identity.start }
 
     /// `OVERTERM_RUN`'s value: `<kind>.<pid>.<start µs>`.
-    var marker: String { "\(kind.rawValue).\(identity.pid).\(identity.start)" }
+    package var marker: String { "\(kind.rawValue).\(identity.pid).\(identity.start)" }
 
     /// The start in base 36, as the argv signs carry it: short enough for a
     /// unix socket's path, and exact.
-    var start36: String { Self.base36(identity.start) }
+    package var start36: String { Self.base36(identity.start) }
 
     /// This process's.
-    static let current: OvertermRun = {
+    package static let current: OvertermRun = {
         let pid = getpid()
         let start = ProcessInspector.kinfo(pid)?.start ?? 0
         let kind = Kind.of(isolated: AppEnvironment.isIsolated, bundlePath: Bundle.main.bundlePath, home: NSHomeDirectory())
@@ -86,7 +86,7 @@ struct OvertermRun: Hashable, Sendable {
 
     /// The run `OVERTERM_RUN`'s value names, and its kind; nil for anything
     /// else (`<kind>.<pid>.<start>` with a known kind).
-    init?(marker: String) {
+    package init?(marker: String) {
         let parts = marker.split(separator: ".", omittingEmptySubsequences: false)
         guard parts.count == 3, let kind = Kind(rawValue: String(parts[0])), let pid = pid_t(parts[1]), pid > 0, let start = UInt64(parts[2]) else {
             return nil
@@ -94,31 +94,31 @@ struct OvertermRun: Hashable, Sendable {
         self.init(kind: kind, identity: ActivityProcessID(pid: pid, start: start))
     }
 
-    init(kind: Kind, identity: ActivityProcessID) {
+    package init(kind: Kind, identity: ActivityProcessID) {
         self.kind = kind
         self.identity = identity
     }
 
     /// The two markers for a child of this run's that is `helper`.
-    func markers(helper: Helper) -> [String: String] {
+    package func markers(helper: Helper) -> [String: String] {
         [Self.variable: marker, Self.helperVariable: helper.rawValue]
     }
 
     /// `environment` with this run's markers for `helper` — set over any it
     /// inherited: an Overterm started from another's pane carries that one's.
-    func marking(_ environment: [String: String], helper: Helper) -> [String: String] {
+    package func marking(_ environment: [String: String], helper: Helper) -> [String: String] {
         environment.merging(markers(helper: helper)) { _, own in own }
     }
 
     /// `environment` without either marker: what a login shell printed, its
     /// own markers among it, before another child is given it (`ShellEnvironment`).
-    static func unmarked(_ environment: [String: String]) -> [String: String] {
+    package static func unmarked(_ environment: [String: String]) -> [String: String] {
         environment.filter { $0.key != variable && $0.key != helperVariable }
     }
 
-    static func base36(_ value: UInt64) -> String { String(value, radix: 36) }
+    package static func base36(_ value: UInt64) -> String { String(value, radix: 36) }
 
-    static func fromBase36(_ text: Substring) -> UInt64? {
+    package static func fromBase36(_ text: Substring) -> UInt64? {
         guard !text.isEmpty, text.count <= 13, text.allSatisfy({ $0.isASCII && ($0.isNumber || $0.isLowercase) }) else { return nil }
         return UInt64(text, radix: 36)
     }

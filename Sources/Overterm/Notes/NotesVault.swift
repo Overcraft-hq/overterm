@@ -4,24 +4,24 @@ import Foundation
 /// same folder opens in Obsidian, on the phone through iCloud, and here.
 /// Overterm keeps nothing of its own in it; `.obsidian/` is read for the
 /// settings that decide where things go, never written.
-struct NotesVault: Equatable, Sendable {
-    let root: URL
-    let settings: ObsidianSettings
+package struct NotesVault: Equatable, Sendable {
+    package let root: URL
+    package let settings: ObsidianSettings
     /// The root with its links resolved, once: a path from walking the
     /// root needs none, and resolving each one cost a call per component.
     private let resolvedRoot: String
 
-    init(root: URL) {
+    package init(root: URL) {
         self.root = root.standardizedFileURL
         resolvedRoot = root.standardizedFileURL.resolvingSymlinksInPath().path
         settings = ObsidianSettings.read(from: root)
     }
 
-    var name: String { root.lastPathComponent }
+    package var name: String { root.lastPathComponent }
 
     /// Where the vault is when Settings names none: a folder in iCloud Drive,
     /// so it is on every device — or Documents without iCloud Drive.
-    static var defaultRoot: URL {
+    package static var defaultRoot: URL {
         if AppEnvironment.isIsolated { return AppEnvironment.supportDirectory.appendingPathComponent("notes-vault", isDirectory: true) }
         let iCloudDrive = FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(
             "Library/Mobile Documents/com~apple~CloudDocs", isDirectory: true)
@@ -32,7 +32,7 @@ struct NotesVault: Equatable, Sendable {
     }
 
     /// Settings ▸ Notes' path, `~` expanded; the default when empty.
-    static func root(fromSetting path: String) -> URL {
+    package static func root(fromSetting path: String) -> URL {
         let trimmed = path.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return defaultRoot }
         return URL(fileURLWithPath: (trimmed as NSString).expandingTildeInPath, isDirectory: true)
@@ -40,19 +40,19 @@ struct NotesVault: Equatable, Sendable {
 
     /// Whether the vault is in iCloud (Drive or an app's container): files
     /// there may not be downloaded, and are written coordinated.
-    var isUbiquitous: Bool { root.path.contains("/Library/Mobile Documents/") }
+    package var isUbiquitous: Bool { root.path.contains("/Library/Mobile Documents/") }
 
     // MARK: Paths
 
     /// A note's path inside the vault, without `.md`: what links name.
-    func relativePath(of url: URL) -> String {
+    package func relativePath(of url: URL) -> String {
         let plain = url.standardizedFileURL.path
         if plain.hasPrefix(root.path + "/") { return String(plain.dropFirst(root.path.count + 1)) }
         let path = url.standardizedFileURL.resolvingSymlinksInPath().path
         return path.hasPrefix(resolvedRoot + "/") ? String(path.dropFirst(resolvedRoot.count + 1)) : url.lastPathComponent
     }
 
-    func contains(_ url: URL) -> Bool {
+    package func contains(_ url: URL) -> Bool {
         let plain = url.standardizedFileURL.path
         if plain == root.path || plain.hasPrefix(root.path + "/") { return true }
         let path = url.standardizedFileURL.resolvingSymlinksInPath().path
@@ -60,7 +60,7 @@ struct NotesVault: Equatable, Sendable {
     }
 
     /// Where a new note goes, as Obsidian's "Default location for new notes" says.
-    func folderForNewNote(beside current: URL?) -> URL {
+    package func folderForNewNote(beside current: URL?) -> URL {
         switch settings.newFileLocation {
         case .current: current?.deletingLastPathComponent() ?? root
         case .folder: root.appendingPathComponent(settings.newFileFolderPath, isDirectory: true)
@@ -71,7 +71,7 @@ struct NotesVault: Equatable, Sendable {
     /// Where a pasted image goes, as Obsidian's "Default location for new
     /// attachments" says: `/` the vault, `./` beside the note, `./x` a folder
     /// beside it, `x` a folder in the vault.
-    func folderForAttachment(of note: URL) -> URL {
+    package func folderForAttachment(of note: URL) -> URL {
         let path = settings.attachmentFolderPath
         if path.isEmpty || path == "/" { return root }
         if path == "./" || path == "." { return note.deletingLastPathComponent() }
@@ -80,14 +80,14 @@ struct NotesVault: Equatable, Sendable {
     }
 
     /// What the vault never has: dotfiles — Obsidian's own folder, the Trash.
-    func isHidden(_ url: URL) -> Bool {
+    package func isHidden(_ url: URL) -> Bool {
         let name = url.lastPathComponent
         return name.hasPrefix(".") && !name.hasSuffix(".icloud")
     }
 
     /// What "Excluded files" lists: not in the tree, but still notes —
     /// links to them resolve, as in Obsidian.
-    func isExcluded(_ url: URL) -> Bool {
+    package func isExcluded(_ url: URL) -> Bool {
         guard !settings.userIgnoreFilters.isEmpty else { return false }
         let relative = relativePath(of: url)
         return settings.userIgnoreFilters.contains { filter in
@@ -99,29 +99,29 @@ struct NotesVault: Equatable, Sendable {
 
 /// What `.obsidian/` says about where things go — the settings a vault
 /// shared with Obsidian has to agree on.
-struct ObsidianSettings: Equatable, Sendable {
-    enum NewFileLocation: String, Sendable { case root, current, folder }
+package struct ObsidianSettings: Equatable, Sendable {
+    package enum NewFileLocation: String, Sendable { case root, current, folder }
 
-    var attachmentFolderPath = "/"
-    var newFileLocation = NewFileLocation.root
-    var newFileFolderPath = ""
+    package var attachmentFolderPath = "/"
+    package var newFileLocation = NewFileLocation.root
+    package var newFileFolderPath = ""
     /// `[[wikilinks]]` (Obsidian's default) or `[text](path.md)`.
-    var useMarkdownLinks = false
+    package var useMarkdownLinks = false
     /// "shortest", "relative" or "absolute": how a new link names its note.
-    var newLinkFormat = "shortest"
-    var userIgnoreFilters: [String] = []
+    package var newLinkFormat = "shortest"
+    package var userIgnoreFilters: [String] = []
     /// "Strict line breaks": off (Obsidian's default), a single newline
     /// breaks the line in the reading view.
-    var strictLineBreaks = false
+    package var strictLineBreaks = false
     /// Daily notes: folder, moment.js format, template.
-    var dailyFolder = ""
-    var dailyFormat = "YYYY-MM-DD"
-    var dailyTemplate = ""
-    var templatesFolder = ""
-    var templateDateFormat = "YYYY-MM-DD"
-    var templateTimeFormat = "HH:mm"
+    package var dailyFolder = ""
+    package var dailyFormat = "YYYY-MM-DD"
+    package var dailyTemplate = ""
+    package var templatesFolder = ""
+    package var templateDateFormat = "YYYY-MM-DD"
+    package var templateTimeFormat = "HH:mm"
 
-    static func read(from root: URL) -> ObsidianSettings {
+    package static func read(from root: URL) -> ObsidianSettings {
         var settings = ObsidianSettings()
         let folder = root.appendingPathComponent(".obsidian", isDirectory: true)
         func json(_ name: String) -> [String: Any] {
@@ -150,12 +150,12 @@ struct ObsidianSettings: Equatable, Sendable {
 
 /// The vaults Obsidian knows on this Mac, from its own list — to pick one
 /// in Settings rather than type its path.
-enum ObsidianVaults {
-    static var listFile: URL {
+package enum ObsidianVaults {
+    package static var listFile: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Library/Application Support/obsidian/obsidian.json")
     }
 
-    static func known(listFile: URL = listFile) -> [URL] {
+    package static func known(listFile: URL = listFile) -> [URL] {
         guard let data = try? Data(contentsOf: listFile),
             let json = (try? JSONSerialization.jsonObject(with: data)) as? [String: Any],
             let vaults = json["vaults"] as? [String: [String: Any]]
@@ -171,8 +171,8 @@ enum ObsidianVaults {
 
 /// Moment.js date formats — what Obsidian's daily notes and templates use —
 /// as DateFormatter patterns, for the tokens people use.
-enum MomentFormat {
-    static func string(from date: Date, format: String, locale: Locale = Locale(identifier: "en_US_POSIX")) -> String {
+package enum MomentFormat {
+    package static func string(from date: Date, format: String, locale: Locale = Locale(identifier: "en_US_POSIX")) -> String {
         let formatter = DateFormatter()
         formatter.locale = locale
         formatter.dateFormat = pattern(format)
@@ -180,7 +180,7 @@ enum MomentFormat {
     }
 
     /// Token by token, longest first; text in [brackets] is literal.
-    static func pattern(_ moment: String) -> String {
+    package static func pattern(_ moment: String) -> String {
         let tokens: [(String, String)] = [
             ("YYYY", "yyyy"), ("YY", "yy"), ("MMMM", "MMMM"), ("MMM", "MMM"), ("MM", "MM"), ("M", "M"), ("DDDD", "DDD"), ("DD", "dd"),
             ("Do", "d"), ("D", "d"), ("dddd", "EEEE"), ("ddd", "EEE"), ("dd", "EEEEEE"), ("d", "e"), ("HH", "HH"), ("H", "H"),

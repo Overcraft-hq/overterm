@@ -4,12 +4,12 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 /// Settings' sections, as in the list on the page's left.
-enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
+package enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
     case general, appearance, themes, terminal, agents, editor, browser, api, notes, database, docker, kubernetes, terraform, activity, notifications, shortcuts, about
 
-    var id: String { rawValue }
+    package var id: String { rawValue }
 
-    var title: String {
+    package var title: String {
         switch self {
         case .general: "General"
         case .appearance: "Appearance"
@@ -31,7 +31,7 @@ enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
         }
     }
 
-    var symbol: String {
+    package var symbol: String {
         switch self {
         case .general: "gearshape"
         case .appearance: "paintbrush"
@@ -54,10 +54,10 @@ enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
     }
 
     /// The JSON file its settings live in.
-    var file: String { self == .shortcuts ? "keybindings.json" : "settings.json" }
+    package var file: String { self == .shortcuts ? "keybindings.json" : "settings.json" }
 
     /// Whether a search finds something here: the title, a setting, a shortcut.
-    @MainActor func matches(_ query: String) -> Bool {
+    @MainActor package func matches(_ query: String) -> Bool {
         let query = query.trimmingCharacters(in: .whitespaces)
         guard !query.isEmpty else { return true }
         if title.lowercased().contains(query.lowercased()) { return true }
@@ -69,43 +69,45 @@ enum SettingsSection: String, CaseIterable, Identifiable, Sendable {
 
 /// What the Settings page shows.
 @MainActor
-final class SettingsPageModel: ObservableObject {
-    enum Mode: String { case ui, json }
+package final class SettingsPageModel: ObservableObject {
+    package init() {}
 
-    @Published var section: SettingsSection = .general
-    @Published var search = ""
-    @Published var mode: Mode = .ui
+    package enum Mode: String { case ui, json }
+
+    @Published package var section: SettingsSection = .general
+    @Published package var search = ""
+    @Published package var mode: Mode = .ui
     /// The JSON view's text, as typed; nil until the view opens.
-    @Published var draft: String?
+    @Published package var draft: String?
     /// Themes: the gallery's own search and filter, and — when a theme
     /// follows macOS — which of the two a pick goes to.
-    @Published var themeSearch = ""
-    @Published var themeShowing: ThemeCatalog.Showing = .popular
-    @Published var themeSlot: ThemeSlot = .dark
+    @Published package var themeSearch = ""
+    @Published package var themeShowing: ThemeCatalog.Showing = .popular
+    @Published package var themeSlot: ThemeSlot = .dark
 
-    var sections: [SettingsSection] { SettingsSection.allCases.filter { $0.matches(search) } }
+    package var sections: [SettingsSection] { SettingsSection.allCases.filter { $0.matches(search) } }
 
     /// Fixed-pitch font families, for the font picker.
-    lazy var monospacedFamilies: [String] = NSFontManager.shared.availableFontFamilies.filter { family in
+    package lazy var monospacedFamilies: [String] = NSFontManager.shared.availableFontFamilies.filter { family in
         guard let member = NSFontManager.shared.availableMembers(ofFontFamily: family)?.first, let name = member.first as? String else { return false }
         return NSFont(name: name, size: 12)?.isFixedPitch == true
     }
 
     /// Ghostty's bundled themes (Contents/Resources/ghostty/themes).
-    lazy var themes: [String] = {
+    package lazy var themes: [String] = {
         guard let dir = Bundle.main.resourceURL?.appendingPathComponent("ghostty/themes") else { return [] }
         return ((try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []).filter { !$0.hasPrefix(".") }
             .sorted { $0.localizedCaseInsensitiveCompare($1) == .orderedAscending }
     }()
 
-    func options(for source: SettingSource) -> [String] {
+    package func options(for source: SettingSource) -> [String] {
         switch source {
         case .monospacedFonts: monospacedFamilies
         case .themes: themes
         }
     }
 
-    func show(_ section: SettingsSection) {
+    package func show(_ section: SettingsSection) {
         self.section = section
         mode = .ui
         draft = nil
@@ -114,13 +116,20 @@ final class SettingsPageModel: ObservableObject {
 
 /// The Settings tab: sections on the left, the chosen one on the right —
 /// as controls, or as the JSON file they write.
-struct SettingsPageView: View {
-    @ObservedObject var model: SettingsPageModel
-    @ObservedObject var settings: Settings
-    @ObservedObject var keybindings: Keybindings
-    @ObservedObject var theme: ChromeTheme
+package struct SettingsPageView: View {
+    @ObservedObject package var model: SettingsPageModel
+    @ObservedObject package var settings: Settings
+    @ObservedObject package var keybindings: Keybindings
+    @ObservedObject package var theme: ChromeTheme
 
-    var body: some View {
+    package init(model: SettingsPageModel, settings: Settings, keybindings: Keybindings, theme: ChromeTheme) {
+        self._model = ObservedObject(wrappedValue: model)
+        self._settings = ObservedObject(wrappedValue: settings)
+        self._keybindings = ObservedObject(wrappedValue: keybindings)
+        self._theme = ObservedObject(wrappedValue: theme)
+    }
+
+    package var body: some View {
         HStack(spacing: 0) {
             sidebar.background(theme.panelGround)
             Rectangle().fill(theme.dimText.opacity(0.15)).frame(width: 1)
@@ -938,14 +947,14 @@ private struct KeyRecorder: NSViewRepresentable {
     }
 }
 
-final class KeyRecorderView: NSView {
-    var onKey: (KeyCombo) -> Void = { _ in }
-    var onClear: () -> Void = {}
-    var onCancel: () -> Void = {}
+package final class KeyRecorderView: NSView {
+    package var onKey: (KeyCombo) -> Void = { _ in }
+    package var onClear: () -> Void = {}
+    package var onCancel: () -> Void = {}
 
-    override var acceptsFirstResponder: Bool { true }
+    package override var acceptsFirstResponder: Bool { true }
 
-    override func draw(_ dirtyRect: NSRect) {
+    package override func draw(_ dirtyRect: NSRect) {
         NSColor.controlAccentColor.withAlphaComponent(0.25).setFill()
         NSBezierPath(roundedRect: bounds.insetBy(dx: 0.5, dy: 0.5), xRadius: 6, yRadius: 6).fill()
         let text = "Press the keys…" as NSString
@@ -955,15 +964,15 @@ final class KeyRecorderView: NSView {
     }
 
     /// ⌘ keys come here first; the menus never see them while recording.
-    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+    package override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard window?.firstResponder === self, event.type == .keyDown else { return false }
         take(event)
         return true
     }
 
-    override func keyDown(with event: NSEvent) { take(event) }
+    package override func keyDown(with event: NSEvent) { take(event) }
 
-    override func resignFirstResponder() -> Bool {
+    package override func resignFirstResponder() -> Bool {
         DispatchQueue.main.async { [onCancel] in onCancel() }
         return true
     }
@@ -1037,8 +1046,8 @@ private struct AboutSettings: View {
 
 /// View ▸ Latest Changelog (⌥⌘O): the bundled CHANGELOG.md.
 @MainActor
-final class ChangelogWindowController: NSWindowController {
-    static let shared = ChangelogWindowController()
+package final class ChangelogWindowController: NSWindowController {
+    package static let shared = ChangelogWindowController()
 
     private init() {
         let window = NSWindow(
@@ -1053,9 +1062,9 @@ final class ChangelogWindowController: NSWindowController {
         super.init(window: window)
     }
 
-    required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
+    package required init?(coder: NSCoder) { fatalError("init(coder:) is not used") }
 
-    func show() {
+    package func show() {
         if window?.isVisible != true { window?.center() }
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)

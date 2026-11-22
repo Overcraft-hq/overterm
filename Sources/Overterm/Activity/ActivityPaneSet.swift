@@ -34,9 +34,9 @@ import Darwin
 /// - what another pane's tree holds.
 ///
 /// Pure: one snapshot, nothing read now.
-struct ActivityPaneSet: Hashable, Sendable {
+package struct ActivityPaneSet: Hashable, Sendable {
     /// Why a process the slice places isn't in the set.
-    enum Exclusion: Hashable, Sendable {
+    package enum Exclusion: Hashable, Sendable {
         case ignoresHangup
         case otherTerminal
         case detachedOnPurpose
@@ -47,17 +47,17 @@ struct ActivityPaneSet: Hashable, Sendable {
     }
 
     /// The set, parents first: the tree, then the tagged.
-    let members: [ActivityProcessID]
+    package let members: [ActivityProcessID]
     /// What the slice places that the set leaves out, and why — in the
     /// slice's order.
-    let leftOut: [(identity: ActivityProcessID, reason: Exclusion)]
+    package let leftOut: [(identity: ActivityProcessID, reason: Exclusion)]
 
-    static func == (lhs: ActivityPaneSet, rhs: ActivityPaneSet) -> Bool {
+    package static func == (lhs: ActivityPaneSet, rhs: ActivityPaneSet) -> Bool {
         lhs.members == rhs.members && lhs.leftOut.map(\.identity) == rhs.leftOut.map(\.identity)
             && lhs.leftOut.map(\.reason) == rhs.leftOut.map(\.reason)
     }
 
-    func hash(into hasher: inout Hasher) {
+    package func hash(into hasher: inout Hasher) {
         hasher.combine(members)
         for (identity, reason) in leftOut {
             hasher.combine(identity)
@@ -68,7 +68,7 @@ struct ActivityPaneSet: Hashable, Sendable {
     /// Session managers and daemons people start on purpose (6.5 rule 5,
     /// with the engines' daemons of rule 6 that a pane starts: `colima
     /// start`, `limactl start`), by their executable's name.
-    static let detachedNames: Set<String> = [
+    package static let detachedNames: Set<String> = [
         "tmux", "screen", "ssh-agent", "gpg-agent", "caffeinate", "mosh-server", "colima", "limactl", "dtach", "abduco", "zellij",
     ]
 
@@ -76,7 +76,7 @@ struct ActivityPaneSet: Hashable, Sendable {
     /// context knows it (`ActivityContext.Pane.terminal`), else its
     /// `login`'s controlling terminal, else its tree's first one's.
     /// `checkouts`: the folders a `.app` inside of stays the pane's.
-    init(_ slice: ActivityPaneSlice, in snapshot: ActivitySnapshot, terminal: dev_t? = nil, checkouts: [String] = []) {
+    package init(_ slice: ActivityPaneSlice, in snapshot: ActivitySnapshot, terminal: dev_t? = nil, checkouts: [String] = []) {
         let table = snapshot.table
         var paneTerminal = terminal ?? slice.login.flatMap { table.process($0)?.terminal }
         for identity in slice.tree where paneTerminal == nil { paneTerminal = table.process(identity)?.terminal }
@@ -111,7 +111,7 @@ struct ActivityPaneSet: Hashable, Sendable {
 
     /// Why `process` itself is left out, if it is; its parent's reasons
     /// are the caller's.
-    static func exclusion(
+    package static func exclusion(
         of process: ActivityProcess, facts: ActivityFacts?, inTree: Bool, paneTerminal: dev_t?, children: [ActivityProcess], checkouts: [String]
     ) -> Exclusion? {
         if process.ignoresHangup { return .ignoresHangup }
@@ -130,7 +130,7 @@ struct ActivityPaneSet: Hashable, Sendable {
     /// A session manager or daemon by its executable's name; Emacs only as
     /// a daemon.
     /// `executable`: its `executableName`, made already.
-    static func isDetachedOnPurpose(_ process: ActivityProcess, facts: ActivityFacts?, executable: String? = nil) -> Bool {
+    package static func isDetachedOnPurpose(_ process: ActivityProcess, facts: ActivityFacts?, executable: String? = nil) -> Bool {
         let name = executable ?? executableName(process, facts: facts)
         if detachedNames.contains(name) { return true }
         if name.utf8.count == 5, name.lowercased() == "emacs", let command = facts?.command {
@@ -140,7 +140,7 @@ struct ActivityPaneSet: Hashable, Sendable {
     }
 
     /// Its executable's file name, else its name, else `p_comm`.
-    static func executableName(_ process: ActivityProcess, facts: ActivityFacts?) -> String {
+    package static func executableName(_ process: ActivityProcess, facts: ActivityFacts?) -> String {
         if let path = facts?.path {
             let last = path.lastIndex(of: "/").map { path[path.index(after: $0)...] } ?? path[...]
             if !last.isEmpty { return String(last) }
@@ -154,7 +154,7 @@ struct ActivityPaneSet: Hashable, Sendable {
     /// `Contents/Resources` (a toolchain, an interpreter, a CLI shipped in
     /// a bundle) —, else nil. A string walk over its components, bounded by
     /// them — no file system read.
-    static func appBundle(of path: String) -> String? {
+    package static func appBundle(of path: String) -> String? {
         // Most executables aren't an app's: one byte search first.
         guard ProcessRole.containsBytes(path, ".app/Contents/MacOS/") else { return nil }
         let parts = path.split(separator: "/", omittingEmptySubsequences: true)
@@ -170,7 +170,7 @@ struct ActivityPaneSet: Hashable, Sendable {
     }
 
     /// Whether `path` is `folder` or inside it.
-    static func isInside(_ path: String, _ folder: String) -> Bool {
+    package static func isInside(_ path: String, _ folder: String) -> Bool {
         var base = folder
         while base.count > 1, base.hasSuffix("/") { base.removeLast() }
         guard !base.isEmpty, base != "/" else { return false }

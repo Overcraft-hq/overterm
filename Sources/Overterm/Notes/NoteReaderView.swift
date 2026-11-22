@@ -10,30 +10,30 @@ import WebKit
 /// Everything it loads comes through `overterm-note:` — the bundled page
 /// and scripts from the app, the vault's images from the vault, nothing
 /// else on disk — and a note's own HTML is sanitized before it is shown.
-final class NoteReaderView: NSView, WKNavigationDelegate, WKScriptMessageHandler {
-    static let scheme = "overterm-note"
+package final class NoteReaderView: NSView, WKNavigationDelegate, WKScriptMessageHandler {
+    package static let scheme = "overterm-note"
 
     /// A link clicked: the target as written, its `#heading` or `#^block`,
     /// whether it was a Markdown link (a path from the note's folder), and
     /// whether ⌘ was down.
-    var onOpenLink: ((_ target: String, _ anchor: String?, _ markdown: Bool, _ newTab: Bool) -> Void)?
-    var onOpenURL: ((URL) -> Void)?
-    var onToggleTask: ((_ line: Int) -> Void)?
-    var onTag: ((String) -> Void)?
+    package var onOpenLink: ((_ target: String, _ anchor: String?, _ markdown: Bool, _ newTab: Bool) -> Void)?
+    package var onOpenURL: ((URL) -> Void)?
+    package var onToggleTask: ((_ line: Int) -> Void)?
+    package var onTag: ((String) -> Void)?
     /// Drawn (mermaid's diagrams count when they are) — for the E2E run.
-    private(set) var renderCount = 0
-    private(set) var mermaidDrawn = 0
+    package private(set) var renderCount = 0
+    package private(set) var mermaidDrawn = 0
     /// Embedded drawings drawn as pictures — for the E2E run.
-    private(set) var drawingsDrawn = 0
+    package private(set) var drawingsDrawn = 0
 
-    let webView: WKWebView
+    package let webView: WKWebView
     private let resources = NoteResources()
     private var ready = false
     private var pending: String?
     private var pendingAnchor: String?
     private var lastJSON: String?
 
-    init() {
+    package init() {
         let configuration = WKWebViewConfiguration()
         configuration.setURLSchemeHandler(resources, forURLScheme: Self.scheme)
         configuration.websiteDataStore = .nonPersistent()
@@ -53,17 +53,17 @@ final class NoteReaderView: NSView, WKNavigationDelegate, WKScriptMessageHandler
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
+    package required init?(coder: NSCoder) { fatalError() }
 
     /// The vault whose files the page may load.
-    var vaultRoot: URL? {
+    package var vaultRoot: URL? {
         get { resources.vaultRoot }
         set { resources.vaultRoot = newValue }
     }
 
     /// Draws `payload` — not again when nothing changed (the editor asks
     /// on every keystroke while it shows).
-    func show(_ payload: NoteRenderPayload, settings: ObsidianSettings, theme: EditorTheme, scrollTo anchor: String? = nil) {
+    package func show(_ payload: NoteRenderPayload, settings: ObsidianSettings, theme: EditorTheme, scrollTo anchor: String? = nil) {
         let folder = (payload.path as NSString).deletingLastPathComponent
         let vaultBase = "\(Self.scheme)://vault/"
         let base = vaultBase + (folder.isEmpty ? "" : Self.encode(folder) + "/")
@@ -82,7 +82,7 @@ final class NoteReaderView: NSView, WKNavigationDelegate, WKScriptMessageHandler
         webView.evaluateJavaScript("OT.render(\(json))")
     }
 
-    func scrollTo(anchor: String) {
+    package func scrollTo(anchor: String) {
         pendingAnchor = anchor
         scrollToPendingAnchor()
     }
@@ -94,10 +94,10 @@ final class NoteReaderView: NSView, WKNavigationDelegate, WKScriptMessageHandler
     }
 
     /// Forget what was drawn: the next `show` draws, even the same note.
-    func invalidate() { lastJSON = nil }
+    package func invalidate() { lastJSON = nil }
 
     /// The rendered text, for checks.
-    func renderedText(_ done: @escaping @MainActor (String) -> Void) {
+    package func renderedText(_ done: @escaping @MainActor (String) -> Void) {
         webView.evaluateJavaScript("OT.text()") { value, _ in
             let text = value as? String ?? ""
             MainActor.assumeIsolated { done(text) }
@@ -106,7 +106,7 @@ final class NoteReaderView: NSView, WKNavigationDelegate, WKScriptMessageHandler
 
     // MARK: The page's messages
 
-    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+    package func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any] else { return }
         if body["ready"] != nil {
             ready = true
@@ -136,7 +136,7 @@ final class NoteReaderView: NSView, WKNavigationDelegate, WKScriptMessageHandler
     }
 
     /// Nothing navigates the page away: links are the app's to follow.
-    func webView(
+    package func webView(
         _ webView: WKWebView, decidePolicyFor action: WKNavigationAction, decisionHandler: @escaping @MainActor (WKNavigationActionPolicy) -> Void
     ) {
         let url = action.request.url
@@ -148,7 +148,7 @@ final class NoteReaderView: NSView, WKNavigationDelegate, WKScriptMessageHandler
         if let url, url.scheme != Self.scheme, action.navigationType == .linkActivated { onOpenURL?(url) }
     }
 
-    func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
+    package func webViewWebContentProcessDidTerminate(_ webView: WKWebView) {
         ready = false
         pending = lastJSON
         webView.reload()
@@ -157,7 +157,7 @@ final class NoteReaderView: NSView, WKNavigationDelegate, WKScriptMessageHandler
     // MARK: Colours
 
     /// The editor's theme as the page's CSS variables.
-    static func colors(_ theme: EditorTheme) -> [String: String] {
+    package static func colors(_ theme: EditorTheme) -> [String: String] {
         func css(_ color: NSColor?) -> String {
             guard let rgb = (color ?? theme.text).usingColorSpace(.sRGB) else { return "inherit" }
             return String(
@@ -174,13 +174,13 @@ final class NoteReaderView: NSView, WKNavigationDelegate, WKScriptMessageHandler
         ]
     }
 
-    static func encode(_ path: String) -> String {
+    package static func encode(_ path: String) -> String {
         path.split(separator: "/", omittingEmptySubsequences: false)
             .map { $0.addingPercentEncoding(withAllowedCharacters: .urlPathAllowed.subtracting(CharacterSet(charactersIn: "/?#"))) ?? String($0) }
             .joined(separator: "/")
     }
 
-    static func jsString(_ string: String) -> String? {
+    package static func jsString(_ string: String) -> String? {
         guard let data = try? JSONSerialization.data(withJSONObject: [string]) else { return nil }
         return String(String(decoding: data, as: UTF8.self).dropFirst().dropLast())
     }
@@ -189,15 +189,15 @@ final class NoteReaderView: NSView, WKNavigationDelegate, WKScriptMessageHandler
 /// `overterm-note://app/…` from the app's Resources/notes, and
 /// `overterm-note://vault/…` from the vault — a path that leaves either is
 /// refused.
-final class NoteResources: NSObject, WKURLSchemeHandler {
-    var vaultRoot: URL?
+package final class NoteResources: NSObject, WKURLSchemeHandler {
+    package var vaultRoot: URL?
     /// Tasks WebKit gave up on: never answered after (it raises).
     private var stopped = Set<ObjectIdentifier>()
 
     /// Resources/notes inside the app.
-    static var bundled: URL? { Bundle.main.resourceURL?.appendingPathComponent("notes", isDirectory: true) }
+    package static var bundled: URL? { Bundle.main.resourceURL?.appendingPathComponent("notes", isDirectory: true) }
 
-    func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
+    package func webView(_ webView: WKWebView, start task: WKURLSchemeTask) {
         guard let url = task.request.url, let file = file(for: url) else {
             task.didFailWithError(URLError(.fileDoesNotExist))
             return
@@ -228,9 +228,9 @@ final class NoteResources: NSObject, WKURLSchemeHandler {
         task.didFinish()
     }
 
-    func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) { stopped.insert(ObjectIdentifier(task)) }
+    package func webView(_ webView: WKWebView, stop task: WKURLSchemeTask) { stopped.insert(ObjectIdentifier(task)) }
 
-    func file(for url: URL) -> URL? {
+    package func file(for url: URL) -> URL? {
         let base: URL?
         switch url.host {
         case "app": base = Self.bundled
@@ -245,7 +245,7 @@ final class NoteResources: NSObject, WKURLSchemeHandler {
         return file
     }
 
-    static func mimeType(_ ext: String) -> String {
+    package static func mimeType(_ ext: String) -> String {
         switch ext.lowercased() {
         case "html": "text/html; charset=utf-8"
         case "js": "text/javascript; charset=utf-8"

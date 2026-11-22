@@ -2,16 +2,24 @@ import SwiftUI
 
 /// The right-hand pane's Runner: a collection or folder run, request by
 /// request — status, time, tests — the failures' messages under them.
-struct APIRunnerView: View {
-    @ObservedObject var runner: APIRunner
-    @ObservedObject var workspace: APIWorkspace
-    @ObservedObject var theme: ChromeTheme
+package struct APIRunnerView: View {
+    @ObservedObject package var runner: APIRunner
+    @ObservedObject package var workspace: APIWorkspace
+    @ObservedObject package var theme: ChromeTheme
     /// Opens a request in the editor.
-    let open: (URL) -> Void
+    package let open: (URL) -> Void
     /// Runs the same under bru, in a terminal tab.
-    let runWithBru: () -> Void
+    package let runWithBru: () -> Void
 
-    var body: some View {
+    package init(runner: APIRunner, workspace: APIWorkspace, theme: ChromeTheme, open: @escaping (URL) -> Void, runWithBru: @escaping () -> Void) {
+        self._runner = ObservedObject(wrappedValue: runner)
+        self._workspace = ObservedObject(wrappedValue: workspace)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.open = open
+        self.runWithBru = runWithBru
+    }
+
+    package var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             header
             Picker("", selection: $runner.filter) {

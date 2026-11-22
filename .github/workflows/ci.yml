@@ -141,8 +141,24 @@ jobs:
     # build (≈14 min cold, ≈8 with its packages cached) and the tests (≈9
     # serial; in parallel, a few).
     timeout-minutes: 60
+    # Deletes its own older build caches once it has saved a newer one.
+    permissions:
+      contents: read
+      actions: write
     steps:
+      # The whole history: each file is dated by its last commit (below).
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # A checkout dates every file now, so Swift Build took every source —
+      # and Package.swift, so the whole build plan — for changed, a
+      # restored .build or not. Dated by their last commits, the files a
+      # commit didn't change read as they did when the cache was saved, and
+      # only what changed and what sits above it is compiled
+      # (Scripts/restore-mtimes.sh).
+      - name: Date the files by their commits
+        run: Scripts/restore-mtimes.sh
 
       # GhosttyKit's pin (Ghostty v1.4.0, Zig 0.17.0) builds with Xcode 27.2.
       - name: Use Xcode ${{ env.XCODE }}
@@ -195,26 +211,21 @@ jobs:
           path: Frameworks
           key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
 
-      # The debug build's packages, compiled once per Package.resolved and
-      # Xcode: the key has no commit, so main saves it only when it is
-      # missing — a key per commit added ≈1 GB a push and pushed the
-      # repository past its 10 GB, where eviction could take this one. A
-      # changed Package.resolved starts from the last one (restore-keys).
-      # Overterm's own modules are left out: the checkout's fresh mtimes
-      # rebuild them anyway, and they are half its size.
+      # The whole debug build — the packages and the app's own modules, and
+      # Swift Build's database (XCBuildData) that says what is up to date —
+      # one entry a commit: this one's, else the newest of this
+      # Package.resolved, else the newest at all (restore-keys). With the
+      # files dated by their commits, only what changed since the entry's
+      # commit is compiled. Each run saves its own and deletes the older
+      # ones of its branch (below), so the repository's 10 GB holds main's
+      # and the open pull requests' newest.
       # The layout is Swift Build's (.build/out; .build/debug a link into it).
       # An exclusion only drops a path the patterns above it listed — the
       # cache tars what is listed, folders whole — so each level is listed
-      # with its globs before what leaves it out: `.build` with
-      # `!.build/*/debug/…` kept everything (1.1 GB from main's run).
-      # Left out: Overterm's intermediates (OvertermTests' and
-      # OvertermE2ETests' are in Overterm.build too), its products (the app,
-      # the modules, OvertermTests.xctest, OvertermE2ETests.xctest),
-      # ExecutableModules (the testable copy of an executable target the
-      # tests import: none since the app's code is a library, kept for an
-      # older entry's layout), the frameworks' libraries
-      # copied in from Frameworks/ (lib*.a, 167 MB), the index store
-      # (out/v5), and Products/Release.
+      # with its globs before what leaves it out. Left out: the frameworks'
+      # libraries copied in from Frameworks/ (lib*.a, 167 MB; copied again),
+      # ExecutableModules (none since the app's code is a library), the
+      # index store (out/v5), and Products/Release.
       - name: Restore the debug build
         id: debug-build
         uses: actions/cache/restore@v6
@@ -223,17 +234,14 @@ jobs:
             .build/*
             !.build/out
             .build/out/*
-            !.build/out/Intermediates.noindex
             !.build/out/Products
             !.build/out/v5
-            .build/out/Intermediates.noindex/*
-            !.build/out/Intermediates.noindex/Overterm.build
             .build/out/Products/Debug/*
-            !.build/out/Products/Debug/Overterm*
             !.build/out/Products/Debug/ExecutableModules
             !.build/out/Products/Debug/lib*.a
-          key: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}
+          key: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
           restore-keys: |
+            spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
             spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-
 
       # A step of its own, so that the compile's time shows apart from the
@@ -241,6 +249,34 @@ jobs:
       - name: Build for tests
         id: build
         run: swift build --build-tests
+
+      # Saved as soon as it is built, before the tests: a failing test
+      # keeps it. A pull request's is its own (its branch's scope), and
+      # main's every pull request restores.
+      - name: Save the debug build
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.debug-build.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        uses: actions/cache/save@v6
+        with:
+          path: |
+            .build/*
+            !.build/out
+            .build/out/*
+            !.build/out/Products
+            !.build/out/v5
+            .build/out/Products/Debug/*
+            !.build/out/Products/Debug/ExecutableModules
+            !.build/out/Products/Debug/lib*.a
+          key: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+
+      - name: Delete this branch's older debug builds
+        if: ${{ !cancelled() && steps.build.outcome == 'success' && steps.debug-build.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+          PREFIX: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-
+        run: Scripts/prune-caches.sh "$PREFIX" "$KEEP"
 
       # Several xctest processes at once (Scripts/unit-tests.sh): the tests
       # mostly wait — on fakes, timers, git — so they share the runner's
@@ -269,30 +305,6 @@ jobs:
           path: ${{ runner.temp }}/unit-tests
           if-no-files-found: ignore
 
-      # Main's only, as the release build's: a pull request's would be its
-      # own. Only when the restore found no entry under this very key, and
-      # only after a build that finished: the entry is kept until
-      # Package.resolved or the Xcode changes, so a half-built .build saved
-      # once would be restored, never saved again, by every later run.
-      - name: Save the debug build
-        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.debug-build.outputs.cache-hit != 'true' && steps.build.outcome == 'success' }}
-        uses: actions/cache/save@v6
-        with:
-          path: |
-            .build/*
-            !.build/out
-            .build/out/*
-            !.build/out/Intermediates.noindex
-            !.build/out/Products
-            !.build/out/v5
-            .build/out/Intermediates.noindex/*
-            !.build/out/Intermediates.noindex/Overterm.build
-            .build/out/Products/Debug/*
-            !.build/out/Products/Debug/Overterm*
-            !.build/out/Products/Debug/ExecutableModules
-            !.build/out/Products/Debug/lib*.a
-          key: spm-debug-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}
-
   # The release path otherwise runs only when someone releases: assemble the
   # bundle on every run that changes the app and check what the release
   # depends on — on its own machine, beside the tests.
@@ -304,8 +316,19 @@ jobs:
     # release build, over 50 min (only its package sources are cached) — the
     # first run on Xcode 27.2 was cut at 60.
     timeout-minutes: 120
+    # Deletes its own older build caches once it has saved a newer one.
+    permissions:
+      contents: read
+      actions: write
     steps:
+      # The whole history: each file is dated by its last commit (below).
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      # As the test job's: what a commit didn't change reads as unchanged.
+      - name: Date the files by their commits
+        run: Scripts/restore-mtimes.sh
 
       - name: Use Xcode ${{ env.XCODE }}
         run: |
@@ -352,25 +375,27 @@ jobs:
           path: Frameworks
           key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
 
-      # The release build's package sources, fetched once per Package.resolved
-      # and Xcode: one entry, saved by main only when missing. No compiled
-      # objects: Release 44693177175 restored CI's whole .build under its
-      # exact key and still compiled the packages from step 1 of 955
-      # (CCryptoBoringSSL first, ≈2 min), then Overterm's whole-module
-      # compile (≈48 min) — nothing compiled was reused. Put the
-      # intermediates back only once a run shows them reused (well under
-      # ~950 steps, no BoringSSL compile). The Release workflow restores the
-      # same paths and key.
+      # The whole release build — the packages compiled, the app's modules,
+      # Swift Build's database — one entry a commit, as the debug build's
+      # (the test job). Release 44693177175 once restored a whole .build
+      # and still compiled everything from the first step: the checkout
+      # had dated every file, Package.swift too, now. The Release workflow
+      # restores main's entry for the commit it releases.
       - name: Restore the Swift build
         id: release-build
         uses: actions/cache/restore@v6
         with:
           path: |
-            .build/checkouts
-            .build/repositories
-            .build/workspace-state.json
-          key: spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}
+            .build/*
+            !.build/out
+            .build/out/*
+            !.build/out/Products
+            !.build/out/v5
+            .build/out/Products/Release/*
+            !.build/out/Products/Release/lib*.a
+          key: spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
           restore-keys: |
+            spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-
             spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-
 
       - name: Assemble and verify the app bundle
@@ -386,6 +411,11 @@ jobs:
           # The Swift libraries it loads by @rpath are in it (make-app.sh
           # bundles them; this runner's macOS has them, older ones don't).
           Scripts/bundle-swift-libs.sh Overterm.app >/dev/null
+          # No end-to-end scenario nor fake server in a shipped build: they
+          # are `#if E2E`, a debug build's or the E2E trait's (Package.swift).
+          if nm Overterm.app/Contents/MacOS/Overterm | grep -qE 'E2ERunner|FakeDockerEngine|FakeKubeAPI'; then
+            echo "::error::the release binary has the end-to-end scenarios in it"; exit 1
+          fi
 
       # The bundle this Xcode made, to open on an older macOS than the
       # runner's before a release (1.6.2 opened on none before macOS 26).
@@ -397,15 +427,28 @@ jobs:
           path: Overterm-app.zip
           retention-days: 5
 
-      # Main's only: a pull request's would be its branch's alone. Only when
-      # the restore found no entry under this very key, and only after a
-      # build that finished (the debug build's reason, above).
+      # Saved once the bundle is built and checked; a pull request's in its
+      # own scope, main's for every pull request and the release.
       - name: Save the Swift build
-        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.release-build.outputs.cache-hit != 'true' && steps.bundle-build.outcome == 'success' }}
+        if: ${{ !cancelled() && steps.bundle-build.outcome == 'success' && steps.release-build.outputs.cache-hit != 'true' }}
+        continue-on-error: true
         uses: actions/cache/save@v6
         with:
           path: |
-            .build/checkouts
-            .build/repositories
-            .build/workspace-state.json
-          key: spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}
+            .build/*
+            !.build/out
+            .build/out/*
+            !.build/out/Products
+            !.build/out/v5
+            .build/out/Products/Release/*
+            !.build/out/Products/Release/lib*.a
+          key: spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+
+      - name: Delete this branch's older release builds
+        if: ${{ !cancelled() && steps.bundle-build.outcome == 'success' && steps.release-build.outputs.cache-hit != 'true' }}
+        continue-on-error: true
+        env:
+          GH_TOKEN: ${{ github.token }}
+          KEEP: spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}-${{ github.sha }}
+          PREFIX: spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-
+        run: Scripts/prune-caches.sh "$PREFIX" "$KEEP"

@@ -1,0 +1,299 @@
+import AppKit
+import Combine
+import UserNotifications
+
+@MainActor
+package final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate {
+    private var windowController: TerminalWindowController?
+    /// The census's context from the app's windows (`wireActivityCensus`).
+    private var activityCensus: AnyCancellable?
+
+    package func applicationDidFinishLaunching(_ notification: Notification) {
+        // A scenario whose environment carries a credential variable stops
+        // before any pane could inherit it (analysis 4.5): its names, never
+        // their values, as the run's one failed check.
+        let refused = AppEnvironment.terraformRefusedCredentials
+        if !refused.isEmpty {
+            print("E2E FAIL no credential variables — refusing to run with \(refused.joined(separator: ", ")) set; unset them first")
+            print("E2E DONE 1")
+            fflush(stdout)
+            exit(1)
+        }
+        AppEnvironment.carryOverFormerDefaults()
+        NSApp.mainMenu = MainMenu.build()
+        NSApp.servicesProvider = self
+        UNUserNotificationCenter.current().delegate = self
+        // Requests started and never saved, from the last run: nothing points
+        // at them now (editor tabs aren't restored).
+        try? FileManager.default.removeItem(at: APIWorkspace.draftsDirectory)
+        // Before any pane: a pane learns the browser's MCP address as it is made.
+        BrowserBridge.shared.start()
+        // Before any pane too: each one made is the census's context's.
+        activityCensus = TerminalWindowController.wireActivityCensus()
+        // A drawing an agent made (notes_draw) opens in the front window's editor.
+        DrawingConverter.open = { url in
+            for window in NSApp.orderedWindows {
+                guard let controller = window.windowController as? TerminalWindowController else { continue }
+                controller.openNote(url)
+                return
+            }
+        }
+
+        let controller = TerminalWindowController()
+        // An isolated run (E2E, layout dump) reads and writes its own support
+        // directory — empty unless a test prepared a session there.
+        let env = ProcessInfo.processInfo.environment
+        if Settings.shared.restoreTabs, let saved = SessionState.load(), !saved.tabs.isEmpty {
+            controller.restore(saved)
+        } else if AppEnvironment.isIsolated {
+            // Never the home folder of whoever runs it: the window follows the
+            // first tab's folder, and its panels read what they find there —
+            // a scenario's picture once showed the user's own Bruno collection.
+            // An empty folder of the run's own unless one is named.
+            let start = AppEnvironment.supportDirectory.appendingPathComponent("start", isDirectory: true)
+            if env["OVERTERM_E2E_CWD"] == nil, env["OVERTERM_DUMP_CWD"] == nil {
+                try? FileManager.default.createDirectory(at: start, withIntermediateDirectories: true)
+            }
+            let cwd = env["OVERTERM_E2E_CWD"] ?? env["OVERTERM_DUMP_CWD"] ?? start.path
+            controller.newTab(in: URL(fileURLWithPath: cwd))
+        } else {
+            controller.newTab(from: nil)
+        }
+        GhosttyRuntime.shared.setColorScheme()
+        controller.autosaveSession()
+        controller.showWindow(nil)
+        UpdateChecker.shared.checkIfDue()
+        windowController = controller
+        controller.dumpLayoutIfRequested()
+        if let scenario = AppEnvironment.e2eScenario {
+            #if E2E
+            E2ERunner.start(scenario, app: controller)
+            #else
+            // A release build without the E2E trait has no scenarios: said
+            // and quit at once, rather than a window the run waits on.
+            FileHandle.standardError.write(Data("error: this build has no end-to-end scenarios (\(scenario)) — build with CONFIG=debug, or --traits E2E\n".utf8))
+            exit(2)
+            #endif
+        }
+        // What Activity kept and stopped before the last quit or crash (D-29).
+        ActivityPersistence.shared.start()
+        // …and, 10 s on, what an earlier Overterm left (D-14): never in an isolated run.
+        if !AppEnvironment.isIsolated {
+            Task { [weak controller] in
+                await controller?.activityRestoreAtLaunch()
+                try? await Task.sleep(for: TerminalWindowController.launchCheckDelay)
+                await controller?.leftBehindAtLaunch()
+            }
+        }
+
+        // An isolated run stays in the background: it must not take the
+        // keyboard from whatever the user is doing.
+        if AppEnvironment.isIsolated {
+            controller.window?.orderFrontRegardless()
+        } else {
+            NSApp.activate(ignoringOtherApps: true)
+        }
+    }
+
+    /// Quitting closes every tab: always confirmed — unless the window's own
+    /// close was just confirmed, or nothing is open.
+    package func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        // Unsaved editor changes ask first, whatever Settings says about tabs
+        // (closing the window asks about them itself).
+        // A cluster object's YAML with edits not applied counts too: it is never saved.
+        if let controller = windowController, !controller.closeConfirmed, let file = controller.unsavedNames(everyWindow: true).first {
+            let alert = NSAlert()
+            alert.messageText = "“\(file)” has unsaved changes."
+            alert.informativeText = "Quitting loses them. Save it (⌘S) — or apply a cluster object's YAML — first, or quit anyway."
+            alert.addButton(withTitle: "Cancel")
+            alert.addButton(withTitle: "Quit Anyway")
+            alert.alertStyle = .warning
+            guard alert.runModal() == .alertSecondButtonReturn else { return .terminateCancel }
+        }
+        // A terraform write typed in a pane dies with it (4.8): asked
+        // whatever the close setting says; Interrupt cancels the quit.
+        let controllers = NSApp.windows.compactMap { $0.windowController as? TerminalWindowController }
+        let writes = controllers.flatMap { $0.terraformWrites(tabs: $0.store.tabs, path: .quit) }
+        if let question = TerraformCloseGuard.question(writes, path: .quit) {
+            switch TerminalWindowController.terraformCloseAlert(question).runModal() {
+            case .alertFirstButtonReturn:
+                // Close Now, once they have stopped, quits again (asked as any quit is).
+                controllers.first?.interruptTerraform(writes, path: .quit) { NSApp.terminate(nil) }
+                return .terminateCancel
+            case .alertSecondButtonReturn:
+                break
+            default:
+                return .terminateCancel
+            }
+        }
+        // A terraform test with real providers runs in the app's group: quitting cuts its cleanup off.
+        let tests = TerraformTestResults.shared.goingReal
+        if let question = TerraformCloseGuard.testQuestion(tests.map { (name: $0.card.name, since: $0.started) }) {
+            let alert = NSAlert()
+            alert.messageText = question.title
+            alert.informativeText = question.detail
+            alert.alertStyle = .critical
+            for title in TerraformCloseGuard.testButtons { alert.addButton(withTitle: title) }
+            switch alert.runModal() {
+            case .alertFirstButtonReturn:
+                tests.forEach { $0.stop() }
+                return .terminateCancel
+            case .alertSecondButtonReturn:
+                break
+            default:
+                return .terminateCancel
+            }
+        }
+        // What Activity suspended stays stopped once Overterm is gone: asked,
+        // Resume and Quit the default (docs/design/activity/analysis.md, 6.10).
+        // The answer is kept: nothing is continued until every later question
+        // has let the quit go (`quitting`), or a Cancel there would leave the
+        // app open with what was suspended running again.
+        var resumeAtQuit = false
+        if let alert = TerminalWindowController.activityQuitAlert() {
+            switch alert.runModal() {
+            case .alertFirstButtonReturn: resumeAtQuit = true
+            case .alertSecondButtonReturn: break
+            default: return .terminateCancel
+            }
+        }
+        /// The quit, once nothing else holds it: Resume and Quit's resumes
+        /// now — any not continued asked about again, Don't Quit the default.
+        func quitting() -> NSApplication.TerminateReply {
+            guard resumeAtQuit, let again = TerminalWindowController.activityResumeAtQuit() else { return .terminateNow }
+            return again.runModal() == .alertSecondButtonReturn ? .terminateNow : .terminateCancel
+        }
+        // Overterm's own applies go on, detached (4.7): said, never waited for.
+        let applies = TerraformRunRegistry.shared.goingApplies.map { (name: $0.marker.name, since: $0.started) }
+        if let question = TerraformCloseGuard.quitQuestion(applies) {
+            let alert = NSAlert()
+            alert.messageText = question.title
+            alert.informativeText = question.detail
+            alert.addButton(withTitle: "Quit and Let It Finish")
+            alert.addButton(withTitle: "Cancel")
+            alert.alertStyle = .warning
+            guard alert.runModal() == .alertFirstButtonReturn else { return .terminateCancel }
+        }
+        guard let controller = windowController, !controller.closeConfirmed, !controller.store.tabs.isEmpty,
+            TerminalWindowController.needsCloseConfirmation(controller.store.tabs, quitting: true)
+        else { return quitting() }
+        let tabs = controller.store.tabs
+        let alert = NSAlert()
+        alert.messageText = tabs.count == 1 ? "Quit Overterm?" : "Quit Overterm and close \(tabs.count) tabs?"
+        alert.informativeText =
+            TerminalWindowController.closeWarning(for: tabs, quitting: true) + " Tabs come back on the next launch; agents resume their conversation."
+            + {
+                // What goes on running is named: it may be why this asks (D-16).
+                let listed = TerminalWindowController.survivorsListed(tabs.flatMap(\.terminals))
+                return listed.isEmpty ? "" : "\n\n" + listed
+            }()
+        alert.addButton(withTitle: "Quit")
+        alert.addButton(withTitle: "Cancel")
+        alert.alertStyle = .warning
+        return alert.runModal() == .alertFirstButtonReturn ? quitting() : .terminateCancel
+    }
+
+    package func applicationWillTerminate(_ notification: Notification) {
+        endRun()
+    }
+
+    /// What quitting ends, so nothing Overterm started outlives it: at
+    /// quit, and at the end of an end-to-end scenario, which exits without
+    /// quitting (`E2ERunner.start`).
+    package func endRun() {
+        // Save first: the autosave is debounced and would miss a quick quit.
+        // With each pane's text — unless closing the window already did.
+        windowController?.saveFinalSession()
+        windowController?.store.tabs.forEach { $0.terminals.forEach { $0.close() } }
+        // Copies made to be read (a resolved compose config) don't outlive the app.
+        NSApp.windows.compactMap { $0.windowController as? TerminalWindowController }.forEach { $0.removeDockerReadCopies() }
+        // shutdown/exit to each language server, so none outlives the app.
+        LanguageServers.shared.stopAll()
+        // Each database tunnel's ssh, or it outlives the app.
+        SSHTunnel.closeAll()
+        MCPClient.terminateAll()
+        // A volume's helpers, while a remote engine's forward is still open.
+        DockerHelpers.removeAll(waiting: 2)
+        // Every Kubernetes port-forward, before its kubectl is closed below:
+        // none is started again.
+        KubeForwards.shared.stopAll()
+        // Every long-lived child Overterm started (a remote engine's ssh
+        // forward, each context's kubectl proxy and port-forwards), by its own pid.
+        ManagedProcess.closeAll()
+        // A kubectl auth can-i still asking, with its exec plugin: its group.
+        KubeProcessRun.stopAll()
+        // A scenario's detached applies (never the user's: those go on, 4.7).
+        if AppEnvironment.guardsTerraform { TerraformRunRegistry.shared.goingApplies.forEach { $0.stop() } }
+        // A validate or fmt still running, with the providers it started: its group.
+        TerraformRun.stopAll()
+        // The proxies' sockets' folder, once kubectl is gone.
+        KubeSocketFolder.app.remove()
+        // The Kubernetes objects' copies the editor had open (`y`).
+        KubeManifestEdits.removeAll()
+        // A scan's Scout, or it outlives the app.
+        DockerScoutScans.shared.cancelAll()
+        BrowserBridge.shared.stop()
+    }
+
+    /// Overterm ▸ Settings… (⌘,): the Settings tab.
+    @objc package func showSettings(_ sender: Any?) {
+        windowController?.openSettings()
+    }
+
+    @objc package func showChangelog(_ sender: Any?) {
+        ChangelogWindowController.shared.show()
+    }
+
+    /// Settings ▸ About, checking.
+    @objc package func checkForUpdates(_ sender: Any?) {
+        windowController?.openSettings(.about)
+        Task { await UpdateChecker.shared.check() }
+    }
+
+    /// Finder's Open With, or a drop on the Dock icon.
+    package func application(_ application: NSApplication, open urls: [URL]) {
+        windowController?.open(urls)
+    }
+
+    /// Finder's "New Overterm Tab Here" (Info.plist NSServices): the
+    /// selected files and folders, as for Open With.
+    @objc package func newTabHere(_ pasteboard: NSPasteboard, userData: String?, error: AutoreleasingUnsafeMutablePointer<NSString>) {
+        let urls = pasteboard.readObjects(forClasses: [NSURL.self], options: [.urlReadingFileURLsOnly: true]) as? [URL] ?? []
+        guard !urls.isEmpty else {
+            error.pointee = "No files or folders to open." as NSString
+            return
+        }
+        windowController?.open(urls)
+    }
+
+    /// Overterm ▸ About Overterm. The menu item has no target: the action
+    /// reaches the app's delegate after the windows' responders.
+    @objc package func showAbout(_ sender: Any?) {
+        AboutPanel.show()
+    }
+
+    /// Returning to the app is "seeing" the selected tab.
+    package func applicationDidBecomeActive(_ notification: Notification) {
+        windowController?.windowDidBecomeKey(notification)
+    }
+
+    /// Clicking a tab's notification brings that tab up. nonisolated: the
+    /// system may call it off the main thread, and this conformance's
+    /// isolation check would trap there (as AttentionNotifier's completion
+    /// did); the tab is revealed on the main thread.
+    package nonisolated func userNotificationCenter(
+        _ center: UNUserNotificationCenter, didReceive response: UNNotificationResponse, withCompletionHandler completionHandler: @escaping () -> Void
+    ) {
+        let id = (response.notification.request.content.userInfo[AttentionNotifier.tabIDKey] as? String).flatMap(UUID.init(uuidString:))
+        DispatchQueue.main.async {
+            MainActor.assumeIsolated {
+                if let id { self.windowController?.reveal(tabID: id) }
+            }
+        }
+        completionHandler()
+    }
+
+    package func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
+        true
+    }
+}

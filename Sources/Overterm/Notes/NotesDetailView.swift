@@ -3,12 +3,12 @@ import SwiftUI
 /// The Notes panel's lower half — Obsidian's side panes: the links into
 /// the note open (with the line each is on), its outline, the vault's
 /// tags (one picked filters the tree), and its open tasks.
-struct NotesDetailView: View {
-    @ObservedObject var model: NotesModel
-    @ObservedObject var theme: ChromeTheme
-    let actions: NotesActions
+package struct NotesDetailView: View {
+    @ObservedObject package var model: NotesModel
+    @ObservedObject package var theme: ChromeTheme
+    package let actions: NotesActions
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             Rectangle().fill(theme.border).frame(height: 1)
             tabs
@@ -253,18 +253,18 @@ private struct DetailRow<Content: View>: View {
 }
 
 /// The vault's open tasks by note, for the Tasks pane. Pure.
-enum NotesTaskGroups {
-    struct Group: Equatable {
-        var path: String
+package enum NotesTaskGroups {
+    package struct Group: Equatable {
+        package var path: String
         /// The note's first heading, else its name.
-        var title: String
-        var folder: String
-        var modified: Date
-        var tasks: [NoteDocument.Task]
+        package var title: String
+        package var folder: String
+        package var modified: Date
+        package var tasks: [NoteDocument.Task]
     }
 
     /// Notes with an open task, the most recently changed first.
-    static func make(_ index: NotesIndex, limit: Int = 60) -> [Group] {
+    package static func make(_ index: NotesIndex, limit: Int = 60) -> [Group] {
         index.paths.compactMap { path -> Group? in
             guard let entry = index.notes[path] else { return nil }
             let open = entry.document.tasks.filter { !$0.isDone && $0.status != "-" }
@@ -278,7 +278,7 @@ enum NotesTaskGroups {
     }
 
     /// A task's Markdown as it reads: **bold**, `code`, links — not its markup.
-    static func inline(_ text: String) -> AttributedString {
+    package static func inline(_ text: String) -> AttributedString {
         let options = AttributedString.MarkdownParsingOptions(interpretedSyntax: .inlineOnlyPreservingWhitespace)
         // Wikilinks read as their names.
         let plain = text.replacingOccurrences(of: #"\[\[([^\]|]+\|)?([^\]]+)\]\]"#, with: "$2", options: .regularExpression)

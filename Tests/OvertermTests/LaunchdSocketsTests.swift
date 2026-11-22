@@ -2,6 +2,12 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// launchd's socket jobs (docs/design/activity/analysis.md, 6.8 rule 9):
 /// fixture plists in folders the test hands over — as `AppEnvironment`

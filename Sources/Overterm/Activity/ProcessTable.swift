@@ -10,12 +10,12 @@ import Darwin
 /// with its `ppid` that started no later than it. One that started later
 /// took a dead parent's pid, and the child is a root — keyed by the pid
 /// alone, it would hang under a stranger.
-struct ProcessTable: Sendable {
-    let processes: [ActivityProcess]
+package struct ProcessTable: Sendable {
+    package let processes: [ActivityProcess]
     private let byPID: [pid_t: Int]
     private let childIndexes: [pid_t: [Int]]
 
-    init(_ processes: [ActivityProcess]) {
+    package init(_ processes: [ActivityProcess]) {
         var byPID: [pid_t: Int] = [:]
         byPID.reserveCapacity(processes.count)
         for (index, process) in processes.enumerated() { byPID[process.pid] = index }
@@ -32,17 +32,17 @@ struct ProcessTable: Sendable {
     }
 
     /// The live process with this pid, whoever it is now.
-    func process(pid: pid_t) -> ActivityProcess? { byPID[pid].map { processes[$0] } }
+    package func process(pid: pid_t) -> ActivityProcess? { byPID[pid].map { processes[$0] } }
 
     /// The process with this identity, if the table still has it (a
     /// zombie until it is reaped).
-    func process(_ identity: ActivityProcessID) -> ActivityProcess? {
+    package func process(_ identity: ActivityProcessID) -> ActivityProcess? {
         guard let process = process(pid: identity.pid), process.identity == identity else { return nil }
         return process
     }
 
     /// Its parent, checked by start time; nil for a root.
-    func parent(of identity: ActivityProcessID) -> ActivityProcess? {
+    package func parent(of identity: ActivityProcessID) -> ActivityProcess? {
         guard let child = process(identity), let parent = process(pid: child.parentPID), parent.pid != child.pid,
             parent.identity.start <= child.identity.start
         else { return nil }
@@ -50,20 +50,20 @@ struct ProcessTable: Sendable {
     }
 
     /// Its children, oldest first.
-    func children(of identity: ActivityProcessID) -> [ActivityProcess] {
+    package func children(of identity: ActivityProcessID) -> [ActivityProcess] {
         guard process(identity) != nil else { return [] }
         return (childIndexes[identity.pid] ?? []).map { processes[$0] }.sorted { $0.identity < $1.identity }
     }
 
     /// The children of whatever holds `pid` now, oldest first, as the
     /// pairing reads them (7.7): pid, start and `p_comm`, a zombie left out.
-    func liveChildren(of pid: pid_t) -> [(pid: pid_t, start: UInt64, name: String)] {
+    package func liveChildren(of pid: pid_t) -> [(pid: pid_t, start: UInt64, name: String)] {
         guard let parent = process(pid: pid) else { return [] }
         return children(of: parent.identity).filter { !$0.isZombie }.map { ($0.pid, $0.identity.start, $0.shortName) }
     }
 
     /// Everything below it, breadth first, at most `limit`.
-    func descendants(of identity: ActivityProcessID, limit: Int = 10_000) -> [ActivityProcess] {
+    package func descendants(of identity: ActivityProcessID, limit: Int = 10_000) -> [ActivityProcess] {
         guard process(identity) != nil else { return [] }
         var found: [ActivityProcess] = []
         var next = 0
@@ -79,7 +79,7 @@ struct ProcessTable: Sendable {
     }
 
     /// Whether `child` sits anywhere below `ancestor`.
-    func descends(_ child: ActivityProcessID, from ancestor: ActivityProcessID) -> Bool {
+    package func descends(_ child: ActivityProcessID, from ancestor: ActivityProcessID) -> Bool {
         var current = child
         // Bounded: a link is checked by start time, so it can't loop, but a
         // table read mid-change shouldn't be trusted to end.
@@ -96,13 +96,13 @@ struct ProcessTable: Sendable {
 
 extension ProcessTable {
     /// The table now; nil when the kernel won't give it.
-    static func read(_ kernel: some ActivityKernel) -> ProcessTable? {
+    package static func read(_ kernel: some ActivityKernel) -> ProcessTable? {
         kernel.processes().map(ProcessTable.init)
     }
 
     /// How many entries a read allows beyond the kernel's estimate: what
     /// starts between the two calls.
-    static let headroom = 64
+    package static let headroom = 64
 
     /// `KERN_PROC_ALL`'s entries: sized by the kernel's estimate with
     /// headroom, and read again larger when the buffer came back full —
@@ -110,7 +110,7 @@ extension ProcessTable {
     /// never trusted. `estimate` gives the bytes the kernel would need;
     /// `fill` fills a buffer, sets the bytes it wrote and gives the errno
     /// (0 for none). Pure apart from those two.
-    static func readEntries(
+    package static func readEntries(
         estimate: () -> Int?, fill: (UnsafeMutableRawBufferPointer, inout Int) -> Int32, attempts: Int = 5
     ) -> [kinfo_proc]? {
         let stride = MemoryLayout<kinfo_proc>.stride
@@ -133,7 +133,7 @@ extension ProcessTable {
     }
 
     /// One entry as the census keeps it; nil for an empty slot.
-    static func record(_ info: kinfo_proc) -> ActivityProcess? {
+    package static func record(_ info: kinfo_proc) -> ActivityProcess? {
         let proc = info.kp_proc
         let eproc = info.kp_eproc
         guard proc.p_pid >= 0 else { return nil }

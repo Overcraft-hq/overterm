@@ -1,7 +1,7 @@
 import Foundation
 
-struct PaletteItem: Identifiable {
-    enum Group: String, CaseIterable {
+package struct PaletteItem: Identifiable {
+    package enum Group: String, CaseIterable {
         case history = "History"
         case snippet = "Snippet"
         case action = "Action"
@@ -17,43 +17,60 @@ struct PaletteItem: Identifiable {
         case activity = "Activity"
 
         /// The scopes the field offers, in the order the designs have them.
-        static let scopes: [Group] = [.history, .snippet, .action, .container, .kubernetes, .terraform, .activity]
+        package static let scopes: [Group] = [.history, .snippet, .action, .container, .kubernetes, .terraform, .activity]
     }
 
-    let id: String
-    let group: Group
-    let title: String
-    let subtitle: String?
-    let symbol: String
+    package let id: String
+    package let group: Group
+    package let title: String
+    package let subtitle: String?
+    package let symbol: String
     /// What the detail pane says about it, if anything: when it last ran,
     /// how it went, where.
-    var detail: String?
+    package var detail: String?
     /// How it went last time, for the glyph beside a history row.
-    var failed: Bool?
+    package var failed: Bool?
     /// `{{name}}`s to fill in before it can run (snippets).
-    var placeholders: [String] = []
+    package var placeholders: [String] = []
     /// `run`: Return (true) vs ⌥Return (false). Snippets and history care.
-    let perform: @MainActor (_ run: Bool, _ values: [String: String]) -> Void
+    package let perform: @MainActor (_ run: Bool, _ values: [String: String]) -> Void
+
+    package init(
+        id: String, group: Group, title: String, subtitle: String?, symbol: String, detail: String? = nil, failed: Bool? = nil, placeholders: [String] = [],
+        perform: @escaping @MainActor (_ run: Bool, _ values: [String: String]) -> Void
+    ) {
+        self.id = id
+        self.group = group
+        self.title = title
+        self.subtitle = subtitle
+        self.symbol = symbol
+        self.detail = detail
+        self.failed = failed
+        self.placeholders = placeholders
+        self.perform = perform
+    }
 }
 
 /// The palette's query, its ranked results and the highlighted one.
 @MainActor
-final class PaletteModel: ObservableObject {
-    @Published var query = "" {
+package final class PaletteModel: ObservableObject {
+    package init() {}
+
+    @Published package var query = "" {
         didSet { rank() }
     }
-    @Published private(set) var results: [PaletteItem] = []
-    @Published var selectedIndex = 0
+    @Published package private(set) var results: [PaletteItem] = []
+    @Published package var selectedIndex = 0
     /// Nil is "All" — the scope chips in the field.
-    @Published var scope: PaletteItem.Group? {
+    @Published package var scope: PaletteItem.Group? {
         didSet { rank() }
     }
     /// What has been typed into the selected snippet's placeholders.
-    @Published var values: [String: String] = [:]
+    @Published package var values: [String: String] = [:]
 
     private var items: [PaletteItem] = []
 
-    func reset(with items: [PaletteItem]) {
+    package func reset(with items: [PaletteItem]) {
         self.items = items
         query = ""
         scope = nil
@@ -63,7 +80,7 @@ final class PaletteModel: ObservableObject {
 
     /// Fresh sources for the query that is already typed — history is
     /// ranked against it, so it has to be rebuilt as you type.
-    func restock(_ items: [PaletteItem]) {
+    package func restock(_ items: [PaletteItem]) {
         guard items.map(\.id) != self.items.map(\.id) else { return }
         let wanted = selected?.id
         self.items = items
@@ -97,21 +114,21 @@ final class PaletteModel: ObservableObject {
         selectedIndex = 0
     }
 
-    func move(_ offset: Int) {
+    package func move(_ offset: Int) {
         guard !results.isEmpty else { return }
         selectedIndex = (selectedIndex + offset + results.count) % results.count
     }
 
-    var selected: PaletteItem? { results.indices.contains(selectedIndex) ? results[selectedIndex] : nil }
+    package var selected: PaletteItem? { results.indices.contains(selectedIndex) ? results[selectedIndex] : nil }
 
     /// How many of a group the query finds (nil: all of them), for its tab.
-    func count(of group: PaletteItem.Group?) -> Int {
+    package func count(of group: PaletteItem.Group?) -> Int {
         guard let group else { return items.isEmpty ? 0 : ranked(items).count }
         return ranked(items.filter { $0.group == group }).count
     }
 
     /// The tabs as the palette shows them: All, then the groups offered.
-    var tabs: [PaletteItem.Group?] {
+    package var tabs: [PaletteItem.Group?] {
         [nil]
             + PaletteItem.Group.scopes.filter {
                 ($0 != .snippet || Settings.shared.snippetsEnabled) && ($0 != .container || Settings.shared.dockerEnabled)
@@ -121,7 +138,7 @@ final class PaletteModel: ObservableObject {
     }
 
     /// ⇥ and ⇧⇥: the next tab, the one before.
-    func cycleScope(_ offset: Int) {
+    package func cycleScope(_ offset: Int) {
         let all = tabs
         let index = all.firstIndex { $0 == scope } ?? 0
         scope = all[(index + offset + all.count) % all.count]
@@ -133,7 +150,7 @@ final class PaletteModel: ObservableObject {
     }
 
     /// Whether the selected item still needs something typed in.
-    var isReady: Bool {
+    package var isReady: Bool {
         guard let selected else { return false }
         return selected.placeholders.allSatisfy { !(values[$0] ?? "").isEmpty }
     }

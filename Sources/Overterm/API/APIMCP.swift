@@ -4,7 +4,7 @@ import Foundation
 /// window answers with an APIWorkspace on that checkout; tests hand in one
 /// of their own.
 @MainActor
-protocol AgentAPI: AnyObject {
+package protocol AgentAPI: AnyObject {
     /// The checkout's collections — never the user's own My Requests.
     var checkoutCollections: [BrunoCollection] { get }
     /// The environment picked for a collection (the panel's, or its last).
@@ -26,8 +26,8 @@ protocol AgentAPI: AnyObject {
 /// sends its requests or one of its own, and runs the collection's tests
 /// — the user watching the same results in the panel.
 @MainActor
-enum APIMCP {
-    static func call(_ name: String, _ arguments: [String: Any], api: AgentAPI) async throws -> [String: Any] {
+package enum APIMCP {
+    package static func call(_ name: String, _ arguments: [String: Any], api: AgentAPI) async throws -> [String: Any] {
         await api.loadIfNeeded()
         func string(_ key: String) -> String? { (arguments[key] as? String).flatMap { $0.isEmpty ? nil : $0 } }
         let environment = string("environment")
@@ -110,7 +110,7 @@ enum APIMCP {
 
     /// A folder by its path in the collection ("Users/Admin") — inside it,
     /// with links resolved, as for requests.
-    static func findFolder(_ path: String, in collection: BrunoCollection) -> APIItem? {
+    package static func findFolder(_ path: String, in collection: BrunoCollection) -> APIItem? {
         let root = collection.root.resolvingSymlinksInPath().path
         let candidate = collection.root.appendingPathComponent(path).resolvingSymlinksInPath()
         guard candidate.path.hasPrefix(root + "/") else { return nil }
@@ -120,7 +120,7 @@ enum APIMCP {
 
     /// Each secret value (four characters or more: shorter ones would
     /// mask ordinary text) replaced by a marker.
-    static func redact(_ text: String, _ secrets: [String]) -> String {
+    package static func redact(_ text: String, _ secrets: [String]) -> String {
         // As written, and as it reads once a URL has percent-encoded it.
         let forms = secrets.filter { $0.count >= 4 }.flatMap { secret in
             [secret, secret.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed), APIRequestPlan.formEncode(secret)].compactMap { $0 }
@@ -131,7 +131,7 @@ enum APIMCP {
     /// A request by its path in the collection or its name — never a file
     /// outside the collection: an absolute path or `..` would run another
     /// checkout's scripts in this one.
-    static func find(_ target: String, in api: AgentAPI) -> URL? {
+    package static func find(_ target: String, in api: AgentAPI) -> URL? {
         for collection in api.checkoutCollections {
             let root = APIWorkspace.canonicalPath(collection.root) + "/"
             let relative = target.hasPrefix(root) ? String(target.dropFirst(root.count)) : target
@@ -147,7 +147,7 @@ enum APIMCP {
         return nil
     }
 
-    static func describe(_ api: AgentAPI) -> String {
+    package static func describe(_ api: AgentAPI) -> String {
         guard !api.checkoutCollections.isEmpty else {
             return "This checkout has no Bruno collection (a folder with bruno.json). api_request sends one-off requests; the user can import an OpenAPI document from the API panel."
         }
@@ -175,7 +175,7 @@ enum APIMCP {
         return lines.joined(separator: "\n")
     }
 
-    static func report(_ result: APIExecution.Result, limit: Int) -> String {
+    package static func report(_ result: APIExecution.Result, limit: Int) -> String {
         var lines: [String] = []
         if let plan = result.plan {
             lines.append("\(plan.method) \(plan.url.absoluteString)")
@@ -205,7 +205,7 @@ enum APIMCP {
         return lines.joined(separator: "\n")
     }
 
-    static func summary(_ entries: [APIRunner.Entry], title: String) -> String {
+    package static func summary(_ entries: [APIRunner.Entry], title: String) -> String {
         let done = entries.filter { $0.state == .done }
         let failed = done.filter { !$0.passed }
         var lines = ["Ran \(title): \(done.count) of \(entries.count) requests, \(done.count - failed.count) passed, \(failed.count) failed."]
@@ -224,14 +224,14 @@ enum APIMCP {
         return lines.joined(separator: "\n")
     }
 
-    static func tool(_ name: String, _ description: String, _ properties: [String: Any], required: [String] = []) -> [String: Any] {
+    package static func tool(_ name: String, _ description: String, _ properties: [String: Any], required: [String] = []) -> [String: Any] {
         [
             "name": name, "description": description,
             "inputSchema": ["type": "object", "properties": properties, "required": required] as [String: Any],
         ]
     }
 
-    static let tools: [[String: Any]] = [
+    package static let tools: [[String: Any]] = [
         tool(
             "api_collections",
             "The Bruno collection in your checkout: its requests (method, name, path) by folder, and its environments. Requests are .bru files you can edit; api_send runs one.",
@@ -266,7 +266,7 @@ enum APIMCP {
 }
 
 extension APIItem {
-    func findFolder(named name: String) -> APIItem? {
+    package func findFolder(named name: String) -> APIItem? {
         for child in children ?? [] where child.isFolder {
             if child.name.caseInsensitiveCompare(name) == .orderedSame { return child }
             if let found = child.findFolder(named: name) { return found }
@@ -279,12 +279,12 @@ extension APIItem {
 /// An agent's environment is for its own call: passed down to that run,
 /// never set as the panel's pick, which a request sent meanwhile would use.
 extension APIWorkspace: AgentAPI {
-    func runFile(_ url: URL, environment: EnvironmentChoice) async -> APIExecution.Result? {
+    package func runFile(_ url: URL, environment: EnvironmentChoice) async -> APIExecution.Result? {
         guard let text = try? String(contentsOf: url, encoding: .utf8) else { return nil }
         return await run(BruFile(parsing: text), at: url, environment: environment)
     }
 
-    func runAdHoc(_ file: BruFile, in collection: BrunoCollection?, environment: EnvironmentChoice) async -> APIExecution.Result {
+    package func runAdHoc(_ file: BruFile, in collection: BrunoCollection?, environment: EnvironmentChoice) async -> APIExecution.Result {
         // Inside the collection's folder, so its environment and .env apply.
         let url = collection?.root.appendingPathComponent(".agent-request.bru")
         // The agent names the host here: no secret is filled in.
@@ -292,7 +292,7 @@ extension APIWorkspace: AgentAPI {
         return await APIExecution.run(setup, client: client(for: setup.collectionRoot), scripts: scripts)
     }
 
-    func runAll(_ items: [APIItem], title: String, in collection: BrunoCollection, environment: String?) async -> [APIRunner.Entry] {
+    package func runAll(_ items: [APIItem], title: String, in collection: BrunoCollection, environment: String?) async -> [APIRunner.Entry] {
         let id = runner.run(items, title: title, in: collection, workspace: self, environment: environment)
         while runner.isRunning(id) { try? await Task.sleep(nanoseconds: 50_000_000) }
         return runner.entries(of: id)

@@ -13,15 +13,15 @@ import Foundation
 /// main actor anyway: the gallery is the only thing that wants them, and it
 /// fades them in when they arrive.
 @MainActor
-final class ThemeCatalog: ObservableObject {
-    static let shared = ThemeCatalog()
+package final class ThemeCatalog: ObservableObject {
+    package static let shared = ThemeCatalog()
 
     /// Where a theme came from, which is also how the gallery groups them.
-    enum Source: String, CaseIterable, Sendable {
+    package enum Source: String, CaseIterable, Sendable {
         case builtIn
         case user
 
-        var title: String {
+        package var title: String {
             switch self {
             case .builtIn: "Built in"
             case .user: "Yours"
@@ -29,22 +29,28 @@ final class ThemeCatalog: ObservableObject {
         }
     }
 
-    struct Entry: Identifiable, Sendable {
-        let theme: TerminalTheme
-        let source: Source
+    package struct Entry: Identifiable, Sendable {
+        package let theme: TerminalTheme
+        package let source: Source
         /// The file it was read from (nil in tests that make one up).
-        var url: URL? = nil
-        var id: String { theme.name }
+        package var url: URL? = nil
+
+        package init(theme: TerminalTheme, source: Source, url: URL? = nil) {
+            self.theme = theme
+            self.source = source
+            self.url = url
+        }
+        package var id: String { theme.name }
     }
 
     /// Every theme, by name. Empty until `load()` finishes.
-    @Published private(set) var entries: [Entry] = []
-    @Published private(set) var isLoaded = false
+    @Published package private(set) var entries: [Entry] = []
+    @Published package private(set) var isLoaded = false
 
     private let directories: [(URL, Source)]
     private var loading = false
 
-    init(directories: [(URL, Source)]? = nil) {
+    package init(directories: [(URL, Source)]? = nil) {
         self.directories =
             directories
             ?? [AppEnvironment.bundledThemesDirectory.map { ($0, Source.builtIn) }, AppEnvironment.userThemesDirectory.map { ($0, .user) }]
@@ -53,7 +59,7 @@ final class ThemeCatalog: ObservableObject {
 
     /// Reads the files, once per launch. Called when Settings ▸ Themes
     /// opens — not at launch, where nothing needs them.
-    func load() {
+    package func load() {
         guard !isLoaded, !loading else { return }
         loading = true
         let directories = directories
@@ -66,7 +72,7 @@ final class ThemeCatalog: ObservableObject {
     }
 
     /// Again, after a theme was imported, edited or deleted.
-    func reload() {
+    package func reload() {
         isLoaded = false
         load()
     }
@@ -75,7 +81,7 @@ final class ThemeCatalog: ObservableObject {
     /// folder: the names they were saved under, and what went wrong with
     /// the last one that failed.
     @discardableResult
-    func importFiles(_ urls: [URL]) -> (saved: [String], problem: String?) {
+    package func importFiles(_ urls: [URL]) -> (saved: [String], problem: String?) {
         guard let directory = Self.writableDirectory else { return ([], "No themes folder to write to.") }
         var saved: [String] = []
         var problem: String?
@@ -100,12 +106,12 @@ final class ThemeCatalog: ObservableObject {
 
     /// Where a theme made here is written: the user's themes folder, which
     /// Ghostty reads too.
-    static var writableDirectory: URL? { AppEnvironment.userThemesDirectory }
+    package static var writableDirectory: URL? { AppEnvironment.userThemesDirectory }
 
     /// The directories' theme files, parsed. A name found twice keeps the
     /// first — the same order Ghostty resolves `theme =` in, so what the
     /// gallery draws is what the terminal takes.
-    nonisolated static func scan(_ directories: [(URL, Source)]) -> [Entry] {
+    package nonisolated static func scan(_ directories: [(URL, Source)]) -> [Entry] {
         var seen = Set<String>()
         var entries = [Entry]()
         for (directory, source) in directories {
@@ -127,14 +133,14 @@ final class ThemeCatalog: ObservableObject {
     /// The ten to open on. Ghostty's catalogue is 473 themes deep, which is
     /// a wall, not a choice; these are the ones people name, a light one
     /// for every two dark, in the order they are shown.
-    nonisolated static let popular = [
+    package nonisolated static let popular = [
         "Catppuccin Mocha", "TokyoNight Night", "Dracula", "Gruvbox Dark", "Nord",
         "Rose Pine", "Everforest Dark Hard", "Claude Dark", "Catppuccin Latte", "One Half Light",
     ]
 
     /// What the gallery shows: themes whose name matches, of the asked-for
     /// kind. Pure, so the filtering is tested without any files.
-    nonisolated static func filter(_ entries: [Entry], search: String, showing: Showing) -> [Entry] {
+    package nonisolated static func filter(_ entries: [Entry], search: String, showing: Showing) -> [Entry] {
         let query = search.trimmingCharacters(in: .whitespaces).lowercased()
         let found = entries.filter { entry in
             guard showing.accepts(entry.theme) else { return false }
@@ -149,12 +155,12 @@ final class ThemeCatalog: ObservableObject {
 
     /// Which themes the gallery is showing: the ten to start from, or the
     /// whole catalogue, dark, light or both.
-    enum Showing: String, CaseIterable, Identifiable, Sendable {
+    package enum Showing: String, CaseIterable, Identifiable, Sendable {
         case popular, dark, light, all
 
-        var id: String { rawValue }
+        package var id: String { rawValue }
 
-        var title: String {
+        package var title: String {
             switch self {
             case .popular: "Popular"
             case .dark: "Dark"
@@ -163,7 +169,7 @@ final class ThemeCatalog: ObservableObject {
             }
         }
 
-        func accepts(_ theme: TerminalTheme) -> Bool {
+        package func accepts(_ theme: TerminalTheme) -> Bool {
             switch self {
             case .popular: ThemeCatalog.popular.contains(theme.name)
             case .dark: theme.isDark
@@ -173,7 +179,7 @@ final class ThemeCatalog: ObservableObject {
         }
     }
 
-    func theme(named name: String) -> TerminalTheme? {
+    package func theme(named name: String) -> TerminalTheme? {
         entries.first { $0.theme.name == name }?.theme
     }
 
@@ -182,7 +188,7 @@ final class ThemeCatalog: ObservableObject {
     /// (`GhosttyRuntime.backgroundColor`). One small file, and the answer
     /// is kept.
     @MainActor
-    static func read(_ name: String) -> TerminalTheme? {
+    package static func read(_ name: String) -> TerminalTheme? {
         if let known = cache[name] { return known }
         let directories = [AppEnvironment.bundledThemesDirectory, AppEnvironment.userThemesDirectory].compactMap { $0 }
         for directory in directories.reversed() {

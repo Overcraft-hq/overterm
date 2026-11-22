@@ -3,15 +3,15 @@ import SwiftUI
 /// An environment's secrets: the names its file lists under `vars:secret`,
 /// their values typed here and kept in the keychain — never in the file,
 /// which is committed. A new name is added to the file's list.
-struct APISecretsView: View {
-    let environment: String
-    @State var names: [String]
+package struct APISecretsView: View {
+    package let environment: String
+    @State package var names: [String]
     @State private var values: [String: String]
     @State private var newName = ""
-    let save: (_ names: [String], _ values: [String: String]) -> Void
-    let cancel: () -> Void
+    package let save: (_ names: [String], _ values: [String: String]) -> Void
+    package let cancel: () -> Void
 
-    init(
+    package init(
         environment: String, names: [String], values: [String: String], save: @escaping ([String], [String: String]) -> Void,
         cancel: @escaping () -> Void
     ) {
@@ -22,7 +22,7 @@ struct APISecretsView: View {
         self.cancel = cancel
     }
 
-    var body: some View {
+    package var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(verbatim: "Secrets of “\(environment)”").font(.headline)
             Text("Kept in your keychain on this Mac, never in the environment's file — the file only names them, so it can be committed.")

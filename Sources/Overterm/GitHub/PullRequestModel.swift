@@ -4,32 +4,34 @@ import Foundation
 /// its checks, conversation and review threads — and writing to it.
 /// Loaded only while the pane shows it; everything goes through gh.
 @MainActor
-final class PullRequestModel: ObservableObject {
-    enum Phase: Equatable {
+package final class PullRequestModel: ObservableObject {
+    package init() {}
+
+    package enum Phase: Equatable {
         case idle, loading, loaded, none
         case failed(String)
     }
 
-    @Published private(set) var phase: Phase = .idle
-    @Published private(set) var detail: PullRequestDetail?
-    @Published private(set) var threads: [ReviewThread] = []
+    @Published package private(set) var phase: Phase = .idle
+    @Published package private(set) var detail: PullRequestDetail?
+    @Published package private(set) var threads: [ReviewThread] = []
     /// The last post that failed, said plainly.
-    @Published private(set) var postError: String?
-    @Published private(set) var posting = false
+    @Published package private(set) var postError: String?
+    @Published package private(set) var posting = false
 
-    private(set) var root: URL?
-    private(set) var branch: String?
+    package private(set) var root: URL?
+    package private(set) var branch: String?
     /// A pull request picked in Overgit — not the checkout's branch's:
     /// shown by its number until the tab's branch changes or it is let go.
-    @Published private(set) var picked: Int?
+    @Published package private(set) var picked: Int?
     /// Whether the pane is showing: nothing loads while it isn't.
     /// Showing it again asks again: comments and checks move meanwhile.
-    var visible = false {
+    package var visible = false {
         didSet { if visible, !oldValue { Task { await refresh() } } }
     }
 
     /// The checkout and branch to show. A change resets and, if visible, loads.
-    func show(root: URL?, branch: String?) {
+    package func show(root: URL?, branch: String?) {
         // Compared resolved: /var and /private/var are one checkout, and
         // taking them for two let go of a picked pull request at once.
         let same = root?.resolvingSymlinksInPath().path == self.root?.resolvingSymlinksInPath().path
@@ -41,7 +43,7 @@ final class PullRequestModel: ObservableObject {
     }
 
     /// Another pull request of the repository, by its number.
-    func show(number: Int, in root: URL) {
+    package func show(number: Int, in root: URL) {
         guard number != picked || root != self.root else { return }
         self.root = root
         picked = number
@@ -49,7 +51,7 @@ final class PullRequestModel: ObservableObject {
     }
 
     /// Back to the checkout's branch's own.
-    func unpick() {
+    package func unpick() {
         guard picked != nil else { return }
         picked = nil
         reset()
@@ -63,7 +65,7 @@ final class PullRequestModel: ObservableObject {
         if visible { Task { await refresh() } }
     }
 
-    func refresh() async {
+    package func refresh() async {
         let picked = self.picked
         guard let root, let selector = picked.map(String.init) ?? branch else {
             phase = .none
@@ -93,14 +95,14 @@ final class PullRequestModel: ObservableObject {
 
     /// A comment on the pull request. True when it was posted.
     @discardableResult
-    func comment(_ text: String) async -> Bool {
+    package func comment(_ text: String) async -> Bool {
         guard let number = detail?.summary.number else { return false }
         return await post(["pr", "comment", "\(number)", "--body", text])
     }
 
     /// A reply in a review thread. True when it was posted.
     @discardableResult
-    func reply(to thread: ReviewThread, _ text: String) async -> Bool {
+    package func reply(to thread: ReviewThread, _ text: String) async -> Bool {
         guard let number = detail?.summary.number else { return false }
         return await post(["api", "repos/{owner}/{repo}/pulls/\(number)/comments/\(thread.id)/replies", "-f", "body=\(text)"])
     }

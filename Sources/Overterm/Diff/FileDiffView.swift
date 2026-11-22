@@ -10,21 +10,21 @@ import SwiftUI
 /// same card. The pieces the changes pane alone has — a stage box, Discard,
 /// the "why it changed" strip — default to absent.
 
-enum DiffColors {
-    static let added = Color(red: 0.36, green: 0.78, blue: 0.44)
-    static let removed = Color(red: 0.94, green: 0.36, blue: 0.34)
+package enum DiffColors {
+    package static let added = Color(red: 0.36, green: 0.78, blue: 0.44)
+    package static let removed = Color(red: 0.94, green: 0.36, blue: 0.34)
 }
 
 /// What a diff line's text is drawn with: the editor's syntax colours
 /// (SyntaxPalette), comments in italics, and the part that changed marked
 /// stronger than the line's tint.
-struct DiffPalette {
+package struct DiffPalette {
     private let comment: AttributeContainer
     private let string: AttributeContainer
     private let number: AttributeContainer
     private let keyword: AttributeContainer
 
-    init(text: NSColor) {
+    package init(text: NSColor) {
         func attributes(_ kind: SyntaxHighlighter.Kind) -> AttributeContainer {
             var attributes = AttributeContainer()
             attributes.foregroundColor = Color(nsColor: SyntaxPalette.color(kind, text: text))
@@ -50,7 +50,7 @@ struct DiffPalette {
     /// loaded (`FileDiff.style(of:)`), only applied here: a few microseconds
     /// a line (kept as ranges, not as attributed text, a capped file's lines
     /// would take megabytes).
-    func text(_ line: DiffLine, _ style: DiffLineStyle) -> AttributedString {
+    package func text(_ line: DiffLine, _ style: DiffLineStyle) -> AttributedString {
         var text = AttributedString(line.text)
         // Tokens don't overlap and the text has no attributes yet: set, not merged.
         for token in style.tokens {
@@ -65,22 +65,40 @@ struct DiffPalette {
 }
 
 /// One changed file: a header row and, unfolded, its diff.
-struct FileCard: View {
-    let file: ChangedFile
-    let diff: DiffModel.FileDiff?
-    let collapsed: Bool
+package struct FileCard: View {
+    package let file: ChangedFile
+    package let diff: DiffModel.FileDiff?
+    package let collapsed: Bool
     /// Stage and Discard: only for uncommitted changes. A commit's card
     /// has neither — what it shows already happened.
-    var editable: Bool = false
-    @ObservedObject var theme: ChromeTheme
-    let palette: DiffPalette
+    package var editable: Bool = false
+    @ObservedObject package var theme: ChromeTheme
+    package let palette: DiffPalette
     /// The changes pane's alone: why the file changed.
-    var why: FileWhy = .none
-    var onToggleWhy: () -> Void = {}
-    let onToggle: () -> Void
-    var onStage: () -> Void = {}
-    var onDiscard: () -> Void = {}
-    let onOpen: () -> Void
+    package var why: FileWhy = .none
+    package var onToggleWhy: () -> Void = {}
+    package let onToggle: () -> Void
+    package var onStage: () -> Void = {}
+    package var onDiscard: () -> Void = {}
+    package let onOpen: () -> Void
+
+    package init(
+        file: ChangedFile, diff: DiffModel.FileDiff?, collapsed: Bool, editable: Bool = false, theme: ChromeTheme, palette: DiffPalette, why: FileWhy = .none, onToggleWhy: @escaping () -> Void = {},
+        onToggle: @escaping () -> Void, onStage: @escaping () -> Void = {}, onDiscard: @escaping () -> Void = {}, onOpen: @escaping () -> Void
+    ) {
+        self.file = file
+        self.diff = diff
+        self.collapsed = collapsed
+        self.editable = editable
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.palette = palette
+        self.why = why
+        self.onToggleWhy = onToggleWhy
+        self.onToggle = onToggle
+        self.onStage = onStage
+        self.onDiscard = onDiscard
+        self.onOpen = onOpen
+    }
 
     private var emptyDiff: String {
         if file.kind == .renamed, let original = file.originalPath { return "Renamed from \(original), content unchanged." }
@@ -95,7 +113,7 @@ struct FileCard: View {
         }
     }
 
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             header
             if !why.isEmpty {
@@ -204,19 +222,26 @@ struct FileCard: View {
     }
 }
 
-struct DiffLineView: View, Equatable {
-    let line: DiffLine
-    let style: DiffLineStyle
-    let palette: DiffPalette
-    @ObservedObject var theme: ChromeTheme
+package struct DiffLineView: View, Equatable {
+    package let line: DiffLine
+    package let style: DiffLineStyle
+    package let palette: DiffPalette
+    @ObservedObject package var theme: ChromeTheme
+
+    package init(line: DiffLine, style: DiffLineStyle, palette: DiffPalette, theme: ChromeTheme) {
+        self.line = line
+        self.style = style
+        self.palette = palette
+        self._theme = ObservedObject(wrappedValue: theme)
+    }
 
     /// The palette and theme are the app's for its life: a line is drawn
     /// again only when its text or style changes, not on every refresh.
-    nonisolated static func == (a: Self, b: Self) -> Bool { a.line == b.line && a.style == b.style }
+    package nonisolated static func == (a: Self, b: Self) -> Bool { a.line == b.line && a.style == b.style }
 
     /// A long line wraps within the pane, under its own text: kept on one
     /// row it grew wider than the pane, was centred, and lost its start.
-    var body: some View {
+    package var body: some View {
         HStack(alignment: .firstTextBaseline, spacing: 0) {
             number(line.oldNumber)
             number(line.newNumber)

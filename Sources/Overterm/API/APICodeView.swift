@@ -4,23 +4,23 @@ import SwiftUI
 /// A text area for a body, a script, the tests, the docs or a response:
 /// the editor's font and colours, tree-sitter's highlighting, nothing
 /// typed substituted — quotes stay straight in JSON.
-struct APICodeView: NSViewRepresentable {
-    @Binding var text: String
+package struct APICodeView: NSViewRepresentable {
+    @Binding package var text: String
     /// A grammar's name or alias: "json", "javascript", "markdown", "yaml".
-    var language: String?
-    var editable = true
-    var placeholder = ""
+    package var language: String?
+    package var editable = true
+    package var placeholder = ""
     /// Wraps long lines (prose, a long token); code otherwise scrolls sideways.
-    var wraps = false
-    var accessibilityIdentifier: String?
+    package var wraps = false
+    package var accessibilityIdentifier: String?
     /// What may finish the word at the caret, given the text before it — a
     /// GraphQL query's fields. Offered as a word is typed (⎋ too), nothing
     /// put in until one is picked.
-    var complete: ((String) -> [String])?
+    package var complete: ((String) -> [String])?
 
-    func makeCoordinator() -> Coordinator { Coordinator(self) }
+    package func makeCoordinator() -> Coordinator { Coordinator(self) }
 
-    func makeNSView(context: Context) -> NSScrollView {
+    package func makeNSView(context: Context) -> NSScrollView {
         let scroll = APITextView.scrollableTextView()
         scroll.hasVerticalScroller = true
         scroll.autohidesScrollers = true
@@ -63,7 +63,7 @@ struct APICodeView: NSViewRepresentable {
         return scroll
     }
 
-    func updateNSView(_ scroll: NSScrollView, context: Context) {
+    package func updateNSView(_ scroll: NSScrollView, context: Context) {
         context.coordinator.parent = self
         guard let textView = context.coordinator.textView else { return }
         textView.isEditable = editable
@@ -90,20 +90,20 @@ struct APICodeView: NSViewRepresentable {
     }
 
     @MainActor
-    final class Coordinator: NSObject, NSTextViewDelegate {
-        var parent: APICodeView
-        weak var textView: NSTextView?
-        var theme: EditorTheme?
+    package final class Coordinator: NSObject, NSTextViewDelegate {
+        package var parent: APICodeView
+        package weak var textView: NSTextView?
+        package var theme: EditorTheme?
         private var syntax: SyntaxDocument?
         private var syntaxLanguage: String?
         private var version = 0
         private var pending: DispatchWorkItem?
 
-        init(_ parent: APICodeView) {
+        package init(_ parent: APICodeView) {
             self.parent = parent
         }
 
-        func show(_ text: String) {
+        package func show(_ text: String) {
             guard let textView else { return }
             let selection = textView.selectedRange()
             textView.string = text
@@ -126,7 +126,7 @@ struct APICodeView: NSViewRepresentable {
             paint()
         }
 
-        func textDidChange(_ notification: Notification) {
+        package func textDidChange(_ notification: Notification) {
             guard let textView else { return }
             parent.text = textView.string
             schedulePaint()
@@ -150,7 +150,7 @@ struct APICodeView: NSViewRepresentable {
             }
         }
 
-        func textView(
+        package func textView(
             _ textView: NSTextView, completions words: [String], forPartialWordRange charRange: NSRange,
             indexOfSelectedItem index: UnsafeMutablePointer<Int>?
         ) -> [String] {
@@ -210,8 +210,8 @@ struct APICodeView: NSViewRepresentable {
 /// opening, a divider let go — makes NSTextView scroll its selection into
 /// sight (viewDidEndLiveResize), which in a read-only view nobody had put
 /// anywhere: the first column came up hidden. It stays where it was.
-final class APITextView: NSTextView {
-    override func viewDidEndLiveResize() {
+package final class APITextView: NSTextView {
+    package override func viewDidEndLiveResize() {
         guard !isEditable, let clip = enclosingScrollView?.contentView else { return super.viewDidEndLiveResize() }
         let origin = clip.bounds.origin
         super.viewDidEndLiveResize()

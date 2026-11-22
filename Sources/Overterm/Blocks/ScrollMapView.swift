@@ -12,17 +12,23 @@ import SwiftUI
 /// grid, so insetting it would mean 16 pt off every pane's width forever
 /// for something you look at while scrolling; macOS's own scrollbars
 /// overlay for the same reason.
-struct ScrollMapView: View {
-    @ObservedObject var blocks: PaneBlocks
-    @ObservedObject var theme: ChromeTheme
+package struct ScrollMapView: View {
+    @ObservedObject package var blocks: PaneBlocks
+    @ObservedObject package var theme: ChromeTheme
     /// Scroll the pane by this many rows (positive is down).
-    let scroll: (Int) -> Void
+    package let scroll: (Int) -> Void
 
-    static let width: CGFloat = 16
+    package init(blocks: PaneBlocks, theme: ChromeTheme, scroll: @escaping (Int) -> Void) {
+        self._blocks = ObservedObject(wrappedValue: blocks)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.scroll = scroll
+    }
+
+    package static let width: CGFloat = 16
 
     private var ledger: CommandLedger { blocks.ledger }
 
-    var body: some View {
+    package var body: some View {
         GeometryReader { proxy in
             let height = proxy.size.height
             ZStack(alignment: .top) {

@@ -8,41 +8,41 @@ import WebKit
 /// is selected and parked off screen otherwise — so its page keeps running
 /// and an agent in a background tab can still use it.
 @MainActor
-final class BrowserSession: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
-    struct ConsoleEntry: Equatable, Identifiable {
-        let id: Int
-        let level: String
-        let message: String
-        let time: Date
+package final class BrowserSession: NSObject, ObservableObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
+    package struct ConsoleEntry: Equatable, Identifiable {
+        package let id: Int
+        package let level: String
+        package let message: String
+        package let time: Date
     }
 
     /// Cookies and storage, shared by every page of every tab (a popup
     /// shares its opener's, which is this one too). An isolated run (E2E, a
     /// layout dump) keeps none of the user's.
-    static let dataStore: WKWebsiteDataStore = AppEnvironment.isIsolated ? .nonPersistent() : .default()
+    package static let dataStore: WKWebsiteDataStore = AppEnvironment.isIsolated ? .nonPersistent() : .default()
 
-    let webView: WKWebView
-    @Published private(set) var url: URL?
-    @Published private(set) var title = ""
-    @Published private(set) var canGoBack = false
-    @Published private(set) var canGoForward = false
-    @Published private(set) var isLoading = false
-    @Published private(set) var progress = 0.0
-    @Published private(set) var console: [ConsoleEntry] = []
-    @Published private(set) var errorCount = 0
+    package let webView: WKWebView
+    @Published package private(set) var url: URL?
+    @Published package private(set) var title = ""
+    @Published package private(set) var canGoBack = false
+    @Published package private(set) var canGoForward = false
+    @Published package private(set) var isLoading = false
+    @Published package private(set) var progress = 0.0
+    @Published package private(set) var console: [ConsoleEntry] = []
+    @Published package private(set) var errorCount = 0
     /// A link opening another window, or a download — handed to the window.
-    var onOpenExternally: ((URL) -> Void)?
+    package var onOpenExternally: ((URL) -> Void)?
     /// target=_blank, window.open: a new page in the same browser (its tab
     /// strip), made with WebKit's configuration so the opener can talk to it.
-    var onOpenPage: ((WKWebViewConfiguration, URL?) -> WKWebView?)?
+    package var onOpenPage: ((WKWebViewConfiguration, URL?) -> WKWebView?)?
 
     private var watcher: KeyValueWatcher?
     private var loads: [(id: UUID, continuation: CheckedContinuation<Void, Error>)] = []
     private var nextEntry = 0
-    static let consoleLimit = 500
+    package static let consoleLimit = 500
 
     /// `configuration`: WebKit's, for a page another one opened.
-    init(configuration given: WKWebViewConfiguration? = nil) {
+    package init(configuration given: WKWebViewConfiguration? = nil) {
         let configuration = given ?? WKWebViewConfiguration()
         if given == nil { configuration.websiteDataStore = Self.dataStore }
         configuration.preferences.isElementFullscreenEnabled = true
@@ -83,7 +83,7 @@ final class BrowserSession: NSObject, ObservableObject, WKNavigationDelegate, WK
         if progress != webView.estimatedProgress { progress = webView.estimatedProgress }
     }
 
-    func close() {
+    package func close() {
         watcher = nil
         webView.stopLoading()
         webView.configuration.userContentController.removeScriptMessageHandler(forName: "overterm", contentWorld: .page)
@@ -93,7 +93,7 @@ final class BrowserSession: NSObject, ObservableObject, WKNavigationDelegate, WK
 
     // MARK: Navigation
 
-    func load(_ url: URL) {
+    package func load(_ url: URL) {
         if url.isFileURL {
             webView.loadFileURL(url, allowingReadAccessTo: url.deletingLastPathComponent())
         } else {
@@ -103,12 +103,12 @@ final class BrowserSession: NSObject, ObservableObject, WKNavigationDelegate, WK
 
     /// Loads `url` and waits for it (or `timeout`): what an agent's
     /// navigate does before it reads the page.
-    func navigate(_ url: URL, timeout: TimeInterval = 20) async throws {
+    package func navigate(_ url: URL, timeout: TimeInterval = 20) async throws {
         load(url)
         try await waitForLoad(timeout: timeout)
     }
 
-    func waitForLoad(timeout: TimeInterval = 20) async throws {
+    package func waitForLoad(timeout: TimeInterval = 20) async throws {
         guard webView.isLoading else { return }
         let id = UUID()
         try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
@@ -134,25 +134,25 @@ final class BrowserSession: NSObject, ObservableObject, WKNavigationDelegate, WK
         waiting.forEach { $0.continuation.resume(throwing: error) }
     }
 
-    func goBack() { webView.goBack() }
-    func goForward() { webView.goForward() }
-    func reload() { webView.reload() }
-    func stop() { webView.stopLoading() }
+    package func goBack() { webView.goBack() }
+    package func goForward() { webView.goForward() }
+    package func reload() { webView.reload() }
+    package func stop() { webView.stopLoading() }
 
-    func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
+    package func webView(_ webView: WKWebView, didStartProvisionalNavigation navigation: WKNavigation!) {
         // A new page: its console is the one that matters.
         console = []
         errorCount = 0
     }
 
-    func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { finishLoads() }
+    package func webView(_ webView: WKWebView, didFinish navigation: WKNavigation!) { finishLoads() }
 
-    func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
+    package func webView(_ webView: WKWebView, didFail navigation: WKNavigation!, withError error: Error) {
         log("error", "Load failed: \(error.localizedDescription)")
         finishLoads()
     }
 
-    func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
+    package func webView(_ webView: WKWebView, didFailProvisionalNavigation navigation: WKNavigation!, withError error: Error) {
         let nsError = error as NSError
         // A link that only started a download, or a cancelled load, isn't a failure to show.
         if nsError.code != NSURLErrorCancelled {
@@ -163,7 +163,7 @@ final class BrowserSession: NSObject, ObservableObject, WKNavigationDelegate, WK
     }
 
     /// target=_blank and window.open: in this browser, not a new window.
-    func webView(
+    package func webView(
         _ webView: WKWebView, createWebViewWith configuration: WKWebViewConfiguration, for navigationAction: WKNavigationAction,
         windowFeatures: WKWindowFeatures
     ) -> WKWebView? {
@@ -172,7 +172,7 @@ final class BrowserSession: NSObject, ObservableObject, WKNavigationDelegate, WK
         return nil
     }
 
-    func webView(
+    package func webView(
         _ webView: WKWebView, decidePolicyFor navigationAction: WKNavigationAction,
         decisionHandler: @escaping @MainActor @Sendable (WKNavigationActionPolicy) -> Void
     ) {
@@ -186,7 +186,7 @@ final class BrowserSession: NSObject, ObservableObject, WKNavigationDelegate, WK
         decisionHandler(.allow)
     }
 
-    func webView(
+    package func webView(
         _ webView: WKWebView, runJavaScriptAlertPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping @MainActor @Sendable () -> Void
     ) {
@@ -200,7 +200,7 @@ final class BrowserSession: NSObject, ObservableObject, WKNavigationDelegate, WK
         }
     }
 
-    func webView(
+    package func webView(
         _ webView: WKWebView, runJavaScriptConfirmPanelWithMessage message: String, initiatedByFrame frame: WKFrameInfo,
         completionHandler: @escaping @MainActor @Sendable (Bool) -> Void
     ) {
@@ -218,7 +218,7 @@ final class BrowserSession: NSObject, ObservableObject, WKNavigationDelegate, WK
 
     // MARK: The console
 
-    func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
+    package func userContentController(_ controller: WKUserContentController, didReceive message: WKScriptMessage) {
         guard let body = message.body as? [String: Any] else { return }
         log(body["level"] as? String ?? "log", body["message"] as? String ?? "")
     }
@@ -230,13 +230,13 @@ final class BrowserSession: NSObject, ObservableObject, WKNavigationDelegate, WK
         if level == "error" { errorCount += 1 }
     }
 
-    func clearConsole() {
+    package func clearConsole() {
         console = []
         errorCount = 0
     }
 
     /// The console as text, for an agent: `[error] message`, oldest first.
-    func consoleText(onlyErrors: Bool = false, limit: Int = 200) -> String {
+    package func consoleText(onlyErrors: Bool = false, limit: Int = 200) -> String {
         let entries = console.filter { !onlyErrors || $0.level == "error" || $0.level == "warn" }.suffix(limit)
         return entries.map { "[\($0.level)] \($0.message)" }.joined(separator: "\n")
     }
@@ -246,7 +246,7 @@ final class BrowserSession: NSObject, ObservableObject, WKNavigationDelegate, WK
     /// The page as an agent reads it: title, address, its visible text,
     /// and each control it can act on, with a ref (`e3`) to click or type
     /// into — refs hold until the next snapshot.
-    func snapshot() async throws -> String {
+    package func snapshot() async throws -> String {
         let raw = try await webView.callAsyncJavaScript(Self.snapshotScript, arguments: [:], in: nil, contentWorld: .page)
         guard let json = raw as? String, let data = json.data(using: .utf8),
             let page = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
@@ -264,7 +264,7 @@ final class BrowserSession: NSObject, ObservableObject, WKNavigationDelegate, WK
         return out
     }
 
-    func click(ref: String) async throws {
+    package func click(ref: String) async throws {
         let answer = try await webView.callAsyncJavaScript(
             """
             const el = document.querySelector(`[data-overterm-ref="${ref}"]`);
@@ -279,7 +279,7 @@ final class BrowserSession: NSObject, ObservableObject, WKNavigationDelegate, WK
 
     /// Types `text` into a field (replacing what is there) the way a
     /// framework notices — its own value setter, then input and change.
-    func type(ref: String, text: String, submit: Bool) async throws {
+    package func type(ref: String, text: String, submit: Bool) async throws {
         let answer = try await webView.callAsyncJavaScript(
             """
             const el = document.querySelector(`[data-overterm-ref="${ref}"]`);
@@ -307,7 +307,7 @@ final class BrowserSession: NSObject, ObservableObject, WKNavigationDelegate, WK
     }
 
     /// Runs JavaScript in the page; its value (JSON for objects) as text.
-    func evaluate(_ script: String) async throws -> String {
+    package func evaluate(_ script: String) async throws -> String {
         let value = try await webView.callAsyncJavaScript(
             """
             const value = await (async () => { return eval(source); })();
@@ -319,7 +319,7 @@ final class BrowserSession: NSObject, ObservableObject, WKNavigationDelegate, WK
     }
 
     /// What is on screen, as a PNG.
-    func screenshot() async throws -> Data {
+    package func screenshot() async throws -> Data {
         let image = try await webView.takeSnapshot(configuration: nil)
         guard let tiff = image.tiffRepresentation, let bitmap = NSBitmapImageRep(data: tiff),
             let png = bitmap.representation(using: .png, properties: [:])
@@ -331,7 +331,7 @@ final class BrowserSession: NSObject, ObservableObject, WKNavigationDelegate, WK
 
     /// Every console call, uncaught error and unhandled rejection, to
     /// the app as well as to the page's own console.
-    static let consoleScript = """
+    package static let consoleScript = """
         (function () {
           if (window.__overtermConsole) return;
           window.__overtermConsole = true;
@@ -357,7 +357,7 @@ final class BrowserSession: NSObject, ObservableObject, WKNavigationDelegate, WK
         })();
         """
 
-    static let snapshotScript = """
+    package static let snapshotScript = """
         document.querySelectorAll('[data-overterm-ref]').forEach(e => e.removeAttribute('data-overterm-ref'));
         const selector = 'a[href],button,input,select,textarea,summary,[role=button],[role=link],[role=checkbox],[role=tab],[role=menuitem],[role=switch],[onclick],[contenteditable=true]';
         const elements = [];
@@ -391,14 +391,14 @@ final class BrowserSession: NSObject, ObservableObject, WKNavigationDelegate, WK
     }
 }
 
-enum BrowserError: LocalizedError {
+package enum BrowserError: LocalizedError {
     case timedOut
     case noElement(String)
     case script(String)
     case noBrowser
     case noTab(Int)
 
-    var errorDescription: String? {
+    package var errorDescription: String? {
         switch self {
         case .timedOut: "The page took too long to load."
         case .noElement(let ref): "No element \(ref) — take a new snapshot; refs change with the page."
@@ -413,12 +413,12 @@ enum BrowserError: LocalizedError {
 /// these from its own threads, and a handler written in a @MainActor type
 /// traps there (CLAUDE.md — dispatch_assert_queue: it took the app down as
 /// the first page loaded). Every change asks for a read on the main queue.
-final class KeyValueWatcher: NSObject, @unchecked Sendable {
+package final class KeyValueWatcher: NSObject, @unchecked Sendable {
     private let object: NSObject
     private let keys: [String]
     private let changed: @Sendable () -> Void
 
-    init(_ object: NSObject, _ keys: [String], changed: @escaping @Sendable () -> Void) {
+    package init(_ object: NSObject, _ keys: [String], changed: @escaping @Sendable () -> Void) {
         self.object = object
         self.keys = keys
         self.changed = changed
@@ -430,7 +430,7 @@ final class KeyValueWatcher: NSObject, @unchecked Sendable {
         for key in keys { object.removeObserver(self, forKeyPath: key) }
     }
 
-    override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
+    package override func observeValue(forKeyPath keyPath: String?, of object: Any?, change: [NSKeyValueChangeKey: Any]?, context: UnsafeMutableRawPointer?) {
         DispatchQueue.main.async(execute: changed)
     }
 }
@@ -452,8 +452,8 @@ private final class WeakMessageHandler: NSObject, WKScriptMessageHandler {
 /// screen, so the page keeps rendering (an agent's screenshot of a
 /// background tab isn't blank) and its timers keep running.
 @MainActor
-final class BrowserParking {
-    static let shared = BrowserParking()
+package final class BrowserParking {
+    package static let shared = BrowserParking()
     private let window: NSWindow
 
     private init() {
@@ -468,7 +468,7 @@ final class BrowserParking {
         window.orderBack(nil)
     }
 
-    func park(_ view: WKWebView) {
+    package func park(_ view: WKWebView) {
         guard let content = window.contentView, view.superview !== content else { return }
         view.removeFromSuperview()
         view.translatesAutoresizingMaskIntoConstraints = true
@@ -477,5 +477,5 @@ final class BrowserParking {
         content.addSubview(view)
     }
 
-    func holds(_ view: WKWebView) -> Bool { view.window === window }
+    package func holds(_ view: WKWebView) -> Bool { view.window === window }
 }

@@ -3,19 +3,21 @@ import Foundation
 /// The Sessions panel: Claude Code conversations run in this repository's
 /// worktrees, newest first, and which of them are running in a tab now.
 @MainActor
-final class SessionsModel: ObservableObject {
-    @Published private(set) var sessions: [ClaudeSession] = []
+package final class SessionsModel: ObservableObject {
+    package init() {}
+
+    @Published package private(set) var sessions: [ClaudeSession] = []
     /// Session id → the tab it is running in.
-    @Published private(set) var running: [String: Tab.ID] = [:]
-    @Published private(set) var loading = false
+    @Published package private(set) var running: [String: Tab.ID] = [:]
+    @Published package private(set) var loading = false
 
     /// A tab's Claude process: where it runs and how it was started.
-    struct RunningClaude: Sendable {
-        let tab: Tab.ID
-        let directory: String
+    package struct RunningClaude: Sendable {
+        package let tab: Tab.ID
+        package let directory: String
         /// The session its `--resume`/`-r` picks back up, off argv's raw
         /// words (`PaneAgent.resumes`).
-        let resumes: String?
+        package let resumes: String?
     }
 
     /// The sessions again, and which tab runs each: every tab's Claude a
@@ -23,7 +25,7 @@ final class SessionsModel: ObservableObject {
     /// — one snapshot for every tab, the window's light tick while it
     /// shows —, where each pane of each tab had a scan of its own. The
     /// lookup and the session files are read off the main thread.
-    func refresh(directories: [String], tabs: [Tab], census: ActivitySampler = .app) async {
+    package func refresh(directories: [String], tabs: [Tab], census: ActivitySampler = .app) async {
         let asked = tabs.map { tab in (id: tab.id, tags: tab.terminals.map(\.processTag)) }
         loading = true
         defer { loading = false }
@@ -40,7 +42,7 @@ final class SessionsModel: ObservableObject {
 
     /// Of each tab's agent, the Claude ones whose folder is known, in the
     /// tabs' order. Pure.
-    nonisolated static func claudes(_ tabs: [Tab.ID], _ agents: [Tab.ID: PaneAgent]) -> [RunningClaude] {
+    package nonisolated static func claudes(_ tabs: [Tab.ID], _ agents: [Tab.ID: PaneAgent]) -> [RunningClaude] {
         tabs.compactMap { tab in
             guard let agent = agents[tab], agent.kind == .claude, let folder = agent.folder else { return nil }
             return RunningClaude(tab: tab, directory: folder, resumes: agent.resumes)
@@ -49,7 +51,7 @@ final class SessionsModel: ObservableObject {
 
     /// Which session each running Claude is: the one its command resumed
     /// (`--resume <id>`), else the newest one in its directory.
-    nonisolated static func running(_ sessions: [ClaudeSession], _ claudes: [RunningClaude]) -> [String: Tab.ID] {
+    package nonisolated static func running(_ sessions: [ClaudeSession], _ claudes: [RunningClaude]) -> [String: Tab.ID] {
         var result: [String: Tab.ID] = [:]
         for claude in claudes {
             if let id = claude.resumes, sessions.contains(where: { $0.id == id }) {

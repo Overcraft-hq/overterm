@@ -8,23 +8,23 @@ import Foundation
 /// its listeners, the children a Stop leaves running, the supervisor that
 /// may start it again, a tree's or a group's members and what a bulk
 /// leaves out, and the command it equals. Pure.
-enum ActivityVerbQuestion {
+package enum ActivityVerbQuestion {
     /// A bulk past this many asks for the count to be typed (D-12).
-    static let typedCountAbove = 50
+    package static let typedCountAbove = 50
     /// Past this many targets, the critical style (D-12).
-    static let criticalAbove = 10
+    package static let criticalAbove = 10
     /// What a SIGUSR1 or SIGUSR2 opens in these (6.10's Send a Signal).
-    static let debuggerRuntimes: Set<String> = ["node", "bun", "deno"]
+    package static let debuggerRuntimes: Set<String> = ["node", "bun", "deno"]
 
     /// What the sheet says for `verb`, done as `action`, to `subject`.
     /// `scope`: "Tab “web” · feature-x · Claude". `pane`: for the close
     /// route, the tab's title and whether it is split.
-    static func question(
+    package static func question(
         _ verb: ActivityVerb, _ rule: ActivityRule, subject: ActivityVerbSubject, scope: String?, pane: (title: String, isSplit: Bool)? = nil,
         timeZone: TimeZone = .current
     ) -> ActivityPortFree.Question? {
         let pid = subject.signal.identity.pid
-        let name = DockerMCP.displayed(subject.name)
+        let name = VisibleText.displayed(subject.name)
         let quoted = "“\(name)” (pid \(pid))"
         var lines: [String] = []
         switch rule {
@@ -32,7 +32,7 @@ enum ActivityVerbQuestion {
             return nil
         case .route(.closePane, _):
             let split = pane?.isSplit ?? true
-            let title = split ? "Close this pane?" : "Close tab “\(DockerMCP.displayed(pane?.title ?? ""))”?"
+            let title = split ? "Close this pane?" : "Close tab “\(VisibleText.displayed(pane?.title ?? ""))”?"
             lines.append("\(quoted) is the pane's own shell: it ends with the pane — and whatever runs in it.")
             lines += identityLines(subject, timeZone: timeZone)
             return ActivityPortFree.Question(title: title, scope: scope, detail: lines.joined(separator: "\n"), button: split ? "Close Pane" : "Close Tab")
@@ -71,11 +71,11 @@ enum ActivityVerbQuestion {
                 title = "Stop \(quoted) and its tree — \(count) processes?"
                 button = "Stop \(count) Processes"
                 lines.append("Each is sent SIG\(signal.rawValue) by its own audit token, parents first, so a supervisor can't start again what follows:")
-                lines += included.prefix(ActivityVerbSubject.memberLimit).map { "  pid \($0.signal.identity.pid) \(DockerMCP.displayed($0.name))" }
+                lines += included.prefix(ActivityVerbSubject.memberLimit).map { "  pid \($0.signal.identity.pid) \(VisibleText.displayed($0.name))" }
                 let left = subject.tree.filter { $0.refusal != nil }
                 if !left.isEmpty {
                     lines.append("Left out, each asked about alone:")
-                    lines += left.map { "  pid \($0.signal.identity.pid) \(DockerMCP.displayed($0.name)) — \($0.refusal ?? "")" }
+                    lines += left.map { "  pid \($0.signal.identity.pid) \(VisibleText.displayed($0.name)) — \($0.refusal ?? "")" }
                 }
             case .signalGroup(let signal):
                 count = subject.groupMembers.count + 1
@@ -89,7 +89,7 @@ enum ActivityVerbQuestion {
                     button = "Stop Group"
                 }
                 lines.append("killpg(\(subject.group), SIG\(signal.rawValue)), once every member is checked again just before:")
-                lines += subject.groupMembers.map { "  pid \($0.signal.identity.pid) \(DockerMCP.displayed($0.name))" }
+                lines += subject.groupMembers.map { "  pid \($0.signal.identity.pid) \(VisibleText.displayed($0.name))" }
             case .quitApp:
                 title = "Quit \(quoted)?"
                 button = "Quit"
@@ -104,10 +104,10 @@ enum ActivityVerbQuestion {
                 return nil
             }
             if let write = subject.target.terraformWrite {
-                lines.append("A running \(DockerMCP.displayed(write)): SIGTERM or SIGKILL could leave its state locked and half written.")
+                lines.append("A running \(VisibleText.displayed(write)): SIGTERM or SIGKILL could leave its state locked and half written.")
             }
             if let write = subject.target.releaseWrite {
-                lines.append("A running \(DockerMCP.displayed(write)): a release stopped mid-upgrade stays pending-upgrade.")
+                lines.append("A running \(VisibleText.displayed(write)): a release stopped mid-upgrade stays pending-upgrade.")
             }
             if subject.target.insideApp { lines.append("It runs inside an app: stopping a helper can leave its app broken, or start it again.") }
             lines += identityLines(subject, timeZone: timeZone)
@@ -123,7 +123,7 @@ enum ActivityVerbQuestion {
                     subject.children == 1 ? "Its child keeps running — Stop Its Tree… ends it too." : "Its \(subject.children) children keep running — Stop Its Tree… ends them too.")
             }
             if let supervisor = subject.supervisor, action != .interruptPane {
-                lines.append("“\(DockerMCP.displayed(supervisor.name))” (pid \(supervisor.pid)), its parent, may start it again — Stop Its Parent… is there.")
+                lines.append("“\(VisibleText.displayed(supervisor.name))” (pid \(supervisor.pid)), its parent, may start it again — Stop Its Parent… is there.")
             }
             lines.append("The command it equals: \(ActivityPortFree.equals(action, pid: pid, members: members))")
             return ActivityPortFree.Question(
@@ -132,7 +132,7 @@ enum ActivityVerbQuestion {
     }
 
     /// Whether a bulk of `count` asks for its count to be typed.
-    static func typesCount(_ count: Int) -> Bool { count > typedCountAbove }
+    package static func typesCount(_ count: Int) -> Bool { count > typedCountAbove }
 
     /// A single signal's title and button.
     private static func words(_ verb: ActivityVerb, _ signal: ActivitySignal, subject: ActivityVerbSubject, quoted: String) -> (String, String) {
@@ -182,7 +182,7 @@ enum ActivityVerbQuestion {
         var lines = [ActivityPortFree.executable(subject.signal.path)]
         let identity = subject.signal.identity
         lines.append("pid \(identity.pid), started \(ActivityPortFree.started(identity.start, timeZone: timeZone))")
-        if let command = subject.command { lines.append("Command: \(DockerMCP.displayed(command))") }
+        if let command = subject.command { lines.append("Command: \(VisibleText.displayed(command))") }
         return lines
     }
 
@@ -191,27 +191,27 @@ enum ActivityVerbQuestion {
     /// Suspend's sheet, asked for an app, a helper inside one, a helm or
     /// pulumi write, Send a Signal ▸ STOP, and whenever more than one
     /// process is stopped: each listed, what is left out with why.
-    static func suspend(_ subject: ActivityVerbSubject, members: [ActivitySignalTarget], scope: String?, timeZone: TimeZone = .current)
+    package static func suspend(_ subject: ActivityVerbSubject, members: [ActivitySignalTarget], scope: String?, timeZone: TimeZone = .current)
         -> ActivityPortFree.Question
     {
         let pid = subject.signal.identity.pid
-        let quoted = "“\(DockerMCP.displayed(subject.name))” (pid \(pid))"
+        let quoted = "“\(VisibleText.displayed(subject.name))” (pid \(pid))"
         let names = subject.memberNames
         var lines = ["SIGSTOP by each one's own audit token, parents first: nothing is lost, and it uses no CPU until resumed."]
         if members.count > 1 {
             lines.append("Stopped with its tree:")
-            lines += members.dropFirst().map { "  pid \($0.identity.pid) \(DockerMCP.displayed(names[$0.identity] ?? ""))" }
+            lines += members.dropFirst().map { "  pid \($0.identity.pid) \(VisibleText.displayed(names[$0.identity] ?? ""))" }
         }
         let left = subject.tree.filter { $0.refusal != nil || $0.target.terraformWrite != nil }
         if !left.isEmpty {
             lines.append("Left running:")
-            lines += left.map { "  pid \($0.signal.identity.pid) \(DockerMCP.displayed($0.name)) — \($0.refusal ?? ActivitySignalCheck.terraformSuspend)" }
+            lines += left.map { "  pid \($0.signal.identity.pid) \(VisibleText.displayed($0.name)) — \($0.refusal ?? ActivitySignalCheck.terraformSuspend)" }
         }
         if subject.target.isApp || subject.target.insideApp {
             lines.append("A stopped app stops answering — its windows, its menus, and any app that waits on a helper of it.")
         }
         if let write = subject.target.releaseWrite {
-            lines.append("A running \(DockerMCP.displayed(write)): stopped, it holds its release where it is until resumed.")
+            lines.append("A running \(VisibleText.displayed(write)): stopped, it holds its release where it is until resumed.")
         }
         lines += identityLines(subject, timeZone: timeZone)
         if !subject.listening.isEmpty {
@@ -229,11 +229,11 @@ enum ActivityVerbQuestion {
     /// Send a Signal ▸ STOP to a pane's job or agent: Suspend's own route —
     /// the pane suspended with it, its shell first —, asked as every Send a
     /// Signal is. `tab`: the tab's title.
-    static func suspendPane(_ subject: ActivityVerbSubject, tab: String, scope: String?, timeZone: TimeZone = .current) -> ActivityPortFree.Question {
+    package static func suspendPane(_ subject: ActivityVerbSubject, tab: String, scope: String?, timeZone: TimeZone = .current) -> ActivityPortFree.Question {
         let pid = subject.signal.identity.pid
-        let quoted = "“\(DockerMCP.displayed(subject.name))” (pid \(pid))"
+        let quoted = "“\(VisibleText.displayed(subject.name))” (pid \(pid))"
         var lines = [
-            "It runs in a pane of “\(DockerMCP.displayed(tab))”: the pane is suspended with it — its shell first, or the shell takes the terminal back, then every process in it —, as Suspend Tab does.",
+            "It runs in a pane of “\(VisibleText.displayed(tab))”: the pane is suspended with it — its shell first, or the shell takes the terminal back, then every process in it —, as Suspend Tab does.",
             "Resume it with the tab's Resume, or the pane's.",
         ]
         lines += identityLines(subject, timeZone: timeZone)
@@ -245,9 +245,9 @@ enum ActivityVerbQuestion {
     /// Resume's sheet — and Resume All's —, asked for an app and whenever
     /// more than one process is continued: `members` parents first, with
     /// the names they were stopped as.
-    static func resume(title: String, members: [(target: ActivitySignalTarget, name: String)], scope: String?) -> ActivityPortFree.Question {
+    package static func resume(title: String, members: [(target: ActivitySignalTarget, name: String)], scope: String?) -> ActivityPortFree.Question {
         var lines = ["SIGCONT by each one's own audit token, children first, only while it is still the process Activity stopped:"]
-        lines += members.map { "  pid \($0.target.identity.pid) \(DockerMCP.displayed($0.name))" }
+        lines += members.map { "  pid \($0.target.identity.pid) \(VisibleText.displayed($0.name))" }
         lines.append("The command it equals: kill -CONT \(members.reversed().map { "\($0.target.identity.pid)" }.joined(separator: " "))")
         return ActivityPortFree.Question(
             title: title, scope: scope, detail: lines.joined(separator: "\n"), button: members.count > 1 ? "Resume \(members.count) Processes" : "Resume")
@@ -255,7 +255,7 @@ enum ActivityVerbQuestion {
 
     /// Lower Priority's sheet: asked every time, since it can't be undone
     /// without an administrator.
-    static func lower(_ subject: ActivityVerbSubject, to nice: Int32, scope: String?, timeZone: TimeZone = .current) -> ActivityPortFree.Question {
+    package static func lower(_ subject: ActivityVerbSubject, to nice: Int32, scope: String?, timeZone: TimeZone = .current) -> ActivityPortFree.Question {
         let pid = subject.signal.identity.pid
         var lines = [
             "Its nice goes from \(subject.nice) to \(nice): it gets the CPU after what runs at a lower nice.",
@@ -265,15 +265,15 @@ enum ActivityVerbQuestion {
         lines += identityLines(subject, timeZone: timeZone)
         lines.append("The command it equals: \(ActivityPriorityChange.nice(nice).command(for: pid))")
         return ActivityPortFree.Question(
-            title: "Lower the priority of “\(DockerMCP.displayed(subject.name))” (pid \(pid)) to nice \(nice)?", scope: scope,
+            title: "Lower the priority of “\(VisibleText.displayed(subject.name))” (pid \(pid)) to nice \(nice)?", scope: scope,
             detail: lines.joined(separator: "\n"), button: "Lower Priority")
     }
 
     /// "Stop it first?" (D-11): `K` with no Stop before it.
-    static func stopFirst(_ subject: ActivityVerbSubject) -> (title: String, detail: String) {
+    package static func stopFirst(_ subject: ActivityVerbSubject) -> (title: String, detail: String) {
         (
             "SIGKILL skips its cleanup: pid files, children. Stop it first?",
-            "“\(DockerMCP.displayed(subject.name))” (pid \(subject.signal.identity.pid)) is sent SIGTERM by Stop and can clean up; Force Quit ends it at once — "
+            "“\(VisibleText.displayed(subject.name))” (pid \(subject.signal.identity.pid)) is sent SIGTERM by Stop and can clean up; Force Quit ends it at once — "
                 + "asked next with its own sheet: its executable, its command and the command it equals."
         )
     }

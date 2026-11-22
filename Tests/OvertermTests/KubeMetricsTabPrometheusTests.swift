@@ -2,6 +2,12 @@ import Foundation
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// A Metrics tab over Prometheus (docs/design/kubernetes/metrics.md, 3.3–3.5,
 /// 6.1, 6.2; stage M6), the page over `FakeKubeAPI` and its fake Prometheus

@@ -7,16 +7,22 @@ import os
 /// Folder, Sample, Open Files, the service's stop, the read route): a
 /// folder, and a command typed into its shell — run, or left for the person
 /// to run (Return theirs).
-struct ActivityTerminalRequest: Equatable, Sendable {
-    var directory: String
-    var command: String?
-    var run = true
+package struct ActivityTerminalRequest: Equatable, Sendable {
+    package var directory: String
+    package var command: String?
+    package var run = true
+
+    package init(directory: String, command: String? = nil, run: Bool = true) {
+        self.directory = directory
+        self.command = command
+        self.run = run
+    }
 }
 
 /// Where a link shows the page (6.12): Tab Info's header, the tab's menu
 /// and ⌘K a tab; Tab Info's rows and the overview's card a process; a pane
 /// pill, Tab Info's Listening and Docker's conflict box a port.
-enum ActivityLink: Equatable, Sendable {
+package enum ActivityLink: Equatable, Sendable {
     /// Processes, scoped to the tab.
     case tab(UUID)
     /// Processes, that process selected and followed — in its tab's scope
@@ -32,61 +38,91 @@ enum ActivityLink: Equatable, Sendable {
 /// A port a link asked for (6.12), selected once a tick's rows list it.
 /// `after`: the tick the link came at — only a later tick's rows say it
 /// isn't listed. `scope`: the rung it is looked for at.
-struct ActivityPendingPort: Equatable, Sendable {
-    var port: Int
-    var proto: String
-    var pid: pid_t?
-    var after: Int
-    var scope: ActivityScope
+package struct ActivityPendingPort: Equatable, Sendable {
+    package var port: Int
+    package var proto: String
+    package var pid: pid_t?
+    package var after: Int
+    package var scope: ActivityScope
     /// Free a Port… (6.3): its Free asked once the row is listed.
-    var free = false
+    package var free = false
 }
 
 /// What the page asks of the window (6.3): the verbs that don't signal.
-struct ActivityPageActions {
+package struct ActivityPageActions {
     /// Its tab brought forward in whichever window holds it, and the pane
     /// whose tag is given focused.
-    var goTo: @MainActor (UUID, String?) -> Void = { _, _ in }
+    package var goTo: @MainActor (UUID, String?) -> Void = { _, _ in }
     /// A listener's URL in its tab's browser column, in the window that
     /// holds the tab, where Settings ▸ Browser says; true: the default
     /// browser (⌥o).
-    var open: @MainActor (URL, UUID?, Bool) -> Void = { _, _, _ in }
+    package var open: @MainActor (URL, UUID?, Bool) -> Void = { _, _, _ in }
     /// Tab Info (⌃⌘I) for a tab.
-    var tabInfo: @MainActor (UUID) -> Void = { _ in }
+    package var tabInfo: @MainActor (UUID) -> Void = { _ in }
     /// A tab's checkout in Overgit: the tab brought forward, the sidebar
     /// on its git panel.
-    var overgit: @MainActor (UUID) -> Void = { _ in }
+    package var overgit: @MainActor (UUID) -> Void = { _ in }
     /// An executable shown in Finder.
-    var reveal: @MainActor (String) -> Void = { path in NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
+    package var reveal: @MainActor (String) -> Void = { path in NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) }
     /// `sample <pid> 5` in a new tab (`s`): it only reads.
-    var sample: @MainActor (pid_t) -> Void = { _ in }
+    package var sample: @MainActor (pid_t) -> Void = { _ in }
     /// Free :N (`f`) through the row's owner's own verb, asked first
     /// (`ActivityPortHolder`).
-    var free: @MainActor (ActivityPortRow) -> Void = { _ in }
+    package var free: @MainActor (ActivityPortRow) -> Void = { _ in }
     /// A new tab: Terminal in Its Folder (`e`), Open Files in a Tab — it
     /// only reads.
-    var terminal: @MainActor (ActivityTerminalRequest) -> Void = { _ in }
+    package var terminal: @MainActor (ActivityTerminalRequest) -> Void = { _ in }
     /// A verb that changes a process (6.10): read again, asked, sent
     /// through `ProcessSignals` or typed into its pane.
-    var act: @MainActor (ActivityVerb, ActivityProcessID) -> Void = { _, _ in }
+    package var act: @MainActor (ActivityVerb, ActivityProcessID) -> Void = { _, _ in }
     /// Send a Signal (`x`): which one, asked first.
-    var chooseSignal: @MainActor (ActivityProcessID) -> Void = { _ in }
+    package var chooseSignal: @MainActor (ActivityProcessID) -> Void = { _ in }
     /// `k`: what its class asks (`ActivityPageModel.stopVerb`), decided on
     /// the process read again as its sheet opens.
-    var stop: @MainActor (ActivityProcessID) -> Void = { _ in }
+    package var stop: @MainActor (ActivityProcessID) -> Void = { _ in }
     /// Lower Priority ▸ +5, +10, 20: asked, saying it can't be undone.
-    var lower: @MainActor (ActivityProcessID, ActivityNiceStep) -> Void = { _, _ in }
+    package var lower: @MainActor (ActivityProcessID, ActivityNiceStep) -> Void = { _, _ in }
     /// `n`: which step, then its question.
-    var chooseLower: @MainActor (ActivityProcessID) -> Void = { _ in }
+    package var chooseLower: @MainActor (ActivityProcessID) -> Void = { _ in }
     /// The header's Resume All: every process Activity stopped, asked when
     /// more than one.
-    var resumeAll: @MainActor () -> Void = {}
+    package var resumeAll: @MainActor () -> Void = {}
     /// Ask an Agent About It (`a`, ⌘L): the Ask Agent sheet with its brief.
-    var ask: @MainActor (ActivityBrief, UUID?) -> Void = { _, _ in }
+    package var ask: @MainActor (ActivityBrief, UUID?) -> Void = { _, _ in }
     /// Keep (6.9): never in a bulk Stop, never Left Behind again.
-    var keep: @MainActor (ActivityProcessID) -> Void = { _ in }
+    package var keep: @MainActor (ActivityProcessID) -> Void = { _ in }
     /// Stop All Certain in This Checkout… (6.9): one sheet listing each.
-    var stopAll: @MainActor (_ rows: [ActivityProcessRow], _ group: String) -> Void = { _, _ in }
+    package var stopAll: @MainActor (_ rows: [ActivityProcessRow], _ group: String) -> Void = { _, _ in }
+
+    package init(
+        goTo: @escaping @MainActor (UUID, String?) -> Void = { _, _ in }, open: @escaping @MainActor (URL, UUID?, Bool) -> Void = { _, _, _ in },
+        tabInfo: @escaping @MainActor (UUID) -> Void = { _ in }, overgit: @escaping @MainActor (UUID) -> Void = { _ in },
+        reveal: @escaping @MainActor (String) -> Void = { path in NSWorkspace.shared.activateFileViewerSelecting([URL(fileURLWithPath: path)]) },
+        sample: @escaping @MainActor (pid_t) -> Void = { _ in }, free: @escaping @MainActor (ActivityPortRow) -> Void = { _ in },
+        terminal: @escaping @MainActor (ActivityTerminalRequest) -> Void = { _ in }, act: @escaping @MainActor (ActivityVerb, ActivityProcessID) -> Void = { _, _ in },
+        chooseSignal: @escaping @MainActor (ActivityProcessID) -> Void = { _ in }, stop: @escaping @MainActor (ActivityProcessID) -> Void = { _ in },
+        lower: @escaping @MainActor (ActivityProcessID, ActivityNiceStep) -> Void = { _, _ in }, chooseLower: @escaping @MainActor (ActivityProcessID) -> Void = { _ in },
+        resumeAll: @escaping @MainActor () -> Void = {}, ask: @escaping @MainActor (ActivityBrief, UUID?) -> Void = { _, _ in }, keep: @escaping @MainActor (ActivityProcessID) -> Void = { _ in },
+        stopAll: @escaping @MainActor (_ rows: [ActivityProcessRow], _ group: String) -> Void = { _, _ in }
+    ) {
+        self.goTo = goTo
+        self.open = open
+        self.tabInfo = tabInfo
+        self.overgit = overgit
+        self.reveal = reveal
+        self.sample = sample
+        self.free = free
+        self.terminal = terminal
+        self.act = act
+        self.chooseSignal = chooseSignal
+        self.stop = stop
+        self.lower = lower
+        self.chooseLower = chooseLower
+        self.resumeAll = resumeAll
+        self.ask = ask
+        self.keep = keep
+        self.stopAll = stopAll
+    }
 }
 
 /// The Activity page (⌥⌘A; docs/design/activity/analysis.md, 6.4): its
@@ -94,13 +130,13 @@ struct ActivityPageActions {
 /// wants the full level only while it is the page on screen in a window
 /// that shows (7.9): hidden, it reads nothing and builds no rows.
 @MainActor
-final class ActivityPageModel: ObservableObject {
-    enum Section: String, CaseIterable, Identifiable {
+package final class ActivityPageModel: ObservableObject {
+    package enum Section: String, CaseIterable, Identifiable {
         case processes, listening, leftBehind
 
-        var id: String { rawValue }
+        package var id: String { rawValue }
 
-        var title: String {
+        package var title: String {
             switch self {
             case .processes: "Processes"
             case .listening: "Listening"
@@ -108,7 +144,7 @@ final class ActivityPageModel: ObservableObject {
             }
         }
 
-        var symbol: String {
+        package var symbol: String {
             switch self {
             case .processes: "list.bullet.indent"
             case .listening: "dot.radiowaves.left.and.right"
@@ -117,7 +153,7 @@ final class ActivityPageModel: ObservableObject {
         }
 
         /// Its digit on the page (6.3).
-        var key: String {
+        package var key: String {
             switch self {
             case .processes: "1"
             case .listening: "2"
@@ -127,9 +163,9 @@ final class ActivityPageModel: ObservableObject {
     }
 
     /// What the list draws, published apart (7.7): `syncList` keeps it.
-    let list = ActivityListState()
+    package let list = ActivityListState()
 
-    @Published var section: Section = .processes {
+    @Published package var section: Section = .processes {
         didSet {
             guard section != oldValue else { return }
             syncList()
@@ -141,41 +177,41 @@ final class ActivityPageModel: ObservableObject {
         }
     }
     /// How Processes is grouped (`G`), and whether as a tree (`t`).
-    @Published var grouping: ActivityGrouping = .checkout {
+    @Published package var grouping: ActivityGrouping = .checkout {
         didSet {
             guard grouping != oldValue else { return }
             syncList()
             rebuild(asked: true)
         }
     }
-    @Published var tree = true {
+    @Published package var tree = true {
         didSet { if tree != oldValue { rebuild(asked: true) } }
     }
     /// Each section's filter field (6.6): not remembered, as Docker's isn't.
-    @Published private(set) var filters: [Section: String] = [:] {
+    @Published package private(set) var filters: [Section: String] = [:] {
         didSet { syncList() }
     }
     /// Asks the filter field for the keyboard (`/`).
-    @Published var focusFilter = 0
+    @Published package var focusFilter = 0
     /// The keys' sheet (`?`).
-    @Published var cheatSheet = false {
+    @Published package var cheatSheet = false {
         didSet { if cheatSheet != oldValue { interacted(cheatSheet ? .menuOpened : .menuClosed, sheet: true) } }
     }
     /// The detail beside the list (Space).
-    @Published var showsDetail = true
+    @Published package var showsDetail = true
     /// `F`: the selection kept in view as its row moves.
-    @Published var following = false {
+    @Published package var following = false {
         didSet { syncList() }
     }
     /// `Z`: values and order frozen; the census given back while nothing
     /// else wants it.
-    @Published var paused = false {
+    @Published package var paused = false {
         didSet { if paused != oldValue { updateWant() } }
     }
     /// The order is held while the person works the list (6.7): said.
-    @Published private(set) var orderHeld = false
+    @Published package private(set) var orderHeld = false
     /// `u`: yours only, or everyone's — `activity.everyone` until pressed.
-    @Published var everyone: Bool? {
+    @Published package var everyone: Bool? {
         didSet {
             guard everyone != oldValue else { return }
             syncList()
@@ -183,44 +219,44 @@ final class ActivityPageModel: ObservableObject {
         }
     }
     /// The selected process's detail (6.4).
-    @Published private(set) var detail: ActivityDetail? {
+    @Published package private(set) var detail: ActivityDetail? {
         didSet { if showsFiles, detail?.row.identity != oldValue?.row.identity { readFiles() } }
     }
     /// The detail's Files (6.4, `l`): shown, and what the read found — of
     /// the selection, read when it opens and when the selection changes
     /// while it shows; nil while reading.
-    @Published var showsFiles = false
-    @Published private(set) var openFiles: ProcessOpenFiles.Listing?
+    @Published package var showsFiles = false
+    @Published package private(set) var openFiles: ProcessOpenFiles.Listing?
     private var filesGeneration = 0
     /// The selected process as its verbs see it (6.10), read off the main
     /// thread with every owner — with the rows, or for a selection made
     /// between two publishes; nil while it is read.
-    @Published private(set) var verbSubject: ActivityVerbSubject?
+    @Published package private(set) var verbSubject: ActivityVerbSubject?
     /// What a Free or a Stop from the page said last (6.8, After the step;
     /// 6.10 step 10): ":3000 freeing…", then free or still held; "Stopping
     /// “x”…", then stopped, still running or came back as pid N.
-    @Published var freeing: String?
+    @Published package var freeing: String?
     /// What the page sent SIGTERM or SIGINT to, and when: Force Quit is
     /// offered without "Stop it first?" for two minutes after (D-11).
-    var stoppedAt: [ActivityProcessID: Date] = [:]
+    package var stoppedAt: [ActivityProcessID: Date] = [:]
     /// The main actor's facts a verb's target is read with (running apps,
     /// what Activity and Suspend Tab stopped): set by the window.
-    var known: @MainActor () -> ActivityVerbSubject.Known = { ActivityVerbSubject.Known() }
+    package var known: @MainActor () -> ActivityVerbSubject.Known = { ActivityVerbSubject.Known() }
     /// What Activity stopped and put in the background (6.10): the
     /// header's "2 stopped here — Resume All", the rows' chips.
-    var held = ActivityHeld.shared
+    package var held = ActivityHeld.shared
     /// What a link said of a port it couldn't show (6.12): ":N isn't
     /// listed"; cleared by the next link, the person's hand, or a hide.
-    @Published private(set) var linkSaid: String?
+    @Published package private(set) var linkSaid: String?
     /// The columns the person left: each section's, kept (6.5).
-    @Published private(set) var layout: ActivityColumns.Layout = ActivityColumns.load() {
+    @Published package private(set) var layout: ActivityColumns.Layout = ActivityColumns.load() {
         didSet { syncList() }
     }
     /// The scope ladder's rung (6.5, `[` and `]`), a section each.
-    @Published private(set) var scopes: [Section: ActivityScope] = [:]
+    @Published package private(set) var scopes: [Section: ActivityScope] = [:]
     /// Folds by row id, kept in memory for the app's life (6.5).
-    @Published private(set) var folds: [String: Bool] = [:]
-    @Published var selection: Set<String> = [] {
+    @Published package private(set) var folds: [String: Bool] = [:]
+    @Published package var selection: Set<String> = [] {
         didSet {
             guard selection != oldValue else { return }
             syncList()
@@ -228,14 +264,14 @@ final class ActivityPageModel: ObservableObject {
             updateDetail()
         }
     }
-    @Published var processSort: ResourceSort? = ResourceSort(column: "cpu", ascending: false) {
+    @Published package var processSort: ResourceSort? = ResourceSort(column: "cpu", ascending: false) {
         didSet {
             guard processSort != oldValue else { return }
             syncList()
             rebuild(asked: true)
         }
     }
-    @Published var portSort: ResourceSort? = ResourceSort(column: "port") {
+    @Published package var portSort: ResourceSort? = ResourceSort(column: "port") {
         didSet {
             guard portSort != oldValue else { return }
             syncList()
@@ -244,70 +280,70 @@ final class ActivityPageModel: ObservableObject {
     }
     /// Listening's connections (`c`, 6.8): the user's established TCP
     /// connections, paired by the 4-tuple.
-    @Published var connections = false {
+    @Published package var connections = false {
         didSet { if connections != oldValue { rebuild(asked: true) } }
     }
-    @Published private(set) var content = ActivityPageContent() {
+    @Published package private(set) var content = ActivityPageContent() {
         didSet {
             syncList(rows: true)
             ActivityRelease.later(oldValue)
         }
     }
     /// A full snapshot has been made into rows since the page showed.
-    @Published private(set) var hasRead = false {
+    @Published package private(set) var hasRead = false {
         didSet { if hasRead != oldValue { syncList() } }
     }
     /// The interval the rows are read at, as the header says it.
-    @Published private(set) var interval: Duration = .seconds(2)
+    @Published package private(set) var interval: Duration = .seconds(2)
     /// Asks the list for the keyboard (the window gives it).
-    @Published var focusList = 0
+    @Published package var focusList = 0
 
     /// It is the page over the body.
-    var visible = false {
+    package var visible = false {
         didSet { if visible != oldValue { updateWant() } }
     }
     /// Its window is on screen (an isolated run's counts as shown).
-    var windowVisible = true {
+    package var windowVisible = true {
         didSet { if windowVisible != oldValue { updateWant() } }
     }
     /// Every window's tabs' titles, by id: what the Where column says.
-    var tabTitles: @MainActor () -> [UUID: String] = { [:] }
+    package var tabTitles: @MainActor () -> [UUID: String] = { [:] }
     /// What every window says of its tabs — checkout, branch, order — and
     /// the checkouts it knows; with it the titles above are unused.
-    var tabFacts: @MainActor () -> (tabs: [UUID: ActivityTabFacts], checkouts: [String])? = { nil }
+    package var tabFacts: @MainActor () -> (tabs: [UUID: ActivityTabFacts], checkouts: [String])? = { nil }
     /// The window's selected tab: where `[` narrows to with no row selected.
-    var currentTab: @MainActor () -> UUID? = { nil }
+    package var currentTab: @MainActor () -> UUID? = { nil }
     /// The running containers with their usage, and the want of Docker's
     /// model while either section shows — their published ports are
     /// Listening's owners (6.8) — and of their usage while Processes does
     /// (6.5): set by the window.
-    var containers: @MainActor () -> [ActivityContainer] = { [] }
-    var wantContainers: @MainActor (ActivityContainerWant) -> Void = { _ in }
+    package var containers: @MainActor () -> [ActivityContainer] = { [] }
+    package var wantContainers: @MainActor (ActivityContainerWant) -> Void = { _ in }
     /// What the census's context leaves to the page (6.5, rules 2 and 6):
     /// the forwards, the containers' published ports, the bridge's port.
-    var contextFacts: @MainActor (inout ActivityContext) -> Void = { _ in }
+    package var contextFacts: @MainActor (inout ActivityContext) -> Void = { _ in }
     /// Running apps' bundles by pid: a deleted executable's place.
-    var runningApps: @MainActor () -> [pid_t: String] = { [:] }
+    package var runningApps: @MainActor () -> [pid_t: String] = { [:] }
     /// A test run lists only its own tabs' processes (6.4, 9.9).
-    var isolated = AppEnvironment.isIsolated
+    package var isolated = AppEnvironment.isIsolated
     /// The verbs that don't signal, as the window does them.
-    var actions = ActivityPageActions()
+    package var actions = ActivityPageActions()
     /// VoiceOver's focus is in the list: the order holds (6.7).
-    var voiceOverInList: @MainActor () -> Bool = { false }
+    package var voiceOverInList: @MainActor () -> Bool = { false }
     /// How the person works the list now, and the rows a tick brought
     /// while the order held: shown once it lets go.
     private var hold = ActivityHold()
-    private(set) var waiting: ActivityPageContent? {
+    package private(set) var waiting: ActivityPageContent? {
         didSet { ActivityRelease.later(oldValue) }
     }
     private var release: Task<Void, Never>?
 
-    let monitor: ActivityMonitor
+    package let monitor: ActivityMonitor
     /// Whether it holds the monitor's full level now.
-    private(set) var wanting = false
+    package private(set) var wanting = false
     /// Rows made, a scenario's count.
-    private(set) var builds = 0
-    private(set) var latest: ActivitySnapshot?
+    package private(set) var builds = 0
+    package private(set) var latest: ActivitySnapshot?
     private var generation = 0
     /// The last rows' options: a selection's subject between two publishes
     /// is read with them; and the read on its way, a later one winning.
@@ -316,7 +352,7 @@ final class ActivityPageModel: ObservableObject {
     /// began.
     private var others: NettopListeners.Reading?
     private var othersBegan: Date?
-    let othersReader: NettopListeners.Reader
+    package let othersReader: NettopListeners.Reader
     private var subjectGeneration = 0
     /// The selection's history read on its own, before the rows carry it:
     /// a row just selected (6.11).
@@ -325,29 +361,29 @@ final class ActivityPageModel: ObservableObject {
     private var historyGeneration = 0
     /// The main thread's part of the last detail made, ms: what
     /// `activityPerf` gates (10.4, main ≤ 4 ms a publish).
-    private(set) var detailCost: Double = 0
+    package private(set) var detailCost: Double = 0
     private var snapshots: AnyCancellable?
     /// The tabs' facts the last rows were made with.
     private var lastTabs: [UUID: ActivityTabFacts] = [:]
     /// The tabs' facts the last rows were made with, for Left Behind's verbs.
-    var lastTabsForVerbs: [UUID: ActivityTabFacts] { lastTabs }
+    package var lastTabsForVerbs: [UUID: ActivityTabFacts] { lastTabs }
     /// A row shown by a link: its groups unfolded for it.
     private var revealed: String?
     /// What it holds of Docker's now.
-    private(set) var wantsContainers = ActivityContainerWant.none
+    package private(set) var wantsContainers = ActivityContainerWant.none
     /// A port a link asked for, selected once a tick's rows list it;
     /// dropped by the person's hand, or once a tick at the Mac's scope
     /// doesn't list it.
-    private(set) var pendingPort: ActivityPendingPort?
+    package private(set) var pendingPort: ActivityPendingPort?
     /// `kern.maxprocperuid` as the rows read it (6.4); a scenario's lower.
-    var processLimit = ActivityProcessLimit.perUser
+    package var processLimit = ActivityProcessLimit.perUser
     /// A link is setting the section and selection: not the person's hand.
     private var linking = false
     /// The selection read in depth (7.3's focus level): its folder for
     /// `e` and ⌥r — the user's own process, one at a time.
-    private(set) var focused: Set<ActivityProcessID> = []
+    package private(set) var focused: Set<ActivityProcessID> = []
 
-    init(monitor: ActivityMonitor = .shared, othersReader: NettopListeners.Reader = .shared) {
+    package init(monitor: ActivityMonitor = .shared, othersReader: NettopListeners.Reader = .shared) {
         self.monitor = monitor
         self.othersReader = othersReader
         for section in Section.allCases {
@@ -359,11 +395,11 @@ final class ActivityPageModel: ObservableObject {
     private static func scopeKey(_ section: Section) -> String { "activity.page.scope.\(section.rawValue)" }
 
     /// The scope of `section`: the Mac by default (⌥⌘A).
-    func scope(_ section: Section) -> ActivityScope { scopes[section] ?? .mac }
+    package func scope(_ section: Section) -> ActivityScope { scopes[section] ?? .mac }
 
     /// Sets `section`'s scope; remembered across launches only as All
     /// tabs or the Mac — a tab or a checkout is this launch's.
-    func setScope(_ scope: ActivityScope, for section: Section? = nil) {
+    package func setScope(_ scope: ActivityScope, for section: Section? = nil) {
         let section = section ?? self.section
         guard self.scope(section) != scope else { return }
         scopes[section] = scope
@@ -374,7 +410,7 @@ final class ActivityPageModel: ObservableObject {
 
     /// The chip's words: "Tab: web", "Checkout: acme-shop", "All tabs";
     /// nil on the Mac.
-    func scopeTitle(_ section: Section) -> String? {
+    package func scopeTitle(_ section: Section) -> String? {
         switch scope(section) {
         case .mac: return nil
         case .allTabs: return "All tabs"
@@ -384,7 +420,7 @@ final class ActivityPageModel: ObservableObject {
     }
 
     /// `[`: narrower, onto the selected row's tab or the window's.
-    func narrowScope() {
+    package func narrowScope() {
         let row = content.processes.first { selection.contains($0.id) }
         let tab = row?.owner.flatMap(ActivityRows.paneTab) ?? row?.tab ?? currentTab()
         guard let narrower = scope(section).narrower(tab: tab, checkout: tab.flatMap { lastTabs[$0]?.checkout }) else { return }
@@ -392,14 +428,14 @@ final class ActivityPageModel: ObservableObject {
     }
 
     /// `]`: wider.
-    func widenScope() {
+    package func widenScope() {
         var checkout: String?
         if case .tab(let id) = scope(section) { checkout = lastTabs[id]?.checkout }
         setScope(scope(section).wider(checkout: checkout))
     }
 
     /// A row's fold flipped: a group, a process with children, "+N more".
-    func toggleFold(_ id: String, folded now: Bool) {
+    package func toggleFold(_ id: String, folded now: Bool) {
         folds[id] = !now
         revealed = nil
         rebuild(asked: true)
@@ -409,7 +445,7 @@ final class ActivityPageModel: ObservableObject {
     /// selected): a group's header, or Listening's folded ports, flips its
     /// fold — the whole header is the switch, not only its chevron. A
     /// process is only selected; its own chevron is a button of its own.
-    func pressed(_ id: String) {
+    package func pressed(_ id: String) {
         if section == .listening {
             if let fold = content.ports.first(where: { $0.id == id && $0.kind == .folded }) { toggleFold(id, folded: fold.folded) }
             return
@@ -421,7 +457,7 @@ final class ActivityPageModel: ObservableObject {
 
     /// ← (`open` false) and → on a row, as `ResourceTable` reads them:
     /// whether it folded or unfolded.
-    func fold(_ id: String, open: Bool) -> Bool {
+    package func fold(_ id: String, open: Bool) -> Bool {
         if section == .listening {
             guard let fold = content.ports.first(where: { $0.id == id && $0.kind == .folded }), fold.folded == open else { return false }
             toggleFold(id, folded: fold.folded)
@@ -445,9 +481,9 @@ final class ActivityPageModel: ObservableObject {
     // MARK: The filter
 
     /// What `section`'s filter field says.
-    func filter(_ section: Section) -> String { filters[section] ?? "" }
+    package func filter(_ section: Section) -> String { filters[section] ?? "" }
 
-    func setFilter(_ text: String, for section: Section? = nil) {
+    package func setFilter(_ text: String, for section: Section? = nil) {
         let section = section ?? self.section
         guard filter(section) != text else { return }
         filters[section] = text
@@ -457,12 +493,12 @@ final class ActivityPageModel: ObservableObject {
     // MARK: The columns
 
     /// `section`'s columns as shown now (6.5).
-    func columns(_ section: Section) -> [ResourceColumn] {
+    package func columns(_ section: Section) -> [ResourceColumn] {
         ActivityColumns.columns(section, kept: layout[section.rawValue], grouping: grouping, everyone: everyone ?? Settings.shared.activityEveryone)
     }
 
     /// A header moved or resized: kept for the next launch too.
-    func columnsChanged(_ columns: [ResourceColumn], in section: Section? = nil) {
+    package func columnsChanged(_ columns: [ResourceColumn], in section: Section? = nil) {
         let section = section ?? self.section
         let kept = ActivityColumns.kept(columns)
         guard layout[section.rawValue] != kept else { return }
@@ -471,7 +507,7 @@ final class ActivityPageModel: ObservableObject {
     }
 
     /// The header's menu: a column shown or hidden.
-    func toggleColumn(_ id: String, in section: Section? = nil) {
+    package func toggleColumn(_ id: String, in section: Section? = nil) {
         let section = section ?? self.section
         columnsChanged(ActivityColumns.toggled(id, in: columns(section), section: section), in: section)
     }
@@ -480,7 +516,7 @@ final class ActivityPageModel: ObservableObject {
 
     /// The list was worked (6.7): the order holds while it is, and lets go
     /// once the pointer rests — the rows a tick brought meanwhile shown.
-    func interacted(_ interaction: ResourceTableInteraction, sheet: Bool = false) {
+    package func interacted(_ interaction: ResourceTableInteraction, sheet: Bool = false) {
         if sheet {
             hold.sheet = interaction == .menuOpened
         } else {
@@ -517,12 +553,12 @@ final class ActivityPageModel: ObservableObject {
     }
 
     /// It shows, in a window on screen, with Activity on.
-    var isShown: Bool { visible && windowVisible && Settings.shared.activityEnabled }
+    package var isShown: Bool { visible && windowVisible && Settings.shared.activityEnabled }
 
     /// Its want, as it shows and Activity is on: the full level at the
     /// census's interval; given back otherwise — and while paused, its rows
     /// kept then. Hidden, the rows go and the pause with them.
-    func updateWant() {
+    package func updateWant() {
         let shown = isShown
         if shown, !paused {
             interval = monitor.interval
@@ -569,7 +605,7 @@ final class ActivityPageModel: ObservableObject {
             .sink { [weak self] snapshot in self?.take(snapshot) }
     }
 
-    func take(_ snapshot: ActivitySnapshot) {
+    package func take(_ snapshot: ActivitySnapshot) {
         guard !paused, snapshot.tick > latest?.tick ?? 0 else { return }
         latest = snapshot
         readOthers(snapshot)
@@ -581,7 +617,7 @@ final class ActivityPageModel: ObservableObject {
 
     /// The selection's open files read again (6.4's Files): its own only,
     /// off the main thread; a later read wins.
-    func readFiles() {
+    package func readFiles() {
         filesGeneration += 1
         openFiles = nil
         guard showsFiles, let row = detail?.row, row.isOwn, !row.ended else { return }
@@ -597,7 +633,7 @@ final class ActivityPageModel: ObservableObject {
     }
 
     /// nettop's period (D-25): every fifth tick, 10 s at the 2 s default.
-    var othersPeriod: TimeInterval {
+    package var othersPeriod: TimeInterval {
         let parts = interval.components
         return 5 * (Double(parts.seconds) + Double(parts.attoseconds) / 1e18)
     }
@@ -628,7 +664,7 @@ final class ActivityPageModel: ObservableObject {
     /// One read of every user's listeners now, whatever the period: what a
     /// scenario asks, with its stand-in nettop.
     @discardableResult
-    func readOtherListenersNow() -> Bool {
+    package func readOtherListenersNow() -> Bool {
         guard let latest else { return false }
         readOthers(latest, now: true)
         return othersReader.isReading
@@ -764,7 +800,7 @@ final class ActivityPageModel: ObservableObject {
     /// The rows made again from the latest snapshot with what the main
     /// actor knows now: a verb that changed what Activity holds (a process
     /// put in the background) is said at once, not a tick later.
-    func refreshVerbs() { rebuild(asked: true) }
+    package func refreshVerbs() { rebuild(asked: true) }
 
     /// The selected row's detail: a process's, or a listener's holder's.
     private func updateDetail() {
@@ -883,7 +919,7 @@ final class ActivityPageModel: ObservableObject {
 
     /// A setting changed: the want again (on, off, the interval), the rows
     /// again (everyone's) — only while it shows: hidden, nothing is made.
-    func settingsChanged() {
+    package func settingsChanged() {
         let was = wanting
         if wanting {
             monitor.unwant(self)
@@ -895,7 +931,7 @@ final class ActivityPageModel: ObservableObject {
     }
 
     /// The page closed: what it shows goes with it.
-    func close() {
+    package func close() {
         visible = false
         selection = []
         forget()
@@ -907,7 +943,7 @@ final class ActivityPageModel: ObservableObject {
     /// A key while the list has the keyboard (`ActivityKey`, 6.3): whether
     /// it meant something; anything else goes on to the list.
     @discardableResult
-    func press(_ characters: String) -> Bool {
+    package func press(_ characters: String) -> Bool {
         guard let pressed = ActivityKey.press(characters, sheetShowing: cheatSheet) else { return false }
         byHand()
         switch pressed {
@@ -975,20 +1011,20 @@ final class ActivityPageModel: ObservableObject {
     }
 
     /// The selected process — a listener's holder in Listening.
-    var selectedProcess: ActivityProcessRow? { selection.count == 1 ? detail?.row : nil }
+    package var selectedProcess: ActivityProcessRow? { selection.count == 1 ? detail?.row : nil }
 
     /// Ask an Agent About It (`a`, ⌘L; 8.6): the selected process's brief,
     /// from its detail, to the window's Ask Agent sheet. False when no one
     /// process is selected.
     @discardableResult
-    func askAboutSelection() -> Bool {
+    package func askAboutSelection() -> Bool {
         guard selection.count == 1, let detail else { return false }
         actions.ask(ActivityBrief.make(detail), detail.row.tab)
         return true
     }
 
     /// The selected process's working folder, once the focus level read it.
-    var selectedFolder: String? { selectedProcess == nil ? nil : detail?.folderPath }
+    package var selectedFolder: String? { selectedProcess == nil ? nil : detail?.folderPath }
 
     /// ↩: a process to its tab and pane; a listener to its process's row;
     /// one outside every tab to its detail.
@@ -1002,7 +1038,7 @@ final class ActivityPageModel: ObservableObject {
     }
 
     /// `row`'s tab, and its pane when the pane's tag placed it.
-    func goTo(_ row: ActivityProcessRow) {
+    package func goTo(_ row: ActivityProcessRow) {
         guard let tab = row.tab else { return }
         var pane: String?
         if case .pane(let tag)? = row.owner?.place { pane = tag }
@@ -1028,7 +1064,7 @@ final class ActivityPageModel: ObservableObject {
     /// A key with ⌥ while the list has the keyboard: ⌥o opens in the
     /// default browser (6.3). `characters` ignore the modifier.
     @discardableResult
-    func pressOption(_ characters: String) -> Bool {
+    package func pressOption(_ characters: String) -> Bool {
         guard !cheatSheet else { return false }
         switch characters {
         case "o": return openSelection(defaultBrowser: true)
@@ -1041,10 +1077,10 @@ final class ActivityPageModel: ObservableObject {
     }
 
     /// ⌘C: the selected rows, a line each — names, pids, ports only.
-    var selectedLines: [String] { lines(for: selection) }
+    package var selectedLines: [String] { lines(for: selection) }
 
     /// `ids`' rows, a line each, as ⌘C copies them.
-    func lines(for ids: Set<String>) -> [String] {
+    package func lines(for ids: Set<String>) -> [String] {
         switch section {
         case .processes, .leftBehind:
             content.processes.filter { ids.contains($0.id) }.map { "\($0.name)\t\($0.identity.pid)" }
@@ -1059,7 +1095,7 @@ final class ActivityPageModel: ObservableObject {
     /// `ResourceActionBar` and as the list's right-click menu. One row: Go
     /// to Tab, Open, Reveal, Tab Info, Sample, Copy — what can't be done
     /// greyed with why; several: Copy. `copy` puts lines on the pasteboard.
-    func verbs(for ids: Set<String>, copy: @escaping ([String]) -> Void) -> [ResourceVerb] {
+    package func verbs(for ids: Set<String>, copy: @escaping ([String]) -> Void) -> [ResourceVerb] {
         let copyVerb = ResourceVerb(
             title: ids.count > 1 ? "Copy \(ids.count) Rows" : "Copy", symbol: "doc.on.doc", key: "⌘C", group: 1,
             perform: { [weak self] in
@@ -1173,14 +1209,14 @@ final class ActivityPageModel: ObservableObject {
 
     /// Open Files in a Tab's line (6.10): `lsof` of the one process, read
     /// only. Pure.
-    nonisolated static func openFilesCommand(_ pid: pid_t) -> String { "lsof -nP -p \(pid)" }
+    package nonisolated static func openFilesCommand(_ pid: pid_t) -> String { "lsof -nP -p \(pid)" }
 
     /// Sample in a Tab's (6.10): its report to the tab, never left in /tmp
     /// as `sample` does without `-file`. Pure.
-    nonisolated static func sampleCommand(_ pid: pid_t) -> String { "sample \(pid) 5 -file /dev/stdout" }
+    package nonisolated static func sampleCommand(_ pid: pid_t) -> String { "sample \(pid) 5 -file /dev/stdout" }
 
     /// `url` as https, when it is http. Pure.
-    nonisolated static func https(_ url: URL?) -> URL? {
+    package nonisolated static func https(_ url: URL?) -> URL? {
         guard let url, url.scheme == "http", var parts = URLComponents(url: url, resolvingAgainstBaseURL: false) else { return nil }
         parts.scheme = "https"
         return parts.url
@@ -1188,7 +1224,7 @@ final class ActivityPageModel: ObservableObject {
 
     /// A link's (6.12): the page on its section and scope, the row
     /// selected and followed — a port's once a tick's rows list it.
-    func show(_ link: ActivityLink) {
+    package func show(_ link: ActivityLink) {
         switch link {
         case .tab(let id):
             section = .processes
@@ -1221,7 +1257,7 @@ final class ActivityPageModel: ObservableObject {
     /// selected and its Free asked as `f` asks it — the holder read again
     /// from a fresh census as the sheet opens. A port no row lists says so
     /// as a link's does.
-    func free(port: Int, proto: String = "tcp") {
+    package func free(port: Int, proto: String = "tcp") {
         show(.port(port, proto: proto, pid: nil, tab: nil))
         if pendingPort != nil {
             pendingPort?.free = true
@@ -1232,7 +1268,7 @@ final class ActivityPageModel: ObservableObject {
 
     /// The port Free a Port… was given: a number, `:3000`, or `5353/udp`.
     /// Nil for anything else. Pure.
-    nonisolated static func typedPort(_ text: String) -> (port: Int, proto: String)? {
+    package nonisolated static func typedPort(_ text: String) -> (port: Int, proto: String)? {
         var word = text.trimmingCharacters(in: .whitespaces).lowercased()
         var proto = "tcp"
         for suffix in ["/udp", "/tcp"] where word.hasSuffix(suffix) {
@@ -1256,7 +1292,7 @@ final class ActivityPageModel: ObservableObject {
     /// The scope a port link opens Listening at (6.5): the tab's
     /// checkout's — its stack's containers listed beside its tabs' — else
     /// the tab's, else the Mac's. Pure.
-    nonisolated static func linkScope(tab: UUID?, checkout: String?) -> ActivityScope {
+    package nonisolated static func linkScope(tab: UUID?, checkout: String?) -> ActivityScope {
         if let checkout { return .checkout(checkout) }
         return tab.map { .tab($0) } ?? .mac
     }
@@ -1264,28 +1300,28 @@ final class ActivityPageModel: ObservableObject {
     /// What a tick's rows that don't list a link's port mean: nothing yet
     /// (made before the link, or at another rung), a wider look (the
     /// Mac's), or that it isn't listed at all. Pure.
-    enum Unlisted: Equatable, Sendable { case wait, widen, drop }
+    package enum Unlisted: Equatable, Sendable { case wait, widen, drop }
 
-    nonisolated static func unlisted(_ pending: ActivityPendingPort, tick: Int, scope: ActivityScope) -> Unlisted {
+    package nonisolated static func unlisted(_ pending: ActivityPendingPort, tick: Int, scope: ActivityScope) -> Unlisted {
         guard tick > pending.after, scope == pending.scope else { return .wait }
         return scope == .mac ? .drop : .widen
     }
 
     /// What the header says of a port a link couldn't show. Pure.
-    nonisolated static func unlistedSaid(_ pending: ActivityPendingPort) -> String {
+    package nonisolated static func unlistedSaid(_ pending: ActivityPendingPort) -> String {
         ":\(pending.port)\(pending.proto == "udp" ? "/udp" : "") isn't listed (another user's?)"
     }
 
     /// The listener a port link names: its holder's when it says which,
     /// else the first on that port and protocol. Pure.
-    nonisolated static func linked(_ link: ActivityPendingPort, in ports: [ActivityPortRow]) -> ActivityPortRow? {
+    package nonisolated static func linked(_ link: ActivityPendingPort, in ports: [ActivityPortRow]) -> ActivityPortRow? {
         let listeners = ports.filter { $0.kind == .listener && $0.port == link.port && $0.proto == link.proto }
         if let pid = link.pid, let held = listeners.first(where: { $0.holder?.pid == pid }) { return held }
         return listeners.first
     }
 
     /// The process or port shown on the page: its section, selected.
-    func reveal(_ id: String, in section: Section) {
+    package func reveal(_ id: String, in section: Section) {
         linking = true
         defer { linking = false }
         self.section = section
@@ -1300,7 +1336,7 @@ final class ActivityPageModel: ObservableObject {
 /// replaced by the next freed thousands of rows' storage on it — 1.8–4.0
 /// ms of the queue's CPU a publish at 1,300 processes (`activityPerf`). Each value is kept a moment
 /// past the main thread's last use, so the queue's is the last reference.
-enum ActivityRelease {
+package enum ActivityRelease {
     private static let queue = DispatchQueue(label: "overterm.activity.release", qos: .utility)
 
     /// The queue's CPU so far, and the values it let go of: moved off the
@@ -1308,7 +1344,7 @@ enum ActivityRelease {
     /// (`activityPerf`).
     private static let spentSoFar = OSAllocatedUnfairLock(initialState: (cpu: UInt64(0), values: 0))
 
-    nonisolated static func later<Value: Sendable>(_ value: Value) {
+    package nonisolated static func later<Value: Sendable>(_ value: Value) {
         let held = Held(value)
         let block: @Sendable () -> Void = {
             let start = clock_gettime_nsec_np(CLOCK_THREAD_CPUTIME_ID)
@@ -1323,7 +1359,7 @@ enum ActivityRelease {
     }
 
     /// The queue's CPU (nanoseconds) and the values it freed, since launch.
-    nonisolated static var spent: (cpu: UInt64, values: Int) { spentSoFar.withLock { $0 } }
+    package nonisolated static var spent: (cpu: UInt64, values: Int) { spentSoFar.withLock { $0 } }
 
     /// A value let go of inside the timed part of the block, not when the
     /// block itself is.

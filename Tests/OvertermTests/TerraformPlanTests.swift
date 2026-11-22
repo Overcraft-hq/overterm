@@ -3,6 +3,12 @@ import CryptoKit
 import XCTest
 
 @testable import Overterm
+@testable import OvertermCore
+@testable import OvertermDatabase
+@testable import OvertermDocker
+@testable import OvertermKubernetes
+@testable import OvertermTerraform
+@testable import OvertermShell
 
 /// Stage 1d's pure parts: the plan's command line and what it can never
 /// say (5.13 rule 1), its environment, the workspace and process checks,
@@ -525,9 +531,9 @@ final class TerraformPlanReadingTests: XCTestCase {
         // scenario); a debug build is ten times slower. Bound here against
         // a scan per value per string, which took minutes.
         #if DEBUG
-            let budget = 15.0
+        let budget = 15.0
         #else
-            let budget = 0.5
+        let budget = 0.5
         #endif
         XCTAssertLessThan(elapsed, budget, "decoding \(data.count >> 20) MB took \(elapsed) s")
     }

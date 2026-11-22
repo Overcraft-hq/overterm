@@ -3,19 +3,31 @@ import SwiftUI
 /// The two strips a group mode puts under the terminal: broadcasting into
 /// an island, and focusing on one. Both are bars rather than sheets —
 /// they are modes you work inside, not questions to answer.
-struct GroupBarsView: View {
-    @ObservedObject var broadcast: BroadcastModel
-    @ObservedObject var focus: GroupFocus
-    @ObservedObject var store: TabStore
-    @ObservedObject var theme: ChromeTheme
-    let onSend: () -> Void
-    let onStopBroadcast: () -> Void
-    let onLeaveFocus: () -> Void
+package struct GroupBarsView: View {
+    @ObservedObject package var broadcast: BroadcastModel
+    @ObservedObject package var focus: GroupFocus
+    @ObservedObject package var store: TabStore
+    @ObservedObject package var theme: ChromeTheme
+    package let onSend: () -> Void
+    package let onStopBroadcast: () -> Void
+    package let onLeaveFocus: () -> Void
+
+    package init(
+        broadcast: BroadcastModel, focus: GroupFocus, store: TabStore, theme: ChromeTheme, onSend: @escaping () -> Void, onStopBroadcast: @escaping () -> Void, onLeaveFocus: @escaping () -> Void
+    ) {
+        self._broadcast = ObservedObject(wrappedValue: broadcast)
+        self._focus = ObservedObject(wrappedValue: focus)
+        self._store = ObservedObject(wrappedValue: store)
+        self._theme = ObservedObject(wrappedValue: theme)
+        self.onSend = onSend
+        self.onStopBroadcast = onStopBroadcast
+        self.onLeaveFocus = onLeaveFocus
+    }
 
     /// The host fills the terminal column (it must not get a say in how
     /// wide that column is); the bars sit at its bottom, and the space
     /// above them stays out of the way of the terminal.
-    var body: some View {
+    package var body: some View {
         VStack(spacing: 0) {
             Color.clear.allowsHitTesting(false)
             if focus.isFocusing { focusBar }
@@ -95,13 +107,13 @@ struct GroupBarsView: View {
 
 /// The strip's "Stashed (2)" chip and what it opens: the groups that are
 /// out of the way, with what is still running in them.
-struct StashedGroupsChip: View {
-    @ObservedObject var store: TabStore
-    @ObservedObject var theme: ChromeTheme
-    let restore: (TabGroup) -> Void
+package struct StashedGroupsChip: View {
+    @ObservedObject package var store: TabStore
+    @ObservedObject package var theme: ChromeTheme
+    package let restore: (TabGroup) -> Void
     @State private var showing = false
 
-    var body: some View {
+    package var body: some View {
         let stashed = store.stashedGroups
         if !stashed.isEmpty {
             Button {

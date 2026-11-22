@@ -8,8 +8,8 @@ import Foundation
 /// `~/.gemini/settings.json` — and servers added
 /// here are Overterm's, in its own folder: nothing goes into a Bruno
 /// collection, which has no MCP request (Bruno would refuse the file).
-struct MCPServerConfig: Equatable, Hashable, Identifiable, Sendable {
-    enum Transport: Equatable, Hashable, Sendable {
+package struct MCPServerConfig: Equatable, Hashable, Identifiable, Sendable {
+    package enum Transport: Equatable, Hashable, Sendable {
         /// A process, its stdin and stdout JSON-RPC a line each.
         case stdio(command: String, args: [String], env: [String: String])
         /// Streamable HTTP: a POST a message, the answer JSON or an event stream.
@@ -17,7 +17,7 @@ struct MCPServerConfig: Equatable, Hashable, Identifiable, Sendable {
         /// The 2024 transport: an event stream, and POSTs to the endpoint it names.
         case sse(url: String, headers: [String: String])
 
-        var kind: String {
+        package var kind: String {
             switch self {
             case .stdio: "stdio"
             case .http: "http"
@@ -26,7 +26,7 @@ struct MCPServerConfig: Equatable, Hashable, Identifiable, Sendable {
         }
 
         /// What it runs or reaches, on one line.
-        var summary: String {
+        package var summary: String {
             switch self {
             case .stdio(let command, let args, _): ([command] + args).joined(separator: " ")
             case .http(let url, _), .sse(let url, _): url
@@ -34,10 +34,10 @@ struct MCPServerConfig: Equatable, Hashable, Identifiable, Sendable {
         }
     }
 
-    enum Source: String, Sendable, CaseIterable {
+    package enum Source: String, Sendable, CaseIterable {
         case project, claudeLocal, claudeUser, codex, opencode, gemini, overterm
 
-        var title: String {
+        package var title: String {
             switch self {
             case .project: ".mcp.json"
             case .claudeLocal: "Claude Code — this checkout"
@@ -50,19 +50,26 @@ struct MCPServerConfig: Equatable, Hashable, Identifiable, Sendable {
         }
     }
 
-    var name: String
-    var source: Source
-    var transport: Transport
+    package var name: String
+    package var source: Source
+    package var transport: Transport
     /// Where a stdio server runs: the checkout, for a project's.
-    var directory: String?
+    package var directory: String?
+
+    package init(name: String, source: Source, transport: Transport, directory: String? = nil) {
+        self.name = name
+        self.source = source
+        self.transport = transport
+        self.directory = directory
+    }
     /// An added one's: its keychain account names its secrets.
-    var id: String { "\(source.rawValue):\(name)" }
+    package var id: String { "\(source.rawValue):\(name)" }
 
     // MARK: Reading the agents' configs
 
     /// Every server the checkout and this Mac's agents know, a name once
     /// per source; `home` is the user's (a test's own folder in tests).
-    static func discover(checkout: URL?, home: URL, environment: [String: String]) -> [MCPServerConfig] {
+    package static func discover(checkout: URL?, home: URL, environment: [String: String]) -> [MCPServerConfig] {
         var out: [MCPServerConfig] = []
         if let checkout, let data = try? Data(contentsOf: checkout.appendingPathComponent(".mcp.json")) {
             out += servers(fromJSON: data, source: .project, directory: checkout.path, environment: environment)
@@ -100,7 +107,7 @@ struct MCPServerConfig: Equatable, Hashable, Identifiable, Sendable {
     /// opencode's `mcp` object (JSONC): `{"type": "local", "command":
     /// [program, args…], "environment": {…}}` or `{"type": "remote",
     /// "url": …, "headers": {…}}`; `{env:VAR}` substituted, as opencode does.
-    static func opencode(_ text: String, environment: [String: String]) -> [MCPServerConfig] {
+    package static func opencode(_ text: String, environment: [String: String]) -> [MCPServerConfig] {
         guard let object = try? SettingsJSON.object(from: text), let servers = object["mcp"] as? [String: Any] else { return [] }
         func expand(_ any: Any?) -> String? {
             guard var text = any as? String else { return nil }
@@ -125,7 +132,7 @@ struct MCPServerConfig: Equatable, Hashable, Identifiable, Sendable {
     /// Gemini CLI's `mcpServers` (JSON with comments): `command`/`args`/
     /// `env`, `httpUrl` (streamable HTTP) or `url` (SSE, unless `type` says
     /// http), `headers`; `$VAR` and `${VAR}` expanded, as Gemini does.
-    static func gemini(_ text: String, environment: [String: String]) -> [MCPServerConfig] {
+    package static func gemini(_ text: String, environment: [String: String]) -> [MCPServerConfig] {
         guard let object = try? SettingsJSON.object(from: text), let servers = object["mcpServers"] as? [String: Any] else { return [] }
         func expand(_ any: Any?) -> String? { (any as? String).map { expandDollar($0, environment) } }
         func strings(_ any: Any?) -> [String: String] { (any as? [String: Any] ?? [:]).compactMapValues { expand($0) } }
@@ -148,7 +155,7 @@ struct MCPServerConfig: Equatable, Hashable, Identifiable, Sendable {
     }
 
     /// `$VAR`, `${VAR}` and `${VAR:-default}`; an unset one left as written.
-    static func expandDollar(_ text: String, _ environment: [String: String]) -> String {
+    package static func expandDollar(_ text: String, _ environment: [String: String]) -> String {
         guard text.contains("$") else { return text }
         let pattern = /\$(?:(?<bare>\w+)|\{(?<name>[^}:]+?)(?::-(?<fallback>[^}]*))?\})/
         var out = ""
@@ -163,13 +170,13 @@ struct MCPServerConfig: Equatable, Hashable, Identifiable, Sendable {
     }
 
     /// `{"mcpServers": {name: {...}}}` — Claude Code's and Claude Desktop's shape.
-    static func servers(fromJSON data: Data, source: Source, directory: String?, environment: [String: String]) -> [MCPServerConfig] {
+    package static func servers(fromJSON data: Data, source: Source, directory: String?, environment: [String: String]) -> [MCPServerConfig] {
         guard let object = try? JSONSerialization.jsonObject(with: data) as? [String: Any], let servers = object["mcpServers"] as? [String: Any]
         else { return [] }
         return Self.servers(servers, source: source, directory: directory, environment: environment)
     }
 
-    static func servers(_ servers: [String: Any], source: Source, directory: String?, environment: [String: String]) -> [MCPServerConfig] {
+    package static func servers(_ servers: [String: Any], source: Source, directory: String?, environment: [String: String]) -> [MCPServerConfig] {
         servers.keys.sorted().compactMap { name in
             guard let entry = servers[name] as? [String: Any] else { return nil }
             func text(_ any: Any?) -> String? { (any as? String).map { expand($0, environment) } }
@@ -190,7 +197,7 @@ struct MCPServerConfig: Equatable, Hashable, Identifiable, Sendable {
     }
 
     /// `${VAR}` and `${VAR:-default}`, as Claude Code expands `.mcp.json`.
-    static func expand(_ text: String, _ environment: [String: String]) -> String {
+    package static func expand(_ text: String, _ environment: [String: String]) -> String {
         guard text.contains("${") else { return text }
         var out = ""
         var rest = Substring(text)
@@ -211,7 +218,7 @@ struct MCPServerConfig: Equatable, Hashable, Identifiable, Sendable {
     /// Codex's `[mcp_servers.<name>]` tables: `command`, `args`, `env`, or `url`.
     /// Only what those tables use of TOML: strings, arrays of strings, inline
     /// tables of strings, `[mcp_servers.<name>.env]` sub-tables.
-    static func codex(_ text: String, environment: [String: String]) -> [MCPServerConfig] {
+    package static func codex(_ text: String, environment: [String: String]) -> [MCPServerConfig] {
         var tables: [String: [String: Any]] = [:]
         var order: [String] = []
         var current: (server: String, sub: String?)?
@@ -248,9 +255,9 @@ struct MCPServerConfig: Equatable, Hashable, Identifiable, Sendable {
 }
 
 /// A line of TOML, as far as an MCP server's table needs it.
-enum TOMLLine {
+package enum TOMLLine {
     /// `mcp_servers."my server".env` → ["mcp_servers", "my server", "env"].
-    static func keyPath(_ text: String) -> [String] {
+    package static func keyPath(_ text: String) -> [String] {
         var parts: [String] = []
         var current = ""
         var quote: Character?
@@ -270,7 +277,7 @@ enum TOMLLine {
         return parts
     }
 
-    static func pair(_ line: String) -> (String, Any)? {
+    package static func pair(_ line: String) -> (String, Any)? {
         guard let equals = line.firstIndex(of: "=") else { return nil }
         let key = keyPath(String(line[..<equals])).joined(separator: ".")
         var rest = Substring(line[line.index(after: equals)...]).drop { $0 == " " }
@@ -338,22 +345,22 @@ enum TOMLLine {
 
 /// Servers added here: their names, how they are reached — their headers'
 /// and env's values in the keychain, never in the file.
-struct MCPAddedServers {
-    let file: URL
-    let secrets: MCPSecrets
+package struct MCPAddedServers {
+    package let file: URL
+    package let secrets: MCPSecrets
 
-    struct Stored: Codable, Equatable {
-        var name: String
-        var kind: String
-        var command: String?
-        var args: [String]?
-        var url: String?
+    package struct Stored: Codable, Equatable {
+        package var name: String
+        package var kind: String
+        package var command: String?
+        package var args: [String]?
+        package var url: String?
         /// Names only: the values are secrets.
-        var env: [String]?
-        var headers: [String]?
+        package var env: [String]?
+        package var headers: [String]?
     }
 
-    func load() -> [MCPServerConfig] {
+    package func load() -> [MCPServerConfig] {
         guard let data = try? Data(contentsOf: file), let stored = try? JSONDecoder().decode([Stored].self, from: data) else { return [] }
         return stored.map { item in
             let id = "overterm:\(item.name)"
@@ -370,7 +377,7 @@ struct MCPAddedServers {
         }
     }
 
-    func save(_ servers: [MCPServerConfig]) throws {
+    package func save(_ servers: [MCPServerConfig]) throws {
         let stored: [Stored] = servers.filter { $0.source == .overterm }.map { server in
             switch server.transport {
             case .stdio(let command, let args, let env):
@@ -387,7 +394,7 @@ struct MCPAddedServers {
         try encoder.encode(stored).write(to: file, options: .atomic)
     }
 
-    func remove(_ server: MCPServerConfig) throws {
+    package func remove(_ server: MCPServerConfig) throws {
         switch server.transport {
         case .stdio(_, _, let env): for name in env.keys { secrets.set(nil, server: server.id, name: name) }
         case .http(_, let headers), .sse(_, let headers): for name in headers.keys { secrets.set(nil, server: server.id, name: name) }
@@ -397,15 +404,15 @@ struct MCPAddedServers {
 }
 
 /// An added server's secret values: the keychain, or memory for an isolated run.
-protocol MCPSecrets: AnyObject, Sendable {
+package protocol MCPSecrets: AnyObject, Sendable {
     func value(server: String, name: String) -> String?
     func set(_ value: String?, server: String, name: String)
 }
 
-final class KeychainMCPSecrets: MCPSecrets {
-    static let service = "Overterm MCP"
+package final class KeychainMCPSecrets: MCPSecrets {
+    package static let service = "Overterm MCP"
 
-    func value(server: String, name: String) -> String? {
+    package func value(server: String, name: String) -> String? {
         let query: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: Self.service,
             kSecAttrAccount as String: "\(server)|\(name)", kSecReturnData as String: true, kSecMatchLimit as String: kSecMatchLimitOne,
@@ -415,7 +422,7 @@ final class KeychainMCPSecrets: MCPSecrets {
         return String(data: data, encoding: .utf8)
     }
 
-    func set(_ value: String?, server: String, name: String) {
+    package func set(_ value: String?, server: String, name: String) {
         let match: [String: Any] = [
             kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: Self.service, kSecAttrAccount as String: "\(server)|\(name)",
         ]
@@ -428,10 +435,10 @@ final class KeychainMCPSecrets: MCPSecrets {
     }
 }
 
-final class MemoryMCPSecrets: MCPSecrets, @unchecked Sendable {
+package final class MemoryMCPSecrets: MCPSecrets, @unchecked Sendable {
     private let lock = NSLock()
     private var values: [String: String] = [:]
 
-    func value(server: String, name: String) -> String? { lock.withLock { values["\(server)|\(name)"] } }
-    func set(_ value: String?, server: String, name: String) { lock.withLock { values["\(server)|\(name)"] = value } }
+    package func value(server: String, name: String) -> String? { lock.withLock { values["\(server)|\(name)"] } }
+    package func set(_ value: String?, server: String, name: String) { lock.withLock { values["\(server)|\(name)"] = value } }
 }

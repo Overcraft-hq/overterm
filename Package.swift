@@ -1,6 +1,38 @@
 // swift-tools-version:6.1
 import PackageDescription
 
+// `#if E2E` (the scenarios, the fakes): every debug build, a release build
+// only with the E2E trait.
+let e2eSettings: [SwiftSetting] = [
+    .define("E2E", .when(configuration: .debug)),
+    .define("E2E", .when(traits: ["E2E"])),
+]
+
+/// A module of the app over `below`, with every package the app uses (an
+/// unused one costs nothing).
+func feature(_ name: String, over below: [String]) -> Target {
+    .target(
+        name: name,
+        dependencies: below.map { .target(name: $0) } + [
+            "GhosttyKit", "TreeSitterKit",
+            .product(name: "PostgresNIO", package: "postgres-nio"),
+            .product(name: "MySQLNIO", package: "mysql-nio"),
+            .product(name: "NIOCore", package: "swift-nio"),
+            .product(name: "NIOPosix", package: "swift-nio"),
+            // Docker's Engine API: HTTP over its unix socket.
+            .product(name: "NIOHTTP1", package: "swift-nio"),
+            .product(name: "NIOSSL", package: "swift-nio-ssl"),
+            .product(name: "NIOHTTP2", package: "swift-nio-http2"),
+            .product(name: "NIOHPACK", package: "swift-nio-http2"),
+            .product(name: "Logging", package: "swift-log"),
+            .product(name: "_CryptoExtras", package: "swift-crypto"),
+            .product(name: "OracleNIO", package: "oracle-nio"),
+        ],
+        path: "Sources/\(name)",
+        swiftSettings: e2eSettings
+    )
+}
+
 let package = Package(
     name: "Overterm",
     platforms: [
@@ -8,6 +40,13 @@ let package = Package(
     ],
     products: [
         .executable(name: "Overterm", targets: ["OvertermApp"])
+    ],
+    // The end-to-end scenarios (Sources/Overterm/E2E) and the tests' fake
+    // servers (Fake*.swift) are `#if E2E`: in every debug build, and in a
+    // release build only with `--traits E2E` — a shipped app carries none
+    // of them (45,000 lines the release build no longer optimises).
+    traits: [
+        .trait(name: "E2E", description: "The end-to-end scenarios and the tests' fake servers, in a release build")
     ],
     // The database client's wire protocols: PostgreSQL (and Redshift, which
     // speaks it) and MySQL — TLS, SCRAM and caching_sha2 included, which is
@@ -43,13 +82,32 @@ let package = Package(
             name: "TreeSitterKit",
             path: "Frameworks/TreeSitterKit.xcframework"
         ),
-        // The app's code, as a library: the executable below and the tests
-        // both link this one module, so a test build compiles it once (as an
-        // executable target the tests' build compiled it a second time, as
-        // a testable copy). `main` is the executable's.
+        // The app's code is a stack of library modules, one package: each
+        // depends only on those below it, and shares what others use as
+        // `package` (docs/architecture.md, Targets). Split so a release build
+        // optimises them on several cores, and a change rebuilds what is
+        // above it only.
+        //
+        // OvertermCore: what depends on nothing else of the app — parsers,
+        // pure models, git, shell words, the transport.
+        .target(
+            name: "OvertermCore",
+            dependencies: [
+                "GhosttyKit", "TreeSitterKit",
+                .product(name: "NIOCore", package: "swift-nio"),
+                .product(name: "NIOPosix", package: "swift-nio"),
+                .product(name: "NIOHTTP1", package: "swift-nio"),
+            ],
+            path: "Sources/OvertermCore",
+            swiftSettings: e2eSettings
+        ),
+        // Overterm: the shell under the features — tabs, terminals, the
+        // editor, settings, Activity — and the few pieces of a feature it
+        // holds itself (docs/architecture.md, Targets).
         .target(
             name: "Overterm",
             dependencies: [
+                "OvertermCore",
                 "GhosttyKit", "TreeSitterKit",
                 .product(name: "PostgresNIO", package: "postgres-nio"),
                 .product(name: "MySQLNIO", package: "mysql-nio"),
@@ -65,6 +123,7 @@ let package = Package(
                 .product(name: "OracleNIO", package: "oracle-nio"),
             ],
             path: "Sources/Overterm",
+            swiftSettings: e2eSettings,
             linkerSettings: [
                 // libghostty's C++ deps (glslang, spirv-cross, simdutf) and the
                 // system frameworks its Zig code links against.
@@ -79,17 +138,28 @@ let package = Package(
                 .linkedLibrary("sqlite3"),
             ]
         ),
+        // The features, each over the shell and the ones it uses:
+        // Database, then Docker (its containers' databases), Kubernetes
+        // (Docker's images and CLI), Terraform (a context's class).
+        feature("OvertermDatabase", over: ["Overterm"]),
+        feature("OvertermDocker", over: ["OvertermDatabase"]),
+        feature("OvertermKubernetes", over: ["OvertermDocker"]),
+        feature("OvertermTerraform", over: ["OvertermKubernetes"]),
+        // OvertermShell: the window and what holds the features together —
+        // TerminalWindowController and its extensions, the app delegate, the
+        // menus, the right slot and the sidebar — and the E2E scenarios.
+        feature("OvertermShell", over: ["OvertermTerraform"]),
         // The app: Sources/OvertermApp/main.swift starts the library. Its
         // product keeps the name the binary always had (make-app.sh, the
         // docs' `.build/debug/Overterm`).
         .executableTarget(
             name: "OvertermApp",
-            dependencies: ["Overterm"],
+            dependencies: ["OvertermShell"],
             path: "Sources/OvertermApp"
         ),
         .testTarget(
             name: "OvertermTests",
-            dependencies: ["Overterm"],
+            dependencies: ["OvertermShell"],
             path: "Tests/OvertermTests"
         ),
         // Launches the built app per scenario; opt-in (make e2e).

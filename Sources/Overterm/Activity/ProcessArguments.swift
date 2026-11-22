@@ -5,23 +5,23 @@ import Foundation
 /// analysis.md, 9.2) — Overterm's three markers and launchd's job label,
 /// none a secret — and nothing else. The type holds these four values:
 /// no other entry of a process's environment ever becomes a `String`.
-struct ProcessMarkers: Hashable, Sendable {
+package struct ProcessMarkers: Hashable, Sendable {
     /// `OVERTERM_TAB_ID`: the pane it was started in.
-    var tab: String?
+    package var tab: String?
     /// `OVERTERM_RUN`: the Overterm run that started it.
-    var run: String?
+    package var run: String?
     /// `OVERTERM_HELPER`: which of Overterm's children it is.
-    var helper: String?
+    package var helper: String?
     /// `XPC_SERVICE_NAME`: a launchd job's label ("0" is none).
-    var service: String?
+    package var service: String?
 
     /// Matched exactly at an entry's start — never an `OVERTERM_` prefix:
     /// `OVERTERM_SSH_SECRET` is a database's password in the tunnel's ssh,
     /// `OVERTERM_MCP_TOKEN` a pane's token. In `subscript(name:)`'s order.
-    static let names = ["OVERTERM_TAB_ID", "OVERTERM_RUN", "OVERTERM_HELPER", "XPC_SERVICE_NAME"]
+    package static let names = ["OVERTERM_TAB_ID", "OVERTERM_RUN", "OVERTERM_HELPER", "XPC_SERVICE_NAME"]
 
     /// The value of `names[index]`.
-    subscript(name index: Int) -> String? {
+    package subscript(name index: Int) -> String? {
         get { [tab, run, helper, service][index] }
         set {
             switch index {
@@ -34,9 +34,9 @@ struct ProcessMarkers: Hashable, Sendable {
     }
 
     /// A value longer than this is no marker of Overterm's or launchd's.
-    static let valueLimit = 512
+    package static let valueLimit = 512
 
-    var isEmpty: Bool { tab == nil && run == nil && helper == nil && service == nil }
+    package var isEmpty: Bool { tab == nil && run == nil && helper == nil && service == nil }
 }
 
 /// What `KERN_PROCARGS2` gives the census of one of the user's processes
@@ -64,44 +64,44 @@ struct ProcessMarkers: Hashable, Sendable {
 ///   any padding a title left.
 ///
 /// A plain synchronous read for the sampler's queue.
-struct ProcessArguments: Hashable, Sendable {
+package struct ProcessArguments: Hashable, Sendable {
     /// argv masked (`ActivityText.command`); "…cut" ends it when argv ran
     /// past `argumentLimit`.
-    let command: String
+    package let command: String
     /// An interpreter's or a package runner's label (`ActivityText.label`).
-    let label: String?
+    package let label: String?
     /// argv ran past `argumentLimit`.
-    let isCut: Bool
+    package let isCut: Bool
     /// argv[0] is a title the process wrote over its argv: `command` is
     /// that title, its arguments gone.
-    let isTitle: Bool
+    package let isTitle: Bool
     /// The agent argv names (`Agent.of(arguments:)`: argv[0]'s file —
     /// `claude`, `/opt/homebrew/bin/codex` — or the script an interpreter
     /// runs, Gemini CLI's under `node`), taken off the raw words before masking: masked, a long relative
     /// path reads as a base64 blob and the agent would be missed.
-    var agent: Agent? = nil
+    package var agent: Agent? = nil
     /// The session id after argv's first `--resume` or `-r`, hex and dashes
     /// only (`ClaudeSession.isValidID`), taken off the raw words: masked,
     /// the `-r` of `--fork-session -r <id>` goes — a session flag's value
     /// looks secret. Whose it is, a Claude's, its reader decides.
-    var resumes: String? = nil
+    package var resumes: String? = nil
     /// The markers, when the environment was scanned.
-    let markers: ProcessMarkers?
+    package let markers: ProcessMarkers?
 
     /// argv is read this far (7.3).
-    static let argumentLimit = 64 * 1024
+    package static let argumentLimit = 64 * 1024
     /// What a cut command ends with.
-    static let cutMark = "…cut"
+    package static let cutMark = "…cut"
     /// The room a region has past the length the kernel gave: an area that
     /// grows less than this between the two calls is still read whole.
-    static let slack = 4_096
+    package static let slack = 4_096
 
     /// `pid`'s, now; nil when the kernel refuses (another user's: EINVAL)
     /// or it is gone, or the area can't be read whole: larger than
     /// `kern.argmax`, or still growing. `markers`: scan the environment —
     /// never for a `CS_RESTRICT` target (`codeSigning`), whose environment
     /// the kernel leaves out anyway (3.9); unknown flags are scanned.
-    static func read(_ pid: pid_t, kernel: some ActivityKernel, markers: Bool, codeSigning: ActivityCodeSigning?) -> ProcessArguments? {
+    package static func read(_ pid: pid_t, kernel: some ActivityKernel, markers: Bool, codeSigning: ActivityCodeSigning?) -> ProcessArguments? {
         read(pid, kernel: kernel, markers: markers && codeSigning?.isRestricted != true, words: true)
     }
 
@@ -112,7 +112,7 @@ struct ProcessArguments: Hashable, Sendable {
     /// the masking is most of a read's cost (0.7 ms for an Electron
     /// helper's line). Nil when refused or gone, unreadable whole, or a
     /// `CS_RESTRICT` target's, whose environment the kernel leaves out.
-    static func markers(_ pid: pid_t, kernel: some ActivityKernel, codeSigning: ActivityCodeSigning?) -> ProcessMarkers? {
+    package static func markers(_ pid: pid_t, kernel: some ActivityKernel, codeSigning: ActivityCodeSigning?) -> ProcessMarkers? {
         guard codeSigning?.isRestricted != true else { return nil }
         return read(pid, kernel: kernel, markers: true, words: false)?.markers
     }
@@ -145,7 +145,7 @@ struct ProcessArguments: Hashable, Sendable {
     /// whatever it found; nil when refused, or when the region came back
     /// full — the kernel fills a region too small for the area with the
     /// area's tail, or zeros, and says nothing.
-    static func read(_ pid: pid_t, kernel: some ActivityKernel, markers: Bool, in region: UnsafeMutableRawBufferPointer) -> ProcessArguments? {
+    package static func read(_ pid: pid_t, kernel: some ActivityKernel, markers: Bool, in region: UnsafeMutableRawBufferPointer) -> ProcessArguments? {
         guard case .whole(let arguments) = read(pid, kernel: kernel, filling: region, { parse($0, markers: markers) }) else { return nil }
         return arguments
     }
@@ -181,7 +181,7 @@ struct ProcessArguments: Hashable, Sendable {
     /// `String` by naming it. A new name is a case here, which
     /// `ProcessArgumentsTests` holds to 9.2's rule: not `Secrets.isSecret`,
     /// no `OVERTERM_` name.
-    enum ReaderName: String, CaseIterable, Sendable {
+    package enum ReaderName: String, CaseIterable, Sendable {
         case terraformWorkspace = "TF_WORKSPACE"
         case terraformDataFolder = "TF_DATA_DIR"
         case awsProfile = "AWS_PROFILE"
@@ -198,7 +198,7 @@ struct ProcessArguments: Hashable, Sendable {
     /// target's environment is the kernel's to hide (`codeSigning`): its
     /// values nil, unscanned; unknown flags are scanned. Nil when refused or
     /// gone, or the area can't be read whole.
-    static func facts<Facts>(
+    package static func facts<Facts>(
         of pid: pid_t, kernel: some ActivityKernel, names: [ReaderName], codeSigning: ActivityCodeSigning?, valueLimit: Int = 1_024,
         _ facts: ([String], [String?]) -> Facts
     ) -> Facts? {
@@ -222,7 +222,7 @@ struct ProcessArguments: Hashable, Sendable {
     /// (7.7: ⌘V asks this inside the key equivalent). A name longer than
     /// `nameLimit` bytes is none. Nil when refused or gone, or unreadable
     /// whole.
-    static func executableName(of pid: pid_t, kernel: some ActivityKernel, nameLimit: Int = 255) -> String? {
+    package static func executableName(of pid: pid_t, kernel: some ActivityKernel, nameLimit: Int = 255) -> String? {
         read(pid, kernel: kernel) { bytes -> String? in
             guard let first = layout(of: bytes)?.words.first else { return nil }
             var end = first.lowerBound
@@ -236,14 +236,14 @@ struct ProcessArguments: Hashable, Sendable {
 
     /// `kern.argmax`: the largest region a read uses — the kernel gives no
     /// more. 1 MB when it can't be read.
-    static let argumentMaximum: Int = {
+    package static let argumentMaximum: Int = {
         var value: Int32 = 0
         var size = MemoryLayout<Int32>.size
         return sysctlbyname("kern.argmax", &value, &size, nil, 0) == 0 && value > 0 ? Int(value) : 1 << 20
     }()
 
     /// Every byte of `region` zeroed, in a way the compiler keeps.
-    static func clear(_ region: UnsafeMutableRawBufferPointer) {
+    package static func clear(_ region: UnsafeMutableRawBufferPointer) {
         guard let base = region.baseAddress, region.count > 0 else { return }
         _ = memset_s(base, region.count, 0, region.count)
     }
@@ -253,7 +253,7 @@ struct ProcessArguments: Hashable, Sendable {
     /// own strings), read in place. Pure over `bytes`; nil for a buffer
     /// that isn't that. `words` false walks past argv without making a
     /// word of it: `command` is empty, no label, nothing masked.
-    static func parse(_ bytes: UnsafeRawBufferPointer, markers scanEnvironment: Bool, words decode: Bool = true) -> ProcessArguments? {
+    package static func parse(_ bytes: UnsafeRawBufferPointer, markers scanEnvironment: Bool, words decode: Bool = true) -> ProcessArguments? {
         guard let layout = layout(of: bytes) else { return nil }
         let markers = scanEnvironment ? scan(bytes, from: layout.environment) : nil
         guard decode else { return ProcessArguments(command: "", label: nil, isCut: layout.isCut, isTitle: layout.isTitle, markers: markers) }
@@ -271,7 +271,7 @@ struct ProcessArguments: Hashable, Sendable {
     /// The word after the first `--resume` or `-r` of `words` — argv's, or
     /// a command line's split at spaces —, when it is a session id
     /// (`ClaudeSession.isValidID`); every session Sessions lists is. Pure.
-    static func resumedSession(in words: [String]) -> String? {
+    package static func resumedSession(in words: [String]) -> String? {
         guard let flag = words.firstIndex(where: { $0 == "--resume" || $0 == "-r" }), flag + 1 < words.count else { return nil }
         let id = words[flag + 1]
         return ClaudeSession.isValidID(id) ? id : nil
@@ -281,18 +281,18 @@ struct ProcessArguments: Hashable, Sendable {
     /// word yet: argv's words over `argumentLimit` (one, a title; a word
     /// cut there dropped whole: half a password no mask recognises), and
     /// where the environment's first entry starts.
-    struct Layout {
-        var words: [Range<Int>]
+    package struct Layout {
+        package var words: [Range<Int>]
         /// argv ran past `argumentLimit`.
-        var isCut: Bool
-        var isTitle: Bool
+        package var isCut: Bool
+        package var isTitle: Bool
         /// The environment's first entry: past argv's words and the NULs a
         /// title shorter than the words' area left.
-        var environment: Int
+        package var environment: Int
     }
 
     /// `bytes` read as the layout; nil for a buffer that isn't it.
-    static func layout(of bytes: UnsafeRawBufferPointer) -> Layout? {
+    package static func layout(of bytes: UnsafeRawBufferPointer) -> Layout? {
         guard bytes.count >= 4 else { return nil }
         let argc = Int(bytes.loadUnaligned(as: Int32.self))
         guard argc >= 0, argc <= bytes.count else { return nil }
@@ -387,7 +387,7 @@ struct ProcessArguments: Hashable, Sendable {
     /// The environment from `start` to the empty string that ends it, in
     /// place: an entry is compared with the four names at its start only,
     /// and only a match's value is copied out.
-    static func scan(_ bytes: UnsafeRawBufferPointer, from start: Int) -> ProcessMarkers {
+    package static func scan(_ bytes: UnsafeRawBufferPointer, from start: Int) -> ProcessMarkers {
         var markers = ProcessMarkers()
         for (index, value) in scan(bytes, from: start, names: ProcessMarkers.names, valueLimit: ProcessMarkers.valueLimit).enumerated() {
             markers[name: index] = value

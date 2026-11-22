@@ -9,34 +9,34 @@ import Foundation
 /// a panel reads nothing while it is not on screen) — or when something
 /// needs the index now: a note open in the editor, an agent asking.
 @MainActor
-final class NotesModel: ObservableObject {
-    static let shared = NotesModel()
+package final class NotesModel: ObservableObject {
+    package static let shared = NotesModel()
 
-    @Published private(set) var vault: NotesVault
-    @Published private(set) var tree: NoteItem?
-    @Published private(set) var index = NotesIndex()
-    @Published private(set) var isLoading = false
+    @Published package private(set) var vault: NotesVault
+    @Published package private(set) var tree: NoteItem?
+    @Published package private(set) var index = NotesIndex()
+    @Published package private(set) var isLoading = false
     /// Counts the index's reloads: what draws from it (the graph) redraws
     /// on a change of links, not only of names.
-    @Published private(set) var revision = 0
+    @Published package private(set) var revision = 0
     /// The name filter over the tree.
-    @Published var query = ""
+    @Published package var query = ""
     /// Open folders, by path.
-    @Published var expanded: Set<String> = []
+    @Published package var expanded: Set<String> = []
     /// The note the editor shows, highlighted in the tree.
-    @Published var current: URL?
+    @Published package var current: URL?
     /// What the panel's lower half shows; nil when it is folded away.
-    @Published var detail: NotesDetail? = NotesDetail(stored: AppEnvironment.defaults.string(forKey: NotesDetail.key)) {
+    @Published package var detail: NotesDetail? = NotesDetail(stored: AppEnvironment.defaults.string(forKey: NotesDetail.key)) {
         didSet { AppEnvironment.defaults.set(detail?.rawValue ?? "none", forKey: NotesDetail.key) }
     }
     /// A tag picked in the Tags pane: the tree lists its notes.
-    @Published var tagFilter: String?
+    @Published package var tagFilter: String?
     /// The Tasks pane over the whole vault rather than the note open.
-    @Published var tasksInVault = AppEnvironment.defaults.bool(forKey: "notesTasksInVault") {
+    @Published package var tasksInVault = AppEnvironment.defaults.bool(forKey: "notesTasksInVault") {
         didSet { AppEnvironment.defaults.set(tasksInVault, forKey: "notesTasksInVault") }
     }
     /// Notes whose tasks are folded in the vault's list.
-    @Published var foldedTaskNotes: Set<String> = []
+    @Published package var foldedTaskNotes: Set<String> = []
 
     private var showing: Set<ObjectIdentifier> = []
     private var watcher: DirectoryWatcher?
@@ -46,18 +46,18 @@ final class NotesModel: ObservableObject {
     private var loadedOnce = false
     private var loadedAt = Date.distantPast
 
-    init(vault: NotesVault? = nil) {
+    package init(vault: NotesVault? = nil) {
         self.vault = vault ?? NotesVault(root: NotesVault.root(fromSetting: Settings.shared.notesVaultPath))
     }
 
     /// Whether some window shows the panel.
-    var visible: Bool { !showing.isEmpty }
+    package var visible: Bool { !showing.isEmpty }
 
     /// The index has been read at least once.
-    var isLoaded: Bool { loadedOnce }
+    package var isLoaded: Bool { loadedOnce }
 
     /// A window says whether its Notes panel is on screen.
-    func setVisible(_ visible: Bool, for owner: AnyObject) {
+    package func setVisible(_ visible: Bool, for owner: AnyObject) {
         let was = self.visible
         if visible { showing.insert(ObjectIdentifier(owner)) } else { showing.remove(ObjectIdentifier(owner)) }
         guard self.visible != was else { return }
@@ -71,7 +71,7 @@ final class NotesModel: ObservableObject {
     }
 
     /// Settings ▸ Notes changed: another vault, read from the start.
-    func settingsChanged() {
+    package func settingsChanged() {
         let root = NotesVault.root(fromSetting: Settings.shared.notesVaultPath)
         guard root.standardizedFileURL != vault.root else { return }
         vault = NotesVault(root: root)
@@ -93,7 +93,7 @@ final class NotesModel: ObservableObject {
     ///
     /// With no panel showing there is no watcher: an index older than a few
     /// seconds is read again first — Obsidian may have written since.
-    func whenLoaded(_ body: @escaping () -> Void) {
+    package func whenLoaded(_ body: @escaping () -> Void) {
         let fresh = visible || Date().timeIntervalSince(loadedAt) < 5
         if loadedOnce, !isLoading, fresh {
             body()
@@ -105,7 +105,7 @@ final class NotesModel: ObservableObject {
 
     /// Reads the tree and the index again, off the main thread; only the
     /// notes whose date changed are parsed.
-    func reload() {
+    package func reload() {
         guard !isLoading else {
             reloadPending = true
             return
@@ -168,14 +168,14 @@ final class NotesModel: ObservableObject {
 
     /// The links into the current note, each with the line it sits on —
     /// the index's, read when the note was: drawing the pane reads nothing.
-    func backlinkLines(of path: String) -> [(source: String, line: Int, text: String)] {
+    package func backlinkLines(of path: String) -> [(source: String, line: Int, text: String)] {
         index.backlinks(of: path).map { ($0.source, $0.link.line, $0.link.context) }
     }
 
     // MARK: The vault on this Mac
 
     /// The vaults to switch between: this one, Obsidian's, and the default.
-    var knownVaults: [URL] {
+    package var knownVaults: [URL] {
         var seen = Set<String>()
         return ([vault.root] + ObsidianVaults.known() + [NotesVault.defaultRoot]).filter {
             seen.insert($0.standardizedFileURL.resolvingSymlinksInPath().path).inserted
@@ -184,7 +184,7 @@ final class NotesModel: ObservableObject {
 
     /// Makes `root` the vault, through the setting — Settings is where it is
     /// kept, so every window follows.
-    func switchVault(to root: URL) {
+    package func switchVault(to root: URL) {
         let home = NSHomeDirectory()
         var path = root.standardizedFileURL.path
         if path.hasPrefix(home + "/") { path = "~" + path.dropFirst(home.count) }
@@ -196,7 +196,7 @@ final class NotesModel: ObservableObject {
 
     /// A new, empty note — in `folder`, else where Obsidian's settings put
     /// new notes.
-    func newNote(in folder: URL?, beside current: URL? = nil) throws -> URL {
+    package func newNote(in folder: URL?, beside current: URL? = nil) throws -> URL {
         let folder = folder ?? vault.folderForNewNote(beside: current)
         let url = NotesVault.freeName("Untitled", extension: "md", in: folder)
         try NoteFiles.write("", to: url)
@@ -208,7 +208,7 @@ final class NotesModel: ObservableObject {
     /// A new Excalidraw drawing — in `folder`, else in Obsidian Excalidraw's
     /// folder — named and started as the plugin would (its template, if
     /// there is one).
-    func newDrawing(in folder: URL?, at date: Date = Date()) throws -> URL {
+    package func newDrawing(in folder: URL?, at date: Date = Date()) throws -> URL {
         let settings = ExcalidrawSettings.read(from: vault.root)
         let folder = folder ?? vault.root.appendingPathComponent(settings.folder, isDirectory: true)
         try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -222,7 +222,7 @@ final class NotesModel: ObservableObject {
         return url
     }
 
-    func newFolder(in folder: URL?) throws -> URL {
+    package func newFolder(in folder: URL?) throws -> URL {
         let url = NotesVault.freeName("Untitled", extension: "", in: folder ?? vault.root)
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         expandFolders(of: url.appendingPathComponent("x"))
@@ -232,7 +232,7 @@ final class NotesModel: ObservableObject {
 
     /// Today's note (or `date`'s), written from the daily template when it
     /// isn't there yet.
-    func dailyNote(for date: Date = Date()) throws -> URL {
+    package func dailyNote(for date: Date = Date()) throws -> URL {
         let url = vault.dailyNote(for: date)
         if !FileManager.default.fileExists(atPath: url.path) && !NoteFiles.isEvicted(url) {
             var text = ""
@@ -247,7 +247,7 @@ final class NotesModel: ObservableObject {
     }
 
     /// Opens every folder down to `url`, so the tree shows it.
-    func expandFolders(of url: URL) {
+    package func expandFolders(of url: URL) {
         var folder = url.deletingLastPathComponent().standardizedFileURL
         // Bounded, and stopping at the root (CLAUDE.md: never walk up to "/").
         for _ in 0..<64 {
@@ -257,30 +257,30 @@ final class NotesModel: ObservableObject {
         }
     }
 
-    func collapseAll() { expanded = [] }
+    package func collapseAll() { expanded = [] }
 
     /// A note's path in the vault (`.md` kept), as the index keys it.
-    func path(of url: URL) -> String { vault.relativePath(of: url) }
+    package func path(of url: URL) -> String { vault.relativePath(of: url) }
 
-    func url(of path: String) -> URL { vault.root.appendingPathComponent(path) }
+    package func url(of path: String) -> URL { vault.root.appendingPathComponent(path) }
 }
 
 /// The Notes panel's lower half: Obsidian's side panes.
-enum NotesDetail: String, CaseIterable, Identifiable {
+package enum NotesDetail: String, CaseIterable, Identifiable {
     case backlinks, outline, tags, tasks
 
-    static let key = "notesDetail"
+    package static let key = "notesDetail"
 
-    var id: String { rawValue }
+    package var id: String { rawValue }
 
-    init?(stored: String?) {
+    package init?(stored: String?) {
         if stored == "none" { return nil }
         self = stored.flatMap(NotesDetail.init(rawValue:)) ?? .backlinks
     }
 
-    var title: String { rawValue.capitalized }
+    package var title: String { rawValue.capitalized }
 
-    var symbol: String {
+    package var symbol: String {
         switch self {
         case .backlinks: "arrow.uturn.backward"
         case .outline: "list.bullet.indent"

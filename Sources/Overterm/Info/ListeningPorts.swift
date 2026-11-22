@@ -4,44 +4,62 @@ import os
 /// A port a tab's process is listening on — typically a dev server —
 /// or one a container of the tab's checkout publishes (Docker's own
 /// process holds those, so the socket walk never finds them under the tab).
-struct ListeningPort: Identifiable, Hashable {
-    let pid: pid_t
-    let process: String
-    let port: Int
+package struct ListeningPort: Identifiable, Hashable {
+    package let pid: pid_t
+    package let process: String
+    package let port: Int
     /// The bound address as lsof prints it (`*`, `127.0.0.1`, `[::1]`): of
     /// a process's sockets on the port, the widest — a wildcard, else one
     /// address that isn't loopback, else loopback.
-    let address: String
+    package let address: String
     /// The container publishing it; its service is `process`, `pid` is 0.
-    var container: String? = nil
+    package var container: String? = nil
     /// The port the compose file asks for, when Up on Free Ports moved it
     /// here for this checkout (`ComposePorts`).
-    var movedFrom: Int? = nil
+    package var movedFrom: Int? = nil
     /// A Kubernetes port-forward's (`KubeForwards`): kubectl is Overterm's
     /// child, not the tab's, so the socket walk never finds it under the
     /// tab. Its pid is kubectl's while it forwards, 0 while it restarts.
-    var forward: KubeForwardPill? = nil
+    package var forward: KubeForwardPill? = nil
     /// "tcp" or "udp".
-    var proto = "tcp"
+    package var proto = "tcp"
     /// The families its sockets serve (`insi_vflag`, docs/design/activity/
     /// analysis.md 6.8): a dual-stack socket both. None known for a
     /// container's or a forward's.
-    var families: SocketRecord.Families = []
+    package var families: SocketRecord.Families = []
     /// Who can reach it (6.8).
-    var scope = Scope.thisMac
+    package var scope = Scope.thisMac
     /// When the process holding it started, µs since 1970: with `pid`, the
     /// identity a pill's verb checks before it acts (6.12). Nil for a
     /// container's or a forward's, whose owners act for them.
-    var start: UInt64? = nil
+    package var start: UInt64? = nil
     /// Where a browser reaches it (6.8): its URL's host, from its sockets'
     /// bound addresses and families — `localhost` only where both families
     /// listen on loopback, since a client may try ::1 first and give up.
     /// Nil when there is none to open: a link-local address needs a zone
     /// id, so it is copied only.
-    var host: String? = "localhost"
+    package var host: String? = "localhost"
+
+    package init(
+        pid: pid_t, process: String, port: Int, address: String, container: String? = nil, movedFrom: Int? = nil, forward: KubeForwardPill? = nil, proto: String = "tcp",
+        families: SocketRecord.Families = [], scope: Scope = Scope.thisMac, start: UInt64? = nil, host: String? = "localhost"
+    ) {
+        self.pid = pid
+        self.process = process
+        self.port = port
+        self.address = address
+        self.container = container
+        self.movedFrom = movedFrom
+        self.forward = forward
+        self.proto = proto
+        self.families = families
+        self.start = start
+        self.host = host
+        self.scope = scope
+    }
 
     /// Who can reach a listener (6.8, Scope).
-    enum Scope: Hashable, Sendable {
+    package enum Scope: Hashable, Sendable {
         /// Loopback only: 127/8, ::1, a v4-mapped `::ffff:127.0.0.1`.
         case thisMac
         /// A wildcard (`*`, 0.0.0.0, ::): anything that can route to this
@@ -54,19 +72,19 @@ struct ListeningPort: Identifiable, Hashable {
 
     /// Its holder as the census names it, pid and start; nil for a
     /// container's or a forward's.
-    var identity: ActivityProcessID? {
+    package var identity: ActivityProcessID? {
         guard pid > 0, let start else { return nil }
         return ActivityProcessID(pid: pid, start: start)
     }
 
-    var id: String {
+    package var id: String {
         if let forward { return "forward:\(forward.id)" }
         if let container { return "\(container):\(port)" }
         return "\(pid):\(start ?? 0):\(proto):\(port)"
     }
 
     /// Where it is opened: where it listens (a forward's, https when it says so).
-    var url: URL? {
+    package var url: URL? {
         if let forward { return URL(string: "\(forward.https ? "https" : "http")://\(KubeForwardAddress.host(for: address)):\(port)") }
         guard let host else { return nil }
         return URL(string: "http://\(host):\(port)")
@@ -74,13 +92,13 @@ struct ListeningPort: Identifiable, Hashable {
 
     /// What a pill and the browser's empty page say for it: its URL's
     /// host and the port, else its bound address and the port.
-    var endpoint: String {
+    package var endpoint: String {
         if forward != nil { return "\(KubeForwardAddress.host(for: address)):\(port)" }
         return "\(host ?? address):\(port)"
     }
 
     /// Its scope as 6.8's Scope column says it.
-    var reach: String {
+    package var reach: String {
         switch scope {
         case .thisMac: "This Mac"
         case .network: "Network"
@@ -91,7 +109,7 @@ struct ListeningPort: Identifiable, Hashable {
 
 /// What listens, as the census's socket walk reads it (docs/design/
 /// activity/analysis.md, 7.6): no reading path runs lsof.
-enum ListeningPorts {
+package enum ListeningPorts {
     /// Whoever of the user's listens on `port` — a TCP listener, or a bound
     /// UDP socket for `udp` — as a one-off census reads it
     /// (docs/design/activity/analysis.md, 7.6: `ActivityMonitor.census`, at
@@ -99,14 +117,14 @@ enum ListeningPorts {
     /// lsof saw: every process of the user's, and nobody else's — root's
     /// and other users' listeners come from nettop (stage 4). Nil when
     /// nothing of the user's holds it, or the table can't be read.
-    static func holder(of port: Int, proto: String = "tcp") async -> ListeningPort? {
+    package static func holder(of port: Int, proto: String = "tcp") async -> ListeningPort? {
         guard let snapshot = await ActivityMonitor.shared.census() else { return nil }
         return holder(of: port, proto: proto, in: snapshot)
     }
 
     /// Of what `snapshot` read, the oldest process holding `port` — every
     /// socket it holds there as one entry, as `of` makes them. Pure.
-    static func holder(of port: Int, proto: String = "tcp", in snapshot: ActivitySnapshot) -> ListeningPort? {
+    package static func holder(of port: Int, proto: String = "tcp", in snapshot: ActivitySnapshot) -> ListeningPort? {
         let udp = proto == "udp"
         for identity in snapshot.facts.keys.sorted() {
             guard let facts = snapshot.facts[identity], let sockets = facts.sockets else { continue }
@@ -118,7 +136,7 @@ enum ListeningPorts {
 
     /// Of what `snapshot` read, every process holding `port`: a pre-fork
     /// server's workers share its listener, a child inherits it. Pure.
-    static func holders(of port: Int, proto: String = "tcp", in snapshot: ActivitySnapshot) -> [ActivityProcessID] {
+    package static func holders(of port: Int, proto: String = "tcp", in snapshot: ActivitySnapshot) -> [ActivityProcessID] {
         let udp = proto == "udp"
         return snapshot.facts.keys.sorted().filter { identity in
             snapshot.facts[identity]?.sockets?.records.contains { Int($0.localPort) == port && (udp ? $0.isBoundUDP : $0.isListening) } == true
@@ -140,7 +158,7 @@ enum ListeningPorts {
     /// that restart fail (EADDRINUSE), after which "free" would be said of
     /// a server the check broke. A port is watched with the census's
     /// socket walk (`holder(of:)`).
-    static func isBound(_ port: Int, proto: String = "tcp", probing addresses: [ProbeAddress] = probeAddresses()) -> Bool {
+    package static func isBound(_ port: Int, proto: String = "tcp", probing addresses: [ProbeAddress] = probeAddresses()) -> Bool {
         guard (1...65535).contains(port) else { return false }
         probed.withLock { $0[port, default: 0] += 1 }
         let type = proto == "udp" ? SOCK_DGRAM : SOCK_STREAM
@@ -152,19 +170,19 @@ enum ListeningPorts {
     private static let probed = OSAllocatedUnfairLock<[Int: Int]>(initialState: [:])
 
     /// The bind probes `port` has had in this process.
-    static func bindProbes(of port: Int) -> Int { probed.withLock { $0[port] ?? 0 } }
+    package static func bindProbes(of port: Int) -> Int { probed.withLock { $0[port] ?? 0 } }
 
     /// One address a bind probe tries: its family, its text, and the
     /// interface a link-local one is scoped to.
-    struct ProbeAddress: Hashable, Sendable {
-        let family: Int32
-        let address: String
-        var scope: UInt32 = 0
+    package struct ProbeAddress: Hashable, Sendable {
+        package let family: Int32
+        package let address: String
+        package var scope: UInt32 = 0
     }
 
     /// The wildcard and loopback addresses of both families, then every
     /// other address of this Mac's interfaces (`getifaddrs`), each once.
-    static func probeAddresses() -> [ProbeAddress] {
+    package static func probeAddresses() -> [ProbeAddress] {
         var found = [
             ProbeAddress(family: AF_INET, address: "0.0.0.0"), ProbeAddress(family: AF_INET, address: "127.0.0.1"),
             ProbeAddress(family: AF_INET6, address: "::"), ProbeAddress(family: AF_INET6, address: "::1"),
@@ -174,7 +192,7 @@ enum ListeningPorts {
     }
 
     /// This Mac's interfaces' IPv4 and IPv6 addresses, loopback's left out.
-    static func interfaceAddresses() -> [ProbeAddress] {
+    package static func interfaceAddresses() -> [ProbeAddress] {
         var head: UnsafeMutablePointer<ifaddrs>?
         guard getifaddrs(&head) == 0, let first = head else { return [] }
         defer { freeifaddrs(head) }
@@ -254,7 +272,7 @@ enum ListeningPorts {
     /// lsof. A process's sockets on one protocol and port are one entry,
     /// its v4 and v6 together: their families, the widest scope, the URL
     /// their bound addresses give (6.8), the holder's start.
-    static func of(_ members: [ActivityProcessID], in snapshot: ActivitySnapshot, udp: Bool = false) -> [ListeningPort] {
+    package static func of(_ members: [ActivityProcessID], in snapshot: ActivitySnapshot, udp: Bool = false) -> [ListeningPort] {
         var result: [ListeningPort] = []
         var seen = Set<String>()
         for identity in members {
@@ -275,7 +293,7 @@ enum ListeningPorts {
     }
 
     /// One process's sockets on one protocol and port as one entry.
-    static func port(_ records: [SocketRecord], holder: ActivityProcessID, name: String) -> ListeningPort? {
+    package static func port(_ records: [SocketRecord], holder: ActivityProcessID, name: String) -> ListeningPort? {
         guard let first = records.first else { return nil }
         let bound = records.map { (address: $0.localAddress, families: $0.families) }
         let widest =
@@ -290,7 +308,7 @@ enum ListeningPorts {
     /// panes `snapshot` read holding `port` (a TCP listener), with the
     /// holder's name: Docker's "a tab holds the port". A pane the snapshot
     /// has for another tab isn't this one's. Pure.
-    static func tab(holding port: Int, among tabs: [(id: UUID, title: String, tags: [String])], in snapshot: ActivitySnapshot) -> (
+    package static func tab(holding port: Int, among tabs: [(id: UUID, title: String, tags: [String])], in snapshot: ActivitySnapshot) -> (
         UUID, String, String
     )? {
         for tab in tabs {
@@ -305,7 +323,7 @@ enum ListeningPorts {
     }
 
     /// A socket's bound address as lsof prints it.
-    static func address(of record: SocketRecord) -> String {
+    package static func address(of record: SocketRecord) -> String {
         guard let local = record.localAddress, !local.isWildcard else { return "*" }
         if case .v6 = local { return "[\(local.description)]" }
         return local.description
@@ -321,7 +339,7 @@ enum ListeningPorts {
     /// of 127/8 (a loopback alias, `ifconfig lo0 alias 127.0.0.2`) is one
     /// address too: 127.0.0.1 doesn't reach it, and may reach another
     /// checkout's server on the same port. Pure.
-    static func host(of bound: [(address: ActivityAddress?, families: SocketRecord.Families)]) -> String? {
+    package static func host(of bound: [(address: ActivityAddress?, families: SocketRecord.Families)]) -> String? {
         var loopbackV4 = false
         var loopbackV6 = false
         var specific: ActivityAddress?
@@ -352,7 +370,7 @@ enum ListeningPorts {
     /// Who can reach a listener bound to `bound` (6.8): a wildcard is the
     /// network, one address that isn't loopback that address, else this
     /// Mac. Pure.
-    static func scope(of bound: [(address: ActivityAddress?, families: SocketRecord.Families)]) -> ListeningPort.Scope {
+    package static func scope(of bound: [(address: ActivityAddress?, families: SocketRecord.Families)]) -> ListeningPort.Scope {
         if bound.contains(where: { $0.address?.isWildcard == true }) { return .network }
         if bound.contains(where: { $0.address.map { !$0.isLoopback } ?? false }) { return .oneAddress }
         return .thisMac
@@ -361,7 +379,7 @@ enum ListeningPorts {
     /// A published port's host address (Docker's `HostIp`; nil for every
     /// address) as its URL's host, as `PublishedPort` reaches it, and its
     /// scope.
-    static func published(hostIP: String?) -> (host: String, scope: ListeningPort.Scope) {
+    package static func published(hostIP: String?) -> (host: String, scope: ListeningPort.Scope) {
         guard let hostIP, !["0.0.0.0", "::", "*"].contains(hostIP) else { return ("localhost", .network) }
         let host = hostIP.contains(":") ? "[\(hostIP)]" : hostIP
         return (host, KubeForwardAddress.isLoopback(hostIP) ? .thisMac : .oneAddress)

@@ -3,97 +3,97 @@ import JavaScriptCore
 
 /// One test's result: a `test()` in a tests block or script, or a line of
 /// the `assert` block.
-struct APITestResult: Equatable, Hashable, Sendable, Identifiable {
-    var name: String
-    var passed: Bool
-    var error: String?
-    var milliseconds: Double = 0
+package struct APITestResult: Equatable, Hashable, Sendable, Identifiable {
+    package var name: String
+    package var passed: Bool
+    package var error: String?
+    package var milliseconds: Double = 0
     /// From the assert block rather than a `test()`.
-    var isAssertion = false
-    var id: String { name + (isAssertion ? "#assert" : "#test") }
+    package var isAssertion = false
+    package var id: String { name + (isAssertion ? "#assert" : "#test") }
 }
 
 /// A line a script logged.
-struct APILogLine: Equatable, Hashable, Sendable {
-    enum Level: String, Sendable { case log, warn, error }
-    var level: Level
-    var text: String
+package struct APILogLine: Equatable, Hashable, Sendable {
+    package enum Level: String, Sendable { case log, warn, error }
+    package var level: Level
+    package var text: String
 }
 
 /// What one script phase did: variables it set, the request as it left
 /// it, tests, logs, and the runner's instructions.
-struct APIScriptOutcome: Equatable, Sendable {
+package struct APIScriptOutcome: Equatable, Sendable {
     /// Runtime variables set, as `{{name}}` reads them (text) …
-    var runtime: [String: String] = [:]
+    package var runtime: [String: String] = [:]
     /// … and as JavaScript values, JSON-encoded: the next script's
     /// `bru.getVar` gets the object or number back, as in Bruno.
-    var runtimeJSON: [String: String] = [:]
-    var deleted: [String] = []
-    var environment: [String: String] = [:]
-    var tests: [APITestResult] = []
-    var logs: [APILogLine] = []
+    package var runtimeJSON: [String: String] = [:]
+    package var deleted: [String] = []
+    package var environment: [String: String] = [:]
+    package var tests: [APITestResult] = []
+    package var logs: [APILogLine] = []
     /// `bru.setNextRequest(name)`: the runner goes there next;
     /// `setNextRequest(null)` and `runner.stopExecution()` set `stop`.
-    var nextRequest: String?
-    var skip = false
-    var stop = false
+    package var nextRequest: String?
+    package var skip = false
+    package var stop = false
     /// What `req` holds after a pre-request script that changed it.
-    var request: APIScriptRequest?
+    package var request: APIScriptRequest?
     /// `res.setBody(…)`, as JSON text.
-    var responseBody: String?
+    package var responseBody: String?
     /// The script threw, or ran past its time.
-    var failure: String?
+    package var failure: String?
 }
 
 /// The request as a script sees and changes it.
-struct APIScriptRequest: Equatable, Sendable, Codable {
-    var url: String
-    var method: String
-    var headers: [String: String]
+package struct APIScriptRequest: Equatable, Sendable, Codable {
+    package var url: String
+    package var method: String
+    package var headers: [String: String]
     /// JSON text for a JSON body, the text for any other.
-    var body: String?
-    var timeout: Double?
+    package var body: String?
+    package var timeout: Double?
     /// The script set the body to null: nothing is sent, rather than the
     /// body it replaced.
-    var bodyCleared = false
+    package var bodyCleared = false
 }
 
 /// What the runtime hands a script about the world around it.
-struct APIScriptInput: Sendable {
-    var requestName = ""
-    var collectionName = ""
-    var environmentName: String?
+package struct APIScriptInput: Sendable {
+    package var requestName = ""
+    package var collectionName = ""
+    package var environmentName: String?
     /// Every variable, merged: what `bru.getVar` falls back to.
-    var variables: [String: String] = [:]
-    var runtime: [String: String] = [:]
+    package var variables: [String: String] = [:]
+    package var runtime: [String: String] = [:]
     /// The runtime variables as JSON-encoded values, where they are known.
-    var runtimeJSON: [String: String] = [:]
-    var environment: [String: String] = [:]
-    var requestVars: [String: String] = [:]
-    var folderVars: [String: String] = [:]
-    var collectionVars: [String: String] = [:]
-    var processEnv: [String: String] = [:]
-    var request = APIScriptRequest(url: "", method: "GET", headers: [:], body: nil)
-    var response: APIResponse?
+    package var runtimeJSON: [String: String] = [:]
+    package var environment: [String: String] = [:]
+    package var requestVars: [String: String] = [:]
+    package var folderVars: [String: String] = [:]
+    package var collectionVars: [String: String] = [:]
+    package var processEnv: [String: String] = [:]
+    package var request = APIScriptRequest(url: "", method: "GET", headers: [:], body: nil)
+    package var response: APIResponse?
 }
 
 /// Runs Bruno's scripts, tests and assertions in JavaScriptCore — off the
 /// main thread, on a queue of its own, each run in a fresh context, with
 /// a time limit so a loop that never ends doesn't hold the request.
-final class APIScriptRuntime: @unchecked Sendable {
-    static let shared = APIScriptRuntime()
+package final class APIScriptRuntime: @unchecked Sendable {
+    package static let shared = APIScriptRuntime()
 
     private let queue = DispatchQueue(label: "overterm.api-scripts", qos: .userInitiated)
     private let machine: JSVirtualMachine
-    var timeLimit: Double = 10
+    package var timeLimit: Double = 10
 
-    init() {
+    package init() {
         // Made on the queue's first use would do as well; JSVirtualMachine
         // is fine to create anywhere, used only on `queue`.
         machine = JSVirtualMachine()
     }
 
-    enum Phase: Sendable {
+    package enum Phase: Sendable {
         case preRequest(String)
         case postResponse(String)
         case tests(String)
@@ -103,7 +103,7 @@ final class APIScriptRuntime: @unchecked Sendable {
         case capture([BruPair])
     }
 
-    func run(_ phase: Phase, input: APIScriptInput) async -> APIScriptOutcome {
+    package func run(_ phase: Phase, input: APIScriptInput) async -> APIScriptOutcome {
         await withCheckedContinuation { continuation in
             queue.async { [self] in continuation.resume(returning: runNow(phase, input: input)) }
         }
@@ -236,7 +236,7 @@ final class APIScriptRuntime: @unchecked Sendable {
     /// is written: JSONSerialization raises an Objective-C exception, which
     /// `try?` doesn't catch, for anything it can't write — a bare number
     /// without .fragmentsAllowed took the app down (req.setBody(42)).
-    static func jsonText(_ value: Any, pretty: Bool = false) -> String? {
+    package static func jsonText(_ value: Any, pretty: Bool = false) -> String? {
         guard JSONSerialization.isValidJSONObject([value]) else { return nil }
         var options: JSONSerialization.WritingOptions = [.fragmentsAllowed, .withoutEscapingSlashes]
         if pretty { options.insert(.prettyPrinted) }

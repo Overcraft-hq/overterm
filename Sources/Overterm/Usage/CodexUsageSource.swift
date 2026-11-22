@@ -14,8 +14,8 @@ import Foundation
 /// `last_token_usage` per turn; and `cached_input_tokens` is *part of*
 /// `input_tokens` (input + output == total), where Claude counts them
 /// separately.
-enum CodexUsageSource {
-    static func isPresent(in directory: URL = AppEnvironment.codexSessionsDirectory) -> Bool {
+package enum CodexUsageSource {
+    package static func isPresent(in directory: URL = AppEnvironment.codexSessionsDirectory) -> Bool {
         FileManager.default.fileExists(atPath: directory.path)
     }
 
@@ -23,7 +23,7 @@ enum CodexUsageSource {
 
     /// The rollout files, newest first. The tree is a day per directory,
     /// so this is an enumerator rather than a sort of everything.
-    static func rollouts(since: Date? = nil, limit: Int = 400, in directory: URL = AppEnvironment.codexSessionsDirectory) -> [URL] {
+    package static func rollouts(since: Date? = nil, limit: Int = 400, in directory: URL = AppEnvironment.codexSessionsDirectory) -> [URL] {
         let manager = FileManager.default
         guard
             let walk = manager.enumerator(
@@ -59,7 +59,7 @@ enum CodexUsageSource {
     /// is read off `window_minutes` — the fields are named "primary" and
     /// "secondary" and they swap: early in a session the primary is the
     /// weekly one.
-    static func limits(in line: UnsafeRawBufferPointer) -> (meters: [UsageMeter], plan: String?)? {
+    package static func limits(in line: UnsafeRawBufferPointer) -> (meters: [UsageMeter], plan: String?)? {
         guard let at = UsageBytes.find(rateLimitsKey, in: line) else { return nil }
         let limits = UnsafeRawBufferPointer(rebasing: line[at...])
         var meters = [UsageMeter]()
@@ -87,7 +87,7 @@ enum CodexUsageSource {
         return (meters.sorted { $0.name < $1.name }, UsageBytes.string(after: planKey, in: limits))
     }
 
-    static func name(forWindow minutes: Int) -> String {
+    package static func name(forWindow minutes: Int) -> String {
         switch minutes {
         case ..<90: "Hourly"
         case ..<1440: "\(minutes / 60)-hour"
@@ -99,7 +99,7 @@ enum CodexUsageSource {
 
     /// The newest rollout's last `token_count` — the freshest thing Codex
     /// has written down about your quota.
-    static func newestLimits() -> (meters: [UsageMeter], plan: String?, at: Date?)? {
+    package static func newestLimits() -> (meters: [UsageMeter], plan: String?, at: Date?)? {
         for file in rollouts(limit: 8) {
             guard let line = lastTokenCount(in: file) else { continue }
             let found = line.withUnsafeBytes { limits(in: $0) }
@@ -113,7 +113,7 @@ enum CodexUsageSource {
     /// Walks back through a rollout until it finds a `token_count` line.
     /// They are not near the end of a long session's file — a rollout here
     /// reaches 65 MB — so the walk grows rather than taking a fixed tail.
-    static func lastTokenCount(in file: URL) -> Data? {
+    package static func lastTokenCount(in file: URL) -> Data? {
         guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
         defer { try? handle.close() }
         var end = (try? handle.seekToEnd()) ?? 0
@@ -146,7 +146,7 @@ enum CodexUsageSource {
     /// A turn's own tokens. `cached_input_tokens` is part of
     /// `input_tokens`, so the cached part is taken out and charged at the
     /// cache rate; `reasoning_output_tokens` is already inside the output.
-    static func line(_ line: UnsafeRawBufferPointer, model: String?) -> UsageLine? {
+    package static func line(_ line: UnsafeRawBufferPointer, model: String?) -> UsageLine? {
         guard UsageBytes.has(tokenCountKey, in: line), let at = UsageBytes.timestamp(timestampKey, in: line),
             let usageAt = UsageBytes.find(lastUsageKey, in: line)
         else { return nil }
@@ -162,7 +162,7 @@ enum CodexUsageSource {
 
     /// The model a rollout ran: it is named in the session's own header,
     /// not in the turns.
-    static func model(of file: URL) -> String? {
+    package static func model(of file: URL) -> String? {
         guard let handle = try? FileHandle(forReadingFrom: file) else { return nil }
         defer { try? handle.close() }
         let head = autoreleasepool { handle.readData(ofLength: 256 << 10) }
@@ -172,7 +172,7 @@ enum CodexUsageSource {
         }
     }
 
-    static func spend(since: Date, scanner: UsageTailScanner) -> UsageSpend {
+    package static func spend(since: Date, scanner: UsageTailScanner) -> UsageSpend {
         var byModel = [String: UsageTokens]()
         for file in rollouts(since: since) {
             let model = model(of: file)
@@ -183,7 +183,7 @@ enum CodexUsageSource {
         return UsageSpend.of(byModel)
     }
 
-    static func snapshot(scope: UsageScope, scanner: UsageTailScanner, cost: Bool, now: Date = Date()) -> UsageSnapshot? {
+    package static func snapshot(scope: UsageScope, scanner: UsageTailScanner, cost: Bool, now: Date = Date()) -> UsageSnapshot? {
         guard isPresent() else { return nil }
         var snapshot = UsageSnapshot(provider: .codex)
         if let found = newestLimits() {

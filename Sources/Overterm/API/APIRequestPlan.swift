@@ -5,38 +5,38 @@ import UniformTypeIdentifiers
 /// collection's headers and auth around it, every `{{variable}}` filled in,
 /// the body made. Pure — nothing is sent, so tests and `Copy as cURL` see
 /// exactly what Send would.
-struct APIRequestPlan: Equatable, Sendable {
-    var method: String
-    var url: URL
+package struct APIRequestPlan: Equatable, Sendable {
+    package var method: String
+    package var url: URL
     /// In order, names as written; a later one replaces an earlier one of
     /// the same name, case aside.
-    var headers: [(name: String, value: String)]
-    var body: Data?
+    package var headers: [(name: String, value: String)]
+    package var body: Data?
     /// The parts of a multipart body, kept for display and cURL.
-    var multipart: [MultipartPart] = []
+    package var multipart: [MultipartPart] = []
     /// Variables the request uses that nothing defines.
-    var unresolved: [String] = []
+    package var unresolved: [String] = []
 
-    static func == (a: APIRequestPlan, b: APIRequestPlan) -> Bool {
+    package static func == (a: APIRequestPlan, b: APIRequestPlan) -> Bool {
         a.method == b.method && a.url == b.url && a.headers.map(\.name) == b.headers.map(\.name)
             && a.headers.map(\.value) == b.headers.map(\.value) && a.body == b.body && a.multipart == b.multipart
             && a.unresolved == b.unresolved
     }
 
-    struct MultipartPart: Equatable, Sendable {
-        var name: String
-        var value: String?
-        var file: URL?
-        var contentType: String?
+    package struct MultipartPart: Equatable, Sendable {
+        package var name: String
+        package var value: String?
+        package var file: URL?
+        package var contentType: String?
     }
 
-    enum Problem: LocalizedError, Equatable {
+    package enum Problem: LocalizedError, Equatable {
         case badURL(String)
         case unsupportedAuth(String)
         case missingFile(String)
         case badGraphQLVariables(String)
 
-        var errorDescription: String? {
+        package var errorDescription: String? {
             switch self {
             case .badURL(let url): "“\(url)” isn't a URL."
             case .unsupportedAuth(let mode): "Overterm doesn't send \(mode) auth yet — run this request with bru."
@@ -46,23 +46,23 @@ struct APIRequestPlan: Equatable, Sendable {
         }
     }
 
-    func header(_ name: String) -> String? {
+    package func header(_ name: String) -> String? {
         headers.last { $0.name.caseInsensitiveCompare(name) == .orderedSame }?.value
     }
 
     /// Everything around a request file that decides how it is sent.
-    struct Context: Sendable {
-        var collectionRoot: URL?
+    package struct Context: Sendable {
+        package var collectionRoot: URL?
         /// collection.bru, then each folder.bru from the outside in.
-        var collectionFile: BruFile?
-        var folderFiles: [BruFile] = []
-        var variables = APIVariables()
+        package var collectionFile: BruFile?
+        package var folderFiles: [BruFile] = []
+        package var variables = APIVariables()
         /// Headers a pre-request script deleted (lower case): gone even when
         /// the collection or a folder sets them.
-        var removedHeaders: Set<String> = []
+        package var removedHeaders: Set<String> = []
     }
 
-    static func make(_ file: BruFile, context: Context) throws -> APIRequestPlan {
+    package static func make(_ file: BruFile, context: Context) throws -> APIRequestPlan {
         // The context brings the environment, the runtime and process.env;
         // the files bring their own layers.
         var vars = context.variables
@@ -193,7 +193,7 @@ struct APIRequestPlan: Equatable, Sendable {
 
     /// The request's auth, or — `inherit` — the nearest folder's that says
     /// one, else the collection's.
-    static func effectiveAuth(_ file: BruFile, context: Context) -> (BruFile, BruFile.AuthMode) {
+    package static func effectiveAuth(_ file: BruFile, context: Context) -> (BruFile, BruFile.AuthMode) {
         guard file.authMode == .inherit else { return (file, file.authMode) }
         for folder in context.folderFiles.reversed() where folder.has("auth") {
             let mode = folder.defaultAuthMode
@@ -206,7 +206,7 @@ struct APIRequestPlan: Equatable, Sendable {
     // MARK: Pieces
 
     /// `/users/:id` with `id` → `/users/42`; only whole path segments.
-    static func replacePathParam(_ name: String, with value: String, in address: String) -> String {
+    package static func replacePathParam(_ name: String, with value: String, in address: String) -> String {
         let queryStart = address.firstIndex(where: { $0 == "?" || $0 == "#" }) ?? address.endIndex
         let path = address[..<queryStart]
         let rest = address[queryStart...]
@@ -217,7 +217,7 @@ struct APIRequestPlan: Equatable, Sendable {
     /// Parsed as given when it already is a URL; else with what isn't
     /// allowed in one percent-encoded (spaces, non-ASCII), as Bruno's
     /// encodeUrl does — `%` already there is left alone.
-    static func makeURL(_ address: String, encode: Bool) -> URL? {
+    package static func makeURL(_ address: String, encode: Bool) -> URL? {
         guard !address.isEmpty else { return nil }
         if let url = URL(string: address), url.scheme != nil, url.host != nil { return url }
         guard encode else { return nil }
@@ -228,37 +228,37 @@ struct APIRequestPlan: Equatable, Sendable {
     }
 
     /// application/x-www-form-urlencoded, as Bruno's (qs) writes it.
-    static func formEncode(_ text: String) -> String {
+    package static func formEncode(_ text: String) -> String {
         var allowed = CharacterSet.alphanumerics
         allowed.insert(charactersIn: "-._~")
         return text.addingPercentEncoding(withAllowedCharacters: allowed) ?? text
     }
 
     /// `@file(path)` → path.
-    static func filePath(_ value: String) -> String? {
+    package static func filePath(_ value: String) -> String? {
         let trimmed = value.trimmingCharacters(in: .whitespaces)
         guard trimmed.hasPrefix("@file("), trimmed.hasSuffix(")") else { return nil }
         return String(trimmed.dropFirst(6).dropLast())
     }
 
     /// `value @contentType(type)` → (value, type).
-    static func splitContentType(_ value: String) -> (String, String?) {
+    package static func splitContentType(_ value: String) -> (String, String?) {
         guard let marker = value.range(of: " @contentType("), value.hasSuffix(")") else { return (value, nil) }
         let type = value[marker.upperBound..<value.index(before: value.endIndex)]
         return (String(value[..<marker.lowerBound]), String(type))
     }
 
-    static func resolve(_ path: String, against root: URL?) -> URL {
+    package static func resolve(_ path: String, against root: URL?) -> URL {
         let expanded = (path as NSString).expandingTildeInPath
         if expanded.hasPrefix("/") { return URL(fileURLWithPath: expanded) }
         return (root ?? URL(fileURLWithPath: FileManager.default.currentDirectoryPath)).appendingPathComponent(expanded)
     }
 
-    static func mimeType(of url: URL) -> String {
+    package static func mimeType(of url: URL) -> String {
         UTType(filenameExtension: url.pathExtension)?.preferredMIMEType ?? "application/octet-stream"
     }
 
-    static func multipartBody(_ parts: [MultipartPart], boundary: String) throws -> Data {
+    package static func multipartBody(_ parts: [MultipartPart], boundary: String) throws -> Data {
         var data = Data()
         for part in parts {
             data.append(Data("--\(boundary)\r\n".utf8))
@@ -282,7 +282,7 @@ struct APIRequestPlan: Equatable, Sendable {
     // MARK: cURL
 
     /// The request as a cURL command, one option a line.
-    var curl: String {
+    package var curl: String {
         func quote(_ text: String) -> String { "'" + text.replacingOccurrences(of: "'", with: "'\\''") + "'" }
         var lines = ["curl -X \(method) \(quote(url.absoluteString))"]
         for header in headers where !(header.name.lowercased() == "content-type" && !multipart.isEmpty) {
