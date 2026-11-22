@@ -139,6 +139,9 @@ cat > "$CONTENTS/Info.plist" <<PLIST
     <string>${COMMIT}</string>
     <key>OvertermBuildDate</key>
     <string>${BUILD_DATE}</string>
+    <!-- release or debug: make-dmg.sh packs only a release one. -->
+    <key>OvertermBuildConfiguration</key>
+    <string>${CONFIG}</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleIconFile</key>
