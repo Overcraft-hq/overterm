@@ -5,6 +5,12 @@ package struct ContentMatch: Hashable {
     package let path: String
     package let line: Int
     package let text: String
+
+    package init(path: String, line: Int, text: String) {
+        self.path = path
+        self.line = line
+        self.text = text
+    }
 }
 
 /// Searches a checkout: file names (fuzzy) and file contents (git grep).

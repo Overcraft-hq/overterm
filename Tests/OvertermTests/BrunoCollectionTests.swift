@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// A collection on disk: found, its tree in Bruno's order, its environments;
 /// and the variables a request sees, layered as Bruno layers them.

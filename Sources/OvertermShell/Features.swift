@@ -9,18 +9,7 @@ import Foundation
 final class OvertermFeatures: NSObject {
     @objc static func install() {
         APIFeature.install()
-        BrowserMCP.featuresStorage.append(
-            BrowserMCP.Provider(
-                handles: { $0.hasPrefix("notes_") }, enabled: { $0.notesAgentAccess },
-                unavailable: "The notes aren't available to agents — Settings ▸ Notes.",
-                tools: { NotesMCP.tools },
-                instructions: { settings in
-                    "The user's notes (an Obsidian vault): notes_search finds notes by name, #tag or what they say, notes_read reads one with its links — for context the user keeps there. Read-only."
-                        + (settings.notesAgentDrawings
-                            ? " notes_draw makes a new Excalidraw drawing from boxes, arrows and text — a diagram the user asked for, opened beside the terminal."
-                            : "")
-                },
-                call: { name, arguments, _ in try await NotesMCP.call(name, arguments, notes: NotesModel.shared) }))
+        NotesFeature.install()
         DatabaseFeature.install()
         DockerFeature.install()
         KubernetesFeature.install()

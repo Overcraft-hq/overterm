@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// `k8s_gitops` where no Argo CD Application here deploys the apps (docs/
 /// design/kubernetes/gitops.md, 14.2.6, D6) against `FakeKubeAPI`'s spoke on

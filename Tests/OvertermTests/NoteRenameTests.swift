@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// A rename's links written again — only the ones that would break, with
 /// everything else about them kept.

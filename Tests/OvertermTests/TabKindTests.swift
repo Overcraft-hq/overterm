@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// What a tab's icon says it is. The rule decides a glyph people read
 /// without looking, so it has to be boring and predictable.

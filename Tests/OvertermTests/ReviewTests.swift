@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// A whole patch cut into files, as `gh pr diff` gives one.
 final class ReviewPatchTests: XCTestCase {

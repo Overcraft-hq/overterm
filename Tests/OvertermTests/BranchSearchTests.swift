@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Overgit ▸ Branches ▸ Filter branches.
 final class BranchSearchTests: XCTestCase {

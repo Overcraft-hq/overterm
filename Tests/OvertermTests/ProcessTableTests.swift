@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Every process from one `KERN_PROC_ALL` (docs/design/activity/analysis.md,
 /// 7.2, 6.5): sized with headroom and read again when full, parents linked

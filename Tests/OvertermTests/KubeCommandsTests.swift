@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// A pod's commands in a tab — a shell, attach, a log followed: the lines
 /// built (`--context` and `-n` always, quoted for zsh), the process class

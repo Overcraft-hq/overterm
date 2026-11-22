@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The Server page, editing and users for the kinds whose rows are
 /// documents or items — MongoDB and DocumentDB, Elasticsearch and

@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Tab logic on real Tabs. The Ghostty runtime is never initialized in the
 /// unit-test process, so each TerminalView is surfaceless: no ptys.

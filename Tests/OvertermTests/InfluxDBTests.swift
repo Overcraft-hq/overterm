@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// InfluxDB: the console's statements and checks, InfluxQL's JSON and
 /// Flux's annotated CSV as rows, the version from `/ping` — offline; the

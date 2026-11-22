@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Bruno's scripts and tests in JavaScriptCore: what `bru`, `req`, `res`,
 /// `test` and `expect` do, the assert block, and a whole request run

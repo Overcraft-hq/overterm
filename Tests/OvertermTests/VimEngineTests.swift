@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// A text view stand-in: NSMutableString, a selection, and undo by whole
 /// snapshots per outermost group, the cursor at the change like NSTextView's.

@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// A stored file's preview, from its name and first bytes.
 final class FilePreviewTests: XCTestCase {

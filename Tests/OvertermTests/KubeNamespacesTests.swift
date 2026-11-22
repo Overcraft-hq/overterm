@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Several namespaces at once: the scope's one spelling, the merge of a
 /// follow each, the cap (one watch across the cluster, filtered — refused

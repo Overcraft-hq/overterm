@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 final class AgentOverviewTests: XCTestCase {
     private func lines(_ objects: [String]) -> [Data] { objects.map { Data($0.utf8) } }

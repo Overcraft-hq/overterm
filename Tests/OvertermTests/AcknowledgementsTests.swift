@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Settings ▸ About ▸ Acknowledgements says what this build ships: the list
 /// moves with the pins, or `Scripts/fetch-licenses.sh` is due.

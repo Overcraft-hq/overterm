@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The pages over the body as declared (`WorkspacePage`) and made
 /// (`WorkspacePages`): no window, plain views.

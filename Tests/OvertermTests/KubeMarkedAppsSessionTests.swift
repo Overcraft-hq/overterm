@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The apps read from Argo CD's marks (`KubeMarkedAppsSession`, gitops.md
 /// 14.4) against a fake spoke on a socket of the tests' own

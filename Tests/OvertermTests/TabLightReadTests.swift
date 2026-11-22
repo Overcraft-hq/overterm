@@ -11,6 +11,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The light tick's consumers from a fake census (docs/design/activity/
 /// analysis.md, 7.8's agent-poll row): what a tab's panes listen on, each

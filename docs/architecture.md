@@ -19,6 +19,7 @@ module, each its own) and a change rebuilds what is above it only:
 | `OvertermKubernetes` | Kubernetes (over Docker — its images and CLI — and the API client) |
 | `OvertermTerraform` | Terraform (over Kubernetes: a context's class) |
 | `OvertermOvergit` | the git panel (⌥⌘G), beside the features: only the window shows it |
+| `OvertermNotes` | the notes vault (⌥⌘N), beside the features; the editor reaches a note's Live Preview, reading view, drawing, completion and templates through `EditorNotes` (`NotesEditor`) |
 | `OvertermShell` | the window and what holds the features together: `TerminalWindowController` and its extensions, the app delegate, the menus, the right slot, the sidebar, Tab Info, the Inbox's view, the review page, the E2E scenarios; `OvertermFeatures` |
 
 `OvertermApp` (`Sources/OvertermApp/main.swift`) calls `AppMain.run()`; its

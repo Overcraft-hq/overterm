@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// A context's settings in one sheet: read from `kubernetes.contexts` and
 /// `kubernetes.agentWrites`, written back with the entry's other fields and

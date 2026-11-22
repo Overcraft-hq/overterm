@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// A workload's pods by owner, its top five and the rest, by revision; a
 /// namespace's top eight workloads, its pods by phase, its quota and what

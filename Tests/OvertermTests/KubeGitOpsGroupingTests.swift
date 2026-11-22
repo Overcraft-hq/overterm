@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// G4 (docs/design/kubernetes/gitops.md, 2.8): `G` groups the GitOps
 /// section by tool, source, owner or destination, and the filter's `is:`,

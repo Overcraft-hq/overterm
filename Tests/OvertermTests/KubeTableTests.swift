@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The pure half of the Kubernetes client: Tables read (columns and their
 /// priorities, rows known by namespace and name, the List fallback), a

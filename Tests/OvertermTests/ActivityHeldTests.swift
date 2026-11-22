@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// What Activity stopped and put in the background (docs/design/activity/
 /// analysis.md, 6.10, 3.9): kept by identity, resumed only as kept — a

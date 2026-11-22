@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The Server page, editing and users against real databases: SQLite
 /// always; PostgreSQL, MySQL and MariaDB when OVERTERM_DB_TESTS=1 and

@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// A note read as Obsidian reads it: properties, links, tags, headings,
 /// tasks — and nothing taken from code.

@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Every kind as a list: discovery read into kinds (groups, preferred
 /// versions, short names), the page's sections, the names the `:` bar

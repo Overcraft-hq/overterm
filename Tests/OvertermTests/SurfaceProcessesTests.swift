@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 final class SurfaceProcessesTests: XCTestCase {
     /// A git the app runs is its child too, and may start between two

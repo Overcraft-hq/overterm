@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The engine's calls over a real unix socket, against the fake engine:
 /// answers, errors, streams that go on, streams left early. Never the

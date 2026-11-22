@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Docker Model Runner's models: what its API answers, read as the Models
 /// section and `docker_models` read them; where the runner is found; and

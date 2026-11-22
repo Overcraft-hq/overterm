@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// D-7 (docs/design/terraform/analysis.md 5.8): any agent can write
 /// settings.json, so a security setting changed there outside the Settings

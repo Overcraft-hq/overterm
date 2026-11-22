@@ -154,7 +154,9 @@ let package = Package(
         // OvertermOvergit: the git panel (⌥⌘G), beside the features: only
         // the window shows it.
         feature("OvertermOvergit", over: ["Overterm"]),
-        feature("OvertermShell", over: ["OvertermTerraform", "OvertermOvergit"]),
+        // OvertermNotes: the notes vault (⌥⌘N), beside the features.
+        feature("OvertermNotes", over: ["Overterm"]),
+        feature("OvertermShell", over: ["OvertermTerraform", "OvertermOvergit", "OvertermNotes"]),
         // The app: Sources/OvertermApp/main.swift starts the library. Its
         // product keeps the name the binary always had (make-app.sh, the
         // docs' `.build/debug/Overterm`).

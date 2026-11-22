@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Rightsizing's queries and card (docs/design/kubernetes/metrics.md 2.10,
 /// 4.6's R1; stage M10): per pod, never the workload's sum; memory from the

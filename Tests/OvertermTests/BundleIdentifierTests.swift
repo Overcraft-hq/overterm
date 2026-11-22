@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 final class BundleIdentifierTests: XCTestCase {
     /// The app's constant (defaults domain, logs, caches) and the bundle id

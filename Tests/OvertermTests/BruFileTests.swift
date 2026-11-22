@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Bruno's file format, read and written — the promise being that the
 /// same file opens in Bruno, in `bru run` and here, and that an edit made

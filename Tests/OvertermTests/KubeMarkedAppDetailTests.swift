@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// An Argo CD app read from marks, its detail (docs/design/kubernetes/
 /// gitops.md, 14.2.3, D4). Pure: the tree — each workload's children under

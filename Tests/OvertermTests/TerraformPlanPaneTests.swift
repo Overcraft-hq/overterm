@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The plan in the right slot as a model (analysis 6.3, Section 7): rows
 /// kept, not built in a body; the list's keys; a long string and JSON in a

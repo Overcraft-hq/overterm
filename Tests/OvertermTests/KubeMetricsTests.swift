@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Usage from metrics.k8s.io (stage 2d; docs/design/kubernetes/analysis.md,
 /// 2.11): quantities read as the API writes them, metrics-server's lists

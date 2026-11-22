@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The list's plain cells as words (`ActivityCells`): which columns are
 /// AppKit text, what each says, its tint — what the table compares to skip

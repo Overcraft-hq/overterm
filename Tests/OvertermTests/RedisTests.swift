@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Redis as the database client reads it: RESP, a console's lines, what
 /// reads and what destroys, a reply as rows, keys as folders — pure.

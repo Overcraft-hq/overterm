@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The agents Overterm knows (`Agent`), how each is started for one launch
 /// (`AgentLaunch`), recognised, guarded, and read off the screen.

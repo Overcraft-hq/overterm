@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// A drop in the Notes panel: what moves where.
 final class NoteMoveTests: XCTestCase {

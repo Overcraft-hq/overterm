@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// A page's list keys (`ResourceKey`): a typed character read by a page's
 /// table — the named keys, case, digits to sections, `?` and `/` — and an

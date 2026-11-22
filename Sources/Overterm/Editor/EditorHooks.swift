@@ -124,3 +124,40 @@ package protocol EditorManifest: AnyObject {
 package protocol EditorRequestPart: AnyObject {
     func textChanged(_ text: String)
 }
+
+/// The notes' part in the editor (`OvertermNotes`): a note's Live Preview,
+/// its reading view, a drawing, a note's completion, paste and templates.
+/// One object, set at install; nil, the editor is the notes' nowhere.
+@MainActor
+package protocol EditorNotes: AnyObject {
+    /// Only iCloud's placeholder is there: true when it is fetched first and
+    /// the open asked again (`then` once it arrives, or false).
+    func opensLater(_ url: URL, in editor: EditorViewController, then done: @escaping (Bool) -> Void) -> Bool
+    func attach(_ buffer: EditorBuffer, in editor: EditorViewController)
+    func activated(_ buffer: EditorBuffer, in editor: EditorViewController)
+    func closing(_ buffer: EditorBuffer, in editor: EditorViewController)
+    func textChanged(_ buffer: EditorBuffer, in editor: EditorViewController)
+    func selectionChanged(in editor: EditorViewController)
+    func themeChanged(dark: Bool, in editor: EditorViewController)
+    /// The reading view is showing: redrawn in the new theme.
+    func invalidateReader(in editor: EditorViewController) -> Bool
+    func hideReader(in editor: EditorViewController)
+    /// A drawing in the preview's place (nil: none shown).
+    func showDrawing(of buffer: EditorBuffer?, in editor: EditorViewController)
+    func showNote(_ buffer: EditorBuffer, in editor: EditorViewController)
+    func styleLive(_ target: NSMutableAttributedString, at location: Int, in buffer: EditorBuffer, editor: EditorViewController)
+    func liveTypingAttributes(in editor: EditorViewController) -> [NSAttributedString.Key: Any]
+    func liveClick(at index: Int, in editor: EditorViewController) -> Bool
+    func paste(_ pasteboard: NSPasteboard, in editor: EditorViewController) -> Bool
+    func addTemplateItems(to menu: NSMenu, in editor: EditorViewController)
+    func updateCompletion(in editor: EditorViewController) -> Bool
+    func acceptCompletion(_ candidate: CompletionState.Candidate, anchor: Int, in editor: EditorViewController)
+}
+
+extension EditorViewController {
+    package static var notes: (any EditorNotes)? {
+        FeatureHooks.ensure()
+        return notesStorage
+    }
+    package nonisolated(unsafe) static var notesStorage: (any EditorNotes)?
+}

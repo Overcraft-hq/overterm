@@ -11,6 +11,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// A page's resource table (`ResourceTable`): its grouped rows, its order,
 /// what a press selects and what a right-click means — Docker's containers

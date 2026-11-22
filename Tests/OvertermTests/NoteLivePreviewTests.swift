@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Live Preview's attributes: markup hidden but on the line being edited,
 /// the text styled, nothing styled inside code.

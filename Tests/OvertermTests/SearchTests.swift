@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Elasticsearch and OpenSearch: the console's requests, the checks, the
 /// answers as rows, the catalog, a pasted address — pure, always run.

@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The rail down the sidebar's edge: what it holds, in what order, and the
 /// width it leaves the panel beside it.

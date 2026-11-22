@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// A collection run top to bottom, against a server on this machine: a
 /// variable one request sets reaching the next, setNextRequest, stop, and

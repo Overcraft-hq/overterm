@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// gh's JSON, in the shapes it really returns (sampled from gh 2.87).
 final class PullRequestTests: XCTestCase {

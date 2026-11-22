@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// What the Overview's cards say (`KubeOverviewCards`): the header's
 /// pills, a kind's line and bar, what needs attention worst first with

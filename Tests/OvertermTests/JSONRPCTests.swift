@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Content-Length framing, as a pipe delivers it: in pieces, several at once.
 final class JSONRPCTests: XCTestCase {

@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Texts with their selections written in: `|` a caret, `«…»` a selection.
 /// (Not `[…]`: brackets are what half of these tests type.)

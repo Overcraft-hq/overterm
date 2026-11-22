@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The window's API client: secrets kept out of the committed file, and a
 /// path compared the same whether or not it exists yet.

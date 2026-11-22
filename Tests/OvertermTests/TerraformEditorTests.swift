@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Stage 1a's pure parts: the environment and the command lines of the
 /// editor's runs, validate's JSON, the block scan and the module's index.

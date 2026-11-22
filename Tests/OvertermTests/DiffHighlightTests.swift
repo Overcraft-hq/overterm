@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 final class DiffHighlightTests: XCTestCase {
     /// `git diff` output for `path` with these hunk lines, as loadDiffs reads it.

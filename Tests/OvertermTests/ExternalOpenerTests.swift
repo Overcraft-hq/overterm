@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The opener against the isolated stand-in for LaunchServices (what E2E
 /// runs use): nothing is launched, every open is recorded.

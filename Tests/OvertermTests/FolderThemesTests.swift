@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Settings ▸ Themes ▸ Themes by folder: which theme a tab's folder takes.
 final class FolderThemesTests: XCTestCase {

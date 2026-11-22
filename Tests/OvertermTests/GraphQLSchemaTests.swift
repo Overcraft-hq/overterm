@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// A GraphQL schema read from introspection, and what a query completes to
 /// at each place — read from the text alone.

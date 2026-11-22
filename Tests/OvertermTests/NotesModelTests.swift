@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// What the Notes panel makes and shows: templates filled, today's note
 /// where Obsidian's settings put it, new notes named as Obsidian names them.

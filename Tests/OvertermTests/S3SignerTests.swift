@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// SigV4 against AWS's own documented examples (Signature Version 4,
 /// "Examples: Signature Calculations in AWS Signature Version 4").

@@ -12,6 +12,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Files and folders into and out of a container: the archive a drop
 /// becomes, read back in any cut, written to the Mac without leaving its

@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The pure halves of the marks' reads (docs/design/kubernetes/gitops.md,
 /// 14.4): when an object is read by a GET — M2 on a moved generation or a

@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// BuildKit's `--progress rawjson`, folded as its plain printer folds it.
 /// The fixtures are recorded shapes — SolveStatus as client/graph.go's

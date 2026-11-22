@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// An agent's folder's checkout, walked off the main thread (docs/design/
 /// activity/analysis.md, 7.2): the main thread is answered from what was

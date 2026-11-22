@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The graph: which notes are in it, which lines join them, and a layout
 /// that keeps linked notes together.

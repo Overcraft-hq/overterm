@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The rail's Kubernetes panel (docs/design/kubernetes/analysis.md,
 /// Section 6, 3.1–3.2) against `FakeKubeAPI` on a socket of the test's

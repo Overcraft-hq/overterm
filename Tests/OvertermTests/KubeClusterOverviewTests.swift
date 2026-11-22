@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The Overview section (stage 2d): workload counts and pods by phase
 /// (the server's phases, by field selector), what fails first, the

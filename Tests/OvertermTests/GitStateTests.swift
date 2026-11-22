@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// What Overgit reads of a checkout's state, and how it names a remote branch.
 final class GitStateTests: XCTestCase {

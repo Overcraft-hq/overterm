@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// What the API panel offers to start from: documents in the checkout, and
 /// a server on a tab's port that publishes its OpenAPI document.

@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Stage 2a's other verbs through the page's one guard path, against the
 /// fake API server: `kind-fake` (local, writable), `fake-dev` (remote,

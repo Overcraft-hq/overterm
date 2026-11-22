@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 final class MarkdownRendererTests: XCTestCase {
     private let theme = EditorTheme(dark: true, background: .black)

@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Stage 1b's pure parts (analysis 4.11, 4.12, 5.1, 3.2): what a folder's
 /// files say, the backends' identities, the classes, the roots and

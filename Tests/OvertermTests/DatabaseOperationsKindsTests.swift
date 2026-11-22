@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Oracle's, ClickHouse's and BigQuery's Server page, editing and users — the
 /// pure parts: quoting, the statements, the engines' answers read.

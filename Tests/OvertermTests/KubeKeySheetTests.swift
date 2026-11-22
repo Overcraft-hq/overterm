@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// `?` on the Kubernetes page: the keys grouped, generated from
 /// `KubernetesKey` and the window's Kubernetes commands. Pure.

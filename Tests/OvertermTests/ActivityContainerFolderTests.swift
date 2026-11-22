@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// A compose project's folder in its checkout's spelling: the checkout
 /// scope compares paths as strings (6.5).

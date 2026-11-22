@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The list's CPU and memory against the fake engine: each running
 /// container read once a round, a few at a time, set against its read

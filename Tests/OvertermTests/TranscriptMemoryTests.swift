@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Reading a big transcript holds a chunk at a time, not the file: each
 /// chunk's autoreleased buffer used to live until the whole read ended.

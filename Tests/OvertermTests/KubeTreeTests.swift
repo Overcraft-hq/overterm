@@ -12,6 +12,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The dependency tree in a detail's Overview (docs/design/kubernetes/
 /// analysis.md, 3.7, stage 3b) and Argo CD's and Flux's trees: which kinds

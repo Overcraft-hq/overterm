@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The user's processes' usage and its rates (docs/design/activity/
 /// analysis.md, 7.5): by the interval measured, over at least 250 ms and

@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// A git remote's URL without the credentials it can carry: the whole
 /// userinfo, a token with no `:` too, cut at the authority's last `@`;

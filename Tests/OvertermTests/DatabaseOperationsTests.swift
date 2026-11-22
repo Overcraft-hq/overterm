@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The database client's Server page, editing and users — the pure parts:
 /// quoting, which results can be edited, pending changes and the statements

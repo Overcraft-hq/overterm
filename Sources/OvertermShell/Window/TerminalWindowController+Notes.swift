@@ -34,7 +34,7 @@ extension TerminalWindowController {
                 return nil
             }
             self.notes.whenLoaded {}
-            return (self.notes.vault, self.notes.index)
+            return VaultSearch(vault: self.notes.vault, index: self.notes.index)
         }
         updateNotesVisibility()
     }

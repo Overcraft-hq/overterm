@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Reading an agent's question off the screen. The inbox answers these by
 /// typing a number, so a wrong parse is a wrong answer sent to a running

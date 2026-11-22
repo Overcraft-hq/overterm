@@ -31,9 +31,9 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// the notes panel highlights it.
     package var onActiveChanged: ((URL?) -> Void)?
     /// A note's reading view, made the first time one is read.
-    package var noteReader: NoteReaderView?
+    package var noteReaderStorage: NSView?
     /// The canvas showing, when the active buffer is a drawing.
-    package var shownDrawing: DrawingView?
+    package var shownDrawingStorage: NSView?
     package var noteObserver: AnyCancellable?
     /// A #tag clicked in a note.
     package var onNoteTag: ((String) -> Void)?
@@ -315,13 +315,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
             return done(true)
         }
         // Only iCloud's placeholder is here: fetched first, then opened.
-        if NoteFiles.isEvicted(url) {
-            NoteFiles.whenDownloaded(url) { [weak self] arrived in
-                guard arrived, let self else { return done(false) }
-                self.open(url, then: done)
-            }
-            return
-        }
+        if let notes = Self.notes, notes.opensLater(url, in: self, then: done) { return }
         let key = url.standardizedFileURL.resolvingSymlinksInPath()
         if let index = buffers.firstIndex(where: { $0.url?.standardizedFileURL.resolvingSymlinksInPath() == key }) {
             activate(index)
@@ -331,8 +325,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
         let buffer = EditorBuffer()
         buffer.relay.editors.add(self)
         buffer.load(url, attributes: baseAttributes)
-        attachNote(buffer)
-        attachDrawing(buffer)
+        Self.notes?.attach(buffer, in: self)
         for hook in Self.hooks.attach { hook(self, buffer) }
         // A new tab goes after the one showing, as Zed's.
         let index = activeIndex >= 0 ? activeIndex + 1 : buffers.count
@@ -489,7 +482,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
         updateResourceWatch()
         for hook in Self.hooks.rebind { hook(self, buffer, true) }
         applyWrap()
-        setLiveLayout(buffer.livePreview)
+        Self.notes?.activated(buffer, in: self)
         for hook in Self.hooks.show { hook(self, buffer) }
         let unavailable = buffer.document.unavailable
         messageLabel.stringValue = unavailable ?? ""
@@ -564,7 +557,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
             return afterRemoving(at: index)
         }
         bufferWillClose(buffer)
-        closeDrawing(buffer)
+        Self.notes?.closing(buffer, in: self)
         // A cluster object's copy goes with its tab.
         buffer.manifestPart?.close()
         // Read first: closing the document forgets its URL.
@@ -681,7 +674,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
             buffer.document.load(url)
             buffer.setText(buffer.document.text, attributes: baseAttributes)
             buffer.requestPart?.textChanged(buffer.storage.string)
-            drawingTextChanged(buffer)
+            Self.notes?.textChanged(buffer, in: self)
             buffer.selection = [NSRange(location: min(selection.location, buffer.storage.length), length: 0)]
             bufferDidReload(buffer)
             if isActive {
@@ -783,15 +776,12 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
         textView.selectedTextAttributes = [.backgroundColor: theme.selection]
         scrollView.backgroundColor = theme.background
         gutter.theme = theme
-        for buffer in buffers { buffer.drawing?.view.setDark(theme.isDark) }
+        Self.notes?.themeChanged(dark: theme.isDark, in: self)
         header.recolor(background: chrome.stripNS, text: theme.text, accent: theme.info)
         breadcrumb.recolor(background: theme.background, text: theme.text)
         statusBar.recolor(background: chrome.stripNS, text: theme.text)
         preview.theme = theme
-        if let noteReader {
-            noteReader.invalidate()
-            updatePreview()
-        }
+        if Self.notes?.invalidateReader(in: self) == true { updatePreview() }
         messageLabel.textColor = theme.text.withAlphaComponent(0.6)
         // The syntax colours are the theme's: every buffer is painted again.
         let attributes = baseAttributes
@@ -859,8 +849,8 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
     package func textDidChange(_ notification: Notification) {
         guard let buffer = active else { return }
         buffer.requestPart?.textChanged(buffer.storage.string)
-        drawingTextChanged(buffer)
-        if buffer.showsPreview, buffer.requestPart == nil, buffer.drawing == nil { schedulePreview() }
+        Self.notes?.textChanged(buffer, in: self)
+        if buffer.showsPreview, buffer.requestPart == nil, buffer.drawingPart == nil { schedulePreview() }
         buffer.document.markEdited()
         gutter.textDidChange()
         bufferDidChange(buffer)
@@ -937,7 +927,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
             if style.underline { styled.addAttribute(.underlineStyle, value: NSUnderlineStyle.single.rawValue, range: local) }
             if style.strikethrough { styled.addAttribute(.strikethroughStyle, value: NSUnderlineStyle.single.rawValue, range: local) }
         }
-        if buffer.livePreview { styleLive(styled, at: range.location, in: buffer) }
+        if buffer.livePreview { Self.notes?.styleLive(styled, at: range.location, in: buffer, editor: self) }
         storage.beginEditing()
         Self.write(styled, at: range.location, into: storage)
         storage.endEditing()
@@ -947,7 +937,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
             if textView.selectedRanges != selection { textView.selectedRanges = selection }
             // A note's text is typed in the note's own font: typed in the
             // code font, a character showed so until the restyle caught up.
-            textView.typingAttributes = buffer.livePreview ? liveTypingAttributes : base
+            textView.typingAttributes = buffer.livePreview ? Self.notes?.liveTypingAttributes(in: self) ?? base : base
         }
     }
 
@@ -955,7 +945,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     /// ⇧⌘V or the header's eye: the file rendered, or its text again.
     package func toggleMarkdownPreview() {
-        guard let buffer = active, buffer.language?.id == "markdown" || buffer.requestPart != nil || buffer.isNote || buffer.drawing != nil else { return }
+        guard let buffer = active, buffer.language?.id == "markdown" || buffer.requestPart != nil || buffer.isNote || buffer.drawingPart != nil else { return }
         buffer.showsPreview.toggle()
         updatePreview()
         if !buffer.showsPreview { focus() }
@@ -966,19 +956,19 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
     package func updatePreview() {
         guard isViewLoaded else { return }
         let buffer = active
-        if let buffer, let drawing = buffer.drawing, buffer.document.unavailable == nil {
+        if let buffer, buffer.drawingPart != nil, buffer.document.unavailable == nil {
             requestHost.isHidden = true
             preview.isHidden = true
-            noteReader?.isHidden = true
+            Self.notes?.hideReader(in: self)
             header.setPreview(available: true, showing: buffer.showsPreview)
-            showDrawing(buffer.showsPreview ? drawing : nil)
+            Self.notes?.showDrawing(of: buffer.showsPreview ? buffer : nil, in: self)
             return
         }
-        showDrawing(nil)
+        Self.notes?.showDrawing(of: nil, in: self)
         if let buffer, buffer.document.unavailable == nil, let request = Self.hooks.requestView.firstAnswer({ $0(self, buffer) }) {
             header.setPreview(available: true, showing: buffer.showsPreview == true, request: true)
             preview.isHidden = true
-            noteReader?.isHidden = true
+            Self.notes?.hideReader(in: self)
             let showing = buffer.showsPreview == true
             requestHost.isHidden = !showing
             scrollView.isHidden = showing
@@ -989,10 +979,10 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
         if let buffer, buffer.isNote, buffer.document.unavailable == nil {
             preview.isHidden = true
             header.setPreview(available: true, showing: buffer.showsPreview)
-            showNote(buffer)
+            Self.notes?.showNote(buffer, in: self)
             return
         }
-        noteReader?.isHidden = true
+        Self.notes?.hideReader(in: self)
         let isMarkdown = buffer?.language?.id == "markdown" && buffer?.document.unavailable == nil
         let showing = isMarkdown && buffer?.showsPreview == true
         header.setPreview(available: isMarkdown, showing: showing)
@@ -1086,7 +1076,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     package func selectionDidChange() {
         guard isViewLoaded else { return }
-        updateLivePreviewEditing()
+        Self.notes?.selectionChanged(in: self)
         updateStatus()
         updateCompletionForSelection()
         gutter.needsDisplay = true

@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The rule for which island a new tab joins. Pure, and the reason it
 /// exists is a bug: inheriting the selected tab's island meant one group

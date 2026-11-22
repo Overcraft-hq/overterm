@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// What Compose says of a checkout's compose files, read for the project
 /// before it runs: kept without its secrets, its errors in its own words,

@@ -85,8 +85,8 @@ package final class SpotlightModel: ObservableObject {
     private var names: [String] = []
     private var contents: [ContentMatch] = []
     private var noteRows: [ContentMatch] = []
-    /// The vault and its index, when notes are on (the window's).
-    package var notes: (() -> (NotesVault, NotesIndex)?)?
+    /// The vault's search, when notes are on (the window's).
+    package var notes: (() -> (any SpotlightNotes)?)?
     private var pending: Task<Void, Never>?
     private var totalSubscription: AnyCancellable?
 
@@ -145,8 +145,8 @@ package final class SpotlightModel: ObservableObject {
         let vault = notes?()
         // Names now — the index has them; what notes say after the grep.
         let wide = scope == .notes
-        let noteNames = vault.map { _, index in
-            index.notes(matching: query, limit: wide ? 30 : 5).map { ContentMatch(path: $0, line: 0, text: "") }
+        let noteNames = vault.map { notes in
+            notes.names(matching: query, limit: wide ? 30 : 5).map { ContentMatch(path: $0, line: 0, text: "") }
         }
         noteRows = query.isEmpty ? [] : noteNames ?? []
         pending = Task { [weak self] in
@@ -164,10 +164,8 @@ package final class SpotlightModel: ObservableObject {
                 self.contents = found
                 self.rebuild()
             }
-            if let (vault, index) = vault {
-                let paths = index.notes(matching: "", limit: .max)
-                let limit = wide ? 100 : 12
-                let lines = await Task.detached(priority: .userInitiated) { NotesSearch.lines(query, in: vault, paths: paths, limit: limit) }.value
+            if let vault {
+                let lines = await vault.lines(query, limit: wide ? 100 : 12)
                 guard !Task.isCancelled, self.query == query else { return }
                 self.noteRows = (noteNames ?? []) + lines
                 self.rebuild()
@@ -203,4 +201,13 @@ package final class SpotlightModel: ObservableObject {
         }
         return rows
     }
+}
+
+/// The notes vault as ⌘F searches it (`OvertermNotes`' `VaultSearch`): its
+/// notes' names now, what they say after the checkout's grep.
+@MainActor
+package protocol SpotlightNotes {
+    func names(matching query: String, limit: Int) -> [String]
+    /// Off the main thread.
+    func lines(_ query: String, limit: Int) async -> [ContentMatch]
 }

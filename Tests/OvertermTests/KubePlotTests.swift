@@ -11,6 +11,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Stage M1 of docs/design/kubernetes/metrics.md (3.1, 3.6, 5.2): a chart's
 /// geometry as a value — the scale rounded to nice values and including

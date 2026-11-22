@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Scripts/affected-tests.sh, which picks the unit tests a change reaches
 /// (`make test-changed`, CI's `changes` job). It runs for real with macOS's

@@ -11,6 +11,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 final class TabPeekTests: XCTestCase {
     private let bounds = CGRect(x: 0, y: 0, width: 1200, height: 800)

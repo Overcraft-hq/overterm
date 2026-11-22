@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The cluster's own API docs (3.15), pure: `/openapi/v3`'s index and its
 /// documents read from fixtures in the server's shape — a core group's,

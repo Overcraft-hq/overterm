@@ -2,6 +2,7 @@
 // imports it: Package.swift's stack.
 @_exported import OvertermTerraform
 @_exported import OvertermOvergit
+@_exported import OvertermNotes
 
 /// The app's settings, not SwiftUI's scene of that name: imported from
 /// two modules here, the name needs saying once.

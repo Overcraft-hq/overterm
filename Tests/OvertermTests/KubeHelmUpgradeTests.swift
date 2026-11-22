@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// A bound release upgraded from the checkout's chart (stage 3a): the
 /// chart found, `helm template`'s inputs — arguments, no kube setting

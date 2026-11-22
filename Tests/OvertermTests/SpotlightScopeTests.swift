@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// ⌘F's tabs: All shows a few of each kind, the others one kind in full.
 final class SpotlightScopeTests: XCTestCase {

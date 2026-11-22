@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The one command-line splitter Kubernetes' pane header, a tab's kind and
 /// Terraform's read a pane's command through.

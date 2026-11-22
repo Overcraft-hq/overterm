@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 final class BranchLogTests: XCTestCase {
     private let sha1 = String(repeating: "1", count: 40)

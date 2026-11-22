@@ -11,6 +11,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// nettop's listeners (docs/design/activity/analysis.md, 6.8, D-25): the
 /// pinned, hand-written fixture — every name invented —, the blind check,

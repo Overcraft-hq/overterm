@@ -11,6 +11,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Each rule of docs/design/activity/analysis.md 6.5, in order, over a
 /// fake Mac and a fake context: owners, reasons, roles and the agent. Every

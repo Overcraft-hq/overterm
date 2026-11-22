@@ -10,6 +10,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 final class SyntaxDocumentTests: XCTestCase {
     private func spans(_ text: String, _ file: String) -> [(String, String)] {

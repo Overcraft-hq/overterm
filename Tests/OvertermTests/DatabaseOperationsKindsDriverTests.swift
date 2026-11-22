@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Oracle's and ClickHouse's Server page, editing and users against real
 /// servers, when OVERTERM_DB_TESTS=1: ClickHouse from

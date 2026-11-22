@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// Obsidian Excalidraw's file, read and written: a drawing made here opens
 /// there and the other way, and nothing but the scene and its texts is

@@ -11,6 +11,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The app's Docker model against the fake engine: what it lists and how it
 /// groups it, kept current by events, an engine that goes and comes back.

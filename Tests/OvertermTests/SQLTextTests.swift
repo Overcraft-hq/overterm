@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// SQL as text: its statements, what they do, what the caret is writing.
 final class SQLTextTests: XCTestCase {

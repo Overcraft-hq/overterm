@@ -11,6 +11,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// A long-lived child process (`ManagedProcess`) and the pool that keeps one
 /// a key: started and waited for, the reason it failed, closed by its own

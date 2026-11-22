@@ -9,6 +9,7 @@ import XCTest
 @testable import OvertermShell
 @testable import OvertermOvergit
 @testable import OvertermAPI
+@testable import OvertermNotes
 
 /// The recording wrapper, in front of a stand-in: what it records, what it
 /// passes on, and what it never writes down.
