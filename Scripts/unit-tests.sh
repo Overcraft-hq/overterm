@@ -44,8 +44,15 @@ fi
 chunks=$((workers * 8))
 [[ $chunks -gt $count ]] && chunks=$count
 i=0
+# Whole classes a chunk; with a filter, only the tests of each class it
+# picked (one method named runs that method, not its siblings).
 while IFS= read -r class; do
-  echo "$class" >>"$logs/chunk-$(printf %03d $((i % chunks))).classes"
+  chunk="$logs/chunk-$(printf %03d $((i % chunks))).classes"
+  if [[ -n "$regex" ]]; then
+    awk -F/ -v class="$class" '$1 == class' <<<"$listed" >>"$chunk"
+  else
+    echo "$class" >>"$chunk"
+  fi
   i=$((i + 1))
 done <<<"$classes"
 echo "$count test classes in $chunks processes, $workers at once (logs: $logs)"
