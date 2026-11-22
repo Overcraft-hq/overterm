@@ -1113,34 +1113,53 @@ package enum ActivityRows {
     /// list draws alike keep their places — the order they came in, the
     /// table's — and a re-sort moves a row only for a change a person can
     /// see (6.7).
+    /// `ResourceSort.sorted`, made here: called across the module
+    /// boundary it is never specialized, and 5,000 rows sorted through its
+    /// generic witnesses cost the list 8 ms a tick (activityPerf). The same
+    /// order — by `key`, equal keys and none (last) in the order they came.
+    private static func order<Item, Key: Comparable>(_ items: [Item], _ sort: ResourceSort, by key: (Item) -> Key?) -> [Item] {
+        let keyed = items.map(key)
+        let ascending = sort.ascending
+        return items.indices
+            .sorted { a, b in
+                switch (keyed[a], keyed[b]) {
+                case (let x?, let y?) where x != y: ascending ? x < y : x > y
+                case (.some, nil): true
+                case (nil, .some): false
+                default: a < b
+                }
+            }
+            .map { items[$0] }
+    }
+
     package static func sorted(_ rows: [ActivityProcessRow], by sort: ResourceSort?) -> [ActivityProcessRow] {
         guard let sort else { return rows }
         switch sort.column {
-        case "name": return sort.sorted(rows) { $0.name.lowercased() }
-        case "pid": return sort.sorted(rows) { $0.identity.pid }
-        case "cpu": return sort.sorted(rows) { $0.cpu.map(Shown.percent) }
-        case "memory": return sort.sorted(rows) { $0.memory.map(Shown.bytes) }
-        case "threads": return sort.sorted(rows) { $0.threads }
-        case "state": return sort.sorted(rows) { $0.state.letter.isEmpty ? nil : $0.state.letter }
-        case "started": return sort.sorted(rows) { $0.started }
-        case "user": return sort.sorted(rows) { $0.user }
-        case "where": return sort.sorted(rows) { $0.tabTitle?.lowercased() }
-        case "rss": return sort.sorted(rows) { $0.residentSize }
-        case "time": return sort.sorted(rows) { $0.cpuTime }
-        case "nice": return sort.sorted(rows) { Int($0.nice) }
-        case "priority": return sort.sorted(rows) { $0.priority }
-        case "ppid": return sort.sorted(rows) { $0.parentPID }
-        case "pgid": return sort.sorted(rows) { $0.group }
-        case "tty": return sort.sorted(rows) { $0.terminal }
-        case "kind": return sort.sorted(rows) { $0.translated ? 1 : 0 }
-        case "path": return sort.sorted(rows) { $0.path }
-        case "command": return sort.sorted(rows) { $0.command }
-        case "cpu15": return sort.sorted(rows) { row in row.strip.flatMap { cells in cells.compactMap { $0 }.max() } }
-        case "energy": return sort.sorted(rows) { $0.energy }
-        case "wakeups": return sort.sorted(rows) { $0.idleWakeups }
-        case "diskRead": return sort.sorted(rows) { $0.diskRead }
-        case "diskWritten": return sort.sorted(rows) { $0.diskWritten }
-        case "sleep": return sort.sorted(rows) { $0.sleepHold.flatMap { $0.isEmpty ? nil : $0.rawValue } }
+        case "name": return order(rows, sort) { $0.name.lowercased() }
+        case "pid": return order(rows, sort) { $0.identity.pid }
+        case "cpu": return order(rows, sort) { $0.cpu.map(Shown.percent) }
+        case "memory": return order(rows, sort) { $0.memory.map(Shown.bytes) }
+        case "threads": return order(rows, sort) { $0.threads }
+        case "state": return order(rows, sort) { $0.state.letter.isEmpty ? nil : $0.state.letter }
+        case "started": return order(rows, sort) { $0.started }
+        case "user": return order(rows, sort) { $0.user }
+        case "where": return order(rows, sort) { $0.tabTitle?.lowercased() }
+        case "rss": return order(rows, sort) { $0.residentSize }
+        case "time": return order(rows, sort) { $0.cpuTime }
+        case "nice": return order(rows, sort) { Int($0.nice) }
+        case "priority": return order(rows, sort) { $0.priority }
+        case "ppid": return order(rows, sort) { $0.parentPID }
+        case "pgid": return order(rows, sort) { $0.group }
+        case "tty": return order(rows, sort) { $0.terminal }
+        case "kind": return order(rows, sort) { $0.translated ? 1 : 0 }
+        case "path": return order(rows, sort) { $0.path }
+        case "command": return order(rows, sort) { $0.command }
+        case "cpu15": return order(rows, sort) { row in row.strip.flatMap { cells in cells.compactMap { $0 }.max() } }
+        case "energy": return order(rows, sort) { $0.energy }
+        case "wakeups": return order(rows, sort) { $0.idleWakeups }
+        case "diskRead": return order(rows, sort) { $0.diskRead }
+        case "diskWritten": return order(rows, sort) { $0.diskWritten }
+        case "sleep": return order(rows, sort) { $0.sleepHold.flatMap { $0.isEmpty ? nil : $0.rawValue } }
         default: return rows
         }
     }
@@ -1148,17 +1167,17 @@ package enum ActivityRows {
     package static func sorted(_ rows: [ActivityPortRow], by sort: ResourceSort?) -> [ActivityPortRow] {
         guard let sort else { return rows }
         switch sort.column {
-        case "port": return sort.sorted(rows) { $0.port }
-        case "proto": return sort.sorted(rows) { $0.proto }
-        case "address": return sort.sorted(rows) { $0.reach }
-        case "process": return sort.sorted(rows) { $0.process.lowercased() }
-        case "pid": return sort.sorted(rows) { $0.holder?.pid }
-        case "where": return sort.sorted(rows) { $0.whereText.isEmpty ? nil : $0.whereText.lowercased() }
-        case "owner": return sort.sorted(rows) { $0.ownerText.lowercased() }
-        case "since": return sort.sorted(rows) { $0.since }
-        case "clients": return sort.sorted(rows) { $0.clients }
-        case "backlog": return sort.sorted(rows) { $0.backlogLimit > 0 ? $0.backlog : nil }
-        case "note": return sort.sorted(rows) { $0.note }
+        case "port": return order(rows, sort) { $0.port }
+        case "proto": return order(rows, sort) { $0.proto }
+        case "address": return order(rows, sort) { $0.reach }
+        case "process": return order(rows, sort) { $0.process.lowercased() }
+        case "pid": return order(rows, sort) { $0.holder?.pid }
+        case "where": return order(rows, sort) { $0.whereText.isEmpty ? nil : $0.whereText.lowercased() }
+        case "owner": return order(rows, sort) { $0.ownerText.lowercased() }
+        case "since": return order(rows, sort) { $0.since }
+        case "clients": return order(rows, sort) { $0.clients }
+        case "backlog": return order(rows, sort) { $0.backlogLimit > 0 ? $0.backlog : nil }
+        case "note": return order(rows, sort) { $0.note }
         default: return rows
         }
     }
