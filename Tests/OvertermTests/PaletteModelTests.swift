@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 final class PaletteModelTests: XCTestCase {
     @MainActor

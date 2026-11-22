@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Several namespaces at once: the scope's one spelling, the merge of a
 /// follow each, the cap (one watch across the cluster, filtered — refused

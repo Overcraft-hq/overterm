@@ -9,6 +9,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The chrome's colour vocabulary. Every token is derived from the
 /// terminal's own background and foreground, so the only way to know a

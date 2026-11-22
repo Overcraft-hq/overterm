@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Links resolved as Obsidian resolves them, and what the index answers.
 final class NotesIndexTests: XCTestCase {

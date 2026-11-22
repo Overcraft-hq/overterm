@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// A compose project's folder in its checkout's spelling: the checkout
 /// scope compares paths as strings (6.5).

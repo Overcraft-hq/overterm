@@ -13,18 +13,17 @@ package enum KubernetesFeature {
             BrowserMCP.Provider(
                 handles: { $0.hasPrefix(KubeMCP.prefix) }, enabled: { $0.kubernetesAgentAccess },
                 unavailable: "Kubernetes isn't available to agents — Settings ▸ Kubernetes.",
-                tools: { KubeMCP.tools }, instructions: { KubeMCP.instructions },
+                tools: { KubeMCP.tools }, instructions: { _ in KubeMCP.instructions },
                 // Kubernetes' writes while kubernetes.agentWrites names a context —
                 // a setting, not the contexts' state now, which changes after the
                 // list was read (it isn't announced again): each call is refused
                 // where the context isn't writable for agents.
                 listed: { _, kubernetes in
-                    let writes = await MainActor.run { !((kubernetes as? KubernetesModel) ?? KubernetesModel.shared).agentWrites.isEmpty }
-                    return writes ? KubeMCP.writeTools : []
+                    ((kubernetes as? KubernetesModel) ?? KubernetesModel.shared).agentWrites.isEmpty ? [] : KubeMCP.writeTools
                 },
-                call: { name, arguments, pane, kubernetes in
-                    let model = await MainActor.run { (kubernetes as? KubernetesModel) ?? KubernetesModel.shared }
-                    return try await KubeMCP.call(name, arguments, kubernetes: model, pane: pane)
+                call: { name, arguments, context in
+                    let model = (context.kubernetes as? KubernetesModel) ?? KubernetesModel.shared
+                    return try await KubeMCP.call(name, arguments, kubernetes: model, pane: context.pane)
                 },
                 said: { error in KubeMCPText.scrubbed(KubernetesModel.said(error)) }))
     }

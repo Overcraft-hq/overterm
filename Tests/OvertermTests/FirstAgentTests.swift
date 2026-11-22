@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Finding a tab's agent among its panes' process trees. A tree is read
 /// from the live process table, so it can answer differently from one read

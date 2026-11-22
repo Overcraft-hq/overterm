@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Stage 2f: a review tab's Terraform section — the roots what is reviewed
 /// touches (directly, through modules, new ones), which checkout has its

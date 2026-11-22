@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Protocol Buffers by descriptor — the shop.proto fixture's, as protoc made
 /// them — and gRPC calls against a server of the tests' own.

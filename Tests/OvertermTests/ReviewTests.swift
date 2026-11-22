@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// A whole patch cut into files, as `gh pr diff` gives one.
 final class ReviewPatchTests: XCTestCase {

@@ -9,6 +9,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The writes of stage 2a's first part, pure: which verb a kind has, the
 /// class check (read-only, production's switch, the typed name), each

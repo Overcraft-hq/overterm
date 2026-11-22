@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The samples taken while shown (docs/design/kubernetes/metrics.md, 4.1):
 /// keyed by metrics-server's stamp, gaps kept as breaks, folded into

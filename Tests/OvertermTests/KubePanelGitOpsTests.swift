@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The rail's GitOps part (docs/design/kubernetes/gitops.md, 4, 8.2)
 /// against `FakeKubeAPI` on a socket of the test's own, with Argo CD's

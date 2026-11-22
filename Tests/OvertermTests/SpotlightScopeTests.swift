@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// ⌘F's tabs: All shows a few of each kind, the others one kind in full.
 final class SpotlightScopeTests: XCTestCase {

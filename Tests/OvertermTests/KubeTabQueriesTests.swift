@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The pod `shop/web-1` the tests' Metrics tabs ask about, and its plans.
 enum KubeTabTesting {

@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// A workload's merged logs (stage 2e, stern's way): the plan — the cap,
 /// streams kept in place, a pod joining, the include and exclude

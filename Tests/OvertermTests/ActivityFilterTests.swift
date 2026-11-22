@@ -9,6 +9,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The Activity page's filter (docs/design/activity/analysis.md, 6.6) over a
 /// fake Mac: `ResourceFilter`'s words with Activity's keys, quantities with

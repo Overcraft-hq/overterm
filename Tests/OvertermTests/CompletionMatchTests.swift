@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 final class CompletionMatchTests: XCTestCase {
     private func score(_ candidate: String, _ query: String) -> Int? {

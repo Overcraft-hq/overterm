@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// `TerraformRun.short` against stand-ins behind the recording wrapper:
 /// what it passes, what it refuses before starting, its bounds.

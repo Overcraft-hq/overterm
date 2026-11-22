@@ -9,6 +9,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Stage 1d's pure parts: the plan's command line and what it can never
 /// say (5.13 rule 1), its environment, the workspace and process checks,

@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Each worktree's stack on its own ports: Compose's reading of the files,
 /// the plan (which ports go where, under which name), the override file,

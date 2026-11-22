@@ -33,7 +33,7 @@ package enum BrowserMCP {
     /// pane's call runs with `MCPAsker.pane` set: every confirmation it
     /// asks names that pane's tab and agent.
     package static func handle(
-        _ message: [String: Any], browser: () -> AgentBrowser?, api: () -> AgentAPI? = { nil }, pane: String? = nil, settings: Settings = .shared,
+        _ message: [String: Any], browser: () -> AgentBrowser?, api: () -> AnyObject? = { nil }, pane: String? = nil, settings: Settings = .shared,
         kubernetes: (any Sendable)? = nil
     ) async -> [String: Any]? {
         guard let pane else { return await answer(message, browser: browser, api: api, pane: nil, settings: settings, kubernetes: kubernetes) }
@@ -43,7 +43,7 @@ package enum BrowserMCP {
     }
 
     private static func answer(
-        _ message: [String: Any], browser: () -> AgentBrowser?, api: () -> AgentAPI?, pane: String?, settings: Settings, kubernetes: (any Sendable)?
+        _ message: [String: Any], browser: () -> AgentBrowser?, api: () -> AnyObject?, pane: String?, settings: Settings, kubernetes: (any Sendable)?
     ) async -> [String: Any]? {
         let id = message["id"]
         let method = message["method"] as? String ?? ""
@@ -75,24 +75,12 @@ package enum BrowserMCP {
         case "tools/call":
             guard let name = params["name"] as? String else { return failure(-32602, "No tool name.") }
             let arguments = params["arguments"] as? [String: Any] ?? [:]
-            if name.hasPrefix("notes_") {
-                guard settings.notesAgentAccess else {
-                    return reply(errorResult("The notes aren't available to agents — Settings ▸ Notes."))
-                }
-                do {
-                    return reply(try await NotesMCP.call(name, arguments, notes: NotesModel.shared))
-                } catch let error as ToolError {
-                    return failure(-32602, error.message)
-                } catch {
-                    return reply(errorResult(error.localizedDescription))
-                }
-            }
             if let provider = features.first(where: { $0.handles(name) }) {
                 guard provider.enabled(settings) else { return reply(errorResult(provider.unavailable)) }
                 // Read by the one call it is handed to, then dropped.
                 nonisolated(unsafe) let arguments = arguments
                 do {
-                    return reply(try await provider.call(name, arguments, pane, kubernetes))
+                    return reply(try await provider.call(name, arguments, Provider.Context(pane: pane, kubernetes: kubernetes, api: api())))
                 } catch let error as ToolError {
                     return failure(-32602, error.message)
                 } catch {
@@ -109,18 +97,6 @@ package enum BrowserMCP {
                     return failure(-32602, error.message)
                 } catch {
                     return reply(errorResult(ActivityMCP.scrubbed(error.localizedDescription)))
-                }
-            }
-            if name.hasPrefix("api_") {
-                guard settings.apiAgentControl, let api = api() else {
-                    return reply(errorResult("The API client isn't available to agents — Settings ▸ API Client."))
-                }
-                do {
-                    return reply(try await APIMCP.call(name, arguments, api: api))
-                } catch let error as ToolError {
-                    return failure(-32602, error.message)
-                } catch {
-                    return reply(errorResult(error.localizedDescription))
                 }
             }
             guard settings.browserAgentControl, let browser = browser() else {
@@ -213,8 +189,6 @@ package enum BrowserMCP {
     package static func offered(in settings: Settings) -> [[String: Any]] {
         var offered: [[String: Any]] = []
         if settings.browserAgentControl { offered += tools }
-        if settings.apiAgentControl { offered += APIMCP.tools }
-        if settings.notesAgentAccess { offered += NotesMCP.tools }
         for provider in features where provider.enabled(settings) { offered += provider.tools }
         if settings.activityAgentAccess { offered += ActivityMCP.tools }
         return offered
@@ -229,20 +203,7 @@ package enum BrowserMCP {
                 "The browser beside your terminal in Overterm (the user sees it). Open a page with browser_navigate, read it with browser_snapshot, act with the refs it lists; browser_console shows the page's errors."
             )
         }
-        if settings.apiAgentControl {
-            parts.append(
-                "The API client of your checkout's Bruno collection: api_collections lists its requests, api_send runs one with its tests, api_request sends a one-off, api_run runs the collection — use it to check an endpoint you changed."
-            )
-        }
-        if settings.notesAgentAccess {
-            parts.append(
-                "The user's notes (an Obsidian vault): notes_search finds notes by name, #tag or what they say, notes_read reads one with its links — for context the user keeps there. Read-only."
-                    + (settings.notesAgentDrawings
-                        ? " notes_draw makes a new Excalidraw drawing from boxes, arrows and text — a diagram the user asked for, opened beside the terminal."
-                        : "")
-            )
-        }
-        for provider in features where provider.enabled(settings) { parts.append(provider.instructions) }
+        for provider in features where provider.enabled(settings) { parts.append(provider.instructionText(settings)) }
         if settings.activityAgentAccess { parts.append(ActivityMCP.instructions) }
         return parts.joined(separator: " ")
     }
@@ -259,18 +220,27 @@ package enum BrowserMCP {
         package var toolList: @MainActor @Sendable () -> [[String: Any]]
         /// What `tools/list` adds now (Kubernetes' writes while a context allows them).
         package var listed: @MainActor @Sendable (Settings, (any Sendable)?) async -> [[String: Any]] = { _, _ in [] }
-        @MainActor package var instructions: String { instructionText() }
-        package var instructionText: @MainActor @Sendable () -> String
-        /// The call: its name, arguments, the pane, a test's Kubernetes model.
-        package var call: @MainActor @Sendable (String, [String: Any], String?, (any Sendable)?) async throws -> Any
+        package var instructionText: @MainActor @Sendable (Settings) -> String
+        /// What a call is handed besides its arguments.
+        package struct Context {
+            /// The calling pane's tag.
+            package var pane: String?
+            /// A test's Kubernetes model, else the app's.
+            package var kubernetes: (any Sendable)?
+            /// The pane's API client (`AgentAPI`), where it has one.
+            package var api: AnyObject?
+        }
+
+        /// The call: its name, arguments and context.
+        package var call: @MainActor @Sendable (String, [String: Any], Context) async throws -> Any
         /// An error as the agent reads it.
         package var said: @MainActor @Sendable (Error) -> String = { $0.localizedDescription }
 
         package init(
             handles: @escaping @MainActor @Sendable (String) -> Bool, enabled: @escaping @MainActor @Sendable (Settings) -> Bool, unavailable: String,
-            tools: @escaping @MainActor @Sendable () -> [[String: Any]], instructions: @escaping @MainActor @Sendable () -> String,
+            tools: @escaping @MainActor @Sendable () -> [[String: Any]], instructions: @escaping @MainActor @Sendable (Settings) -> String,
             listed: @escaping @MainActor @Sendable (Settings, (any Sendable)?) async -> [[String: Any]] = { _, _ in [] },
-            call: @escaping @MainActor @Sendable (String, [String: Any], String?, (any Sendable)?) async throws -> Any,
+            call: @escaping @MainActor @Sendable (String, [String: Any], Context) async throws -> Any,
             said: @escaping @MainActor @Sendable (Error) -> String = { $0.localizedDescription }
         ) {
             self.handles = handles

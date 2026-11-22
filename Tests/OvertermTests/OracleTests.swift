@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Oracle: SQL and PL/SQL split as SQL*Plus does, the checks, an Easy
 /// Connect string, values from their bytes — offline; the driver against

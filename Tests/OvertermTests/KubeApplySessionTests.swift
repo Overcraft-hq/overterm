@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// A manifest diffed with and applied to `FakeKubeAPI` on a socket of the
 /// test's own (stage 2b), over three fictional contexts on it — never

@@ -18,32 +18,6 @@ extension EditorViewController {
         buffer.showsPreview = true
     }
 
-    /// Replaces what changed between the buffer's text and `text` — only
-    /// that range, through the text view when the buffer is the one showing,
-    /// so undo, the dirty mark and the git gutter see an ordinary edit.
-    package func replaceText(of buffer: EditorBuffer, with text: String) {
-        let old = buffer.storage.string as NSString
-        let new = text as NSString
-        guard old as String != text else { return }
-        var prefix = 0
-        let shorter = min(old.length, new.length)
-        while prefix < shorter, old.character(at: prefix) == new.character(at: prefix) { prefix += 1 }
-        var suffix = 0
-        while suffix < shorter - prefix, old.character(at: old.length - 1 - suffix) == new.character(at: new.length - 1 - suffix) {
-            suffix += 1
-        }
-        let range = NSRange(location: prefix, length: old.length - prefix - suffix)
-        let replacement = new.substring(with: NSRange(location: prefix, length: new.length - prefix - suffix))
-        if buffer === active, textView.shouldChangeText(in: range, replacementString: replacement) {
-            buffer.storage.replaceCharacters(in: range, with: NSAttributedString(string: replacement, attributes: baseAttributes))
-            textView.didChangeText()
-        } else {
-            buffer.storage.replaceCharacters(in: range, with: NSAttributedString(string: replacement, attributes: baseAttributes))
-            buffer.document.markEdited()
-            refreshChrome()
-        }
-    }
-
     // MARK: Drafts
 
     /// A request started with New Request and not saved yet.

@@ -9,6 +9,8 @@ import os
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The Kubernetes page: the app's model against `FakeKubeAPI` on a socket
 /// of the test's own — contexts chosen, the pods followed while a page

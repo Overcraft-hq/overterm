@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// What the GitOps section says of the Argo CD apps read from their marks
 /// (docs/design/kubernetes/gitops.md, 14.2, 14.3; `KubeMarkedSection`):

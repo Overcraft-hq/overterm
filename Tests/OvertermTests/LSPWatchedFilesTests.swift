@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// LSP's glob patterns, and the watched files each server asks for: what it
 /// registers once the client says it can watch (`dynamicRegistration`), and

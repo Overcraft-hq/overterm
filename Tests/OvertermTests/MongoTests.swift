@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// MongoDB's pure parts: BSON both ways, the shell's values and statements,
 /// what reads and what destroys, answers as rows, connection strings, SCRAM

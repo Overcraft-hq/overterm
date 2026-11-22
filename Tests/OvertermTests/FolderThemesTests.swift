@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Settings ▸ Themes ▸ Themes by folder: which theme a tab's folder takes.
 final class FolderThemesTests: XCTestCase {

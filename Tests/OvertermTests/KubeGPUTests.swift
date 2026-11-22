@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// GPUs (docs/design/kubernetes/metrics.md, decision 12; stage M8c): what
 /// the objects say — a node's GPU resources and the pods that hold them, a

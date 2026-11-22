@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The plan in the right slot as a model (analysis 6.3, Section 7): rows
 /// kept, not built in a body; the list's keys; a long string and JSON in a

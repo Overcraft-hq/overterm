@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// What the palette offers when you type. The ordering *is* the feature —
 /// a history that puts the right command fourth is a list you scroll.

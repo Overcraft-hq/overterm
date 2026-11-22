@@ -9,6 +9,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// A process a census test started (docs/design/activity/analysis.md,
 /// 10.2, 10.6): in a process group of its own, never the runner's; its

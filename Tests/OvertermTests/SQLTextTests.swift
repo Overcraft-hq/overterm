@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// SQL as text: its statements, what they do, what the caret is writing.
 final class SQLTextTests: XCTestCase {

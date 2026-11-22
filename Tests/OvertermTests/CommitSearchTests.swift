@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Overgit's commit search: the query read, git asked, a commit matched.
 final class CommitSearchTests: XCTestCase {

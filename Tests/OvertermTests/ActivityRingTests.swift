@@ -9,6 +9,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Activity's history (docs/design/activity/analysis.md, 6.11, 10.1): the
 /// strip's cells — highest, lowest, a gap never zero —, the detail's

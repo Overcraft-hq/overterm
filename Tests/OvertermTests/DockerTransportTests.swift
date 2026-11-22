@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The engine's calls over a real unix socket, against the fake engine:
 /// answers, errors, streams that go on, streams left early. Never the

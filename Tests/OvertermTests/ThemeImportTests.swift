@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Another app's colours as a Ghostty theme file, read back by the gallery.
 final class ThemeImportTests: XCTestCase {

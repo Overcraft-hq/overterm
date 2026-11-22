@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// A workload's pods by owner, its top five and the rest, by revision; a
 /// namespace's top eight workloads, its pods by phase, its quota and what

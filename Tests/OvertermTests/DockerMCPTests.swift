@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Docker's MCP tools, as an agent calls them, against the fake engine:
 /// what they say, and that a secret never leaves in an answer. The writes

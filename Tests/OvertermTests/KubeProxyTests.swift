@@ -12,6 +12,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// What a context's `kubectl proxy` is told and given: the flags per class,
 /// the socket's folder and path, the environment (never the user's

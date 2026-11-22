@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// What the API panel offers to start from: documents in the checkout, and
 /// a server on a tab's port that publishes its OpenAPI document.

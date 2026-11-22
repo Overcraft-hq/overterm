@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// A process's command line as Tab Info's tooltip shows it: masked as the
 /// census reads it (`ProcessArguments`, docs/design/activity/analysis.md,

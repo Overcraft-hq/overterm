@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The list's plain cells as words (`ActivityCells`): which columns are
 /// AppKit text, what each says, its tint — what the table compares to skip

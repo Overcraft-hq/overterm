@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The engine's pure parts: where it is, its frames and lines, its tar,
 /// what a stats sample means, ports once each, secrets hidden.

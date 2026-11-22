@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// What Activity shows of a command line, a title, and what an agent reads
 /// (docs/design/activity/analysis.md, 9.3, 8.4): masked once, everywhere.

@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Force unlock (analysis 2.5, 4.10, D-10, stage 2e): the two lines it
 /// runs and nothing like them, the probe's answer read against the lock

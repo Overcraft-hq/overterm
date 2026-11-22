@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The database client's Server page, editing and users — the pure parts:
 /// quoting, which results can be edited, pending changes and the statements

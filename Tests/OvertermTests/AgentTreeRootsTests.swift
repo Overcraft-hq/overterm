@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// An agent's folder's checkout, walked off the main thread (docs/design/
 /// activity/analysis.md, 7.2): the main thread is answered from what was

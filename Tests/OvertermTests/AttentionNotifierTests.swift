@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 final class AttentionNotifierTests: XCTestCase {
     /// UserNotifications answers the permission request on a queue of its

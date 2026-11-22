@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Content-Length framing, as a pipe delivers it: in pieces, several at once.
 final class JSONRPCTests: XCTestCase {

@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// `k8s_gitops` and `k8s_why` on Argo CD's and Flux's objects (docs/design/
 /// kubernetes/gitops.md, 6.1, 8.2; G7) against `FakeKubeAPI` with §8.3's

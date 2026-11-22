@@ -9,6 +9,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Collisions on Listening (docs/design/activity/analysis.md, 6.8): one
 /// port split across IPv4 and IPv6 by two holders, a specific address

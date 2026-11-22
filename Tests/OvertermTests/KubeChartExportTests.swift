@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// A chart's Copy PromQL and Copy Values as CSV, and the expanded chart's
 /// own identity (docs/design/kubernetes/metrics.md 2.1, 3.9; stage M9). Pure.

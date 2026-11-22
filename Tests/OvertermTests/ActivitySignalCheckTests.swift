@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The pane pill's Free… by the class table (docs/design/activity/
 /// analysis.md, 6.10, 6.12, 10.1): every class a pill can name, and what

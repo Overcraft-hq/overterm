@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The command ledger. libghostty gives no command boundaries, so these
 /// are inferred from the title, the finish event and the scrollbar — which

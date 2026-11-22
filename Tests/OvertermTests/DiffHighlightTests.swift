@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 final class DiffHighlightTests: XCTestCase {
     /// `git diff` output for `path` with these hunk lines, as loadDiffs reads it.

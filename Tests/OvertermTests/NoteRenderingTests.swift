@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// What the reading view is handed: links resolved, embeds cut to their
 /// heading or block, properties in order — and a ticked task's place.

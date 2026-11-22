@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The Server page, editing and users for the kinds whose rows are
 /// documents or items — MongoDB and DocumentDB, Elasticsearch and

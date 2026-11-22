@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// What Compose says of a checkout's compose files, read for the project
 /// before it runs: kept without its secrets, its errors in its own words,

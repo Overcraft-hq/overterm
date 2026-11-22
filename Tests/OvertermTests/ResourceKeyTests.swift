@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// A page's list keys (`ResourceKey`): a typed character read by a page's
 /// table — the named keys, case, digits to sections, `?` and `/` — and an

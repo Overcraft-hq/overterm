@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// New Task's Terraform (analysis 2.1, 2.8, 3.7, stage 2b): a new
 /// worktree's roots read against the repository's other worktrees — the

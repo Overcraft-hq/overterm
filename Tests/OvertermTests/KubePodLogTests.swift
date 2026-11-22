@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// A pod's log (stage 1c): the default container, the queries built, the
 /// pure pieces (lines out of bytes, older lines, the file's name, what an

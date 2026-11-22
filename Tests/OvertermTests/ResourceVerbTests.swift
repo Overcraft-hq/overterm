@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// A resource's verbs as an AppKit menu (`ResourceVerbMenuItem.items`):
 /// the order and dividers its SwiftUI menu has, the reason a verb is

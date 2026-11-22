@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// A context's saved queries (docs/design/kubernetes/metrics.md, decision
 /// 11; stage M8d): read from `kubernetes.contexts`' `charts`, checked

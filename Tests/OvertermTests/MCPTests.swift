@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Where MCP servers are found — the agents' configs, read never written —
 /// and the client against servers of the tests' own (E2EMCPServer).

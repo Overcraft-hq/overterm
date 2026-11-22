@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Stage 2a's other verbs through the page's one guard path, against the
 /// fake API server: `kind-fake` (local, writable), `fake-dev` (remote,

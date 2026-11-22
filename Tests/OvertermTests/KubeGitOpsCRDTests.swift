@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The fake against Argo CD's and Flux's own CRDs (docs/design/kubernetes/
 /// gitops.md, 8.5): pinned and SHA-checked by `Scripts/fetch-gitops-crds.sh`

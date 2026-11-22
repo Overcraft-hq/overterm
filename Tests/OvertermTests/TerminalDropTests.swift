@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// What a drop onto a terminal types in. The Claude Code forms follow its
 /// CLI (2.1.282): a pasted image path is split off at " /", unquoted or

@@ -11,6 +11,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The shared transport over a real unix socket, against a small server of
 /// the test's own that checks the Host header as `kubectl proxy` does:

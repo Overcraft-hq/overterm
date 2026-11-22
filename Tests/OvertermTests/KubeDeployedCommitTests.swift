@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// What is deployed, compared with the checkout (docs/design/kubernetes/analysis.md,
 /// 3.2): the sources in their order of trust — an image's revision label

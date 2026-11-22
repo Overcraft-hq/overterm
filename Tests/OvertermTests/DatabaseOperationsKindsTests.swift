@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Oracle's, ClickHouse's and BigQuery's Server page, editing and users — the
 /// pure parts: quoting, the statements, the engines' answers read.

@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// A collection run top to bottom, against a server on this machine: a
 /// variable one request sets reaching the next, setNextRequest, stop, and

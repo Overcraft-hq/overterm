@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The GitOps section's rows, chips and words (docs/design/kubernetes/
 /// gitops.md, 2.1–2.7, 8.1), R3's policy (3.1) and the controllers'

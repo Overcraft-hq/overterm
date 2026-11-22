@@ -143,12 +143,18 @@ let package = Package(
         // (Docker's images and CLI), Terraform (a context's class).
         feature("OvertermDatabase", over: ["Overterm"]),
         feature("OvertermDocker", over: ["OvertermDatabase"]),
-        feature("OvertermKubernetes", over: ["OvertermDocker"]),
+        // OvertermAPI: the API client (⌥⌘R), under Kubernetes (a forward's
+        // API docs, its discovery).
+        feature("OvertermAPI", over: ["Overterm"]),
+        feature("OvertermKubernetes", over: ["OvertermDocker", "OvertermAPI"]),
         feature("OvertermTerraform", over: ["OvertermKubernetes"]),
         // OvertermShell: the window and what holds the features together —
         // TerminalWindowController and its extensions, the app delegate, the
         // menus, the right slot and the sidebar — and the E2E scenarios.
-        feature("OvertermShell", over: ["OvertermTerraform"]),
+        // OvertermOvergit: the git panel (⌥⌘G), beside the features: only
+        // the window shows it.
+        feature("OvertermOvergit", over: ["Overterm"]),
+        feature("OvertermShell", over: ["OvertermTerraform", "OvertermOvergit"]),
         // The app: Sources/OvertermApp/main.swift starts the library. Its
         // product keeps the name the binary always had (make-app.sh, the
         // docs' `.build/debug/Overterm`).

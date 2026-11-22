@@ -9,6 +9,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// A long-lived child process (`ManagedProcess`) and the pool that keeps one
 /// a key: started and waited for, the reason it failed, closed by its own

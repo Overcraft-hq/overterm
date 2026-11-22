@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 final class OpenWithTests: XCTestCase {
     private static func app(_ bundleID: String, _ name: String, at path: String? = nil) -> ExternalApp {

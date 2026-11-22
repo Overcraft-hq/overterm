@@ -22,7 +22,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
     /// Where Go to File looks: the window's checkout.
     package var workspaceRoot: (() -> URL?)?
     /// The window's API client: a `.bru` request opens as one, sent through it.
-    package var apiWorkspace: APIWorkspace?
+    package var apiWorkspaceStorage: AnyObject?
     /// The window: a Kubernetes manifest's confirmations and its diff.
     package weak var kubernetesHostStorage: AnyObject?
     /// The window: Ask Why on a Terraform folder's failed validate.
@@ -331,7 +331,6 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
         let buffer = EditorBuffer()
         buffer.relay.editors.add(self)
         buffer.load(url, attributes: baseAttributes)
-        attachRequest(buffer)
         attachNote(buffer)
         attachDrawing(buffer)
         for hook in Self.hooks.attach { hook(self, buffer) }
@@ -572,7 +571,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
         let closed = buffer.url
         buffer.document.close()
         // A new request closed unsaved is gone, as Postman's tab is.
-        if let url = buffer.url { apiWorkspace?.discardDraft(url) }
+        for hook in Self.hooks.closed { hook(self, buffer) }
         buffer.relay.editors.remove(self)
         buffers.remove(at: index)
         if let closed { onBufferClosed?(closed) }
@@ -681,7 +680,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
             let selection = isActive ? textView.selectedRange() : buffer.selection.first ?? NSRange(location: 0, length: 0)
             buffer.document.load(url)
             buffer.setText(buffer.document.text, attributes: baseAttributes)
-            buffer.request?.textChanged(buffer.storage.string)
+            buffer.requestPart?.textChanged(buffer.storage.string)
             drawingTextChanged(buffer)
             buffer.selection = [NSRange(location: min(selection.location, buffer.storage.length), length: 0)]
             bufferDidReload(buffer)
@@ -859,9 +858,9 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     package func textDidChange(_ notification: Notification) {
         guard let buffer = active else { return }
-        buffer.request?.textChanged(buffer.storage.string)
+        buffer.requestPart?.textChanged(buffer.storage.string)
         drawingTextChanged(buffer)
-        if buffer.showsPreview, buffer.request == nil, buffer.drawing == nil { schedulePreview() }
+        if buffer.showsPreview, buffer.requestPart == nil, buffer.drawing == nil { schedulePreview() }
         buffer.document.markEdited()
         gutter.textDidChange()
         bufferDidChange(buffer)
@@ -956,7 +955,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
 
     /// ⇧⌘V or the header's eye: the file rendered, or its text again.
     package func toggleMarkdownPreview() {
-        guard let buffer = active, buffer.language?.id == "markdown" || buffer.request != nil || buffer.isNote || buffer.drawing != nil else { return }
+        guard let buffer = active, buffer.language?.id == "markdown" || buffer.requestPart != nil || buffer.isNote || buffer.drawing != nil else { return }
         buffer.showsPreview.toggle()
         updatePreview()
         if !buffer.showsPreview { focus() }
@@ -976,14 +975,14 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
             return
         }
         showDrawing(nil)
-        if let request = buffer?.request, buffer?.document.unavailable == nil {
-            header.setPreview(available: true, showing: buffer?.showsPreview == true, request: true)
+        if let buffer, buffer.document.unavailable == nil, let request = Self.hooks.requestView.firstAnswer({ $0(self, buffer) }) {
+            header.setPreview(available: true, showing: buffer.showsPreview == true, request: true)
             preview.isHidden = true
             noteReader?.isHidden = true
-            let showing = buffer?.showsPreview == true
+            let showing = buffer.showsPreview == true
             requestHost.isHidden = !showing
             scrollView.isHidden = showing
-            if showing { requestHost.rootView = AnyView(APIRequestView(model: request, theme: chrome)) }
+            if showing { requestHost.rootView = request }
             return
         }
         requestHost.isHidden = true
@@ -1168,7 +1167,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
             return
         }
         // A new request: saving it is naming it and putting it in its collection.
-        if isDraft(buffer) { return saveDraft(buffer) }
+        if Self.hooks.draft.contains(where: { $0(self, buffer, nil) }) { return }
         // A Terraform file: terraform fmt, only where the checkout already passes fmt -check — never the server's formatter.
         let own =
             formatted
@@ -1249,7 +1248,7 @@ package final class EditorViewController: NSViewController, NSTextViewDelegate {
             guard let self else { return }
             switch response {
             case .alertFirstButtonReturn:
-                if self.isDraft(buffer) { return self.saveDraft(buffer, then: proceed) }
+                if Self.hooks.draft.contains(where: { $0(self, buffer, proceed) }) { return }
                 self.save(buffer, overwriting: false, formatted: true)
                 proceed(!buffer.document.isDirty)
             case .alertThirdButtonReturn:

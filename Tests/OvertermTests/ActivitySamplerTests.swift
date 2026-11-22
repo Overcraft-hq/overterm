@@ -9,6 +9,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The census's ticks (docs/design/activity/analysis.md, 7.1–7.5, 10.1)
 /// over a fake Mac: rates by the interval measured, only over 250 ms and

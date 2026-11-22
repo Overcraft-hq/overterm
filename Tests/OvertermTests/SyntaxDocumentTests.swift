@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 final class SyntaxDocumentTests: XCTestCase {
     private func spans(_ text: String, _ file: String) -> [(String, String)] {

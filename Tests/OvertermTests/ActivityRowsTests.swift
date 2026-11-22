@@ -9,6 +9,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The Activity page's rows and its want (docs/design/activity/analysis.md,
 /// 6.4, 7.9, 9.9) over a fake Mac: every process, other users' named only,

@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Suspend Tab over a fake Mac (docs/design/activity/analysis.md, 6.5,
 /// 6.10, 10.1): what it stops is the pane's set, its sends go through

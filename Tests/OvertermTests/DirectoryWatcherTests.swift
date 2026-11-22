@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 final class DirectoryWatcherTests: XCTestCase {
     /// End to end through FSEvents: the C callback, the unretained context

@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 final class AgentOverviewTests: XCTestCase {
     private func lines(_ objects: [String]) -> [Data] { objects.map { Data($0.utf8) } }

@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The Server page, editing and users against real servers, with
 /// OVERTERM_DB_TESTS=1: Scripts/database-test-servers.sh's MongoDB 7 (with

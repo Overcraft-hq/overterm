@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Texts with their selections written in: `|` a caret, `«…»` a selection.
 /// (Not `[…]`: brackets are what half of these tests type.)

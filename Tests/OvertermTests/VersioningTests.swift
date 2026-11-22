@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The app's version: VERSION and CHANGELOG.md, Scripts/bump-version.sh, and
 /// the git hooks that keep them in step with the code (.githooks; CLAUDE.md,

@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// A text view stand-in: NSMutableString, a selection, and undo by whole
 /// snapshots per outermost group, the cursor at the change like NSTextView's.

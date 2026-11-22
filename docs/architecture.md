@@ -13,10 +13,12 @@ module, each its own) and a change rebuilds what is above it only:
 |---|---|
 | `OvertermCore` | what depends on nothing else of the app: the parsers and pure models (BruFile, Protobuf, TerraformPlan and its kin, EditCommands, Vim, LSPGlob, BSON, SQLText…), git's readers, the shell's words, the transport, `Secrets` |
 | `Overterm` | the shell under the features: tabs, terminals and Ghostty, splits, the editor, settings, the sidebar's panels, Activity, the API client, notes, the browser — and the few pieces of a feature it holds itself (`Sources/Overterm/Kubernetes/`: `KubeForwardPill`, `KubeLogScrub`…) |
+| `OvertermAPI` | the API client (Kubernetes reads a forward's API through it) |
 | `OvertermDatabase` | the database client |
 | `OvertermDocker` | Docker (over the databases: its containers' clients) |
-| `OvertermKubernetes` | Kubernetes (over Docker: its images and CLI) |
+| `OvertermKubernetes` | Kubernetes (over Docker — its images and CLI — and the API client) |
 | `OvertermTerraform` | Terraform (over Kubernetes: a context's class) |
+| `OvertermOvergit` | the git panel (⌥⌘G), beside the features: only the window shows it |
 | `OvertermShell` | the window and what holds the features together: `TerminalWindowController` and its extensions, the app delegate, the menus, the right slot, the sidebar, Tab Info, the Inbox's view, the review page, the E2E scenarios; `OvertermFeatures` |
 
 `OvertermApp` (`Sources/OvertermApp/main.swift`) calls `AppMain.run()`; its
@@ -39,8 +41,8 @@ feature answers through a hook it sets in `OvertermFeatures.install`
 which `FeatureHooks.ensure()` looks up by its Objective-C name the first time
 a hook is read — the app and a unit test (which never runs `AppMain`) get
 them alike; install sets storage only, never reads a hook. The editor's
-(`EditorHooks`: a buffer's console, manifest or Terraform folder attached,
-shown, completed, formatted, saved), an agent's tools (`BrowserMCP.Provider`,
+(`EditorHooks`: a buffer's console, manifest, request or Terraform folder
+attached, shown, completed, formatted, saved; a new request's draft), an agent's tools (`BrowserMCP.Provider`,
 in the order they are offered), a tab's Kubernetes badge
 (`Tab.kubeBadgeHook`), a setting's entry fields
 (`SettingsSchema.entryFields`), terraform-ls's environment, what a pane's

@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Stage M0 of docs/design/kubernetes/metrics.md (1.1): the rate window
 /// (Grafana's `$__rate_interval`, the scrape taken as a minute), the

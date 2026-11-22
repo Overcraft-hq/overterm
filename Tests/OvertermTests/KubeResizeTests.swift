@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// In-place resize (stage 3b): what a pod's containers say, what is typed
 /// checked against it, the patch and the request it is, the kubectl it

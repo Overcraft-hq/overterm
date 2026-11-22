@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The real terraform against `FakeTerraformBackend`, through the recording
 /// wrapper, in a sandbox of its own: that the fake answers as Terraform's

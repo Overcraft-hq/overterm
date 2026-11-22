@@ -9,6 +9,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The proxies a context each (`KubeProxies`), over stand-in proxies whose
 /// answers the test writes: opened once and kept, `maxProxies` with the

@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Pod files (stage 4): `kubectl cp` out of and into a container — the
 /// lines (`-c`, `--context` and `-n` always, quoted for zsh, odd paths

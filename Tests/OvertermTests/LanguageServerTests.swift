@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// What servers answer, decoded; text edits applied in UTF-16; finding a
 /// server and its root; and a whole session with a fake server

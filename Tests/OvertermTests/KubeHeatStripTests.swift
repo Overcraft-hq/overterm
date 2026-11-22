@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The Nodes list's heat strips (docs/design/kubernetes/metrics.md, 2.1,
 /// stage M3c): 60 cells of 15 s against allocatable, from the ring's

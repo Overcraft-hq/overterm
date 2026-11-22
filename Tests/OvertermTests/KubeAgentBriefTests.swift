@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Ask Why (stage 1e; docs/design/kubernetes/analysis.md, 3.4): what is
 /// wrong with a pod or a Deployment, the brief's words for each failure —

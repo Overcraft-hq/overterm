@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Stage 2a, the apply (analysis 2.3, 4.7, 4.8, 5.3, 5.4, 6.4): the one
 /// apply line and the plan's modes; 5.4's checks, each with its refusal;

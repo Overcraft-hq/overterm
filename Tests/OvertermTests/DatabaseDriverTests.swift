@@ -8,6 +8,8 @@ import _CryptoExtras
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The drivers against real databases. SQLite always; PostgreSQL, MySQL,
 /// MariaDB and ClickHouse when OVERTERM_DB_TESTS=1 and Scripts/database-test-servers.sh

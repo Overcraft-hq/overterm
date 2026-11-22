@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// What the census relies on, checked on the Mac it runs on (docs/design/
 /// activity/analysis.md, 12: measured on one macOS): the structures' sizes,

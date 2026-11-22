@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// `FakeTerraformBackend` answers as Terraform's http backend client
 /// expects (its `client.go`): GET 404 for no state, writes refused without

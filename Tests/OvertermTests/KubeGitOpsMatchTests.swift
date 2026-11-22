@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Which Argo CD and Flux objects deploy a checkout (docs/design/
 /// kubernetes/gitops.md, 4.2, 8.1): the owners from each mark, the

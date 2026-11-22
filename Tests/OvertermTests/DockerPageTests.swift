@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The Docker page's pure parts: the filter, the commands it types, its
 /// keys, how the list is grouped and what a selection means.

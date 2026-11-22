@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// YAML through tree-sitter's grammar, into JSONSerialization's shapes —
 /// what an OpenAPI document in YAML needs.

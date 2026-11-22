@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The Metrics tab over Prometheus (docs/design/kubernetes/metrics.md,
 /// 3.3–3.5, 4.7, 6.1; stage M6): each range's step, points and refresh,

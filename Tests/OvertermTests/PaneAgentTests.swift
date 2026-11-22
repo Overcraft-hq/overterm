@@ -9,6 +9,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// A tab's agent from a fake census (docs/design/activity/analysis.md,
 /// 7.8): the readers that walked every pane's tree with a scan of their own

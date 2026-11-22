@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Bruno's file format, read and written — the promise being that the
 /// same file opens in Bruno, in `bru run` and here, and that an edit made

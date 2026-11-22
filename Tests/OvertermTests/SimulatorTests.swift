@@ -9,6 +9,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The simulator pane's pure halves: what `simctl list` says there is, and
 /// the screenshot a polled frame is cut down to.

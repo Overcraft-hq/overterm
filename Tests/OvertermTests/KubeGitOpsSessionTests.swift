@@ -9,6 +9,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The GitOps section's reads against `FakeKubeAPI` on a socket of the
 /// tests' own (docs/design/kubernetes/gitops.md, 3, 8.2), never a real

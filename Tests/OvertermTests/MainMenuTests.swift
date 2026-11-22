@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The menu bar as it is built. A command whose key never reaches its item
 /// is a shortcut that does nothing, and that is invisible from the model

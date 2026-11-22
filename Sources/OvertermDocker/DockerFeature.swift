@@ -7,7 +7,7 @@ package enum DockerFeature {
             BrowserMCP.Provider(
                 handles: { $0.hasPrefix("docker_") }, enabled: { $0.dockerAgentAccess },
                 unavailable: "Docker isn't available to agents — Settings ▸ Docker.",
-                tools: { DockerMCP.tools }, instructions: { DockerMCP.instructions },
-                call: { name, arguments, _, _ in try await DockerMCP.call(name, arguments, docker: DockerModel.shared) }))
+                tools: { DockerMCP.tools }, instructions: { _ in DockerMCP.instructions },
+                call: { name, arguments, _ in try await DockerMCP.call(name, arguments, docker: DockerModel.shared) }))
     }
 }

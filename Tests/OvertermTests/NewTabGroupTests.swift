@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// The rule for which island a new tab joins. Pure, and the reason it
 /// exists is a bug: inheriting the selected tab's island meant one group

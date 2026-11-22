@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// DynamoDB: PartiQL's checks, typed values as text, items as rows, the
 /// catalog's columns, signing — offline; the driver against DynamoDB Local

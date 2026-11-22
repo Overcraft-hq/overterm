@@ -32,7 +32,7 @@ package final class EditorBuffer {
     /// shown as one (APIRequestView).
     package var showsPreview = false
     /// A `.bru` request's model, while the file is one.
-    package var request: APIRequestModel?
+    package var requestPart: (any EditorRequestPart)?
     /// A note of the vault: its preview is the reading view (NoteReaderView).
     package var isNote = false
     /// An Excalidraw drawing: shown as its canvas (DrawingView) over its text.

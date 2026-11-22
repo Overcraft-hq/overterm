@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Where a tab dragged over a pane lands. Five targets in one rectangle
 /// with no modifier to remember, which only works if the thresholds are

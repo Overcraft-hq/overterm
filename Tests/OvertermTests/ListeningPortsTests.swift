@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 final class ListeningPortsTests: XCTestCase {
     // MARK: Where a listener is reached (docs/design/activity/analysis.md, 6.8)

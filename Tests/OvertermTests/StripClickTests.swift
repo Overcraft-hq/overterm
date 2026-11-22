@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 final class StripClickTests: XCTestCase {
     private func kind(_ type: NSEvent.EventType, _ modifiers: NSEvent.ModifierFlags = []) -> StripClick? {

@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Change markers on every chart (docs/design/kubernetes/metrics.md 3.2,
 /// 8; stage M4): a workload's History, the detail's events, the pods'

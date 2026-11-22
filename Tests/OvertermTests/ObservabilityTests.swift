@@ -7,6 +7,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Prometheus, Loki and Tempo as the client reads them — the answers'
 /// shapes, a console's queries, the levels and trace ids in log lines.

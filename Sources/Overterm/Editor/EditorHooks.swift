@@ -1,4 +1,5 @@
 import AppKit
+import SwiftUI
 
 /// What the editor asks of the features it sits under (the SQL console,
 /// a Kubernetes manifest, Terraform): each sets its own at install
@@ -15,6 +16,14 @@ package struct EditorHooks {
     /// The buffer shown again: its part bound to this editor; `requireResource`,
     /// only where the buffer is a cluster object's YAML.
     package var rebind: [@MainActor (EditorViewController, EditorBuffer, _ requireResource: Bool) -> Void] = []
+    /// A buffer's preview of its own in the editor's place (a request's
+    /// form); nil when it has none.
+    package var requestView: [@MainActor (EditorViewController, EditorBuffer) -> AnyView?] = []
+    /// A save of a buffer that is no file yet (a new request): true when the
+    /// feature took it, then calling `done` (nil: none waits).
+    package var draft: [@MainActor (EditorViewController, EditorBuffer, _ done: ((Bool) -> Void)?) -> Bool] = []
+    /// The buffer's tab closed (its document already closed).
+    package var closed: [@MainActor (EditorViewController, EditorBuffer) -> Void] = []
     /// The buffer showing changed (nil: none): a panel under it shown or hidden.
     package var show: [@MainActor (EditorViewController, EditorBuffer?) -> Void] = []
     /// The buffer has no console: true when the feature's bar takes its place
@@ -108,4 +117,10 @@ package protocol EditorConsole: AnyObject {
 package protocol EditorManifest: AnyObject {
     func say(_ text: String)
     func close()
+}
+
+/// A request open in the editor (`APIRequestModel`): what the editor tells it.
+@MainActor
+package protocol EditorRequestPart: AnyObject {
+    func textChanged(_ text: String)
 }

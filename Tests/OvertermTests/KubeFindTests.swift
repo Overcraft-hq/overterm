@@ -8,6 +8,8 @@ import XCTest
 @testable import OvertermKubernetes
 @testable import OvertermTerraform
 @testable import OvertermShell
+@testable import OvertermOvergit
+@testable import OvertermAPI
 
 /// Finding and copying on the Kubernetes page: `field:` and `label:` sent
 /// to the server, Copy as kubectl and its quoting, the list as CSV, the
