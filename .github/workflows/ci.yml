@@ -286,6 +286,19 @@ jobs:
           /usr/libexec/PlistBuddy -c 'Print :CFBundleVersion' "$plist" | grep -qx 42
           /usr/libexec/PlistBuddy -c 'Print :CFBundleIdentifier' "$plist" | grep -qx io.github.overcraft-hq.overterm
           codesign --verify --strict Overterm.app
+          # The Swift libraries it loads by @rpath are in it (make-app.sh
+          # bundles them; this runner's macOS has them, older ones don't).
+          Scripts/bundle-swift-libs.sh Overterm.app >/dev/null
+
+      # The bundle this Xcode made, to open on an older macOS than the
+      # runner's before a release (1.6.2 opened on none before macOS 26).
+      - name: Keep the app bundle
+        run: ditto -c -k --keepParent Overterm.app Overterm-app.zip
+      - uses: actions/upload-artifact@v5
+        with:
+          name: Overterm-app
+          path: Overterm-app.zip
+          retention-days: 5
 
       # Main's only: a pull request's would be its branch's alone. The debug
       # build (the tests') is left out — the release doesn't use it.
