@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Darwin
 
@@ -180,3 +181,4 @@ extension E2ERunner {
         return bound ? Int(UInt16(bigEndian: address.sin_port)) : 0
     }
 }
+#endif

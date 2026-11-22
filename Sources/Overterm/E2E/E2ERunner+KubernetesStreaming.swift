@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -66,3 +67,4 @@ extension E2ERunner {
         check("it wrote nothing", fake.writes.isEmpty)
     }
 }
+#endif

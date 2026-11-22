@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Combine
 
@@ -105,3 +106,4 @@ extension E2ERunner {
         check("then goes", gone)
     }
 }
+#endif

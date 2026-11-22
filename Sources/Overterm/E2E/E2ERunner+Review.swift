@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Review tabs: the branch, a commit and a pull request (a stand-in gh),
@@ -214,3 +215,4 @@ extension E2ERunner {
             sys.exit(2)
         """#
 }
+#endif

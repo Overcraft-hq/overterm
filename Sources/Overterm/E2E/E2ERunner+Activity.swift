@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// The Activity page (docs/design/activity/analysis.md, 6.4, 7.9, 10.3): it
@@ -279,3 +280,4 @@ extension E2ERunner {
         return labels
     }
 }
+#endif

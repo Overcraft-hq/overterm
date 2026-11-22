@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 import SwiftUI
@@ -410,3 +411,4 @@ extension E2ERunner {
         check("Cancel sends nothing", cancelled && away && !ask.isOpen)
     }
 }
+#endif

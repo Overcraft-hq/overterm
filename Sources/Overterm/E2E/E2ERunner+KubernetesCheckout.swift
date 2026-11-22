@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// A checkout tied to what it deploys (docs/design/kubernetes/analysis.md,
@@ -201,3 +202,4 @@ extension E2ERunner {
         fake.delete("deployments.apps", "shop-api", namespace: "shop")
     }
 }
+#endif

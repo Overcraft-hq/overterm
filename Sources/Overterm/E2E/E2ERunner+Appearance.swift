@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import SwiftUI
 
@@ -275,3 +276,4 @@ extension E2ERunner {
         check("all back to the user's Ghostty config", await eventually(3) { !written().contains("background-image") && !written().contains("font-feature") })
     }
 }
+#endif

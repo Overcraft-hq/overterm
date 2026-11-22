@@ -1,3 +1,4 @@
+#if E2E
 import Foundation
 import Network
 
@@ -321,3 +322,4 @@ final class E2EMongoServer: @unchecked Sendable {
         return groups.map(\.document)
     }
 }
+#endif

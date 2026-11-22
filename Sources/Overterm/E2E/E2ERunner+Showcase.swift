@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -300,3 +301,4 @@ extension E2ERunner {
 
 /// A wave between -1 and 1 over `period` seconds.
 private func wave(_ time: Double, _ period: Double) -> Double { sin(2 * Double.pi * time / period) }
+#endif

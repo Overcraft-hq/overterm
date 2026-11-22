@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Terraform stage 1c (docs/design/terraform/analysis.md 9): guarding
@@ -301,3 +302,4 @@ enum TerraformPromptTexts {
 
         """
 }
+#endif

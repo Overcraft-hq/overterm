@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -349,3 +350,4 @@ extension E2ERunner {
             await eventually(10) { panel.helmUpgrade?.state == .failed("The name typed wasn't web: nothing was run.") } && recorded().count == 1)
     }
 }
+#endif

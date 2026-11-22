@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -99,3 +100,4 @@ extension E2ERunner {
         check("the page and its tab back", await eventually(5) { self.app.store.showingOverlay == .kubernetes && page.metricsTabWant != nil })
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Suspend Tab and Resume Tab on a tab running something in the
@@ -149,3 +150,4 @@ extension E2ERunner {
         return info.kp_proc.p_stat == SSTOP
     }
 }
+#endif

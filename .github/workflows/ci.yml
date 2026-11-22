@@ -386,6 +386,11 @@ jobs:
           # The Swift libraries it loads by @rpath are in it (make-app.sh
           # bundles them; this runner's macOS has them, older ones don't).
           Scripts/bundle-swift-libs.sh Overterm.app >/dev/null
+          # No end-to-end scenario nor fake server in a shipped build: they
+          # are `#if E2E`, a debug build's or the E2E trait's (Package.swift).
+          if nm Overterm.app/Contents/MacOS/Overterm | grep -qE 'E2ERunner|FakeDockerEngine|FakeKubeAPI'; then
+            echo "::error::the release binary has the end-to-end scenarios in it"; exit 1
+          fi
 
       # The bundle this Xcode made, to open on an older macOS than the
       # runner's before a release (1.6.2 opened on none before macOS 26).

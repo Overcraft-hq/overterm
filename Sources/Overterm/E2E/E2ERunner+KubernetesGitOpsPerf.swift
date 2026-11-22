@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -280,3 +281,4 @@ final class MainThreadStall {
         return longest
     }
 }
+#endif

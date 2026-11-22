@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// A gRPC request against the scenario's own server: its methods read by
@@ -89,3 +90,4 @@ extension E2ERunner {
         check("and the protoPath is Bruno's", model.file.text.contains("protoPath: protos/shop.proto"))
     }
 }
+#endif

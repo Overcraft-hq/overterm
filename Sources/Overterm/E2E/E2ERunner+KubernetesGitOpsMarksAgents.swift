@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 import SwiftUI
@@ -176,3 +177,4 @@ extension E2ERunner {
         check("nothing written", spoke.writes.isEmpty)
     }
 }
+#endif

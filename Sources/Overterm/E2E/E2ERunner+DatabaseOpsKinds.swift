@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// The Server and Users pages of kinds that aren't SQL's, and a graph's
@@ -186,3 +187,4 @@ extension E2ERunner {
         return nil
     }
 }
+#endif

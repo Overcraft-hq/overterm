@@ -1,3 +1,4 @@
+#if E2E
 import Foundation
 
 /// The harness's leftover check, inside the app (docs/design/activity/
@@ -61,3 +62,4 @@ extension E2ERunner {
         return !targets.contains(where: running)
     }
 }
+#endif

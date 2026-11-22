@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Overgit's git commands, each against a real repository and a remote:
@@ -162,3 +163,4 @@ extension E2ERunner {
         check("nothing left running", model.running == nil)
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// A MongoDB find's documents edited in the grid and saved, then the
@@ -117,3 +118,4 @@ extension E2ERunner {
         return nil
     }
 }
+#endif

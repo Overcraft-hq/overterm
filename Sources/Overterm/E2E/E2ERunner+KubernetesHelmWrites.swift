@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -209,3 +210,4 @@ extension E2ERunner {
         check("fake-dev's version read again", await eventually(10) { model.version != nil })
     }
 }
+#endif

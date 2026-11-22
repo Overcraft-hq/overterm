@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -112,3 +113,4 @@ extension E2ERunner {
         model.select("kind-fake")
     }
 }
+#endif

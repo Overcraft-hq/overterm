@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// A pane header's port pill (docs/design/activity/analysis.md, 6.12;
@@ -193,3 +194,4 @@ extension E2ERunner {
             "\(tab.portFreeing.map(\.label))")
     }
 }
+#endif

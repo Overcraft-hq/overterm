@@ -65,7 +65,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         UpdateChecker.shared.checkIfDue()
         windowController = controller
         controller.dumpLayoutIfRequested()
-        if let scenario = AppEnvironment.e2eScenario { E2ERunner.start(scenario, app: controller) }
+        if let scenario = AppEnvironment.e2eScenario {
+            #if E2E
+            E2ERunner.start(scenario, app: controller)
+            #else
+            // A release build without the E2E trait has no scenarios: said
+            // and quit at once, rather than a window the run waits on.
+            FileHandle.standardError.write(Data("error: this build has no end-to-end scenarios (\(scenario)) — build with CONFIG=debug, or --traits E2E\n".utf8))
+            exit(2)
+            #endif
+        }
         // What Activity kept and stopped before the last quit or crash (D-29).
         ActivityPersistence.shared.start()
         // …and, 10 s on, what an earlier Overterm left (D-14): never in an isolated run.

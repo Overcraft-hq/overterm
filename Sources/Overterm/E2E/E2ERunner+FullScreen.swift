@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Full screen keeps the tab strip on screen and uncovered: AppKit puts a
@@ -75,3 +76,4 @@ extension E2ERunner {
         check("the user's window frame untouched", UserDefaults.standard.string(forKey: savedKey) == saved, "\(saved ?? "none") → \(UserDefaults.standard.string(forKey: savedKey) ?? "none")")
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if E2E
 import Foundation
 
 /// The fake's `/openapi/v3` (3.15): an index naming a document for each
@@ -330,3 +331,4 @@ extension FakeKubeAPI {
         ])
     }
 }
+#endif

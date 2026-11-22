@@ -1,3 +1,4 @@
+#if E2E
 import CryptoKit
 import Foundation
 import NIOCore
@@ -1957,3 +1958,4 @@ extension FakeDockerEngine {
         }
         """#
 }
+#endif

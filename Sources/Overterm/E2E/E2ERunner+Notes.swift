@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Notes: the vault in the sidebar, its notes in the editor.
@@ -484,3 +485,4 @@ extension E2ERunner {
         check("and read, as the link was", editor.active?.showsPreview == true)
     }
 }
+#endif

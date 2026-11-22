@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// ⌘V with only a picture on the clipboard: an agent gets ⌃V (it reads the
@@ -57,3 +58,4 @@ extension E2ERunner {
         check("so ⌘V is not turned into ⌃V", !ImagePaste.clipboardHasOnlyImage() || !agentHasKeyboard(shell))
     }
 }
+#endif

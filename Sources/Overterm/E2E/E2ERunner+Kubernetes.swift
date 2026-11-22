@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Darwin
 import OSLog
@@ -2786,3 +2787,4 @@ extension E2ERunner {
         return (false, seen.joined(separator: " | "))
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// The API panel's MCP servers: a checkout's `.mcp.json` read (a stdio
@@ -67,3 +68,4 @@ extension E2ERunner {
         inspector.disconnectAll()
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -104,3 +105,4 @@ extension E2ERunner {
         page.showSection(.workloads)
     }
 }
+#endif

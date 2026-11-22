@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Left Behind (docs/design/activity/analysis.md, 6.9, 10.3 items 12 and
@@ -173,3 +174,4 @@ extension E2ERunner {
         return boxes
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -297,3 +298,4 @@ extension E2ERunner {
         KubeSocketFolder.app.remove()
     }
 }
+#endif

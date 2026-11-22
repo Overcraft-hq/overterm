@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import SwiftUI
 
@@ -379,3 +380,4 @@ extension E2ERunner {
         check("shown again", await eventually(5) { app.store.showingOverlay == .kubernetes })
     }
 }
+#endif

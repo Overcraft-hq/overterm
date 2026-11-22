@@ -1,3 +1,4 @@
+#if E2E
 import Foundation
 import NIOCore
 import NIOHPACK
@@ -198,3 +199,4 @@ final class E2EGRPCServer: @unchecked Sendable {
         return out
     }
 }
+#endif

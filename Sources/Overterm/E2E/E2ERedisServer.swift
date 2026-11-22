@@ -1,3 +1,4 @@
+#if E2E
 import Foundation
 
 /// A redis-server of the tests' own: on a free port, nothing saved to disk,
@@ -108,3 +109,4 @@ final class E2ERedisServer: @unchecked Sendable {
         }
     }
 }
+#endif

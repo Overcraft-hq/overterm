@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -267,3 +268,4 @@ extension E2ERunner {
         return read
     }
 }
+#endif

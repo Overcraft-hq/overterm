@@ -1,3 +1,4 @@
+#if E2E
 import Foundation
 
 /// A spoke cluster on the fake (docs/design/kubernetes/gitops.md, 14.9.1):
@@ -437,3 +438,4 @@ extension FakeKubeAPI {
         return head + String(repeating: "x", count: max(0, padding - head.count - 3)) + "\"}"
     }
 }
+#endif

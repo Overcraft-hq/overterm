@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// opencode, pi and Gemini CLI as Overterm knows them: in the menus, their
@@ -165,3 +166,4 @@ extension E2ERunner {
         if let elsewhere { app.store.select(elsewhere) }
     }
 }
+#endif

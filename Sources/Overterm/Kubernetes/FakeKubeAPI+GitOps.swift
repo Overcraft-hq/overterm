@@ -1,3 +1,4 @@
+#if E2E
 import Foundation
 
 /// Argo CD and Flux on the fake (docs/design/kubernetes/gitops.md, 8.3):
@@ -616,3 +617,4 @@ extension FakeKubeAPI {
         }
     }
 }
+#endif

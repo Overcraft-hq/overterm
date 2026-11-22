@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -162,3 +163,4 @@ extension E2ERunner {
         _ = await eventually(10) { model.discovery?.kind("po")?.subresources.contains("resize") == true }
     }
 }
+#endif

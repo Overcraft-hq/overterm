@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Darwin
 import SwiftUI
@@ -1063,3 +1064,4 @@ final class ActivityFrameClock: @unchecked Sendable {
     /// The main thread's CPU of the last publish, ms.
     var lastCPU: Double { lock.withLock { cpuSamples.last ?? 0 } }
 }
+#endif

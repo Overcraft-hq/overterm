@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Darwin
 
@@ -351,3 +352,4 @@ extension E2ERunner {
         _ = await eventually(5) { self.window.attachedSheet == nil }
     }
 }
+#endif

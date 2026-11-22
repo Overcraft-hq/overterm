@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// ⌘W, pressed — through the window as a key, not a call — closes the tab
@@ -44,3 +45,4 @@ extension E2ERunner {
         }
     }
 }
+#endif

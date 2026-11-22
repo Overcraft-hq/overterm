@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Terraform's plan at Section 10's size, timed in the app as built: a
@@ -84,3 +85,4 @@ extension E2ERunner {
         return Data(("{\"format_version\": \"1.2\", \"terraform_version\": \"1.17.1\", \"applyable\": true, \"complete\": true, \"resource_changes\": [" + changes.joined(separator: ",") + "]}").utf8)
     }
 }
+#endif

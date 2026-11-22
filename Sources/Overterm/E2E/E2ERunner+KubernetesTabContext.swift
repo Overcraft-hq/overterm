@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -292,3 +293,4 @@ extension E2ERunner {
         page.applySelector()
     }
 }
+#endif

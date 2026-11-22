@@ -1,3 +1,4 @@
+#if E2E
 import Foundation
 import Network
 
@@ -191,3 +192,4 @@ final class E2EClickHouseServer: @unchecked Sendable {
         return table([], [])
     }
 }
+#endif

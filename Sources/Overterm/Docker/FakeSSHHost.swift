@@ -1,3 +1,4 @@
+#if E2E
 import Foundation
 
 /// A throwaway sshd for this user on 127.0.0.1 — its own host key, the one
@@ -101,3 +102,4 @@ final class FakeSSHHost {
         try? FileManager.default.removeItem(at: folder)
     }
 }
+#endif

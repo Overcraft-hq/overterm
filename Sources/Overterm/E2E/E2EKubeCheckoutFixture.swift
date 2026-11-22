@@ -1,3 +1,4 @@
+#if E2E
 import Foundation
 
 /// The fixture checkout the Kubernetes scenarios bind (gitops.md 8.4): a
@@ -46,3 +47,4 @@ struct E2EKubeCheckoutFixture {
     @discardableResult
     func git(_ arguments: [String]) async throws -> String { try await Self.git(arguments, in: repo) }
 }
+#endif

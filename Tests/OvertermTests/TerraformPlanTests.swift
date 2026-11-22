@@ -525,9 +525,9 @@ final class TerraformPlanReadingTests: XCTestCase {
         // scenario); a debug build is ten times slower. Bound here against
         // a scan per value per string, which took minutes.
         #if DEBUG
-            let budget = 15.0
+        let budget = 15.0
         #else
-            let budget = 0.5
+        let budget = 0.5
         #endif
         XCTAssertLessThan(elapsed, budget, "decoding \(data.count >> 20) MB took \(elapsed) s")
     }

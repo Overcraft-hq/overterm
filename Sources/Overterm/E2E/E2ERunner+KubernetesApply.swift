@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -327,3 +328,4 @@ extension E2ERunner {
         check("nothing left to ask about", app.unsavedNames(everyWindow: true).isEmpty, "\(app.unsavedNames(everyWindow: true))")
     }
 }
+#endif

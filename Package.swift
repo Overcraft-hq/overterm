@@ -9,6 +9,13 @@ let package = Package(
     products: [
         .executable(name: "Overterm", targets: ["OvertermApp"])
     ],
+    // The end-to-end scenarios (Sources/Overterm/E2E) and the tests' fake
+    // servers (Fake*.swift) are `#if E2E`: in every debug build, and in a
+    // release build only with `--traits E2E` — a shipped app carries none
+    // of them (45,000 lines the release build no longer optimises).
+    traits: [
+        .trait(name: "E2E", description: "The end-to-end scenarios and the tests' fake servers, in a release build")
+    ],
     // The database client's wire protocols: PostgreSQL (and Redshift, which
     // speaks it) and MySQL — TLS, SCRAM and caching_sha2 included, which is
     // why they are packages and not ours. SQLite is the system's; ClickHouse
@@ -65,6 +72,10 @@ let package = Package(
                 .product(name: "OracleNIO", package: "oracle-nio"),
             ],
             path: "Sources/Overterm",
+            swiftSettings: [
+                .define("E2E", .when(configuration: .debug)),
+                .define("E2E", .when(traits: ["E2E"])),
+            ],
             linkerSettings: [
                 // libghostty's C++ deps (glslang, spirv-cross, simdutf) and the
                 // system frameworks its Zig code links against.

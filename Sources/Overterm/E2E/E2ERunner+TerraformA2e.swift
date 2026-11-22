@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Terraform stage 2e (docs/design/terraform/analysis.md 2.5, 4.10, 9,
@@ -109,3 +110,4 @@ private final class UnlockSheets {
     var sheets: [TerraformUnlock.Sheet] = []
     var answer: (TerraformUnlock.Sheet) -> String? = { _ in nil }
 }
+#endif

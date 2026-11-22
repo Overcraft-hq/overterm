@@ -1,3 +1,4 @@
+#if E2E
 import Foundation
 
 extension E2ERunner {
@@ -106,3 +107,4 @@ extension E2ERunner {
         await pause(1)
     }
 }
+#endif

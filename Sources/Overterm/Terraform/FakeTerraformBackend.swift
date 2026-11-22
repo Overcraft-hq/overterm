@@ -1,3 +1,4 @@
+#if E2E
 import Foundation
 import NIOCore
 import NIOHTTP1
@@ -305,3 +306,4 @@ private final class FakeTerraformBackendHandler: ChannelInboundHandler, @uncheck
         context.writeAndFlush(wrapOutboundOut(.end(nil))).whenComplete { _ in channel.close(promise: nil) }
     }
 }
+#endif

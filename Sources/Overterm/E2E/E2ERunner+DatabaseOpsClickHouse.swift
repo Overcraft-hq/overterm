@@ -1,3 +1,4 @@
+#if E2E
 import Foundation
 
 /// ClickHouse's rows edited as mutations, its Server page and its Users
@@ -102,3 +103,4 @@ extension E2ERunner {
         model.disconnect(connection)
     }
 }
+#endif

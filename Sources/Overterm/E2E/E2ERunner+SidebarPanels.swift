@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Settings ▸ General ▸ Sidebar: Sessions and Snippets switched off and on
@@ -76,3 +77,4 @@ extension E2ERunner {
         Settings.shared.set("general.sidebarStartPanel", nil)
     }
 }
+#endif

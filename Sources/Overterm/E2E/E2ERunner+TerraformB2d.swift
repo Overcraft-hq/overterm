@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Terraform stage 2d (docs/design/terraform/analysis.md 2.6, 2.9, 9):
@@ -349,3 +350,4 @@ extension E2ERunner {
         return words
     }
 }
+#endif

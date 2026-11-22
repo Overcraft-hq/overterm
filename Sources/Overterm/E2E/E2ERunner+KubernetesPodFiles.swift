@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -190,3 +191,4 @@ extension E2ERunner {
         model.setScope(.namespace("shop"))
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if E2E
 import Foundation
 
 /// The surveyed production spoke at its size (docs/design/kubernetes/
@@ -400,3 +401,4 @@ extension FakeKubeAPI {
         ]
     }
 }
+#endif

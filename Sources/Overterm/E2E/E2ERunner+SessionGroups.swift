@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Two islands and a loose tab, saved and brought back: every tab returns,
@@ -45,3 +46,4 @@ extension E2ERunner {
         }
     }
 }
+#endif

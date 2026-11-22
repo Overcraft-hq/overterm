@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 import SwiftUI
@@ -667,3 +668,4 @@ extension E2ERunner {
         return parts.count > start ? parts[start] : nil
     }
 }
+#endif

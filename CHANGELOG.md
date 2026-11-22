@@ -9,6 +9,7 @@ version is tagged `v<version>`.
 ## 1.6.5 — 2026-11-22
 
 - activity: an agent's folder already read since its call is not read again
+- build: the shipped app no longer carries the end-to-end scenarios and the tests' fake servers (`#if E2E`; `make e2e` builds them in with the E2E trait) — a smaller binary and a shorter release build
 
 ## 1.6.4 — 2026-11-22
 

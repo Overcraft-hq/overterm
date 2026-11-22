@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -214,3 +215,4 @@ extension E2ERunner {
         return (ok, said.joined(separator: "; "))
     }
 }
+#endif

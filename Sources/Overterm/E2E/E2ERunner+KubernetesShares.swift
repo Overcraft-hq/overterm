@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -103,3 +104,4 @@ extension E2ERunner {
         fake.delete("pods", name, namespace: "shop")
     }
 }
+#endif

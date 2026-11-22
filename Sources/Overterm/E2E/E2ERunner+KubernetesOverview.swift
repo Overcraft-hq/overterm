@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import SwiftUI
 
@@ -314,3 +315,4 @@ extension E2ERunner {
         fake.addEvent(about: "pods", "web-1", namespace: "shop", reason: "Scheduled", message: "Assigned shop/web-1 to fake-node-1")
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Terraform stage 2f (docs/design/terraform/analysis.md 2.9, 5.5, 9): a
@@ -272,3 +273,4 @@ extension E2ERunner {
             version: "1.17.1", environment: [:], dataDir: "", workspace: "default", status: 2)
     }
 }
+#endif

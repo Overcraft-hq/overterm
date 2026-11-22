@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -348,3 +349,4 @@ extension E2ERunner {
         model.select("fake-dev")
     }
 }
+#endif

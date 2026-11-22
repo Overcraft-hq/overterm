@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -702,3 +703,4 @@ extension E2ERunner {
         "deployments.apps", "statefulsets.apps", "daemonsets.apps", "rollouts.argoproj.io", "cronjobs.batch", "horizontalpodautoscalers.autoscaling",
     ]
 }
+#endif

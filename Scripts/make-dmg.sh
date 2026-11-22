@@ -20,6 +20,11 @@ if [[ "$config" != "release" ]]; then
   echo "error: Overterm.app is a ${config:-unknown} build, not a release one — run: make app" >&2
   exit 1
 fi
+traits="$(/usr/libexec/PlistBuddy -c 'Print OvertermBuildTraits' "$APP/Contents/Info.plist" 2>/dev/null || true)"
+if [[ -n "$traits" ]]; then
+  echo "error: Overterm.app has the end-to-end scenarios in it (traits: $traits) — run: make app" >&2
+  exit 1
+fi
 if [[ "$built" != "$VERSION" ]]; then
   echo "error: Overterm.app is version $built, not $VERSION — run: VERSION=$VERSION make app" >&2
   exit 1

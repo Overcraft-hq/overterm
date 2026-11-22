@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Prometheus, Loki and Tempo in the Database panel, against the fake of
@@ -127,3 +128,4 @@ extension E2ERunner {
         app.captureWindow(to: (folder as NSString).appendingPathComponent("\(name).png"))
     }
 }
+#endif

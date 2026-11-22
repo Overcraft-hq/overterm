@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -328,3 +329,4 @@ extension E2ERunner {
         check("drawn", await shownText(15) { $0.contains("HelmRepository") } != nil)
     }
 }
+#endif

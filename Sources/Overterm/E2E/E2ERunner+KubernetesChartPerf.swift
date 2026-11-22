@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import SwiftUI
 
@@ -261,3 +262,4 @@ private struct KubeChartPerfHost: View {
         }
     }
 }
+#endif

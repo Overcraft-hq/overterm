@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// A GraphQL request against the echo server's `/graphql`: its schema read
@@ -54,3 +55,4 @@ extension E2ERunner {
         }
     }
 }
+#endif

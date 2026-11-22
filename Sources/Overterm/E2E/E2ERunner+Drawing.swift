@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Notes ▸ New Drawing: an Excalidraw canvas in the editor, written as
@@ -158,3 +159,4 @@ extension E2ERunner {
         check("the canvas fits its pane \(when)", fits, "view \(width), page \(last.page), box \(last.width), Excalidraw \(last.appWidth)")
     }
 }
+#endif

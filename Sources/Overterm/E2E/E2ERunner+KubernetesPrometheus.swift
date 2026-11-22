@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -427,3 +428,4 @@ extension E2ERunner {
 
     func prometheusAskedOf(_ fake: FakeKubeAPI) -> [FakeKubeAPI.Request] { fake.requests.filter(\.isPrometheusQuery) }
 }
+#endif

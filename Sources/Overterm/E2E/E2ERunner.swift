@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Carbon.HIToolbox
 import CryptoKit
@@ -6038,3 +6039,4 @@ private final class StallMeter {
 
     func stop() { timer?.invalidate() }
 }
+#endif

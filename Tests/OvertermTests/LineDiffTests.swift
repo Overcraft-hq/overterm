@@ -91,9 +91,9 @@ final class LineDiffTests: XCTestCase {
                 GutterHunk(kind: .added, lines: 49_000..<49_003),
             ])
         #if DEBUG
-            XCTAssertLessThan(elapsed, .milliseconds(500))
+        XCTAssertLessThan(elapsed, .milliseconds(500))
         #else
-            XCTAssertLessThan(elapsed, .milliseconds(15))
+        XCTAssertLessThan(elapsed, .milliseconds(15))
         #endif
     }
 

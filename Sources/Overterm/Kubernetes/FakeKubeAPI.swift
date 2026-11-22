@@ -1,3 +1,4 @@
+#if E2E
 import Foundation
 import NIOCore
 import NIOHTTP1
@@ -2791,3 +2792,4 @@ private final class FakeKubeHandler: ChannelInboundHandler, @unchecked Sendable 
         api.forget(context.channel)
     }
 }
+#endif

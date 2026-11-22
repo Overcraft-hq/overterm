@@ -818,6 +818,14 @@ scenario inside the app and prints `E2E PASS|FAIL <check>` lines, then
 launches one process per scenario (skipped unless `OVERTERM_E2E_TESTS=1`,
 which `make e2e` sets) and turns FAIL lines into test failures.
 
+The scenarios are only in an app built with them: every debug build, and a
+release build with the `E2E` trait — `make e2e` builds that one (`make app
+TRAITS=E2E`), the perf scenarios' budgets being a release build's. `make app`
+alone, the shipped app, has none, and a scenario launched in it fails at once
+("this build has no end-to-end scenarios"). Switching between the two rebuilds
+the `Overterm` module in release, its defines being different
+(docs/architecture.md, Targets).
+
 What makes it end-to-end without being dangerous:
 
 - **Input goes only to its own window**: key events are built with

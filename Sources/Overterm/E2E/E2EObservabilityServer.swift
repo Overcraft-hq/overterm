@@ -1,3 +1,4 @@
+#if E2E
 import Foundation
 import Network
 
@@ -307,3 +308,4 @@ final class E2EObservabilityServer: @unchecked Sendable {
         ]
     }
 }
+#endif

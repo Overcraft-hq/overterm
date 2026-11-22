@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Terraform stage 1d (docs/design/terraform/analysis.md 9): the plan in
@@ -423,3 +424,4 @@ extension E2ERunner {
         var all: [TerraformAgentBrief] = []
     }
 }
+#endif

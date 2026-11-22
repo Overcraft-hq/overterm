@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -125,3 +126,4 @@ extension E2ERunner {
         if !wasShowing { app.toggleKubernetesPage(nil) }
     }
 }
+#endif

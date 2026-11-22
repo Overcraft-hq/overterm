@@ -1,3 +1,4 @@
+#if E2E
 import Foundation
 import Network
 
@@ -170,3 +171,4 @@ final class E2EEchoServer: @unchecked Sendable {
         }
         """
 }
+#endif

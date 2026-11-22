@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// A resource list's rows pressed as a person presses them: a press and its
@@ -377,3 +378,4 @@ extension E2ERunner {
         _ = await eventually(3) { table.selectedRowIndexes.count == saved.count }
     }
 }
+#endif

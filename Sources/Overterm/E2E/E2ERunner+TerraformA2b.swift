@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Terraform stage 2b (docs/design/terraform/analysis.md 2.1, 2.8, 3.7, 9):
@@ -141,3 +142,4 @@ extension E2ERunner {
             }, "\(String(describing: plainFolder?.state))")
     }
 }
+#endif

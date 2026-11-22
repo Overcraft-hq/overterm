@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Darwin
 
@@ -178,3 +179,4 @@ extension E2ERunner {
         check("l again hides them", page.press("l") && !page.showsFiles)
     }
 }
+#endif

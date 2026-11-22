@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Terraform stage 2c (docs/design/terraform/analysis.md 2.4, 5.6, 9):
@@ -248,3 +249,4 @@ extension E2ERunner {
         var all: [TerraformOutputLinks.Offer] = []
     }
 }
+#endif

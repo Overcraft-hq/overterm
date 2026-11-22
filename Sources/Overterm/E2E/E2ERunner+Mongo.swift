@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// MongoDB in the Database panel, against the fake mongod (E2EMongoServer):
@@ -120,3 +121,4 @@ extension E2ERunner {
         app.captureWindow(to: (folder as NSString).appendingPathComponent("mongo-\(name).png"))
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Terraform stage 2a (docs/design/terraform/analysis.md 9): the apply,
@@ -360,3 +361,4 @@ extension E2ERunner {
         var answers: [String] = []
     }
 }
+#endif

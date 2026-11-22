@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Overgit's work: stage and commit, search the history, compare two sides.
@@ -88,3 +89,4 @@ extension E2ERunner {
         }
     }
 }
+#endif

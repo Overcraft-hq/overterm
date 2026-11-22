@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 import SwiftUI
@@ -360,3 +361,4 @@ extension E2ERunner {
         check("GETs only", fake.requests.allSatisfy { $0.method == "GET" })
     }
 }
+#endif

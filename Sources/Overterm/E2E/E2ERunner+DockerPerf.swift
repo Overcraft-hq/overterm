@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// The Docker page with many containers — 160 in 20 compose projects —
@@ -148,3 +149,4 @@ extension E2ERunner {
         await pause(0.3)
     }
 }
+#endif

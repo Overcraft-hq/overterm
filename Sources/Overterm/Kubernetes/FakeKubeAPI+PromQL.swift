@@ -1,3 +1,4 @@
+#if E2E
 import Foundation
 
 /// What the fake Prometheus answers a query with, before it evaluates
@@ -344,3 +345,4 @@ enum FakePromQL {
         return regex.firstMatch(in: text, range: NSRange(text.startIndex..., in: text)) != nil
     }
 }
+#endif

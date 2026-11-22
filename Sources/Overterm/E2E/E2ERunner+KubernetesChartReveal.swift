@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -148,3 +149,4 @@ extension E2ERunner {
         scroll.reflectScrolledClipView(scroll.contentView)
     }
 }
+#endif

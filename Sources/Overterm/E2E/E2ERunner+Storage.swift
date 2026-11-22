@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Buckets in the Database panel, against the S3 server of
@@ -83,3 +84,4 @@ extension E2ERunner {
         await session.delete(all, in: bucket, refreshing: "")
     }
 }
+#endif

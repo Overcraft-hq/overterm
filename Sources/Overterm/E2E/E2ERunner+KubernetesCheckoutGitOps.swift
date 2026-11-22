@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 import SwiftUI
@@ -704,3 +705,4 @@ extension E2ERunner {
         await readWindow().map(\.text).filter(keep).joined(separator: " | ")
     }
 }
+#endif

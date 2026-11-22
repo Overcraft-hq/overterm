@@ -16,6 +16,20 @@ one compile is 631. `AppMain` is `package`, the one thing the executable needs
 from the library; nothing else changed its access. Resources are the bundle's
 (`Bundle.main`), as before: the library has none of SwiftPM's.
 
+The end-to-end scenarios (`Sources/Overterm/E2E`) and the tests' fake servers
+(every `Fake*.swift`: `FakeDockerEngine`, `FakeSSHHost`, `FakeKubeAPI` and its
+parts, `FakeTerraformBackend`) are `#if E2E`, about 45,000 lines a shipped app
+never runs. Package.swift defines `E2E` in every debug build, and in a release
+build only with the package's `E2E` trait (`swift build -c release --traits
+E2E`, `make app TRAITS=E2E` — `make e2e`'s app). A release build without it,
+the one released, carries none of them and doesn't spend its optimiser on
+them; launched with `OVERTERM_E2E` it says it has no scenarios and quits (2).
+`make-app.sh` writes the build's configuration and traits into Info.plist
+(`OvertermBuildConfiguration`, `OvertermBuildTraits`) and `make-dmg.sh` packs
+only a release one without traits. swift-format leaves `#if` blocks
+unindented (`indentConditionalCompilationBlocks`), so a file wrapped whole
+keeps its lines as they were.
+
 ## Window layout
 
 ```

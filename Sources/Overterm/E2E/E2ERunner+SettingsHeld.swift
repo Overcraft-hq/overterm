@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// D-7 (docs/design/terraform/analysis.md 5.8): settings.json written
@@ -107,3 +108,4 @@ extension E2ERunner {
         return (element as AnyObject).accessibilityPerformPress?() ?? false
     }
 }
+#endif

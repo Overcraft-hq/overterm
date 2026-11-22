@@ -13,7 +13,8 @@ make treesitter              # Frameworks/TreeSitterKit.xcframework + the editor
 make hooks                   # .githooks: an app change goes into an unreleased version (once per clone)
 make test                    # unit + integration tests, several processes at once (~1 min; SERIAL=1)
 make test-changed            # only those this branch's changes reach (docs/testing.md, Choosing tests)
-make e2e                     # end-to-end scenarios in the real app (~25 min, opens windows)
+make e2e                     # end-to-end scenarios in the real app (~25 min, opens windows),
+                             # built with them (TRAITS=E2E); a plain make app has none
                              # both: run OUTSIDE the Bash sandbox — docs/testing.md
 make app                     # Overterm.app in the repo
 make install                 # …and copy it to /Applications, re-signed with
@@ -31,7 +32,7 @@ make app dmg                 # dist/Overterm-<VERSION>.dmg; a release is the Rel
 
 | Path | What |
 |---|---|
-| `Sources/OvertermApp/`, `Sources/Overterm/` | the `Overterm` executable — its `main.swift` only calls `AppMain.run()` — and everything else, the `Overterm` library the tests `@testable import`: one module, so a test build compiles it once (docs/architecture.md, Targets) |
+| `Sources/OvertermApp/`, `Sources/Overterm/` | the `Overterm` executable — its `main.swift` only calls `AppMain.run()` — and everything else, the `Overterm` library the tests `@testable import`: one module, so a test build compiles it once; the scenarios (`E2E/`) and every `Fake*.swift` are `#if E2E` — a debug build's, or a release one's with the E2E trait, never a shipped app's (docs/architecture.md, Targets) |
 | `Sources/Overterm/Ghostty/` | libghostty embedding: `GhosttyRuntime` (app + C callbacks + actions), `TerminalView` (one surface: keys, IME, mouse, drops), `GhosttyInput`, `TerminalDrop` (what a drop types in) |
 | `Sources/Overterm/Tabs/` | `Tab`, `TabStore` (order, selection, pin invariant), tab strip, `TabKind` (what a tab's icon says it is; `.pod` for `kubectl exec`/`attach -it`), `TabActivity` (needs-you flags), `Agent` (each agent CLI: commands, recognising its process) + `AgentLaunch` (what one launch gets: the bridge each its own way, its attention switch; `AgentLaunchFiles`), `AttentionChip` ("N need you"), `Agent`, tab context menu, `TabSuspension` (Suspend Tab: SIGSTOP the shell first, SIGCONT it last), `StripPress` (the AppKit view each tab and chip takes its press with) |
 | `Sources/Overterm/Groups/` | tab groups: `TabGroup`/`TabStrip`, `TabStore+Groups` (the contiguous-run invariant), `NewTabGroup` (which island a new tab joins), `GroupFocus` (holding other groups' notices), `BroadcastModel`, the island views, the ⌃⌘G switcher |

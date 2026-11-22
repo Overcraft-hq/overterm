@@ -1,3 +1,4 @@
+#if E2E
 import Foundation
 
 /// The kinds of Prometheus the fake can be (metrics.md, 8's profiles):
@@ -149,3 +150,4 @@ extension FakeKubeAPI {
         }
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import SQLite3
 
@@ -186,3 +187,4 @@ extension E2ERunner {
         return nil
     }
 }
+#endif

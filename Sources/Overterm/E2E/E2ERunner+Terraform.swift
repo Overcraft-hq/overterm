@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Terraform stage 1a (docs/design/terraform/analysis.md 4.14, 9): a `.tf`
@@ -240,3 +241,4 @@ extension E2ERunner {
         return String(cString: resolved)
     }
 }
+#endif

@@ -6,6 +6,7 @@
   },
   "maximumBlankLines": 2,
   "respectsExistingLineBreaks": true,
+  "indentConditionalCompilationBlocks": false,
   "prioritizeKeepingFunctionOutputTogether": false,
   "rules": {
     "DoNotUseSemicolons": false,

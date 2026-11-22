@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Foundation
 
@@ -281,3 +282,4 @@ extension E2ERunner {
         check("production said in the pane", app.kubernetesManifest.change?.production == true)
     }
 }
+#endif

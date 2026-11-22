@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Terraform stage 1b (docs/design/terraform/analysis.md 9): which root,
@@ -264,3 +265,4 @@ extension URL {
         return self
     }
 }
+#endif

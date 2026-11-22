@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// Redis in the Database panel, against a redis-server of the scenario's
@@ -122,3 +123,4 @@ extension E2ERunner {
         app.captureWindow(to: (folder as NSString).appendingPathComponent("\(name).png"))
     }
 }
+#endif

@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
@@ -4136,3 +4137,4 @@ private final class MenuSeen: @unchecked Sendable {
     var menu: NSMenu?
     var ended = false
 }
+#endif

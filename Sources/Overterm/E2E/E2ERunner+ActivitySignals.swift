@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 import Darwin
 
@@ -380,3 +381,4 @@ extension E2ERunner {
         check("the header's last word goes", await eventually(30) { page.freeing == nil }, page.freeing ?? "")
     }
 }
+#endif

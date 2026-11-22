@@ -1,3 +1,4 @@
+#if E2E
 import AppKit
 
 /// A big review — 250 files, thousands of lines — scrolled by the page's
@@ -124,3 +125,4 @@ extension E2ERunner {
         return timing
     }
 }
+#endif
