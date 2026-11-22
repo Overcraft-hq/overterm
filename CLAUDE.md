@@ -31,6 +31,7 @@ make app dmg                 # dist/Overterm-<VERSION>.dmg; a release is the Rel
 
 | Path | What |
 |---|---|
+| `Sources/OvertermApp/`, `Sources/Overterm/` | the `Overterm` executable — its `main.swift` only calls `AppMain.run()` — and everything else, the `Overterm` library the tests `@testable import`: one module, so a test build compiles it once (docs/architecture.md, Targets) |
 | `Sources/Overterm/Ghostty/` | libghostty embedding: `GhosttyRuntime` (app + C callbacks + actions), `TerminalView` (one surface: keys, IME, mouse, drops), `GhosttyInput`, `TerminalDrop` (what a drop types in) |
 | `Sources/Overterm/Tabs/` | `Tab`, `TabStore` (order, selection, pin invariant), tab strip, `TabKind` (what a tab's icon says it is; `.pod` for `kubectl exec`/`attach -it`), `TabActivity` (needs-you flags), `Agent` (each agent CLI: commands, recognising its process) + `AgentLaunch` (what one launch gets: the bridge each its own way, its attention switch; `AgentLaunchFiles`), `AttentionChip` ("N need you"), `Agent`, tab context menu, `TabSuspension` (Suspend Tab: SIGSTOP the shell first, SIGCONT it last), `StripPress` (the AppKit view each tab and chip takes its press with) |
 | `Sources/Overterm/Groups/` | tab groups: `TabGroup`/`TabStrip`, `TabStore+Groups` (the contiguous-run invariant), `NewTabGroup` (which island a new tab joins), `GroupFocus` (holding other groups' notices), `BroadcastModel`, the island views, the ⌃⌘G switcher |

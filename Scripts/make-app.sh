@@ -3,7 +3,8 @@
 set -euo pipefail
 
 APP_NAME="Overterm"
-# The SPM target, which keeps the old name (Package.swift).
+# The SPM executable product (Package.swift: the OvertermApp target, its
+# binary named as it always was).
 PRODUCT="Overterm"
 # Where the settings, the session and the privacy grants live. It is not
 # the app's name and never was; renaming it would open a new, empty app.

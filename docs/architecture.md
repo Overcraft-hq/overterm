@@ -3,6 +3,19 @@
 One process, one window (for now), everything on the main thread except
 libghostty's own threads and git calls.
 
+## Targets
+
+Package.swift has the app's code as a library, `Overterm` (`Sources/Overterm`),
+and a thin executable, `OvertermApp` (`Sources/OvertermApp/main.swift`, which
+calls `AppMain.run()`), whose product keeps the binary's name, `Overterm`
+(`.build/debug/Overterm`, what `Scripts/make-app.sh` copies into the bundle).
+The tests `@testable import Overterm`, the library. It was one executable
+target: then Swift Build compiled the whole app twice for a test build — the
+executable, and a testable copy for the tests to link — 1,128 s of CPU where
+one compile is 631. `AppMain` is `package`, the one thing the executable needs
+from the library; nothing else changed its access. Resources are the bundle's
+(`Bundle.main`), as before: the library has none of SwiftPM's.
+
 ## Window layout
 
 ```
