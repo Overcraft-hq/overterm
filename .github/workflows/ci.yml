@@ -299,7 +299,7 @@ jobs:
     if: needs.changes.outputs.bundle == 'true'
     runs-on: xcode-27  # public preview (see the top)
     # A cold GhosttyKit build (≈10 min, when its cache misses) and the
-    # release build: ≈17 min from the cache, over 50 min with none — the
+    # release build, over 50 min (only its package sources are cached) — the
     # first run on Xcode 27.2 was cut at 60.
     timeout-minutes: 120
     steps:
@@ -350,29 +350,23 @@ jobs:
           path: Frameworks
           key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
 
-      # The release build's packages, compiled once per Package.resolved and
-      # Xcode — the debug build's rules (the test job): one entry, saved by
-      # main only when missing, Overterm's own build left out. Its
-      # whole-module compile (≈35–48 min) runs again whatever is restored, so
-      # only the packages (≈2–4 min) are worth keeping; a key per commit
-      # saved ≈0.7 GB a push. The Release workflow restores the same cache.
+      # The release build's package sources, fetched once per Package.resolved
+      # and Xcode: one entry, saved by main only when missing. No compiled
+      # objects: Release 44693177175 restored CI's whole .build under its
+      # exact key and still compiled the packages from step 1 of 955
+      # (CCryptoBoringSSL first, ≈2 min), then Overterm's whole-module
+      # compile (≈48 min) — nothing compiled was reused. Put the
+      # intermediates back only once a run shows them reused (well under
+      # ~950 steps, no BoringSSL compile). The Release workflow restores the
+      # same paths and key.
       - name: Restore the Swift build
         id: release-build
         uses: actions/cache/restore@v6
         with:
           path: |
-            .build/*
-            !.build/out
-            .build/out/*
-            !.build/out/Intermediates.noindex
-            !.build/out/Products
-            !.build/out/v5
-            .build/out/Intermediates.noindex/*
-            !.build/out/Intermediates.noindex/Overterm.build
-            .build/out/Products/Release/*
-            !.build/out/Products/Release/Overterm*
-            !.build/out/Products/Release/ExecutableModules
-            !.build/out/Products/Release/lib*.a
+            .build/checkouts
+            .build/repositories
+            .build/workspace-state.json
           key: spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}
           restore-keys: |
             spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-
@@ -396,16 +390,7 @@ jobs:
         uses: actions/cache/save@v6
         with:
           path: |
-            .build/*
-            !.build/out
-            .build/out/*
-            !.build/out/Intermediates.noindex
-            !.build/out/Products
-            !.build/out/v5
-            .build/out/Intermediates.noindex/*
-            !.build/out/Intermediates.noindex/Overterm.build
-            .build/out/Products/Release/*
-            !.build/out/Products/Release/Overterm*
-            !.build/out/Products/Release/ExecutableModules
-            !.build/out/Products/Release/lib*.a
+            .build/checkouts
+            .build/repositories
+            .build/workspace-state.json
           key: spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}

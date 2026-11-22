@@ -7,13 +7,12 @@
 # Fast, because it repeats nothing CI did. The unit tests ran in CI on this
 # very commit with the same Xcode: the release asks for that run's result
 # (waiting if it is still going) instead of running them again — ten minutes
-# of a 30-minute release. And the release build starts from CI's: CI saves
-# .build after building the app on main (the Swift packages — SwiftNIO,
-# swift-crypto's BoringSSL — compiled once per Package.resolved), the release
-# restores it (the packages alone: Overterm's own whole-module compile runs
-# every time). The build metadata About shows is Info.plist's, not compiled
-# in, so CI's build is the release's. `run_tests` runs the tests here anyway;
-# `clean_build` builds without the cache.
+# of a 30-minute release. The release build restores the package sources CI
+# saved on main, once per Package.resolved, so nothing is fetched again; the
+# compile itself runs every time (packages ≈2 min, then Overterm's own
+# whole-module ≈48 min) — a restored whole .build was not reused (ci.yml,
+# bundle). `run_tests` runs the tests here anyway; `clean_build` builds
+# without the cache.
 #
 # Manual only: a macOS runner is expensive, so nothing triggers it on push.
 #
@@ -57,8 +56,8 @@ concurrency:
 jobs:
   release:
     runs-on: xcode-27  # public preview (see the top)
-    # Up to 30 of them waiting for CI on this commit to finish, and a
-    # release build without CI's cache takes over 50 (Xcode 27.2).
+    # Up to 30 of them waiting for CI on this commit to finish, and the
+    # release build takes over 50 (Xcode 27.2).
     timeout-minutes: 150
     env:
       GH_TOKEN: ${{ github.token }}
@@ -152,7 +151,7 @@ jobs:
           path: Frameworks
           key: frameworks-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Scripts/build-ghosttykit.sh', 'Scripts/build-treesitter.sh', 'mise.toml') }}
 
-      # CI's release build on main (see the top): its packages, for these
+      # CI's release build on main (see the top): its package sources, for these
       # pins and this Xcode. Restored only — CI is what saves it, with these
       # very paths and key (ci.yml, bundle).
       - name: Restore the Swift build
@@ -160,18 +159,9 @@ jobs:
         uses: actions/cache/restore@v6
         with:
           path: |
-            .build/*
-            !.build/out
-            .build/out/*
-            !.build/out/Intermediates.noindex
-            !.build/out/Products
-            !.build/out/v5
-            .build/out/Intermediates.noindex/*
-            !.build/out/Intermediates.noindex/Overterm.build
-            .build/out/Products/Release/*
-            !.build/out/Products/Release/Overterm*
-            !.build/out/Products/Release/ExecutableModules
-            !.build/out/Products/Release/lib*.a
+            .build/checkouts
+            .build/repositories
+            .build/workspace-state.json
           key: spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-${{ hashFiles('Package.resolved') }}
           restore-keys: |
             spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-
