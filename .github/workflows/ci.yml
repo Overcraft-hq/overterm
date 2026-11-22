@@ -237,6 +237,7 @@ jobs:
       # A step of its own, so that the compile's time shows apart from the
       # tests'.
       - name: Build for tests
+        id: build
         run: swift build --build-tests
 
       # Several xctest processes at once (Scripts/unit-tests.sh): the tests
@@ -267,9 +268,12 @@ jobs:
           if-no-files-found: ignore
 
       # Main's only, as the release build's: a pull request's would be its
-      # own. Only when the restore found no entry under this very key.
+      # own. Only when the restore found no entry under this very key, and
+      # only after a build that finished: the entry is kept until
+      # Package.resolved or the Xcode changes, so a half-built .build saved
+      # once would be restored, never saved again, by every later run.
       - name: Save the debug build
-        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.debug-build.outputs.cache-hit != 'true' }}
+        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.debug-build.outputs.cache-hit != 'true' && steps.build.outcome == 'success' }}
         uses: actions/cache/save@v6
         with:
           path: |
@@ -374,6 +378,7 @@ jobs:
             spm-release-${{ runner.arch }}-xcode${{ env.XCODE }}-
 
       - name: Assemble and verify the app bundle
+        id: bundle-build
         run: |
           VERSION=9.9.9 BUILD=42 make app
           test -x Overterm.app/Contents/MacOS/Overterm
@@ -384,9 +389,10 @@ jobs:
           codesign --verify --strict Overterm.app
 
       # Main's only: a pull request's would be its branch's alone. Only when
-      # the restore found no entry under this very key.
+      # the restore found no entry under this very key, and only after a
+      # build that finished (the debug build's reason, above).
       - name: Save the Swift build
-        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.release-build.outputs.cache-hit != 'true' }}
+        if: ${{ !cancelled() && github.event_name == 'push' && github.ref == 'refs/heads/main' && steps.release-build.outputs.cache-hit != 'true' && steps.bundle-build.outcome == 'success' }}
         uses: actions/cache/save@v6
         with:
           path: |
